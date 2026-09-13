@@ -2900,6 +2900,12 @@ def _run_workflow_node_in_process(
     from agent.runtime_cwd import set_session_cwd
 
     set_session_cwd(str(sandbox.root))
+    from hermes_constants import (
+        reset_hermes_home_override,
+        set_hermes_home_override,
+    )
+
+    hermes_home_token = set_hermes_home_override(_sandbox_hermes_home(sandbox))
     agent = None
     timeout_fired = threading.Event()
     timeout_timer = None
@@ -3006,6 +3012,7 @@ def _run_workflow_node_in_process(
         except Exception:
             pass
         _sandbox_tool_context.value = None
+        reset_hermes_home_override(hermes_home_token)
 
 
 def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
@@ -4967,6 +4974,12 @@ def _prewarm_session_agent(
             session_db.close()
         _update_session_mapping(user_id, hermes_sid, sandbox.state_db)
 
+    from hermes_constants import (
+        reset_hermes_home_override,
+        set_hermes_home_override,
+    )
+
+    hermes_home_token = set_hermes_home_override(_sandbox_hermes_home(sandbox))
     agent = session_db = None
     try:
         agent, session_db, route = _build_in_process_agent(
@@ -4994,6 +5007,7 @@ def _prewarm_session_agent(
         _sandbox_tool_context.value = None
         _skill_route_context.value = None
         _close_agent_resources(agent, session_db)
+        reset_hermes_home_override(hermes_home_token)
 
 
 def _get_cached_config() -> dict:

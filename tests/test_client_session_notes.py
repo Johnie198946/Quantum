@@ -222,6 +222,7 @@ def test_session_agent_cache_signature_includes_tenant_sandbox():
 
 def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypatch):
     import scripts.hermes_bridge as bridge
+    from hermes_constants import get_hermes_home, get_hermes_home_override
 
     class BootstrapDB:
         def __init__(self):
@@ -246,8 +247,11 @@ def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypa
         lambda user, sid, state_db: mappings.append((user, sid, state_db)),
     )
     build_kwargs = {}
+    ambient = get_hermes_home_override()
+    sandbox_home = Path("/tenant/hermes-home")
 
     def build(*_args, **kwargs):
+        assert get_hermes_home() == sandbox_home
         build_kwargs.update(kwargs)
         return (
             agent,
@@ -260,7 +264,9 @@ def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypa
         bridge, "_finish_cached_agent",
         lambda *args, **kwargs: retained.append((args, kwargs)) or True,
     )
-    sandbox = SimpleNamespace(root="/tenant", state_db="/tenant/state.db")
+    sandbox = SimpleNamespace(
+        root="/tenant", state_db="/tenant/state.db", hermes_home=sandbox_home
+    )
 
     session_id, populated = bridge._prewarm_session_agent(
         "user", {"triage": {}}, sandbox, knowledge_action_enabled=True
@@ -275,6 +281,7 @@ def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypa
     assert retained[0][1] == {"keep": True, "cache_origin": "prewarm"}
     assert build_kwargs["client_context_enabled"] is False
     assert build_kwargs["knowledge_action_enabled"] is True
+    assert get_hermes_home_override() == ambient
 
 
 def test_prewarm_does_not_relabel_prior_turn_cache(monkeypatch):

@@ -189,7 +189,17 @@ def test_other_in_process_entrypoints_snapshot_before_execution(monkeypatch, tmp
     agent = CounterAgent()
     agent.run_conversation("prior work")
     db = SimpleNamespace(close=lambda: None)
-    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=lambda **kwargs: agent))
+    from hermes_constants import get_hermes_home, get_hermes_home_override
+
+    ambient = get_hermes_home_override()
+    sandbox_home = tmp_path / "hermes-home"
+
+    def build_agent(**kwargs):
+        if entrypoint == "workflow":
+            assert get_hermes_home() == sandbox_home
+        return agent
+
+    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=build_agent))
     monkeypatch.setitem(sys.modules, "model_tools", SimpleNamespace(get_tool_definitions=lambda **kwargs: []))
     monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda cwd: None))
     monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": "test-model"})
@@ -202,9 +212,10 @@ def test_other_in_process_entrypoints_snapshot_before_execution(monkeypatch, tmp
     if entrypoint == "workflow":
         reply, sid, usage = bridge._run_workflow_node_in_process(
             "hello", {"node_type": "LLM_INFERENCE", "parameters": {"max_tokens": 1000}},
-            sandbox=SimpleNamespace(root=tmp_path),
+            sandbox=SimpleNamespace(root=tmp_path, hermes_home=sandbox_home),
         )
         assert sid == agent.session_id
+        assert get_hermes_home_override() == ambient
     else:
         reply, usage = bridge._run_clarification_in_process("hello")
     assert reply == "answer"
