@@ -2,7 +2,7 @@
 
 - `task_id`: `ios-explicit-memory-receipt-20260913`
 - `goal`: 让 iOS 对话中的明确“请记住……”指令可靠写入 Quantum 原生长期记忆，并向用户显示写入回执。
-- `status`: `TESTED`
+- `status`: `PUSHED`
 
 ## 变更文件
 
@@ -14,6 +14,7 @@
 - `tests/test_agent_os_runtime_acceptance.py`: 覆盖明确指令识别、原生写入、去重和工具成功判定。
 - `tests/test_answer_blocks_meaningful_stream.py`: 覆盖回执的有效流活动判定。
 - `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift`: 覆盖 iOS 回执事件解析。
+- `ios/project.yml`、`ios/AIPlatformApp.xcodeproj/project.pbxproj`: 将已使用的 Build 36 递增并统一为 TestFlight Build 37。
 
 ## 开工前 Git 盘点
 
@@ -35,15 +36,19 @@
 ## 交付与部署
 
 - `authorization`: 用户已在当前任务明确要求“推送 部署”。
-- `commit_sha`: 待生成。
-- `github_remote/ref/sha`: 待提交、推送并执行 `git ls-remote` 发布核验。
-- `server_before`: 待部署前读取。
-- `server_after`: 待部署后读取。
-- `health_check`: 待部署后执行。
+- `testflight_authorization`: 用户随后明确要求继续部署并上传 TestFlight，连同用户 Profile 工作流构建新包。
+- `included_profile_workflow`: `c90affe16370ef736b77cd07e2611685719d02a3`（工作流节点和会话预热绑定用户独立 Hermes Profile），交付记录 `d0f583cf65f5efe3bf8f7605b022b80ceb9ebe7d`。
+- `testflight_target`: `1.0.3 (37)`；Build 36 已上传，不复用。
+- `commit_sha`: `bc791e55c543473f139bc2778744c144bf5347bf`。
+- `github_remote/ref/sha`: `source/main@bc791e55c543473f139bc2778744c144bf5347bf`，已用 `git ls-remote` 核验；`origin/main` 仍为 `479b7ab7468f7d222b057dddd82791fa0ddda51e`。
+- `server_before`: `/opt/releases/ai-lab-platform-479b7ab7468f.4kqg68`，`.deployed-sha=479b7ab7468f7d222b057dddd82791fa0ddda51e`。
+- `server_after`: 部署未发生，仍为 `.deployed-sha=479b7ab7468f7d222b057dddd82791fa0ddda51e`。
+- `health_check`: 失败前 API `/ready` 返回 `ready/0.8.0`，Hermes Bridge `/health` 返回 `ok/v6.0`；失败后 SHA 回读确认服务器未切换。
 - `functional_check`: 本地后端 95 项回归和 iOS 定向测试通过。
-- `rollback_point`: 代码基线 `1922d1318b7f5a53a3edb30dbdb08ca815a7c2a7`；如需回滚，仅撤销本 manifest 所列文件中的本任务 diff，必须保留现有无关改动。
+- `rollback_point`: `/opt/releases/ai-lab-platform-479b7ab7468f.4kqg68`；本次失败发生在下载阶段，未创建或切换新 release。
 
 ## 风险与未完成项
 
-- 当前是已测试、待提交和部署的本地改动；服务器部署不发布 iOS 二进制，客户端仍需后续新构建。
+- exact-SHA 部署器固定从 `Johnie198946/Quantum` 下载，而目标 SHA 当前只存在于 `source`（`ai-lab-platform`），因此 codeload 返回 404 并中止。恢复路径是先将同一 SHA 推送到 `origin/main`、核验，再重试部署。
+- 服务器仍运行旧 SHA；服务器部署也不会发布 iOS 二进制，客户端仍需后续新构建。
 - 明确“请记住……”路径现在是确定性写入；长期对话的周期复盘仍由 Hermes 按条件决定，不保证每轮产生新记忆。
