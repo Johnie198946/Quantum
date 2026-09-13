@@ -11,7 +11,7 @@
 - health_check: deployment script passed additive migration, runtime contract audit, atomic switch and final checks; API ready, Hermes Bridge `ok/v6.0`, public `/health` ok, and 8/8 Compose services running/healthy
 - functional_check: final backend suite passed 132 tests; simulator suites passed 163 tests; deployed catalog loaded 15 capabilities with digest `2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff`; unauthenticated search returned 401; all three Bridge tool registrations are present
 - rollback_point: `/opt/ai-lab-shared/deployment-checkpoints/pcm-qcp-e787d2c13da29a54300da7a1391b74d0ece0b546`; deployment rollback release `/opt/releases/ai-lab-platform-5bcb0dac4e89.fZdeXk`
-- deployment/release: GitHub push and exact-SHA production deployment completed; TestFlight 1.0.3 (39) archive passed, but upload was blocked by missing Xcode account credentials (`Failed to Use Accounts`)
+- deployment/release: GitHub push and exact-SHA production deployment completed; a fresh TestFlight `1.0.3 (39)` archive from clean GitHub `main` SHA `f03c233a67b265975dc4a92664622062a5ceeac6` passed strict signing verification and App Store Connect accepted the upload (`Upload succeeded`; processing started)
 
 ## Delivered
 
@@ -80,4 +80,4 @@
 - Structured artifact consumption is contractually described and content-hash receipted, but remains `partial`: there is no general downstream structured-artifact consumer that emits a durable consumption receipt.
 - FastAPI reports existing `on_event` deprecation warnings; replacing the Bridge lifecycle style was outside this security fix.
 - The passing iOS run still emitted existing SQLite test-cleanup `vnode unlinked while in use` diagnostics and AppIntents metadata-skip warnings; neither produced a test/build failure.
-- The deployed iOS source was archived as TestFlight `1.0.3 (39)` with executable SHA-256 `2d5621d6debc810e783efd46ba0205bd5ae060d97d7ac963f54a6a67b3c010b4`; strict code-sign verification passed. Upload did not occur because Xcode has no usable App Store Connect account credential in the current keychain (`Failed to Use Accounts`).
+- A fresh archive was generated after Xcode account login from clean GitHub `main` SHA `f03c233a67b265975dc4a92664622062a5ceeac6`: `/private/tmp/Quantumn-f03c233-1.0.3-39-fresh.xcarchive`, bundle `com.ailab.AIPlatformApp`, TestFlight `1.0.3 (39)`, executable SHA-256 `2f2060aa8b473de1f3bf9098538fa73d0eb356f1959be30d3bcc6be351eb6df0`. Strict code-sign verification passed. App Store Connect returned `Upload succeeded`, `Uploaded package is processing`, and `EXPORT SUCCEEDED`; processing completion and TestFlight-group visibility remain pending readback.
