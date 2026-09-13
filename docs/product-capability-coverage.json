@@ -1,0 +1,164 @@
+{
+  "capabilities": [
+    {
+      "id": "artifact.download",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "artifact.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "knowledge.navigation",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/CapabilityProtocolTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.archive",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "knowledge.note.merge",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "knowledge.note.restore",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "knowledge.note.search",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "knowledge.note.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "presentation.create_from_document",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ]
+    },
+    {
+      "id": "workflow.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "workflow.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "workflow.start",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "workflow.status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py"
+      ]
+    }
+  ],
+  "catalog_digest": "2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff",
+  "consumptions": [
+    {
+      "gates": [
+        "owned_execution",
+        "read_verified_artifact"
+      ],
+      "id": "artifact.structured_consumption",
+      "implementation_refs": [
+        "backend/api/workflows.py",
+        "backend/services/workflow_artifacts.py"
+      ],
+      "receipt": "content_hash_only",
+      "status": "partial"
+    },
+    {
+      "gates": [
+        "backend/api/knowledge_policy.py",
+        "backend/services/knowledge_policy.py"
+      ],
+      "id": "knowledge.natural_qa",
+      "implementation_refs": [
+        "backend/api/chat.py",
+        "scripts/hermes_bridge.py"
+      ],
+      "receipt": "durable_answer_and_source_events",
+      "status": "implemented"
+    },
+    {
+      "gates": [
+        "backend/services/knowledge_policy.py",
+        "backend/services/workflow_contract.py"
+      ],
+      "id": "workflow.knowledge_need_injection",
+      "implementation_refs": [
+        "backend/services/workflow_planner.py",
+        "backend/services/workflow_executor.py"
+      ],
+      "receipt": "workflow_event_receipt",
+      "status": "implemented"
+    }
+  ],
+  "counts": {
+    "implemented": 15,
+    "partial": 0,
+    "unverified": 0
+  },
+  "protocol": "qcp",
+  "total": 15,
+  "version": "1.0.0"
+}

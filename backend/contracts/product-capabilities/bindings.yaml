@@ -1,0 +1,31 @@
+bindings:
+  - id: knowledge.search
+    handler: knowledge.search
+  - id: knowledge.read
+    handler: knowledge.read
+  - id: knowledge.create
+    handler: knowledge.create
+  - id: knowledge.update
+    handler: knowledge.update
+  - id: knowledge.merge
+    handler: knowledge.merge
+  - id: knowledge.archive
+    handler: knowledge.archive
+  - id: knowledge.restore
+    handler: knowledge.restore
+  - id: knowledge.navigation
+    handler: client.knowledge.navigation
+  - id: workflow.create
+    handler: workflow.create
+  - id: workflow.open
+    handler: workflow.open
+  - id: workflow.status
+    handler: workflow.status
+  - id: workflow.start
+    handler: workflow.start
+  - id: presentation.create_from_document
+    handler: presentation.create_from_document
+  - id: artifact.open
+    handler: artifact.open
+  - id: artifact.download
+    handler: artifact.download

@@ -1,0 +1,29 @@
+renderers:
+  - id: confirmation
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: answer
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: clarify
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: knowledge_action
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: workflow
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: presentation_review
+    version: 1
+    fallback: artifact
+    fallback_version: 1
+  - id: artifact
+    version: 1
+    fallback: answer
+    fallback_version: 1

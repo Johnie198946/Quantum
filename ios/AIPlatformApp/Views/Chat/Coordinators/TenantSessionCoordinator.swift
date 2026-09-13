@@ -80,6 +80,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     private let fetchAnswerBlocksRequest: @MainActor (String, String?, Int) async throws -> AnswerBlockPageDTO
     private let cancelRunRequest: @MainActor (String, String?) async throws -> Void
     private let recoverySleep: @MainActor (UInt64) async -> Void
+    private let capabilityClient: CapabilityClient
 
     public init(
         sessionManager: SessionManager? = nil,
@@ -99,6 +100,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         cancelRun: @escaping @MainActor (String, String?) async throws -> Void = {
             try await APIClient.shared.cancelStream(sessionId: $0, agentId: $1)
         },
+        capabilityClient: CapabilityClient? = nil,
         recoverySleep: @escaping @MainActor (UInt64) async -> Void = {
             try? await Task.sleep(nanoseconds: $0)
         }
@@ -110,6 +112,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         self.fetchChatStatusRequest = fetchChatStatus
         self.fetchAnswerBlocksRequest = fetchAnswerBlocks
         self.cancelRunRequest = cancelRun
+        self.capabilityClient = capabilityClient ?? CapabilityClient()
         self.recoverySleep = recoverySleep
         restoreActiveSession()
         loadedAccountFingerprint = self.sessionManager.activeAccountFingerprint
@@ -175,6 +178,9 @@ public final class TenantSessionCoordinator: ObservableObject {
             },
             onKnowledgeAction: { [weak self] actionId, verb in
                 self?.handleKnowledgeAction(messageId: message?.id, actionId: actionId, verb: verb)
+            },
+            onCapabilityProposal: { [weak self] proposalId, verb in
+                self?.handleCapabilityProposal(messageId: message?.id, proposalId: proposalId, verb: verb)
             },
             onLoadAnswerBlocks: { [weak self] messageId in
                 self?.loadNextAnswerBlocks(messageId: messageId)
@@ -388,6 +394,19 @@ public final class TenantSessionCoordinator: ObservableObject {
                                return false
                            }) {
                             self.messages[index].blocks.append(.knowledgeAction(action))
+                        } else if case .capability(let capabilityEvent) = event,
+                                  RendererRegistry.route(
+                                      for: capabilityEvent.type, version: capabilityEvent.version
+                                  ) == .confirmation,
+                                  let proposal = try? JSONDecoder().decode(
+                                      CapabilityProposalBlock.self, from: capabilityEvent.payload
+                                  ), !self.messages[index].blocks.contains(where: {
+                                      if case .capabilityProposal(let existing) = $0 {
+                                          return existing.id == proposal.id
+                                      }
+                                      return false
+                                  }) {
+                            self.messages[index].blocks.append(.capabilityProposal(proposal))
                         }
                     }
                     let status = replay.run.status
@@ -1666,6 +1685,40 @@ public final class TenantSessionCoordinator: ObservableObject {
                         applyAnswerPage(page, messageIndex: idx, replace: true)
                         messages[idx].pending = page.status != "completed"
                         messages[idx].isStreaming = page.status != "completed"
+                    }
+
+                case .capability(let event):
+                    let path = RendererRegistry.route(for: event.type, version: event.version)
+                    if path == .confirmation {
+                        let decoder = JSONDecoder()
+                        if let proposal = try? decoder.decode(
+                            CapabilityProposalBlock.self, from: event.payload
+                        ), let idx = messages.firstIndex(where: { $0.id == outputId }),
+                           !messages[idx].blocks.contains(where: {
+                               if case .capabilityProposal(let existing) = $0 {
+                                   return existing.id == proposal.id
+                               }
+                               return false
+                           }) {
+                            messages[idx].blocks.append(.capabilityProposal(proposal))
+                            messages[idx].pending = false
+                        }
+                    } else if path == .workflow || path == .presentationReview {
+                        let decoder = JSONDecoder()
+                        decoder.keyDecodingStrategy = .convertFromSnakeCase
+                        if let created = try? decoder.decode(
+                            WorkflowCreateResponseDTO.self, from: event.payload
+                        ) {
+                            WorkflowActivityCoordinator.shared.track(created.workflow)
+                            appState?.pendingWorkflowId = created.workflow.id
+                        } else if let workflow = try? decoder.decode(
+                            WorkflowDTO.self, from: event.payload
+                        ) {
+                            WorkflowActivityCoordinator.shared.track(workflow)
+                            appState?.pendingWorkflowId = workflow.id
+                        }
+                    } else if path == .artifact {
+                        showToast("工作流工件已就绪")
                     }
 
                 case .done(_, let answer):
@@ -3266,6 +3319,108 @@ public final class TenantSessionCoordinator: ObservableObject {
                 self.sessionManager.finishTopic(self.sessionManager.activeSessionID())
             }
         }
+    }
+
+    public func handleCapabilityProposal(messageId: String?, proposalId: String, verb: String) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              }), case .capabilityProposal(var proposal) = messages[messageIndex].blocks[blockIndex],
+              proposal.state == .awaitingConfirmation || proposal.state == .failed
+        else { return }
+        if verb == "discard" {
+            proposal.state = .discarded
+            messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+            commitSession()
+            return
+        }
+        guard verb == "confirm" else { return }
+        proposal.state = .applying
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+        commitSession()
+        let expectedEpoch = tenantEpoch
+        let capabilityClient = capabilityClient
+        Task { [weak self] in
+            do {
+                var completedWorkflow: WorkflowDTO?
+                var pendingWorkflowId: String?
+                switch proposal.capabilityId {
+                case QCPCapabilityID.workflowCreate:
+                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
+                        proposal.capabilityId,
+                        input: WorkflowCreateRequestDTO(
+                            title: proposal.input.title ?? "",
+                            description: proposal.input.description ?? "",
+                            desiredOutput: proposal.input.desiredOutput ?? "",
+                            sourceDocumentId: proposal.input.sourceDocumentId,
+                            outputKind: proposal.input.outputKind ?? "general"
+                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
+                    )
+                    guard response.status == "completed", let created = response.events.first?.payload
+                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+                    completedWorkflow = created.workflow
+                    pendingWorkflowId = created.workflow.id
+                case QCPCapabilityID.presentationCreateFromDocument:
+                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
+                        proposal.capabilityId,
+                        input: PresentationCreateRequestDTO(
+                            sourceDocumentId: proposal.input.sourceDocumentId ?? "",
+                            title: proposal.input.title ?? "",
+                            description: proposal.input.description ?? ""
+                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
+                    )
+                    guard response.status == "completed", let created = response.events.first?.payload
+                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+                    completedWorkflow = created.workflow
+                    pendingWorkflowId = created.workflow.id
+                case QCPCapabilityID.workflowStart:
+                    let response: QCPInvokeResponseDTO<WorkflowExecutionDTO> = try await capabilityClient.invoke(
+                        proposal.capabilityId,
+                        input: WorkflowStartRequestDTO(workflowId: proposal.input.workflowId ?? ""),
+                        confirmed: true, idempotencyKey: proposal.idempotencyKey
+                    )
+                    guard response.status == "completed", response.events.first != nil
+                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+                    completedWorkflow = nil
+                    pendingWorkflowId = proposal.input.workflowId
+                default:
+                    throw APIError.network("不支持的确认操作")
+                }
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                if let completedWorkflow {
+                    WorkflowActivityCoordinator.shared.track(completedWorkflow)
+                }
+                self.appState?.pendingWorkflowId = pendingWorkflowId
+                self.updateCapabilityProposal(
+                    messageId: messageId, proposalId: proposalId,
+                    state: .completed, error: nil
+                )
+                self.showToast("操作已确认并执行")
+            } catch {
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                self.updateCapabilityProposal(
+                    messageId: messageId, proposalId: proposalId,
+                    state: .failed, error: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func updateCapabilityProposal(
+        messageId: String?, proposalId: String,
+        state: CapabilityProposalState, error: String?
+    ) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              }), case .capabilityProposal(var proposal) = messages[messageIndex].blocks[blockIndex]
+        else { return }
+        proposal.state = state
+        proposal.errorMessage = error
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+        commitSession()
     }
 
     public func applyOrganizationDisposition(_ status: SessionLifecycleStatus?) {

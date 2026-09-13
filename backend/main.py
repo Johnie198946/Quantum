@@ -43,6 +43,7 @@ from backend.api.knowledge_contribution import router as knowledge_contribution_
 from backend.api.hot_memory import router as hot_memory_router
 from backend.api.external_auth import router as external_auth_router
 from backend.api.quantum_workspace import router as quantum_workspace_router
+from backend.api.capabilities import router as capabilities_router
 from backend.db import SessionLocal, init_db
 from backend.models.workspace import WorkspaceProject
 
@@ -207,6 +208,7 @@ app.include_router(customer_demands_router, dependencies=[Depends(require_curren
 # 可执行工作流：计划审批、持久执行、素材复核
 app.include_router(workflows_router, dependencies=[Depends(require_current_agreement)])
 app.include_router(documents_router, dependencies=[Depends(require_current_agreement)])
+app.include_router(capabilities_router, dependencies=[Depends(require_current_agreement)])
 # QuantumWorkspace 项目控制面。执行事实继续由 workflows/chat 路由持有。
 app.include_router(quantum_workspace_router, dependencies=[Depends(require_current_agreement)])
 # Authen HMAC webhook + signed-capability Knowledge Gateway use their own auth.

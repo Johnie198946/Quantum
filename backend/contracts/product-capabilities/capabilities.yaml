@@ -1,0 +1,316 @@
+capabilities:
+  - id: knowledge.note.search
+    version: 1.0.0
+    domain: knowledge
+    description: Search the authenticated user's active or archived notes.
+    positive_examples: ["Find my notes about IPD"]
+    negative_examples: ["Search the public web"]
+    input_schema: {type: object, properties: {query: {type: string, minLength: 1}, limit: {type: integer, minimum: 1, maximum: 20}, include_archived: {type: boolean}}, required: [query], additionalProperties: false}
+    output_schema: {type: object, required: [items]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: personal-knowledge-owner
+    handler_binding: knowledge.search
+    idempotency: none
+    receipt: none
+    result_event: knowledge.results
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: knowledge.note.read
+    version: 1.0.0
+    domain: knowledge
+    description: Read one authenticated user's note by stable note id.
+    positive_examples: ["Open note note-123"]
+    negative_examples: ["Read another user's note"]
+    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}}, required: [note_id], additionalProperties: false}
+    output_schema: {type: object, required: [note]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: personal-knowledge-owner
+    handler_binding: knowledge.read
+    idempotency: none
+    receipt: none
+    result_event: knowledge.note
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: knowledge.note.create
+    version: 1.0.0
+    domain: knowledge
+    description: Create a stable personal Markdown note after confirmation.
+    positive_examples: ["Save this as a note"]
+    negative_examples: ["Draft text without saving"]
+    input_schema: {type: object, properties: {markdown: {type: string, minLength: 1}}, required: [markdown], additionalProperties: false}
+    output_schema: {type: object, required: [note_id, content_hash]}
+    effect: write
+    risk: low
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: personal-knowledge-confirmed-mutation
+    handler_binding: knowledge.create
+    idempotency: required
+    receipt: required
+    result_event: knowledge.action
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: knowledge.note.update
+    version: 1.0.0
+    domain: knowledge
+    description: Replace a note with complete Markdown using compare-and-set.
+    positive_examples: ["Update this note from its current version"]
+    negative_examples: ["Blindly overwrite a note"]
+    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, markdown: {type: string, minLength: 1}, base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}}, required: [note_id, markdown, base_hash], additionalProperties: false}
+    output_schema: {type: object, required: [note_id, content_hash]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner, base_hash_matches]
+    policy_ref: personal-knowledge-confirmed-mutation
+    handler_binding: knowledge.update
+    idempotency: required
+    receipt: required
+    result_event: knowledge.action
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py, ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift]
+    implementation_status: implemented
+  - id: knowledge.note.merge
+    version: 1.0.0
+    domain: knowledge
+    description: CAS-update a target and archive only explicit merge sources.
+    positive_examples: ["Merge these two versioned notes into the selected target"]
+    negative_examples: ["Archive the target into itself"]
+    input_schema: {type: object, properties: {target_note_id: {type: string}, target_base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}, source_versions: {type: object}, revised_content: {type: string, minLength: 1}}, required: [target_note_id, target_base_hash, source_versions, revised_content], additionalProperties: false}
+    output_schema: {type: object, required: [target_note_id, status]}
+    effect: write
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_owner, target_and_source_hashes_match]
+    policy_ref: personal-knowledge-confirmed-mutation
+    handler_binding: knowledge.merge
+    idempotency: required
+    receipt: required
+    result_event: knowledge.action
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py, ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift]
+    implementation_status: implemented
+  - id: knowledge.note.archive
+    version: 1.0.0
+    domain: knowledge
+    description: Ordinarily archive one note without inventing a merge target.
+    positive_examples: ["Archive this note"]
+    negative_examples: ["Merge and archive source notes"]
+    input_schema: {type: object, properties: {note_id: {type: string}, base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}}, required: [note_id, base_hash], additionalProperties: false}
+    output_schema: {type: object, required: [note_id, archive_status]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner, base_hash_matches]
+    policy_ref: personal-knowledge-confirmed-mutation
+    handler_binding: knowledge.archive
+    idempotency: required
+    receipt: required
+    result_event: knowledge.action
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py, ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift]
+    implementation_status: implemented
+  - id: knowledge.note.restore
+    version: 1.0.0
+    domain: knowledge
+    description: Restore one ordinarily archived personal note.
+    positive_examples: ["Restore this archived note"]
+    negative_examples: ["Restore a trashed note"]
+    input_schema: {type: object, properties: {note_id: {type: string}}, required: [note_id], additionalProperties: false}
+    output_schema: {type: object, required: [note_id, archive_status]}
+    effect: write
+    risk: low
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: personal-knowledge-confirmed-mutation
+    handler_binding: knowledge.restore
+    idempotency: required
+    receipt: required
+    result_event: knowledge.action
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: knowledge.navigation
+    version: 1.0.0
+    domain: knowledge
+    description: Emit a semantic knowledge destination for the client.
+    positive_examples: ["Open my archive"]
+    negative_examples: ["Instantiate a SwiftUI view"]
+    input_schema: {type: object, properties: {destination: {type: string, enum: [knowledge_home, note, daily_note, search, archive]}, note_id: {type: string}, query: {type: string}}, required: [destination], additionalProperties: false}
+    output_schema: {type: object, required: [destination]}
+    effect: client
+    risk: low
+    confirmation: none
+    preconditions: [supported_client_renderer]
+    policy_ref: personal-knowledge-owner
+    handler_binding: knowledge.navigation
+    idempotency: none
+    receipt: none
+    result_event: knowledge.navigation
+    renderer: knowledge_action
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py, ios/AIPlatformAppTests/CapabilityProtocolTests.swift]
+    implementation_status: implemented
+  - id: workflow.create
+    version: 1.0.0
+    domain: workflow
+    description: Create a real workflow draft through the existing workflow handler.
+    positive_examples: ["Create a market research workflow"]
+    negative_examples: ["Start an unapproved plan"]
+    input_schema: {type: object, properties: {title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document]}}, required: [title, description], additionalProperties: false}
+    output_schema: {type: object, required: [workflow]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: workflow.create
+    idempotency: required
+    receipt: required
+    result_event: workflow.created
+    renderer: workflow
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: workflow.open
+    version: 1.0.0
+    domain: workflow
+    description: Open an owned workflow summary.
+    positive_examples: ["Open workflow wf_123"]
+    negative_examples: ["Open another user's private workflow"]
+    input_schema: {type: object, properties: {workflow_id: {type: string}}, required: [workflow_id], additionalProperties: false}
+    output_schema: {type: object, required: [id, status]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: workflow.open
+    idempotency: none
+    receipt: none
+    result_event: workflow.summary
+    renderer: workflow
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: workflow.status
+    version: 1.0.0
+    domain: workflow
+    description: Read an owned workflow execution status.
+    positive_examples: ["What is the run status?"]
+    negative_examples: ["Guess whether a run completed"]
+    input_schema: {type: object, properties: {execution_id: {type: string}}, required: [execution_id], additionalProperties: false}
+    output_schema: {type: object, required: [id, status]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: workflow.status
+    idempotency: none
+    receipt: none
+    result_event: workflow.summary
+    renderer: workflow
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: workflow.start
+    version: 1.0.0
+    domain: workflow
+    description: Start an approved workflow through its existing lifecycle handler.
+    positive_examples: ["Start the approved workflow"]
+    negative_examples: ["Bypass plan approval"]
+    input_schema: {type: object, properties: {workflow_id: {type: string}}, required: [workflow_id], additionalProperties: false}
+    output_schema: {type: object, required: [id, status]}
+    effect: execute
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_owner, approved_plan]
+    policy_ref: workflow-owner
+    handler_binding: workflow.start
+    idempotency: required
+    receipt: required
+    result_event: workflow.started
+    renderer: workflow
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: presentation.create_from_document
+    version: 1.0.0
+    domain: presentation
+    description: Create a presentation workflow bound to an existing parsed document.
+    positive_examples: ["Create a PPT from this uploaded document"]
+    negative_examples: ["Pretend an upload is a finished presentation"]
+    input_schema: {type: object, properties: {source_document_id: {type: string, minLength: 8, maxLength: 48}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}}, required: [source_document_id, title, description], additionalProperties: false}
+    output_schema: {type: object, required: [workflow]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner, parsed_document]
+    policy_ref: workflow-owner
+    handler_binding: presentation.create_from_document
+    idempotency: required
+    receipt: required
+    result_event: presentation.created
+    renderer: presentation_review
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    implementation_status: implemented
+  - id: artifact.open
+    version: 1.0.0
+    domain: artifact
+    description: Open verified text content for an owned workflow artifact.
+    positive_examples: ["Open the generated report"]
+    negative_examples: ["Read an arbitrary server path"]
+    input_schema: {type: object, properties: {execution_id: {type: string}, artifact_id: {type: string}}, required: [execution_id, artifact_id], additionalProperties: false}
+    output_schema: {type: object, required: [id, content]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner, verified_content_hash]
+    policy_ref: artifact-owner
+    handler_binding: artifact.open
+    idempotency: none
+    receipt: none
+    result_event: artifact.content
+    renderer: artifact
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented
+  - id: artifact.download
+    version: 1.0.0
+    domain: artifact
+    description: Return the existing authenticated download reference and expected hash.
+    positive_examples: ["Download the generated PPT"]
+    negative_examples: ["Download an arbitrary URL"]
+    input_schema: {type: object, properties: {execution_id: {type: string}, artifact_id: {type: string}}, required: [execution_id, artifact_id], additionalProperties: false}
+    output_schema: {type: object, required: [path, content_hash]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner, verified_content_hash]
+    policy_ref: artifact-owner
+    handler_binding: artifact.download
+    idempotency: none
+    receipt: none
+    result_event: artifact.download_ready
+    renderer: artifact
+    renderer_version: 1
+    tests: [tests/test_product_capabilities.py]
+    implementation_status: implemented

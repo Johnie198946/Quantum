@@ -357,6 +357,69 @@ final class KnowledgeNoteStoreTests: XCTestCase {
         XCTAssertFalse(store.notes.contains { $0.id.hasPrefix("ka-") })
     }
 
+    func testUpdateCarriesCASAndOrdinaryArchiveHasNoMergeTarget() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "cas-archive-\(UUID())", userId: "user")
+        defer { removeVault(store) }
+        let synchronizer = FakeKnowledgeActionSynchronizer()
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: synchronizer)
+        let note = try XCTUnwrap(store.createNote(id: "note-a", title: "A", body: "v1"))
+        let baseHash = store.contentHash(for: note)
+        var result = await executor.execute(KnowledgeActionBlock(
+            id: "update-\(UUID())", summary: "更新", steps: [.init(
+                kind: "update_note", targetNoteId: note.id,
+                markdown: "# A\n\nv2", originalContentHash: baseHash
+            )], actionDigest: "update-digest", transientCapability: "capability",
+            expiresAt: Int(Date().timeIntervalSince1970) + 3600
+        ))
+        XCTAssertEqual(result.state, .synced)
+        XCTAssertEqual(synchronizer.syncBaseHashes.last!, baseHash)
+
+        let current = try XCTUnwrap(store.note(id: note.id))
+        let archiveHash = store.contentHash(for: current)
+        result = await executor.execute(KnowledgeActionBlock(
+            id: "archive-\(UUID())", summary: "归档", steps: [.init(
+                kind: "archive_note", targetNoteId: note.id,
+                originalContentHash: archiveHash
+            )], actionDigest: "archive-digest", transientCapability: "capability",
+            expiresAt: Int(Date().timeIntervalSince1970) + 3600
+        ))
+        XCTAssertEqual(result.state, .synced)
+        XCTAssertNil(synchronizer.archiveMergeTargets.last!)
+        XCTAssertEqual(synchronizer.archiveExpectedHashes.last!, archiveHash)
+    }
+
+    func testStaleUpdateAndArchiveCASFailBeforeLocalMutation() async throws {
+        let (store, executor) = isolatedStoreAndExecutor()
+        defer { removeVault(store) }
+        let note = try XCTUnwrap(store.createNote(id: "stale-note", title: "A", body: "v1"))
+        let staleHash = store.contentHash(for: note)
+        _ = try XCTUnwrap(store.save(
+            id: note.id, title: note.title, body: "v2", tags: note.tags, isPinned: note.isPinned
+        ))
+
+        for step in [
+            KnowledgeActionStep(
+                kind: "update_note", targetNoteId: note.id,
+                markdown: "# A\n\noverwrote", originalContentHash: staleHash
+            ),
+            KnowledgeActionStep(
+                kind: "archive_note", targetNoteId: note.id,
+                originalContentHash: staleHash
+            ),
+        ] {
+            let id = UUID().uuidString.lowercased()
+            let result = await executor.execute(KnowledgeActionBlock(
+                id: id, summary: "CAS", steps: [step], actionDigest: "digest-\(id)",
+                transientCapability: "test-capability",
+                expiresAt: Int(Date().timeIntervalSince1970) + 3_600
+            ))
+            XCTAssertEqual(result.state, .stale)
+            XCTAssertEqual(store.note(id: note.id)?.body, "v2")
+            XCTAssertNil(store.archivedNote(id: note.id))
+        }
+    }
+
     func testServerSyncedNotesParticipateInKnowledgeWorkspaceSnapshot() {
         let server = ChatLocalNoteDTO(
             id: "server-only",
@@ -512,6 +575,9 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
     private var notes: [String: CloudKnowledgeNoteDTO] = [:]
     private(set) var mergeRequests: [KnowledgeNoteMergeRequestDTO] = []
     private(set) var legacyMergeMutationCount = 0
+    private(set) var syncBaseHashes: [String?] = []
+    private(set) var archiveMergeTargets: [String?] = []
+    private(set) var archiveExpectedHashes: [String?] = []
 
     func fetchKnowledgeNotes(includeArchived: Bool) async throws -> CloudKnowledgeNotesResponse {
         let items = notes.values.filter { includeArchived || !$0.archived }
@@ -520,6 +586,7 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
 
     func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, credentialGeneration: UInt64) async throws {
         legacyMergeMutationCount += 1
+        syncBaseHashes.append(baseHash)
         let hash = SHA256.hash(data: Data(markdown.utf8)).map { String(format: "%02x", $0) }.joined()
         notes[id] = .init(
             noteId: id, markdown: markdown, contentHash: hash, updatedAt: nil,
@@ -527,8 +594,10 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
         )
     }
 
-    func archiveKnowledgeNote(id: String, mergedIntoNoteId: String, expectedContentHash: String?) async throws {
+    func archiveKnowledgeNote(id: String, mergedIntoNoteId: String?, expectedContentHash: String?) async throws {
         legacyMergeMutationCount += 1
+        archiveMergeTargets.append(mergedIntoNoteId)
+        archiveExpectedHashes.append(expectedContentHash)
         guard let note = notes[id] else { return }
         notes[id] = .init(
             noteId: note.noteId, markdown: note.markdown, contentHash: note.contentHash,

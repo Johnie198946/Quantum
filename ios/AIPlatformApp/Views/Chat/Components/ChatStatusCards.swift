@@ -776,3 +776,62 @@ public struct KnowledgeActionCard: View {
          "archive_note":"归档", "restore_note":"恢复", "move_to_trash":"移入废纸篓"][kind] ?? kind
     }
 }
+
+public struct CapabilityProposalCard: View {
+    public let proposal: CapabilityProposalBlock
+    public let onConfirm: () -> Void
+    public let onDiscard: () -> Void
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("待确认操作", systemImage: "checkmark.shield")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(stateLabel).font(.caption.weight(.semibold))
+                    .foregroundColor(AppTheme.Colors.primary)
+            }
+            Text(proposal.summary).font(.system(size: 16, weight: .semibold))
+            if let title = proposal.input.title { Text(title).font(.subheadline) }
+            if let description = proposal.input.description {
+                Text(description).font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let workflowId = proposal.input.workflowId {
+                Text("工作流：\(workflowId)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let sourceId = proposal.input.sourceDocumentId {
+                Text("来源文档：\(sourceId)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let output = proposal.input.desiredOutput {
+                Text("预期输出：\(output)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let kind = proposal.input.outputKind {
+                Text("输出类型：\(kind)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let error = proposal.errorMessage {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+            if proposal.state == .awaitingConfirmation || proposal.state == .failed {
+                HStack(spacing: 10) {
+                    Button(proposal.state == .failed ? "重试" : "确认执行", action: onConfirm)
+                        .buttonStyle(.borderedProminent)
+                    Button("放弃", action: onDiscard).buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(18)
+        .background(AppTheme.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(AppTheme.Colors.primary.opacity(0.16)))
+    }
+
+    private var stateLabel: String {
+        switch proposal.state {
+        case .awaitingConfirmation: return "待确认"
+        case .applying: return "执行中"
+        case .completed: return "已完成"
+        case .discarded: return "已放弃"
+        case .failed: return "失败"
+        }
+    }
+}

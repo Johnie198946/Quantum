@@ -1,0 +1,32 @@
+# Product Capability Manual
+
+QCP version: `1.0.0`
+Catalog digest: `2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff`
+
+| Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
+|---|---|---|---|---|---|---|---|
+| `artifact.download@1.0.0` | artifact | read | none | none | `artifact.download_ready` | `artifact@1` | implemented |
+| `artifact.open@1.0.0` | artifact | read | none | none | `artifact.content` | `artifact@1` | implemented |
+| `knowledge.navigation@1.0.0` | knowledge | client | none | none | `knowledge.navigation` | `knowledge_action@1` | implemented |
+| `knowledge.note.archive@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.create@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.merge@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.read@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
+| `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
+| `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `presentation.create_from_document@1.0.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
+| `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
+| `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
+| `workflow.start@1.0.0` | workflow | execute | required | required | `workflow.started` | `workflow@1` | implemented |
+| `workflow.status@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
+
+## Consumption contracts
+
+| Contract | Kind | Receipt | Status |
+|---|---|---|---|
+| `artifact.structured_consumption` | artifact | `content_hash_only` | partial |
+| `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
+| `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
+
+Discovery returns metadata only. Describe reveals one full contract; invoke accepts only allowlisted IDs and schema-validated business input. Domain handlers remain the authorization truth.

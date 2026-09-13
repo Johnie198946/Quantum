@@ -70,6 +70,12 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         case (true, "GET", "/api/v1/workflow-activities/active"):
             responseStatus = 401
             responseBody = Data(#"{"detail":"test fixture unauthorized"}"#.utf8)
+        case (true, "POST", "/api/v1/capabilities/invoke"):
+            if String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true {
+                responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"workflow":{"id":"tenant-a-workflow","title":"Delayed","description":"delayed-switch","desired_output":"report","status":"clarifying","active_plan_id":null,"clarification_session_id":"clarification-1","primary_agent_id":null,"created_at":null,"updated_at":null,"latest_execution":null},"clarification_session":{"id":"clarification-1","workflow_id":"tenant-a-workflow","phase":"clarifying","round_number":1,"last_event_seq":1}}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
+            } else {
+                responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"value":"ok"}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
+            }
         case (true, "GET", "/api/v1/legal/agreement"):
             responseBody = Data(#"{"version":"2026-09-06","title":"服务协议","updated_at":"2026-09-06T00:00:00Z","sections":[{"id":"service","title":"用户服务协议","clauses":["服务条款"]},{"id":"privacy","title":"隐私保护条款","clauses":["隐私条款"]},{"id":"knowledge-contribution","title":"知识共建协议","clauses":["共建条款"]}]}"#.utf8)
         case (true, "PUT", "/api/v1/me/agreement-acceptance"):
@@ -111,7 +117,9 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: responseBody)
             client?.urlProtocolDidFinishLoading(self)
         }
-        if path == "/api/v1/auth/capabilities" || path.hasPrefix("/api/v1/me/knowledge-notes/") {
+        if path == "/api/v1/auth/capabilities"
+            || path.hasPrefix("/api/v1/me/knowledge-notes/")
+            || String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true {
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.1, execute: deliver)
         } else {
             deliver()
@@ -4438,5 +4446,276 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(coordinator.messages[1].runId, "durable-run")
         XCTAssertFalse(coordinator.messages[1].answerHasMore)
         XCTAssertNil(coordinator.messages[1].answerNextCursor)
+    }
+
+    @MainActor
+    func testCapabilityClientUsesAuthenticatedQCPEnvelope() async throws {
+        struct Input: Encodable { let title: String }
+        struct Output: Decodable { let value: String }
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        let response: QCPInvokeResponseDTO<Output> = try await CapabilityClient(apiClient: api).invoke(
+            QCPCapabilityID.workflowCreate,
+            input: Input(title: "QCP"),
+            confirmed: true,
+            idempotencyKey: "request-123"
+        )
+
+        XCTAssertEqual(response.events.first?.payload.value, "ok")
+        XCTAssertEqual(response.receipt?.eventType, "workflow.created")
+        let captured = try XCTUnwrap(APIContractURLProtocol.requests().last)
+        XCTAssertEqual(captured.request.url?.path, "/api/v1/capabilities/invoke")
+        XCTAssertEqual(captured.request.value(forHTTPHeaderField: "Authorization"), "Bearer [REDACTED]")
+        let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
+        )
+        XCTAssertEqual(body["capability_id"] as? String, "workflow.create")
+        XCTAssertEqual(body["confirmed"] as? Bool, true)
+        XCTAssertEqual(body["idempotency_key"] as? String, "request-123")
+        XCTAssertNil((body["input"] as? [String: Any])?["tenant_key"])
+    }
+
+    @MainActor
+    func testInterruptedCapabilityProposalRestoresRetryWithSameRequestKey() async throws {
+        struct Output: Decodable { let value: String }
+        let proposalData = Data(#"{"proposal_id":"stable-proposal-1","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"applying"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: proposalData)
+        let message = ChatMessage(
+            id: "message-1", sessionId: "session-1", role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal)]
+        )
+        let persisted = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        )
+        guard case .capabilityProposal(let restored) = try XCTUnwrap(
+            persisted.toChatMessage(sessionId: "session-1").blocks.first
+        ) else { return XCTFail("expected restored proposal") }
+        XCTAssertEqual(restored.state, .awaitingConfirmation)
+        XCTAssertEqual(restored.idempotencyKey, "stable-proposal-1")
+
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = CapabilityClient(apiClient: APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
+        ))
+        for _ in 0..<2 {
+            let _: QCPInvokeResponseDTO<Output> = try await client.invoke(
+                restored.capabilityId, input: restored.input, confirmed: true,
+                idempotencyKey: restored.idempotencyKey
+            )
+        }
+        let keys = try APIContractURLProtocol.requests().map { captured in
+            let body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
+            )
+            return body["idempotency_key"] as? String
+        }
+        XCTAssertEqual(keys, ["stable-proposal-1", "stable-proposal-1"])
+    }
+
+    func testPersistedMessageRoundTripsEveryProposalAndDecodesLegacySingular() throws {
+        func proposal(_ id: String) throws -> CapabilityProposalBlock {
+            try JSONDecoder().decode(
+                CapabilityProposalBlock.self,
+                from: Data("""
+                {"proposal_id":"\(id)","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}
+                """.utf8)
+            )
+        }
+        let first = try proposal("proposal-1")
+        let second = try proposal("proposal-2")
+        let message = ChatMessage(
+            id: "message-1", sessionId: "session-1", role: .assistant, content: "",
+            blocks: [.capabilityProposal(first), .capabilityProposal(second)]
+        )
+        let decoded = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        )
+        let restored = decoded.toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(restored.map(\.id), ["proposal-1", "proposal-2"])
+
+        var legacy = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(PersistedMessage(message)))
+                as? [String: Any]
+        )
+        legacy["capabilityProposal"] = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(first)
+        )
+        let overlapRestored = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy)
+        ).toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(overlapRestored.map(\.id), ["proposal-1", "proposal-2"])
+
+        legacy.removeValue(forKey: "capabilityProposals")
+        let legacyRestored = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy)
+        ).toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(legacyRestored.map(\.id), ["proposal-1"])
+    }
+
+    @MainActor
+    func testFailedCapabilityProposalCanRetryOrDiscardButTerminalStatesCannotRepeat() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = SessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        func proposal(_ id: String, _ state: String) throws -> CapabilityProposalBlock {
+            try JSONDecoder().decode(CapabilityProposalBlock.self, from: Data(
+                """
+                {"proposal_id":"\(id)","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"\(state)"}
+                """.utf8
+            ))
+        }
+        manager.setMessages([ChatMessage(
+            id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",
+            blocks: [
+                .capabilityProposal(try proposal("retry-key", "failed")),
+                .capabilityProposal(try proposal("discard-key", "failed")),
+                .capabilityProposal(try proposal("done-key", "completed")),
+            ]
+        )], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager,
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
+            ))
+        )
+
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "retry-key", verb: "confirm"
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "discard-key", verb: "discard"
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "done-key", verb: "confirm"
+        )
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        let proposals = coordinator.messages[0].blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(proposals.first { $0.id == "retry-key" }?.state, .completed)
+        XCTAssertEqual(proposals.first { $0.id == "discard-key" }?.state, .discarded)
+        XCTAssertEqual(proposals.first { $0.id == "done-key" }?.state, .completed)
+        let bodies = try APIContractURLProtocol.requests().map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap($0.body)) as? [String: Any])
+        }
+        XCTAssertEqual(bodies.compactMap { $0["idempotency_key"] as? String }, ["retry-key"])
+    }
+
+    @MainActor
+    func testCapabilityCompletionAfterTenantSwitchHasNoSideEffects() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = SessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        let proposal = try JSONDecoder().decode(
+            CapabilityProposalBlock.self,
+            from: Data(#"{"proposal_id":"tenant-a-proposal","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        )
+        manager.setMessages([ChatMessage(
+            id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal)]
+        )], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let appState = AppState()
+        appState.pendingWorkflowId = nil
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager, appState: appState,
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
+            ))
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: proposal.id, verb: "confirm"
+        )
+        while APIContractURLProtocol.requests().isEmpty { await Task.yield() }
+        manager.activateAccount(tenantKey: "tenant-b", userId: "user-b")
+        coordinator.synchronizeLocalAccount()
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertTrue(coordinator.messages.isEmpty)
+    }
+
+    func testRendererRegistryCoversSemanticPathsAndVersionFallbacks() throws {
+        XCTAssertEqual(RendererRegistry.route(for: "answer_page", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "clarify", version: 1), .clarify)
+        XCTAssertEqual(RendererRegistry.route(for: "knowledge.action", version: 1), .knowledgeAction)
+        XCTAssertEqual(RendererRegistry.route(for: "capability.proposed", version: 1), .confirmation)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.created", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "knowledge.navigation", version: 1), .navigation)
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 0), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "unknown.event", version: 99), .answer)
+
+        let event = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "workflow.created", "version": 1,
+            "payload": ["workflow": ["id": "wf-1"]],
+        ]))
+        guard case .capability(let capability) = event else {
+            return XCTFail("Expected semantic capability event")
+        }
+        XCTAssertEqual(capability.type, "workflow.created")
+        XCTAssertEqual(RendererRegistry.route(for: capability.type, version: capability.version), .workflow)
+
+        let proposalEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "capability.proposed", "version": 1,
+            "payload": [
+                "proposal_id": "proposal-1", "capability_id": "workflow.create",
+                "input": ["title": "QCP", "description": "Create a workflow"],
+                "summary": "Create workflow", "risk": "medium",
+                "state": "awaiting_confirmation",
+            ],
+        ]))
+        guard case .capability(let rawProposal) = proposalEvent else {
+            return XCTFail("Expected capability proposal event")
+        }
+        let proposal = try JSONDecoder().decode(
+            CapabilityProposalBlock.self, from: rawProposal.payload
+        )
+        XCTAssertEqual(proposal.capabilityId, "workflow.create")
+        XCTAssertEqual(proposal.input.title, "QCP")
+        XCTAssertEqual(proposal.state, .awaitingConfirmation)
     }
 }

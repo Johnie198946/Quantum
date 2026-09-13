@@ -1,0 +1,25 @@
+consumptions:
+  - id: knowledge.natural_qa
+    kind: knowledge
+    description: Natural-language QA consumes only policy-scoped knowledge evidence through Hermes.
+    input_contract: {question: string, knowledge_scope: authorized_list}
+    receipt: durable_answer_and_source_events
+    implementation_refs: [backend/api/chat.py, scripts/hermes_bridge.py]
+    gates: [backend/api/knowledge_policy.py, backend/services/knowledge_policy.py]
+    status: implemented
+  - id: workflow.knowledge_need_injection
+    kind: workflow
+    description: Workflow KnowledgeNeed maps to existing KNOWLEDGE_RETRIEVAL nodes and a server-minted scoped capability.
+    input_contract: {knowledge_need: workflow_node_parameters, injection: execution_payload}
+    receipt: workflow_event_receipt
+    implementation_refs: [backend/services/workflow_planner.py, backend/services/workflow_executor.py]
+    gates: [backend/services/knowledge_policy.py, backend/services/workflow_contract.py]
+    status: implemented
+  - id: artifact.structured_consumption
+    kind: artifact
+    description: Verified artifact content can be read structurally, but no general downstream consumer receipt exists yet.
+    input_contract: {execution_id: string, artifact_id: string, expected_schema: optional}
+    receipt: content_hash_only
+    implementation_refs: [backend/api/workflows.py, backend/services/workflow_artifacts.py]
+    gates: [owned_execution, read_verified_artifact]
+    status: partial

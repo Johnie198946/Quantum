@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.api.auth import require_auth
 from backend.api.tenant import current_tenant
@@ -701,16 +702,40 @@ async def owned_execution(
     return row
 
 
-@router.post("/workflows", status_code=201)
-async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_auth)):
-    workflow_id = uid("wf")
-    session_id = uid("wfs")
+async def _create_workflow(
+    body: WorkflowCreate,
+    payload: dict,
+    *,
+    workflow_id: str | None = None,
+    qcp_request_hash: str | None = None,
+):
+    workflow_id = workflow_id or uid("wf")
+    session_id = "wfs_" + workflow_id.removeprefix("wf_") if qcp_request_hash else uid("wfs")
     async with SessionLocal() as db:
+        if qcp_request_hash:
+            existing = await db.get(WorkflowDefinition, workflow_id)
+            if existing is not None:
+                if (
+                    existing.tenant_key != tenant()
+                    or existing.created_by != current_user(payload)
+                    or (existing.requirements_snapshot or {}).get("qcp_request_hash")
+                    != qcp_request_hash
+                ):
+                    raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
+                clarification = await db.get(
+                    WorkflowClarificationSession, existing.clarification_session_id
+                )
+                return {
+                    "workflow": workflow_out(existing),
+                    "clarification_session": clarification_out(clarification),
+                }
         description = body.description.strip()
         requirements_snapshot: dict[str, Any] = {
             "clarification_mode": body.clarification_mode,
             "output_kind": body.output_kind,
         }
+        if qcp_request_hash:
+            requirements_snapshot["qcp_request_hash"] = qcp_request_hash
         if body.output_kind == "presentation":
             requirements_snapshot["scenario_id"] = "presentation-generation"
         elif body.output_kind == "document":
@@ -799,7 +824,30 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
         # The session references workflows.id but there is no ORM relationship
         # between these two independently constructed rows.  Flush the parent
         # explicitly so PostgreSQL cannot order the child INSERT first.
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            if not qcp_request_hash:
+                raise
+            await db.rollback()
+            existing = await db.get(WorkflowDefinition, workflow_id)
+            if (
+                existing is None
+                or existing.tenant_key != tenant()
+                or existing.created_by != current_user(payload)
+                or (existing.requirements_snapshot or {}).get("qcp_request_hash")
+                != qcp_request_hash
+            ):
+                raise HTTPException(
+                    status_code=409, detail={"code": "idempotency_conflict"}
+                ) from exc
+            clarification = await db.get(
+                WorkflowClarificationSession, existing.clarification_session_id
+            )
+            return {
+                "workflow": workflow_out(existing),
+                "clarification_session": clarification_out(clarification),
+            }
         db.add(clarification)
         await db.flush()
         await append_session_message(
@@ -875,6 +923,11 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
             "workflow": workflow_out(row),
             "clarification_session": clarification_out(clarification),
         }
+
+
+@router.post("/workflows", status_code=201)
+async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_auth)):
+    return await _create_workflow(body, payload)
 
 
 @router.get("/workflows/{workflow_id}/clarification")

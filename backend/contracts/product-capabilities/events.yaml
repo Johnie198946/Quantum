@@ -1,0 +1,23 @@
+events:
+  - id: capability.proposed
+    version: 1
+  - id: knowledge.results
+    version: 1
+  - id: knowledge.note
+    version: 1
+  - id: knowledge.action
+    version: 1
+  - id: knowledge.navigation
+    version: 1
+  - id: workflow.summary
+    version: 1
+  - id: workflow.created
+    version: 1
+  - id: workflow.started
+    version: 1
+  - id: presentation.created
+    version: 1
+  - id: artifact.content
+    version: 1
+  - id: artifact.download_ready
+    version: 1

@@ -441,6 +441,9 @@ public struct MessageBubbleView: View {
             },
             onKnowledgeAction: { actionId, action in
                 context?.onKnowledgeAction?(actionId, action)
+            },
+            onCapabilityProposal: { proposalId, action in
+                context?.onCapabilityProposal?(proposalId, action)
             }
         )
     }

@@ -424,6 +424,55 @@ public enum KnowledgeActionState: String, Codable, Sendable, Hashable {
     case syncPending = "sync_pending"
 }
 
+public enum CapabilityProposalState: String, Codable, Sendable, Hashable {
+    case awaitingConfirmation = "awaiting_confirmation"
+    case applying, completed, discarded, failed
+}
+
+public struct CapabilityProposalInput: Codable, Sendable, Hashable {
+    public let title: String?
+    public let description: String?
+    public let desiredOutput: String?
+    public let sourceDocumentId: String?
+    public let outputKind: String?
+    public let workflowId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, description
+        case desiredOutput = "desired_output"
+        case sourceDocumentId = "source_document_id"
+        case outputKind = "output_kind"
+        case workflowId = "workflow_id"
+    }
+}
+
+public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable {
+    public let id: String
+    public let capabilityId: String
+    public let input: CapabilityProposalInput
+    public let summary: String
+    public let risk: String
+    public var state: CapabilityProposalState = .awaitingConfirmation
+    public var errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "proposal_id"
+        case capabilityId = "capability_id"
+        case input, summary, risk, state
+        case errorMessage = "error_message"
+    }
+
+    public var idempotencyKey: String { id }
+
+    public var restoredForRetry: Self {
+        guard state == .applying else { return self }
+        var restored = self
+        restored.state = .awaitingConfirmation
+        restored.errorMessage = nil
+        return restored
+    }
+}
+
 public struct KnowledgeActionStep: Codable, Sendable, Hashable, Identifiable {
     public var id: String { "\(kind):\(targetNoteId ?? title ?? "new")" }
     public let kind: String
@@ -517,6 +566,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
     case clarify(ClarifyBlock)
     case noteDraft(NoteDraftBlock)
     case knowledgeAction(KnowledgeActionBlock)
+    case capabilityProposal(CapabilityProposalBlock)
 
     public var id: String {
         switch self {
@@ -530,6 +580,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
         case .clarify(let c): return "clarify_\(c.id)"
         case .noteDraft(let draft): return "note_draft_\(draft.id)"
         case .knowledgeAction(let action): return "knowledge_action_\(action.id)"
+        case .capabilityProposal(let proposal): return "capability_proposal_\(proposal.id)"
         }
     }
 }
@@ -593,6 +644,7 @@ public extension ChatMessage {
             case .clarify(let c): return "[澄清·\(c.question)]"
             case .noteDraft(let draft): return "[笔记草稿·\(draft.title)]"
             case .knowledgeAction(let action): return "[知识操作·\(action.summary)]"
+            case .capabilityProposal(let proposal): return "[待确认操作·\(proposal.summary)]"
             }
         }
         let blockSummary = summaries.isEmpty ? nil : summaries.joined(separator: " ")
@@ -704,6 +756,8 @@ public struct PersistedMessage: Codable, Sendable {
     public let clarify: PersistedClarify?
     public let noteDraft: NoteDraftBlock?
     public let knowledgeAction: KnowledgeActionBlock?
+    public let capabilityProposals: [CapabilityProposalBlock]?
+    public let capabilityProposal: CapabilityProposalBlock?
     public let attachments: [AttachmentBlock]?
 
     public init(_ m: ChatMessage) {
@@ -738,6 +792,12 @@ public struct PersistedMessage: Codable, Sendable {
             if case .knowledgeAction(let action) = $0 { return action }
             return nil
         }.first
+        let proposals = m.blocks.compactMap {
+            if case .capabilityProposal(let proposal) = $0 { return proposal }
+            return nil
+        }
+        self.capabilityProposals = proposals.isEmpty ? nil : proposals
+        self.capabilityProposal = nil
         self.attachments = m.blocks.compactMap { if case .attachment(let item) = $0 { return item }; return nil }
     }
 
@@ -774,6 +834,13 @@ public struct PersistedMessage: Codable, Sendable {
         }
         if let knowledgeAction {
             message.blocks.append(.knowledgeAction(knowledgeAction))
+        }
+        var restoredProposalIDs = Set<String>()
+        for proposal in capabilityProposals ?? [] where restoredProposalIDs.insert(proposal.id).inserted {
+            message.blocks.append(.capabilityProposal(proposal.restoredForRetry))
+        }
+        if let capabilityProposal, restoredProposalIDs.insert(capabilityProposal.id).inserted {
+            message.blocks.append(.capabilityProposal(capabilityProposal.restoredForRetry))
         }
         for attachment in attachments ?? [] { message.blocks.append(.attachment(attachment)) }
         return message

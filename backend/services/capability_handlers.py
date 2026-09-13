@@ -1,0 +1,262 @@
+"""Thin QCP bindings; existing domain handlers remain the authorization truth."""
+
+from __future__ import annotations
+
+import hashlib
+import fcntl
+import json
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable
+
+from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
+
+from backend.api.knowledge_sync import (
+    NoteArchiveRequest,
+    NoteMergeRequest,
+    NoteSyncRequest,
+    archive_note,
+    list_synced_notes,
+    merge_notes,
+    restore_note,
+    sync_note,
+)
+from backend.api.workflows import (
+    ApprovalRequest,
+    WorkflowCreate,
+    _create_workflow,
+    get_artifact_content,
+    get_execution,
+    get_workflow,
+    list_artifacts,
+    start_workflow,
+)
+
+
+Handler = Callable[[dict[str, Any], dict[str, Any], str | None], Awaitable[dict[str, Any]]]
+
+
+def _qcp_workflow_identity(
+    capability_id: str, payload: dict[str, Any], key: str, data: dict[str, Any]
+) -> tuple[str, str]:
+    owner = (
+        f"{payload.get('tenant_key')}:{payload.get('user_id') or payload.get('sub')}:"
+        f"{capability_id}:{key}"
+    )
+    workflow_id = "wf_" + hashlib.sha256(owner.encode()).hexdigest()[:32]
+    request_hash = hashlib.sha256(
+        json.dumps(
+            {"capability_id": capability_id, "input": data},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return workflow_id, request_hash
+
+
+async def _knowledge_mutation(
+    capability_id: str,
+    data: dict[str, Any],
+    payload: dict[str, Any],
+    key: str | None,
+    operation: Callable[[], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Serialize and durably replay one private-note capability mutation."""
+    assert key
+    from backend.api import knowledge_sync as sync
+
+    tenant_key = str(payload.get("tenant_key") or "")
+    user_id = str(payload.get("user_id") or payload.get("sub") or "")
+    directory = sync.note_directory(tenant_key, user_id, sync._sync_root())
+    receipts = directory / ".operations"
+    receipts.mkdir(parents=True, exist_ok=True)
+    identity = hashlib.sha256(f"{capability_id}:{key}".encode()).hexdigest()
+    receipt_path = receipts / f"qcp-{identity}.json"
+    lock_path = receipts / f"qcp-{identity}.lock"
+    payload_digest = hashlib.sha256(json.dumps(
+        {"capability_id": capability_id, "input": data},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
+    with lock_path.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        prior = sync._read_metadata(receipt_path)
+        if receipt_path.exists():
+            if receipt_path.is_symlink() or not prior:
+                raise HTTPException(
+                    status_code=409, detail={"code": "idempotency_receipt_invalid"}
+                )
+            if prior.get("payload_digest") != payload_digest:
+                raise HTTPException(
+                    status_code=409, detail={"code": "idempotency_conflict"}
+                )
+            if isinstance(prior.get("result"), dict):
+                return prior["result"]
+        else:
+            sync._atomic_write(receipt_path, json.dumps({
+                "capability_id": capability_id,
+                "key_hash": hashlib.sha256(key.encode()).hexdigest(),
+                "payload_digest": payload_digest,
+                "status": "applying",
+            }, sort_keys=True, separators=(",", ":")).encode())
+        result = await operation()
+        sync._atomic_write(receipt_path, json.dumps({
+            "capability_id": capability_id,
+            "key_hash": hashlib.sha256(key.encode()).hexdigest(),
+            "payload_digest": payload_digest,
+            "status": "completed",
+            "result": jsonable_encoder(result),
+        }, sort_keys=True, separators=(",", ":")).encode())
+        return result
+
+
+def _note_title(markdown: str) -> str:
+    first = next((line.strip() for line in markdown.splitlines() if line.strip()), "无标题")
+    return first.lstrip("# ")[:200] or "无标题"
+
+
+async def _knowledge_search(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    snapshot = await list_synced_notes(bool(data.get("include_archived", False)), payload)
+    terms = data["query"].casefold().split()
+    items = [item for item in snapshot["items"] if all(
+        term in str(item.get("markdown") or "").casefold() for term in terms
+    )][:int(data.get("limit", 5))]
+    return {
+        "items": [{
+            "note_id": item["note_id"], "title": _note_title(item["markdown"]),
+            "snippet": item["markdown"][:1000], "content_hash": item["content_hash"],
+            "updated_at": item.get("updated_at"), "archived": item["archived"],
+        } for item in items],
+        "local_state": "client_managed", "cloud_state": "synced",
+        "index_state": snapshot["compile_status"],
+    }
+
+
+async def _knowledge_read(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    snapshot = await list_synced_notes(True, payload)
+    note = next((item for item in snapshot["items"] if item["note_id"] == data["note_id"]), None)
+    if note is None:
+        raise HTTPException(status_code=404, detail={"code": "note_not_found"})
+    return {"note": note, "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
+
+
+async def _knowledge_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    assert key
+    owner = f"{payload.get('tenant_key')}:{payload.get('user_id') or payload.get('sub')}:{key}"
+    note_id = "qcp-" + hashlib.sha256(owner.encode()).hexdigest()[:32]
+    markdown = data["markdown"]
+    return await sync_note(note_id, NoteSyncRequest(
+        markdown=markdown, content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
+        updated_at=datetime.now(timezone.utc), create_only=True,
+    ), payload)
+
+
+async def _knowledge_update(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    markdown = data["markdown"]
+    return await _knowledge_mutation(
+        "knowledge.note.update", data, payload, key,
+        lambda: sync_note(data["note_id"], NoteSyncRequest(
+            markdown=markdown, content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
+            base_hash=data["base_hash"], updated_at=datetime.now(timezone.utc),
+        ), payload),
+    )
+
+
+async def _knowledge_merge(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    assert key
+    operation_id = "qcp-" + hashlib.sha256(key.encode()).hexdigest()[:32]
+    return await merge_notes(NoteMergeRequest(operation_id=operation_id, **data), payload)
+
+
+async def _knowledge_archive(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    return await _knowledge_mutation(
+        "knowledge.note.archive", data, payload, key,
+        lambda: archive_note(data["note_id"], NoteArchiveRequest(
+            expected_content_hash=data["base_hash"]
+        ), payload),
+    )
+
+
+async def _knowledge_restore(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    return await _knowledge_mutation(
+        "knowledge.note.restore", data, payload, key,
+        lambda: restore_note(data["note_id"], payload),
+    )
+
+
+async def _navigation(data: dict[str, Any], _payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    return dict(data)
+
+
+async def _workflow_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    assert key
+    workflow_id, request_hash = _qcp_workflow_identity("workflow.create", payload, key, data)
+    return await _create_workflow(
+        WorkflowCreate(**data), payload,
+        workflow_id=workflow_id, qcp_request_hash=request_hash,
+    )
+
+
+async def _presentation_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    assert key
+    workflow_id, request_hash = _qcp_workflow_identity(
+        "presentation.create_from_document", payload, key, data
+    )
+    return await _create_workflow(
+        WorkflowCreate(
+            **data,
+            desired_output="可编辑 PPTX 与渲染预览",
+            output_kind="presentation",
+        ),
+        payload,
+        workflow_id=workflow_id,
+        qcp_request_hash=request_hash,
+    )
+
+
+async def _workflow_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    return await get_workflow(data["workflow_id"], payload)
+
+
+async def _workflow_status(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    return await get_execution(data["execution_id"], payload)
+
+
+async def _workflow_start(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    assert key
+    return await start_workflow(data["workflow_id"], ApprovalRequest(
+        comment="QCP confirmed start", request_id=key
+    ), payload)
+
+
+async def _artifact_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    return await get_artifact_content(data["execution_id"], data["artifact_id"], payload)
+
+
+async def _artifact_download(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    artifacts = await list_artifacts(data["execution_id"], payload)
+    artifact = next((item for item in artifacts if item["id"] == data["artifact_id"]), None)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="工作流素材不存在")
+    return {
+        "path": f"workflow-executions/{data['execution_id']}/artifacts/{data['artifact_id']}/download",
+        "content_hash": artifact["content_hash"], "mime_type": artifact["mime_type"],
+        "extension": artifact["extension"],
+    }
+
+
+HANDLERS: dict[str, Handler] = {
+    "knowledge.search": _knowledge_search,
+    "knowledge.read": _knowledge_read,
+    "knowledge.create": _knowledge_create,
+    "knowledge.update": _knowledge_update,
+    "knowledge.merge": _knowledge_merge,
+    "knowledge.archive": _knowledge_archive,
+    "knowledge.restore": _knowledge_restore,
+    "client.knowledge.navigation": _navigation,
+    "workflow.create": _workflow_create,
+    "workflow.open": _workflow_open,
+    "workflow.status": _workflow_status,
+    "workflow.start": _workflow_start,
+    "presentation.create_from_document": _presentation_create,
+    "artifact.open": _artifact_open,
+    "artifact.download": _artifact_download,
+}

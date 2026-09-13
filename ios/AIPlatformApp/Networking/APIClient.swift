@@ -1724,6 +1724,136 @@ public struct WorkflowCreateRequestDTO: Encodable {
     }
 }
 
+public struct PresentationCreateRequestDTO: Encodable {
+    public let sourceDocumentId: String
+    public let title: String
+    public let description: String
+    enum CodingKeys: String, CodingKey {
+        case sourceDocumentId = "source_document_id"
+        case title, description
+    }
+}
+
+public struct WorkflowStartRequestDTO: Encodable {
+    public let workflowId: String
+    enum CodingKeys: String, CodingKey { case workflowId = "workflow_id" }
+}
+
+public enum QCPCapabilityID {
+    public static let workflowCreate = "workflow.create"
+    public static let presentationCreateFromDocument = "presentation.create_from_document"
+    public static let workflowStart = "workflow.start"
+}
+
+public struct QCPReceiptDTO: Decodable, Sendable, Hashable {
+    public let invocationId: String
+    public let capabilityVersion: String
+    public let status: String
+    public let eventType: String
+}
+
+public struct QCPErrorDTO: Decodable, Sendable, Hashable {
+    public let code: String
+    public let message: String
+}
+
+public struct QCPEventDTO<Payload: Decodable>: Decodable {
+    public let type: String
+    public let version: Int
+    public let payload: Payload
+}
+
+public struct QCPInvokeResponseDTO<Payload: Decodable>: Decodable {
+    public let status: String
+    public let capabilityId: String
+    public let events: [QCPEventDTO<Payload>]
+    public let receipt: QCPReceiptDTO?
+    public let error: QCPErrorDTO?
+}
+
+private struct QCPInvokeRequestDTO<Input: Encodable>: Encodable {
+    let capabilityId: String
+    let input: Input
+    let confirmed: Bool
+    let idempotencyKey: String?
+    enum CodingKeys: String, CodingKey {
+        case capabilityId = "capability_id"
+        case input, confirmed
+        case idempotencyKey = "idempotency_key"
+    }
+}
+
+@MainActor
+public final class CapabilityClient {
+    private let apiClient: APIClient
+
+    public init(apiClient: APIClient? = nil) { self.apiClient = apiClient ?? .shared }
+
+    public func invoke<Input: Encodable, Output: Decodable>(
+        _ capabilityId: String,
+        input: Input,
+        confirmed: Bool,
+        idempotencyKey: String?
+    ) async throws -> QCPInvokeResponseDTO<Output> {
+        return try await apiClient.request(
+            QCPInvokeResponseDTO<Output>.self,
+            path: "capabilities/invoke",
+            method: "POST",
+            body: QCPInvokeRequestDTO(
+                capabilityId: capabilityId,
+                input: input,
+                confirmed: confirmed,
+                idempotencyKey: idempotencyKey
+            )
+        )
+    }
+}
+
+public enum QCPRenderingPath: String, Sendable {
+    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, navigation
+}
+
+public struct QCPRendererRoute: Sendable, Equatable {
+    public let path: QCPRenderingPath
+    public let minimumVersion: Int
+    public let fallback: QCPRenderingPath
+}
+
+public enum RendererRegistry {
+    private static let routes: [String: QCPRendererRoute] = [
+        "capability.proposed": .init(path: .confirmation, minimumVersion: 1, fallback: .answer),
+        "answer_page": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "clarify": .init(path: .clarify, minimumVersion: 1, fallback: .answer),
+        "knowledge.results": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "knowledge.note": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "knowledge.action": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "knowledge_action_draft": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "knowledge.navigation": .init(path: .navigation, minimumVersion: 1, fallback: .answer),
+        "knowledge_navigation": .init(path: .navigation, minimumVersion: 1, fallback: .answer),
+        "workflow.summary": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+    ]
+
+    public static func route(for eventType: String, version: Int) -> QCPRenderingPath {
+        guard let route = routes[eventType] else { return .answer }
+        return version >= route.minimumVersion ? route.path : route.fallback
+    }
+
+    public static func metadata(for eventType: String) -> QCPRendererRoute? {
+        routes[eventType]
+    }
+}
+
+public struct QCPStreamEvent: Sendable {
+    public let type: String
+    public let version: Int
+    public let payload: Data
+}
+
 public struct WorkflowPlanEditRequestDTO: Encodable {
     public let dsl: WorkflowDSLDTO
     public let deliverable: String
@@ -2558,18 +2688,35 @@ public final class APIClient: ObservableObject {
         sourceDocumentId: String? = nil,
         outputKind: String = "general"
     ) async throws -> WorkflowCreateResponseDTO {
-        try await request(
-            WorkflowCreateResponseDTO.self,
-            path: "workflows",
-            method: "POST",
-            body: WorkflowCreateRequestDTO(
-                title: title,
-                description: description,
-                desiredOutput: desiredOutput,
-                sourceDocumentId: sourceDocumentId,
-                outputKind: outputKind
+        let key = UUID().uuidString
+        let client = CapabilityClient(apiClient: self)
+        let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO>
+        if outputKind == "presentation", let sourceDocumentId {
+            response = try await client.invoke(
+                QCPCapabilityID.presentationCreateFromDocument,
+                input: PresentationCreateRequestDTO(
+                    sourceDocumentId: sourceDocumentId,
+                    title: title,
+                    description: description
+                ),
+                confirmed: true,
+                idempotencyKey: key
             )
-        )
+        } else {
+            response = try await client.invoke(
+                QCPCapabilityID.workflowCreate,
+                input: WorkflowCreateRequestDTO(
+                title: title, description: description, desiredOutput: desiredOutput,
+                sourceDocumentId: sourceDocumentId, outputKind: outputKind
+                ),
+                confirmed: true,
+                idempotencyKey: key
+            )
+        }
+        guard response.status == "completed", let output = response.events.first?.payload,
+              response.receipt != nil
+        else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+        return output
     }
 
     public func fetchWorkflowClarification(
@@ -3012,11 +3159,11 @@ public final class APIClient: ObservableObject {
 
     public func archiveKnowledgeNote(
         id: String,
-        mergedIntoNoteId: String,
+        mergedIntoNoteId: String?,
         expectedContentHash: String? = nil
     ) async throws {
         struct Body: Encodable {
-            let mergedIntoNoteId: String
+            let mergedIntoNoteId: String?
             let expectedContentHash: String?
             enum CodingKeys: String, CodingKey {
                 case mergedIntoNoteId = "merged_into_note_id"
@@ -3239,6 +3386,7 @@ public final class APIClient: ObservableObject {
         case knowledgeActionDraft(KnowledgeActionBlock)
         case knowledgeNavigation(KnowledgeNavigationTarget)
         case answerPage(AnswerBlockPageDTO)
+        case capability(QCPStreamEvent)
         case done(sessionId: String?, answer: String?)
         case error(code: String, message: String)
 
@@ -3400,7 +3548,16 @@ public final class APIClient: ObservableObject {
                     message: json["message"] as? String ?? ""
                 )
             default:
-                return nil
+                guard RendererRegistry.metadata(for: type) != nil,
+                      let payload = json["payload"],
+                      JSONSerialization.isValidJSONObject(payload),
+                      let data = try? JSONSerialization.data(withJSONObject: payload)
+                else { return nil }
+                return .capability(QCPStreamEvent(
+                    type: type,
+                    version: json["version"] as? Int ?? 1,
+                    payload: data
+                ))
             }
         }
     }

@@ -1,0 +1,9 @@
+policies:
+  - id: personal-knowledge-owner
+    description: Authenticated tenant/user owns the note; domain API enforces isolation and CAS.
+  - id: personal-knowledge-confirmed-mutation
+    description: Mutation requires an explicit confirmation and domain-level ownership/CAS checks.
+  - id: workflow-owner
+    description: Workflow APIs derive tenant/user from JWT and enforce ownership and lifecycle state.
+  - id: artifact-owner
+    description: Artifact APIs verify execution ownership, path containment and content hash.

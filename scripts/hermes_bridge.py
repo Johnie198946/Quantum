@@ -110,6 +110,8 @@ except ModuleNotFoundError:  # pragma: no cover - direct ``python scripts/hermes
     from chat_run_store import DurableChatRunStore  # type: ignore[no-redef]  # noqa: E402
 
 app = FastAPI(title="Hermes Bridge v6.0")
+_bridge_async_loop: asyncio.AbstractEventLoop | None = None
+CAPABILITY_DISPATCH_TIMEOUT_SECONDS = 30
 
 SKILL_ROUTING_OVERRIDES = _REPO_ROOT / "config" / "skill-routing-overrides.yaml"
 
@@ -1526,6 +1528,8 @@ _client_context_tool_registration_lock = threading.Lock()
 _client_context_tools_registered = False
 _knowledge_workspace_tool_registration_lock = threading.Lock()
 _knowledge_workspace_tools_registered = False
+_app_capability_tool_registration_lock = threading.Lock()
+_app_capability_tools_registered = False
 _NOTE_DRAFT_REQUEST_RE = re.compile(
     r"(?:总结|整理|保存|入库|记录|生成|完善|补充|修改|更新).{0,40}(?:笔记|note)"
     r"|(?:笔记|note).{0,40}(?:保存|入库|总结|整理|完善|补充|修改|更新)"
@@ -2705,12 +2709,18 @@ def _knowledge_action_propose_tool(args: dict[str, Any], **_kwargs) -> str:
             "pinned": raw.get("pinned") if isinstance(raw.get("pinned"), bool) else None,
             "link_title": str(raw.get("link_title") or "").strip()[:200] or None,
             "original_content_hash": (
-                notes.get(target_id, {}).get("content_hash") if target_id else None
+                raw.get("original_content_hash")
+                if "original_content_hash" in raw
+                else notes.get(target_id, {}).get("content_hash") if target_id else None
             ),
-            "source_content_hashes": {
-                note_id: notes.get(note_id, {}).get("content_hash")
-                for note_id in source_ids
-            },
+            "source_content_hashes": (
+                raw.get("source_content_hashes")
+                if "source_content_hashes" in raw
+                else {
+                    note_id: notes.get(note_id, {}).get("content_hash")
+                    for note_id in source_ids
+                }
+            ),
         }
         normalized.append(step)
     summary = str((args or {}).get("summary") or "").strip()[:500]
@@ -2833,6 +2843,189 @@ def _ensure_knowledge_workspace_tools_registered() -> None:
             }, handler=lambda args, **kwargs: _knowledge_ui_navigate_tool(args, **kwargs),
         )
         _knowledge_workspace_tools_registered = True
+
+
+def _app_capability_search_tool(args: dict[str, Any], **_kwargs) -> str:
+    from backend.services.capability_catalog import catalog_digest, search_capabilities
+
+    query = str((args or {}).get("query") or "").strip()[:200]
+    limit = max(1, min(10, int((args or {}).get("limit") or 5)))
+    return json.dumps({
+        "success": True, "protocol": "qcp", "catalog_digest": catalog_digest(),
+        "items": search_capabilities(query, limit=limit),
+    }, ensure_ascii=False)
+
+
+def _app_capability_describe_tool(args: dict[str, Any], **_kwargs) -> str:
+    from backend.services.capability_catalog import describe_capability
+
+    capability_id = str((args or {}).get("capability_id") or "").strip()
+    capability = describe_capability(capability_id)
+    return json.dumps(
+        {"success": capability is not None, "capability": capability,
+         **({} if capability is not None else {"error": "capability_not_found"})},
+        ensure_ascii=False,
+    )
+
+
+def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
+    """Route model intent to existing semantic tools; never accepts authority."""
+    from backend.services.capability_catalog import (
+        CapabilityContractError, describe_capability, validate_instance,
+    )
+
+    capability_id = str((args or {}).get("capability_id") or "").strip()
+    data = (args or {}).get("input")
+    capability = describe_capability(capability_id)
+    if capability is None:
+        return json.dumps({"success": False, "error": "capability_not_found"})
+    if capability["implementation_status"] != "implemented":
+        return json.dumps({"success": False, "error": "capability_not_executable"})
+    if not isinstance(data, dict):
+        return json.dumps({"success": False, "error": "input_object_required"})
+    try:
+        validate_instance(data, capability["input_schema"])
+    except CapabilityContractError as exc:
+        return json.dumps({"success": False, "error": "contract_invalid", "detail": str(exc)[:200]})
+    if capability_id == "knowledge.note.search":
+        return _knowledge_workspace_read_tool({"operation": "search", **data})
+    if capability_id == "knowledge.note.read":
+        return _knowledge_workspace_read_tool({"operation": "read", **data})
+    if capability_id == "knowledge.navigation":
+        return _knowledge_ui_navigate_tool(data)
+    kind = {
+        "knowledge.note.create": "create_note",
+        "knowledge.note.update": "update_note",
+        "knowledge.note.merge": "merge_notes",
+        "knowledge.note.archive": "archive_note",
+        "knowledge.note.restore": "restore_note",
+    }.get(capability_id)
+    if kind:
+        target_id = str(data.get("note_id") or data.get("target_note_id") or "")
+        if kind != "create_note":
+            read = json.loads(_knowledge_workspace_read_tool({
+                "operation": "read", "note_id": target_id,
+            }))
+            if not read.get("success"):
+                return json.dumps(read, ensure_ascii=False)
+        step = {
+            "kind": kind,
+            "target_note_id": target_id or None,
+            "source_note_ids": list((data.get("source_versions") or {}).keys()),
+            "markdown": data.get("markdown") or data.get("revised_content"),
+            "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
+            "source_content_hashes": data.get("source_versions"),
+        }
+        return _knowledge_action_propose_tool({
+            "summary": f"执行 {capability_id}", "steps": [step],
+            "suggested_navigation": {
+                "destination": "note" if target_id else "knowledge_home",
+                **({"note_id": target_id} if target_id else {}),
+            },
+        })
+    if capability["confirmation"] == "required":
+        proposal_id = "qcp-proposal-" + hashlib.sha256(json.dumps(
+            {"capability_id": capability_id, "input": data},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()[:24]
+        event = {
+            "type": "capability.proposed", "version": 1,
+            "payload": {
+                "proposal_id": proposal_id,
+                "capability_id": capability_id,
+                "input": data,
+                "summary": capability["description"],
+                "risk": capability["risk"],
+                "state": "awaiting_confirmation",
+            },
+        }
+        context = getattr(_client_context_tool_context, "value", None)
+        emit = context.get("emit") if isinstance(context, dict) else None
+        if callable(emit):
+            emit(event)
+        return json.dumps({
+            "status": "awaiting_confirmation",
+            "capability_id": capability_id,
+            "events": [event],
+            "receipt": None,
+            "error": None,
+        }, ensure_ascii=False)
+    if capability_id not in {
+        "workflow.create", "workflow.open", "workflow.status", "workflow.start",
+        "presentation.create_from_document", "artifact.open", "artifact.download",
+    }:
+        return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
+    context = getattr(_client_context_tool_context, "value", None)
+    identity = context.get("identity") if isinstance(context, dict) else None
+    request_id = str((context or {}).get("request_id") or "")
+    if (
+        not isinstance(identity, dict)
+        or not str(identity.get("tenant_key") or "")
+        or not str(identity.get("user_id") or "")
+        or len(request_id) < 8
+    ):
+        return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+    from backend.api.tenant import current_tenant
+    from backend.services.capability_catalog import invoke_capability
+
+    loop = _bridge_async_loop
+    if loop is None or loop.is_closed() or not loop.is_running():
+        return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
+    tenant_token = current_tenant.set(str(identity["tenant_key"]))
+    try:
+        invocation = invoke_capability(
+            capability_id,
+            data,
+            payload=dict(identity),
+            confirmed=False,
+            idempotency_key=None,
+        )
+        try:
+            future = asyncio.run_coroutine_threadsafe(invocation, loop)
+        except RuntimeError:
+            invocation.close()
+            return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
+        try:
+            result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
+        except TimeoutError:
+            future.cancel()
+            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
+        except Exception:
+            return json.dumps({"success": False, "error": "async_dispatch_failed"})
+    finally:
+        current_tenant.reset(tenant_token)
+    emit = context.get("emit")
+    if callable(emit):
+        for event in result.get("events") or []:
+            emit(event)
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _ensure_app_capability_tools_registered() -> None:
+    global _app_capability_tools_registered
+    if _app_capability_tools_registered:
+        return
+    with _app_capability_tool_registration_lock:
+        if _app_capability_tools_registered:
+            return
+        from tools.registry import registry
+
+        registry.register(
+            name="app_capability_search", toolset="app_capabilities",
+            schema={"name": "app_capability_search", "description": "Search compact AI Lab product capability metadata before requesting a full contract.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]}},
+            handler=lambda args, **kwargs: _app_capability_search_tool(args, **kwargs),
+        )
+        registry.register(
+            name="app_capability_describe", toolset="app_capabilities",
+            schema={"name": "app_capability_describe", "description": "Describe one allowlisted capability contract selected from app_capability_search.", "parameters": {"type": "object", "properties": {"capability_id": {"type": "string"}}, "required": ["capability_id"], "additionalProperties": False}},
+            handler=lambda args, **kwargs: _app_capability_describe_tool(args, **kwargs),
+        )
+        registry.register(
+            name="app_capability_invoke", toolset="app_capabilities",
+            schema={"name": "app_capability_invoke", "description": "Read through one allowlisted semantic app capability, or propose a mutation for explicit confirmation in the authenticated app. This tool cannot confirm mutations.", "parameters": {"type": "object", "properties": {"capability_id": {"type": "string"}, "input": {"type": "object"}}, "required": ["capability_id", "input"], "additionalProperties": False}},
+            handler=lambda args, **kwargs: _app_capability_invoke_tool(args, **kwargs),
+        )
+        _app_capability_tools_registered = True
 
 
 def _ensure_client_context_tools_registered() -> None:
@@ -4567,7 +4760,8 @@ async def _stream_from_serve(goal: str, session_id: str | None = None):
 
 @app.on_event("startup")
 async def _startup():
-    global _chat_run_store
+    global _bridge_async_loop, _chat_run_store
+    _bridge_async_loop = asyncio.get_running_loop()
     _chat_run_store = DurableChatRunStore(HERMES_CHAT_RUN_DB)
     stalled = _chat_run_store.recover_after_restart()
     if stalled:
@@ -4598,6 +4792,12 @@ async def _startup():
         f"[bridge] watchdog 已启动: 间隔 {WATCHDOG_INTERVAL_SECONDS}s"
         f"·detached 超时 {STREAM_MAX_DURATION_SECONDS}s"
     )
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    global _bridge_async_loop
+    _bridge_async_loop = None
 
 
 def _block_safe_event(event: dict[str, Any]) -> dict[str, Any] | None:
@@ -6273,7 +6473,9 @@ def _memory_tool_succeeded(result: Any) -> bool:
 def _legacy_client_context_enabled(
     client_context_enabled: bool, knowledge_action_enabled: bool
 ) -> bool:
-    return client_context_enabled and not knowledge_action_enabled
+    # Historical note_draft events remain decodable, but every new write intent
+    # must converge on knowledge_action/QCP.
+    return False
 
 
 def _expose_eager_request_tools(agent: Any, toolsets: list[str]) -> None:
@@ -6336,7 +6538,7 @@ def _build_in_process_agent(
         tier = inference_policy["tier"].upper()
         cfg_model = os.environ.get(f"HERMES_{tier}_CHAT_MODEL", "").strip() or cfg_model
     route_class = triage.get("route_class") if triage else None
-    note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
+    note_draft_request = knowledge_action_enabled and not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
     if route_class == GENERAL_QA:
         cfg_model = os.environ.get("HERMES_FAST_CHAT_MODEL", "gpt-5.4-nano")
     evidence_requirements = set(
@@ -6453,8 +6655,11 @@ def _build_in_process_agent(
             toolsets_list.append("client_context")
     if knowledge_action_enabled:
         _ensure_knowledge_workspace_tools_registered()
+        _ensure_app_capability_tools_registered()
         if "knowledge_workspace" not in toolsets_list:
             toolsets_list.append("knowledge_workspace")
+        if "app_capabilities" not in toolsets_list:
+            toolsets_list.append("app_capabilities")
     if allowed_tools:
         requested_toolsets = _tenant_base_toolsets(allowed_tools)
         if network_tool_requested:
@@ -6473,6 +6678,7 @@ def _build_in_process_agent(
             requested_toolsets.add("client_context")
         if knowledge_action_enabled:
             requested_toolsets.add("knowledge_workspace")
+            requested_toolsets.add("app_capabilities")
         if agency_route_enabled:
             requested_toolsets.update(
                 {"agency_agents", "ai_lab"} & platform_tools
@@ -6907,7 +7113,7 @@ def _run_agent_sync(
                 "\n\n【平台记忆回执】该内容已由平台写入当前用户的长期记忆。"
                 "不要再次调用 memory；只需简洁确认。"
             )
-        note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
+        note_draft_request = knowledge_action_enabled and not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
         note_context_claims = client_context_claims or knowledge_claims
         has_client_context = (
             client_session_context is not None and client_context_claims is not None
@@ -6929,6 +7135,10 @@ def _run_agent_sync(
                     (client_context_claims or {}).get("request_id")
                     or run_state.get("request_id")
                 ),
+                "identity": {
+                    "tenant_key": str(note_context_claims.get("tenant_key") or ""),
+                    "user_id": str(note_context_claims.get("user_id") or ""),
+                },
                 "client_session_id": transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],
                 "account_scope": (
@@ -7759,6 +7969,7 @@ async def chat(
                         item for item in events
                         if item.get("type") in {
                             "note_draft", "knowledge_action_draft", "knowledge_navigation",
+                            "capability.proposed",
                             "tool_start", "tool_complete", "delegate_receipt", "memory_receipt"
                         }
                     ],

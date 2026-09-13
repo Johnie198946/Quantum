@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"QCP resource consumption contract","type":"object","required":["id","kind","description","input_contract","receipt","implementation_refs","gates","status"]}

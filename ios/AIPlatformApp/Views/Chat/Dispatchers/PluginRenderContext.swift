@@ -16,6 +16,7 @@ public struct PluginRenderContext {
     public var onRegenerate: ((String) -> Void)? = nil
     public var onNoteDraftAction: ((String, String) -> Void)? = nil
     public var onKnowledgeAction: ((String, String) -> Void)? = nil
+    public var onCapabilityProposal: ((String, String) -> Void)? = nil
     public var onLoadAnswerBlocks: ((String) -> Void)? = nil
     public var onFetchFullAnswer: ((String) async throws -> String)? = nil
 
@@ -27,6 +28,7 @@ public struct PluginRenderContext {
         onRegenerate: ((String) -> Void)? = nil,
         onNoteDraftAction: ((String, String) -> Void)? = nil,
         onKnowledgeAction: ((String, String) -> Void)? = nil,
+        onCapabilityProposal: ((String, String) -> Void)? = nil,
         onLoadAnswerBlocks: ((String) -> Void)? = nil,
         onFetchFullAnswer: ((String) async throws -> String)? = nil
     ) {
@@ -37,6 +39,7 @@ public struct PluginRenderContext {
         self.onRegenerate = onRegenerate
         self.onNoteDraftAction = onNoteDraftAction
         self.onKnowledgeAction = onKnowledgeAction
+        self.onCapabilityProposal = onCapabilityProposal
         self.onLoadAnswerBlocks = onLoadAnswerBlocks
         self.onFetchFullAnswer = onFetchFullAnswer
     }
