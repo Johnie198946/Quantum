@@ -23,7 +23,7 @@ from backend.services.llm_usage import record_llm_usage
 from backend.services.ipd_scenario_registry import build_registered_ipd_plan
 from backend.services.hermes_sandbox_catalog import fetch_skill_catalog
 from backend.services.process_contract_registry import build_routed_process_plan
-from backend.services.presentation_scenario import build_presentation_plan
+from backend.services.presentation_scenario import build_document_plan, build_presentation_plan
 
 HERMES_BRIDGE_URL = os.environ.get(
     "HERMES_BRIDGE_URL", "http://host.docker.internal:9118/v1/chat"
@@ -504,10 +504,18 @@ async def build_plan(
 ) -> WorkflowPlanVersion:
     """Create an immediately reviewable plan; execution never starts here."""
     scopes, allowed_agents, analysis_agent = await planning_context(db, workflow)
+    if (workflow.requirements_snapshot or {}).get("output_kind") in {"presentation", "document"}:
+        scopes = []
     presentation = build_presentation_plan(workflow, plan_id="pending", knowledge_scope=scopes)
     if presentation is not None:
         return await persist_raw_plan(
             db, workflow, presentation, scopes=scopes,
+            analysis_agent=analysis_agent, revision_note=revision_note,
+        )
+    document = build_document_plan(workflow, plan_id="pending", knowledge_scope=scopes)
+    if document is not None:
+        return await persist_raw_plan(
+            db, workflow, document, scopes=scopes,
             analysis_agent=analysis_agent, revision_note=revision_note,
         )
     registered = build_registered_ipd_plan(

@@ -615,7 +615,7 @@ def test_presentation_prompt_rejects_oversized_private_source_instead_of_excerpt
         "deliverable": "pptx",
         "plan": {"nodes": [node], "edges": []},
         "nodes": {},
-        "source_document": {"filename": "private.docx", "text": "x" * 8001},
+        "source_document": {"filename": "private.docx", "text": "x" * 80001},
     }
     with pytest.raises(RuntimeError, match="禁止静默截断"):
         bridge._workflow_node_prompt(run, node)
@@ -946,7 +946,7 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
         {
             "title": "Deck",
             "requirements_snapshot": {
-                "scenario_id": "document-to-presentation",
+                "scenario_id": "presentation-generation",
                 "source_document": {
                     "source_id": "doc_1",
                     "content_hash": "a" * 64,
@@ -973,6 +973,50 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
     assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 4
 
 
+def test_presentation_scenario_without_upload_researches_user_topic_first():
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "鹿儿岛旅行攻略",
+            "description": "帮我生成一个介绍鹿儿岛旅行攻略的 PPT",
+            "requirements_snapshot": {"scenario_id": "presentation-generation"},
+        },
+    )()
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan["source_document"] == {}
+    assert plan["nodes"][0]["id"] == "presentation_research"
+    assert plan["nodes"][0]["node_type"] == "KNOWLEDGE_RETRIEVAL"
+    assert plan["nodes"][0]["parameters"]["knowledge_scope"] == []
+    assert {tuple(edge.values()) for edge in plan["edges"]} >= {
+        ("presentation_research", "presentation_analysis"),
+    }
+
+
+def test_document_scenario_generates_real_word_output_with_two_confirmation_gates():
+    from backend.services.presentation_scenario import build_document_plan
+
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "项目说明书",
+            "description": "帮我写一份项目说明 Word 文档",
+            "requirements_snapshot": {"scenario_id": "document-generation"},
+        },
+    )()
+    plan = build_document_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
+        None,
+        None,
+        "outline",
+        "content",
+        None,
+    ]
+    assert plan["nodes"][-1]["parameters"]["output_format"] == "word"
+    assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 5
+
+
 def test_presentation_workflow_uses_presentation_questions_and_reads_source_in_analysis():
     import scripts.hermes_bridge as bridge
     from backend.api.workflows import clarification_payload, requirement_confirmation_payload
@@ -984,17 +1028,18 @@ def test_presentation_workflow_uses_presentation_questions_and_reads_source_in_a
             "title": "Deck",
             "description": "把文档做成 PPT",
             "desired_output": "可编辑 PPTX",
-            "requirements_snapshot": {
-                "scenario_id": "document-to-presentation",
-                "source_document_evidence": "收入证明；月收入 20,000 元",
-            },
+                "requirements_snapshot": {
+                    "scenario_id": "presentation-generation",
+                    "source_document": {"source_id": "doc_1"},
+                    "source_document_evidence": "收入证明；月收入 20,000 元",
+                },
         },
     )()
     first_question = clarification_payload(0, workflow)
     assert first_question["dimension"] == "用途与受众"
     assert "月收入 20,000 元" in first_question["question"]
     confirmation = requirement_confirmation_payload(workflow, [])
-    assert confirmation["choices"][0] == "确认，开始分析文档"
+    assert confirmation["choices"][0] == "确认，开始生成演示文稿"
     assert "文档依据：收入证明" in confirmation["question"]
 
     plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])

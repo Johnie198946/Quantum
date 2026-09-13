@@ -130,6 +130,37 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["workflow"]
 
+    def test_explicit_output_kind_does_not_require_an_uploaded_file(self):
+        presentation = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "鹿儿岛旅行攻略",
+                "description": "帮我生成一个介绍鹿儿岛旅行攻略的 PPT",
+                "desired_output": "可编辑 PPTX 与渲染预览",
+                "output_kind": "presentation",
+            },
+        )
+        self.assertEqual(presentation.status_code, 201, presentation.text)
+        snapshot = presentation.json()["workflow"]["requirements_snapshot"]
+        self.assertEqual(snapshot["output_kind"], "presentation")
+        self.assertEqual(snapshot["scenario_id"], "presentation-generation")
+        self.assertNotIn("source_document", snapshot)
+
+        document = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "项目说明书",
+                "description": "帮我写一份项目说明 Word 文档",
+                "desired_output": "可编辑 Word 文档 DOCX",
+                "output_kind": "document",
+            },
+        )
+        self.assertEqual(document.status_code, 201, document.text)
+        snapshot = document.json()["workflow"]["requirements_snapshot"]
+        self.assertEqual(snapshot["scenario_id"], "document-generation")
+
     def seed_project_result(self, *, history=False, add_member=False):
         from backend.db import SessionLocal, canonical_plan_hash
         from backend.models.workflow import (
