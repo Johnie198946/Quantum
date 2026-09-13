@@ -1463,6 +1463,7 @@ def _knowledge_gateway_search(
     book_request: dict[str, Any] | None = None,
     wiki_request: dict[str, Any] | None = None,
     with_status: bool = False,
+    timeout_seconds: float = 20.0,
 ) -> list[dict[str, Any]] | dict[str, Any]:
     request_body: dict[str, Any] = {
         "query": query[:200],
@@ -1482,7 +1483,7 @@ def _knowledge_gateway_search(
         KNOWLEDGE_GATEWAY_URL,
         headers={"X-Knowledge-Capability": token},
         json=request_body,
-        timeout=20.0,
+        timeout=timeout_seconds,
     )
     if response.status_code == 403:
         raise PermissionError("knowledge_scope_denied")
@@ -1512,6 +1513,7 @@ class _PropagatedRequestContext:
 
 
 _knowledge_tool_context = _PropagatedRequestContext("qws_knowledge_tool_context")
+_knowledge_gate_context = _PropagatedRequestContext("knowledge_consumption_gate_context")
 _knowledge_tool_registration_lock = threading.Lock()
 _knowledge_tool_registered = False
 _sandbox_tool_context = _PropagatedRequestContext("qws_sandbox_tool_context")
@@ -1639,6 +1641,9 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
              if book_request else _knowledge_fallback_payload("knowledge_scope_denied", query=query)),
             ensure_ascii=False,
         )
+    gateway_options: dict[str, Any] = {}
+    if "gateway_timeout" in _kwargs:
+        gateway_options["timeout_seconds"] = float(_kwargs["gateway_timeout"])
     try:
         docs = _knowledge_gateway_search(
             str(context["capability"]),
@@ -1654,6 +1659,7 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
             **({"book_request": book_request} if book_request else {}),
             **({"wiki_request": wiki_request} if wiki_request else {}),
             with_status=True,
+            **gateway_options,
         )
     except PermissionError:
         if book_request:
@@ -1681,6 +1687,15 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
     gateway_status = docs.get("retrieval_status") if isinstance(docs, dict) else None
     if isinstance(docs, dict):
         docs = docs.get("docs", [])
+    if gateway_status in {"denied", "error"}:
+        return json.dumps({
+            "success": False,
+            "error": f"knowledge_gateway_{gateway_status}",
+            "retrieval_status": gateway_status,
+            "query": query,
+            "fallback_recommended": False,
+            "docs": [],
+        }, ensure_ascii=False)
     # An exact acronym absent from every result is a deterministic coverage gap,
     # not semantic proof that an entity-only hit answers the question.
     required_acronyms = re.findall(r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]{1,23}(?![A-Za-z0-9])", query)
@@ -1732,6 +1747,268 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
         },
         ensure_ascii=False,
     )
+
+
+_KNOWLEDGE_GATE_LIMIT = 3
+_KNOWLEDGE_GATE_CONTEXT_CHARS = 12_000
+_KNOWLEDGE_GATE_TIMEOUT = 5.0
+_KNOWLEDGE_GATE_EXCLUDED_RE = re.compile(
+    r"(?:只|仅)(?:看|用|查).{0,10}(?:我的|个人)?笔记|only.{0,16}(?:my )?notes|"
+    r"^(?:(?:请|帮我)\s*)?(?:润色|改写|校对|总结|概括).{0,20}(?:以下|这段|上述|provided)",
+    re.I,
+)
+
+
+class _KnowledgeBarrierQueue:
+    """Keep controls visible but withhold answer bytes until the final barrier."""
+
+    def __init__(self, target: queue.Queue):
+        self.target = target
+
+    def accept(self, item: dict[str, Any]) -> bool:
+        return True if item.get("type") == "delta" else _qput(self.target, item)
+
+
+def _knowledge_gate_required(
+    goal: str,
+    agent_config: dict[str, Any] | None,
+    capability: str | None,
+    claims: dict[str, Any] | None,
+) -> bool:
+    triage = _request_triage(dict(agent_config or {}))
+    question = _routing_user_goal(goal)
+    if not triage:
+        return False
+    evidence = set(triage.get("evidence_requirements") or [])
+    if (
+        not capability or not claims or not question
+        or "tenant_knowledge" not in set(claims.get("sources") or ["tenant_knowledge"])
+        or "knowledge_search" not in set((agent_config or {}).get("allowed_tools") or [])
+        or _KNOWLEDGE_GATE_EXCLUDED_RE.search(question)
+        or triage.get("reason_code") == "supplied_translation"
+        or ("web_extract" in evidence and "knowledge_search" not in evidence)
+    ):
+        return False
+    if triage["route_class"] == GENERAL_QA:
+        return triage.get("reason_code") not in {"direct_response", "empty_or_ambiguous"}
+    return triage["route_class"] == PROFESSIONAL_TASK and "knowledge_search" in set(
+        triage.get("evidence_requirements") or []
+    )
+
+
+def _knowledge_gap_answer(status: str) -> str:
+    detail = {
+        "no_match": "授权知识库未命中，且本回合没有成功的联网补证。",
+        "insufficient": "授权知识正文不足，且本回合没有成功的联网补证。",
+        "denied": "知识授权在读取或发送前复核时被拒绝。",
+        "error": "知识读取或发送前复核失败。",
+    }.get(status, "知识读取或发送前复核失败。")
+    return "知识证据门禁未通过：" + detail
+
+
+def _perform_knowledge_preread(goal: str) -> tuple[str, dict[str, Any]]:
+    try:
+        payload = json.loads(_knowledge_search_tool(
+            {"query": _routing_user_goal(goal), "limit": _KNOWLEDGE_GATE_LIMIT},
+            gateway_timeout=_KNOWLEDGE_GATE_TIMEOUT,
+        ))
+    except (TypeError, ValueError):
+        payload = {"success": False, "error": "invalid_knowledge_result"}
+    error = str(payload.get("error") or "")
+    if payload.get("success") is not True:
+        status = "denied" if "denied" in error or "scope_unavailable" in error else "error"
+    else:
+        status = str(payload.get("retrieval_status") or "error")
+    docs, remaining, truncated = [], _KNOWLEDGE_GATE_CONTEXT_CHARS, False
+    for raw in (payload.get("docs") or [])[:_KNOWLEDGE_GATE_LIMIT]:
+        markdown = str(raw.get("markdown") or "")
+        excerpt = markdown[:remaining]
+        remaining -= len(excerpt)
+        truncated = truncated or len(excerpt) < len(markdown) or not markdown or raw.get("content_status") in {
+            "truncated", "unavailable", "revoked", "budget_exhausted", "not_requested",
+        }
+        docs.append({
+            "path": str(raw.get("path") or ""), "version": str(raw.get("version") or ""),
+            "citation": str(raw.get("citation") or ""), "title": str(raw.get("title") or "")[:200],
+            "markdown": excerpt,
+        })
+        if remaining <= 0:
+            truncated = True
+            break
+    if truncated and status == "matched":
+        status = "insufficient"
+    state = {"status": status, "docs": docs, "web_urls": set(), "web_succeeded": False,
+             "tool_results": [f"knowledge_search:{status}"]}
+    suffix = (
+        "\nCite no more than three read Wiki paths as [[path]]. Public fallback requires an "
+        "authorized successful web tool and a retained URL."
+    )
+    prefix = "\n\n[SERVER_KNOWLEDGE_PREREAD — trusted read-only evidence]\n"
+    while True:
+        rendered = json.dumps(
+            {"retrieval_status": status, "docs": docs},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        overflow = len(prefix) + len(rendered) + len(suffix) - _KNOWLEDGE_GATE_CONTEXT_CHARS
+        if overflow <= 0 or not docs:
+            break
+        markdown = str(docs[-1].get("markdown") or "")
+        if markdown:
+            docs[-1]["markdown"] = markdown[: max(0, len(markdown) - overflow)]
+            status = state["status"] = "insufficient"
+        else:
+            docs.pop()
+            status = state["status"] = "insufficient"
+    state["tool_results"] = [f"knowledge_search:{status}"]
+    context = prefix + rendered + suffix
+    return context, state
+
+
+def _knowledge_result_succeeded(result: Any) -> bool:
+    try:
+        payload = json.loads(result) if isinstance(result, str) else result
+    except (TypeError, ValueError):
+        return False
+    return not isinstance(payload, dict) or (
+        payload.get("success", True) is not False and not payload.get("error")
+    )
+
+
+def _successful_web_result_urls(tool_name: str, result: Any) -> set[str]:
+    """Return only URLs backed by a successful structured web result."""
+    try:
+        payload = json.loads(result) if isinstance(result, str) else result
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
+        return set()
+    if isinstance(payload, dict) and "result" in payload and not any(
+        key in payload for key in ("data", "results", "url", "page_url", "current_url")
+    ):
+        nested = payload.get("result")
+        try:
+            payload = json.loads(nested) if isinstance(nested, str) else nested
+        except (TypeError, ValueError):
+            return set()
+    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
+        return set()
+    if tool_name == "web_search":
+        raw_data = payload.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
+        rows = data.get("web") or payload.get("web") or payload.get("results") or []
+        return {
+            str(row.get("url") or "").strip()
+            for row in rows
+            if isinstance(row, dict) and str(row.get("url") or "").strip() and not row.get("error")
+        }
+    if tool_name == "web_extract":
+        rows = payload.get("results") or []
+        return {
+            str(row.get("url") or "").strip()
+            for row in rows
+            if isinstance(row, dict)
+            and str(row.get("url") or "").strip()
+            and not row.get("error")
+            and bool(row.get("content") or row.get("raw_content"))
+        }
+    if tool_name == "browser_exec":
+        url = str(payload.get("url") or payload.get("page_url") or payload.get("current_url") or "").strip()
+        return {url} if url and bool(payload.get("title") or payload.get("content") or payload.get("output")) else set()
+    return set()
+
+
+def _record_knowledge_gate_tool_result(
+    tool_name: str, result: Any, function_args: Any = None
+) -> None:
+    state = getattr(_knowledge_gate_context, "value", None)
+    if not isinstance(state, dict):
+        return
+    effective_tool = tool_name
+    if tool_name == "tool_call":
+        args = function_args
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (TypeError, ValueError):
+                args = {}
+        effective_tool = str((args or {}).get("name") or "") if isinstance(args, dict) else ""
+    succeeded = _knowledge_result_succeeded(result)
+    state["tool_results"].append(f"{effective_tool or tool_name}:{'success' if succeeded else 'error'}")
+    if effective_tool not in {"web_search", "web_extract", "browser_exec"} or not succeeded:
+        return
+    urls = _successful_web_result_urls(effective_tool, result)
+    if urls:
+        state["web_succeeded"] = True
+        state["web_urls"].update(urls)
+
+
+def _finalize_knowledge_gate(answer: str, token: str, state: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    status, docs = str(state.get("status") or "error"), list(state.get("docs") or [])
+    known = {str(doc.get("path") or ""): doc for doc in docs}
+    markers = [next(part for part in match if part).removeprefix("knowledge:") for match in
+               re.findall(r"\[\[([^\]]+)\]\]|knowledge:([^\s\]\)]+)", answer or "")]
+    outside = any((item.startswith("wiki/") or item.endswith(".md")) and item not in known for item in markers)
+    cited = list(dict.fromkeys(item for item in markers if item in known))
+    for path, doc in known.items():
+        citation = str(doc.get("citation") or "")
+        if path not in cited and (path in answer or bool(citation and citation in answer)):
+            cited.append(path)
+    answer_urls = set(re.findall(r"https?://[^\s<>\]\)\"']+", answer or "", re.I))
+    web_ok = bool(state.get("web_succeeded") and answer_urls & set(state.get("web_urls") or set()))
+    if outside or len(cited) > _KNOWLEDGE_GATE_LIMIT:
+        status = "denied"
+    elif status == "matched" and not cited:
+        status = "insufficient"
+    elif cited:
+        expected = {path: str(known[path].get("version") or "") for path in cited}
+        try:
+            live = _knowledge_gateway_search(
+                token, query="live authorization barrier", sources=["tenant_knowledge"], limit=len(cited),
+                include_content=True, wiki_request={"paths": cited}, with_status=True,
+                timeout_seconds=_KNOWLEDGE_GATE_TIMEOUT,
+            )
+            if not isinstance(live, dict):
+                status = "error"
+            elif (live_status := str(live.get("retrieval_status") or "error")) != "matched":
+                status = live_status if live_status in {"denied", "error", "insufficient", "no_match"} else "error"
+            else:
+                live_docs = live.get("docs") or []
+                actual = {str(doc.get("path") or ""): str(doc.get("version") or "")
+                          for doc in live_docs}
+                if actual != expected:
+                    status = "denied"
+        except PermissionError:
+            status = "denied"
+        except Exception:
+            status = "error"
+    passed = bool(
+        (status == "matched" and cited)
+        or (status in {"no_match", "insufficient"} and web_ok)
+    )
+    receipt: dict[str, Any] = {
+        "status": status,
+        "cited_paths": cited[:3],
+        "web_fallback": web_ok,
+        "tool_results": list(state.get("tool_results") or []),
+        "web_urls": sorted(answer_urls & set(state.get("web_urls") or set()))[:3],
+    }
+    if not passed:
+        return _knowledge_gap_answer(status), receipt
+    receipt["semantic"] = "retrieved_and_cited"
+    receipt["versions"] = {path: str(known[path].get("version") or "") for path in cited}
+    visible_sources = [
+        f"{path}@{receipt['versions'][path]}" if receipt["versions"][path] else path
+        for path in cited
+    ] or receipt["web_urls"]
+    visible_receipt = (
+        "知识回执：retrieved_and_cited；来源="
+        + ", ".join(visible_sources)
+        + "；外网补证="
+        + ("是" if web_ok else "否")
+        + "。此回执仅证明读取并引用，不证明结论被证据语义蕴含。"
+    )
+    return answer.rstrip() + "\n\n" + visible_receipt, receipt
 
 
 def _inline_user_note_matches(query: str, notes: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -5748,6 +6025,7 @@ def _tenantize_created_skill(
 
 def _emit_tool_complete(stream_q: queue.Queue, tool_call_id, function_name, function_args=None, result=None) -> None:
     """工具完成事件（模块级可测）：不发 raw result（对齐 api_server 契约·防内部信息泄露）。"""
+    _record_knowledge_gate_tool_result(str(function_name or ""), result, function_args)
     if not tool_call_id or (function_name or "").startswith("_"):
         return
     _qput(stream_q, {
@@ -6569,6 +6847,7 @@ def _run_agent_sync(
     cache_keep = False
     usage_baseline: dict[str, Any] = {}
     result_usage: dict[str, Any] | None = None
+    knowledge_gate_state: dict[str, Any] | None = None
 
     execution_started = False
     original_goal = goal
@@ -6724,8 +7003,16 @@ def _run_agent_sync(
                     "可判断的 Use when 描述、至少两层 skill_path、skill_level、"
                     "trigger_phrases 和 negative_phrases。工具返回 success=true 后才可称已创建。"
                 )
+        agent_stream_q: Any = stream_q
+        if _knowledge_gate_required(
+            original_goal, agent_config, knowledge_capability, knowledge_claims
+        ):
+            preread_context, knowledge_gate_state = _perform_knowledge_preread(original_goal)
+            _knowledge_gate_context.value = knowledge_gate_state
+            goal += preread_context
+            agent_stream_q = _KnowledgeBarrierQueue(stream_q)
         agent, session_db, route_context = _build_in_process_agent(
-            goal, user_id, hermes_sid, stream_q,
+            goal, user_id, hermes_sid, agent_stream_q,
             allow_local_files=allow_local_files,
             agent_config=agent_config,
             knowledge_capability=knowledge_capability,
@@ -6882,15 +7169,20 @@ def _run_agent_sync(
                         "source_message_ids": source_ids,
                     }
                 )
-        _qput(
-            stream_q,
-            {
-                "type": "done",
-                "session_id": user_id,
-                "answer": final,
-                "usage": result_usage,
-            },
-        )
+        knowledge_receipt = None
+        if knowledge_gate_state is not None:
+            final, knowledge_receipt = _finalize_knowledge_gate(
+                str(final or ""), str(knowledge_capability or ""), knowledge_gate_state
+            )
+        done_event = {
+            "type": "done",
+            "session_id": user_id,
+            "answer": final,
+            "usage": result_usage,
+        }
+        if knowledge_receipt is not None:
+            done_event["knowledge_receipt"] = knowledge_receipt
+        _qput(stream_q, done_event)
     except Exception as e:
         print(f"[bridge] ⚠️ 进程内 agent 执行失败: {e}")
         # Completed usage survives post-processing errors. If Hermes raised
@@ -6907,6 +7199,7 @@ def _run_agent_sync(
         })
     finally:
         _knowledge_tool_context.value = None
+        _knowledge_gate_context.value = None
         _client_context_tool_context.value = None
         _sandbox_tool_context.value = None
         _skill_route_context.value = None
@@ -7454,6 +7747,7 @@ async def chat(
                     "hermes_session_id": _user_session_map.get(user_id),
                     "reasoning": [],
                     "usage": done.get("usage") or {},
+                    "knowledge_receipt": done.get("knowledge_receipt"),
                     "events": [
                         item for item in events
                         if item.get("type") in {
