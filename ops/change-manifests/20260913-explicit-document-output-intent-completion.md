@@ -43,18 +43,25 @@
 
 ## Delivery status
 
-- status: `TESTED`（用户已授权提交、推送、部署及 TestFlight 上传，交付执行中）
+- status: `VERIFIED`
 - testflight_target: `1.0.3 (38)`；Build 37 已占用，不复用。
-- commit_sha: 待创建。
-- github_remote_ref_sha: 待推送并用 `git ls-remote` 核验。
-- server_before: `/opt/releases/ai-lab-platform-0ec9b84a5242.PIKs1Y`，`.deployed-sha=0ec9b84a524288d076aac0e6831f671e14e8d883`；API `/ready` 正常；Hermes Bridge 与 chat worker active，gateway/serve inactive，Bridge `127.0.0.1:9118` 不监听（部署前既有状态）。
-- server_after: 未部署。
-- health_check: 未执行远端健康检查。
-- functional_check: 本地 API/规划/产物测试与 iOS 构建、单测通过；尚未在已部署服务和真机上验收本次新增逻辑。
-- rollback_point: 生产 `/opt/releases/ai-lab-platform-0ec9b84a5242.PIKs1Y` / `0ec9b84a524288d076aac0e6831f671e14e8d883`；任务起始 GitHub main 为 `bc791e55c543473f139bc2778744c144bf5347bf`。
+- commit_sha: `5bcb0dac4e89baf33df11ee7822ed9444d867bc9`。
+- github_remote_ref_sha: `ai-lab-platform/main@5bcb0dac4e89baf33df11ee7822ed9444d867bc9` 与 `Quantum/main@5bcb0dac4e89baf33df11ee7822ed9444d867bc9`，均已用 `git ls-remote` 核验；后者是精确 SHA 部署器的下载源。
+- server_before: 首次只读检查为 `/opt/releases/ai-lab-platform-0ec9b84a5242.PIKs1Y` / `0ec9b84a524288d076aac0e6831f671e14e8d883`；执行期间另一发布将生产推进到 `/opt/releases/ai-lab-platform-a9725bbc9e5a.x3WRsy` / `a9725bbc9e5ac7277982cf6ddd6a6291161dcf71`，本任务重新读回且确认无并发部署后才继续。
+- server_after: `/opt/releases/ai-lab-platform-5bcb0dac4e89.fZdeXk`，`.deployed-sha=5bcb0dac4e89baf33df11ee7822ed9444d867bc9`；API 与三个 worker 的镜像 ID 均为 `sha256:8bdb61ad3aa4ca5e1fcfd82a264fb4be6d4a22d1d37220d85d321f8a182070eb`，revision 与目标 SHA 一致。
+- health_check: 精确 SHA 部署器完成 additive migration、runtime contract audit、原子切换与最终检查；8/8 Compose 服务 running/healthy；API `/ready=ready/0.8.0`，Hermes Bridge `ok/v6.0`，公网 `t-react.com/health` 与 `www.t-react.com/health` 均为 `ok/0.8.0`。
+- functional_check: 本地后端 `81 passed, 1 skipped`、iOS `161 passed`；运行容器的 `WorkflowCreate` 明确暴露 `general/presentation/document` 三种 `output_kind`，未认证创建请求返回 401（非 422）；Build 38 已安装到配对 iPhone，自动启动因设备锁定被 iOS 拒绝，待解锁后补启动验收。
+- rollback_point: `/opt/ai-lab-shared/deployment-checkpoints/20260913-document-output-before-5bcb0da`，保存成功部署前 `a9725bbc9e5ac7277982cf6ddd6a6291161dcf71` release 与离线镜像证明；部署器回滚 release 为 `/opt/releases/ai-lab-platform-a9725bbc9e5a.x3WRsy`。
+
+## TestFlight receipt
+
+- Archive: `/private/tmp/Quantumn-1.0.3-38.xcarchive`，bundle `com.ailab.AIPlatformApp`，版本 `1.0.3 (38)`，签名严格校验通过。
+- Archive binary SHA-256: `1148c24509976b826b1b223df7551ca5cf4176a588a8af204fea2407e35499c2`。
+- App Store Connect: Xcode 返回 `Upload succeeded`、`Uploaded package is processing` 与 `EXPORT SUCCEEDED`；Apple 处理及测试组可见性仍需等待。
 
 ## Remaining risks / rollback
 
 - 私有源文档生成上限已从 8,000 提升到 80,000 字符并禁止静默截断；更长文件仍需后续引入可核验的分块汇总协议，上传解析入库本身不受此生成限制。
 - Chat 的显式输出识别采用受测试的保守关键词规则；未明确出现 PPT/PPTX/演示文稿或 Word/DOCX 的请求仍走普通 Hermes 对话。
-- 回滚：在未提交状态下可按本 manifest 的 changed_files 逐一恢复到 rollback point；不得影响另一 worktree 的 build 36 任务。
+- TestFlight Build 38 已被 Apple 接收但仍在 processing；尚未证明测试组可见，也尚未在解锁真机内完成业务账号的上传—解析—PPT/Word 全流程点击验收。
+- 回滚：按上述 checkpoint 恢复离线镜像证明并重新部署 `a9725bbc9e5ac7277982cf6ddd6a6291161dcf71`；不得影响另一 worktree 的历史 build 36 任务。
