@@ -19,7 +19,7 @@ from backend.services.user_note_context import (
 )
 
 MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
-MAX_PRESENTATION_SOURCE_CHARACTERS = 8_000
+MAX_PRESENTATION_SOURCE_CHARACTERS = 80_000
 SUPPORTED_DOCUMENTS = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

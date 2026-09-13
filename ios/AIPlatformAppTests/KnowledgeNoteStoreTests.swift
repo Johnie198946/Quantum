@@ -473,6 +473,19 @@ final class KnowledgeNoteStoreTests: XCTestCase {
         ))
     }
 
+    func testExplicitDocumentOutputIntentIsSeparateFromQuestions() {
+        XCTAssertEqual(
+            TenantSessionCoordinator.explicitOutputKind("帮我生成一个介绍鹿儿岛旅行攻略的ppt"),
+            "presentation"
+        )
+        XCTAssertEqual(
+            TenantSessionCoordinator.explicitOutputKind("请写一份项目复盘 Word 文档"),
+            "document"
+        )
+        XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("如何生成 PPT？"))
+        XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("帮我总结这份文档"))
+    }
+
     private func isolatedStoreAndExecutor() -> (KnowledgeNoteStore, KnowledgeActionExecutor) {
         let store = KnowledgeNoteStore()
         store.activate(tenantKey: "merge-tenant-\(UUID())", userId: "merge-user")

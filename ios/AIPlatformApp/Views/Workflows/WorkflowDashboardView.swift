@@ -299,6 +299,7 @@ private struct WorkflowCreateSheet: View {
     @State private var title = ""
     @State private var description = ""
     @State private var output = "研究报告（Markdown）"
+    @State private var outputKind = "general"
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
@@ -312,6 +313,11 @@ private struct WorkflowCreateSheet: View {
                         .lineLimit(5...10)
                 }
                 Section("交付物") {
+                    Picker("类型", selection: $outputKind) {
+                        Text("通用").tag("general")
+                        Text("演示文稿 PPTX").tag("presentation")
+                        Text("Word 文档 DOCX").tag("document")
+                    }
                     TextField("例如：带引用的 Markdown 研究报告", text: $output)
                 }
                 Section {
@@ -344,8 +350,12 @@ private struct WorkflowCreateSheet: View {
         errorMessage = nil
         Task {
             do {
+                let deliverable = outputKind == "presentation"
+                    ? "可编辑 PPTX 与渲染预览"
+                    : outputKind == "document" ? "可编辑 Word 文档 DOCX" : output
                 let created = try await APIClient.shared.createWorkflow(
-                    title: title, description: description, desiredOutput: output
+                    title: title, description: description, desiredOutput: deliverable,
+                    outputKind: outputKind
                 )
                 await onCreated(created)
             } catch {
@@ -1537,6 +1547,11 @@ private struct WorkflowExecutionView: View {
     @State private var slideNumber = 1
 
     private var isPresentation: Bool { workflow.desiredOutput.lowercased().contains("pptx") }
+    private var isDocument: Bool {
+        let output = workflow.desiredOutput.lowercased()
+        return output.contains("docx") || output.contains("word")
+    }
+    private var isStagedOutput: Bool { isPresentation || isDocument }
 
     init(workflow: WorkflowDTO, initialExecution: WorkflowExecutionDTO) {
         self.workflow = workflow
@@ -1592,6 +1607,15 @@ private struct WorkflowExecutionView: View {
     }
 
     private var visibleArtifacts: [WorkflowArtifactDTO] {
+        if isDocument {
+            if execution.status == "awaiting_approval" {
+                return artifacts.filter { $0.metadata.approvalGate == activePresentationGate }
+            }
+            if execution.status == "awaiting_review" || execution.status == "completed" {
+                return artifacts.filter { $0.extension == "docx" && $0.metadata.approvalGate == nil }
+            }
+            return artifacts
+        }
         guard isPresentation else { return artifacts }
         if execution.status == "awaiting_approval" {
             let gate = activePresentationGate
@@ -1614,32 +1638,9 @@ private struct WorkflowExecutionView: View {
             }
             ProgressView(value: Double(execution.progress), total: 100)
                 .tint(AppTheme.Colors.quantumBlue)
-            HStack {
-                Label("\(execution.tokenUsed) / \(execution.tokenBudget) tokens", systemImage: "gauge.with.dots.needle.50percent")
-                Spacer()
-                Label("\(execution.artifactCount) 个产物", systemImage: "doc.on.doc")
-            }
+            Label("\(execution.artifactCount) 个产物", systemImage: "doc.on.doc")
             .font(AppTheme.Typography.micro)
             .foregroundStyle(AppTheme.Colors.textSecondary)
-            if ["queued", "running"].contains(execution.status) {
-                Label("本次模型调用计量中；下次调用完成后刷新精确用量", systemImage: "clock.arrow.circlepath")
-                    .font(AppTheme.Typography.micro)
-                    .foregroundStyle(AppTheme.Colors.textTertiary)
-            }
-            if let model = execution.modelUsed, !model.isEmpty {
-                Label(
-                    "\(model) · \(execution.providerUsed ?? "自动路由")",
-                    systemImage: "point.3.connected.trianglepath.dotted"
-                )
-                .font(AppTheme.Typography.supporting)
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-            if let reason = execution.routeReason, !reason.isEmpty {
-                Text(reason)
-                    .font(AppTheme.Typography.micro)
-                    .foregroundStyle(AppTheme.Colors.textTertiary)
-            }
-            usageBreakdown
         }
         .padding(AppTheme.Spacing.xl)
         .background(AppTheme.Colors.surfaceTint)
@@ -1666,30 +1667,6 @@ private struct WorkflowExecutionView: View {
         }
     }
 
-    private var usageBreakdown: some View {
-        let input = execution.inputTokens ?? 0
-        let output = execution.outputTokens ?? 0
-        let reasoning = execution.reasoningTokens ?? 0
-        let cached = execution.cacheReadTokens ?? 0
-        return VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            HStack(spacing: AppTheme.Spacing.md) {
-                Text("输入 \(input)")
-                Text("输出 \(output)")
-                if reasoning > 0 { Text("推理 \(reasoning)") }
-            }
-            HStack(spacing: AppTheme.Spacing.md) {
-                Label("缓存命中 \(cached)", systemImage: "bolt.horizontal.circle")
-                Text("\(execution.apiCalls ?? 0) 次调用")
-                if let cost = execution.estimatedCostUsd, cost > 0 {
-                    Text(cost, format: .currency(code: "USD"))
-                }
-            }
-        }
-        .font(AppTheme.Typography.micro)
-        .foregroundStyle(AppTheme.Colors.textSecondary)
-        .accessibilityElement(children: .combine)
-    }
-
     private var nodeProgress: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Text("实时执行").font(AppTheme.Typography.sectionTitle)
@@ -1700,14 +1677,6 @@ private struct WorkflowExecutionView: View {
                         .frame(width: 28, height: 28)
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                         Text(node.name).font(AppTheme.Typography.cardTitle)
-                        Text("\(node.agentId) · \(node.tokenUsed) tokens")
-                            .font(AppTheme.Typography.micro)
-                            .foregroundStyle(AppTheme.Colors.textSecondary)
-                        if let model = node.modelUsed, !model.isEmpty {
-                            Text("\(model) · \(node.providerUsed ?? "自动路由") · 缓存 \(node.cacheReadTokens ?? 0)")
-                                .font(AppTheme.Typography.micro)
-                                .foregroundStyle(AppTheme.Colors.textTertiary)
-                        }
                         if let error = node.errorMessage {
                             Text(error).font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.statusError)
                         }
@@ -1725,13 +1694,13 @@ private struct WorkflowExecutionView: View {
 
     private var artifactReview: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Text(isPresentation ? presentationReviewTitle : "成果与入库素材").font(AppTheme.Typography.sectionTitle)
-            Text(isPresentation ? presentationReviewHelp : "所有内容已保存到工作流档案。勾选后批准，才会进入正式知识库。")
+            Text(isStagedOutput ? stagedReviewTitle : "成果与入库素材").font(AppTheme.Typography.sectionTitle)
+            Text(isStagedOutput ? stagedReviewHelp : "所有内容已保存到工作流档案。勾选后批准，才会进入正式知识库。")
                 .font(AppTheme.Typography.supporting)
                 .foregroundStyle(AppTheme.Colors.textSecondary)
             ForEach(visibleArtifacts) { artifact in
                 HStack(spacing: AppTheme.Spacing.md) {
-                    if !isPresentation { Button {
+                    if !isStagedOutput { Button {
                         if selectedArtifacts.contains(artifact.id) { selectedArtifacts.remove(artifact.id) }
                         else { selectedArtifacts.insert(artifact.id) }
                     } label: {
@@ -1755,11 +1724,11 @@ private struct WorkflowExecutionView: View {
                 .background(AppTheme.Colors.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
-            if isPresentation && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
-                TextField(presentationFeedbackPrompt, text: $feedback, axis: .vertical)
+            if isStagedOutput && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
+                TextField(stagedFeedbackPrompt, text: $feedback, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(presentationFeedbackPrompt)
-                if execution.status == "awaiting_review" {
+                    .accessibilityLabel(stagedFeedbackPrompt)
+                if execution.status == "awaiting_review" && isPresentation {
                     Stepper("反馈页：第 \(slideNumber) 页", value: $slideNumber, in: 1...60)
                     Text("打开全稿预览时，页码会自动同步到这里。")
                         .font(AppTheme.Typography.micro)
@@ -1767,6 +1736,25 @@ private struct WorkflowExecutionView: View {
                 }
             }
         }
+    }
+
+    private var stagedReviewTitle: String {
+        if isPresentation { return presentationReviewTitle }
+        return activePresentationGate == "outline" ? "确认 Word 文档大纲" : "确认 Word 文档全文"
+    }
+
+    private var stagedReviewHelp: String {
+        if isPresentation { return presentationReviewHelp }
+        if execution.status == "completed" { return "文档已确认，可预览、下载 DOCX 或用系统分享。" }
+        if execution.status == "awaiting_review" { return "检查完整正文；可退回修改，确认后开放 DOCX 下载与系统分享。" }
+        return activePresentationGate == "outline"
+            ? "先确认章节结构和每节要点，再生成完整 Word 文档。"
+            : "检查完整正文；可以继续退回修改。"
+    }
+
+    private var stagedFeedbackPrompt: String {
+        if isPresentation { return presentationFeedbackPrompt }
+        return activePresentationGate == "outline" ? "说明大纲要如何修改（退回时必填）" : "说明正文要如何修改（退回时必填）"
     }
 
     private var presentationReviewTitle: String {
@@ -1804,6 +1792,12 @@ private struct WorkflowExecutionView: View {
             } else if execution.status == "awaiting_review" && isPresentation {
                 Button("修改第 \(slideNumber) 页") { reviewPresentation(decision: "revise", perSlide: true) }.buttonStyle(.bordered)
                 Button("确认并下载") { reviewPresentation(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_approval" && isDocument {
+                Button("修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
+                Button(activePresentationGate == "outline" ? "确认大纲" : "确认全文") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_review" && isDocument {
+                Button("退回修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
+                Button("确认并下载") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_review" {
                 Button("退回修改") { requestRevision() }
                     .buttonStyle(.bordered)
@@ -1887,6 +1881,29 @@ private struct WorkflowExecutionView: View {
         if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errorMessage = "请填写修改意见"; return }
         perform {
             execution = try await APIClient.shared.reviewPresentationStage(executionId: execution.id, artifact: artifact, decision: decision, comment: feedback, slideNumber: perSlide ? slideNumber : nil)
+            feedback = ""
+            if decision == "approve" && execution.status == "completed" { selectedArtifact = artifact }
+            else { await monitor() }
+        }
+    }
+    private func reviewStagedOutput(decision: String) {
+        guard let artifact = artifacts.last(where: { item in
+            if execution.status == "awaiting_approval" {
+                return item.metadata.approvalGate == activePresentationGate
+            }
+            return item.extension == "docx"
+        }) else { errorMessage = "待确认成果尚未同步"; return }
+        if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            errorMessage = "请填写修改意见"
+            return
+        }
+        perform {
+            execution = try await APIClient.shared.reviewPresentationStage(
+                executionId: execution.id,
+                artifact: artifact,
+                decision: decision,
+                comment: feedback
+            )
             feedback = ""
             if decision == "approve" && execution.status == "completed" { selectedArtifact = artifact }
             else { await monitor() }
@@ -1979,6 +1996,18 @@ private struct WorkflowArtifactPreview: View {
                         let pdf = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
                         guard let document = PDFDocument(data: pdf) else { throw APIError.decoding("预览不是有效 PDF") }; pdfDocument = document
                     } else {
+                        if artifact.extension == "docx" {
+                            let document = try await APIClient.shared.downloadAuthenticated(
+                                path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download",
+                                expectedHash: artifact.contentHash
+                            )
+                            downloadURL = try InboxFileManager.shared.storePrivateFile(
+                                document,
+                                sourceId: artifact.id,
+                                revision: artifact.metadata.artifactVersion ?? 1,
+                                filename: "\(artifact.title).docx"
+                            )
+                        }
                         content = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: artifact.id).content
                     }
                 } catch { errorMessage = error.localizedDescription }

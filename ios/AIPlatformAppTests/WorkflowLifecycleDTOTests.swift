@@ -1555,7 +1555,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                   "agent_id":"supervision","instruction":"检查方案",
                   "output_format":"Markdown","knowledge_scope":["wiki"],
                   "allow_network":true,"requires_review":true,
-                  "max_tokens":1500,"revision_note":"复核"
+                  "max_tokens":1500,"revision_note":"复核",
+                  "scenario_id":"presentation-generation",
+                  "scenario_version":"2.0.0","approval_gate":"outline"
                 }
               }]
             }
@@ -1566,6 +1568,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(dsl.planId, "wfp_nested")
         XCTAssertEqual(dsl.nodes.first?.nodeType, "FILTER_PASS")
         XCTAssertEqual(dsl.nodes.first?.parameters.agentId, "supervision")
+        XCTAssertEqual(dsl.nodes.first?.parameters.scenarioId, "presentation-generation")
+        XCTAssertEqual(dsl.nodes.first?.parameters.scenarioVersion, "2.0.0")
+        XCTAssertEqual(dsl.nodes.first?.parameters.approvalGate, "outline")
         XCTAssertEqual(dsl.nodes.first?.parameters.outputFormat, "Markdown")
         XCTAssertEqual(dsl.nodes.first?.parameters.knowledgeScope, ["wiki"])
         XCTAssertEqual(dsl.nodes.first?.parameters.allowNetwork, true)
@@ -1580,6 +1585,24 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(first["node_type"] as? String, "FILTER_PASS")
         let parameters = try XCTUnwrap(first["parameters"] as? [String: Any])
         XCTAssertEqual(parameters["agent_id"] as? String, "supervision")
+        XCTAssertEqual(parameters["scenario_id"] as? String, "presentation-generation")
+        XCTAssertEqual(parameters["scenario_version"] as? String, "2.0.0")
+        XCTAssertEqual(parameters["approval_gate"] as? String, "outline")
+    }
+
+    func testWorkflowCreateEncodesExplicitOutputKind() throws {
+        let request = WorkflowCreateRequestDTO(
+            title: "鹿儿岛旅行攻略",
+            description: "帮我生成一个介绍鹿儿岛旅行攻略的 PPT",
+            desiredOutput: "可编辑 PPTX",
+            sourceDocumentId: nil,
+            outputKind: "presentation"
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+        XCTAssertEqual(object["output_kind"] as? String, "presentation")
+        XCTAssertNil(object["source_document_id"])
     }
 
     func testActivePlanningActivityDecodesStructuredPluginStep() throws {

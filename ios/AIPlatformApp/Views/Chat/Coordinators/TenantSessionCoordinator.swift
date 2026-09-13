@@ -901,6 +901,11 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("最多排队 3 条，请等待")
             return
         }
+        let requestedOutputKind = Self.explicitOutputKind(text)
+        if requestedOutputKind != nil && isGenerating {
+            showToast("当前回答完成后再创建文档任务")
+            return
+        }
 
         // Hermes SessionDB is the sole conversation runtime. Attach auxiliary
         // client context only for recovery, explicit local notes, or a knowledge
@@ -946,6 +951,18 @@ public final class TenantSessionCoordinator: ObservableObject {
         messages.append(userMessage)
         inputText = ""
         quotedContext = nil
+        if let outputKind = requestedOutputKind {
+            commitSession()
+            let refersToUpload = ["这份文档", "这个文件", "该文件", "附件", "上传的", "刚才的文档"]
+                .contains(where: text.contains)
+            let sourceId = refersToUpload ? latestReadyDocumentSourceId() : nil
+            createOutputWorkflowFromChat(
+                text: text,
+                outputKind: outputKind,
+                sourceDocumentId: sourceId
+            )
+            return
+        }
         if isGenerating && !regenerate {
             // Queued messages do not have a Run identity yet; persist them through
             // the normal ordered writer until the queue starts execution.
@@ -1146,6 +1163,79 @@ public final class TenantSessionCoordinator: ObservableObject {
         let hasMutation = ["保存", "写入", "创建", "新建", "修改", "更新", "重命名", "标签", "置顶", "合并", "归档", "恢复", "删除", "save", "create", "update", "merge", "archive", "restore", "delete"]
             .contains(where: value.contains)
         return hasKnowledgeObject && hasMutation
+    }
+
+    static func explicitOutputKind(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let isQuestion = ["如何", "怎么", "教程", "解释", "what is", "how to"]
+            .contains(where: value.contains)
+        guard !isQuestion,
+              ["帮我", "请", "生成", "制作", "做一份", "写一份", "create", "make"]
+                .contains(where: value.contains) else { return nil }
+        if ["ppt", "pptx", "演示文稿", "幻灯片"].contains(where: value.contains) {
+            return "presentation"
+        }
+        if ["word", "docx", "word文档", "word 文档"].contains(where: value.contains) {
+            return "document"
+        }
+        return nil
+    }
+
+    private func latestReadyDocumentSourceId() -> String? {
+        for message in messages.reversed() {
+            for block in message.blocks.reversed() {
+                if case .attachment(let attachment) = block,
+                   let sourceId = attachment.sourceId {
+                    return sourceId
+                }
+            }
+        }
+        return nil
+    }
+
+    private func createOutputWorkflowFromChat(
+        text: String,
+        outputKind: String,
+        sourceDocumentId: String?
+    ) {
+        isGenerating = true
+        let outputName = outputKind == "presentation" ? "PPTX" : "Word 文档"
+        let pending = ChatMessage(
+            role: .assistant,
+            content: "正在创建 \(outputName) 任务…",
+            pending: true
+        )
+        messages.append(pending)
+        commitSession()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishGeneration() }
+            do {
+                let created = try await APIClient.shared.createWorkflow(
+                    title: String(text.prefix(48)),
+                    description: text,
+                    desiredOutput: outputKind == "presentation"
+                        ? "可编辑 PPTX 与渲染预览"
+                        : "可编辑 Word 文档 DOCX",
+                    sourceDocumentId: sourceDocumentId,
+                    outputKind: outputKind
+                )
+                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
+                    self.messages[index].content = "已创建 \(outputName) 任务。接下来会先确认用途、结构和内容要求，再生成大纲与成品；文件和知识库只在你明确提供或选择时作为素材。"
+                    self.messages[index].pending = false
+                }
+                WorkflowActivityCoordinator.shared.track(created.workflow)
+                self.appState?.pendingWorkflowId = created.workflow.id
+                self.commitSession()
+            } catch {
+                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
+                    self.messages[index].content = "\(outputName) 任务创建失败：\(error.localizedDescription)"
+                    self.messages[index].pending = false
+                    self.messages[index].degraded = true
+                }
+                self.commitSession()
+            }
+        }
     }
 
     static func shouldAttachClientSessionContext(
@@ -3238,22 +3328,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                 let receipt = try await APIClient.shared.uploadDocument(data: data, filename: name, contentType: mime)
                 updateAttachment(messageId: msg.id, attachmentId: attachment.id, receipt: receipt)
                 guard receipt.status == "ready" else { return }
-                do {
-                    let workflow = try await APIClient.shared.createWorkflow(
-                        title: "\(name) 演示文稿",
-                        description: "将已上传私有文档《\(name)》转换为结构清晰、可编辑且可逐页修订的演示文稿。先确认受众、用途、篇幅和视觉方向，再分析文档，确认逐页大纲与带真实内容的代表页，最后生成完整 PPTX 并逐页验收。",
-                        desiredOutput: "可编辑 PPTX 与同源渲染预览",
-                        sourceDocumentId: receipt.sourceId
-                    )
-                    messages.append(ChatMessage(role: .assistant, content: "原件已安全保存，私有笔记已生成，知识编译正在后台进行。PPT 工作流已创建（\(workflow.workflow.id)）：需求确认、文档分析、逐页大纲、代表页设计、全稿验收。每个确认阶段都可以反复退回修改。"))
-                    WorkflowActivityCoordinator.shared.track(workflow.workflow)
-                    appState?.pendingWorkflowId = workflow.workflow.id
-                    commitSession()
-                    await KnowledgeNoteStore.shared.restoreFromCloud()
-                    await monitorDocumentCompilation(messageId: msg.id, attachmentId: attachment.id, sourceId: receipt.sourceId)
-                } catch {
-                    updateAttachmentFailure(messageId: msg.id, attachmentId: attachment.id, message: "原件已保存，但演示工作流未创建：\(error.localizedDescription)", state: .ready)
-                }
+                await KnowledgeNoteStore.shared.restoreFromCloud()
+                await monitorDocumentCompilation(messageId: msg.id, attachmentId: attachment.id, sourceId: receipt.sourceId)
             } catch {
                 updateAttachmentFailure(messageId: msg.id, attachmentId: attachment.id, message: error.localizedDescription)
             }

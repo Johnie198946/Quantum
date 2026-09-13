@@ -256,6 +256,7 @@ WATERMARK_FILE = Path(
     )
 )
 MAX_INPUT = 12000
+MAX_DOCUMENT_WORKFLOW_INPUT = 96_000
 ALLOWED_CHAT_SKILLS = {"solution-consultant-persona"}
 DEFAULT_TIMEOUT = 300
 SERVE_TIMEOUT = 300
@@ -716,8 +717,8 @@ class WorkflowRunRequest(BaseModel):
         if set(value) - allowed or not re.fullmatch(r"doc_[a-f0-9]{32}", str(value.get("source_id") or "")) or not re.fullmatch(r"[a-f0-9]{64}", str(value.get("content_hash") or "")):
             raise ValueError("invalid private source document")
         text = str(value.get("text") or "")
-        if not text or len(text) > 8_000:
-            raise ValueError("private source document text exceeds 8000 characters; truncation is forbidden")
+        if not text or len(text) > 80_000:
+            raise ValueError("private source document text exceeds 80000 characters; truncation is forbidden")
         return {key: value[key] for key in allowed if key in value}
 
 
@@ -3460,7 +3461,9 @@ def _bind_approved_presentation_inputs(
 def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     params = node.get("parameters") or {}
     artifact_contract = _workflow_artifact_contract(node)
-    presentation_output = str(params.get("output_format") or "").startswith("presentation")
+    output_format = str(params.get("output_format") or "").lower()
+    presentation_output = output_format.startswith("presentation")
+    document_output = output_format in {"word", "docx", "word 文档", "word文档"}
     completed = []
     current_id = str(node.get("id") or "")
     revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
@@ -3475,9 +3478,9 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 5000 if str((node.get("parameters") or {}).get("output_format") or "").startswith("presentation") else 1800
+            upstream_limit = 5000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
-            if presentation_output:
+            if presentation_output or document_output:
                 if len(output) > upstream_limit:
                     raise RuntimeError(f"上游成果 {node_id} 超过 {upstream_limit} 字符；禁止静默截断")
             completed.append(f"- {candidate.get('name') or node_id}: {output[:upstream_limit]}")
@@ -3485,7 +3488,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     node_budget = max(
         256, int((node.get("parameters") or {}).get("max_tokens") or 2048)
     )
-    output_char_limit = max(600, min(8000 if presentation_output else 2200, node_budget // 2))
+    output_char_limit = max(600, min(8000 if presentation_output or document_output else 2200, node_budget // 2))
     tool_rule = (
         "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
         "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
@@ -3495,14 +3498,17 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     upstream = chr(10).join(completed) if completed else "无直接依赖或上游暂无成果"
     source = run.get("source_document") or {}
     source_text = str(source.get("text") or "")
+    plan_node_ids = {
+        str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []
+    }
     source_node_id = (
-        "presentation_analysis"
-        if any(str(item.get("id") or "") == "presentation_analysis" for item in run.get("plan", {}).get("nodes") or [])
+        "presentation_analysis" if "presentation_analysis" in plan_node_ids
+        else "document_analysis" if "document_analysis" in plan_node_ids
         else "presentation_outline"
     )
     if source_text and current_id == source_node_id:
-        if len(source_text) > 8_000:
-            raise RuntimeError("私有源文档超过 8000 字符；当前演示工作流禁止静默截断")
+        if len(source_text) > 80_000:
+            raise RuntimeError("私有源文档超过 80000 字符；文档生成工作流禁止静默截断")
         upstream += f"\n\n私有源文档（{source.get('filename', 'document')}，共 {len(source_text)} 字符）：\n{source_text}"
     agent_config = run.get("agent_config") or {}
     composition = agent_config.get("composition") or {}
@@ -3540,9 +3546,10 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         "只输出当前节点可落盘的完整成果，不要输出运行状态说明。\n"
         f"上游上下文：\n{upstream}"
     )
-    if presentation_output and len(prompt) > MAX_INPUT:
-        raise RuntimeError(f"演示工作流输入为 {len(prompt)} 字符，超过 {MAX_INPUT} 字符上限；禁止静默截断")
-    return prompt[:MAX_INPUT]
+    input_limit = MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else MAX_INPUT
+    if (presentation_output or document_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
+        raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
+    return prompt[:input_limit]
 
 
 def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:

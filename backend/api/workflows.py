@@ -151,6 +151,7 @@ class WorkflowCreate(BaseModel):
     showroom_session_id: str | None = Field(None, min_length=1, max_length=120)
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
+    output_kind: Literal["general", "presentation", "document"] = "general"
 
 
 class ClarificationResponse(BaseModel):
@@ -519,10 +520,31 @@ PRESENTATION_CLARIFICATION_STEPS: tuple[dict[str, Any], ...] = (
     },
 )
 
+DOCUMENT_CLARIFICATION_STEPS: tuple[dict[str, Any], ...] = (
+    {
+        "dimension": "用途与读者",
+        "question": "这份 Word 文档给谁使用，主要解决什么问题？",
+        "choices": ["正式提交或汇报", "内部协作与沉淀", "对外说明或交付"],
+    },
+    {
+        "dimension": "结构与篇幅",
+        "question": "希望采用什么结构和篇幅？",
+        "choices": ["精简短文，直接给结论", "标准报告，完整展开", "长文档，保留详细论证"],
+    },
+    {
+        "dimension": "风格与验收",
+        "question": "希望采用什么表达风格，最终如何验收？",
+        "choices": ["正式专业，确认大纲与全文", "清晰易读，重点检查结构", "信息密集，重点检查事实与引用"],
+    },
+)
+
 
 def _clarification_steps(workflow: WorkflowDefinition | None) -> tuple[dict[str, Any], ...]:
-    if workflow and (workflow.requirements_snapshot or {}).get("scenario_id") == "document-to-presentation":
+    scenario = (workflow.requirements_snapshot or {}).get("scenario_id") if workflow else None
+    if scenario in {"presentation-generation", "document-to-presentation"}:
         return PRESENTATION_CLARIFICATION_STEPS
+    if scenario == "document-generation":
+        return DOCUMENT_CLARIFICATION_STEPS
     return CLARIFICATION_STEPS
 
 
@@ -607,8 +629,10 @@ def requirement_confirmation_payload(
     return {
         "question": "请确认需求单：\n" + "\n".join(details),
         "choices": [
-            "确认，开始分析文档"
+            "确认，开始生成演示文稿"
             if steps is PRESENTATION_CLARIFICATION_STEPS
+            else "确认，开始生成 Word 文档"
+            if steps is DOCUMENT_CLARIFICATION_STEPS
             else "确认，进入方案设计",
             "需要修改",
         ],
@@ -684,18 +708,23 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
     async with SessionLocal() as db:
         description = body.description.strip()
         requirements_snapshot: dict[str, Any] = {
-            "clarification_mode": body.clarification_mode
+            "clarification_mode": body.clarification_mode,
+            "output_kind": body.output_kind,
         }
+        if body.output_kind == "presentation":
+            requirements_snapshot["scenario_id"] = "presentation-generation"
+        elif body.output_kind == "document":
+            requirements_snapshot["scenario_id"] = "document-generation"
         if body.source_document_id:
             try:
                 source = read_document_receipt(tenant(), current_user(payload), body.source_document_id)
             except DocumentSourceError as exc:
                 raise HTTPException(status_code=404, detail={"code": exc.code, "message": str(exc)}) from exc
             if source.get("status") != "ready":
-                raise HTTPException(status_code=409, detail={"code": "document_text_unavailable", "message": "源文档尚不可用于生成演示文稿"})
+                raise HTTPException(status_code=409, detail={"code": "document_text_unavailable", "message": "源文档尚未解析完成"})
             if int(source.get("extracted_characters") or 0) > MAX_PRESENTATION_SOURCE_CHARACTERS:
                 raise HTTPException(status_code=422, detail={
-                    "code": "presentation_source_too_long",
+                    "code": "document_source_too_long",
                     "message": f"源文档提取文本超过 {MAX_PRESENTATION_SOURCE_CHARACTERS} 字符，当前版本不会静默截断，请缩短文档后重试",
                 })
             text, _ = document_text(tenant(), current_user(payload), body.source_document_id)
@@ -703,7 +732,6 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
                 line.strip() for line in text.splitlines() if line.strip()
             )[:500]
             requirements_snapshot.update({
-                "scenario_id": "document-to-presentation",
                 "source_document": {key: source[key] for key in ("source_id", "source_revision", "content_hash", "filename", "content_type")},
                 "source_document_evidence": evidence or "文档未包含可展示的非空文本行",
             })
@@ -1006,7 +1034,7 @@ async def respond_to_clarification(
                 prior_snapshot = workflow.requirements_snapshot or {}
                 source_context = {
                     key: prior_snapshot[key]
-                    for key in ("showroom_context", "customer_demand", "scenario_id", "source_document", "source_document_evidence")
+                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence")
                     if prior_snapshot.get(key)
                 }
                 workflow.requirements_snapshot = {**spec, **source_context}
