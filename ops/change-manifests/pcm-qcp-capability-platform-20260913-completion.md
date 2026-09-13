@@ -1,17 +1,17 @@
 # PCM/QCP capability platform completion
 
 - task_id: `pcm-qcp-capability-platform-20260913`
-- status: `TESTED`
+- status: `VERIFIED`
 - branch: `main`
 - worktree: `/Users/dengzhaoyu/Projects/ai-lab-platform-ios-document-ppt-final-20260912`
-- head/local_commit: `5bcb0dac4e89baf33df11ee7822ed9444d867bc9` (uncommitted task changes)
-- remote_sha: local `origin/main` tracking ref is `5bcb0dac4e89baf33df11ee7822ed9444d867bc9`; not freshly fetched because this review explicitly prohibited fetch
-- server_before: not applicable
-- server_after: not applicable
-- health_check: not run; no deployment requested
-- functional_check: final relevant backend suite passed 117 tests with 1 environment-dependent PPTX preview skip; generic iOS build-for-testing passed; requested simulator suites passed 163 tests and the adjacent QCP regression suite passed 9 tests
-- rollback_point: repository HEAD `5bcb0dac4e89baf33df11ee7822ed9444d867bc9`; discard only the uncommitted files/edits listed below
-- deployment/release: not performed or claimed
+- head/local_commit: implementation commit `e787d2c13da29a54300da7a1391b74d0ece0b546`
+- remote_sha: `e787d2c13da29a54300da7a1391b74d0ece0b546`, verified with `git ls-remote origin refs/heads/main` before deployment
+- server_before: `/opt/releases/ai-lab-platform-5bcb0dac4e89.fZdeXk`, `.deployed-sha=5bcb0dac4e89baf33df11ee7822ed9444d867bc9`
+- server_after: `/opt/releases/ai-lab-platform-e787d2c13da2.LafdiJ`, `.deployed-sha=e787d2c13da29a54300da7a1391b74d0ece0b546`
+- health_check: deployment script passed additive migration, runtime contract audit, atomic switch and final checks; API ready, Hermes Bridge `ok/v6.0`, public `/health` ok, and 8/8 Compose services running/healthy
+- functional_check: final backend suite passed 132 tests; simulator suites passed 163 tests; deployed catalog loaded 15 capabilities with digest `2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff`; unauthenticated search returned 401; all three Bridge tool registrations are present
+- rollback_point: `/opt/ai-lab-shared/deployment-checkpoints/pcm-qcp-e787d2c13da29a54300da7a1391b74d0ece0b546`; deployment rollback release `/opt/releases/ai-lab-platform-5bcb0dac4e89.fZdeXk`
+- deployment/release: GitHub push and exact-SHA production deployment completed; TestFlight 1.0.3 (39) archive passed, but upload was blocked by missing Xcode account credentials (`Failed to Use Accounts`)
 
 ## Delivered
 
@@ -80,5 +80,4 @@
 - Structured artifact consumption is contractually described and content-hash receipted, but remains `partial`: there is no general downstream structured-artifact consumer that emits a durable consumption receipt.
 - FastAPI reports existing `on_event` deprecation warnings; replacing the Bridge lifecycle style was outside this security fix.
 - The passing iOS run still emitted existing SQLite test-cleanup `vnode unlinked while in use` diagnostics and AppIntents metadata-skip warnings; neither produced a test/build failure.
-- The existing local `origin/main` tracking ref matches HEAD but was not freshly verified because fetch was explicitly prohibited.
-- No commit, push, release, deployment, or external Hermes installation change was performed.
+- The deployed iOS source was archived as TestFlight `1.0.3 (39)` with executable SHA-256 `2d5621d6debc810e783efd46ba0205bd5ae060d97d7ac963f54a6a67b3c010b4`; strict code-sign verification passed. Upload did not occur because Xcode has no usable App Store Connect account credential in the current keychain (`Failed to Use Accounts`).
