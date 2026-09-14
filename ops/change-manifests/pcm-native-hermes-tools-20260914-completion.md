@@ -26,9 +26,8 @@ The existing authenticated API search/describe endpoints remain available for ad
 
 - Real Hermes Registry assembly: `registered_count=16`, `expected_count=16`, `missing=[]`; no `app_capability_search`, `app_capability_describe` or `app_capability_invoke` tool was exposed. The generated `app_presentation_create_from_document` definition carried the exact Registry input schema.
 - Python focused and adjacent regression suites: `206 passed`, `0 failed`.
-- Additional broader workflow/chat/artifact suite from the same change pass: `246 passed`, `0 failed`.
-- iOS Simulator `WorkflowLifecycleDTOTests`: `141 passed`, `0 failed`; result bundle `/tmp/pcm-native-tools-workflow.xcresult`.
 - iOS Simulator `KnowledgeNoteStoreTests`: `23 passed`, `0 failed`.
+- iOS Simulator `WorkflowLifecycleDTOTests`: result remains unverified. Both attempts were interrupted by orphan recovery, so no pass count is claimed.
 - `python3 scripts/generate_product_capability_manual.py --check`: PASS.
 - `python3 -m compileall -q backend scripts/hermes_bridge.py scripts/generate_product_capability_manual.py`: PASS.
 - Ruff and `git diff --check`: PASS.
