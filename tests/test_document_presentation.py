@@ -635,6 +635,9 @@ def test_bridge_normalizes_outline_style_points_for_renderable_slides():
             {"layout": "process", "title": "steps", "steps": ["one", "two"]},
             {"layout": "two_column", "title": "governance", "left_title": "data", "left_points": ["private"], "right_title": "flow", "right_points": ["approve"]},
             {"layout": "two_column", "title": "nested", "left": {"heading": "data", "points": ["private"]}, "right": {"heading": "flow", "points": ["approve"]}},
+            {"layout": "two_column", "title": "empty columns", "subtitle": "preserve subtitle"},
+            {"layout": "chart", "title": "no verified data"},
+            {"layout": "table", "title": "fallback points", "key_points": ["one", "two"]},
         ],
     })))
     assert normalized["slides"][0] == {"layout": "title", "title": "cover", "subtitle": "brief"}
@@ -652,6 +655,9 @@ def test_bridge_normalizes_outline_style_points_for_renderable_slides():
     assert normalized["slides"][6]["left"] == ["data", "private"]
     assert normalized["slides"][6]["right"] == ["flow", "approve"]
     assert "steps" not in normalized["slides"][4]
+    assert normalized["slides"][7] == {"layout": "title", "title": "empty columns", "subtitle": "preserve subtitle"}
+    assert normalized["slides"][8] == {"layout": "section", "title": "no verified data"}
+    assert normalized["slides"][9] == {"layout": "bullets", "title": "fallback points", "bullets": ["one", "two"]}
     build_pptx(json.dumps(normalized))
 
 

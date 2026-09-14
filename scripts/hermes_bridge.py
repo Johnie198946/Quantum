@@ -3632,6 +3632,49 @@ def _normalize_presentation_reply(reply: str) -> str:
                             slide[side] = ([str(nested_heading)] if nested_heading else []) + nested_points
             if layout in {"bullets", "conclusion"} and "bullets" not in slide and "key_points" in slide:
                 slide["bullets"] = slide.pop("key_points")
+
+            invalid_structured_layout = False
+            if layout == "two_column":
+                invalid_structured_layout = not any(
+                    isinstance(slide.get(side), list) and slide.get(side)
+                    for side in ("left", "right")
+                )
+            elif layout == "table":
+                headers, rows = slide.get("headers"), slide.get("rows")
+                invalid_structured_layout = not (
+                    isinstance(headers, list)
+                    and headers
+                    and isinstance(rows, list)
+                    and rows
+                    and all(isinstance(row, list) and len(row) == len(headers) for row in rows)
+                )
+            elif layout == "chart":
+                categories, series = slide.get("categories"), slide.get("series")
+                invalid_structured_layout = not (
+                    isinstance(categories, list)
+                    and categories
+                    and isinstance(series, list)
+                    and 1 <= len(series) <= 6
+                    and all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("values"), list)
+                        and len(item["values"]) == len(categories)
+                        for item in series
+                    )
+                )
+            if invalid_structured_layout:
+                points = slide.get("bullets") or slide.get("key_points")
+                if isinstance(points, list) and points:
+                    slide["layout"] = "bullets"
+                    slide["bullets"] = points
+                    layout = "bullets"
+                elif slide.get("subtitle"):
+                    slide["layout"] = "title"
+                    layout = "title"
+                else:
+                    slide["layout"] = "section"
+                    layout = "section"
+
             allowed = layout_fields.get(layout)
             if allowed is not None:
                 for key in tuple(slide):
