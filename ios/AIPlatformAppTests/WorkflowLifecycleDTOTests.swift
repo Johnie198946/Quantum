@@ -1722,6 +1722,21 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(response.feedbackReceipt?.revocable == true)
     }
 
+    func testDocumentCapabilityProposalAndRendererRouteDecode() throws {
+        let data = Data(#"{"proposal_id":"proposal-doc","capability_id":"paper.academic.create_from_text","input":{"title":"Evidence paper","text_material":"Verified evidence","thesis":"Evidence supports the claim","language":"en","citation_style":"apa7","review_mode":"outline_content_final"},"summary":"Create paper","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        let decoder = JSONDecoder()
+        let proposal = try decoder.decode(CapabilityProposalBlock.self, from: data)
+
+        XCTAssertEqual(proposal.capabilityId, QCPCapabilityID.academicPaperCreateFromText)
+        XCTAssertEqual(proposal.input.textMaterial, "Verified evidence")
+        XCTAssertEqual(proposal.input.thesis, "Evidence supports the claim")
+        XCTAssertEqual(proposal.input.citationStyle, "apa7")
+        XCTAssertEqual(
+            RendererRegistry.route(for: "document.created", version: 1),
+            .workflow
+        )
+    }
+
     @MainActor
     func testNonStreamingChatDecodesAndDispatchesQCPEvents() throws {
         let data = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"proposal-1","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"创建工作流","risk":"medium","state":"awaiting_confirmation"}},{"type":"artifact.consumed","version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}}]}"#.utf8)
@@ -4965,5 +4980,27 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
                 over: "building_agent"
             )
         )
+    }
+
+    @MainActor
+    func testWorkflowActivityOwnerSwitchClearsPreviousUsersProjection() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-user-a","title":"Private A","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        coordinator.track(workflow)
+        XCTAssertEqual(coordinator.workflows[workflow.id], workflow)
+
+        coordinator.activate(tenantKey: "tenant-b", userId: "user-b")
+
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.executions.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
+        XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+        coordinator.deactivate()
+        coordinator.track(workflow)
+        XCTAssertTrue(coordinator.workflows.isEmpty)
     }
 }

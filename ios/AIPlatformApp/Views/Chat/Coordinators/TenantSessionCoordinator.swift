@@ -3476,6 +3476,27 @@ public final class TenantSessionCoordinator: ObservableObject {
                     else { throw APIError.network(response.error?.message ?? "能力调用失败") }
                     completedWorkflow = created.workflow
                     pendingWorkflowId = created.workflow.id
+                case QCPCapabilityID.documentWordCreateFromText,
+                     QCPCapabilityID.researchReportCreateFromText,
+                     QCPCapabilityID.academicPaperCreateFromText:
+                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
+                        proposal.capabilityId,
+                        input: DocumentCreateFromTextRequestDTO(
+                            title: proposal.input.title ?? "",
+                            textMaterial: proposal.input.textMaterial ?? "",
+                            researchQuestion: proposal.input.researchQuestion,
+                            thesis: proposal.input.thesis,
+                            audience: proposal.input.audience,
+                            language: proposal.input.language,
+                            citationStyle: proposal.input.citationStyle,
+                            evidencePolicy: proposal.input.evidencePolicy,
+                            clarificationStrategy: proposal.input.clarificationStrategy
+                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
+                    )
+                    guard response.status == "completed", let created = response.events.first?.payload
+                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+                    completedWorkflow = created.workflow
+                    pendingWorkflowId = created.workflow.id
                 case QCPCapabilityID.workflowStart:
                     let response: QCPInvokeResponseDTO<WorkflowExecutionDTO> = try await capabilityClient.invoke(
                         proposal.capabilityId,

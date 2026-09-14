@@ -17,6 +17,8 @@ events:
     version: 1
   - id: presentation.created
     version: 1
+  - id: document.created
+    version: 1
   - id: artifact.content
     version: 1
   - id: artifact.download_ready

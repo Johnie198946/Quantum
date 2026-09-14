@@ -311,6 +311,122 @@ capabilities:
       return: {preview: authenticated_artifact_reference, download: authenticated_artifact_download_reference}
     tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
     implementation_status: implemented
+  - id: document.word.create_from_text
+    version: 1.0.0
+    domain: document
+    description: Create a governed editable Word document from user-provided text.
+    positive_examples: ["Turn these notes into an editable Word document"]
+    negative_examples: ["Create a research report with formal citations"]
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        text_material: {type: string, minLength: 3, maxLength: 32000}
+        audience: {type: string, minLength: 1, maxLength: 300, default: professional_reader}
+        language: {type: string, enum: [zh-CN, en-US], default: zh-CN}
+        citation_style: {type: string, enum: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], default: none}
+        evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
+        clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
+      required: [title, text_material]
+      additionalProperties: false
+    output_schema: {type: object, required: [workflow, clarification_session, delivery]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: document.word.create_from_text
+    idempotency: required
+    receipt: required
+    result_event: document.created
+    renderer: workflow
+    renderer_version: 1
+    workflow_contract:
+      format: {extension: docx, mime_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document}
+      required_sections: [governed_heading_hierarchy, editable_body]
+      citations: {supported: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], fabricated_sources: forbidden}
+      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
+      delivery: {version: required, content_hash: required, download: authenticated}
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    implementation_status: implemented
+  - id: report.research.create_from_text
+    version: 1.0.0
+    domain: report
+    description: Create a governed research report with explicit evidence and citation requirements.
+    positive_examples: ["Write a cited market research report from these materials"]
+    negative_examples: ["Format these notes as a generic Word memo"]
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        text_material: {type: string, minLength: 3, maxLength: 32000}
+        research_question: {type: string, minLength: 3, maxLength: 500}
+        audience: {type: string, minLength: 1, maxLength: 300, default: decision_maker}
+        language: {type: string, enum: [zh-CN, en-US], default: zh-CN}
+        citation_style: {type: string, enum: [apa7, chicago_author_date, gbt7714, footnotes], default: apa7}
+        evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
+        clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
+      required: [title, text_material, research_question]
+      additionalProperties: false
+    output_schema: {type: object, required: [workflow, clarification_session, delivery]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: report.research.create_from_text
+    idempotency: required
+    receipt: required
+    result_event: document.created
+    renderer: workflow
+    renderer_version: 1
+    workflow_contract:
+      format: {extension: docx, mime_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document}
+      required_sections: [research_question, method, evidence, analysis, findings, limitations, recommendations, references]
+      citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
+      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
+      delivery: {version: required, content_hash: required, download: authenticated}
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    implementation_status: implemented
+  - id: paper.academic.create_from_text
+    version: 1.0.0
+    domain: paper
+    description: Create a governed academic paper with a declared thesis, structure and citation style.
+    positive_examples: ["Draft an APA 7 academic paper from these verified sources"]
+    negative_examples: ["Create an uncited business research summary"]
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        text_material: {type: string, minLength: 3, maxLength: 32000}
+        thesis: {type: string, minLength: 3, maxLength: 500}
+        audience: {type: string, minLength: 1, maxLength: 300, default: academic_reader}
+        language: {type: string, enum: [zh-CN, en-US], default: zh-CN}
+        citation_style: {type: string, enum: [apa7, mla9, chicago_author_date, gbt7714], default: apa7}
+        evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
+        clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
+      required: [title, text_material, thesis]
+      additionalProperties: false
+    output_schema: {type: object, required: [workflow, clarification_session, delivery]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: paper.academic.create_from_text
+    idempotency: required
+    receipt: required
+    result_event: document.created
+    renderer: workflow
+    renderer_version: 1
+    workflow_contract:
+      format: {extension: docx, mime_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document}
+      required_sections: [abstract, keywords, introduction, method, results, discussion, conclusion, references]
+      citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
+      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
+      delivery: {version: required, content_hash: required, download: authenticated}
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    implementation_status: implemented
   - id: artifact.open
     version: 1.0.0
     domain: artifact

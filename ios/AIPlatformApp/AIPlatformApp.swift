@@ -165,7 +165,17 @@ public struct AppRootCoordinatorView: View {
         .task(id: appState.isLoggedIn) {
             if appState.isLoggedIn {
                 await restorePersistedSession()
-                if appState.isLoggedIn { await workflowActivities.bootstrap() }
+                if appState.isLoggedIn,
+                   !appState.currentTenantKey.isEmpty,
+                   !appState.currentUserId.isEmpty {
+                    workflowActivities.activate(
+                        tenantKey: appState.currentTenantKey,
+                        userId: appState.currentUserId
+                    )
+                    await workflowActivities.bootstrap()
+                }
+            } else {
+                workflowActivities.deactivate()
             }
         }
         .onChange(of: scenePhase) { _, phase in

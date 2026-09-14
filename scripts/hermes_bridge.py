@@ -26,6 +26,7 @@ v4.1 (2026-08-10·Supervision 批复返工):
 """
 import ast
 import asyncio
+import base64
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 import contextvars
@@ -3667,11 +3668,11 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     if render_type == "word":
         return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
     if render_type == "presentation_outline":
-        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据，数据不足时明确写出缺口。'
+        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据，数据不足时明确写出缺口；旅行、流程或历史主题优先规划时间线、图标网格和路线地图，只有上游提供已验证图片数据时才规划 image。'
     if render_type == "presentation_design":
-        return '只输出合法 JSON：{"title":"设计样稿","theme":{"colors":{"primary":"#8057E8","text":"#191521","muted":"#686275","pale":"#F1EEFA","background":"#FFFFFF","inverse":"#FFFFFF"},"fonts":{"title":"Aptos","body":"Aptos"}},"slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"代表页标题","subtitle":"可选","bullets":["真实内容"]}]}；theme 字段和值必须完整，slides 给出 3 至 5 张带真实内容、可渲染的代表页，每页仅保留所选版式需要的字段，不得使用占位符或虚构数据。'
+        return '只输出合法 JSON：{"title":"设计样稿","theme":{"colors":{"primary":"#8057E8","text":"#191521","muted":"#686275","pale":"#F1EEFA","background":"#FFFFFF","inverse":"#FFFFFF"},"fonts":{"title":"Aptos","body":"Aptos"}},"slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"代表页标题","subtitle":"可选","bullets":["真实内容"],"events":[{"label":"时间","title":"事件","detail":"说明"}],"items":[{"icon":"camera|card|ferry|food|hotel|map|shield|train|walk|landmark","title":"主题","detail":"说明"}],"points":[{"name":"地点","side":"europe|asia|route","detail":"说明"}]}]}；theme 字段和值必须完整，slides 给出 3 至 5 张带真实内容、可渲染的代表页；旅行、流程或历史主题至少采用两种 timeline/icon_grid/route_map 视觉版式；image 只能复用上游已验证的 image_data，不得编造；每页仅保留所选版式需要的字段。'
     if render_type == "presentation":
-        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"页标题","subtitle":"可选","bullets":["要点"],"left":[],"right":[],"headers":[],"rows":[],"categories":[],"series":[{"name":"系列","values":[1]}]}]}；仅保留所选版式需要的字段。'
+        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","subtitle":"可选","bullets":["要点"],"left":[],"right":[],"headers":[],"rows":[],"categories":[],"series":[{"name":"系列","values":[1]}],"events":[{"label":"时间","title":"事件","detail":"说明"}],"items":[{"icon":"camera|card|ferry|food|hotel|map|shield|train|walk|landmark","title":"主题","detail":"说明"}],"points":[{"name":"地点","side":"europe|asia|route","detail":"说明"}],"image_data":"仅限上游已验证 data URI","caption":"图片说明"}]}；旅行、流程或历史主题至少采用两种 timeline/icon_grid/route_map 视觉版式；image 只能复用上游已验证数据，不得编造；仅保留所选版式需要的字段。'
     return "输出可直接渲染的 Markdown 正文。"
 
 
@@ -3685,6 +3686,10 @@ def _normalize_presentation_reply(reply: str) -> str:
         "two_column": {"layout", "title", "subtitle", "left", "right"},
         "table": {"layout", "title", "headers", "rows"},
         "chart": {"layout", "title", "categories", "series"},
+        "timeline": {"layout", "title", "subtitle", "events"},
+        "icon_grid": {"layout", "title", "subtitle", "items"},
+        "route_map": {"layout", "title", "subtitle", "points"},
+        "image": {"layout", "title", "subtitle", "image_data", "caption"},
     }
     slides = value.get("slides") if isinstance(value, dict) else None
     if isinstance(slides, list):
@@ -3717,15 +3722,20 @@ def _normalize_presentation_reply(reply: str) -> str:
             if layout in {"bullets", "conclusion"} and "bullets" not in slide and "key_points" in slide:
                 slide["bullets"] = slide.pop("key_points")
 
-            invalid_structured_layout = False
+            allowed_slide_fields = layout_fields.get(layout)
+            invalid_structured_layout = allowed_slide_fields is None or bool(
+                set(slide)
+                - (allowed_slide_fields or set())
+                - {"purpose", "key_message", "bullets", "key_points"}
+            )
             if layout == "two_column":
-                invalid_structured_layout = not any(
+                invalid_structured_layout = invalid_structured_layout or not any(
                     isinstance(slide.get(side), list) and slide.get(side)
                     for side in ("left", "right")
                 )
             elif layout == "table":
                 headers, rows = slide.get("headers"), slide.get("rows")
-                invalid_structured_layout = not (
+                invalid_structured_layout = invalid_structured_layout or not (
                     isinstance(headers, list)
                     and headers
                     and isinstance(rows, list)
@@ -3734,7 +3744,7 @@ def _normalize_presentation_reply(reply: str) -> str:
                 )
             elif layout == "chart":
                 categories, series = slide.get("categories"), slide.get("series")
-                invalid_structured_layout = not (
+                invalid_structured_layout = invalid_structured_layout or not (
                     isinstance(categories, list)
                     and categories
                     and isinstance(series, list)
@@ -3746,6 +3756,81 @@ def _normalize_presentation_reply(reply: str) -> str:
                         for item in series
                     )
                 )
+            elif layout == "timeline":
+                events = slide.get("events")
+                invalid_structured_layout = invalid_structured_layout or not (
+                    isinstance(events, list)
+                    and 2 <= len(events) <= 8
+                    and all(
+                        isinstance(item, dict)
+                        and not set(item) - {"label", "title", "detail"}
+                        and bool(str(item.get("title") or "").strip())
+                        and len(str(item.get("label") or "")) <= 24
+                        and len(str(item.get("title") or "")) <= 60
+                        and len(str(item.get("detail") or "")) <= 120
+                        for item in events
+                    )
+                )
+            elif layout == "icon_grid":
+                items = slide.get("items")
+                allowed_icons = {
+                    "camera", "card", "ferry", "food", "hotel", "map",
+                    "shield", "train", "walk", "landmark",
+                }
+                invalid_structured_layout = invalid_structured_layout or not (
+                    isinstance(items, list)
+                    and 2 <= len(items) <= 8
+                    and all(
+                        isinstance(item, dict)
+                        and not set(item) - {"icon", "title", "detail"}
+                        and bool(str(item.get("title") or "").strip())
+                        and item.get("icon") in allowed_icons
+                        and len(str(item.get("title") or "")) <= 60
+                        and len(str(item.get("detail") or "")) <= 120
+                        for item in items
+                    )
+                )
+            elif layout == "route_map":
+                points = slide.get("points")
+                invalid_structured_layout = invalid_structured_layout or not (
+                    isinstance(points, list)
+                    and 2 <= len(points) <= 10
+                    and all(
+                        isinstance(item, dict)
+                        and not set(item) - {"name", "side", "detail"}
+                        and bool(str(item.get("name") or "").strip())
+                        and item.get("side") in {"europe", "asia", "route"}
+                        and len(str(item.get("name") or "")) <= 60
+                        and len(str(item.get("detail") or "")) <= 100
+                        for item in points
+                    )
+                    and all(
+                        sum(item["side"] == side for item in points) <= 4
+                        for side in {"europe", "asia", "route"}
+                    )
+                )
+            elif layout == "image":
+                image_data = slide.get("image_data")
+                if isinstance(image_data, str) and image_data.startswith(
+                    ("data:image/png;base64,", "data:image/jpeg;base64,")
+                ):
+                    try:
+                        raw_image = base64.b64decode(
+                            image_data.split(",", 1)[1], validate=True
+                        )
+                    except (ValueError, TypeError):
+                        raw_image = b""
+                    expected_magic = (
+                        b"\x89PNG\r\n\x1a\n"
+                        if image_data.startswith("data:image/png;")
+                        else b"\xff\xd8\xff"
+                    )
+                    invalid_structured_layout = invalid_structured_layout or not (
+                        32 <= len(raw_image) <= 8_000_000
+                        and raw_image.startswith(expected_magic)
+                    )
+                else:
+                    invalid_structured_layout = True
             if invalid_structured_layout:
                 points = slide.get("bullets") or slide.get("key_points")
                 if isinstance(points, list) and points:

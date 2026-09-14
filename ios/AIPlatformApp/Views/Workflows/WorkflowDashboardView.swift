@@ -600,6 +600,32 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     private var publishScheduled = false
     private var executionWorkflows: [String: WorkflowDTO] = [:]
     private var executionTasks: [String: Task<Void, Never>] = [:]
+    private var activeOwnerScope: String?
+
+    public func activate(tenantKey: String, userId: String) {
+        let scope = tenantKey + "\u{0}" + userId
+        guard activeOwnerScope != scope else { return }
+        clearTrackedState()
+        activeOwnerScope = scope
+    }
+
+    public func deactivate() {
+        clearTrackedState()
+        activeOwnerScope = nil
+    }
+
+    private func clearTrackedState() {
+        for model in models.values { model.stopTracking() }
+        for task in executionTasks.values { task.cancel() }
+        workflows.removeAll()
+        dismissedWorkflowIds.removeAll()
+        executions.removeAll()
+        models.removeAll()
+        subscriptions.removeAll()
+        executionWorkflows.removeAll()
+        executionTasks.removeAll()
+        publishScheduled = false
+    }
 
     public struct Activity {
         public let workflow: WorkflowDTO
@@ -652,12 +678,14 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     }
 
     public func track(_ workflow: WorkflowDTO) {
+        guard activeOwnerScope != nil else { return }
         if workflows[workflow.id] != workflow { workflows[workflow.id] = workflow }
         if dismissedWorkflowIds.contains(workflow.id) { dismissedWorkflowIds.remove(workflow.id) }
         model(for: workflow).startTracking()
     }
 
     public func trackExecution(_ execution: WorkflowExecutionDTO, workflow: WorkflowDTO) {
+        guard let ownerScope = activeOwnerScope else { return }
         executionWorkflows[workflow.id] = workflow
         if executions[execution.id] != execution { executions[execution.id] = execution }
         if dismissedWorkflowIds.contains(workflow.id) { dismissedWorkflowIds.remove(workflow.id) }
@@ -669,6 +697,7 @@ public final class WorkflowActivityCoordinator: ObservableObject {
             while !Task.isCancelled {
                 do {
                     let snapshot = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+                    guard self.activeOwnerScope == ownerScope, !Task.isCancelled else { return }
                     if self.executions[snapshot.id] != snapshot { self.executions[snapshot.id] = snapshot }
                     if ["awaiting_approval", "awaiting_review", "completed", "failed", "cancelled"].contains(snapshot.status) { return }
                 } catch {
@@ -690,8 +719,10 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     }
 
     public func bootstrap() async {
+        guard let ownerScope = activeOwnerScope else { return }
         do {
             let activities = try await APIClient.shared.fetchActiveWorkflowActivities()
+            guard activeOwnerScope == ownerScope else { return }
             for activity in activities {
                 track(activity.workflow)
             }
@@ -701,6 +732,7 @@ public final class WorkflowActivityCoordinator: ObservableObject {
         }
         do {
             let active = try await APIClient.shared.fetchActiveWorkflowExecutions()
+            guard activeOwnerScope == ownerScope else { return }
             for item in active { trackExecution(item.execution, workflow: item.workflow) }
         } catch {
             schedulePublish()

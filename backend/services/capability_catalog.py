@@ -26,6 +26,8 @@ IMPLEMENTED_HANDLERS = {
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "presentation.create_from_document",
     "presentation.create_from_text",
+    "document.word.create_from_text", "report.research.create_from_text",
+    "paper.academic.create_from_text",
     "artifact.open", "artifact.download",
     "artifact.consume_structured",
 }

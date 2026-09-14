@@ -697,6 +697,10 @@ public struct LoginView: View {
         let profile = try await APIClient.shared.fetchMe()
         appState.currentTenantKey = profile.tenantKey
         appState.currentUserId = profile.userId
+        WorkflowActivityCoordinator.shared.activate(
+            tenantKey: profile.tenantKey,
+            userId: profile.userId
+        )
         KnowledgeNoteStore.shared.activate(
             tenantKey: profile.tenantKey,
             userId: profile.userId

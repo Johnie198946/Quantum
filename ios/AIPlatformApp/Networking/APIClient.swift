@@ -1760,6 +1760,27 @@ public struct PresentationCreateFromTextRequestDTO: Encodable {
     }
 }
 
+public struct DocumentCreateFromTextRequestDTO: Encodable {
+    public let title: String
+    public let textMaterial: String
+    public let researchQuestion: String?
+    public let thesis: String?
+    public let audience: String?
+    public let language: String?
+    public let citationStyle: String?
+    public let evidencePolicy: String?
+    public let clarificationStrategy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, thesis, audience, language
+        case textMaterial = "text_material"
+        case researchQuestion = "research_question"
+        case citationStyle = "citation_style"
+        case evidencePolicy = "evidence_policy"
+        case clarificationStrategy = "clarification_strategy"
+    }
+}
+
 public struct WorkflowStartRequestDTO: Encodable {
     public let workflowId: String
     enum CodingKeys: String, CodingKey { case workflowId = "workflow_id" }
@@ -1769,6 +1790,9 @@ public enum QCPCapabilityID {
     public static let workflowCreate = "workflow.create"
     public static let presentationCreateFromDocument = "presentation.create_from_document"
     public static let presentationCreateFromText = "presentation.create_from_text"
+    public static let documentWordCreateFromText = "document.word.create_from_text"
+    public static let researchReportCreateFromText = "report.research.create_from_text"
+    public static let academicPaperCreateFromText = "paper.academic.create_from_text"
     public static let workflowStart = "workflow.start"
 }
 
@@ -1861,6 +1885,7 @@ public enum RendererRegistry {
         "workflow.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "document.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
         "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),

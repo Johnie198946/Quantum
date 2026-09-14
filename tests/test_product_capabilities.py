@@ -30,7 +30,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 17
+    assert len(catalog["capabilities"]) == 20
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])
@@ -55,6 +55,17 @@ def test_catalog_is_complete_unique_and_progressively_disclosed():
     bad_fallback["renderers"][0]["fallback"] = "missing"
     with pytest.raises(CapabilityContractError, match="invalid renderer fallback"):
         validate_catalog(bad_fallback)
+
+
+def test_capability_yaml_keys_match_declared_repository_schema():
+    schema = json.loads(
+        Path("backend/contracts/product-capabilities/capability.schema.json").read_text()
+    )
+    allowed = set(schema["properties"])
+    required = set(schema["required"])
+    for capability in load_catalog()["capabilities"]:
+        assert required <= set(capability), capability["id"]
+        assert not set(capability) - allowed, capability["id"]
 
 
 @pytest.mark.asyncio
@@ -169,7 +180,8 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
     assert body.output_kind == "presentation"
     assert "management_briefing" in body.description
     assert "clean_professional_16_9" in body.description
-    assert "湖泊、雪山与少女峰路线" in body.description
+    assert "湖泊、雪山与少女峰路线" not in body.description
+    assert "私有需求快照" in body.description
     from backend.api.workflows import requirement_is_explicit
     assert requirement_is_explicit(body.description)
 
@@ -189,6 +201,56 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
         )
     assert clarify_create.await_args is not None
     assert clarify_create.await_args.kwargs["requirements_explicit"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("capability_id", "focus_field", "document_kind", "citation_style"),
+    [
+        ("document.word.create_from_text", None, "word", "none"),
+        ("report.research.create_from_text", "research_question", "research_report", "apa7"),
+        ("paper.academic.create_from_text", "thesis", "academic_paper", "apa7"),
+    ],
+)
+async def test_first_class_document_capabilities_bind_format_evidence_and_review_contracts(
+    capability_id, focus_field, document_kind, citation_style
+):
+    created = {
+        "workflow": {"id": "wf-doc", "status": "clarifying"},
+        "clarification_session": {
+            "id": "wfs-doc", "phase": "awaiting_requirement_confirmation"
+        },
+    }
+    text_material = "V" * 32_000 if document_kind == "word" else "Verified source material"
+    data = {"title": "Governed document", "text_material": text_material}
+    if focus_field:
+        data[focus_field] = "What does the evidence support?"
+    with patch(
+        "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
+    ) as create:
+        result = await invoke_capability(
+            capability_id,
+            data,
+            payload={"tenant_key": "tenant-a", "user_id": "user-a"},
+            confirmed=True,
+            idempotency_key=f"{document_kind}-1",
+        )
+
+    assert result["status"] == "completed"
+    assert result["events"][0]["type"] == "document.created"
+    assert result["events"][0]["payload"]["delivery"]["artifact_extension"] == "docx"
+    body = create.await_args.args[0]
+    options = create.await_args.kwargs
+    profile = options["requirements_snapshot_overrides"]["document_profile"]
+    artifact = options["requirements_snapshot_overrides"]["artifact_contract"]
+    assert body.output_kind == "document"
+    assert profile["kind"] == document_kind
+    assert profile["citation_style"] == citation_style
+    assert profile["review_gates"] == ["outline", "content", "final_output"]
+    assert artifact["extension"] == "docx"
+    assert artifact["version"] == artifact["content_hash"] == "required"
+    assert options["requirements_snapshot_overrides"]["text_material"] == text_material
+    assert text_material not in body.description
 
 
 def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():

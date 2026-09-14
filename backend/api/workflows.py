@@ -283,6 +283,30 @@ def _workflow_ids_from_snapshot(snapshot: Any) -> set[str]:
     }
 
 
+def _preserved_requirement_source_context(snapshot: Any) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {}
+    return {
+        key: snapshot[key]
+        for key in (
+            "showroom_context",
+            "customer_demand_context",
+            "customer_demand",
+            "output_kind",
+            "scenario_id",
+            "source_document",
+            "source_document_evidence",
+            "text_material",
+            "presentation_defaults",
+            "document_profile",
+            "artifact_contract",
+            "clarification_strategy",
+            "qcp_request_hash",
+        )
+        if snapshot.get(key)
+    }
+
+
 async def _project_bound_workflow_ids(db, project) -> set[str]:
     workflow_ids = _workflow_ids_from_snapshot(project.process_snapshot or {})
     history = list(
@@ -1093,22 +1117,7 @@ async def respond_to_clarification(
                 session.confirmed_spec = spec
                 session.phase = "planning"
                 prior_snapshot = workflow.requirements_snapshot or {}
-                source_context = {
-                    key: prior_snapshot[key]
-                    for key in (
-                        "showroom_context",
-                        "customer_demand",
-                        "output_kind",
-                        "scenario_id",
-                        "source_document",
-                        "source_document_evidence",
-                        "text_material",
-                        "presentation_defaults",
-                        "artifact_contract",
-                        "qcp_request_hash",
-                    )
-                    if prior_snapshot.get(key)
-                }
+                source_context = _preserved_requirement_source_context(prior_snapshot)
                 workflow.requirements_snapshot = {**spec, **source_context}
                 workflow.description = workflow.description + "\n\n已确认需求：\n" + "\n".join(
                     f"- {item['name']}：{item['answer']}" for item in spec["dimensions"]

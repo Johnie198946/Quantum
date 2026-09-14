@@ -235,8 +235,8 @@ async def _presentation_create_from_text(
         f"范围：根据以下文本材料制作 {normalized['slide_count']} 页演示文稿；"
         f"约束：版式必须采用 {normalized['layout_style']}，不得虚构材料中的事实；"
         "数据与知识库：仅使用用户文字和明确授权的检索；"
-        "验收：输出可编辑 PPTX、同版本 PDF 渲染预览和鉴权下载入口。\n\n"
-        f"文本材料：\n{material}"
+        "验收：输出可编辑 PPTX、同版本 PDF 渲染预览和鉴权下载入口；"
+        f"文本材料已绑定到私有需求快照（{len(material)} 字符）。"
     )
     result = await _create_workflow(
         WorkflowCreate(
@@ -278,6 +278,109 @@ async def _presentation_create_from_text(
             "download_return": "authenticated_artifact_download_reference",
         },
     }
+
+
+async def _document_create_from_text(
+    capability_id: str,
+    document_kind: str,
+    data: dict[str, Any],
+    payload: dict[str, Any],
+    key: str | None,
+) -> dict[str, Any]:
+    """Create one governed DOCX workflow from a first-class document contract."""
+    assert key
+    defaults = {
+        "audience": data.get("audience") or "professional_reader",
+        "language": data.get("language") or "zh-CN",
+        "citation_style": data.get("citation_style") or (
+            "none" if document_kind == "word" else "apa7"
+        ),
+        "evidence_policy": data.get("evidence_policy") or "verified_public_sources",
+        "clarification_strategy": data.get("clarification_strategy")
+        or "use_defaults_unless_blocked",
+    }
+    identity_input = {**data, **defaults}
+    workflow_id, request_hash = _qcp_workflow_identity(
+        capability_id, payload, key, identity_input
+    )
+    material = data["text_material"].strip()
+    focus = str(data.get("research_question") or data.get("thesis") or "").strip()
+    label, structure = {
+        "word": ("Word 文档", "通用文档结构、标题层级与可编辑格式"),
+        "research_report": ("研究报告", "研究问题、方法、证据、分析、结论、局限与建议"),
+        "academic_paper": ("学术论文", "摘要、关键词、引言、方法、结果、讨论、结论与参考文献"),
+    }[document_kind]
+    description = (
+        f"用户与场景：{defaults['audience']}；输出：{label}；语言：{defaults['language']}；"
+        f"结构：{structure}；引文：{defaults['citation_style']}；"
+        f"证据策略：{defaults['evidence_policy']}；不得虚构事实或来源；"
+        "验收：大纲和全文分别审阅，输出可编辑 DOCX、鉴权下载、版本与内容哈希。"
+        + (f"\n核心问题：{focus}" if focus else "")
+        + f"\n文本材料已绑定到私有需求快照（{len(material)} 字符）。"
+    )
+    result = await _create_workflow(
+        WorkflowCreate(
+            title=data["title"],
+            description=description,
+            desired_output=f"可编辑 {label} DOCX、版本、内容哈希与鉴权下载",
+            clarification_mode="compatibility",
+            showroom_session_id=None,
+            customer_demand_id=None,
+            source_document_id=None,
+            output_kind="document",
+        ),
+        payload,
+        workflow_id=workflow_id,
+        qcp_request_hash=request_hash,
+        requirements_explicit=(
+            defaults["clarification_strategy"] == "use_defaults_unless_blocked"
+        ),
+        requirements_snapshot_overrides={
+            "text_material": material,
+            "document_profile": {
+                **defaults,
+                "kind": document_kind,
+                "focus": focus,
+                "required_structure": structure,
+                "review_gates": ["outline", "content", "final_output"],
+            },
+            "artifact_contract": {
+                "extension": "docx",
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "download": "authenticated",
+                "version": "required",
+                "content_hash": "required",
+            },
+        },
+    )
+    return {
+        **result,
+        "delivery": {
+            "artifact_extension": "docx",
+            "artifact_mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "download_return": "authenticated_artifact_download_reference",
+            "version": "required",
+            "content_hash": "required",
+        },
+    }
+
+
+async def _word_create_from_text(data, payload, key):
+    return await _document_create_from_text(
+        "document.word.create_from_text", "word", data, payload, key
+    )
+
+
+async def _research_report_create_from_text(data, payload, key):
+    return await _document_create_from_text(
+        "report.research.create_from_text", "research_report", data, payload, key
+    )
+
+
+async def _academic_paper_create_from_text(data, payload, key):
+    return await _document_create_from_text(
+        "paper.academic.create_from_text", "academic_paper", data, payload, key
+    )
 
 
 async def _workflow_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
@@ -335,6 +438,9 @@ HANDLERS: dict[str, Handler] = {
     "workflow.start": _workflow_start,
     "presentation.create_from_document": _presentation_create,
     "presentation.create_from_text": _presentation_create_from_text,
+    "document.word.create_from_text": _word_create_from_text,
+    "report.research.create_from_text": _research_report_create_from_text,
+    "paper.academic.create_from_text": _academic_paper_create_from_text,
     "artifact.open": _artifact_open,
     "artifact.download": _artifact_download,
     "artifact.consume_structured": _artifact_consume_structured,

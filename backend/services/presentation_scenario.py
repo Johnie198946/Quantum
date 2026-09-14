@@ -172,11 +172,19 @@ def build_document_plan(
     if not is_document_workflow(workflow):
         return None
     source = (workflow.requirements_snapshot or {}).get("source_document") or {}
+    profile = (workflow.requirements_snapshot or {}).get("document_profile") or {}
+    document_kind = str(profile.get("kind") or "word")
+    citation_style = str(profile.get("citation_style") or "none")
+    required_structure = str(
+        profile.get("required_structure") or "清晰的标题层级与正文"
+    )
     common = {
         "scenario_id": DOCUMENT_SCENARIO_ID,
         "scenario_version": SCENARIO_VERSION,
         "knowledge_scope": knowledge_scope,
-        "allow_network": True,
+        "allow_network": profile.get("evidence_policy") != "user_material_only",
+        "document_kind": document_kind,
+        "citation_style": citation_style,
     }
     nodes = [
         {
@@ -187,7 +195,7 @@ def build_document_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "markdown",
-                "instruction": "基于用户指令、可选源文件和可靠资料，明确文档目的、读者、核心观点、证据、结构约束与内容缺口，不得虚构。",
+                "instruction": f"基于用户指令、可选源文件和可靠资料，明确文档目的、读者、核心观点、证据、结构约束与内容缺口，不得虚构。文档类型：{document_kind}；必要结构：{required_structure}；引文格式：{citation_style}。",
                 "max_tokens": 5000,
             },
         },
@@ -200,7 +208,7 @@ def build_document_plan(
                 "agent_id": "main_agent",
                 "output_format": "markdown",
                 "approval_gate": "outline",
-                "instruction": "基于分析和已确认需求生成可审阅的分级大纲，逐节说明目的、要点和证据依据。",
+                "instruction": f"基于分析和已确认需求生成可审阅的分级大纲，逐节说明目的、要点和证据依据；必须覆盖：{required_structure}。",
                 "max_tokens": 7000,
             },
         },
@@ -213,7 +221,7 @@ def build_document_plan(
                 "agent_id": "main_agent",
                 "output_format": "word",
                 "approval_gate": "content",
-                "instruction": "严格按已批准大纲写成完整、可直接使用的正文；结构清晰、事实可核验、语言符合用户指定风格。",
+                "instruction": f"严格按已批准大纲写成完整、可直接使用的正文；结构清晰、事实可核验、语言符合用户指定风格；引文和参考文献统一采用 {citation_style}，未知来源必须标记待核验而非编造。",
                 "max_tokens": 16000,
             },
         },

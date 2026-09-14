@@ -442,6 +442,11 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let layoutStyle: String?
     public let slideCount: Int?
     public let clarificationStrategy: String?
+    public let researchQuestion: String?
+    public let thesis: String?
+    public let language: String?
+    public let citationStyle: String?
+    public let evidencePolicy: String?
 
     enum CodingKeys: String, CodingKey {
         case title, description
@@ -455,6 +460,10 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
         case layoutStyle = "layout_style"
         case slideCount = "slide_count"
         case clarificationStrategy = "clarification_strategy"
+        case researchQuestion = "research_question"
+        case thesis, language
+        case citationStyle = "citation_style"
+        case evidencePolicy = "evidence_policy"
     }
 }
 
@@ -2582,6 +2591,7 @@ public final class AppState: ObservableObject {
         )
         self.currentTenantKey = "guest_tenant"
         self.currentUserId = "guest"
+        WorkflowActivityCoordinator.shared.activate(tenantKey: "guest_tenant", userId: "guest")
         KnowledgeNoteStore.shared.activate(tenantKey: "guest_tenant", userId: "guest")
     }
     
@@ -2594,6 +2604,7 @@ public final class AppState: ObservableObject {
         self.pendingChatSessionContext = nil
         self.pendingKnowledgeNavigation = nil
         self.isDevMode = false
+        WorkflowActivityCoordinator.shared.deactivate()
         KnowledgeNoteStore.shared.deactivate()
         SessionManager.shared.deactivateAccount()
         NotificationCenter.default.post(name: .localAccountDidChange, object: nil)

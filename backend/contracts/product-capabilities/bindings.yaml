@@ -27,6 +27,12 @@ bindings:
     handler: presentation.create_from_document
   - id: presentation.create_from_text
     handler: presentation.create_from_text
+  - id: document.word.create_from_text
+    handler: document.word.create_from_text
+  - id: report.research.create_from_text
+    handler: report.research.create_from_text
+  - id: paper.academic.create_from_text
+    handler: paper.academic.create_from_text
   - id: artifact.open
     handler: artifact.open
   - id: artifact.download

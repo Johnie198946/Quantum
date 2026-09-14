@@ -1,5 +1,6 @@
 import hashlib
 import asyncio
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -9,6 +10,7 @@ import pytest
 import httpx
 from fastapi import FastAPI
 from docx import Document
+from PIL import Image
 from pptx import Presentation
 from pypdf import PdfWriter
 
@@ -476,6 +478,104 @@ def test_editable_pptx_reopens_and_pdf_preview_uses_same_file(tmp_path):
             pytest.skip(str(exc))
         raise
     assert pdf.startswith(b"%PDF-")
+
+
+def test_visual_presentation_layouts_are_editable_and_images_are_bounded():
+    image_bytes = BytesIO()
+    Image.new("RGB", (128, 96), "#4A90E2").save(image_bytes, format="PNG")
+    image_data = "data:image/png;base64," + base64.b64encode(image_bytes.getvalue()).decode()
+    spec = {
+        "title": "Istanbul",
+        "slides": [
+            {
+                "layout": "timeline",
+                "title": "Three days",
+                "events": [
+                    {"label": "Day 1", "title": "Old City", "detail": "Hagia Sophia"},
+                    {"label": "Day 2", "title": "Bosphorus", "detail": "Ferry"},
+                ],
+            },
+            {
+                "layout": "icon_grid",
+                "title": "Travel kit",
+                "items": [
+                    {"icon": "ferry", "title": "Crossing", "detail": "Istanbulkart"},
+                    {"icon": "food", "title": "Market", "detail": "Local breakfast"},
+                ],
+            },
+            {
+                "layout": "route_map",
+                "title": "Europe to Asia",
+                "points": [
+                    {"name": "Eminönü", "side": "europe", "detail": "Start"},
+                    {"name": "Bosphorus", "side": "route", "detail": "Ferry"},
+                    {"name": "Kadıköy", "side": "asia", "detail": "Finish"},
+                ],
+            },
+            {
+                "layout": "image",
+                "title": "Verified image",
+                "image_data": image_data,
+                "caption": "Embedded upstream asset",
+            },
+        ],
+    }
+    reopened = Presentation(BytesIO(build_pptx(json.dumps(spec))))
+    assert len(reopened.slides) == 4
+    assert all(len(reopened.slides[index].shapes) >= 3 for index in range(3))
+    assert any(shape.shape_type == 13 for shape in reopened.slides[3].shapes)
+    assert "Old City" in " ".join(
+        shape.text for shape in reopened.slides[0].shapes if shape.has_text_frame
+    )
+
+    jpeg = BytesIO()
+    Image.new("RGB", (128, 96), "#4A90E2").save(jpeg, format="JPEG")
+    spec["slides"] = [{
+        "layout": "image",
+        "title": "Spoofed",
+        "image_data": "data:image/png;base64," + base64.b64encode(jpeg.getvalue()).decode(),
+    }]
+    with pytest.raises(ValueError, match="match MIME type"):
+        build_pptx(json.dumps(spec))
+
+    tiny = BytesIO()
+    Image.new("RGB", (1, 1), "#4A90E2").save(tiny, format="PNG")
+    spec["slides"][0]["image_data"] = (
+        "data:image/png;base64," + base64.b64encode(tiny.getvalue()).decode()
+    )
+    with pytest.raises(ValueError, match="dimensions"):
+        build_pptx(json.dumps(spec))
+
+
+def test_bridge_visual_layout_normalization_is_renderer_safe_and_fail_closed():
+    import scripts.hermes_bridge as bridge
+
+    valid = {
+        "slides": [{
+            "layout": "icon_grid",
+            "title": "Visual",
+            "items": [
+                {"icon": "map", "title": "Route", "detail": "Old City"},
+                {"icon": "ferry", "title": "Crossing", "detail": "Bosphorus"},
+            ],
+        }]
+    }
+    normalized = json.loads(bridge._normalize_presentation_reply(json.dumps(valid)))
+    assert normalized["slides"][0]["layout"] == "icon_grid"
+
+    for mutation in ("unexpected_field", "unsupported_icon"):
+        invalid = json.loads(json.dumps(valid))
+        invalid["slides"][0]["bullets"] = ["Fallback"]
+        if mutation == "unexpected_field":
+            invalid["slides"][0]["unexpected"] = "must fail closed"
+        else:
+            invalid["slides"][0]["items"][0]["icon"] = "remote-svg"
+        degraded = json.loads(bridge._normalize_presentation_reply(json.dumps(invalid)))
+        assert degraded["slides"][0] == {
+            "layout": "bullets",
+            "title": "Visual",
+            "bullets": ["Fallback"],
+        }
 
 
 def test_two_real_pptx_files_apply_distinct_theme_to_title_body_table_chart_and_section(

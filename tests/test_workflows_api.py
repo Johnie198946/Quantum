@@ -375,6 +375,31 @@ class TestWorkflowsAPI(unittest.TestCase):
 
         self.assertEqual(asyncio.run(count()), 0)
 
+    def test_document_capability_profile_survives_requirement_confirmation(self):
+        from backend.api.workflows import _preserved_requirement_source_context
+
+        source = {
+            "scenario_id": "document-generation",
+            "text_material": "Verified source material",
+            "document_profile": {
+                "kind": "academic_paper",
+                "citation_style": "apa7",
+                "review_gates": ["outline", "content", "final_output"],
+            },
+            "artifact_contract": {"extension": "docx"},
+            "discard_me": "transient clarification state",
+        }
+        confirmed_spec = {"dimensions": [{"name": "audience", "answer": "researchers"}]}
+        merged = {
+            **confirmed_spec,
+            **_preserved_requirement_source_context(source),
+        }
+
+        self.assertEqual(merged["document_profile"], source["document_profile"])
+        self.assertEqual(merged["text_material"], source["text_material"])
+        self.assertEqual(merged["artifact_contract"], source["artifact_contract"])
+        self.assertNotIn("discard_me", merged)
+
     def test_create_can_continue_authorized_showroom_context(self):
         from backend.db import SessionLocal
         from backend.models.showroom import ShowroomSession
