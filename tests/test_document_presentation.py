@@ -628,6 +628,7 @@ def test_bridge_normalizes_outline_style_points_for_renderable_slides():
         "title": "design",
         "theme": THEME_A,
         "slides": [
+            {"layout": "title", "title": "cover", "subtitle": "brief", "bullets": ["unused"], "purpose": "cover"},
             {"layout": "bullets", "title": "goals", "key_points": ["one"]},
             {"layout": "section", "title": "flow", "subtitle": "one → two"},
             {"layout": "section", "title": "checkpoints", "key_points": ["upload", "preview"]},
@@ -636,20 +637,21 @@ def test_bridge_normalizes_outline_style_points_for_renderable_slides():
             {"layout": "two_column", "title": "nested", "left": {"heading": "data", "points": ["private"]}, "right": {"heading": "flow", "points": ["approve"]}},
         ],
     })))
-    assert normalized["slides"][0]["bullets"] == ["one"]
-    assert "key_points" not in normalized["slides"][0]
-    assert normalized["slides"][1]["layout"] == "title"
-    assert normalized["slides"][2]["layout"] == "bullets"
-    assert normalized["slides"][2]["bullets"] == ["upload", "preview"]
+    assert normalized["slides"][0] == {"layout": "title", "title": "cover", "subtitle": "brief"}
+    assert normalized["slides"][1]["bullets"] == ["one"]
+    assert "key_points" not in normalized["slides"][1]
+    assert normalized["slides"][2]["layout"] == "title"
     assert normalized["slides"][3]["layout"] == "bullets"
-    assert normalized["slides"][3]["bullets"] == ["one", "two"]
-    assert normalized["slides"][4]["left"] == ["data", "private"]
-    assert normalized["slides"][4]["right"] == ["flow", "approve"]
-    assert "left_points" not in normalized["slides"][4]
-    assert "right_title" not in normalized["slides"][4]
+    assert normalized["slides"][3]["bullets"] == ["upload", "preview"]
+    assert normalized["slides"][4]["layout"] == "bullets"
+    assert normalized["slides"][4]["bullets"] == ["one", "two"]
     assert normalized["slides"][5]["left"] == ["data", "private"]
     assert normalized["slides"][5]["right"] == ["flow", "approve"]
-    assert "steps" not in normalized["slides"][3]
+    assert "left_points" not in normalized["slides"][5]
+    assert "right_title" not in normalized["slides"][5]
+    assert normalized["slides"][6]["left"] == ["data", "private"]
+    assert normalized["slides"][6]["right"] == ["flow", "approve"]
+    assert "steps" not in normalized["slides"][4]
     build_pptx(json.dumps(normalized))
 
 

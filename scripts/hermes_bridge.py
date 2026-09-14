@@ -3593,6 +3593,15 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
 
 def _normalize_presentation_reply(reply: str) -> str:
     value = _extract_json_object(reply)
+    layout_fields = {
+        "title": {"layout", "title", "subtitle"},
+        "section": {"layout", "title"},
+        "bullets": {"layout", "title", "subtitle", "bullets"},
+        "conclusion": {"layout", "title", "subtitle", "bullets"},
+        "two_column": {"layout", "title", "subtitle", "left", "right"},
+        "table": {"layout", "title", "headers", "rows"},
+        "chart": {"layout", "title", "categories", "series"},
+    }
     slides = value.get("slides") if isinstance(value, dict) else None
     if isinstance(slides, list):
         for slide in slides:
@@ -3623,6 +3632,11 @@ def _normalize_presentation_reply(reply: str) -> str:
                             slide[side] = ([str(nested_heading)] if nested_heading else []) + nested_points
             if layout in {"bullets", "conclusion"} and "bullets" not in slide and "key_points" in slide:
                 slide["bullets"] = slide.pop("key_points")
+            allowed = layout_fields.get(layout)
+            if allowed is not None:
+                for key in tuple(slide):
+                    if key not in allowed:
+                        slide.pop(key)
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
