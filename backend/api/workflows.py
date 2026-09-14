@@ -1773,18 +1773,6 @@ async def edit_plan(
                 return plan_out(prior)
         current_hash = current_plan.content_hash or canonical_plan_hash(current_plan.dsl or {})
         try:
-            expected_hash, expected_revision = require_compare_and_set_inputs(
-                expected_hash=body.expected_hash,
-                expected_revision=body.expected_revision,
-            )
-            if (
-                expected_hash != current_hash
-                or expected_revision != current_plan.activation_revision
-            ):
-                raise PlanContractError("计划已被更新，请刷新后重试")
-        except PlanContractError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        try:
             compiled: WorkflowDSLPlan = DSLSafetyCompiler.compile_and_validate(body.dsl)
             if is_registered_ipd_plan(current_plan.dsl or {}):
                 validate_registered_ipd_execution_contract(compiled.model_dump(mode="json"))
@@ -1808,7 +1796,23 @@ async def edit_plan(
             and body.max_tokens == current_plan.max_tokens
             and body.knowledge_scope == (current_plan.knowledge_scope or [])
         ):
+            # A stale compare-and-set token is irrelevant for an exact no-op.
+            # iOS intentionally saves before approval; if planning refreshed the
+            # active row with identical content, returning that row is safe and
+            # lets approval use the canonical latest plan instead of surfacing 409.
             return plan_out(current_plan)
+        try:
+            expected_hash, expected_revision = require_compare_and_set_inputs(
+                expected_hash=body.expected_hash,
+                expected_revision=body.expected_revision,
+            )
+            if (
+                expected_hash != current_hash
+                or expected_revision != current_plan.activation_revision
+            ):
+                raise PlanContractError("计划已被更新，请刷新后重试")
+        except PlanContractError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         version = (
             int(
                 (

@@ -29,6 +29,7 @@ import asyncio
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 import contextvars
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -914,6 +915,82 @@ def _save_state_db_mapping() -> None:
                 raise
         except Exception as error:
             print(f"[bridge] state.db 映射持久化失败: {error}")
+
+
+def _read_string_mapping(path: Path) -> dict[str, str]:
+    """Read one persisted mapping without trusting malformed entries."""
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in raw.items()
+        if isinstance(key, str) and isinstance(value, str)
+    }
+
+
+def _write_string_mapping(path: Path, values: dict[str, str]) -> None:
+    """Atomically write a mapping while the cross-process lock is held."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.stem}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(values, ensure_ascii=False, indent=2))
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _sync_session_mappings(
+    *,
+    user_id: str | None = None,
+    hermes_sid: str | None = None,
+    state_db: str | Path | None = None,
+    delete: bool = False,
+) -> None:
+    """Refresh or mutate both session maps without sibling-process clobbering.
+
+    The bridge API and durable worker are separate processes.  A process-local
+    lock plus whole-file writes can otherwise erase bindings written by its
+    sibling after a restart.  Keep the existing JSON registries, but serialize
+    read/modify/write through one advisory lock and refresh both local caches.
+    """
+    lock_file = MAPPING_FILE.parent / ".session_mappings.lock"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with _mapping_lock, lock_file.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        sessions = _read_string_mapping(MAPPING_FILE)
+        state_dbs = _read_string_mapping(STATE_DB_MAPPING_FILE)
+        if user_id is not None:
+            if delete:
+                sessions.pop(user_id, None)
+                state_dbs.pop(user_id, None)
+            else:
+                if not hermes_sid:
+                    raise ValueError("hermes_sid_required")
+                sessions[user_id] = hermes_sid
+                if state_db is not None:
+                    state_dbs[user_id] = str(state_db)
+            # A state-db-only crash is harmless; a session binding without its
+            # owning DB is not. Persist the physical location first.
+            _write_string_mapping(STATE_DB_MAPPING_FILE, state_dbs)
+            _write_string_mapping(MAPPING_FILE, sessions)
+        _user_session_map.clear()
+        _user_session_map.update(sessions)
+        _user_state_db_map.clear()
+        _user_state_db_map.update(state_dbs)
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def _load_watermarks() -> None:
@@ -4258,6 +4335,10 @@ def _append_session_messages(
 
 def _resolve_hermes_session(user_id: str) -> str | None:
     """Resolve a user's session in the same state.db where it was created."""
+    # The HTTP bridge and durable worker share these registries across process
+    # boundaries. Refresh before resolution so either process sees the other's
+    # latest per-session binding instead of its startup snapshot.
+    _sync_session_mappings()
     hermes_sid = _user_session_map.get(user_id)
     state_db = _user_state_db_map.get(user_id)
     if not hermes_sid:
@@ -4276,17 +4357,12 @@ def _resolve_hermes_session(user_id: str) -> str | None:
         if aliases:
             (hermes_sid, encoded_db), _legacy_key = next(iter(aliases.items()))
             state_db = encoded_db or None
-            _user_session_map[user_id] = hermes_sid
-            if state_db:
-                _user_state_db_map[user_id] = state_db
-            _save_mapping()
-            _save_state_db_mapping()
+            _sync_session_mappings(
+                user_id=user_id, hermes_sid=hermes_sid, state_db=state_db
+            )
     if hermes_sid and not _session_exists(hermes_sid, state_db):
         print(f"[bridge] user {user_id} session {hermes_sid} 已失效·清除映射·新建")
-        _user_session_map.pop(user_id, None)
-        _user_state_db_map.pop(user_id, None)
-        _save_mapping()
-        _save_state_db_mapping()
+        _sync_session_mappings(user_id=user_id, delete=True)
         hermes_sid = None
     return hermes_sid
 
@@ -4295,11 +4371,9 @@ def _update_session_mapping(
     user_id: str, hermes_sid: str, state_db: str | Path | None = None
 ) -> None:
     """Persist user -> Hermes session and its physical state.db binding."""
-    _user_session_map[user_id] = hermes_sid
-    _save_mapping()
-    if state_db is not None:
-        _user_state_db_map[user_id] = str(state_db)
-        _save_state_db_mapping()
+    _sync_session_mappings(
+        user_id=user_id, hermes_sid=hermes_sid, state_db=state_db
+    )
     print(f"[bridge] 会话映射: user={user_id} -> session={hermes_sid}")
 
 

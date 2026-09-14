@@ -1475,6 +1475,22 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(first.status_code, 200, first.text)
         self.assertNotEqual(first.json()["id"], plan["id"])
 
+        # Saving immediately before approval is an exact no-op. A stale token
+        # must not turn that read-equivalent operation into a user-visible 409.
+        stale_noop = {
+            **payload,
+            "dsl": first.json()["dsl"],
+            "deliverable": first.json()["deliverable"],
+            "allow_network": first.json()["allow_network"],
+            "max_tokens": first.json()["max_tokens"],
+            "knowledge_scope": first.json()["knowledge_scope"],
+        }
+        stale_noop_response = self.request(
+            "PATCH", f"/api/v1/workflows/{body['id']}/plan", json=stale_noop
+        )
+        self.assertEqual(stale_noop_response.status_code, 200, stale_noop_response.text)
+        self.assertEqual(stale_noop_response.json()["id"], first.json()["id"])
+
         stale = {
             **payload,
             "dsl": {**original_dsl, "name": "并发覆盖"},
