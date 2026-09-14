@@ -218,7 +218,7 @@ def test_bridge_reads_require_trusted_context_and_fail_closed():
     assert unsupported["error"] == "capability_not_found"
 
 
-def test_bridge_tools_expose_no_identity_url_or_handler_inputs(monkeypatch):
+def test_bridge_compiles_every_implemented_capability_as_a_native_tool(monkeypatch):
     registered = {}
 
     class Registry:
@@ -228,14 +228,46 @@ def test_bridge_tools_expose_no_identity_url_or_handler_inputs(monkeypatch):
     monkeypatch.setitem(sys.modules, "tools.registry", types.SimpleNamespace(registry=Registry()))
     monkeypatch.setattr(bridge, "_app_capability_tools_registered", False)
     bridge._ensure_app_capability_tools_registered()
-    assert set(registered) == {
-        "app_capability_search", "app_capability_describe", "app_capability_invoke",
+    implemented = {
+        item["id"]: item for item in load_catalog()["capabilities"]
+        if item["implementation_status"] == "implemented"
     }
-    invoke_schema = registered["app_capability_invoke"]["schema"]["parameters"]
-    assert set(invoke_schema["properties"]) == {"capability_id", "input"}
-    assert "cannot confirm" in registered["app_capability_invoke"]["schema"]["description"]
-    assert not {"url", "handler", "tenant", "user"} & set(invoke_schema["properties"])
+    expected = {
+        bridge._app_capability_native_tool_name(capability_id)
+        for capability_id in implemented
+    }
+    assert set(registered) == expected
+    assert not {
+        "app_capability_search", "app_capability_describe", "app_capability_invoke",
+    } & set(registered)
+    presentation = registered["app_presentation_create_from_document"]
+    assert presentation["schema"]["parameters"] == implemented[
+        "presentation.create_from_document"
+    ]["input_schema"]
+    assert "authenticated app must confirm" in presentation["schema"]["description"]
+    assert not {"url", "handler", "tenant", "user"} & set(
+        presentation["schema"]["parameters"]["properties"]
+    )
     assert bridge._legacy_client_context_enabled(True, False) is False
+
+
+def test_native_capability_handler_binds_one_id_without_model_supplied_routing(monkeypatch):
+    captured = {}
+
+    def fake_invoke(args, **kwargs):
+        captured.update(args=args, kwargs=kwargs)
+        return "bound"
+
+    monkeypatch.setattr(bridge, "_app_capability_invoke_tool", fake_invoke)
+    handler = bridge._app_capability_native_handler("workflow.status")
+    assert handler({"workflow_id": "wf-1"}, trusted=True) == "bound"
+    assert captured == {
+        "args": {
+            "capability_id": "workflow.status",
+            "input": {"workflow_id": "wf-1"},
+        },
+        "kwargs": {"trusted": True},
+    }
 
 
 @pytest.mark.parametrize(
@@ -243,7 +275,7 @@ def test_bridge_tools_expose_no_identity_url_or_handler_inputs(monkeypatch):
     [
         (True, False, {"app_capabilities"}),
         (False, True, {"knowledge_workspace"}),
-        (True, True, {"app_capabilities", "knowledge_workspace"}),
+        (True, True, {"app_capabilities"}),
         (False, False, set()),
     ],
 )
@@ -300,11 +332,16 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
     actual = set(route["enabled_toolsets"])
     assert actual & {"app_capabilities", "knowledge_workspace"} == expected_toolsets
     app_tools = {
-        "app_capability_search", "app_capability_describe", "app_capability_invoke"
+        bridge._app_capability_native_tool_name(item["id"])
+        for item in load_catalog()["capabilities"]
+        if item["implementation_status"] == "implemented"
     }
     assert (app_tools <= set(registered)) is qcp_enabled
     if qcp_enabled:
         assert app_tools <= {item["function"]["name"] for item in agent.tools}
+        assert not {
+            "app_capability_search", "app_capability_describe", "app_capability_invoke",
+        } & {item["function"]["name"] for item in agent.tools}
 
 
 def test_bridge_navigation_emits_semantic_event_and_rejects_injected_identity():

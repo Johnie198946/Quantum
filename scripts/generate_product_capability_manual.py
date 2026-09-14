@@ -44,7 +44,11 @@ def outputs() -> tuple[str, str]:
         lines.append(
             f"| `{item['id']}` | {item['kind']} | `{item['receipt']}` | {item['status']} |"
         )
-    lines.extend(["", "Discovery returns metadata only. Describe reveals one full contract; invoke accepts only allowlisted IDs and schema-validated business input. Domain handlers remain the authorization truth.", ""])
+    lines.extend([
+        "",
+        "PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.",
+        "",
+    ])
     counts = {status: sum(item["implementation_status"] == status for item in capabilities)
               for status in ("implemented", "partial", "unverified")}
     coverage = {

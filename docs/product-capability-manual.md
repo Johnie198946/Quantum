@@ -30,4 +30,4 @@ Catalog digest: `83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d
 | `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
 | `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
 
-Discovery returns metadata only. Describe reveals one full contract; invoke accepts only allowlisted IDs and schema-validated business input. Domain handlers remain the authorization truth.
+PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.

@@ -3013,6 +3013,46 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+def _app_capability_native_tool_name(capability_id: str) -> str:
+    """Compile one stable provider-safe Hermes tool name from a QCP id."""
+    normalized = re.sub(r"[^a-z0-9_]+", "_", capability_id.casefold()).strip("_")
+    name = f"app_{normalized}"
+    if not normalized or len(name) > 64:
+        raise ValueError(f"invalid native capability tool name: {capability_id}")
+    return name
+
+
+def _app_capability_native_tool_schema(capability: dict[str, Any]) -> dict[str, Any]:
+    """Compile the governed capability contract into a native Hermes tool."""
+    name = _app_capability_native_tool_name(str(capability["id"]))
+    use_when = "; ".join(str(item) for item in capability.get("positive_examples") or [])
+    exclude_when = "; ".join(str(item) for item in capability.get("negative_examples") or [])
+    description_parts = [str(capability["description"]).strip()]
+    if use_when:
+        description_parts.append(f"Use when: {use_when}")
+    if exclude_when:
+        description_parts.append(f"Do not use when: {exclude_when}")
+    if capability.get("confirmation") == "required":
+        description_parts.append(
+            "This tool only proposes the action; the authenticated app must confirm it."
+        )
+    return {
+        "name": name,
+        "description": " ".join(description_parts),
+        "parameters": json.loads(json.dumps(capability["input_schema"])),
+    }
+
+
+def _app_capability_native_handler(capability_id: str) -> Callable[..., str]:
+    """Bind a native Hermes tool to exactly one immutable capability id."""
+    def handler(args: dict[str, Any], **kwargs) -> str:
+        return _app_capability_invoke_tool(
+            {"capability_id": capability_id, "input": dict(args or {})}, **kwargs
+        )
+
+    return handler
+
+
 def _ensure_app_capability_tools_registered() -> None:
     global _app_capability_tools_registered
     if _app_capability_tools_registered:
@@ -3020,23 +3060,24 @@ def _ensure_app_capability_tools_registered() -> None:
     with _app_capability_tool_registration_lock:
         if _app_capability_tools_registered:
             return
+        from backend.services.capability_catalog import load_catalog
         from tools.registry import registry
 
-        registry.register(
-            name="app_capability_search", toolset="app_capabilities",
-            schema={"name": "app_capability_search", "description": "Search compact AI Lab product capability metadata before requesting a full contract.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]}},
-            handler=lambda args, **kwargs: _app_capability_search_tool(args, **kwargs),
-        )
-        registry.register(
-            name="app_capability_describe", toolset="app_capabilities",
-            schema={"name": "app_capability_describe", "description": "Describe one allowlisted capability contract selected from app_capability_search.", "parameters": {"type": "object", "properties": {"capability_id": {"type": "string"}}, "required": ["capability_id"], "additionalProperties": False}},
-            handler=lambda args, **kwargs: _app_capability_describe_tool(args, **kwargs),
-        )
-        registry.register(
-            name="app_capability_invoke", toolset="app_capabilities",
-            schema={"name": "app_capability_invoke", "description": "Read through one allowlisted semantic app capability, or propose a mutation for explicit confirmation in the authenticated app. This tool cannot confirm mutations.", "parameters": {"type": "object", "properties": {"capability_id": {"type": "string"}, "input": {"type": "object"}}, "required": ["capability_id", "input"], "additionalProperties": False}},
-            handler=lambda args, **kwargs: _app_capability_invoke_tool(args, **kwargs),
-        )
+        compiled_names: set[str] = set()
+        for capability in load_catalog()["capabilities"]:
+            if capability.get("implementation_status") != "implemented":
+                continue
+            schema = _app_capability_native_tool_schema(capability)
+            name = schema["name"]
+            if name in compiled_names:
+                raise RuntimeError(f"duplicate native capability tool: {name}")
+            compiled_names.add(name)
+            registry.register(
+                name=name,
+                toolset="app_capabilities",
+                schema=schema,
+                handler=_app_capability_native_handler(str(capability["id"])),
+            )
         _app_capability_tools_registered = True
 
 
@@ -6688,7 +6729,7 @@ def _build_in_process_agent(
         _ensure_client_context_tools_registered()
         if "client_context" not in toolsets_list:
             toolsets_list.append("client_context")
-    if knowledge_action_enabled:
+    if knowledge_action_enabled and not qcp_enabled:
         _ensure_knowledge_workspace_tools_registered()
         if "knowledge_workspace" not in toolsets_list:
             toolsets_list.append("knowledge_workspace")
@@ -6712,7 +6753,7 @@ def _build_in_process_agent(
             requested_toolsets.add("user_notes_gateway")
         if legacy_client_context_enabled:
             requested_toolsets.add("client_context")
-        if knowledge_action_enabled:
+        if knowledge_action_enabled and not qcp_enabled:
             requested_toolsets.add("knowledge_workspace")
         if qcp_enabled:
             requested_toolsets.add("app_capabilities")
@@ -6727,7 +6768,11 @@ def _build_in_process_agent(
         note_draft_request=note_draft_request,
         public_knowledge_fallback=public_knowledge_fallback,
     )
-    if knowledge_action_enabled and "knowledge_workspace" not in toolsets_list:
+    if (
+        knowledge_action_enabled
+        and not qcp_enabled
+        and "knowledge_workspace" not in toolsets_list
+    ):
         toolsets_list.append("knowledge_workspace")
     if qcp_enabled and "app_capabilities" not in toolsets_list:
         toolsets_list.append("app_capabilities")
