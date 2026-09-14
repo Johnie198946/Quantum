@@ -5,6 +5,7 @@ import copy
 import hashlib
 import importlib
 import json
+import queue
 import sys
 import threading
 import types
@@ -29,7 +30,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 15
+    assert len(catalog["capabilities"]) == 16
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])
@@ -237,6 +238,75 @@ def test_bridge_tools_expose_no_identity_url_or_handler_inputs(monkeypatch):
     assert bridge._legacy_client_context_enabled(True, False) is False
 
 
+@pytest.mark.parametrize(
+    ("qcp_enabled", "knowledge_enabled", "expected_toolsets"),
+    [
+        (True, False, {"app_capabilities"}),
+        (False, True, {"knowledge_workspace"}),
+        (True, True, {"app_capabilities", "knowledge_workspace"}),
+        (False, False, set()),
+    ],
+)
+def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
+    monkeypatch, tmp_path, qcp_enabled, knowledge_enabled, expected_toolsets
+):
+    registered = {}
+    captured = {}
+
+    class Registry:
+        def register(self, **kwargs):
+            registered[kwargs["name"]] = kwargs
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            captured["agent"] = self
+
+    registry_module = types.SimpleNamespace(registry=Registry())
+    run_agent_module = types.SimpleNamespace(AIAgent=FakeAgent)
+    model_tools_module = types.SimpleNamespace(get_tool_definitions=lambda **kwargs: [
+        {"function": {"name": name}}
+        for name, item in registered.items()
+        if item["toolset"] in set(kwargs.get("enabled_toolsets") or [])
+    ])
+    monkeypatch.setitem(sys.modules, "tools.registry", registry_module)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent_module)
+    monkeypatch.setitem(sys.modules, "model_tools", model_tools_module)
+    monkeypatch.setattr(bridge, "_app_capability_tools_registered", False)
+    monkeypatch.setattr(bridge, "_knowledge_workspace_tools_registered", False)
+    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": {"default": "test"}})
+    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _cfg: {"provider": "test"})
+    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr(bridge, "_get_cached_tools", lambda _cfg: set())
+    monkeypatch.setattr(bridge, "_resolve_dynamic_toolsets", lambda *_args: [])
+    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _sandbox: object())
+    monkeypatch.setattr(bridge, "_take_cached_agent", lambda *_args: None)
+    monkeypatch.setattr(bridge, "persist_agent_snapshot", lambda *_args: None)
+    monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
+
+    agent, _, route = bridge._build_in_process_agent(
+        "inspect application data",
+        f"route-{int(qcp_enabled)}-{int(knowledge_enabled)}",
+        None,
+        queue.Queue(),
+        agent_config={},
+        qcp_enabled=qcp_enabled,
+        knowledge_action_enabled=knowledge_enabled,
+        sandbox=types.SimpleNamespace(
+            root=tmp_path, state_db=tmp_path / "state.db", hermes_home=tmp_path
+        ),
+    )
+
+    actual = set(route["enabled_toolsets"])
+    assert actual & {"app_capabilities", "knowledge_workspace"} == expected_toolsets
+    app_tools = {
+        "app_capability_search", "app_capability_describe", "app_capability_invoke"
+    }
+    assert (app_tools <= set(registered)) is qcp_enabled
+    if qcp_enabled:
+        assert app_tools <= {item["function"]["name"] for item in agent.tools}
+
+
 def test_bridge_navigation_emits_semantic_event_and_rejects_injected_identity():
     events = []
     bridge._client_context_tool_context.value = {
@@ -293,8 +363,11 @@ def test_bridge_db_reads_dispatch_consecutively_on_one_stable_loop():
     thread.start()
     ready.wait(timeout=2)
 
-    async def fake_invoke(*_args, **_kwargs):
+    invocation_keys = []
+
+    async def fake_invoke(*_args, **kwargs):
         seen.append(asyncio.get_running_loop())
+        invocation_keys.append(kwargs.get("idempotency_key"))
         return {"status": "completed", "events": [], "receipt": None, "error": None}
 
     bridge._bridge_async_loop = loop
@@ -309,13 +382,99 @@ def test_bridge_db_reads_dispatch_consecutively_on_one_stable_loop():
                     "capability_id": "workflow.open", "input": {"workflow_id": "wf-1"},
                 }))
                 assert result["status"] == "completed"
+            consumed = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "artifact.consume_structured",
+                "input": {
+                    "execution_id": "execution-1", "artifact_id": "artifact-1",
+                    "expected_content_hash": "a" * 64,
+                },
+            }))
+            assert consumed["status"] == "completed"
+            consumed_again = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "artifact.consume_structured",
+                "input": {
+                    "execution_id": "execution-1", "artifact_id": "artifact-1",
+                    "expected_content_hash": "a" * 64,
+                },
+            }))
+            consumed_other = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "artifact.consume_structured",
+                "input": {
+                    "execution_id": "execution-1", "artifact_id": "artifact-2",
+                    "expected_content_hash": "b" * 64,
+                },
+            }))
+            assert consumed_again["status"] == consumed_other["status"] == "completed"
     finally:
         bridge._client_context_tool_context.value = None
         bridge._bridge_async_loop = None
         loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=2)
         loop.close()
-    assert seen == [loop, loop]
+    assert seen == [loop, loop, loop, loop, loop]
+    assert invocation_keys[:2] == [None, None]
+    first_input = {
+        "execution_id": "execution-1", "artifact_id": "artifact-1",
+        "expected_content_hash": "a" * 64,
+    }
+    input_digest = hashlib.sha256(json.dumps(
+        first_input, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()
+    assert invocation_keys[2] == invocation_keys[3] == "bridge-" + hashlib.sha256(
+        f"artifact.consume_structured:request-123:{input_digest}".encode()
+    ).hexdigest()
+    assert invocation_keys[4] != invocation_keys[2]
+
+
+def test_bridge_qcp_read_path_installs_only_trusted_invocation_identity(
+    monkeypatch, tmp_path
+):
+    observed = {}
+
+    class FakeAgent:
+        session_id = "hermes-session"
+
+        def run_conversation(self, _goal, **_kwargs):
+            observed.update(bridge._client_context_tool_context.value)
+            return {"final_response": "done"}
+
+        def close(self):
+            return None
+
+    class FakeSessionDB:
+        def get_messages(self, _session_id):
+            return []
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        bridge, "_build_in_process_agent",
+        lambda *_args, **kwargs: (
+            observed.update(build_kwargs=kwargs)
+            or (FakeAgent(), FakeSessionDB(), {"triage": None})
+        ),
+    )
+    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    gateway_context = types.ModuleType("gateway.session_context")
+    gateway_context.declare_stateless_channel = lambda: None
+    monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
+
+    bridge._run_agent_sync(
+        "consume an artifact", "logical-session", "hermes-session",
+        queue.Queue(), [None],
+        sandbox=types.SimpleNamespace(
+            root=tmp_path, hermes_home=tmp_path, state_db=tmp_path / "state.db"
+        ),
+        qcp_enabled=True,
+        trusted_request_id="trusted-request-123",
+        trusted_identity_claims={"tenant_key": "tenant-a", "user_id": "user-a"},
+    )
+
+    assert observed["identity"] == {"tenant_key": "tenant-a", "user_id": "user-a"}
+    assert observed["request_id"] == "trusted-request-123"
+    assert observed["build_kwargs"]["qcp_enabled"] is True
+    assert bridge._client_context_tool_context.value is None
 
 
 @pytest.mark.asyncio
@@ -350,7 +509,7 @@ async def test_knowledge_create_idempotency_preserves_first_payload(tmp_path):
 
 
 def test_workflow_idempotency_identity_includes_exact_capability():
-    from backend.services.capability_handlers import _qcp_workflow_identity
+    from backend.capability_handlers import _qcp_workflow_identity
 
     payload = {"tenant_key": "tenant-a", "user_id": "user-a"}
     data = {"title": "Same", "description": "same request"}
@@ -392,7 +551,7 @@ async def test_knowledge_mutation_receipts_survive_cache_clear_and_are_scoped(tm
             confirmed=True, idempotency_key="shared-key",
         )
         load_catalog.cache_clear()
-        import backend.services.capability_handlers as handlers
+        import backend.capability_handlers as handlers
         importlib.reload(handlers)
         replay = await invoke_capability(
             "knowledge.note.update", update, payload=tenant_a,

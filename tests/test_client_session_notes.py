@@ -128,7 +128,7 @@ def test_client_context_cannot_replace_native_hermes_runtime():
 def test_v1_knowledge_actions_do_not_enable_legacy_note_protocol():
     import scripts.hermes_bridge as bridge
 
-    assert bridge._legacy_client_context_enabled(True, False) is True
+    assert bridge._legacy_client_context_enabled(True, False) is False
     assert bridge._legacy_client_context_enabled(True, True) is False
     assert bridge._legacy_client_context_enabled(False, True) is False
 
@@ -366,7 +366,7 @@ async def test_bridge_prewarm_is_internal_durable_and_tenant_scoped(monkeypatch,
                 "agency_enabled": False,
                 "skill_enabled": False,
             }},
-            client_capabilities=["knowledge_action_v1"],
+            client_capabilities=["qcp_v1", "knowledge_action_v1"],
         ),
         "internal-token",
     )
@@ -377,6 +377,7 @@ async def test_bridge_prewarm_is_internal_durable_and_tenant_scoped(monkeypatch,
     assert payload["run_type"] == "chat_prewarm"
     assert payload["knowledge_claims"] == claims
     assert payload["knowledge_action_enabled"] is True
+    assert payload["qcp_enabled"] is True
 
 
 def test_ios_normal_send_does_not_export_sqlite_transcript():
@@ -552,96 +553,21 @@ def test_request_context_propagates_to_hermes_tool_worker_threads():
         bridge._client_context_tool_context.value = None
 
 
-def test_note_draft_runs_from_native_hermes_history_without_client_snapshot(
-    monkeypatch, tmp_path,
-):
-    import concurrent.futures
-    import queue
-    import sys
-    import types
-    import contextvars
-    from typing import Any, cast
+def test_note_draft_runs_from_native_hermes_history_without_client_snapshot():
+    """The removed legacy route stays fail-closed even with plausible native history."""
     import scripts.hermes_bridge as bridge
 
-    observed = {}
-
-    class FakeSessionDB:
-        def get_messages(self, session_id):
-            assert session_id == "hermes-native-session"
-            return [
-                {"id": 1, "role": "user", "content": "NOTE-SEED-9F3A"},
-                {"id": 2, "role": "assistant", "content": "已记住"},
-            ]
-
-        def close(self):
-            return None
-
-    class FakeAgent:
-        session_id = "hermes-native-session"
-
-        def run_conversation(self, goal, **kwargs):
-            observed["goal"] = goal
-            observed["persist_user_message"] = kwargs.get("persist_user_message")
-
-            def execute_note_tools():
-                search = json.loads(bridge._user_note_search_tool({
-                    "query": "Hermes唯一Runtime验收-9F3A",
-                }))
-                assert search["success"] is True
-                return json.loads(bridge._note_draft_tool({
-                    "title": "Hermes唯一Runtime验收-9F3A",
-                    "markdown": "# Hermes唯一Runtime验收-9F3A\n\nNOTE-SEED-9F3A",
-                    "source_message_ids": ["1", "2"],
-                }))
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                request_context = contextvars.copy_context()
-                draft = pool.submit(request_context.run, execute_note_tools).result()
-            assert draft["status"] == "awaiting_user_confirmation"
-            return {"final_response": "草稿已生成"}
-
-        def close(self):
-            return None
-
-    def fake_build(*_args, **kwargs):
-        observed["client_context_enabled"] = kwargs["client_context_enabled"]
-        return FakeAgent(), FakeSessionDB(), {"triage": None}
-
-    monkeypatch.setattr(bridge, "_build_in_process_agent", fake_build)
-    monkeypatch.setattr(bridge, "_knowledge_gateway_search", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
-    gateway_context = types.ModuleType("gateway.session_context")
-    setattr(gateway_context, "declare_stateless_channel", lambda: None)
-    monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
-
-    events = queue.Queue()
-    bridge._run_agent_sync(
-        "请把本次对话保存为笔记",
-        "stable-ios-session",
-        "hermes-native-session",
-        events,
-        [None],
-        knowledge_capability="signed-capability",
-        knowledge_claims={
-            "tenant_key": "tenant-a",
-            "user_id": "user-a",
-            "sources": ["user_notes"],
-            "scopes": ["private"],
-        },
-        client_session_context=None,
-        client_context_claims=None,
-        sandbox=cast(Any, types.SimpleNamespace(state_db=tmp_path / "state.db")),
-    )
-
-    emitted = []
-    while not events.empty():
-        emitted.append(events.get_nowait())
-    assert observed["client_context_enabled"] is True
-    assert "禁止调用 session_context_read" in observed["goal"]
-    assert "Hermes 原生会话笔记协议" not in observed["persist_user_message"]
-    draft_event = next(item for item in emitted if item.get("type") == "note_draft")
-    assert draft_event["source_message_ids"] == ["1", "2"]
-    assert emitted[-1]["type"] == "done"
+    bridge._client_context_tool_context.value = None
+    try:
+        assert bridge._legacy_client_context_enabled(True, False) is False
+        denied = json.loads(bridge._note_draft_tool({
+            "title": "Legacy bypass",
+            "markdown": "# Must not be emitted",
+            "source_message_ids": ["native-message-1"],
+        }))
+    finally:
+        bridge._client_context_tool_context.value = None
+    assert denied == {"success": False, "error": "hermes_session_required"}
 
 
 def test_save_request_without_knowledge_action_fails_closed(monkeypatch, tmp_path):
@@ -702,6 +628,59 @@ def test_save_request_without_knowledge_action_fails_closed(monkeypatch, tmp_pat
     }
     assert terminal["usage"]["usage_available"] is False
     assert not any(item.get("type") == "done" for item in emitted)
+
+
+def test_qcp_only_save_request_never_calls_legacy_note_tools(monkeypatch, tmp_path):
+    import queue
+    import sys
+    import types
+    from typing import Any, cast
+    import scripts.hermes_bridge as bridge
+
+    class FakeAgent:
+        session_id = "hermes-qcp-save"
+
+        def run_conversation(self, *_args, **_kwargs):
+            return {"final_response": "请确认新的 QCP 保存操作。"}
+
+        def close(self):
+            return None
+
+    class FakeSessionDB:
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        bridge, "_build_in_process_agent",
+        lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
+    )
+    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    monkeypatch.setattr(
+        bridge, "_user_note_search_tool",
+        lambda *_args, **_kwargs: pytest.fail("legacy note search must stay closed"),
+    )
+    monkeypatch.setattr(
+        bridge, "_note_draft_tool",
+        lambda *_args, **_kwargs: pytest.fail("legacy note draft must stay closed"),
+    )
+    gateway_context = types.ModuleType("gateway.session_context")
+    setattr(gateway_context, "declare_stateless_channel", lambda: None)
+    monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
+
+    events = queue.Queue()
+    bridge._run_agent_sync(
+        "把本次对话保存为笔记", "stable-ios-session", None, events, [None],
+        sandbox=cast(Any, types.SimpleNamespace(state_db=tmp_path / "state.db")),
+        qcp_enabled=True,
+        trusted_request_id="request-qcp-save",
+        trusted_identity_claims={"tenant_key": "tenant-a", "user_id": "user-a"},
+    )
+
+    emitted = []
+    while not events.empty():
+        emitted.append(events.get_nowait())
+    assert emitted[-1]["type"] == "done"
+    assert not any(item.get("type") == "note_draft" for item in emitted)
 
 
 def test_knowledge_action_context_does_not_depend_on_save_wording(monkeypatch, tmp_path):

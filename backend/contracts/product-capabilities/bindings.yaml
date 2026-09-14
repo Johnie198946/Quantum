@@ -29,3 +29,5 @@ bindings:
     handler: artifact.open
   - id: artifact.download
     handler: artifact.download
+  - id: artifact.consume_structured
+    handler: artifact.consume_structured

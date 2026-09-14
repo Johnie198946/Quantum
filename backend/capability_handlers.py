@@ -243,6 +243,15 @@ async def _artifact_download(data: dict[str, Any], payload: dict[str, Any], _key
     }
 
 
+async def _artifact_consume_structured(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    assert key
+    from backend.services.artifact_consumption import consume_structured_artifact
+
+    return await consume_structured_artifact(data, payload, key)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -259,4 +268,5 @@ HANDLERS: dict[str, Handler] = {
     "presentation.create_from_document": _presentation_create,
     "artifact.open": _artifact_open,
     "artifact.download": _artifact_download,
+    "artifact.consume_structured": _artifact_consume_structured,
 }

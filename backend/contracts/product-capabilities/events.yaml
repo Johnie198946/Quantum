@@ -21,3 +21,5 @@ events:
     version: 1
   - id: artifact.download_ready
     version: 1
+  - id: artifact.consumed
+    version: 1

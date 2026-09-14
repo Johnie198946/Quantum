@@ -2953,6 +2953,7 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     if capability_id not in {
         "workflow.create", "workflow.open", "workflow.status", "workflow.start",
         "presentation.create_from_document", "artifact.open", "artifact.download",
+        "artifact.consume_structured",
     }:
         return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
     context = getattr(_client_context_tool_context, "value", None)
@@ -2973,12 +2974,23 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
     tenant_token = current_tenant.set(str(identity["tenant_key"]))
     try:
+        input_digest = hashlib.sha256(json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode()).hexdigest()
+        stable_key = (
+            "bridge-" + hashlib.sha256(
+                f"{capability_id}:{request_id}:{input_digest}".encode()
+            ).hexdigest()
+            if capability.get("idempotency") == "required"
+            else None
+        )
         invocation = invoke_capability(
             capability_id,
             data,
             payload=dict(identity),
             confirmed=False,
-            idempotency_key=None,
+            idempotency_key=stable_key,
         )
         try:
             future = asyncio.run_coroutine_threadsafe(invocation, loop)
@@ -4488,6 +4500,15 @@ def _durable_status(
     if run is None:
         return None
     run_id = str(run["run_id"])
+    from backend.services.capability_catalog import load_catalog
+    qcp_event_types = {item["id"] for item in load_catalog()["events"]}
+    semantic_events = [
+        event for event in _chat_run_store.events_after(
+            run_id, max(0, offset), tenant_user_hash=owner_hash
+        )
+        if event.get("type") in qcp_event_types
+    ]
+    bounded_semantic_events = semantic_events[:100]
     exact_status = str(run["status"])
     execution_available = _durable_worker_is_live()
     status = (
@@ -4564,6 +4585,11 @@ def _durable_status(
         latest_step = _WORKER_MAINTENANCE["message"]
         clarify = None
     cursor = int(run["event_sequence"])
+    events_next_offset = (
+        int(bounded_semantic_events[-1]["event_sequence"])
+        if len(semantic_events) > len(bounded_semantic_events)
+        else cursor
+    )
     return {
         "status": status,
         "run_status": exact_status,
@@ -4578,6 +4604,8 @@ def _durable_status(
         "clarify": clarify,
         "last_message_id": cursor,
         "event_sequence": cursor,
+        "events_next_offset": events_next_offset,
+        "events": bounded_semantic_events,
         "run_id": run_id,
         "consumed": float(run.get("consumed_at") or 0) > 0,
         **({
@@ -5041,6 +5069,7 @@ async def chat_stream(
                     "knowledge_action_enabled": (
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
+                    "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
                     "answer_blocks_v1": "answer_blocks_v1" in set(body.client_capabilities),
                 },
             )
@@ -5135,7 +5164,7 @@ async def chat_stream(
                 _sse_from_in_process(
                     user_id,
                     goal,
-                    request_id=body.request_id,
+                    request_id=request_id,
                     reserved_run_id=run_id,
                     allow_local_files=False,
                     agent_config=body.agent_config,
@@ -5148,6 +5177,8 @@ async def chat_stream(
                     knowledge_action_enabled=(
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
+                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
+                    trusted_identity_claims=qws_context_claims,
                 ),
                 media_type="text/event-stream",
                 headers={
@@ -5285,6 +5316,7 @@ async def chat_prewarm(
             "knowledge_action_enabled": (
                 "knowledge_action_v1" in set(body.client_capabilities)
             ),
+            "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
         },
     )
     return {"run_id": run["run_id"], "status": run["status"]}
@@ -5446,6 +5478,7 @@ def _prewarm_session_agent(
     sandbox: "TenantHermesSandbox",
     *,
     knowledge_action_enabled: bool = False,
+    qcp_enabled: bool = False,
 ) -> tuple[str, bool]:
     """Build the ordinary fast-lane agent without spending a model turn."""
     hermes_sid = _resolve_hermes_session(user_id)
@@ -5474,6 +5507,7 @@ def _prewarm_session_agent(
             agent_config=agent_config,
             client_context_enabled=False,
             knowledge_action_enabled=knowledge_action_enabled,
+            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
         )
         source = str(route.get("agent_cache_source") or "cold_build")
@@ -6502,6 +6536,7 @@ def _build_in_process_agent(
     knowledge_capability: str | None = None,
     client_context_enabled: bool = False,
     knowledge_action_enabled: bool = False,
+    qcp_enabled: bool = False,
     sandbox: TenantHermesSandbox | None = None,
     timing_origin: float | None = None,
 ) -> tuple[object, object, dict[str, Any]]:
@@ -6655,9 +6690,10 @@ def _build_in_process_agent(
             toolsets_list.append("client_context")
     if knowledge_action_enabled:
         _ensure_knowledge_workspace_tools_registered()
-        _ensure_app_capability_tools_registered()
         if "knowledge_workspace" not in toolsets_list:
             toolsets_list.append("knowledge_workspace")
+    if qcp_enabled:
+        _ensure_app_capability_tools_registered()
         if "app_capabilities" not in toolsets_list:
             toolsets_list.append("app_capabilities")
     if allowed_tools:
@@ -6678,6 +6714,7 @@ def _build_in_process_agent(
             requested_toolsets.add("client_context")
         if knowledge_action_enabled:
             requested_toolsets.add("knowledge_workspace")
+        if qcp_enabled:
             requested_toolsets.add("app_capabilities")
         if agency_route_enabled:
             requested_toolsets.update(
@@ -6690,6 +6727,10 @@ def _build_in_process_agent(
         note_draft_request=note_draft_request,
         public_knowledge_fallback=public_knowledge_fallback,
     )
+    if knowledge_action_enabled and "knowledge_workspace" not in toolsets_list:
+        toolsets_list.append("knowledge_workspace")
+    if qcp_enabled and "app_capabilities" not in toolsets_list:
+        toolsets_list.append("app_capabilities")
     fast_general = bool(
         route_class == GENERAL_QA
         and not evidence_requirements
@@ -6697,6 +6738,8 @@ def _build_in_process_agent(
         and not tenant_skill_enabled
         and not knowledge_tool_enabled
         and not delegation_tool_enabled
+        and not knowledge_action_enabled
+        and not qcp_enabled
     )
     if fast_general:
         # Keep only native profile continuity on the fast lane.
@@ -6864,6 +6907,7 @@ def _build_in_process_agent(
                 "skill_candidates": skill_candidates,
                 "legacy_client_context": legacy_client_context_enabled,
                 "knowledge_action": knowledge_action_enabled,
+                "qcp": qcp_enabled,
                 "fast_general": fast_general,
             },
             ensure_ascii=False,
@@ -7007,7 +7051,7 @@ def _build_in_process_agent(
         # - Hermes 原生 resolve_reasoning_config 处理 DeepSeek 映射；不支持的 Provider 自动忽略
         reasoning_config={"effort": "minimal"},
     )
-    if knowledge_action_enabled:
+    if knowledge_action_enabled or qcp_enabled:
         _expose_eager_request_tools(agent, toolsets_list)
 
     # 支柱二兜底：若模型能力检测不支持 reasoning_effort 字段注入，保留 prompt 级限词约束
@@ -7051,6 +7095,9 @@ def _run_agent_sync(
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
+    qcp_enabled: bool = False,
+    trusted_request_id: str | None = None,
+    trusted_identity_claims: dict[str, Any] | None = None,
 ) -> None:
     """Run one Hermes turn, retaining only a bounded session-safe warm agent."""
     timing_origin = time.monotonic()
@@ -7114,12 +7161,14 @@ def _run_agent_sync(
                 "不要再次调用 memory；只需简洁确认。"
             )
         note_draft_request = knowledge_action_enabled and not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
-        note_context_claims = client_context_claims or knowledge_claims
+        note_context_claims = (
+            client_context_claims or knowledge_claims or trusted_identity_claims
+        )
         has_client_context = (
             client_session_context is not None and client_context_claims is not None
         )
         if note_context_claims is not None and (
-            has_client_context or note_draft_request or knowledge_action_enabled
+            has_client_context or note_draft_request or knowledge_action_enabled or qcp_enabled
         ):
             assert note_context_claims is not None
             transcript = (
@@ -7133,6 +7182,7 @@ def _run_agent_sync(
                 "transcript": transcript,
                 "request_id": (
                     (client_context_claims or {}).get("request_id")
+                    or trusted_request_id
                     or run_state.get("request_id")
                 ),
                 "identity": {
@@ -7238,6 +7288,7 @@ def _run_agent_sync(
                 or (note_draft_request and knowledge_claims is not None)
             ),
             knowledge_action_enabled=knowledge_action_enabled,
+            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
             timing_origin=timing_origin,
         )
@@ -7371,6 +7422,7 @@ def _run_agent_sync(
             isinstance(client_tool_context, dict)
             and _is_note_draft_request(goal)
             and not knowledge_action_enabled
+            and _legacy_client_context_enabled(has_client_context, knowledge_action_enabled)
             and not client_tool_context.get("draft_emitted")
             and str(final or "").strip()
         ):
@@ -7459,6 +7511,8 @@ def _sse_from_in_process(
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
+    qcp_enabled: bool = False,
+    trusted_identity_claims: dict[str, Any] | None = None,
 ):
     """SSE 事件生成器：agent 线程事件 → queue → asyncio 逐帧输出（thread-safe）。
 
@@ -7488,7 +7542,8 @@ def _sse_from_in_process(
             goal, user_id, hermes_sid, stream_q, agent_holder,
             allow_local_files, agent_config, knowledge_capability, knowledge_claims,
             client_session_context, client_context_claims, sandbox,
-            knowledge_action_enabled, qws_business_context,
+            knowledge_action_enabled, qws_business_context, qcp_enabled, request_id,
+            trusted_identity_claims,
         ),
         daemon=True,
         name=f"agent-stream-{user_id[:12]}",
@@ -7948,6 +8003,9 @@ async def chat(
                     client_context_claims is not None
                     and "knowledge_action_v1" in set(body.client_capabilities),
                     body.qws_business_context,
+                    "qcp_v1" in set(body.client_capabilities),
+                    body.request_id,
+                    qws_context_claims,
                 )
                 events: list[dict[str, Any]] = []
                 while not event_queue.empty():
@@ -7958,6 +8016,8 @@ async def chat(
                 if error:
                     raise HTTPException(status_code=502, detail=error.get("message") or "Hermes failed")
                 done = next((item for item in reversed(events) if item.get("type") == "done"), {})
+                from backend.services.capability_catalog import load_catalog
+                qcp_event_types = {item["id"] for item in load_catalog()["events"]}
                 return {
                     "reply": str(done.get("answer") or ""),
                     "session_id": user_id,
@@ -7967,9 +8027,8 @@ async def chat(
                     "knowledge_receipt": done.get("knowledge_receipt"),
                     "events": [
                         item for item in events
-                        if item.get("type") in {
+                        if item.get("type") in qcp_event_types or item.get("type") in {
                             "note_draft", "knowledge_action_draft", "knowledge_navigation",
-                            "capability.proposed",
                             "tool_start", "tool_complete", "delegate_receipt", "memory_receipt"
                         }
                     ],

@@ -1039,6 +1039,10 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(context["session_id"] as? String, "session-1")
         XCTAssertNil(object["tenant_key"])
         XCTAssertNil(object["user_id"])
+        XCTAssertEqual(
+            object["client_capabilities"] as? [String],
+            ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
+        )
     }
 
     func testChatPrewarmRequestUsesServerSessionContract() throws {
@@ -1052,7 +1056,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(object["agent_id"] as? String, "main_agent")
         XCTAssertEqual(
             object["client_capabilities"] as? [String],
-            ["knowledge_action_v1", "answer_blocks_v1"]
+            ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
         )
     }
 
@@ -1718,6 +1722,47 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(response.feedbackReceipt?.revocable == true)
     }
 
+    @MainActor
+    func testNonStreamingChatDecodesAndDispatchesQCPEvents() throws {
+        let data = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"proposal-1","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"创建工作流","risk":"medium","state":"awaiting_confirmation"}},{"type":"artifact.consumed","version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}}]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ChatResponseDTO.self, from: data)
+        XCTAssertEqual(response.events?.map(\.type), ["capability.proposed", "artifact.consumed"])
+        let artifactEvent = try XCTUnwrap(response.events?.last)
+        XCTAssertEqual(
+            RendererRegistry.route(for: artifactEvent.type, version: artifactEvent.version),
+            .artifactConsumption
+        )
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = SessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        manager.setMessages([
+            ChatMessage(
+                id: "output", sessionId: sessionID, role: .assistant,
+                content: "", pending: true
+            )
+        ], for: sessionID)
+        manager.applyResponse(sessionId: sessionID, requestId: "output", response: response)
+        let proposal = manager.messages(for: sessionID).first(where: { $0.id == "output" })?.blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }.first
+        XCTAssertEqual(proposal?.id, "proposal-1")
+        let consumption = manager.messages(for: sessionID).first(where: { $0.id == "output" })?.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first
+        XCTAssertEqual(consumption?.receiptId, "acr-1")
+        XCTAssertEqual(consumption?.structuredPreview, #"{"value":"ok"}"#)
+    }
+
     func testFeedbackReceiptSSEEventDecodes() throws {
         let event = try XCTUnwrap(APIClient.StreamEvent.parse([
             "type": "feedback_receipt",
@@ -1849,6 +1894,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             {
               "status":"running","phase":"clarify","answer":"",
               "reasoning":[],"latest_step":"等待用户确认","consumed":false,
+              "run_id":"run-2","event_sequence":12,"events_next_offset":11,
+              "events":[{"type":"artifact.consumed","version":1,"run_id":"run-2","event_sequence":11,"payload":{"receipt":{"receipt_id":"acr-status"}}}],
               "clarify":{
                 "clarify_id":"cid-2","request_id":"request-2",
                 "question":"选择目标","choices":["A","B"],
@@ -1862,6 +1909,10 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(status.clarify?.clarifyId, "cid-2")
         XCTAssertEqual(status.clarify?.requestId, "request-2")
         XCTAssertEqual(status.clarify?.expiresInSeconds, 88)
+        XCTAssertEqual(status.runId, "run-2")
+        XCTAssertEqual(status.eventsNextOffset, 11)
+        XCTAssertEqual(status.events?.first?.type, "artifact.consumed")
+        XCTAssertEqual(status.events?.first?.eventSequence, 11)
     }
 
     func testRunningChatStatusNeverAllowsRegenerate() {
@@ -4089,16 +4140,24 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let coordinator = TenantSessionCoordinator(
             sessionManager: manager,
             hasAuthenticatedSession: { true },
-            fetchChatStatus: { sessionId, consume, _ in
+            fetchChatStatus: { sessionId, consume, _, offset in
                 XCTAssertEqual(sessionId, runSession)
-                XCTAssertTrue(consume)
-                stored.fulfill()
+                XCTAssertEqual(offset, consume ? 9 : (offset == 5 ? 5 : 8))
+                if !consume && offset == 5 { stored.fulfill() }
+                let isFirstPage = offset == 5
                 return ChatStatusDTO(
                     status: "completed", phase: nil, answer: "离开期间完成的正文",
                     reasoning: [ChatReasoningStepDTO(
                         type: "tool_call", title: "检索完成", detail: "8 个来源", status: "done"
                     )],
-                    latestStep: nil, clarify: nil, consumed: true, answerProjection: nil
+                    latestStep: nil, clarify: nil, consumed: consume, answerProjection: nil,
+                    runId: "run-away", eventSequence: 9,
+                    eventsNextOffset: isFirstPage ? 8 : 9,
+                    events: isFirstPage ? [QCPStreamEvent(
+                        type: "artifact.consumed", version: 1,
+                        payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-away","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
+                        runId: "run-away", eventSequence: 8
+                    )] : []
                 )
             }
         )
@@ -4111,7 +4170,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         await fulfillment(of: [stored], timeout: 1)
         for _ in 0..<100 {
             if coordinator.backgroundMonitorCountForTesting == 0 { break }
-            await Task.yield()
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertEqual(coordinator.backgroundMonitorCountForTesting, 0)
         await manager.flushPendingPersistence()
@@ -4122,6 +4181,16 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(completed.runId, "run-away")
         XCTAssertEqual(completed.content, "离开期间完成的正文")
         XCTAssertFalse(completed.pending)
+        XCTAssertEqual(completed.lastEventSequence, 9)
+        XCTAssertTrue(completed.blocks.contains {
+            if case .artifactConsumption(let receipt) = $0 {
+                return receipt.receiptId == "acr-away"
+            }
+            return false
+        })
+        XCTAssertFalse(manager.messages(for: otherSession).contains {
+            $0.blocks.contains { if case .artifactConsumption = $0 { return true }; return false }
+        })
         guard case .reasoning(let steps) = try XCTUnwrap(completed.blocks.first) else {
             XCTFail("completed status must preserve the visible tool timeline")
             return
@@ -4159,7 +4228,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                 started.fulfill()
                 return try await withCheckedThrowingContinuation { continuation = $0 }
             },
-            fetchChatStatus: { _, _, _ in
+            fetchChatStatus: { _, _, _, _ in
                 legacyStatusGETs += 1
                 throw APIError.network("offline")
             }
@@ -4685,6 +4754,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(RendererRegistry.route(for: "workflow.created", version: 1), .workflow)
         XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
         XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 1), .artifactConsumption)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 0), .artifact)
         XCTAssertEqual(RendererRegistry.route(for: "knowledge.navigation", version: 1), .navigation)
         XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 0), .artifact)
         XCTAssertEqual(RendererRegistry.route(for: "unknown.event", version: 99), .answer)
@@ -4717,5 +4788,90 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(proposal.capabilityId, "workflow.create")
         XCTAssertEqual(proposal.input.title, "QCP")
         XCTAssertEqual(proposal.state, .awaitingConfirmation)
+
+        let consumedEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "artifact.consumed", "version": 1,
+            "run_id": "run-1", "event_sequence": 8,
+            "payload": [
+                "structured_payload": ["value": "ok"],
+                "receipt": [
+                    "receipt_id": "acr-1", "artifact_id": "artifact-1",
+                    "artifact_content_hash": String(repeating: "a", count: 64),
+                    "schema_version": "schema-v1", "consumed_at": "2026-09-14T08:00:00Z",
+                    "status": "completed",
+                ],
+            ],
+        ]))
+        guard case .capability(let consumed) = consumedEvent else {
+            return XCTFail("Expected artifact consumption event")
+        }
+        XCTAssertEqual(consumed.type, "artifact.consumed")
+        XCTAssertEqual(consumed.runId, "run-1")
+        XCTAssertEqual(consumed.eventSequence, 8)
+        XCTAssertEqual(
+            RendererRegistry.metadata(for: consumed.type)?.path, .artifactConsumption
+        )
+        XCTAssertEqual(RendererRegistry.metadata(for: consumed.type)?.fallback, .artifact)
+
+        var message = ChatMessage(role: .assistant, content: "")
+        XCTAssertNotNil(message.appendCapabilityBlock(from: consumed))
+        XCTAssertNil(message.appendCapabilityBlock(from: consumed))
+        let receipt = try XCTUnwrap(message.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first)
+        XCTAssertEqual(receipt.receiptId, "acr-1")
+        XCTAssertLessThanOrEqual(receipt.structuredPreview.count, ArtifactConsumptionBlock.previewLimit)
+    }
+
+    func testArtifactConsumptionPersistsRoundTripAndBoundsPreview() throws {
+        let receipt = ArtifactConsumptionBlock(
+            receiptId: "acr-roundtrip", artifactId: "artifact-1",
+            artifactContentHash: String(repeating: "b", count: 64),
+            schemaVersion: "schema-v1", consumedAt: "2026-09-14T08:00:00Z",
+            status: "completed", structuredPreview: String(repeating: "x", count: 2_000)
+        )
+        let message = ChatMessage(
+            id: "receipt-message", sessionId: "session-1", role: .assistant,
+            content: "", blocks: [.artifactConsumption(receipt)]
+        )
+
+        let decoded = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        ).toChatMessage(sessionId: "session-1")
+        let restored = try XCTUnwrap(decoded.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first)
+        XCTAssertEqual(restored.receiptId, "acr-roundtrip")
+        XCTAssertEqual(restored.structuredPreview.count, ArtifactConsumptionBlock.previewLimit)
+
+        let legacy = try JSONDecoder().decode(
+            PersistedMessage.self,
+            from: Data(#"{"id":"legacy","role":"assistant","content":"old","createdAt":0,"pending":false,"degraded":false,"isDemoSample":false}"#.utf8)
+        )
+        XCTAssertFalse(legacy.toChatMessage(sessionId: "session-1").blocks.contains {
+            if case .artifactConsumption = $0 { return true }
+            return false
+        })
+    }
+
+    func testArtifactConsumptionQCPEnvelopeDecodesWithDurableReceiptInPayload() throws {
+        struct Consumption: Decodable {
+            struct DurableReceipt: Decodable { let receiptId: String }
+            let structuredPayload: [String: String]
+            let receipt: DurableReceipt
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(
+            QCPInvokeResponseDTO<Consumption>.self,
+            from: Data(#"{"status":"completed","capability_id":"artifact.consume_structured","events":[{"type":"artifact.consumed","version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1"}}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"artifact.consumed"},"error":null}"#.utf8)
+        )
+
+        XCTAssertEqual(response.receipt?.invocationId, "qcp-1")
+        XCTAssertEqual(response.receipt?.eventType, "artifact.consumed")
+        XCTAssertEqual(response.events.first?.payload.structuredPayload["value"], "ok")
+        XCTAssertEqual(response.events.first?.payload.receipt.receiptId, "acr-1")
     }
 }

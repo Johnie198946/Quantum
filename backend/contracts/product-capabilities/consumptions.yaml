@@ -17,9 +17,9 @@ consumptions:
     status: implemented
   - id: artifact.structured_consumption
     kind: artifact
-    description: Verified artifact content can be read structurally, but no general downstream consumer receipt exists yet.
-    input_contract: {execution_id: string, artifact_id: string, expected_schema: optional}
-    receipt: content_hash_only
-    implementation_refs: [backend/api/workflows.py, backend/services/workflow_artifacts.py]
-    gates: [owned_execution, read_verified_artifact]
-    status: partial
+    description: QCP consumes only owned, hash-matched JSON workflow artifacts through the Hermes runtime and persists a verified idempotent receipt.
+    input_contract: {execution_id: string, artifact_id: string, expected_content_hash: sha256, expected_schema: optional_restricted_json_schema}
+    receipt: durable_structured_consumption_receipt
+    implementation_refs: [backend/services/artifact_consumption.py, backend/capability_handlers.py, scripts/hermes_bridge.py]
+    gates: [workflow_creator, dirfd_verified_artifact, stable_trusted_idempotency_key]
+    status: implemented

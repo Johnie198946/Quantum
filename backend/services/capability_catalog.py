@@ -26,6 +26,7 @@ IMPLEMENTED_HANDLERS = {
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "presentation.create_from_document",
     "artifact.open", "artifact.download",
+    "artifact.consume_structured",
 }
 
 
@@ -200,7 +201,7 @@ async def invoke_capability(
     idempotency_key: str | None,
 ) -> dict[str, Any]:
     from fastapi import HTTPException
-    from backend.services.capability_handlers import HANDLERS
+    from backend.capability_handlers import HANDLERS
 
     capability = describe_capability(capability_id)
     if capability is None:

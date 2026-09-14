@@ -129,7 +129,7 @@ async def test_prewarm_queues_same_general_agent_lane_without_model_call(monkeyp
         chat_mod.ChatPrewarmRequest(
             session_id="client-session",
             agent_id="main_agent",
-            client_capabilities=["knowledge_action_v1"],
+            client_capabilities=["qcp_v1", "knowledge_action_v1"],
         ),
         {"tenant_key": "tenant-a", "user_id": "user-a"},
     )
@@ -137,7 +137,7 @@ async def test_prewarm_queues_same_general_agent_lane_without_model_call(monkeyp
     assert result == {"run_id": "prewarm-run", "status": "queued"}
     assert observed["json"]["session_id"] == "isolated-session"
     assert observed["json"]["agent_config"]["triage"]["route_class"] == "GENERAL_QA"
-    assert observed["json"]["client_capabilities"] == ["knowledge_action_v1"]
+    assert observed["json"]["client_capabilities"] == ["qcp_v1", "knowledge_action_v1"]
     assert observed["headers"]["X-Hermes-Internal-Token"] == "internal-token"
 
 
@@ -466,12 +466,19 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
     async def fake_child(*_args, **kwargs):
         observed["child_agent"] = kwargs["agent_config"]["id"]
         observed["child_session"] = kwargs["session_id"]
-        return "英语评估结果", []
+        observed["child_capabilities"] = kwargs["client_capabilities"]
+        observed["child_request_id"] = kwargs["request_id"]
+        return "英语评估结果", [], [{
+            "type": "artifact.consumed", "version": 1,
+            "payload": {"receipt": {"receipt_id": "acr-child"}},
+        }]
 
     async def fake_bridge_stream(goal: str, session_id: str, **kwargs):
         observed["main_agent"] = kwargs["agent_config"]["id"]
         observed["main_session"] = session_id
         observed["goal"] = goal
+        observed["main_capabilities"] = kwargs["client_capabilities"]
+        observed["main_request_id"] = kwargs["request_id"]
         yield 'data: {"type":"done","answer":"已转交"}\n\n'
 
     monkeypatch.setattr(chat_mod, "_resolve_agent_route", fake_route)
@@ -481,16 +488,22 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/chat/stream",
-            json={"question": "调用小学生英语评估 Agent", "session_id": "s1"},
+            json={
+                "question": "调用小学生英语评估 Agent", "session_id": "s1",
+                "request_id": "stream-request-123", "client_capabilities": ["qcp_v1"],
+            },
             headers=auth_headers(),
         )
 
     assert response.status_code == 200
     assert '"type": "agent_route"' in response.text
+    assert '"type": "artifact.consumed"' in response.text
     assert "小学生英语评估" in response.text
     assert observed["child_agent"] == target.id
     assert observed["main_agent"] == main.id
     assert observed["child_session"] != observed["main_session"]
+    assert observed["child_capabilities"] == observed["main_capabilities"] == ["qcp_v1"]
+    assert observed["child_request_id"] == observed["main_request_id"] == "stream-request-123"
     assert "英语评估结果" in observed["goal"]
 
 

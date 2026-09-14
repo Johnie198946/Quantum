@@ -173,7 +173,7 @@ def test_worker_prewarms_agent_without_running_a_model_turn(monkeypatch, tmp_pat
             },
         },
         sandbox,
-        {"knowledge_action_enabled": True},
+        {"knowledge_action_enabled": True, "qcp_enabled": False},
     )]
     timing = store.events_after(run["run_id"], 0, tenant_user_hash=owner)
     assert [event.get("phase") for event in timing[:-1]] == [

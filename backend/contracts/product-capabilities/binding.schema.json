@@ -1,1 +1,1 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"QCP handler binding","type":"object","required":["id","handler"]}
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"QCP handler binding","type":"object","properties":{"id":{"type":"string","minLength":1},"handler":{"type":"string","minLength":1}},"required":["id","handler"],"additionalProperties":false}

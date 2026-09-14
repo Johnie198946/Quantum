@@ -275,6 +275,7 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
                 knowledge_action_enabled=bool(
                     payload.get("knowledge_action_enabled")
                 ),
+                qcp_enabled=bool(payload.get("qcp_enabled")),
             )
             store.append_event(run_id, {
                 "type": "runtime_timing", "phase": "agent_build_end",
@@ -293,6 +294,9 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
             payload.get("client_session_context"), client_claims or None, sandbox,
             bool(payload.get("knowledge_action_enabled")),
             payload.get("qws_business_context"),
+            bool(payload.get("qcp_enabled")),
+            str(run.get("request_id") or ""),
+            qws_claims or None,
         )
         snapshot = store.get_unchecked(run_id)
         triage = dict((payload.get("agent_config") or {}).get("triage") or {})

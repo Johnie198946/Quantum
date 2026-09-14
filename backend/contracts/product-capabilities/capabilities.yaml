@@ -314,3 +314,49 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_product_capabilities.py]
     implementation_status: implemented
+  - id: artifact.consume_structured
+    version: 1.0.0
+    domain: artifact
+    description: Deterministically consume an owned JSON workflow artifact after content-hash and optional restricted-schema validation.
+    positive_examples: ["Consume this JSON artifact with the expected schema"]
+    negative_examples: ["Send this artifact to a model-defined URL"]
+    input_schema: {type: object, properties: {execution_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, artifact_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, expected_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}, expected_schema: {type: object}}, required: [execution_id, artifact_id, expected_content_hash], additionalProperties: false}
+    output_schema:
+      type: object
+      properties:
+        structured_payload: {}
+        receipt:
+          type: object
+          properties:
+            receipt_id: {type: string}
+            tenant_key: {type: string}
+            user_id: {type: string}
+            execution_id: {type: string}
+            artifact_id: {type: string}
+            artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+            schema_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+            schema_version: {type: string}
+            capability_id: {type: string}
+            capability_version: {type: string}
+            idempotency_key_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+            payload_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+            consumed_at: {type: string}
+            result_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+            status: {type: string, enum: [completed]}
+          required: [receipt_id, tenant_key, user_id, execution_id, artifact_id, artifact_content_hash, schema_digest, schema_version, capability_id, capability_version, idempotency_key_hash, payload_digest, consumed_at, result_digest, status]
+          additionalProperties: false
+      required: [structured_payload, receipt]
+      additionalProperties: false
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner, verified_content_hash, supported_json_format, stable_idempotency_key]
+    policy_ref: artifact-owner
+    handler_binding: artifact.consume_structured
+    idempotency: required
+    receipt: required
+    result_event: artifact.consumed
+    renderer: artifact_consumption
+    renderer_version: 1
+    tests: [tests/test_artifact_structured_consumption.py, tests/test_product_capabilities.py]
+    implementation_status: implemented

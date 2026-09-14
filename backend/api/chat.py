@@ -404,6 +404,7 @@ class ChatResponse(BaseModel):
     resolved_agent: Optional[AgentRouteInfo] = None
     delegated_by: Optional[str] = None
     feedback_receipt: Optional[Dict[str, Any]] = None
+    events: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 def _feedback_surface(capabilities: List[str]) -> str:
@@ -466,8 +467,10 @@ async def _call_hermes(
     knowledge_capability: Optional[str] = None, policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
-) -> tuple[str, List[ReasoningStep]]:
-    """透传 Hermes bridge，返回 (reply, reasoning)。"""
+    client_capabilities: Optional[List[str]] = None,
+    request_id: Optional[str] = None,
+) -> tuple[str, List[ReasoningStep], List[Dict[str, Any]]]:
+    """透传 Hermes bridge，返回 reply、reasoning 与原始 QCP semantic events。"""
     _last_hermes_usage.set({})
     payload: Dict[str, Any] = {"goal": _bounded_bridge_goal(goal, knowledge_capability)}
     if session_id:
@@ -483,6 +486,9 @@ async def _call_hermes(
         payload["knowledge_query"] = knowledge_query
     if agent_config:
         payload["agent_config"] = agent_config
+    payload["client_capabilities"] = client_capabilities or []
+    if request_id:
+        payload["request_id"] = request_id
     async with httpx.AsyncClient(timeout=HERMES_TIMEOUT) as client:
         r = await client.post(
             _bridge_url_for_placement(
@@ -502,8 +508,9 @@ async def _call_hermes(
                 ReasoningStep(**s) if isinstance(s, dict) else s
                 for s in data.get("reasoning", [])
             ]
-            return reply, reasoning
-        return f"⚠️ Hermes 桥接失败（HTTP {r.status_code}）", []
+            events = [item for item in data.get("events", []) if isinstance(item, dict)]
+            return reply, reasoning, events
+        return f"⚠️ Hermes 桥接失败（HTTP {r.status_code}）", [], []
 
 
 async def _call_hermes_recorded(
@@ -516,12 +523,14 @@ async def _call_hermes_recorded(
     policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
-) -> tuple[str, List[ReasoningStep]]:
+    client_capabilities: Optional[List[str]] = None,
+    request_id: Optional[str] = None,
+) -> tuple[str, List[ReasoningStep], List[Dict[str, Any]]]:
     started = time.perf_counter()
     quota_owned = bool((agent_config or {}).get("inference_policy"))
     _last_hermes_usage.set({})
     try:
-        reply, reasoning = await _call_hermes(
+        reply, reasoning, events = await _call_hermes(
             goal,
             session_id=session_id,
             skill_id=skill_id,
@@ -529,6 +538,8 @@ async def _call_hermes_recorded(
             policy_version=policy_version,
             knowledge_query=knowledge_query,
             agent_config=agent_config,
+            client_capabilities=client_capabilities,
+            request_id=request_id,
         )
         success = bool(reply) and not reply.lstrip().startswith("⚠️")
         if not quota_owned:
@@ -538,7 +549,7 @@ async def _call_hermes_recorded(
                 latency_ms=round((time.perf_counter() - started) * 1000),
                 success=success,
             )
-        return reply, reasoning
+        return reply, reasoning, events
     except Exception:
         if not quota_owned:
             await record_llm_usage(
@@ -625,6 +636,7 @@ async def _check_cached_answer(
         reasoning=reasoning,
         citations=citations,
         clarify=extract_clarify_payload(reasoning),
+        events=[item for item in data.get("events", []) if isinstance(item, dict)],
     )
 
 
@@ -1144,7 +1156,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             child_config["inference_policy"] = inference.bridge_config()
             child_config["runtime_placement"] = placement.bridge_config()
             model_attempted = True
-            child_reply, _ = await _call_hermes_recorded(
+            child_reply, _, child_events = await _call_hermes_recorded(
                 goal + child_context.evidence,
                 auth_payload=payload,
                 session_id=child_session_id,
@@ -1152,6 +1164,8 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
                 policy_version=child_context.policy_version,
                 knowledge_query=child_context.knowledge_query,
                 agent_config=child_config,
+                client_capabilities=req.client_capabilities,
+                request_id=effective_request_id,
             )
             delegated_usage = dict(_last_hermes_usage.get())
             await persist_usage_prefix(payload, effective_request_id, delegated_usage)
@@ -1165,23 +1179,27 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
 
         if skill_id:
             model_attempted = True
-            reply, reasoning = await _call_hermes_recorded(
+            reply, reasoning, events = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id, skill_id=skill_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
+                client_capabilities=req.client_capabilities,
+                request_id=effective_request_id,
             )
         else:
             model_attempted = True
-            reply, reasoning = await _call_hermes_recorded(
+            reply, reasoning, events = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
+                client_capabilities=req.client_capabilities,
+                request_id=effective_request_id,
             )
         answer = trim_boilerplate(reply)
         citations = extract_citations(answer)
@@ -1221,6 +1239,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             ),
             delegated_by="main_agent" if delegated_target is not None else None,
             feedback_receipt=feedback_payload,
+            events=(child_events if delegated_target is not None else []) + events,
         )
     except (Exception, asyncio.CancelledError) as e:
         if model_attempted:
@@ -1933,7 +1952,7 @@ async def stream_chat(
                     child_config["inference_policy"] = inference.bridge_config()
                     child_config["runtime_placement"] = placement.bridge_config()
                     model_attempted = True
-                    child_reply, _ = await _call_hermes_recorded(
+                    child_reply, _, child_events = await _call_hermes_recorded(
                         goal,
                         auth_payload=payload,
                         session_id=child_session_id,
@@ -1941,11 +1960,15 @@ async def stream_chat(
                         policy_version=child_policy_version,
                         knowledge_query=effective_knowledge_query,
                         agent_config=child_config,
+                        client_capabilities=req.client_capabilities,
+                        request_id=effective_request_id,
                     )
                     delegated_usage = dict(_last_hermes_usage.get())
                     await persist_usage_prefix(payload, effective_request_id, delegated_usage)
                     if not child_reply.strip() or child_reply.lstrip().startswith("⚠️"):
                         raise RuntimeError(child_reply.strip() or "专属 Agent 未返回结果")
+                    for event in child_events:
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 except Exception as exc:
                     message = f"专属 Agent 调用失败：{exc}"
                     for frame in _message_sse(message):

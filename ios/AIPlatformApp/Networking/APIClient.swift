@@ -874,7 +874,7 @@ public struct ChatRequestDTO: Encodable {
     public let clientSessionContext: ClientSessionContextDTO?
     public let clientCapabilities: [String]
 
-    public init(question: String, requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["knowledge_action_v1", "answer_blocks_v1"]) {
+    public init(question: String, requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]) {
         self.question = question
         self.requestId = requestId
         self.sessionId = sessionId
@@ -907,7 +907,7 @@ public struct ChatPrewarmRequestDTO: Encodable {
     public init(
         sessionId: String,
         agentId: String?,
-        clientCapabilities: [String] = ["knowledge_action_v1", "answer_blocks_v1"]
+        clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
     ) {
         self.sessionId = sessionId
         self.agentId = agentId
@@ -922,7 +922,7 @@ public struct ChatPrewarmRequestDTO: Encodable {
 }
 
 /// POST /api/chat 响应（snake_case → camelCase 自动转换）
-public struct ChatResponseDTO: Codable {
+public struct ChatResponseDTO: Decodable {
     public let question: String
     public let answer: String
     public let sessionId: String?
@@ -934,8 +934,9 @@ public struct ChatResponseDTO: Codable {
     public let resolvedAgent: ChatAgentRouteDTO?
     public let delegatedBy: String?
     public let feedbackReceipt: FeedbackReceiptDTO?
+    public let events: [QCPStreamEvent]?
 
-    public init(question: String, answer: String, sessionId: String?, reasoning: [ChatReasoningStepDTO], degraded: Bool? = nil, clarify: ChatClarifyDTO? = nil, resolvedAgent: ChatAgentRouteDTO? = nil, delegatedBy: String? = nil, feedbackReceipt: FeedbackReceiptDTO? = nil) {
+    public init(question: String, answer: String, sessionId: String?, reasoning: [ChatReasoningStepDTO], degraded: Bool? = nil, clarify: ChatClarifyDTO? = nil, resolvedAgent: ChatAgentRouteDTO? = nil, delegatedBy: String? = nil, feedbackReceipt: FeedbackReceiptDTO? = nil, events: [QCPStreamEvent]? = nil) {
         self.question = question
         self.answer = answer
         self.sessionId = sessionId
@@ -945,6 +946,7 @@ public struct ChatResponseDTO: Codable {
         self.resolvedAgent = resolvedAgent
         self.delegatedBy = delegatedBy
         self.feedbackReceipt = feedbackReceipt
+        self.events = events
     }
 }
 
@@ -1007,7 +1009,7 @@ public extension ChatReasoningStepDTO {
 /// GET /api/chat/status/{session_id} 响应（长任务状态回读 + 断点 0ms 恢复）
 /// 状态机：completed（附 answer + 完整 reasoning）/ running（附 latestStep + 已产生 steps）
 ///        / timeout / not_found
-public struct ChatStatusDTO: Codable {
+public struct ChatStatusDTO: Decodable {
     public let status: String
     public let phase: String?
     public let answer: String?
@@ -1017,6 +1019,10 @@ public struct ChatStatusDTO: Codable {
     /// 是否已消费（completed 且水位线已推进）；consume=1 时后端顺带标记
     public let consumed: Bool?
     public let answerProjection: AnswerBlockPageDTO?
+    public let runId: String?
+    public let eventSequence: Int?
+    public let eventsNextOffset: Int?
+    public let events: [QCPStreamEvent]?
 
     public var loadedAnswer: String? {
         answer ?? answerProjection.map { $0.blocks.map(\.content).joined() }
@@ -1810,7 +1816,7 @@ public final class CapabilityClient {
 }
 
 public enum QCPRenderingPath: String, Sendable {
-    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, navigation
+    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, artifactConsumption, navigation
 }
 
 public struct QCPRendererRoute: Sendable, Equatable {
@@ -1834,6 +1840,7 @@ public enum RendererRegistry {
         "workflow.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
         "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
     ]
@@ -1848,10 +1855,66 @@ public enum RendererRegistry {
     }
 }
 
-public struct QCPStreamEvent: Sendable {
+private enum QCPJSONValue: Decodable {
+    case object([String: QCPJSONValue]), array([QCPJSONValue])
+    case string(String), integer(Int64), number(Double), bool(Bool), null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode([String: QCPJSONValue].self) { self = .object(value) }
+        else if let value = try? container.decode([QCPJSONValue].self) { self = .array(value) }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else { self = .string(try container.decode(String.self)) }
+    }
+
+    var foundationValue: Any {
+        switch self {
+        case .object(let value): return value.mapValues(\.foundationValue)
+        case .array(let value): return value.map(\.foundationValue)
+        case .string(let value): return value
+        case .integer(let value): return value
+        case .number(let value): return value
+        case .bool(let value): return value
+        case .null: return NSNull()
+        }
+    }
+}
+
+public struct QCPStreamEvent: Decodable, Sendable {
     public let type: String
     public let version: Int
     public let payload: Data
+    public let runId: String?
+    public let eventSequence: Int?
+
+    public init(
+        type: String, version: Int, payload: Data,
+        runId: String? = nil, eventSequence: Int? = nil
+    ) {
+        self.type = type
+        self.version = version
+        self.payload = payload
+        self.runId = runId
+        self.eventSequence = eventSequence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, version, payload
+        case runId, eventSequence
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        eventSequence = try container.decodeIfPresent(Int.self, forKey: .eventSequence)
+        let value = try container.decode(QCPJSONValue.self, forKey: .payload)
+        payload = try JSONSerialization.data(withJSONObject: value.foundationValue)
+    }
 }
 
 public struct WorkflowPlanEditRequestDTO: Encodable {
@@ -3556,7 +3619,9 @@ public final class APIClient: ObservableObject {
                 return .capability(QCPStreamEvent(
                     type: type,
                     version: json["version"] as? Int ?? 1,
-                    payload: data
+                    payload: data,
+                    runId: json["run_id"] as? String,
+                    eventSequence: json["event_sequence"] as? Int
                 ))
             }
         }
@@ -3637,7 +3702,9 @@ public final class APIClient: ObservableObject {
                             if let data = payload.data(using: .utf8),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                                let event = StreamEvent.parse(json) {
-                                if let runId = json["run_id"] as? String, !runId.isEmpty {
+                                if case .capability = event {
+                                    // Capability blocks checkpoint themselves before advancing.
+                                } else if let runId = json["run_id"] as? String, !runId.isEmpty {
                                     continuation.yield(.runCursor(
                                         runId: runId,
                                         eventSequence: json["event_sequence"] as? Int ?? 0
@@ -3652,7 +3719,9 @@ public final class APIClient: ObservableObject {
                                let data = buffer.dropFirst(6).data(using: .utf8),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                                let event = StreamEvent.parse(json) {
-                                if let runId = json["run_id"] as? String, !runId.isEmpty {
+                                if case .capability = event {
+                                    // Capability blocks checkpoint themselves before advancing.
+                                } else if let runId = json["run_id"] as? String, !runId.isEmpty {
                                     continuation.yield(.runCursor(
                                         runId: runId,
                                         eventSequence: json["event_sequence"] as? Int ?? 0
@@ -3794,7 +3863,8 @@ public final class APIClient: ObservableObject {
     public func fetchChatStatus(
         sessionId: String,
         consume: Bool = false,
-        agentId: String? = nil
+        agentId: String? = nil,
+        offset: Int = 0
     ) async throws -> ChatStatusDTO {
         var url = baseURL
             .appendingPathComponent("api/chat/status")
@@ -3803,6 +3873,7 @@ public final class APIClient: ObservableObject {
         var items: [URLQueryItem] = [URLQueryItem(name: "answer_blocks_v1", value: "true")]
         if consume { items.append(URLQueryItem(name: "consume", value: "1")) }
         if let agentId { items.append(URLQueryItem(name: "agent_id", value: agentId)) }
+        if offset > 0 { items.append(URLQueryItem(name: "offset", value: String(offset))) }
         comps?.queryItems = items
         if let u = comps?.url { url = u }
         var request = URLRequest(url: url)

@@ -1,10 +1,11 @@
 # Product Capability Manual
 
 QCP version: `1.0.0`
-Catalog digest: `2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff`
+Catalog digest: `83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d6`
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
 |---|---|---|---|---|---|---|---|
+| `artifact.consume_structured@1.0.0` | artifact | read | none | required | `artifact.consumed` | `artifact_consumption@1` | implemented |
 | `artifact.download@1.0.0` | artifact | read | none | none | `artifact.download_ready` | `artifact@1` | implemented |
 | `artifact.open@1.0.0` | artifact | read | none | none | `artifact.content` | `artifact@1` | implemented |
 | `knowledge.navigation@1.0.0` | knowledge | client | none | none | `knowledge.navigation` | `knowledge_action@1` | implemented |
@@ -25,7 +26,7 @@ Catalog digest: `2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bf
 
 | Contract | Kind | Receipt | Status |
 |---|---|---|---|
-| `artifact.structured_consumption` | artifact | `content_hash_only` | partial |
+| `artifact.structured_consumption` | artifact | `durable_structured_consumption_receipt` | implemented |
 | `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
 | `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
 

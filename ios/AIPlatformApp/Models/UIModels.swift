@@ -555,6 +555,82 @@ public struct KnowledgeActionBlock: Identifiable, Codable, Sendable, Hashable {
     }
 }
 
+public struct ArtifactConsumptionBlock: Identifiable, Codable, Sendable, Hashable {
+    public static let previewLimit = 600
+
+    public let receiptId: String
+    public let artifactId: String
+    public let artifactContentHash: String
+    public let schemaVersion: String
+    public let consumedAt: String
+    public let status: String
+    public let structuredPreview: String
+    public var id: String { receiptId }
+
+    private enum CodingKeys: String, CodingKey {
+        case receiptId, artifactId, artifactContentHash, schemaVersion
+        case consumedAt, status, structuredPreview
+    }
+
+    public init(
+        receiptId: String,
+        artifactId: String,
+        artifactContentHash: String,
+        schemaVersion: String,
+        consumedAt: String,
+        status: String,
+        structuredPreview: String
+    ) {
+        self.receiptId = receiptId
+        self.artifactId = artifactId
+        self.artifactContentHash = artifactContentHash
+        self.schemaVersion = schemaVersion
+        self.consumedAt = consumedAt
+        self.status = status
+        self.structuredPreview = String(structuredPreview.prefix(Self.previewLimit))
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            receiptId: try container.decode(String.self, forKey: .receiptId),
+            artifactId: try container.decode(String.self, forKey: .artifactId),
+            artifactContentHash: try container.decode(String.self, forKey: .artifactContentHash),
+            schemaVersion: try container.decode(String.self, forKey: .schemaVersion),
+            consumedAt: try container.decode(String.self, forKey: .consumedAt),
+            status: try container.decode(String.self, forKey: .status),
+            structuredPreview: try container.decode(String.self, forKey: .structuredPreview)
+        )
+    }
+
+    init?(event: QCPStreamEvent) {
+        guard event.type == "artifact.consumed",
+              let envelope = try? JSONSerialization.jsonObject(with: event.payload) as? [String: Any],
+              let payload = envelope["structured_payload"],
+              let receipt = envelope["receipt"] as? [String: Any],
+              let receiptId = receipt["receipt_id"] as? String, !receiptId.isEmpty,
+              let artifactId = receipt["artifact_id"] as? String, !artifactId.isEmpty,
+              let hash = receipt["artifact_content_hash"] as? String, !hash.isEmpty,
+              let schemaVersion = receipt["schema_version"] as? String, !schemaVersion.isEmpty,
+              let consumedAt = receipt["consumed_at"] as? String, !consumedAt.isEmpty,
+              let status = receipt["status"] as? String, !status.isEmpty,
+              let previewData = try? JSONSerialization.data(
+                  withJSONObject: payload, options: [.fragmentsAllowed, .sortedKeys]
+              ),
+              let preview = String(data: previewData, encoding: .utf8)
+        else { return nil }
+        self.init(
+            receiptId: receiptId,
+            artifactId: artifactId,
+            artifactContentHash: hash,
+            schemaVersion: schemaVersion,
+            consumedAt: consumedAt,
+            status: status,
+            structuredPreview: preview
+        )
+    }
+}
+
 public enum MessageBlock: Identifiable, Sendable, Hashable {
     case code(CodeSnippet)
     case formula(String)
@@ -567,6 +643,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
     case noteDraft(NoteDraftBlock)
     case knowledgeAction(KnowledgeActionBlock)
     case capabilityProposal(CapabilityProposalBlock)
+    case artifactConsumption(ArtifactConsumptionBlock)
 
     public var id: String {
         switch self {
@@ -581,6 +658,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
         case .noteDraft(let draft): return "note_draft_\(draft.id)"
         case .knowledgeAction(let action): return "knowledge_action_\(action.id)"
         case .capabilityProposal(let proposal): return "capability_proposal_\(proposal.id)"
+        case .artifactConsumption(let receipt): return "artifact_consumption_\(receipt.id)"
         }
     }
 }
@@ -645,6 +723,7 @@ public extension ChatMessage {
             case .noteDraft(let draft): return "[笔记草稿·\(draft.title)]"
             case .knowledgeAction(let action): return "[知识操作·\(action.summary)]"
             case .capabilityProposal(let proposal): return "[待确认操作·\(proposal.summary)]"
+            case .artifactConsumption: return "[工件消费回执]"
             }
         }
         let blockSummary = summaries.isEmpty ? nil : summaries.joined(separator: " ")
@@ -731,8 +810,7 @@ public struct ChatMessage: Identifiable, Sendable, Hashable {
 
 // MARK: - 会话持久化（消息级原子落盘 + 冷启动恢复）
 
-/// 落盘消息 DTO：仅持久化会话恢复所需的核心字段（角色/正文/时间/pending/degraded/演示标注）。
-/// 富媒体 blocks 为演示态，不参与落盘（本轮范围：iPhone 单窗口会话管理，诚实标注）。
+/// 落盘消息 DTO：持久化会话恢复所需核心字段与可恢复语义块，不保存无界事件 payload。
 public struct PersistedMessage: Codable, Sendable {
     public let id: String
     public let role: String
@@ -758,6 +836,7 @@ public struct PersistedMessage: Codable, Sendable {
     public let knowledgeAction: KnowledgeActionBlock?
     public let capabilityProposals: [CapabilityProposalBlock]?
     public let capabilityProposal: CapabilityProposalBlock?
+    public let artifactConsumptions: [ArtifactConsumptionBlock]?
     public let attachments: [AttachmentBlock]?
 
     public init(_ m: ChatMessage) {
@@ -798,6 +877,11 @@ public struct PersistedMessage: Codable, Sendable {
         }
         self.capabilityProposals = proposals.isEmpty ? nil : proposals
         self.capabilityProposal = nil
+        let consumptions = m.blocks.compactMap {
+            if case .artifactConsumption(let receipt) = $0 { return receipt }
+            return nil
+        }
+        self.artifactConsumptions = consumptions.isEmpty ? nil : consumptions
         self.attachments = m.blocks.compactMap { if case .attachment(let item) = $0 { return item }; return nil }
     }
 
@@ -842,8 +926,34 @@ public struct PersistedMessage: Codable, Sendable {
         if let capabilityProposal, restoredProposalIDs.insert(capabilityProposal.id).inserted {
             message.blocks.append(.capabilityProposal(capabilityProposal.restoredForRetry))
         }
+        var restoredReceiptIDs = Set<String>()
+        for receipt in artifactConsumptions ?? [] where restoredReceiptIDs.insert(receipt.id).inserted {
+            message.blocks.append(.artifactConsumption(receipt))
+        }
         for attachment in attachments ?? [] { message.blocks.append(.attachment(attachment)) }
         return message
+    }
+}
+
+public extension ChatMessage {
+    @discardableResult
+    mutating func appendCapabilityBlock(from event: QCPStreamEvent) -> MessageBlock? {
+        let block: MessageBlock
+        switch RendererRegistry.route(for: event.type, version: event.version) {
+        case .confirmation:
+            guard let proposal = try? JSONDecoder().decode(
+                CapabilityProposalBlock.self, from: event.payload
+            ) else { return nil }
+            block = .capabilityProposal(proposal)
+        case .artifactConsumption:
+            guard let receipt = ArtifactConsumptionBlock(event: event) else { return nil }
+            block = .artifactConsumption(receipt)
+        default:
+            return nil
+        }
+        guard !blocks.contains(where: { $0.id == block.id }) else { return nil }
+        blocks.append(block)
+        return block
     }
 }
 
@@ -1970,9 +2080,10 @@ public final class SessionManager: ObservableObject {
             updated.content = response.answer; updated.pending = false; updated.isStreaming = false
             updated.degraded = response.degraded == true; updated.executingAgentId = response.resolvedAgent?.id
             updated.executingAgentName = response.resolvedAgent?.name; updated.delegatedBy = response.delegatedBy
-            updated.blocks = []
+            for event in response.events ?? [] { updated.appendCapabilityBlock(from: event) }
             return updated
-        } ?? ChatMessage(
+        } ?? {
+            var created = ChatMessage(
                 id: requestId, sessionId: sessionId, role: .assistant,
                 content: response.answer, pending: false,
                 degraded: response.degraded == true,
@@ -1980,6 +2091,9 @@ public final class SessionManager: ObservableObject {
                 executingAgentName: response.resolvedAgent?.name,
                 delegatedBy: response.delegatedBy
             )
+            for event in response.events ?? [] { created.appendCapabilityBlock(from: event) }
+            return created
+        }()
         updateStoredMessage(message, sessionId: sessionId)
     }
 
@@ -2032,6 +2146,26 @@ public final class SessionManager: ObservableObject {
         var completed = message
         completed.settleCompletedAssistantResponse()
         updateStoredMessage(completed, sessionId: sessionId)
+    }
+
+    public func checkpointStatusEvents(
+        _ events: [QCPStreamEvent], runId: String?, cursor: Int,
+        sessionId: String, messageId: String
+    ) async -> Bool {
+        var projected = messages(for: sessionId)
+        guard let index = projected.firstIndex(where: { $0.id == messageId }) else { return false }
+        for event in events {
+            if RendererRegistry.route(for: event.type, version: event.version) == .artifactConsumption,
+               ArtifactConsumptionBlock(event: event) == nil {
+                return false
+            }
+            projected[index].appendCapabilityBlock(from: event)
+        }
+        guard await checkpointRunProjection(projected, for: sessionId) else { return false }
+        projected[index].runId = runId ?? projected[index].runId
+        projected[index].lastEventSequence = max(projected[index].lastEventSequence, cursor)
+        sessions[sessionId] = projected
+        return await checkpointRunProjection(projected, for: sessionId)
     }
 
     /// 切走后任务失败：把 degraded 卡写归属会话（不中断、不静默）。

@@ -76,7 +76,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     private var loadedAccountFingerprint: String? = nil
     private let hasAuthenticatedSession: @MainActor () -> Bool
     private let fetchDurableChatRunRequest: @MainActor (String, Int) async throws -> DurableChatReplayDTO
-    private let fetchChatStatusRequest: @MainActor (String, Bool, String?) async throws -> ChatStatusDTO
+    private let fetchChatStatusRequest: @MainActor (String, Bool, String?, Int) async throws -> ChatStatusDTO
     private let fetchAnswerBlocksRequest: @MainActor (String, String?, Int) async throws -> AnswerBlockPageDTO
     private let cancelRunRequest: @MainActor (String, String?) async throws -> Void
     private let recoverySleep: @MainActor (UInt64) async -> Void
@@ -91,8 +91,10 @@ public final class TenantSessionCoordinator: ObservableObject {
         fetchDurableChatRun: @escaping @MainActor (String, Int) async throws -> DurableChatReplayDTO = {
             try await APIClient.shared.fetchDurableChatRun(runId: $0, after: $1)
         },
-        fetchChatStatus: @escaping @MainActor (String, Bool, String?) async throws -> ChatStatusDTO = {
-            try await APIClient.shared.fetchChatStatus(sessionId: $0, consume: $1, agentId: $2)
+        fetchChatStatus: @escaping @MainActor (String, Bool, String?, Int) async throws -> ChatStatusDTO = {
+            try await APIClient.shared.fetchChatStatus(
+                sessionId: $0, consume: $1, agentId: $2, offset: $3
+            )
         },
         fetchAnswerBlocks: @escaping @MainActor (String, String?, Int) async throws -> AnswerBlockPageDTO = {
             try await APIClient.shared.fetchAnswerBlocks(runId: $0, cursor: $1, maxBlocks: $2)
@@ -303,11 +305,33 @@ public final class TenantSessionCoordinator: ObservableObject {
                   self.sessionManager.activeAccountFingerprint == accountFingerprint,
                   self.sessionManager.activeSessionID() == sid else { return }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                var statusOffset = self.statusEventCursor(
+                    sessionId: sid, outputMessageId: outputId
+                )
+                var status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId, statusOffset
+                )
                 guard self.tenantEpoch == taskEpoch,
                       self.sessionManager.activeAccountFingerprint == accountFingerprint,
                       self.sessionManager.activeSessionID() == sid else { return }
                 if status.status == "completed" {
+                    while !(await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: outputId,
+                        agentId: agentId
+                    )) {
+                        let nextOffset = self.statusEventCursor(
+                            sessionId: sid, outputMessageId: outputId
+                        )
+                        guard nextOffset > statusOffset else { return }
+                        statusOffset = nextOffset
+                        status = try await self.fetchChatStatusRequest(
+                            sid, false, agentId, statusOffset
+                        )
+                        guard self.tenantEpoch == taskEpoch,
+                              self.sessionManager.activeAccountFingerprint == accountFingerprint,
+                              self.sessionManager.activeSessionID() == sid,
+                              status.status == "completed" else { return }
+                    }
                     self.confirmedRunningMessageIDs.remove(outputId)
                     self.applyRecoveredAnswer(
                         status.loadedAnswer,
@@ -344,6 +368,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     return
                 }
                 if Self.terminalStatusMessage(status.status) != nil {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: outputId,
+                        agentId: agentId
+                    ) else { return }
                     self.applyTerminalStatus(status.status, outputMessageId: outputId)
                 }
             } catch {
@@ -379,36 +407,33 @@ public final class TenantSessionCoordinator: ObservableObject {
                     guard self.tenantEpoch == taskEpoch,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint,
                           self.sessionManager.activeSessionID() == sessionId,
-                          let index = self.messages.firstIndex(where: { $0.id == outputMessageId })
+                          let initialIndex = self.messages.firstIndex(where: { $0.id == outputMessageId })
                     else { return }
                     consecutiveFailures = 0
-                    cursor = max(cursor, replay.run.eventSequence)
-                    self.messages[index].runId = runId
-                    self.messages[index].lastEventSequence = cursor
+                    self.messages[initialIndex].runId = runId
                     for event in replay.events {
                         if case .knowledgeActionDraft(let action) = event,
-                           !self.messages[index].blocks.contains(where: {
+                           let eventIndex = self.messages.firstIndex(where: { $0.id == outputMessageId }),
+                           !self.messages[eventIndex].blocks.contains(where: {
                                if case .knowledgeAction(let existing) = $0 {
                                    return existing.id == action.id
                                }
                                return false
                            }) {
-                            self.messages[index].blocks.append(.knowledgeAction(action))
-                        } else if case .capability(let capabilityEvent) = event,
-                                  RendererRegistry.route(
-                                      for: capabilityEvent.type, version: capabilityEvent.version
-                                  ) == .confirmation,
-                                  let proposal = try? JSONDecoder().decode(
-                                      CapabilityProposalBlock.self, from: capabilityEvent.payload
-                                  ), !self.messages[index].blocks.contains(where: {
-                                      if case .capabilityProposal(let existing) = $0 {
-                                          return existing.id == proposal.id
-                                      }
-                                      return false
-                                  }) {
-                            self.messages[index].blocks.append(.capabilityProposal(proposal))
+                            self.messages[eventIndex].blocks.append(.knowledgeAction(action))
+                        } else if case .capability(let capabilityEvent) = event {
+                            guard await self.dispatchCapabilityEvent(
+                                capabilityEvent, outputMessageId: outputMessageId
+                            ) else { throw APIError.decoding("artifact consumption receipt") }
                         }
                     }
+                    guard self.tenantEpoch == taskEpoch,
+                          self.sessionManager.activeAccountFingerprint == accountFingerprint,
+                          self.sessionManager.activeSessionID() == sessionId,
+                          let index = self.messages.firstIndex(where: { $0.id == outputMessageId })
+                    else { return }
+                    cursor = max(cursor, replay.run.eventSequence)
+                    self.messages[index].lastEventSequence = cursor
                     let status = replay.run.status
                     if let page = replay.run.answerProjection, !page.blocks.isEmpty {
                         self.applyAnswerPage(page, messageIndex: index, replace: true)
@@ -464,6 +489,97 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
+    private func dispatchCapabilityEvent(
+        _ event: QCPStreamEvent, outputMessageId: String
+    ) async -> Bool {
+        let path = RendererRegistry.route(for: event.type, version: event.version)
+        if path == .confirmation || path == .artifactConsumption {
+            guard let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
+                return false
+            }
+            let validConsumption = path != .artifactConsumption
+                || ArtifactConsumptionBlock(event: event) != nil
+            guard validConsumption else { return false }
+            if let appended = messages[index].appendCapabilityBlock(from: event),
+               case .capabilityProposal = appended {
+                messages[index].pending = false
+            }
+            if path == .artifactConsumption {
+                return await sessionManager.checkpointRunProjection(
+                    messages, for: messages[index].sessionId
+                )
+            }
+        } else if path == .workflow || path == .presentationReview {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            if let created = try? decoder.decode(
+                WorkflowCreateResponseDTO.self, from: event.payload
+            ) {
+                WorkflowActivityCoordinator.shared.track(created.workflow)
+                appState?.pendingWorkflowId = created.workflow.id
+            } else if let workflow = try? decoder.decode(
+                WorkflowDTO.self, from: event.payload
+            ) {
+                WorkflowActivityCoordinator.shared.track(workflow)
+                appState?.pendingWorkflowId = workflow.id
+            }
+        } else if path == .artifact {
+            showToast("工作流工件已就绪")
+        }
+        return true
+    }
+
+    private func statusEventCursor(sessionId: String, outputMessageId: String) -> Int {
+        if sessionManager.activeSessionID() == sessionId,
+           let message = messages.first(where: { $0.id == outputMessageId }) {
+            return message.lastEventSequence
+        }
+        return sessionManager.messages(for: sessionId)
+            .first(where: { $0.id == outputMessageId })?.lastEventSequence ?? 0
+    }
+
+    private func checkpointStatusEvents(
+        _ status: ChatStatusDTO, sessionId: String, outputMessageId: String,
+        agentId: String?
+    ) async -> Bool {
+        let events = status.events ?? []
+        let cursor = status.eventsNextOffset
+            ?? events.compactMap(\.eventSequence).max()
+            ?? status.eventSequence
+            ?? statusEventCursor(sessionId: sessionId, outputMessageId: outputMessageId)
+        guard sessionManager.activeSessionID() == sessionId else {
+            let checkpointed = await sessionManager.checkpointStatusEvents(
+                events, runId: status.runId, cursor: cursor,
+                sessionId: sessionId, messageId: outputMessageId
+            )
+            if checkpointed, cursor < (status.eventSequence ?? cursor) { return false }
+            if checkpointed, status.status == "completed" {
+                _ = try? await fetchChatStatusRequest(sessionId, true, agentId, cursor)
+            }
+            return checkpointed
+        }
+        guard messages.contains(where: { $0.id == outputMessageId }) else { return false }
+        for event in events {
+            guard await dispatchCapabilityEvent(event, outputMessageId: outputMessageId) else {
+                return false
+            }
+        }
+        guard await sessionManager.checkpointRunProjection(messages, for: sessionId),
+              let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
+            return false
+        }
+        messages[index].runId = status.runId ?? messages[index].runId
+        messages[index].lastEventSequence = max(messages[index].lastEventSequence, cursor)
+        guard await sessionManager.checkpointRunProjection(messages, for: sessionId) else {
+            return false
+        }
+        if cursor < (status.eventSequence ?? cursor) { return false }
+        if status.status == "completed" {
+            _ = try? await fetchChatStatusRequest(sessionId, true, agentId, cursor)
+        }
+        return true
+    }
+
     /// 冷启动/回前台时以服务端为准恢复 Clarify；不启动新推理。
     public func reconcileRestoredClarify() {
         guard let idx = messages.lastIndex(where: {
@@ -490,7 +606,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 return
             }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 guard let currentIdx = self.messages.firstIndex(where: { $0.id == messageId }) else { return }
                 if let pending = status.clarify, pending.clarifyId == block.clarifyId {
                     if let blockIdx = self.messages[currentIdx].blocks.firstIndex(where: {
@@ -505,6 +624,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         self.commitSession()
                     }
                 } else if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.appendCompletedAnswer(status.loadedAnswer, sessionId: sid)
                     self.setClarifyState(messageIndex: currentIdx, state: .expired)
                     self.commitSession()
@@ -779,12 +902,19 @@ public final class TenantSessionCoordinator: ObservableObject {
                   self.sessionManager.activeAccountFingerprint == accountFingerprint {
                 do {
                     let status = try await self.fetchChatStatusRequest(
-                        req.sessionId, true, req.agentId
+                        req.sessionId, false, req.agentId,
+                        self.statusEventCursor(
+                            sessionId: req.sessionId, outputMessageId: outputMessageId
+                        )
                     )
                     guard !Task.isCancelled,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint
                     else { return }
                     if status.status == "completed" {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputMessageId, agentId: req.agentId
+                        ) else { continue }
                         self.sessionManager.applyCompletedStatus(
                             sessionId: req.sessionId,
                             requestId: outputMessageId,
@@ -806,6 +936,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         return
                     }
                     if let terminalText = Self.terminalStatusMessage(status.status) {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputMessageId, agentId: req.agentId
+                        ) else { continue }
                         self.sessionManager.applyDegraded(
                             sessionId: req.sessionId,
                             requestId: outputMessageId,
@@ -1688,37 +1822,15 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
 
                 case .capability(let event):
-                    let path = RendererRegistry.route(for: event.type, version: event.version)
-                    if path == .confirmation {
-                        let decoder = JSONDecoder()
-                        if let proposal = try? decoder.decode(
-                            CapabilityProposalBlock.self, from: event.payload
-                        ), let idx = messages.firstIndex(where: { $0.id == outputId }),
-                           !messages[idx].blocks.contains(where: {
-                               if case .capabilityProposal(let existing) = $0 {
-                                   return existing.id == proposal.id
-                               }
-                               return false
-                           }) {
-                            messages[idx].blocks.append(.capabilityProposal(proposal))
-                            messages[idx].pending = false
-                        }
-                    } else if path == .workflow || path == .presentationReview {
-                        let decoder = JSONDecoder()
-                        decoder.keyDecodingStrategy = .convertFromSnakeCase
-                        if let created = try? decoder.decode(
-                            WorkflowCreateResponseDTO.self, from: event.payload
-                        ) {
-                            WorkflowActivityCoordinator.shared.track(created.workflow)
-                            appState?.pendingWorkflowId = created.workflow.id
-                        } else if let workflow = try? decoder.decode(
-                            WorkflowDTO.self, from: event.payload
-                        ) {
-                            WorkflowActivityCoordinator.shared.track(workflow)
-                            appState?.pendingWorkflowId = workflow.id
-                        }
-                    } else if path == .artifact {
-                        showToast("工作流工件已就绪")
+                    if await dispatchCapabilityEvent(event, outputMessageId: outputId),
+                       let runId = event.runId, !runId.isEmpty,
+                       let eventSequence = event.eventSequence,
+                       let idx = messages.firstIndex(where: { $0.id == outputId }) {
+                        messages[idx].runId = runId
+                        messages[idx].lastEventSequence = max(
+                            messages[idx].lastEventSequence, eventSequence
+                        )
+                        commitSession()
                     }
 
                 case .done(_, let answer):
@@ -1734,8 +1846,15 @@ public final class TenantSessionCoordinator: ObservableObject {
                         // transport fragment. Reconcile once with the durable answer
                         // projection before persisting completion.
                         if let status = try? await fetchChatStatusRequest(
-                            req.sessionId, false, req.agentId
-                        ), status.status == "completed" {
+                            req.sessionId, false, req.agentId,
+                            statusEventCursor(
+                                sessionId: req.sessionId, outputMessageId: outputId
+                            )
+                        ), status.status == "completed",
+                           await checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputId, agentId: req.agentId
+                           ) {
                             applyRecoveredAnswer(
                                 status.loadedAnswer,
                                 answerProjection: status.answerProjection,
@@ -1814,8 +1933,17 @@ public final class TenantSessionCoordinator: ObservableObject {
             return true
         }
         do {
-            let status = try await fetchChatStatusRequest(req.sessionId, true, req.agentId)
+            let status = try await fetchChatStatusRequest(
+                req.sessionId, false, req.agentId,
+                statusEventCursor(
+                    sessionId: req.sessionId, outputMessageId: outputMessageId
+                )
+            )
             if status.status == "completed" {
+                guard await checkpointStatusEvents(
+                    status, sessionId: req.sessionId,
+                    outputMessageId: outputMessageId, agentId: req.agentId
+                ) else { return true }
                 if sessionManager.activeSessionID() == req.sessionId {
                     applyRecoveredAnswer(
                         status.loadedAnswer,
@@ -1862,6 +1990,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 return true
             }
             if let terminalText = Self.terminalStatusMessage(status.status) {
+                guard await checkpointStatusEvents(
+                    status, sessionId: req.sessionId,
+                    outputMessageId: outputMessageId, agentId: req.agentId
+                ) else { return true }
                 if sessionManager.activeSessionID() == req.sessionId {
                     applyTerminalStatus(status.status, outputMessageId: outputMessageId)
                 } else {
@@ -2236,9 +2368,16 @@ public final class TenantSessionCoordinator: ObservableObject {
         setClarifyState(messageIndex: idx, state: .reconciling, selection: selection)
         commitSession()
         do {
-            let status = try await fetchChatStatusRequest(sessionId, true, agentId)
+            let status = try await fetchChatStatusRequest(
+                sessionId, false, agentId,
+                statusEventCursor(sessionId: sessionId, outputMessageId: messageId)
+            )
             print("[Clarify] reconcile clarify=\(local.clarifyId ?? "legacy") phase=\(status.phase ?? status.status)")
             if status.status == "completed" {
+                guard await checkpointStatusEvents(
+                    status, sessionId: sessionId, outputMessageId: messageId,
+                    agentId: agentId
+                ) else { return }
                 markClarifySubmitted(messageIndex: idx, selection: selection)
                 appendCompletedAnswer(status.loadedAnswer, sessionId: sessionId)
                 commitSession()
@@ -2322,12 +2461,21 @@ public final class TenantSessionCoordinator: ObservableObject {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { return }
                 do {
-                    let status = try await self.fetchChatStatusRequest(sessionId, true, agentId)
+                    let status = try await self.fetchChatStatusRequest(
+                        sessionId, false, agentId,
+                        self.statusEventCursor(
+                            sessionId: sessionId, outputMessageId: outputMessageId
+                        )
+                    )
                     guard self.tenantEpoch == taskEpoch,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint,
                           self.sessionManager.activeSessionID() == sessionId
                     else { return }
                     if status.status == "completed" {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: sessionId,
+                            outputMessageId: outputMessageId, agentId: agentId
+                        ) else { continue }
                         self.applyRecoveredAnswer(
                             status.loadedAnswer,
                             answerProjection: status.answerProjection,
@@ -2373,6 +2521,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         return
                     }
                     if ["timeout", "not_found", "failed", "cancelled"].contains(status.status) {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: sessionId,
+                            outputMessageId: outputMessageId, agentId: agentId
+                        ) else { continue }
                         if let idx = self.messages.firstIndex(where: { $0.id == outputMessageId }) {
                             let cancelled = status.status == "cancelled"
                             self.messages[idx].role = cancelled ? .assistant : .interrupted
@@ -2438,8 +2590,15 @@ public final class TenantSessionCoordinator: ObservableObject {
         clarifySubmissionTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.appendCompletedAnswer(status.loadedAnswer, sessionId: sid)
                     self.commitSession()
                     self.finishGeneration()
@@ -2719,7 +2878,12 @@ public final class TenantSessionCoordinator: ObservableObject {
                       self.inflight?.id == req.id,
                       self.inflight?.phase == .thinking else { return }
                 do {
-                    let status = try await self.fetchChatStatusRequest(sid, false, req.agentId)
+                    let status = try await self.fetchChatStatusRequest(
+                        sid, false, req.agentId,
+                        self.statusEventCursor(
+                            sessionId: sid, outputMessageId: self.outputMessageId(for: req)
+                        )
+                    )
                     if status.status == "running" {
                         self.liveProgress = status.latestStep
                     }
@@ -2908,9 +3072,16 @@ public final class TenantSessionCoordinator: ObservableObject {
                 }
             }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 guard !Task.isCancelled else { return }
                 if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.applyRecoveredAnswer(
                         status.loadedAnswer,
                         answerProjection: status.answerProjection,
@@ -3003,6 +3174,10 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     private func applyCompletedStatus(req: InFlightRequest, status: ChatStatusDTO) async {
         guard inflight?.id == req.id else { return }
+        guard await checkpointStatusEvents(
+            status, sessionId: req.sessionId,
+            outputMessageId: req.id, agentId: req.agentId
+        ) else { return }
         guard req.sessionId == sessionManager.activeSessionID() else {
             sessionManager.applyCompletedStatus(
                 sessionId: req.sessionId, requestId: req.id,

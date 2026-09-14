@@ -1,6 +1,14 @@
 {
   "capabilities": [
     {
+      "id": "artifact.consume_structured",
+      "status": "implemented",
+      "tests": [
+        "tests/test_artifact_structured_consumption.py",
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
       "id": "artifact.download",
       "status": "implemented",
       "tests": [
@@ -111,20 +119,22 @@
       ]
     }
   ],
-  "catalog_digest": "2fb5823ef73b12286f441b0c2bdce0f755548dd6cde7ecc494db773495827bff",
+  "catalog_digest": "83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d6",
   "consumptions": [
     {
       "gates": [
-        "owned_execution",
-        "read_verified_artifact"
+        "workflow_creator",
+        "dirfd_verified_artifact",
+        "stable_trusted_idempotency_key"
       ],
       "id": "artifact.structured_consumption",
       "implementation_refs": [
-        "backend/api/workflows.py",
-        "backend/services/workflow_artifacts.py"
+        "backend/services/artifact_consumption.py",
+        "backend/capability_handlers.py",
+        "scripts/hermes_bridge.py"
       ],
-      "receipt": "content_hash_only",
-      "status": "partial"
+      "receipt": "durable_structured_consumption_receipt",
+      "status": "implemented"
     },
     {
       "gates": [
@@ -154,11 +164,11 @@
     }
   ],
   "counts": {
-    "implemented": 15,
+    "implemented": 16,
     "partial": 0,
     "unverified": 0
   },
   "protocol": "qcp",
-  "total": 15,
+  "total": 16,
   "version": "1.0.0"
 }

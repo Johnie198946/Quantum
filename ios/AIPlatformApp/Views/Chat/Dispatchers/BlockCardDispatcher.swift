@@ -85,6 +85,58 @@ public struct BlockCardDispatcher: View {
                 onConfirm: { onCapabilityProposal?(proposal.id, "confirm") },
                 onDiscard: { onCapabilityProposal?(proposal.id, "discard") }
             )
+        case .artifactConsumption(let receipt):
+            ArtifactConsumptionCard(receipt: receipt)
         }
+    }
+}
+
+private struct ArtifactConsumptionCard: View {
+    let receipt: ArtifactConsumptionBlock
+
+    private var hashSummary: String {
+        let hash = receipt.artifactContentHash
+        guard hash.count > 16 else { return hash }
+        return "\(hash.prefix(8))…\(hash.suffix(8))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(AppTheme.Icons.success)
+                Text(receipt.status == "completed" ? "已消费" : receipt.status)
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                Spacer()
+                Text("回执")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.Colors.primary)
+            }
+            Text(receipt.structuredPreview)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+                .lineLimit(6)
+                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("工件  \(receipt.artifactId)")
+                Text("Hash  \(hashSummary)")
+                Text("Schema  \(receipt.schemaVersion)")
+                Text("时间  \(receipt.consumedAt)")
+                Text("回执  \(receipt.receiptId)")
+            }
+            .font(.caption2)
+            .foregroundStyle(AppTheme.Colors.textTertiary)
+            .textSelection(.enabled)
+        }
+        .padding(14)
+        .background(AppTheme.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AppTheme.Colors.border, lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("工件已消费回执")
     }
 }

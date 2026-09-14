@@ -183,7 +183,14 @@ class TestChatAPIEndpoint(unittest.TestCase):
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \
-             patch("backend.api.chat._call_hermes", return_value=(raw_llm_reply, fake_reasoning)):
+             patch("backend.api.chat._call_hermes", return_value=(
+                 raw_llm_reply,
+                 fake_reasoning,
+                 [{"type": "artifact.consumed", "version": 1, "payload": {
+                     "structured_payload": {"value": "ok"},
+                     "receipt": {"receipt_id": "acr-1"},
+                 }}],
+             )):
             r = self.request("POST", "/api/chat", json={"question": "如何优化调度？", "agent_id": "main_agent"})
 
         self.assertEqual(r.status_code, 200)
@@ -193,6 +200,8 @@ class TestChatAPIEndpoint(unittest.TestCase):
         self.assertTrue(body["answer"].startswith("我们基于 [[wiki/DeepSeek]]"))
         # 验证 2：citations 结构化字段正确下沉
         self.assertEqual(body["citations"], ["wiki/DeepSeek", "wiki/算力调度"])
+        self.assertEqual(body["events"][0]["type"], "artifact.consumed")
+        self.assertEqual(body["events"][0]["payload"]["receipt"]["receipt_id"], "acr-1")
         # 验证 3：session_id 按 tenant/user/agent 隔离，权限版本变化不切断会话
         self.assertRegex(body["session_id"], r"^t[0-9a-f]{12}-u[0-9a-f]{12}-main_agent-")
 
@@ -202,7 +211,7 @@ class TestChatAPIEndpoint(unittest.TestCase):
         async def fake_hermes(goal, session_id=None, **kwargs):
             captured_goal["goal"] = goal
             captured_goal["knowledge_query"] = kwargs.get("knowledge_query")
-            return "直接回答", []
+            return "直接回答", [], []
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \
@@ -230,7 +239,7 @@ class TestChatAPIEndpoint(unittest.TestCase):
 
         async def fake_hermes(goal, session_id=None, **kwargs):
             captured.update(kwargs.get("agent_config") or {})
-            return "已完成", []
+            return "已完成", [], []
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \
