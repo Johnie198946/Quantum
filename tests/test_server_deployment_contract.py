@@ -12,16 +12,26 @@ import yaml
 
 
 UPDATE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "update.sh"
+EXACT_DEPLOY_SCRIPT = UPDATE_SCRIPT.parents[1] / "scripts" / "deploy_exact_sha.sh"
 CI_WORKFLOW = UPDATE_SCRIPT.parents[1] / ".github" / "workflows" / "ci.yml"
 SYSTEMD_DIR = UPDATE_SCRIPT.parents[1] / "ops" / "systemd"
 BRIDGE_SCRIPT = UPDATE_SCRIPT.parents[1] / "scripts" / "hermes_bridge.py"
 EGRESS_TUNNEL_SCRIPT = UPDATE_SCRIPT.parents[1] / "ops" / "scripts" / "clash-verge-egress-tunnel.sh"
 
 
-def test_server_deploy_downloads_quantum_release_archive() -> None:
+def test_server_deploy_downloads_current_repository_release_archive() -> None:
     script = UPDATE_SCRIPT.read_text(encoding="utf-8")
-    assert "https://codeload.github.com/Johnie198946/Quantum/tar.gz/$EXPECTED_SHA" in script
-    assert "codeload.github.com/Johnie198946/ai-lab-platform" not in script
+    assert "https://codeload.github.com/Johnie198946/ai-lab-platform/tar.gz/$EXPECTED_SHA" in script
+    assert "codeload.github.com/Johnie198946/Quantum" not in script
+
+
+def test_exact_sha_deploy_transfers_an_attested_local_source_archive() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'git archive --format=tar --prefix="ai-lab-platform-$EXPECTED_SHA/" "$EXPECTED_SHA"' in script
+    assert 'SOURCE_HASH="$(shasum -a 256 "$LOCAL_SOURCE"' in script
+    assert 'REMOTE_SOURCE="/opt/ai-lab-shared/offline-source/ai-lab-platform-$EXPECTED_SHA.tar.gz"' in script
+    assert 'AI_LAB_SOURCE_ARCHIVE="$REMOTE_SOURCE"' in script
+    assert 'AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH"' in script
 
 
 def test_server_deploy_accepts_only_attested_root_owned_offline_source_archive() -> None:
