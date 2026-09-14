@@ -25,84 +25,47 @@ public struct MainTabView: View {
     public init() {}
 
     public var body: some View {
-        TabView(selection: $appState.activeTab) {
+        VStack(spacing: 0) {
+            TabView(selection: $appState.activeTab) {
 
-            // Tab 1: Chat Stream & Multiturn Dialogues
-            ChatView()
-                .toolbar(.hidden, for: .tabBar)
-                .tabItem {
-                    Label("对话", systemImage: "bubble.left.and.bubble.right.fill")
-                }
-                .tag(0)
+                // Tab 1: Chat Stream & Multiturn Dialogues
+                ChatView()
+                    .toolbar(.hidden, for: .tabBar)
+                    .tabItem {
+                        Label("对话", systemImage: "bubble.left.and.bubble.right.fill")
+                    }
+                    .tag(0)
 
-            // Tab 2: 可执行工作流（拓扑从任务页按需打开）
-            WorkflowDashboardView()
-                .toolbar(.hidden, for: .tabBar)
-                .tabItem {
-                    Label("任务", systemImage: "square.grid.2x2.fill")
-                }
-                .tag(1)
+                // Tab 2: 可执行工作流（拓扑从任务页按需打开）
+                WorkflowDashboardView()
+                    .toolbar(.hidden, for: .tabBar)
+                    .tabItem {
+                        Label("任务", systemImage: "square.grid.2x2.fill")
+                    }
+                    .tag(1)
 
-            // Tab 3: local-first Markdown notes workspace
-            KnowledgeView()
-                .toolbar(.hidden, for: .tabBar)
-                .tabItem {
-                    Label("知识", systemImage: "books.vertical.fill")
-                }
-                .tag(2)
+                // Tab 3: local-first Markdown notes workspace
+                KnowledgeView()
+                    .toolbar(.hidden, for: .tabBar)
+                    .tabItem {
+                        Label("知识", systemImage: "books.vertical.fill")
+                    }
+                    .tag(2)
 
-            // Tab 4: Tenant Profile & Prompt Studio Settings
-            SettingsView()
-                .toolbar(.hidden, for: .tabBar)
-                .tabItem {
-                    Label("设置", systemImage: "gearshape.fill")
-                }
-                .tag(3)
-        }
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: keyboardObserver.isKeyboardVisible ? 0 : 18) {
+                // Tab 4: Tenant Profile & Prompt Studio Settings
+                SettingsView()
+                    .toolbar(.hidden, for: .tabBar)
+                    .tabItem {
+                        Label("设置", systemImage: "gearshape.fill")
+                    }
+                    .tag(3)
+            }
+            .toolbar(.hidden, for: .tabBar)
+
             if !keyboardObserver.isKeyboardVisible {
-                VStack(spacing: AppTheme.Spacing.xs) {
-                    if let activity = workflowActivities.primaryActivity {
-                        WorkflowActivityMiniBar(
-                            activity: activity,
-                            count: workflowActivities.visibleActivities.count,
-                            onOpen: {
-                                appState.pendingWorkflowId = activity.workflow.id
-                                appState.activeTab = 1
-                            },
-                            onDismiss: {
-                                workflowActivities.dismiss(activity.workflow.id)
-                            }
-                        )
-                        .padding(.horizontal, AppTheme.Spacing.lg)
-                    } else if let activity = workflowActivities.primaryExecutionActivity {
-                        WorkflowExecutionMiniBar(
-                            activity: activity,
-                            count: workflowActivities.visibleExecutionActivities.count,
-                            onOpen: {
-                                appState.pendingWorkflowId = activity.workflow.id
-                                appState.activeTab = 1
-                            },
-                            onDismiss: { workflowActivities.dismiss(activity.workflow.id) }
-                        )
-                        .padding(.horizontal, AppTheme.Spacing.lg)
-                    }
-                    if !tabBarCollapsed || voiceOverEnabled {
-                        QuantumFloatingTabBar(selection: $appState.activeTab) {
-                            scheduleTabBarAutoCollapse()
-                        }
-                        .simultaneousGesture(
-                            DragGesture(minimumDistance: 16)
-                                .onEnded { value in
-                                    if value.translation.height > 24 {
-                                        setTabBarCollapsed(true)
-                                    }
-                                }
-                        )
-                        .transition(tabBarTransition)
-                    }
-                }
+                bottomChrome
+                    .padding(.top, AppTheme.Spacing.xs)
+                    .padding(.bottom, 18)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -123,6 +86,51 @@ public struct MainTabView: View {
         }
         .onAppear { scheduleTabBarAutoCollapse() }
         .onDisappear { tabBarAutoCollapseTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private var bottomChrome: some View {
+        VStack(spacing: AppTheme.Spacing.xs) {
+            if let activity = workflowActivities.primaryActivity {
+                WorkflowActivityMiniBar(
+                    activity: activity,
+                    count: workflowActivities.visibleActivities.count,
+                    onOpen: {
+                        appState.pendingWorkflowId = activity.workflow.id
+                        appState.activeTab = 1
+                    },
+                    onDismiss: {
+                        workflowActivities.dismiss(activity.workflow.id)
+                    }
+                )
+                .padding(.horizontal, AppTheme.Spacing.lg)
+            } else if let activity = workflowActivities.primaryExecutionActivity {
+                WorkflowExecutionMiniBar(
+                    activity: activity,
+                    count: workflowActivities.visibleExecutionActivities.count,
+                    onOpen: {
+                        appState.pendingWorkflowId = activity.workflow.id
+                        appState.activeTab = 1
+                    },
+                    onDismiss: { workflowActivities.dismiss(activity.workflow.id) }
+                )
+                .padding(.horizontal, AppTheme.Spacing.lg)
+            }
+            if !tabBarCollapsed || voiceOverEnabled {
+                QuantumFloatingTabBar(selection: $appState.activeTab) {
+                    scheduleTabBarAutoCollapse()
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 16)
+                        .onEnded { value in
+                            if value.translation.height > 24 {
+                                setTabBarCollapsed(true)
+                            }
+                        }
+                )
+                .transition(tabBarTransition)
+            }
+        }
     }
 
     private func setTabBarCollapsed(_ collapsed: Bool, feedback: Bool = true) {

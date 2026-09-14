@@ -17,15 +17,18 @@ if [[ ! "$REMOTE_SUDO" =~ ^[01]$ ]]; then
   exit 2
 fi
 LOCAL_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/ai-lab-update.XXXXXX")"
+LOCAL_SOURCE="$(mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX.tar.gz")"
 REMOTE_SCRIPT=""
+REMOTE_SOURCE="/opt/ai-lab-shared/offline-source/ai-lab-platform-$EXPECTED_SHA.tar.gz"
 
 cleanup() {
   rc=$?
   trap - EXIT
-  rm -f "$LOCAL_SCRIPT"
+  rm -f "$LOCAL_SCRIPT" "$LOCAL_SOURCE"
   if [[ "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
     ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SCRIPT" >/dev/null 2>&1 || true
   fi
+  ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE" >/dev/null 2>&1 || true
   exit "$rc"
 }
 trap cleanup EXIT
@@ -34,6 +37,8 @@ git cat-file -e "$EXPECTED_SHA^{commit}"
 git show "$EXPECTED_SHA:scripts/update.sh" > "$LOCAL_SCRIPT"
 bash -n "$LOCAL_SCRIPT"
 LOCAL_HASH="$(shasum -a 256 "$LOCAL_SCRIPT" | cut -d' ' -f1)"
+git archive --format=tar --prefix="ai-lab-platform-$EXPECTED_SHA/" "$EXPECTED_SHA" | gzip -n > "$LOCAL_SOURCE"
+SOURCE_HASH="$(shasum -a 256 "$LOCAL_SOURCE" | cut -d' ' -f1)"
 
 REMOTE_SCRIPT="$(ssh -o BatchMode=yes "$DEPLOY_HOST" mktemp /tmp/ai-lab-update.XXXXXX)"
 if [[ ! "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
@@ -42,18 +47,28 @@ if [[ ! "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
 fi
 
 scp -q "$LOCAL_SCRIPT" "$DEPLOY_HOST:$REMOTE_SCRIPT"
+ssh -o BatchMode=yes "$DEPLOY_HOST" install -d -o root -g root -m 0755 /opt/ai-lab-shared/offline-source
+scp -q "$LOCAL_SOURCE" "$DEPLOY_HOST:$REMOTE_SOURCE.upload"
+ssh -o BatchMode=yes "$DEPLOY_HOST" install -o root -g root -m 0600 \
+  "$REMOTE_SOURCE.upload" "$REMOTE_SOURCE"
+ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE.upload"
 ssh -o BatchMode=yes "$DEPLOY_HOST" bash -s -- \
-  "$REMOTE_SCRIPT" "$EXPECTED_SHA" "$LOCAL_HASH" "$REMOTE_SUDO" <<'REMOTE'
+  "$REMOTE_SCRIPT" "$EXPECTED_SHA" "$LOCAL_HASH" "$REMOTE_SUDO" \
+  "$REMOTE_SOURCE" "$SOURCE_HASH" <<'REMOTE'
 set -euo pipefail
 REMOTE_SCRIPT="$1"
 EXPECTED_SHA="$2"
 LOCAL_HASH="$3"
 REMOTE_SUDO="$4"
+REMOTE_SOURCE="$5"
+SOURCE_HASH="$6"
 REMOTE_HASH="$(sha256sum "$REMOTE_SCRIPT" | cut -d' ' -f1)"
 test "$REMOTE_HASH" = "$LOCAL_HASH"
 if [ "$REMOTE_SUDO" = "1" ]; then
-  sudo -n bash "$REMOTE_SCRIPT" "$EXPECTED_SHA"
+  sudo -n env AI_LAB_SOURCE_ARCHIVE="$REMOTE_SOURCE" \
+    AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH" bash "$REMOTE_SCRIPT" "$EXPECTED_SHA"
 else
-  bash "$REMOTE_SCRIPT" "$EXPECTED_SHA"
+  AI_LAB_SOURCE_ARCHIVE="$REMOTE_SOURCE" AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH" \
+    bash "$REMOTE_SCRIPT" "$EXPECTED_SHA"
 fi
 REMOTE

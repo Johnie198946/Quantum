@@ -1596,7 +1596,7 @@ if [ -n "$SOURCE_ARCHIVE" ]; then
   cp "$SOURCE_ARCHIVE" "$TARBALL"
 else
   curl -fsSL --retry 3 \
-    "https://codeload.github.com/Johnie198946/Quantum/tar.gz/$EXPECTED_SHA?cachebust=$EXPECTED_SHA-$(date +%s)" \
+    "https://codeload.github.com/Johnie198946/ai-lab-platform/tar.gz/$EXPECTED_SHA?cachebust=$EXPECTED_SHA-$(date +%s)" \
     -o "$TARBALL"
 fi
 tar xzf "$TARBALL" --strip-components=1 -C "$STAGING_DIR"
