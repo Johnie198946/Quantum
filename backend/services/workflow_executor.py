@@ -470,15 +470,18 @@ async def _assert_approved_presentation_projection(
         )
     )
     final_shape = [
-        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
+        str(item.get("title") or "").strip()
         for item in final.get("slides") or []
         if isinstance(item, dict)
     ]
     outline_shape = [
-        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
+        str(item.get("title") or "").strip()
         for item in outline.get("slides") or []
         if isinstance(item, dict)
     ]
+    # The approved gate fixes page count, order and titles. Layout may be
+    # safely downgraded by the Hermes normalization layer when the approved
+    # semantic layout lacks fields required by the strict renderer.
     if final_shape != outline_shape:
         raise ValueError("final presentation differs from approved outline structure")
 

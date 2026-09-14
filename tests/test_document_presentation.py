@@ -781,6 +781,18 @@ async def test_workflow_projection_rechecks_approved_design_against_final_theme(
         },
         "presentation",
     )
+    await _assert_approved_presentation_projection(
+        DB(),
+        execution,
+        {
+            "approved_design": binding,
+            "approved_outline": outline_binding,
+            "content": json.dumps(
+                {"theme": THEME_A, "slides": [{"layout": "bullets", "title": "final", "bullets": ["safe fallback"]}]}
+            ),
+        },
+        "presentation",
+    )
     with pytest.raises(ValueError, match="differs"):
         await _assert_approved_presentation_projection(
             DB(),
