@@ -107,6 +107,14 @@ async def test_capability_is_signed_scoped_and_bound_to_policy(policy_rows):
     assert claims["scopes"] == ["premium"]
     assert claims["user_id"] == "user-a"
     assert claims["sources"] == ["tenant_knowledge", "user_notes"]
+    no_knowledge_token = mint_capability(
+        policy,
+        subject_id="run-no-knowledge",
+        entry_point="workflow",
+        requested_scopes=[],
+        user_id="user-a",
+    )
+    assert verify_capability(no_knowledge_token)["scopes"] == []
     payload, signature = token.split(".", 1)
     tampered = ("A" if payload[0] != "A" else "B") + payload[1:] + "." + signature
     with pytest.raises(KnowledgeScopeDenied):

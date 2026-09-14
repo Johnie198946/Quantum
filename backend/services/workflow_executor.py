@@ -250,7 +250,10 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
             catalog=compute_catalog(),
             allow_admin_bypass=False,
         )
-        allowed_scope = policy.restrict(plan.knowledge_scope or [])
+        requested_scope = tuple(plan.knowledge_scope or [])
+        allowed_scope = (
+            policy.restrict(requested_scope) if requested_scope else frozenset()
+        )
         workflow = await policy_db.get(WorkflowDefinition, execution.workflow_id)
         capability = mint_capability(
             policy,
@@ -760,22 +763,71 @@ async def retry_remote(
     from_node_id: str | None = None,
     revision_comment: str | None = None,
 ) -> None:
+    authorization = await _refresh_workflow_authorization(execution_id)
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs/{execution_id}/retry",
             headers=bridge_headers(),
-            json={"from_node_id": from_node_id, "revision_comment": revision_comment},
+            json={
+                "from_node_id": from_node_id,
+                "revision_comment": revision_comment,
+                **authorization,
+            },
         )
     response.raise_for_status()
 
 
 async def approve_remote_gate(execution_id: str, node_id: str, artifact_version: int, artifact_id: str, expected_hash: str) -> None:
+    authorization = await _refresh_workflow_authorization(execution_id)
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs/{execution_id}/approve-gate",
-            headers=bridge_headers(), json={"node_id": node_id, "artifact_version": artifact_version, "artifact_id": artifact_id, "expected_hash": expected_hash},
+            headers=bridge_headers(), json={"node_id": node_id, "artifact_version": artifact_version, "artifact_id": artifact_id, "expected_hash": expected_hash, **authorization},
         )
     response.raise_for_status()
+
+
+async def _refresh_workflow_authorization(execution_id: str) -> dict[str, str]:
+    """Mint a replacement capability before a durable run resumes."""
+    async with SessionLocal() as db:
+        execution = await db.get(WorkflowExecution, execution_id)
+        if execution is None:
+            raise RuntimeError("workflow execution not found")
+        plan = await db.get(WorkflowPlanVersion, execution.plan_id)
+        workflow = await db.get(WorkflowDefinition, execution.workflow_id)
+        if plan is None or workflow is None:
+            raise RuntimeError("workflow execution binding is incomplete")
+        mapping = (
+            await db.execute(
+                select(TenantMapping)
+                .where(TenantMapping.tenant_key == execution.tenant_key)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        policy, _ = await resolve_policy(
+            db,
+            tenant_key=execution.tenant_key,
+            org_id=mapping.org_id if mapping else "",
+            catalog=compute_catalog(),
+            allow_admin_bypass=False,
+        )
+        requested_scope = tuple(plan.knowledge_scope or [])
+        allowed_scope = (
+            policy.restrict(requested_scope) if requested_scope else frozenset()
+        )
+        capability = mint_capability(
+            policy,
+            subject_id=execution.id,
+            entry_point="workflow",
+            requested_scopes=allowed_scope,
+            user_id=str(workflow.created_by),
+            sources=("tenant_knowledge", "user_notes"),
+            ttl_seconds=900,
+        )
+        return {
+            "knowledge_capability": capability,
+            "knowledge_policy_version": policy.policy_version,
+        }
 
 
 async def worker_loop(poll_seconds: float = 2.0) -> None:

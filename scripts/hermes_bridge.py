@@ -749,8 +749,12 @@ class ClarificationDecision(BaseModel):
 
 
 class WorkflowRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     from_node_id: str | None = Field(None, max_length=80)
     revision_comment: str | None = Field(None, max_length=2000)
+    knowledge_capability: str | None = Field(None, min_length=20)
+    knowledge_policy_version: str | None = Field(None, min_length=8, max_length=80)
 
 
 class WorkflowGateApprovalRequest(BaseModel):
@@ -760,6 +764,8 @@ class WorkflowGateApprovalRequest(BaseModel):
     artifact_version: int = Field(..., ge=1)
     artifact_id: str = Field(..., pattern=r"^wfa_[a-f0-9]{32}$")
     expected_hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+    knowledge_capability: str | None = Field(None, min_length=20)
+    knowledge_policy_version: str | None = Field(None, min_length=8, max_length=80)
 
 
 class AgentEvaluationRequest(BaseModel):
@@ -8646,6 +8652,32 @@ async def cancel_workflow_run(
         return {"ok": True, "status": run.get("status")}
 
 
+def _refresh_workflow_authorization(
+    run: dict[str, Any],
+    capability: str | None,
+    policy_version: str | None,
+) -> None:
+    if bool(capability) != bool(policy_version):
+        raise HTTPException(status_code=422, detail="incomplete workflow authorization refresh")
+    if not capability:
+        return
+    claims = _validated_knowledge_claims(
+        capability,
+        subject_id=str(run.get("execution_id") or ""),
+        policy_version=policy_version,
+    )
+    if (
+        str((claims or {}).get("entry_point") or "") != "workflow"
+        or str((claims or {}).get("tenant_key") or "") != str(run.get("tenant_id") or "")
+    ):
+        raise HTTPException(status_code=403, detail="knowledge_scope_denied")
+    run["knowledge_capability"] = capability
+    run["knowledge_policy_version"] = policy_version
+    run["knowledge_scope"] = sorted(
+        str(item) for item in (claims or {}).get("scopes") or [] if str(item)
+    )
+
+
 @app.post("/v1/workflow-runs/{execution_id}/retry")
 async def retry_workflow_run(
     execution_id: str,
@@ -8657,6 +8689,9 @@ async def retry_workflow_run(
         run = _workflow_runs.get(execution_id)
         if not run:
             raise HTTPException(status_code=404, detail="workflow run not found")
+        _refresh_workflow_authorization(
+            run, body.knowledge_capability, body.knowledge_policy_version
+        )
         order = _workflow_order(run["plan"])
         target = body.from_node_id
         if target is None:
@@ -8784,6 +8819,9 @@ async def approve_workflow_gate(execution_id: str, body: WorkflowGateApprovalReq
         run = _workflow_runs.get(execution_id)
         if not run or run.get("status") != "awaiting_approval":
             raise HTTPException(status_code=409, detail="workflow is not awaiting approval")
+        _refresh_workflow_authorization(
+            run, body.knowledge_capability, body.knowledge_policy_version
+        )
         state = (run.get("nodes") or {}).get(body.node_id) or {}
         node = next((item for item in run["plan"].get("nodes") or [] if item.get("id") == body.node_id), None)
         if not node or not (node.get("parameters") or {}).get("approval_gate") or state.get("status") != "succeeded" or int(state.get("attempt") or 0) != body.artifact_version:

@@ -947,6 +947,33 @@ def test_hermes_gate_rejects_stale_version_and_records_current_approval(monkeypa
         bridge._workflow_runs.pop("exec-gate", None)
 
 
+def test_workflow_retry_refreshes_expired_authorization_without_scope_widening(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    run = {
+        "execution_id": "exec-refresh",
+        "tenant_id": "tenant-a",
+        "knowledge_capability": "expired-capability",
+        "knowledge_policy_version": "old-policy",
+        "knowledge_scope": ["private-old"],
+    }
+    monkeypatch.setattr(
+        bridge,
+        "_validated_knowledge_claims",
+        lambda token, **_: {
+            "entry_point": "workflow",
+            "tenant_key": "tenant-a",
+            "scopes": [],
+        },
+    )
+    bridge._refresh_workflow_authorization(
+        run, "replacement-capability-value", "replacement-policy"
+    )
+    assert run["knowledge_capability"] == "replacement-capability-value"
+    assert run["knowledge_policy_version"] == "replacement-policy"
+    assert run["knowledge_scope"] == []
+
+
 def test_presentation_scenario_analyzes_source_before_two_business_gates_and_binary_deck():
     workflow = type(
         "Workflow",

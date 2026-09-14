@@ -228,7 +228,16 @@ def mint_capability(
     ttl_seconds: int | None = None,
     book_scope: dict[str, str] | None = None,
 ) -> str:
-    scopes = sorted(policy.restrict(requested_scopes))
+    # ``None`` accepts the policy default. An explicit empty iterable means
+    # no knowledge access and must not widen to every tenant category.
+    requested = None if requested_scopes is None else tuple(requested_scopes)
+    scopes = sorted(
+        policy.effective_categories
+        if requested is None
+        else policy.restrict(requested)
+        if requested
+        else ()
+    )
     allowed_sources = {"tenant_knowledge", "user_notes"}
     requested_sources = set(sources or ("tenant_knowledge",))
     if not requested_sources.issubset(allowed_sources):
