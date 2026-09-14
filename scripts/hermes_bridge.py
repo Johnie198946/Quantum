@@ -3752,6 +3752,43 @@ def _bind_approved_presentation_inputs(
     value = _extract_json_object(content)
     theme, design_binding = _approved_presentation_design(run)
     outline, outline_binding = _approved_presentation_outline(run)
+    generated = [item for item in value.get("slides") or [] if isinstance(item, dict)]
+    outline_slides = [
+        item for item in outline.get("slides") or [] if isinstance(item, dict)
+    ]
+    if len(generated) == len(outline_slides):
+        bound_slides = generated
+    else:
+        by_title = {
+            str(item.get("title") or "").strip(): item
+            for item in generated
+            if str(item.get("title") or "").strip()
+        }
+        bound_slides = []
+        for approved_slide in outline_slides:
+            title = str(approved_slide.get("title") or "").strip()
+            slide = by_title.get(title)
+            if slide is None:
+                points = [
+                    str(point).strip()
+                    for point in approved_slide.get("key_points") or []
+                    if str(point).strip()
+                ]
+                approved_layout = str(approved_slide.get("layout") or "bullets")
+                if approved_layout in {"title", "section"}:
+                    slide = {
+                        "layout": approved_layout,
+                        "title": title,
+                        "subtitle": "；".join(points[:2]),
+                    }
+                else:
+                    slide = {
+                        "layout": "conclusion" if approved_layout == "conclusion" else "bullets",
+                        "title": title,
+                        "bullets": points,
+                    }
+            bound_slides.append(dict(slide))
+    value["slides"] = bound_slides
     _assert_final_matches_approved_outline(value, outline)
     value["title"] = str(outline.get("title") or value.get("title") or "演示文稿")
     for final_slide, outline_slide in zip(value["slides"], outline["slides"]):

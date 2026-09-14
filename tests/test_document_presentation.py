@@ -854,6 +854,13 @@ def test_final_presentation_requires_approved_outline_binding_and_structure():
     changed["slides"][1]["title"] = "unapproved"
     rebound, _, _ = bridge._bind_approved_presentation_inputs(run, json.dumps(changed))
     assert json.loads(rebound)["slides"][1]["title"] == json.loads(outline)["slides"][1]["title"]
+    shortened = json.loads(final)
+    shortened["slides"] = shortened["slides"][:1]
+    rebuilt, _, _ = bridge._bind_approved_presentation_inputs(run, json.dumps(shortened))
+    rebuilt_slides = json.loads(rebuilt)["slides"]
+    assert len(rebuilt_slides) == len(json.loads(outline)["slides"])
+    assert rebuilt_slides[1]["layout"] == "bullets"
+    assert rebuilt_slides[1]["bullets"] == json.loads(outline)["slides"][1]["key_points"]
     run["nodes"]["presentation_outline"]["output"] = outline + " "
     with pytest.raises(RuntimeError, match="outline.*tampered"):
         bridge._bind_approved_presentation_inputs(run, final)
