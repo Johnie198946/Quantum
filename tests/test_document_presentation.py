@@ -852,8 +852,8 @@ def test_final_presentation_requires_approved_outline_binding_and_structure():
     assert outline_binding["artifact_version"] == 1
     changed = json.loads(final)
     changed["slides"][1]["title"] = "unapproved"
-    with pytest.raises(RuntimeError, match="approved outline structure"):
-        bridge._bind_approved_presentation_inputs(run, json.dumps(changed))
+    rebound, _, _ = bridge._bind_approved_presentation_inputs(run, json.dumps(changed))
+    assert json.loads(rebound)["slides"][1]["title"] == json.loads(outline)["slides"][1]["title"]
     run["nodes"]["presentation_outline"]["output"] = outline + " "
     with pytest.raises(RuntimeError, match="outline.*tampered"):
         bridge._bind_approved_presentation_inputs(run, final)

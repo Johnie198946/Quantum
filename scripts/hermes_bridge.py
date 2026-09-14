@@ -3731,17 +3731,11 @@ def _assert_final_matches_approved_outline(
     outline_slides = outline.get("slides")
     if not isinstance(final_slides, list) or not isinstance(outline_slides, list):
         raise RuntimeError("final presentation or approved outline has invalid slides")
-    final_shape = [
-        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
-        for item in final_slides
-        if isinstance(item, dict)
-    ]
-    outline_shape = [
-        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
-        for item in outline_slides
-        if isinstance(item, dict)
-    ]
-    if final_shape != outline_shape:
+    if (
+        len(final_slides) != len(outline_slides)
+        or any(not isinstance(item, dict) for item in final_slides)
+        or any(not isinstance(item, dict) for item in outline_slides)
+    ):
         raise RuntimeError("final presentation differs from approved outline structure")
 
 
@@ -3759,6 +3753,12 @@ def _bind_approved_presentation_inputs(
     theme, design_binding = _approved_presentation_design(run)
     outline, outline_binding = _approved_presentation_outline(run)
     _assert_final_matches_approved_outline(value, outline)
+    value["title"] = str(outline.get("title") or value.get("title") or "演示文稿")
+    for final_slide, outline_slide in zip(value["slides"], outline["slides"]):
+        # Titles and order were approved at the outline gate. Layout remains the
+        # renderer-safe normalized layout so sparse qualitative material is not
+        # forced back into an invalid chart/table contract.
+        final_slide["title"] = str(outline_slide.get("title") or final_slide.get("title") or "")
     value["theme"] = theme
     return (
         json.dumps(value, ensure_ascii=False, separators=(",", ":")),
@@ -3805,6 +3805,25 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         else "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
     )
     upstream = chr(10).join(completed) if completed else "无直接依赖或上游暂无成果"
+    if artifact_contract["render_type"] == "presentation":
+        approved_outline, _ = _approved_presentation_outline(run)
+        approved_structure = {
+            "title": approved_outline.get("title"),
+            "slides": [
+                {
+                    "layout": item.get("layout"),
+                    "title": item.get("title"),
+                    "key_points": item.get("key_points") or [],
+                }
+                for item in approved_outline.get("slides") or []
+                if isinstance(item, dict)
+            ],
+        }
+        upstream += (
+            "\n\n已批准逐页大纲（必须保留页数、顺序与标题；layout 若与实际字段不兼容，"
+            "可按渲染契约安全降级，不得删页）：\n"
+            + json.dumps(approved_structure, ensure_ascii=False, separators=(",", ":"))
+        )
     source = run.get("source_document") or {}
     source_text = str(source.get("text") or "")
     plan_node_ids = {
