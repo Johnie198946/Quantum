@@ -778,6 +778,23 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
 
     func testFreshRequestCreatesWorkflowAndAutoOpensTask() throws {
         app.launch()
+        try completeFreshIstanbulWorkflow()
+    }
+
+    func testCleanRoomIstanbulPresentationCompletesEveryGateAndDownloadsPPTX() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["LIVE_ACCEPTANCE"] == "1" else {
+            throw XCTSkip("Set LIVE_ACCEPTANCE=1 for the production clean-room test.")
+        }
+        let token = try XCTUnwrap(environment["LIVE_ACCEPTANCE_JWT"])
+        XCTAssertFalse(token.isEmpty)
+        app.launchArguments = ["-autoLogin"]
+        app.launchEnvironment["AI_LAB_E2E_TOKEN"] = token
+        app.launch()
+        try completeFreshIstanbulWorkflow()
+    }
+
+    private func completeFreshIstanbulWorkflow() throws {
         let newSession = app.buttons["新建会话"]
         XCTAssertTrue(newSession.waitForExistence(timeout: 20))
         newSession.tap()
