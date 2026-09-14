@@ -942,6 +942,7 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         download.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(waitUntil(timeout: 30) {
             app.sheets.firstMatch.exists
+                || app.buttons["保存到“文件”"].exists
                 || app.buttons["存储到“文件”"].exists
                 || app.buttons["拷贝"].exists
         }, "PPTX 下载/分享面板未打开。")
