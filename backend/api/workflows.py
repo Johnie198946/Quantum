@@ -1788,9 +1788,12 @@ async def edit_plan(
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         compiled_dsl = compiled.model_dump(mode="json")
+        current_compiled_dsl = DSLSafetyCompiler.compile_and_validate(
+            current_plan.dsl or {}
+        ).model_dump(mode="json")
         candidate_hash = canonical_plan_hash(compiled_dsl)
         if (
-            candidate_hash == current_hash
+            compiled_dsl == current_compiled_dsl
             and body.deliverable == current_plan.deliverable
             and body.allow_network == current_plan.allow_network
             and body.max_tokens == current_plan.max_tokens
