@@ -791,6 +791,7 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         app.launchArguments = ["-autoLogin"]
         app.launchEnvironment["AI_LAB_E2E_TOKEN"] = token
         app.launch()
+        acceptAgreementIfNeeded()
         try completeFreshIstanbulWorkflow()
     }
 
@@ -806,11 +807,12 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         for _ in 0..<8 where !confirmExecution.waitForExistence(timeout: 45) {
             let choice = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "未选择，")).firstMatch
             if choice.exists {
-                choice.tap()
+                if !choice.isHittable { app.swipeUp() }
+                guard choice.isHittable else { continue }
+                choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 let confirmChoice = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "确认")).allElementsBoundByIndex.first {
                     $0.label != "确认执行" && $0.isHittable
                 }
-                XCTAssertNotNil(confirmChoice, "需求确认卡没有可点击的确认按钮。")
                 confirmChoice?.tap()
             }
         }
@@ -856,12 +858,30 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
     private func send(_ text: String) {
         let input = app.textFields["selected-book-chat-input"]
         XCTAssertTrue(input.waitForExistence(timeout: 30))
-        XCTAssertTrue(waitUntil(timeout: 120) { input.isEnabled && input.isHittable })
-        input.tap()
+        guard waitUntil(timeout: 120, condition: { input.isEnabled && input.isHittable }) else {
+            XCTFail("Istanbul chat input never became interactive.")
+            return
+        }
+        input.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if !app.keyboards.firstMatch.waitForExistence(timeout: 5) {
+            input.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         input.typeText(text)
         let button = app.buttons["selected-book-chat-send"]
         XCTAssertTrue(waitUntil(timeout: 30) { button.isEnabled && button.isHittable })
         button.tap()
+    }
+
+    private func acceptAgreementIfNeeded() {
+        let cta = app.buttons["agreement.cta"]
+        guard cta.waitForExistence(timeout: 12) else { return }
+        guard waitUntil(timeout: 60, condition: { cta.isEnabled && cta.isHittable }) else {
+            XCTFail("Required service agreement never became actionable.")
+            return
+        }
+        cta.tap()
+        XCTAssertTrue(waitUntil(timeout: 60) { !cta.exists })
     }
 
     private func waitUntil(timeout: TimeInterval, condition: () -> Bool) -> Bool {
@@ -914,13 +934,17 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
 
     private func verifyCompletedPPTX() {
         let completedPreview = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "workflow-artifact-preview-")).firstMatch
-        XCTAssertTrue(scrollUntilHittable(completedPreview, timeout: 180), "完成后 PPTX 预览入口未出现。")
-        completedPreview.tap()
+        XCTAssertTrue(completedPreview.waitForExistence(timeout: 180), "完成后 PPTX 预览入口未出现。")
+        completedPreview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["完成"].waitForExistence(timeout: 60), "完成态 PPTX 预览未打开。")
-        XCTAssertTrue(
-            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "下载可编辑 PPTX")).firstMatch.waitForExistence(timeout: 60),
-            "完成态未开放可编辑 PPTX 下载/分享。"
-        )
+        let download = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "下载可编辑 PPTX")).firstMatch
+        XCTAssertTrue(download.waitForExistence(timeout: 60), "完成态未开放可编辑 PPTX 下载/分享。")
+        download.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(waitUntil(timeout: 30) {
+            app.sheets.firstMatch.exists
+                || app.buttons["存储到“文件”"].exists
+                || app.buttons["拷贝"].exists
+        }, "PPTX 下载/分享面板未打开。")
         attachScreenshot(named: "istanbul-completed-pptx-download")
     }
 

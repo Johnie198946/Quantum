@@ -400,7 +400,10 @@ private struct WorkflowDetailView: View {
             } else if current.status == "awaiting_approval" && execution == nil {
                 WorkflowPlanReviewView(workflow: current) { buildResult in
                     current = buildResult.workflow
-                    Task { await onChanged() }
+                    Task {
+                        await refresh()
+                        await onChanged()
+                    }
                 }
             } else if current.status == "agent_ready", let agent = current.agent, execution == nil {
                 WorkflowAgentReadyView(workflow: current, agent: agent) { started in
