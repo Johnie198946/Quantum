@@ -995,6 +995,29 @@ def test_presentation_scenario_without_upload_researches_user_topic_first():
     }
 
 
+def test_text_material_presentation_does_not_read_unscoped_private_knowledge():
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "因特拉肯管理层简报",
+            "description": "根据用户材料生成六页管理层 PPT",
+            "requirements_snapshot": {
+                "scenario_id": "presentation-generation",
+                "text_material": "因特拉肯位于图恩湖与布里恩茨湖之间。",
+            },
+        },
+    )()
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
+    assert plan["source_document"] == {}
+    assert "presentation_research" not in {node["id"] for node in plan["nodes"]}
+    assert ("presentation_research", "presentation_analysis") not in {
+        tuple(edge.values()) for edge in plan["edges"]
+    }
+    assert "用户提供的文字材料" in plan["nodes"][0]["parameters"]["instruction"]
+
+
 def test_document_scenario_generates_real_word_output_with_two_confirmation_gates():
     from backend.services.presentation_scenario import build_document_plan
 

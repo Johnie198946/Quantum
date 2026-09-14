@@ -65,8 +65,17 @@ def build_presentation_plan(
 ) -> dict[str, Any] | None:
     if not is_presentation_workflow(workflow):
         return None
-    source = (workflow.requirements_snapshot or {}).get("source_document") or {}
-    source_hint = "源文档" if source else "用户指令与检索到的可靠资料"
+    snapshot = workflow.requirements_snapshot or {}
+    source = snapshot.get("source_document") or {}
+    text_material = str(snapshot.get("text_material") or "").strip()
+    should_research = not source and not text_material
+    source_hint = (
+        "源文档"
+        if source
+        else "用户提供的文字材料"
+        if text_material
+        else "用户指令与检索到的可靠资料"
+    )
     common = {
         "scenario_id": SCENARIO_ID,
         "scenario_version": SCENARIO_VERSION,
@@ -125,7 +134,7 @@ def build_presentation_plan(
             },
         },
     ]
-    if not source:
+    if should_research:
         nodes.insert(0, {
             "id": "presentation_research",
             "node_type": "KNOWLEDGE_RETRIEVAL",
@@ -144,7 +153,7 @@ def build_presentation_plan(
         {"source": "presentation_outline", "target": "presentation_deck"},
         {"source": "presentation_design", "target": "presentation_deck"},
     ]
-    if not source:
+    if should_research:
         edges.insert(0, {"source": "presentation_research", "target": "presentation_analysis"})
     return {
         "plan_id": plan_id,
