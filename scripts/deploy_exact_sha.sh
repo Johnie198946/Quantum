@@ -12,6 +12,17 @@ fi
 EXPECTED_SHA="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
 DEPLOY_HOST="${AI_LAB_DEPLOY_HOST:?ERROR: 必须设置 AI_LAB_DEPLOY_HOST}"
 REMOTE_SUDO="${AI_LAB_DEPLOY_REMOTE_SUDO:-0}"
+IDENTITY_FILE="${AI_LAB_DEPLOY_IDENTITY_FILE:-}"
+SSH_OPTIONS=(-o BatchMode=yes)
+SCP_OPTIONS=(-q -o BatchMode=yes)
+if [ -n "$IDENTITY_FILE" ]; then
+  if [ ! -f "$IDENTITY_FILE" ]; then
+    echo "ERROR: AI_LAB_DEPLOY_IDENTITY_FILE does not exist" >&2
+    exit 2
+  fi
+  SSH_OPTIONS+=(-o IdentitiesOnly=yes -i "$IDENTITY_FILE")
+  SCP_OPTIONS+=(-o IdentitiesOnly=yes -i "$IDENTITY_FILE")
+fi
 if [[ ! "$REMOTE_SUDO" =~ ^[01]$ ]]; then
   echo "ERROR: AI_LAB_DEPLOY_REMOTE_SUDO must be 0 or 1" >&2
   exit 2
@@ -26,9 +37,9 @@ cleanup() {
   trap - EXIT
   rm -f "$LOCAL_SCRIPT" "$LOCAL_SOURCE"
   if [[ "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
-    ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SCRIPT" >/dev/null 2>&1 || true
+    ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" rm -f -- "$REMOTE_SCRIPT" >/dev/null 2>&1 || true
   fi
-  ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE" >/dev/null 2>&1 || true
+  ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE" >/dev/null 2>&1 || true
   exit "$rc"
 }
 trap cleanup EXIT
@@ -40,19 +51,19 @@ LOCAL_HASH="$(shasum -a 256 "$LOCAL_SCRIPT" | cut -d' ' -f1)"
 git archive --format=tar --prefix="ai-lab-platform-$EXPECTED_SHA/" "$EXPECTED_SHA" | gzip -n > "$LOCAL_SOURCE"
 SOURCE_HASH="$(shasum -a 256 "$LOCAL_SOURCE" | cut -d' ' -f1)"
 
-REMOTE_SCRIPT="$(ssh -o BatchMode=yes "$DEPLOY_HOST" mktemp /tmp/ai-lab-update.XXXXXX)"
+REMOTE_SCRIPT="$(ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" mktemp /tmp/ai-lab-update.XXXXXX)"
 if [[ ! "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
   echo "ERROR: 远端未返回受控的随机临时路径" >&2
   exit 1
 fi
 
-scp -q "$LOCAL_SCRIPT" "$DEPLOY_HOST:$REMOTE_SCRIPT"
-ssh -o BatchMode=yes "$DEPLOY_HOST" install -d -o root -g root -m 0755 /opt/ai-lab-shared/offline-source
-scp -q "$LOCAL_SOURCE" "$DEPLOY_HOST:$REMOTE_SOURCE.upload"
-ssh -o BatchMode=yes "$DEPLOY_HOST" install -o root -g root -m 0600 \
+scp "${SCP_OPTIONS[@]}" "$LOCAL_SCRIPT" "$DEPLOY_HOST:$REMOTE_SCRIPT"
+ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" install -d -o root -g root -m 0755 /opt/ai-lab-shared/offline-source
+scp "${SCP_OPTIONS[@]}" "$LOCAL_SOURCE" "$DEPLOY_HOST:$REMOTE_SOURCE.upload"
+ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" install -o root -g root -m 0600 \
   "$REMOTE_SOURCE.upload" "$REMOTE_SOURCE"
-ssh -o BatchMode=yes "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE.upload"
-ssh -o BatchMode=yes "$DEPLOY_HOST" bash -s -- \
+ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE.upload"
+ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" bash -s -- \
   "$REMOTE_SCRIPT" "$EXPECTED_SHA" "$LOCAL_HASH" "$REMOTE_SUDO" \
   "$REMOTE_SOURCE" "$SOURCE_HASH" <<'REMOTE'
 set -euo pipefail
