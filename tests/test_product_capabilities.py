@@ -30,7 +30,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 16
+    assert len(catalog["capabilities"]) == 17
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])
@@ -134,6 +134,61 @@ async def test_invoke_rejects_authority_fields_and_missing_confirmation():
         confirmed=False, idempotency_key="request-123",
     )
     assert unconfirmed["error"]["code"] == "contract_invalid"
+
+
+@pytest.mark.asyncio
+async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract():
+    created = {
+        "workflow": {"id": "wf-text", "status": "clarifying"},
+        "clarification_session": {
+            "id": "wfs-text", "phase": "awaiting_requirement_confirmation"
+        },
+    }
+    with patch(
+        "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
+    ) as create:
+        result = await invoke_capability(
+            "presentation.create_from_text",
+            {"title": "因特拉肯旅行攻略", "text_material": "湖泊、雪山与少女峰路线"},
+            payload={"tenant_key": "tenant-a", "user_id": "user-a"},
+            confirmed=True,
+            idempotency_key="interlaken-deck-1",
+        )
+
+    assert result["status"] == "completed"
+    assert result["events"][0]["type"] == "presentation.created"
+    payload = result["events"][0]["payload"]
+    assert payload["delivery"]["artifact_extension"] == "pptx"
+    assert payload["delivery"]["preview_extension"] == "pdf"
+    assert create.await_args is not None
+    body = create.await_args.args[0]
+    call_options = create.await_args.kwargs
+    assert call_options["requirements_explicit"] is True
+    assert call_options["requirements_snapshot_overrides"]["text_material"] == "湖泊、雪山与少女峰路线"
+    assert call_options["requirements_snapshot_overrides"]["artifact_contract"]["extension"] == "pptx"
+    assert body.output_kind == "presentation"
+    assert "management_briefing" in body.description
+    assert "clean_professional_16_9" in body.description
+    assert "湖泊、雪山与少女峰路线" in body.description
+    from backend.api.workflows import requirement_is_explicit
+    assert requirement_is_explicit(body.description)
+
+    with patch(
+        "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
+    ) as clarify_create:
+        await invoke_capability(
+            "presentation.create_from_text",
+            {
+                "title": "因特拉肯旅行攻略",
+                "text_material": "湖泊、雪山与少女峰路线",
+                "clarification_strategy": "ask_before_planning",
+            },
+            payload={"tenant_key": "tenant-a", "user_id": "user-a"},
+            confirmed=True,
+            idempotency_key="interlaken-deck-ask",
+        )
+    assert clarify_create.await_args is not None
+    assert clarify_create.await_args.kwargs["requirements_explicit"] is False
 
 
 def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():
@@ -248,6 +303,16 @@ def test_bridge_compiles_every_implemented_capability_as_a_native_tool(monkeypat
     assert not {"url", "handler", "tenant", "user"} & set(
         presentation["schema"]["parameters"]["properties"]
     )
+    text_presentation = registered["app_presentation_create_from_text"]
+    text_schema = text_presentation["schema"]["parameters"]
+    assert text_schema == implemented["presentation.create_from_text"]["input_schema"]
+    assert text_schema["required"] == ["title", "text_material"]
+    assert text_schema["properties"]["intended_use"]["default"] == "management_briefing"
+    assert text_schema["properties"]["layout_style"]["default"] == "clean_professional_16_9"
+    contract = implemented["presentation.create_from_text"]["workflow_contract"]
+    assert contract["clarification"].startswith("Ask only")
+    assert contract["artifact"]["extension"] == "pptx"
+    assert contract["preview"]["extension"] == "pdf"
     assert bridge._legacy_client_context_enabled(True, False) is False
 
 

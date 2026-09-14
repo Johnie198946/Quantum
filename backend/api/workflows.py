@@ -708,6 +708,8 @@ async def _create_workflow(
     *,
     workflow_id: str | None = None,
     qcp_request_hash: str | None = None,
+    requirements_explicit: bool | None = None,
+    requirements_snapshot_overrides: dict[str, Any] | None = None,
 ):
     workflow_id = workflow_id or uid("wf")
     session_id = "wfs_" + workflow_id.removeprefix("wf_") if qcp_request_hash else uid("wfs")
@@ -734,6 +736,8 @@ async def _create_workflow(
             "clarification_mode": body.clarification_mode,
             "output_kind": body.output_kind,
         }
+        if requirements_snapshot_overrides:
+            requirements_snapshot.update(requirements_snapshot_overrides)
         if qcp_request_hash:
             requirements_snapshot["qcp_request_hash"] = qcp_request_hash
         if body.output_kind == "presentation":
@@ -800,7 +804,11 @@ async def _create_workflow(
                 description, demand_context
             )[:12_000]
 
-        explicit = requirement_is_explicit(description)
+        explicit = (
+            requirements_explicit
+            if requirements_explicit is not None
+            else requirement_is_explicit(description)
+        )
         row = WorkflowDefinition(
             id=workflow_id,
             tenant_key=tenant(),
@@ -1087,7 +1095,18 @@ async def respond_to_clarification(
                 prior_snapshot = workflow.requirements_snapshot or {}
                 source_context = {
                     key: prior_snapshot[key]
-                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence")
+                    for key in (
+                        "showroom_context",
+                        "customer_demand",
+                        "output_kind",
+                        "scenario_id",
+                        "source_document",
+                        "source_document_evidence",
+                        "text_material",
+                        "presentation_defaults",
+                        "artifact_contract",
+                        "qcp_request_hash",
+                    )
                     if prior_snapshot.get(key)
                 }
                 workflow.requirements_snapshot = {**spec, **source_context}

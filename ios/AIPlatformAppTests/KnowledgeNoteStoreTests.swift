@@ -535,18 +535,14 @@ final class KnowledgeNoteStoreTests: XCTestCase {
             userText: "保存为笔记", hasProposal: true
         ))
     }
-
-    func testExplicitDocumentOutputIntentIsSeparateFromQuestions() {
-        XCTAssertEqual(
-            TenantSessionCoordinator.explicitOutputKind("帮我生成一个介绍鹿儿岛旅行攻略的ppt"),
-            "presentation"
-        )
-        XCTAssertEqual(
-            TenantSessionCoordinator.explicitOutputKind("请写一份项目复盘 Word 文档"),
-            "document"
-        )
-        XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("如何生成 PPT？"))
-        XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("帮我总结这份文档"))
+    func testTextPresentationProposalPreservesRegistryInput() throws {
+        let data = Data(#"{"proposal_id":"ppt-text-1","capability_id":"presentation.create_from_text","input":{"title":"因特拉肯旅行攻略","text_material":"湖泊、雪山与少女峰路线","intended_use":"travel_guide","layout_style":"editorial_16_9","slide_count":10,"clarification_strategy":"use_defaults_unless_blocked"},"summary":"Create deck","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: data)
+        XCTAssertEqual(proposal.capabilityId, QCPCapabilityID.presentationCreateFromText)
+        XCTAssertEqual(proposal.input.textMaterial, "湖泊、雪山与少女峰路线")
+        XCTAssertEqual(proposal.input.intendedUse, "travel_guide")
+        XCTAssertEqual(proposal.input.layoutStyle, "editorial_16_9")
+        XCTAssertEqual(proposal.input.slideCount, 10)
     }
 
     private func isolatedStoreAndExecutor() -> (KnowledgeNoteStore, KnowledgeActionExecutor) {

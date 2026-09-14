@@ -91,6 +91,14 @@
       ]
     },
     {
+      "id": "presentation.create_from_text",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ]
+    },
+    {
       "id": "workflow.create",
       "status": "implemented",
       "tests": [
@@ -119,7 +127,7 @@
       ]
     }
   ],
-  "catalog_digest": "83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d6",
+  "catalog_digest": "8f3d20fe89ae37cf69e34c83dd331f7698300c59a777732ebcad2f89dbf72ea8",
   "consumptions": [
     {
       "gates": [
@@ -164,11 +172,11 @@
     }
   ],
   "counts": {
-    "implemented": 16,
+    "implemented": 17,
     "partial": 0,
     "unverified": 0
   },
   "protocol": "qcp",
-  "total": 16,
+  "total": 17,
   "version": "1.0.0"
 }

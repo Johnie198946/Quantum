@@ -212,6 +212,74 @@ async def _presentation_create(data: dict[str, Any], payload: dict[str, Any], ke
     )
 
 
+async def _presentation_create_from_text(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    """Create the governed text-to-deck workflow selected by Hermes."""
+    assert key
+    normalized = {
+        "audience": data.get("audience") or "general_business_audience",
+        "intended_use": data.get("intended_use") or "management_briefing",
+        "layout_style": data.get("layout_style") or "clean_professional_16_9",
+        "slide_count": int(data.get("slide_count") or 10),
+        "clarification_strategy": data.get("clarification_strategy")
+        or "use_defaults_unless_blocked",
+    }
+    identity_input = {**data, **normalized}
+    workflow_id, request_hash = _qcp_workflow_identity(
+        "presentation.create_from_text", payload, key, identity_input
+    )
+    material = data["text_material"].strip()
+    description = (
+        f"用户与场景：{normalized['audience']}；用途：{normalized['intended_use']}；"
+        f"范围：根据以下文本材料制作 {normalized['slide_count']} 页演示文稿；"
+        f"约束：版式必须采用 {normalized['layout_style']}，不得虚构材料中的事实；"
+        "数据与知识库：仅使用用户文字和明确授权的检索；"
+        "验收：输出可编辑 PPTX、同版本 PDF 渲染预览和鉴权下载入口。\n\n"
+        f"文本材料：\n{material}"
+    )
+    result = await _create_workflow(
+        WorkflowCreate(
+            title=data["title"],
+            description=description,
+            desired_output="可编辑 PPTX、同版本 PDF 渲染预览与鉴权下载",
+            clarification_mode="compatibility",
+            showroom_session_id=None,
+            customer_demand_id=None,
+            source_document_id=None,
+            output_kind="presentation",
+        ),
+        payload,
+        workflow_id=workflow_id,
+        qcp_request_hash=request_hash,
+        requirements_explicit=(
+            normalized["clarification_strategy"] == "use_defaults_unless_blocked"
+        ),
+        requirements_snapshot_overrides={
+            "text_material": material,
+            "presentation_defaults": normalized,
+            "artifact_contract": {
+                "extension": "pptx",
+                "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "preview_extension": "pdf",
+                "preview_source": "exact_final_pptx_bytes",
+                "download": "authenticated",
+            },
+        },
+    )
+    return {
+        **result,
+        "delivery": {
+            "artifact_extension": "pptx",
+            "artifact_mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "preview_extension": "pdf",
+            "preview_source": "exact_final_pptx_bytes",
+            "preview_return": "authenticated_artifact_reference",
+            "download_return": "authenticated_artifact_download_reference",
+        },
+    }
+
+
 async def _workflow_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
     return await get_workflow(data["workflow_id"], payload)
 
@@ -266,6 +334,7 @@ HANDLERS: dict[str, Handler] = {
     "workflow.status": _workflow_status,
     "workflow.start": _workflow_start,
     "presentation.create_from_document": _presentation_create,
+    "presentation.create_from_text": _presentation_create_from_text,
     "artifact.open": _artifact_open,
     "artifact.download": _artifact_download,
     "artifact.consume_structured": _artifact_consume_structured,

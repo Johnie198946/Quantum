@@ -436,6 +436,12 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let sourceDocumentId: String?
     public let outputKind: String?
     public let workflowId: String?
+    public let textMaterial: String?
+    public let audience: String?
+    public let intendedUse: String?
+    public let layoutStyle: String?
+    public let slideCount: Int?
+    public let clarificationStrategy: String?
 
     enum CodingKeys: String, CodingKey {
         case title, description
@@ -443,6 +449,12 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
         case sourceDocumentId = "source_document_id"
         case outputKind = "output_kind"
         case workflowId = "workflow_id"
+        case textMaterial = "text_material"
+        case audience
+        case intendedUse = "intended_use"
+        case layoutStyle = "layout_style"
+        case slideCount = "slide_count"
+        case clarificationStrategy = "clarification_strategy"
     }
 }
 

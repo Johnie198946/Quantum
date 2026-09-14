@@ -272,6 +272,45 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
     implementation_status: implemented
+  - id: presentation.create_from_text
+    version: 1.0.0
+    domain: presentation
+    description: Create an editable PPTX workflow directly from user-provided text, using governed defaults and returning the workflow that will expose its rendered preview and authenticated download.
+    positive_examples: ["Create a PPT about an Interlaken travel guide from these notes", "把这些文字材料直接做成因特拉肯旅行攻略 PPT"]
+    negative_examples: ["Create a PPT from this uploaded document", "Explain how to make slides without creating a file"]
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        text_material: {type: string, minLength: 3, maxLength: 12000}
+        audience: {type: string, minLength: 1, maxLength: 300, default: general_business_audience}
+        intended_use: {type: string, enum: [management_briefing, client_proposal, internal_sharing, teaching, travel_guide], default: management_briefing}
+        layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
+        slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
+        clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
+      required: [title, text_material]
+      additionalProperties: false
+    output_schema: {type: object, required: [workflow, clarification_session, delivery]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: workflow-owner
+    handler_binding: presentation.create_from_text
+    idempotency: required
+    receipt: required
+    result_event: presentation.created
+    renderer: presentation_review
+    renderer_version: 1
+    workflow_contract:
+      defaults: {audience: general_business_audience, intended_use: management_briefing, layout_style: clean_professional_16_9, slide_count: 10}
+      clarification: Ask only when text material is missing or a blocking contradiction exists; otherwise present the governed defaults in the requirement confirmation.
+      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, design, final_output]
+      artifact: {extension: pptx, mime_type: application/vnd.openxmlformats-officedocument.presentationml.presentation}
+      preview: {extension: pdf, generated_from: exact_final_pptx_bytes}
+      return: {preview: authenticated_artifact_reference, download: authenticated_artifact_download_reference}
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    implementation_status: implemented
   - id: artifact.open
     version: 1.0.0
     domain: artifact

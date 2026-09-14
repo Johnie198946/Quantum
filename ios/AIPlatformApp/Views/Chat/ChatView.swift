@@ -70,22 +70,24 @@ public struct ChatView: View {
                             showingTopicDiscussion = currentTopic != nil
                         }
                     )
-                    ChatInputBar(
-                        inputText: $draftText,
-                        quotedContext: $coordinator.quotedContext,
-                        isVoicePressing: $isVoicePressing,
-                        speechService: speechService,
-                        isGenerating: coordinator.isGenerating,
-                        dismissKeyboardToken: dismissKeyboardToken,
-                        onSend: {
-                            guard let text = ChatDraftSubmission.consume(&draftText) else { return }
-                            coordinator.sendMessage(text: text)
-                            dismissKeyboard()
-                        },
-                        onVoicePressChanged: handleVoicePressChanged,
-                        onPlusTap: { showingPlusMenu = true }
-                    )
                 }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ChatInputBar(
+                    inputText: $draftText,
+                    quotedContext: $coordinator.quotedContext,
+                    isVoicePressing: $isVoicePressing,
+                    speechService: speechService,
+                    isGenerating: coordinator.isGenerating,
+                    dismissKeyboardToken: dismissKeyboardToken,
+                    onSend: {
+                        guard let text = ChatDraftSubmission.consume(&draftText) else { return }
+                        coordinator.sendMessage(text: text)
+                        dismissKeyboard()
+                    },
+                    onVoicePressChanged: handleVoicePressChanged,
+                    onPlusTap: { showingPlusMenu = true }
+                )
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)

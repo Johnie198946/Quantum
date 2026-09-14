@@ -25,6 +25,8 @@ bindings:
     handler: workflow.start
   - id: presentation.create_from_document
     handler: presentation.create_from_document
+  - id: presentation.create_from_text
+    handler: presentation.create_from_text
   - id: artifact.open
     handler: artifact.open
   - id: artifact.download

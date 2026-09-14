@@ -1740,6 +1740,26 @@ public struct PresentationCreateRequestDTO: Encodable {
     }
 }
 
+public struct PresentationCreateFromTextRequestDTO: Encodable {
+    public let title: String
+    public let textMaterial: String
+    public let audience: String?
+    public let intendedUse: String?
+    public let layoutStyle: String?
+    public let slideCount: Int?
+    public let clarificationStrategy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case textMaterial = "text_material"
+        case audience
+        case intendedUse = "intended_use"
+        case layoutStyle = "layout_style"
+        case slideCount = "slide_count"
+        case clarificationStrategy = "clarification_strategy"
+    }
+}
+
 public struct WorkflowStartRequestDTO: Encodable {
     public let workflowId: String
     enum CodingKeys: String, CodingKey { case workflowId = "workflow_id" }
@@ -1748,6 +1768,7 @@ public struct WorkflowStartRequestDTO: Encodable {
 public enum QCPCapabilityID {
     public static let workflowCreate = "workflow.create"
     public static let presentationCreateFromDocument = "presentation.create_from_document"
+    public static let presentationCreateFromText = "presentation.create_from_text"
     public static let workflowStart = "workflow.start"
 }
 
@@ -2754,28 +2775,15 @@ public final class APIClient: ObservableObject {
         let key = UUID().uuidString
         let client = CapabilityClient(apiClient: self)
         let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO>
-        if outputKind == "presentation", let sourceDocumentId {
-            response = try await client.invoke(
-                QCPCapabilityID.presentationCreateFromDocument,
-                input: PresentationCreateRequestDTO(
-                    sourceDocumentId: sourceDocumentId,
-                    title: title,
-                    description: description
-                ),
-                confirmed: true,
-                idempotencyKey: key
-            )
-        } else {
-            response = try await client.invoke(
-                QCPCapabilityID.workflowCreate,
-                input: WorkflowCreateRequestDTO(
+        response = try await client.invoke(
+            QCPCapabilityID.workflowCreate,
+            input: WorkflowCreateRequestDTO(
                 title: title, description: description, desiredOutput: desiredOutput,
                 sourceDocumentId: sourceDocumentId, outputKind: outputKind
-                ),
-                confirmed: true,
-                idempotencyKey: key
-            )
-        }
+            ),
+            confirmed: true,
+            idempotencyKey: key
+        )
         guard response.status == "completed", let output = response.events.first?.payload,
               response.receipt != nil
         else { throw APIError.network(response.error?.message ?? "能力调用失败") }

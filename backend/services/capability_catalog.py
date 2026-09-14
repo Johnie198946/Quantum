@@ -25,6 +25,7 @@ IMPLEMENTED_HANDLERS = {
     "knowledge.merge", "knowledge.archive", "knowledge.restore",
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "presentation.create_from_document",
+    "presentation.create_from_text",
     "artifact.open", "artifact.download",
     "artifact.consume_structured",
 }

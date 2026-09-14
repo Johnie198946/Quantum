@@ -1,7 +1,7 @@
 # Product Capability Manual
 
 QCP version: `1.0.0`
-Catalog digest: `83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d6`
+Catalog digest: `8f3d20fe89ae37cf69e34c83dd331f7698300c59a777732ebcad2f89dbf72ea8`
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
 |---|---|---|---|---|---|---|---|
@@ -17,6 +17,7 @@ Catalog digest: `83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d
 | `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `presentation.create_from_document@1.0.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
+| `presentation.create_from_text@1.0.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
 | `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.start@1.0.0` | workflow | execute | required | required | `workflow.started` | `workflow@1` | implemented |

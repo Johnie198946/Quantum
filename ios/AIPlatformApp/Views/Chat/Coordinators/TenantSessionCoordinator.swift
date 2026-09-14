@@ -1054,12 +1054,6 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("最多排队 3 条，请等待")
             return
         }
-        let requestedOutputKind = Self.explicitOutputKind(text)
-        if requestedOutputKind != nil && isGenerating {
-            showToast("当前回答完成后再创建文档任务")
-            return
-        }
-
         // Hermes SessionDB is the sole conversation runtime. Attach auxiliary
         // client context only for recovery, explicit local notes, or a knowledge
         // mutation; an empty envelope would disable Hermes' fast general lane.
@@ -1104,18 +1098,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         messages.append(userMessage)
         inputText = ""
         quotedContext = nil
-        if let outputKind = requestedOutputKind {
-            commitSession()
-            let refersToUpload = ["这份文档", "这个文件", "该文件", "附件", "上传的", "刚才的文档"]
-                .contains(where: text.contains)
-            let sourceId = refersToUpload ? latestReadyDocumentSourceId() : nil
-            createOutputWorkflowFromChat(
-                text: text,
-                outputKind: outputKind,
-                sourceDocumentId: sourceId
-            )
-            return
-        }
         if isGenerating && !regenerate {
             // Queued messages do not have a Run identity yet; persist them through
             // the normal ordered writer until the queue starts execution.
@@ -1318,78 +1300,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         return hasKnowledgeObject && hasMutation
     }
 
-    static func explicitOutputKind(_ text: String) -> String? {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let isQuestion = ["如何", "怎么", "教程", "解释", "what is", "how to"]
-            .contains(where: value.contains)
-        guard !isQuestion,
-              ["帮我", "请", "生成", "制作", "做一份", "写一份", "create", "make"]
-                .contains(where: value.contains) else { return nil }
-        if ["ppt", "pptx", "演示文稿", "幻灯片"].contains(where: value.contains) {
-            return "presentation"
-        }
-        if ["word", "docx", "word文档", "word 文档"].contains(where: value.contains) {
-            return "document"
-        }
-        return nil
-    }
-
-    private func latestReadyDocumentSourceId() -> String? {
-        for message in messages.reversed() {
-            for block in message.blocks.reversed() {
-                if case .attachment(let attachment) = block,
-                   let sourceId = attachment.sourceId {
-                    return sourceId
-                }
-            }
-        }
-        return nil
-    }
-
-    private func createOutputWorkflowFromChat(
-        text: String,
-        outputKind: String,
-        sourceDocumentId: String?
-    ) {
-        isGenerating = true
-        let outputName = outputKind == "presentation" ? "PPTX" : "Word 文档"
-        let pending = ChatMessage(
-            role: .assistant,
-            content: "正在创建 \(outputName) 任务…",
-            pending: true
-        )
-        messages.append(pending)
-        commitSession()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.finishGeneration() }
-            do {
-                let created = try await APIClient.shared.createWorkflow(
-                    title: String(text.prefix(48)),
-                    description: text,
-                    desiredOutput: outputKind == "presentation"
-                        ? "可编辑 PPTX 与渲染预览"
-                        : "可编辑 Word 文档 DOCX",
-                    sourceDocumentId: sourceDocumentId,
-                    outputKind: outputKind
-                )
-                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
-                    self.messages[index].content = "已创建 \(outputName) 任务。接下来会先确认用途、结构和内容要求，再生成大纲与成品；文件和知识库只在你明确提供或选择时作为素材。"
-                    self.messages[index].pending = false
-                }
-                WorkflowActivityCoordinator.shared.track(created.workflow)
-                self.appState?.pendingWorkflowId = created.workflow.id
-                self.commitSession()
-            } catch {
-                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
-                    self.messages[index].content = "\(outputName) 任务创建失败：\(error.localizedDescription)"
-                    self.messages[index].pending = false
-                    self.messages[index].degraded = true
-                }
-                self.commitSession()
-            }
-        }
-    }
 
     static func shouldAttachClientSessionContext(
         userText: String,
@@ -3543,6 +3453,23 @@ public final class TenantSessionCoordinator: ObservableObject {
                             sourceDocumentId: proposal.input.sourceDocumentId ?? "",
                             title: proposal.input.title ?? "",
                             description: proposal.input.description ?? ""
+                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
+                    )
+                    guard response.status == "completed", let created = response.events.first?.payload
+                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+                    completedWorkflow = created.workflow
+                    pendingWorkflowId = created.workflow.id
+                case QCPCapabilityID.presentationCreateFromText:
+                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
+                        proposal.capabilityId,
+                        input: PresentationCreateFromTextRequestDTO(
+                            title: proposal.input.title ?? "",
+                            textMaterial: proposal.input.textMaterial ?? "",
+                            audience: proposal.input.audience,
+                            intendedUse: proposal.input.intendedUse,
+                            layoutStyle: proposal.input.layoutStyle,
+                            slideCount: proposal.input.slideCount,
+                            clarificationStrategy: proposal.input.clarificationStrategy
                         ), confirmed: true, idempotencyKey: proposal.idempotencyKey
                     )
                     guard response.status == "completed", let created = response.events.first?.payload

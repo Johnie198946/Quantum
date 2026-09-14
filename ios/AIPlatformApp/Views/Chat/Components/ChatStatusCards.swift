@@ -808,6 +808,18 @@ public struct CapabilityProposalCard: View {
             if let kind = proposal.input.outputKind {
                 Text("输出类型：\(kind)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
             }
+            if let material = proposal.input.textMaterial {
+                Text("文字材料：\(material)")
+                    .font(.caption)
+                    .foregroundColor(AppTheme.Colors.textSecondary)
+                    .lineLimit(3)
+            }
+            if let use = proposal.input.intendedUse {
+                Text("用途：\(use)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
+            if let layout = proposal.input.layoutStyle {
+                Text("版式：\(layout)").font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
+            }
             if let error = proposal.errorMessage {
                 Text(error).font(.caption).foregroundColor(.red)
             }
