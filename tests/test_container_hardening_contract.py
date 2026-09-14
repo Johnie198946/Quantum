@@ -375,6 +375,23 @@ def test_api_identity_is_attested_and_shared_mount_access_uses_acl() -> None:
     assert 'verify_shared_data_access "$DATA_TARGET" "$API_RUNTIME_IMAGE" "$API_RUNTIME_UID"' in script
 
 
+def test_workflow_worker_write_probe_is_a_release_gate() -> None:
+    script = (ROOT / "scripts/update.sh").read_text(encoding="utf-8")
+
+    directory_install = script.index(
+        'install -d -o quantumn-hermes -g quantumn-hermes -m 0750 "$VAULT_ROOT/workflows"'
+    )
+    acl_repair = script.index(
+        'configure_shared_data_acl "$DATA_TARGET" "$API_RUNTIME_UID" "$AI_LAB_RUNTIME_UID"',
+        directory_install,
+    )
+    service_check_definition = script.index(".workflow-worker-write-probe-")
+    final_health = script.index('echo "==> [6/6] 最终健康检查"')
+    service_check_call = script.index("\nverify_application_services\n", final_health)
+
+    assert service_check_definition < directory_install < acl_repair < final_health < service_check_call
+
+
 def test_deploy_repairs_existing_taskboard_volume() -> None:
     script = (ROOT / "scripts/update.sh").read_text(encoding="utf-8")
 

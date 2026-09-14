@@ -516,12 +516,12 @@ public final class TenantSessionCoordinator: ObservableObject {
                 WorkflowCreateResponseDTO.self, from: event.payload
             ) {
                 WorkflowActivityCoordinator.shared.track(created.workflow)
-                appState?.pendingWorkflowId = created.workflow.id
+                appState?.openWorkflow(created.workflow.id)
             } else if let workflow = try? decoder.decode(
                 WorkflowDTO.self, from: event.payload
             ) {
                 WorkflowActivityCoordinator.shared.track(workflow)
-                appState?.pendingWorkflowId = workflow.id
+                appState?.openWorkflow(workflow.id)
             }
         } else if path == .artifact {
             showToast("工作流工件已就绪")
@@ -3493,7 +3493,9 @@ public final class TenantSessionCoordinator: ObservableObject {
                 if let completedWorkflow {
                     WorkflowActivityCoordinator.shared.track(completedWorkflow)
                 }
-                self.appState?.pendingWorkflowId = pendingWorkflowId
+                if let pendingWorkflowId {
+                    self.appState?.openWorkflow(pendingWorkflowId)
+                }
                 self.updateCapabilityProposal(
                     messageId: messageId, proposalId: proposalId,
                     state: .completed, error: nil

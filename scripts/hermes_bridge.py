@@ -259,6 +259,7 @@ WATERMARK_FILE = Path(
     )
 )
 MAX_INPUT = 12000
+MAX_GENERATIVE_WORKFLOW_INPUT = 32_000
 MAX_DOCUMENT_WORKFLOW_INPUT = 96_000
 ALLOWED_CHAT_SKILLS = {"solution-consultant-persona"}
 DEFAULT_TIMEOUT = 300
@@ -3988,7 +3989,12 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         "只输出当前节点可落盘的完整成果，不要输出运行状态说明。\n"
         f"上游上下文：\n{upstream}"
     )
-    input_limit = MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else MAX_INPUT
+    if source_text and current_id == source_node_id:
+        input_limit = MAX_DOCUMENT_WORKFLOW_INPUT
+    elif presentation_output or document_output:
+        input_limit = MAX_GENERATIVE_WORKFLOW_INPUT
+    else:
+        input_limit = MAX_INPUT
     if (presentation_output or document_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]

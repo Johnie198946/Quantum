@@ -4874,4 +4874,96 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(response.events.first?.payload.structuredPayload["value"], "ok")
         XCTAssertEqual(response.events.first?.payload.receipt.receiptId, "acr-1")
     }
+
+    @MainActor
+    func testPendingWorkflowPresentBeforeConsumerMountsOpensAndClears() async throws {
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-first-mount")
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-first-mount","title":"First","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let resolved = await appState.resolvePendingWorkflow { id in
+            XCTAssertEqual(id, workflow.id)
+            return workflow
+        }
+
+        XCTAssertEqual(resolved, workflow)
+        XCTAssertEqual(appState.activeTab, 1)
+        XCTAssertNil(appState.pendingWorkflowId)
+    }
+
+    @MainActor
+    func testPendingWorkflowFetchFailureKeepsRequestForRetry() async {
+        enum ExpectedFailure: Error { case unavailable }
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-retry")
+
+        let resolved = await appState.resolvePendingWorkflow { _ in
+            throw ExpectedFailure.unavailable
+        }
+
+        XCTAssertNil(resolved)
+        XCTAssertEqual(appState.pendingWorkflowId, "workflow-retry")
+        XCTAssertEqual(appState.activeTab, 1)
+    }
+
+    func testAgentDescriptionContractAndCollapseBoundary() {
+        let short = AgentDescriptionPresentation(name: "研究助手", raw: "检索并总结资料")
+        XCTAssertTrue(short.full.contains("功能："))
+        XCTAssertTrue(short.full.contains("适合："))
+        XCTAssertTrue(short.full.contains("边界："))
+        XCTAssertLessThanOrEqual(short.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertNil(short.collapsed)
+
+        let long = AgentDescriptionPresentation(
+            name: "研究助手",
+            raw: String(repeating: "需要核验来源并清晰总结 ", count: 12)
+        )
+        XCTAssertLessThanOrEqual(long.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertNotNil(long.collapsed)
+        XCTAssertEqual(long.collapsed?.count, AgentDescriptionPresentation.collapsedLength)
+    }
+
+    func testWorkflowPreviewEntryKeepsQCPRendererAndArtifactVersionContract() throws {
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+
+        let artifact = try JSONDecoder().decode(
+            WorkflowArtifactDTO.self,
+            from: Data(#"{"id":"deck","kind":"presentation","title":"Deck","relativePath":"deck.pptx","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sourceUrl":null,"sourceKind":null,"selectedForPublish":false,"publishedPath":null,"extension":"pptx","mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","metadata":{"renderType":"presentation","approvalGate":"final","artifactVersion":3,"previewStatus":"ready","previewArtifactId":"deck-preview","previewContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","previewError":null,"parentArtifactId":null,"parentContentHash":null,"sampleArtifactId":null,"sampleContentHash":null}}"#.utf8)
+        )
+
+        XCTAssertEqual(artifact.metadata.artifactVersion, 3)
+        XCTAssertEqual(artifact.metadata.previewArtifactId, "deck-preview")
+        XCTAssertNotNil(artifact.metadata.previewContentHash)
+    }
+
+    func testWorkflowDetailKeepsBuildingAgentVisibleAndRejectsStaleRegression() {
+        XCTAssertTrue(
+            WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                status: "building_agent",
+                hasExecution: false
+            )
+        )
+        XCTAssertFalse(
+            WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                status: "building_agent",
+                hasExecution: true
+            )
+        )
+        XCTAssertFalse(
+            WorkflowDetailTransitionPolicy.accepts(
+                remoteStatus: "building_agent",
+                over: "agent_ready"
+            )
+        )
+        XCTAssertTrue(
+            WorkflowDetailTransitionPolicy.accepts(
+                remoteStatus: "agent_ready",
+                over: "building_agent"
+            )
+        )
+    }
 }

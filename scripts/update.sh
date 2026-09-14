@@ -1381,7 +1381,7 @@ verify_application_services() {
   docker compose -p "$COMPOSE_PROJECT" exec -T taskboard \
     node -e "fetch('http://127.0.0.1:47823/api/meta').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T workflow-worker python -c \
-    "import pathlib; assert b'backend.workers.workflow_worker' in pathlib.Path('/proc/1/cmdline').read_bytes()" || return 1
+    "import pathlib,tempfile; assert b'backend.workers.workflow_worker' in pathlib.Path('/proc/1/cmdline').read_bytes(); pathlib.Path(tempfile.mkdtemp(prefix='.workflow-worker-write-probe-', dir='/app/data/vault/workflows')).rmdir()" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T planning-worker python -c \
     "import pathlib; assert b'backend.workers.workflow_planning_worker' in pathlib.Path('/proc/1/cmdline').read_bytes()" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T agent-evaluation-worker python -c \
@@ -1688,6 +1688,7 @@ printf '%s\n' "$EXPECTED_SHA" > .deployed-sha
 echo "==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限"
 VAULT_ROOT="$DATA_TARGET/vault"
 repair_vault_runtime_permissions "$VAULT_ROOT"
+install -d -o quantumn-hermes -g quantumn-hermes -m 0750 "$VAULT_ROOT/workflows"
 repair_note_path_ancestors "$VAULT_ROOT"
 bash scripts/link_release_vault.sh "$RELEASE_DIR" "$RELEASE_ROOT" "$VAULT_ROOT"
 python3 scripts/repair_user_note_permissions.py \

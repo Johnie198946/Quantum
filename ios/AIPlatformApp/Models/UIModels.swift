@@ -2618,6 +2618,26 @@ public final class AppState: ObservableObject {
         )
         activeTab = 0
     }
+
+    /// Routes every Hermes/QCP workflow event through one atomic UI action.
+    public func openWorkflow(_ workflowId: String) {
+        pendingWorkflowId = workflowId
+        activeTab = 1
+    }
+
+    public func resolvePendingWorkflow(
+        using fetch: (String) async throws -> WorkflowDTO
+    ) async -> WorkflowDTO? {
+        guard let workflowId = pendingWorkflowId else { return nil }
+        do {
+            let workflow = try await fetch(workflowId)
+            guard pendingWorkflowId == workflowId else { return nil }
+            pendingWorkflowId = nil
+            return workflow
+        } catch {
+            return nil
+        }
+    }
 }
 
 // MARK: - Comprehensive Mock Data Set

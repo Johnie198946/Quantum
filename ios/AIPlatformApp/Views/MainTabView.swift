@@ -96,8 +96,7 @@ public struct MainTabView: View {
                     activity: activity,
                     count: workflowActivities.visibleActivities.count,
                     onOpen: {
-                        appState.pendingWorkflowId = activity.workflow.id
-                        appState.activeTab = 1
+                        appState.openWorkflow(activity.workflow.id)
                     },
                     onDismiss: {
                         workflowActivities.dismiss(activity.workflow.id)
@@ -109,8 +108,7 @@ public struct MainTabView: View {
                     activity: activity,
                     count: workflowActivities.visibleExecutionActivities.count,
                     onOpen: {
-                        appState.pendingWorkflowId = activity.workflow.id
-                        appState.activeTab = 1
+                        appState.openWorkflow(activity.workflow.id)
                     },
                     onDismiss: { workflowActivities.dismiss(activity.workflow.id) }
                 )

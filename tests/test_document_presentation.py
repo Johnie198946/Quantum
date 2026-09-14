@@ -621,6 +621,44 @@ def test_presentation_prompt_rejects_oversized_private_source_instead_of_excerpt
         bridge._workflow_node_prompt(run, node)
 
 
+def test_final_presentation_prompt_accepts_full_approved_context_above_chat_limit(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    approved_outline = {
+        "title": "Istanbul",
+        "slides": [
+            {"layout": "bullets", "title": f"slide-{index}", "key_points": ["证据" * 800]}
+            for index in range(8)
+        ],
+    }
+    monkeypatch.setattr(bridge, "_approved_presentation_outline", lambda run: (approved_outline, {}))
+    design = {"id": "presentation_design", "name": "design", "parameters": {"output_format": "presentation_design"}}
+    deck = {"id": "presentation_deck", "name": "deck", "node_type": "LLM_INFERENCE", "parameters": {"output_format": "presentation", "max_tokens": 8000}}
+    run = {
+        "goal": "deck",
+        "deliverable": "pptx",
+        "plan": {"nodes": [design, deck], "edges": [{"source": "presentation_design", "target": "presentation_deck"}]},
+        "nodes": {"presentation_design": {"status": "succeeded", "output": json.dumps({"theme": THEME_A, "slides": []})}},
+    }
+    prompt = bridge._workflow_node_prompt(run, deck)
+    assert bridge.MAX_INPUT < len(prompt) <= bridge.MAX_GENERATIVE_WORKFLOW_INPUT
+    assert "已批准逐页大纲" in prompt
+
+
+def test_final_presentation_prompt_still_rejects_context_above_generation_limit(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    monkeypatch.setattr(
+        bridge,
+        "_approved_presentation_outline",
+        lambda run: ({"title": "oversized", "slides": [{"layout": "bullets", "title": "x", "key_points": ["证据" * 17_000]}]}, {}),
+    )
+    deck = {"id": "presentation_deck", "name": "deck", "node_type": "LLM_INFERENCE", "parameters": {"output_format": "presentation", "max_tokens": 8000}}
+    run = {"goal": "deck", "deliverable": "pptx", "plan": {"nodes": [deck], "edges": []}, "nodes": {}}
+    with pytest.raises(RuntimeError, match="超过 32000 字符上限"):
+        bridge._workflow_node_prompt(run, deck)
+
+
 def test_bridge_normalizes_outline_style_points_for_renderable_slides():
     import scripts.hermes_bridge as bridge
 

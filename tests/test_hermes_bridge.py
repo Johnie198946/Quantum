@@ -16,12 +16,33 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 # 必须在 import bridge 前设置环境变量
 os.environ.setdefault("HERMES_STATE_DB", "/tmp/test_state.db")
 os.environ.setdefault("HERMES_BRIDGE_INTERNAL_TOKEN", "test-internal-token")
+
+
+@contextmanager
+def isolated_session_mappings(bridge, sessions: dict[str, str]):
+    """Use real persistent mappings without touching process defaults."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mapping_file = Path(tmpdir) / "session_mappings.json"
+        state_db_mapping_file = Path(tmpdir) / "session_state_dbs.json"
+        mapping_file.write_text(json.dumps(sessions), encoding="utf-8")
+        state_db_mapping_file.write_text("{}", encoding="utf-8")
+        with (
+            patch.object(bridge, "MAPPING_FILE", mapping_file),
+            patch.object(bridge, "STATE_DB_MAPPING_FILE", state_db_mapping_file),
+        ):
+            bridge._user_session_map.clear()
+            bridge._user_session_map.update(sessions)
+            bridge._user_state_db_map.clear()
+            yield
+        bridge._user_session_map.clear()
+        bridge._user_state_db_map.clear()
 
 
 class TestBridgeCLIParms(unittest.TestCase):
@@ -472,28 +493,24 @@ class TestSessionExistsAssertion(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        # 设置：user 映射到无效 session
-        bridge._user_session_map = {"user_1001": "dead_sid"}
-        mock_exists.return_value = False  # session 不存在
+        with isolated_session_mappings(bridge, {"user_1001": "dead_sid"}):
+            mock_exists.return_value = False  # session 不存在
 
-        # mock _run_hermes 返回新 session
-        with patch("scripts.hermes_bridge._run_hermes") as mock_hermes:
-            mock_hermes.return_value = ("回复内容", "new_session_id")
-            import asyncio
-            body = GoalRequest(goal="你好", session_id="user_1001")
-            result = asyncio.run(chat(body, "test-internal-token"))
+            # mock _run_hermes 返回新 session
+            with patch("scripts.hermes_bridge._run_hermes") as mock_hermes:
+                mock_hermes.return_value = ("回复内容", "new_session_id")
+                import asyncio
+                body = GoalRequest(goal="你好", session_id="user_1001")
+                result = asyncio.run(chat(body, "test-internal-token"))
 
-            # 验证：_run_hermes 被调用时 session_id=None（新建）
-            called_goal, called_session = mock_hermes.call_args.args
-            self.assertTrue(called_goal.endswith("【用户问题】你好"))
-            self.assertIsNone(called_session)
-            # 验证：映射已更新为新 session
-            self.assertEqual(bridge._user_session_map["user_1001"], "new_session_id")
-            # 验证：返回新 session_id
-            self.assertEqual(result["hermes_session_id"], "new_session_id")
-
-        # 清理
-        bridge._user_session_map = {}
+                # 验证：_run_hermes 被调用时 session_id=None（新建）
+                called_goal, called_session = mock_hermes.call_args.args
+                self.assertTrue(called_goal.endswith("【用户问题】你好"))
+                self.assertIsNone(called_session)
+                # 验证：映射已更新为新 session
+                self.assertEqual(bridge._user_session_map["user_1001"], "new_session_id")
+                # 验证：返回新 session_id
+                self.assertEqual(result["hermes_session_id"], "new_session_id")
 
 
 class TestContextCoherence(unittest.TestCase):
@@ -506,44 +523,37 @@ class TestContextCoherence(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        # 设置：user_1001 已有有效 session
-        bridge._user_session_map = {"user_1001": "existing_sid"}
-        mock_exists.return_value = True
+        with isolated_session_mappings(bridge, {"user_1001": "existing_sid"}):
+            mock_exists.return_value = True
 
-        # R1: "你好我叫李四"
-        usage_file = Path(tempfile.gettempdir()) / "test_usage_r1.json"
-        usage_file.write_text(json.dumps({"session_id": "existing_sid"}))
+            # R1: "你好我叫李四"
+            def side_effect_r1(*args, **kwargs):
+                return MagicMock(returncode=0, stdout="你好李四", stderr="")
 
-        def side_effect_r1(*args, **kwargs):
-            return MagicMock(returncode=0, stdout="你好李四", stderr="")
+            mock_run.side_effect = side_effect_r1
+            import asyncio
 
-        mock_run.side_effect = side_effect_r1
-        import asyncio
+            body_r1 = GoalRequest(goal="你好我叫李四", session_id="user_1001")
+            asyncio.run(chat(body_r1, "test-internal-token"))
 
-        body_r1 = GoalRequest(goal="你好我叫李四", session_id="user_1001")
-        asyncio.run(chat(body_r1, "test-internal-token"))
+            # 验证 R1 使用 --resume
+            cmd_r1 = mock_run.call_args.args[0]
+            self.assertIn("--resume", cmd_r1)
+            self.assertIn("existing_sid", cmd_r1)
 
-        # 验证 R1 使用 --resume
-        cmd_r1 = mock_run.call_args.args[0]
-        self.assertIn("--resume", cmd_r1)
-        self.assertIn("existing_sid", cmd_r1)
+            # R2: "我是谁"
+            def side_effect_r2(*args, **kwargs):
+                return MagicMock(returncode=0, stdout="你是李四", stderr="")
 
-        # R2: "我是谁"
-        def side_effect_r2(*args, **kwargs):
-            return MagicMock(returncode=0, stdout="你是李四", stderr="")
+            mock_run.side_effect = side_effect_r2
+            body_r2 = GoalRequest(goal="我是谁", session_id="user_1001")
+            result_r2 = asyncio.run(chat(body_r2, "test-internal-token"))
 
-        mock_run.side_effect = side_effect_r2
-        body_r2 = GoalRequest(goal="我是谁", session_id="user_1001")
-        result_r2 = asyncio.run(chat(body_r2, "test-internal-token"))
-
-        # 验证 R2 也使用 --resume 同一 session
-        cmd_r2 = mock_run.call_args.args[0]
-        self.assertIn("--resume", cmd_r2)
-        self.assertIn("existing_sid", cmd_r2)
-        self.assertEqual(result_r2["reply"], "你是李四")
-
-        # 清理
-        bridge._user_session_map = {}
+            # 验证 R2 也使用 --resume 同一 session
+            cmd_r2 = mock_run.call_args.args[0]
+            self.assertIn("--resume", cmd_r2)
+            self.assertIn("existing_sid", cmd_r2)
+            self.assertEqual(result_r2["reply"], "你是李四")
 
 
 class TestConcurrencyIsolation(unittest.TestCase):
@@ -556,7 +566,6 @@ class TestConcurrencyIsolation(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {}
         mock_exists.return_value = False
 
         call_count = {"n": 0}
@@ -574,31 +583,29 @@ class TestConcurrencyIsolation(unittest.TestCase):
             usage_path.write_text(json.dumps({"session_id": sessions[n % 2]}))
             return MagicMock(returncode=0, stdout=f"回复{n}", stderr="")
 
-        mock_run.side_effect = side_effect
-        import asyncio
+        with isolated_session_mappings(bridge, {}):
+            mock_run.side_effect = side_effect
+            import asyncio
 
-        # 并发发起 2 个新 user
-        async def run_concurrent():
-            body_a = GoalRequest(goal="user A goal", session_id="user_A")
-            body_b = GoalRequest(goal="user B goal", session_id="user_B")
-            result_a, result_b = await asyncio.gather(
-                chat(body_a, "test-internal-token"),
-                chat(body_b, "test-internal-token"),
-            )
-            return result_a, result_b
+            # 并发发起 2 个新 user
+            async def run_concurrent():
+                body_a = GoalRequest(goal="user A goal", session_id="user_A")
+                body_b = GoalRequest(goal="user B goal", session_id="user_B")
+                result_a, result_b = await asyncio.gather(
+                    chat(body_a, "test-internal-token"),
+                    chat(body_b, "test-internal-token"),
+                )
+                return result_a, result_b
 
-        result_a, result_b = asyncio.run(run_concurrent())
+            result_a, result_b = asyncio.run(run_concurrent())
 
-        # 验证：每个 user 映射到独立 session
-        self.assertIn("user_A", bridge._user_session_map)
-        self.assertIn("user_B", bridge._user_session_map)
-        # 验证：mapping 不重复
-        sid_a = bridge._user_session_map["user_A"]
-        sid_b = bridge._user_session_map["user_B"]
-        self.assertNotEqual(sid_a, sid_b)
-
-        # 清理
-        bridge._user_session_map = {}
+            # 验证：每个 user 映射到独立 session
+            self.assertIn("user_A", bridge._user_session_map)
+            self.assertIn("user_B", bridge._user_session_map)
+            # 验证：mapping 不重复
+            sid_a = bridge._user_session_map["user_A"]
+            sid_b = bridge._user_session_map["user_B"]
+            self.assertNotEqual(sid_a, sid_b)
 
 
 class TestDrillMeSteering(unittest.TestCase):

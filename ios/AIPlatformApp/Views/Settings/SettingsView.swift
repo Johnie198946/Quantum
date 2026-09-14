@@ -8,6 +8,28 @@
 import SwiftUI
 import UIKit
 
+struct AgentDescriptionPresentation: Equatable {
+    static let maximumLength = 100
+    static let collapsedLength = 60
+
+    let full: String
+
+    init(name: String, raw: String) {
+        let normalized = raw
+            .replacingOccurrences(of: "\n", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        let functionSource = normalized.isEmpty ? "完成\(name)相关工作" : normalized
+        let function = String(functionSource.prefix(42))
+        full = "功能：\(function)。适合：目标明确的相关任务。边界：仅按授权执行，关键结果需人工确认。"
+    }
+
+    var collapsed: String? {
+        guard full.count > Self.collapsedLength else { return nil }
+        return String(full.prefix(Self.collapsedLength - 1)) + "…"
+    }
+}
+
 public struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var api: APIClient
@@ -20,6 +42,7 @@ public struct SettingsView: View {
     @State private var skillPendingDeletion: TenantSkillDTO?
     @State private var isDeletingSkill = false
     @State private var skillDeletionFeedback: SkillDeletionFeedback?
+    @State private var expandedAgentIDs: Set<String> = []
 
     public init() {}
 
@@ -295,10 +318,15 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             artifactHeader(icon: "sparkles", title: "我创建的智能体", accent: AppTheme.Colors.quantumViolet)
             let rows = cloudAgents.map { agent in
-                AgentRowData(
+                let description = AgentDescriptionPresentation(
+                    name: agent.customName ?? agent.baseAgentId,
+                    raw: agent.privatePromptDelta
+                )
+                return AgentRowData(
                     id: agent.id,
                     name: agent.customName ?? agent.baseAgentId,
-                    responsibility: agent.privatePromptDelta.isEmpty ? "基于基线 \(agent.baseAgentId) 的租户私有切片" : agent.privatePromptDelta,
+                    responsibility: description.full,
+                    collapsedResponsibility: description.collapsed,
                     createdAt: agent.createdAt ?? "",
                     accent: AppTheme.Colors.quantumViolet
                 )
@@ -310,8 +338,16 @@ public struct SettingsView: View {
                     artifactRow(
                         name: row.name,
                         responsibility: row.responsibility,
+                        collapsedResponsibility: row.collapsedResponsibility,
                         createdAt: row.createdAt,
                         accent: AppTheme.Colors.quantumViolet,
+                        isExpanded: row.collapsedResponsibility == nil ? nil : Binding(
+                            get: { expandedAgentIDs.contains(row.id) },
+                            set: { expanded in
+                                if expanded { expandedAgentIDs.insert(row.id) }
+                                else { expandedAgentIDs.remove(row.id) }
+                            }
+                        ),
                         onDelete: {
                             Task {
                                 if (try? await APIClient.shared.deleteTenantAgent(id: row.id)) != nil {
@@ -336,6 +372,7 @@ public struct SettingsView: View {
         let id: String
         let name: String
         let responsibility: String
+        let collapsedResponsibility: String?
         let createdAt: String
         let accent: Color
     }
@@ -391,8 +428,10 @@ public struct SettingsView: View {
     private func artifactRow(
         name: String,
         responsibility: String,
+        collapsedResponsibility: String? = nil,
         createdAt: String,
         accent: Color,
+        isExpanded: Binding<Bool>? = nil,
         deleteDisabled: Bool = false,
         onDelete: @escaping () -> Void
     ) -> some View {
@@ -416,10 +455,19 @@ public struct SettingsView: View {
                 .disabled(deleteDisabled)
                 .accessibilityLabel("删除 \(name)")
             }
-            Text(responsibility)
+            Text(isExpanded?.wrappedValue == false ? (collapsedResponsibility ?? responsibility) : responsibility)
                 .font(.system(size: 12))
                 .foregroundColor(AppTheme.Colors.textSecondary)
                 .lineSpacing(1)
+            if let isExpanded {
+                Button(isExpanded.wrappedValue ? "收起描述" : "展开描述") {
+                    withAnimation(AppTheme.Motion.quick) { isExpanded.wrappedValue.toggle() }
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(AppTheme.Colors.quantumBlue)
+                .accessibilityIdentifier("agent-description-toggle")
+            }
             if !createdAt.isEmpty {
                 Text("创建于 \(createdAt)")
                     .font(.system(size: 11))

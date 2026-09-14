@@ -110,19 +110,15 @@ public struct WorkflowDashboardView: View {
                 Text("任务将从列表中移除，正在执行的工作也会停止。")
             }
             .task { await model.load() }
-            .onChange(of: appState.pendingWorkflowId) { _, workflowId in
-                guard let workflowId else { return }
-                Task {
-                    let workflow: WorkflowDTO?
+            .task(id: appState.pendingWorkflowId) {
+                guard appState.pendingWorkflowId != nil else { return }
+                if let workflow = await appState.resolvePendingWorkflow(using: { workflowId in
                     if let tracked = workflowActivities.workflows[workflowId] {
-                        workflow = tracked
-                    } else {
-                        workflow = try? await APIClient.shared.fetchWorkflow(id: workflowId)
+                        return tracked
                     }
-                    if let workflow {
-                        navigationPath = [workflow]
-                    }
-                    appState.pendingWorkflowId = nil
+                    return try await APIClient.shared.fetchWorkflow(id: workflowId)
+                }) {
+                    navigationPath = [workflow]
                 }
             }
         }
@@ -368,6 +364,16 @@ private struct WorkflowCreateSheet: View {
 
 // MARK: - 详情与计划确认
 
+enum WorkflowDetailTransitionPolicy {
+    static func showsLifecycleSession(status: String, hasExecution: Bool) -> Bool {
+        !hasExecution && ["clarifying", "planning", "building_agent"].contains(status)
+    }
+
+    static func accepts(remoteStatus: String, over currentStatus: String) -> Bool {
+        !(currentStatus == "agent_ready" && remoteStatus == "building_agent")
+    }
+}
+
 private struct WorkflowDetailView: View {
     let workflow: WorkflowDTO
     let onChanged: () async -> Void
@@ -383,7 +389,10 @@ private struct WorkflowDetailView: View {
 
     var body: some View {
         Group {
-            if ["clarifying", "planning"].contains(current.status) && execution == nil {
+            if WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                status: current.status,
+                hasExecution: execution != nil
+            ) {
                 WorkflowClarificationView(workflow: current) {
                     await refresh()
                     await onChanged()
@@ -411,8 +420,15 @@ private struct WorkflowDetailView: View {
 
     private func refresh() async {
         do {
-            current = try await APIClient.shared.fetchWorkflow(id: workflow.id)
-            execution = current.latestExecution
+            let remote = try await APIClient.shared.fetchWorkflow(id: workflow.id)
+            guard WorkflowDetailTransitionPolicy.accepts(
+                remoteStatus: remote.status,
+                over: current.status
+            ) else { return }
+            current = remote
+            if let remoteExecution = remote.latestExecution {
+                execution = remoteExecution
+            }
         } catch { }
     }
 }
@@ -1711,14 +1727,20 @@ private struct WorkflowExecutionView: View {
                     Button {
                         selectedArtifact = artifact
                     } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(artifact.title).font(AppTheme.Typography.cardTitle).lineLimit(2)
-                            Text(artifact.kind).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(artifact.title).font(AppTheme.Typography.cardTitle).lineLimit(2)
+                                Text(artifact.kind).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "chevron.right").foregroundStyle(AppTheme.Colors.textTertiary)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(SoftButtonStyle())
-                    Image(systemName: "chevron.right").foregroundStyle(AppTheme.Colors.textTertiary)
+                    .accessibilityIdentifier("workflow-artifact-preview-\(artifact.id)")
+                    .accessibilityHint("打开成果预览")
                 }
                 .padding(AppTheme.Spacing.sm)
                 .background(AppTheme.Colors.cardBackground)

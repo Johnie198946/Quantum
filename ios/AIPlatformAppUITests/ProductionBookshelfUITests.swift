@@ -192,6 +192,7 @@ final class ProductionBookshelfUITests: XCTestCase {
             timeout: 10,
             failureMessage: "发送消息控件未出现。"
         )
+        XCTAssertTrue(send.isHittable, "键盘显示时发送入口被遮挡。")
         send.tap()
 
         if usesMessageIdentifiers {
@@ -572,6 +573,23 @@ final class ReaderFixtureUITests: XCTestCase {
     }
 }
 
+final class ChatKeyboardFixtureUITests: XCTestCase {
+    func testKeyboardKeepsSendControlHittable() {
+        let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launchArguments = ["-tabBarPreview"]
+        app.launch()
+
+        let input = app.textFields["selected-book-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        input.typeText("键盘安全区回归")
+
+        let send = app.buttons["selected-book-chat-send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+        XCTAssertTrue(send.isHittable, "原生 keyboard safe area 未保留发送入口。")
+    }
+}
+
 final class ProductionLongBookAcceptanceUITests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
 
@@ -727,5 +745,184 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+final class IstanbulPresentationLiveE2ETests: XCTestCase {
+    private let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+
+    func testContinueNewestIstanbulWorkflowThroughPPTXDownload() throws {
+        app.launch()
+        let taskTab = app.buttons["任务"]
+        XCTAssertTrue(taskTab.waitForExistence(timeout: 30), "找不到任务入口。")
+        taskTab.tap()
+        let activity = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "穷游伊斯坦布尔")).firstMatch
+        XCTAssertTrue(activity.waitForExistence(timeout: 60), "任务列表中找不到上一轮伊斯坦布尔工作流。")
+        activity.tap()
+
+        let confirmOutline = app.buttons["确认大纲"]
+        if !confirmOutline.exists {
+            let viewAgent = app.buttons["查看专属 Agent"]
+            let startTask = app.buttons["启动任务"]
+            XCTAssertTrue(waitUntil(timeout: 420) { viewAgent.exists || startTask.exists }, "专属 Agent 未恢复到可启动状态。")
+            if viewAgent.exists { viewAgent.tap() }
+            XCTAssertTrue(waitUntil(timeout: 120) { startTask.exists && startTask.isHittable }, "启动入口未稳定显示。")
+            startTask.tap()
+        }
+
+        try reviewGate(approveButton: "确认大纲", timeout: 600, screenshotName: "istanbul-outline-preview")
+        try reviewGate(approveButton: "确认并生成全稿", timeout: 600, screenshotName: "istanbul-design-preview")
+        try reviewGate(approveButton: "确认并下载", timeout: 900, screenshotName: "istanbul-full-deck-preview")
+        verifyCompletedPPTX()
+    }
+
+    func testFreshRequestCreatesWorkflowAndAutoOpensTask() throws {
+        app.launch()
+        let newSession = app.buttons["新建会话"]
+        XCTAssertTrue(newSession.waitForExistence(timeout: 20))
+        newSession.tap()
+
+        send(sourceMaterial)
+        send("基于以上信息帮我生成一个信息丰富的PPT文件")
+
+        let confirmExecution = app.buttons["确认执行"]
+        for _ in 0..<8 where !confirmExecution.waitForExistence(timeout: 45) {
+            let choice = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "未选择，")).firstMatch
+            if choice.exists {
+                choice.tap()
+                let confirmChoice = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "确认")).allElementsBoundByIndex.first {
+                    $0.label != "确认执行" && $0.isHittable
+                }
+                XCTAssertNotNil(confirmChoice, "需求确认卡没有可点击的确认按钮。")
+                confirmChoice?.tap()
+            }
+        }
+        XCTAssertTrue(confirmExecution.waitForExistence(timeout: 20), "没有收到工作流确认卡。")
+        confirmExecution.tap()
+
+        let backToTasks = app.buttons["返回任务"]
+        XCTAssertTrue(backToTasks.waitForExistence(timeout: 120), "工作流创建后没有自动打开任务详情。")
+        XCTAssertTrue(app.staticTexts["需求"].waitForExistence(timeout: 30), "任务详情没有显示需求阶段。")
+
+        let accurate = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "内容准确")).firstMatch
+        XCTAssertTrue(scrollUntilHittable(accurate, timeout: 60), "需求确认单没有可点击的“内容准确”选项。")
+        accurate.tap()
+        let generatePlan = app.buttons["确认并生成方案"]
+        XCTAssertTrue(scrollUntilHittable(generatePlan, timeout: 30))
+        generatePlan.tap()
+
+        let reviewPlan = app.buttons["查看并确认方案"]
+        XCTAssertTrue(reviewPlan.waitForExistence(timeout: 420), "云端未生成可确认方案。")
+        reviewPlan.tap()
+        let buildAgent = app.buttons["确认并构建 Agent"]
+        XCTAssertTrue(buildAgent.waitForExistence(timeout: 120), "方案确认页未加载。")
+        buildAgent.tap()
+
+        let viewAgent = app.buttons["查看专属 Agent"]
+        let startTask = app.buttons["启动任务"]
+        XCTAssertTrue(
+            waitUntil(timeout: 420) { viewAgent.exists || startTask.exists },
+            "专属 Agent 未构建完成。"
+        )
+        if viewAgent.exists {
+            viewAgent.tap()
+        }
+        XCTAssertTrue(waitUntil(timeout: 120) { startTask.exists && startTask.isHittable }, "Agent 已构建但启动入口未稳定显示。")
+        startTask.tap()
+
+        try reviewGate(approveButton: "确认大纲", timeout: 600, screenshotName: "istanbul-outline-preview")
+        try reviewGate(approveButton: "确认并生成全稿", timeout: 600, screenshotName: "istanbul-design-preview")
+        try reviewGate(approveButton: "确认并下载", timeout: 900, screenshotName: "istanbul-full-deck-preview")
+        verifyCompletedPPTX()
+    }
+
+    private func send(_ text: String) {
+        let input = app.textFields["selected-book-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 30))
+        XCTAssertTrue(waitUntil(timeout: 120) { input.isEnabled && input.isHittable })
+        input.tap()
+        input.typeText(text)
+        let button = app.buttons["selected-book-chat-send"]
+        XCTAssertTrue(waitUntil(timeout: 30) { button.isEnabled && button.isHittable })
+        button.tap()
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        return condition()
+    }
+
+    private func scrollUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isHittable { return true }
+            let scroll = app.scrollViews.firstMatch
+            if scroll.exists { scroll.swipeUp() }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        return element.exists && element.isHittable
+    }
+
+    private func reviewGate(approveButton title: String, timeout: TimeInterval, screenshotName: String) throws {
+        let approve = app.buttons[title]
+        XCTAssertTrue(approve.waitForExistence(timeout: timeout), "没有进入验收门：\(title)")
+        let expectedArtifactTitle: String
+        switch title {
+        case "确认大纲": expectedArtifactTitle = "生成演示文稿大纲"
+        case "确认并生成全稿": expectedArtifactTitle = "生成代表页设计样稿"
+        default: expectedArtifactTitle = "生成可编辑演示文稿"
+        }
+        let preview = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+            "workflow-artifact-preview-",
+            expectedArtifactTitle
+        )).firstMatch
+        XCTAssertTrue(scrollUntilHittable(preview, timeout: 120), "验收门 \(title) 没有可点击预览。")
+        preview.tap()
+        let done = app.buttons["完成"]
+        XCTAssertTrue(done.waitForExistence(timeout: 60), "验收门 \(title) 的预览未打开。")
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        attachScreenshot(named: screenshotName)
+        done.tap()
+        XCTAssertTrue(approve.waitForExistence(timeout: 30))
+        approve.tap()
+        if title == "确认并下载" {
+            XCTAssertTrue(app.staticTexts["已完成并归档"].waitForExistence(timeout: 300), "确认全稿后未进入完成态。")
+        }
+    }
+
+    private func verifyCompletedPPTX() {
+        let completedPreview = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "workflow-artifact-preview-")).firstMatch
+        XCTAssertTrue(scrollUntilHittable(completedPreview, timeout: 180), "完成后 PPTX 预览入口未出现。")
+        completedPreview.tap()
+        XCTAssertTrue(app.buttons["完成"].waitForExistence(timeout: 60), "完成态 PPTX 预览未打开。")
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "下载可编辑 PPTX")).firstMatch.waitForExistence(timeout: 60),
+            "完成态未开放可编辑 PPTX 下载/分享。"
+        )
+        attachScreenshot(named: "istanbul-completed-pptx-download")
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private var sourceMaterial: String {
+        """
+        Europe/Istanbul
+
+        Istanbul serves as Turkey's bridge between Europe and Asia, straddling both continents across the Bosphorus Strait. Historically known as Byzantium and Constantinople, it was the capital of the Byzantine and Ottoman empires. Today, Istanbul is Turkey's largest city and economic center, home to over 15 million people. Its strategic position has made it a crucial commercial hub for millennia, while landmarks like the Hagia Sophia, Blue Mosque, and Topkapi Palace reflect its rich multicultural heritage. The city remains a vital link between Western and Eastern civilizations, blending modernity with centuries-old traditions.
+
+        İstanbul Türkiye'nin Avrupa ve Asya kıtaları arasındaki köprüsü olarak Boğaz'ın iki yakasında yer almaktadır. Tarih boyunca Bizans ve Konstantinopolis olarak bilinen şehir, Bizans ve Osmanlı imparatorluklarının başkentliğini yapmıştır. Günümüzde İstanbul 15 milyondan fazla nüfusuyla Türkiye'nin en büyük şehri ve ekonomik merkezidir. Stratejik konumu binlerce yıldır önemli bir ticaret merkezi olmasını sağlarken Ayasofya, Sultanahmet Camii ve Topkapı Sarayı gibi yapılar zengin çok kültürlü mirasını yansıtmaktadır. Şehir modernlik ile yüzyıllar boyunca süregelen gelenekleri harmanlayarak Batı ve Doğu medeniyetleri arasında hayati bir bağlantı olmaya devam etmektedir.
+
+        伊斯坦布尔作为土耳其连接欧洲和亚洲的桥梁 横跨博斯普鲁斯海峡两岸，分属两个大洲，历史上称为拜占庭和君士坦丁堡，曾是拜占庭帝国和奥斯曼帝国的首都。如今伊斯坦布尔是土耳其最大的城市和经济中心，拥有超过1500万人口。其战略位置使其数千年来一直是重要的商业中心，而圣索菲亚大教堂、蓝色清真寺和托普卡帕宫等地标则反映了其丰富的多元文化遗产。这座城市仍然是西方与东方文明之间的重要纽带，将现代性与数百年的传统融为一体。
+        """
     }
 }
