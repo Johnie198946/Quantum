@@ -1731,10 +1731,6 @@ async def edit_plan(
 ):
     async with SessionLocal() as db:
         workflow = await owned_workflow(db, workflow_id, payload)
-        if workflow.status not in {"awaiting_approval", "draft", "planning"}:
-            raise HTTPException(
-                status_code=409, detail="已确认计划不能直接修改，请创建新版本"
-            )
         current_plan = (
             await db.execute(
                 select(WorkflowPlanVersion)
@@ -1804,6 +1800,10 @@ async def edit_plan(
             # active row with identical content, returning that row is safe and
             # lets approval use the canonical latest plan instead of surfacing 409.
             return plan_out(current_plan)
+        if workflow.status not in {"awaiting_approval", "draft", "planning"}:
+            raise HTTPException(
+                status_code=409, detail="已确认计划不能直接修改，请创建新版本"
+            )
         try:
             expected_hash, expected_revision = require_compare_and_set_inputs(
                 expected_hash=body.expected_hash,

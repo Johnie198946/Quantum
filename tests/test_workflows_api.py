@@ -1491,6 +1491,18 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(stale_noop_response.status_code, 200, stale_noop_response.text)
         self.assertEqual(stale_noop_response.json()["id"], first.json()["id"])
 
+        approved = self.request(
+            "POST",
+            f"/api/v1/workflows/{body['id']}/approve-plan",
+            json={"request_id": "approve-before-late-ios-save"},
+        )
+        self.assertEqual(approved.status_code, 201, approved.text)
+        late_noop_response = self.request(
+            "PATCH", f"/api/v1/workflows/{body['id']}/plan", json=stale_noop
+        )
+        self.assertEqual(late_noop_response.status_code, 200, late_noop_response.text)
+        self.assertEqual(late_noop_response.json()["id"], first.json()["id"])
+
         stale = {
             **payload,
             "dsl": {**original_dsl, "name": "并发覆盖"},
