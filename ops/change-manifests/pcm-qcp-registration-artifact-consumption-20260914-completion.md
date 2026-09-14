@@ -1,18 +1,18 @@
 # PCM/QCP registration and structured artifact consumption completion
 
 task_id: pcm-qcp-registration-artifact-consumption-20260914
-status: TESTED
+status: DEPLOYED; TESTFLIGHT_ARCHIVED_UPLOAD_BLOCKED
 branch: main
 worktree: /Users/dengzhaoyu/Projects/ai-lab-platform-ios-document-ppt-final-20260912
-head/local_commit: 9b959309dd6b15624ff864321833700380fc7db5 (pre-commit tested baseline)
-remote_sha: 9b959309dd6b15624ff864321833700380fc7db5 (verified before task commit)
+head/local_commit: 8e259b37a67d034af853864c99bfc313a5ec3a6e
+remote_sha: 8e259b37a67d034af853864c99bfc313a5ec3a6e (verified after push)
 server_before: f03c233a67b265975dc4a92664622062a5ceeac6
-server_after: NOT_DEPLOYED
-health_check: NOT_RUN
+server_after: 8e259b37a67d034af853864c99bfc313a5ec3a6e
+health_check: PASS (`https://t-react.com/health` -> `{"status":"ok","version":"0.8.0"}`)
 functional_check: PYTHON_RELATED_290_PASS; IOS_SIMULATOR_178_PASS
-rollback_point: NONE (no commit, push, deployment, upload, or server mutation)
+rollback_point: git 9b959309dd6b15624ff864321833700380fc7db5; production release f03c233a67b265975dc4a92664622062a5ceeac6
 manifest: ops/change-manifests/pcm-qcp-registration-artifact-consumption-20260914-completion.md
-remaining_risks: production deployment and authenticated production QCP readback remain pending until release.
+remaining_risks: TestFlight build 40 upload is blocked by the local Xcode account credential (`Failed to Use Accounts`; missing Xcode-Username). Production destructive invoke was deliberately not run; production Registry search/describe and invoke fail-closed were verified.
 
 ## Final P1 durable semantic status recovery
 
@@ -68,3 +68,13 @@ remaining_risks: production deployment and authenticated production QCP readback
 ## Not performed
 
 The implementation/review subprocesses performed no remote writes. Parent release actions and receipts are recorded separately below after deployment.
+
+## Release and runtime receipts
+
+- Implementation commit: `8e259b37a67d034af853864c99bfc313a5ec3a6e`; local `main` and GitHub `origin/main` were read back equal after push.
+- Production release symlink: `/opt/releases/ai-lab-platform-8e259b37a67d.wN9l4P`; `.deployed-sha` read back as `8e259b37a67d034af853864c99bfc313a5ec3a6e`.
+- Production API, workflow worker, planning worker and agent-evaluation worker all run the offline image labelled with the same implementation SHA; Compose reports them healthy. `hermes-bridge.service` and `hermes-chat-worker.service` are active.
+- Public health readback: `https://t-react.com/health` returned `{"status":"ok","version":"0.8.0"}`.
+- Production Hermes Registry process registered all three meta-tools. Registry dispatch verified `app_capability_search` finds `artifact.consume_structured`, `app_capability_describe` reports it `implemented`, and `app_capability_invoke` without trusted tenant/user context returns `trusted_invocation_context_required` (fail-closed). Catalog digest: `83abb82e5bd7eb2b202839f91f4b1c2fd876349d2d5a602bd9a90a08b9cb33d6`.
+- iOS Archive `/tmp/Quantumn-1.0.3-40.xcarchive`: version `1.0.3 (40)`, codesign verification passed, provisioning expires 2027-08-30.
+- TestFlight upload attempt failed before upload with Xcode `Failed to Use Accounts`: the Keychain credential for the configured developer account is missing `Xcode-Username`. No Apple upload or processing receipt exists for build 40.
