@@ -47,7 +47,9 @@ started_at: 2026-09-15T11:21:20+08:00
 
 ## 发布
 
-- local_commit: pending
+- local_commits:
+  - ebc23dccef444264f13cbd5d24ec60ea2df88ce0
+  - b86ddb0f650fe9abf739da80d2b29a9b4f1491c5
 - remote_sha: not pushed
 - server_before: not captured
 - server_after: not deployed
