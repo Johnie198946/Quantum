@@ -234,6 +234,7 @@ async def _presentation_create_from_text(
         "slide_count": int(data.get("slide_count") or 10),
         "clarification_strategy": data.get("clarification_strategy")
         or "use_defaults_unless_blocked",
+        "presentation_review_gates": list(data.get("presentation_review_gates") or []),
     }
     identity_input = {**data, **normalized}
     workflow_id, request_hash = _qcp_workflow_identity(
@@ -258,6 +259,7 @@ async def _presentation_create_from_text(
             customer_demand_id=None,
             source_document_id=None,
             output_kind="presentation",
+            presentation_review_gates=normalized["presentation_review_gates"],
         ),
         payload,
         workflow_id=workflow_id,

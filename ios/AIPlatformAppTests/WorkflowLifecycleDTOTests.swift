@@ -4934,8 +4934,9 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         )], for: sessionId)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [APIContractURLProtocol.self]
+        let appState = AppState(activeTab: 0)
         let coordinator = TenantSessionCoordinator(
-            sessionManager: manager,
+            sessionManager: manager, appState: appState,
             capabilityClient: CapabilityClient(apiClient: APIClient(
                 baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
                 sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
@@ -4951,7 +4952,10 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         coordinator.handleCapabilityProposal(
             messageId: "proposal-message", proposalId: "done-key", verb: "confirm"
         )
-        try await Task.sleep(nanoseconds: 250_000_000)
+        let navigationDeadline = ContinuousClock.now + .seconds(2)
+        while appState.pendingWorkflowId == nil && ContinuousClock.now < navigationDeadline {
+            await Task.yield()
+        }
 
         let proposals = coordinator.messages[0].blocks.compactMap {
             if case .capabilityProposal(let value) = $0 { return value }
@@ -4960,6 +4964,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(proposals.first { $0.id == "retry-key" }?.state, .completed)
         XCTAssertEqual(proposals.first { $0.id == "discard-key" }?.state, .discarded)
         XCTAssertEqual(proposals.first { $0.id == "done-key" }?.state, .completed)
+        XCTAssertEqual(appState.pendingWorkflowId, "tenant-a-workflow")
+        XCTAssertEqual(appState.activeTab, 1)
         let bodies = try APIContractURLProtocol.requests().map {
             try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap($0.body)) as? [String: Any])
         }
@@ -5201,20 +5207,35 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     func testAgentDescriptionContractAndCollapseBoundary() {
-        let short = AgentDescriptionPresentation(name: "研究助手", raw: "检索并总结资料")
-        XCTAssertTrue(short.full.contains("功能："))
-        XCTAssertTrue(short.full.contains("适合："))
-        XCTAssertTrue(short.full.contains("边界："))
-        XCTAssertLessThanOrEqual(short.full.count, AgentDescriptionPresentation.maximumLength)
-        XCTAssertNil(short.collapsed)
-
-        let long = AgentDescriptionPresentation(
-            name: "研究助手",
-            raw: String(repeating: "需要核验来源并清晰总结 ", count: 12)
+        let presentation = AgentDescriptionPresentation(
+            function: "检索并总结资料",
+            suitable: "需要来源追溯的研究任务",
+            boundary: "只访问授权数据，结论需人工确认"
         )
-        XCTAssertLessThanOrEqual(long.full.count, AgentDescriptionPresentation.maximumLength)
-        XCTAssertNotNil(long.collapsed)
-        XCTAssertEqual(long.collapsed?.count, AgentDescriptionPresentation.collapsedLength)
+        XCTAssertEqual(
+            presentation.full,
+            "功能：检索并总结资料。适合：需要来源追溯的研究任务。边界：只访问授权数据，结论需人工确认。"
+        )
+        XCTAssertLessThanOrEqual(presentation.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertTrue(presentation.isCollapsible)
+
+        let bounded = AgentDescriptionPresentation(
+            function: String(repeating: "功能", count: 80),
+            suitable: String(repeating: "适合", count: 80),
+            boundary: String(repeating: "边界", count: 80)
+        )
+        XCTAssertLessThanOrEqual(bounded.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertFalse(bounded.full.contains("目标明确的相关任务"))
+    }
+
+    func testWorkflowFailurePresentationShowsReportedCauseAndExplicitRetry() throws {
+        let execution = try JSONDecoder().decode(
+            WorkflowExecutionDTO.self,
+            from: Data(#"{"id":"execution-failed","workflowId":"workflow","planId":"plan","status":"failed","progress":45,"tokenBudget":100,"tokenUsed":10,"inputTokens":null,"outputTokens":null,"reasoningTokens":null,"cacheReadTokens":null,"cacheWriteTokens":null,"apiCalls":null,"estimatedCostUsd":null,"modelUsed":null,"providerUsed":null,"routeReason":null,"hermesSessionId":null,"artifactCount":0,"errorMessage":"素材下载校验失败","startedAt":null,"finishedAt":null,"createdAt":null,"nodes":[]}"#.utf8)
+        )
+        let failure = try XCTUnwrap(WorkflowFailurePresentation.make(execution: execution))
+        XCTAssertEqual(failure.cause, "素材下载校验失败")
+        XCTAssertEqual(failure.action, "从失败步骤继续同一任务")
     }
 
     func testWorkflowPreviewEntryKeepsQCPRendererAndArtifactVersionContract() throws {

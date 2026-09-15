@@ -1,0 +1,56 @@
+version: 1
+scope: batch-5-document-class-ios
+status_values: [implemented, partial, absent, unverified]
+rule: >-
+  A feature is implemented only when every registry and iOS consumption link is
+  evidenced. Production receipt remains unverified until a clean-room production
+  workflow returns an artifact id, version, SHA-256 and authenticated download.
+features:
+  - ios_user_function: Generate, revise, and download a multi-page Word document
+    capability: document.word.create_from_text
+    event: document.created@1
+    renderer: workflow@1
+    handler: backend/capability_handlers.py:_word_create_from_text
+    consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    policy: workflow-owner + artifact-owner
+    automated_tests:
+      - tests/e2e/test_word_workflow.py
+      - tests/test_product_capabilities.py
+      - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+    local_evidence: multi-page DOCX, two content edits, versioned re-render, repeated authenticated download, SHA-256 equality
+    production_receipt:
+      status: unverified
+      evidence: null
+    status: partial
+  - ios_user_function: Generate and revise a research report with traceable evidence
+    capability: report.research.create_from_text
+    event: document.created@1
+    renderer: workflow@1
+    handler: backend/capability_handlers.py:_research_report_create_from_text
+    consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    policy: workflow-owner + artifact-owner
+    automated_tests:
+      - tests/e2e/test_research_report_workflow.py
+      - tests/test_product_capabilities.py
+      - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+    local_evidence: three independently published accessible sources, exact citation/source correspondence, revision and redownload hashes
+    production_receipt:
+      status: unverified
+      evidence: null
+    status: partial
+  - ios_user_function: Generate an academic paper with verified citation correspondence
+    capability: paper.academic.create_from_text
+    event: document.created@1
+    renderer: workflow@1
+    handler: backend/capability_handlers.py:_academic_paper_create_from_text
+    consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    policy: workflow-owner + artifact-owner
+    automated_tests:
+      - tests/e2e/test_academic_paper_workflow.py
+      - tests/test_product_capabilities.py
+      - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+    local_evidence: abstract/body/references sections, exhaustive in-text/reference mapping, allowlisted verified source fixture, DOCX hash and redownload
+    production_receipt:
+      status: unverified
+      evidence: null
+    status: partial

@@ -47,10 +47,12 @@ def _yaml(name: str) -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def load_catalog() -> dict[str, Any]:
     manifest = _yaml("manifest.yaml")
+    capability_document = _yaml(str(manifest["capabilities"]))
     catalog = {
         "protocol": manifest.get("protocol"),
         "version": manifest.get("version"),
-        "capabilities": _yaml(str(manifest["capabilities"]))["capabilities"],
+        "capabilities": capability_document["capabilities"],
+        "agent_descriptions": capability_document.get("agent_descriptions") or {},
         "events": _yaml(str(manifest["events"]))["events"],
         "renderers": _yaml(str(manifest["renderers"]))["renderers"],
         "bindings": _yaml(str(manifest["bindings"]))["bindings"],
@@ -76,6 +78,29 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
     bindings = catalog.get("bindings") or []
     policies = catalog.get("policies") or []
     consumptions = catalog.get("consumptions") or []
+    agent_descriptions = catalog.get("agent_descriptions") or {}
+    required_description_parts = {"function", "suitable", "boundary"}
+    if not isinstance(agent_descriptions, dict) or not agent_descriptions:
+        raise CapabilityContractError("agent descriptions required")
+    rendered_descriptions: set[str] = set()
+    rendered_parts: set[tuple[str, str, str]] = set()
+    for agent_id, description in agent_descriptions.items():
+        if not isinstance(description, dict) or set(description) != required_description_parts:
+            raise CapabilityContractError(f"{agent_id}: invalid agent description fields")
+        parts = (
+            str(description["function"]).strip(),
+            str(description["suitable"]).strip(),
+            str(description["boundary"]).strip(),
+        )
+        if any(not part for part in parts) or len(set(parts)) != 3:
+            raise CapabilityContractError(f"{agent_id}: agent description parts must be distinct")
+        rendered = f"功能：{parts[0]}。适合：{parts[1]}。边界：{parts[2]}。"
+        if len(rendered) > 100:
+            raise CapabilityContractError(f"{agent_id}: agent description exceeds 100 characters")
+        if rendered in rendered_descriptions or parts in rendered_parts:
+            raise CapabilityContractError(f"{agent_id}: duplicate agent description")
+        rendered_descriptions.add(rendered)
+        rendered_parts.add(parts)
     capability_ids = _unique(capabilities, "id", "capability ids")
     if len(capability_ids) != len(capabilities):
         raise CapabilityContractError("capability id missing")
@@ -122,6 +147,13 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
         gates = consumption.get("gates") or []
         if not refs or len(refs) != len(set(refs)) or len(gates) != len(set(gates)):
             raise CapabilityContractError(f"{consumption.get('id')}: invalid consumption references")
+
+
+def agent_description_for(agent_id: str) -> dict[str, str]:
+    """Return structured PCM UI copy, never a private-prompt excerpt."""
+    descriptions = load_catalog()["agent_descriptions"]
+    value = descriptions.get(agent_id) or descriptions["main_agent"]
+    return {key: str(value[key]) for key in ("function", "suitable", "boundary")}
 
 
 def search_capabilities(query: str, *, limit: int = 5) -> list[dict[str, Any]]:

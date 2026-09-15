@@ -1,0 +1,81 @@
+schema_version: 1
+scope: quantumn-document-ppt-product-remediation
+baseline_revision: 58d212f18ed1edd71d0a95d18b12fc0b820eb277
+current_revision: 35eb697bdad218aeb5371bcd8f63c0671393c5fb
+status: in-progress
+acceptance_semantics:
+  implemented: code and focused automated evidence exist
+  partial: some implementation or evidence exists but the approved exit gate is open
+  absent: required implementation or artifact is not present
+  unverified: implementation may exist but the required acceptance evidence is absent
+known_gap_probes:
+  source_fact_loss_or_unsupported_expansion:
+    status: implemented
+    automated_evidence:
+      - tests/test_presentation_source_trace.py::test_istanbul_source_claims_are_exact_deterministic_and_match_golden
+      - tests/test_presentation_source_trace.py::test_trace_matrix_requires_approved_known_claims_and_explicit_slides
+      - tests/test_presentation_source_trace.py::test_unmapped_or_rejected_claim_cannot_enter_final_presentation
+  cross_session_source_contamination:
+    status: implemented
+    automated_evidence:
+      - tests/test_presentation_source_trace.py::test_trace_validation_fails_closed_for_tampering_and_cross_session_material
+      - tests/test_document_presentation.py::test_inline_text_material_is_hash_bound_to_its_client_session
+      - tests/test_workflows_api.py::TestWorkflowsAPI::test_source_client_session_requires_server_registration_and_owner_binding
+  tourism_visual_assets:
+    status: partial
+    automated_evidence:
+      - tests/test_presentation_materials.py::test_valid_raster_material_records_license_hash_mime_dimensions_and_cache
+      - tests/test_presentation_materials.py::test_svg_must_be_real_safe_vector_without_external_resources
+    missing_exit_evidence:
+      - licensed photography embedded in a new Istanbul PPTX
+      - editable geographic route map
+      - six real vector icons
+      - five layout families and visual overflow gates
+      - PDF and montage
+      - user visual approval
+  field_level_review_with_cas:
+    status: partial
+    automated_evidence:
+      - tests/test_workflows_api.py::TestWorkflowsAPI::test_structured_review_persists_with_etag_cas_undo_and_owner_scope
+      - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+    missing_exit_evidence:
+      - two-device or two-client concurrent edit UI acceptance
+      - kill-process and re-login persistence UI acceptance
+      - complete three-step PPT path UI acceptance
+  late_response_session_overwrite:
+    status: partial
+    automated_evidence:
+      - tests/test_workflows_api.py::TestWorkflowsAPI::test_source_client_session_requires_server_registration_and_owner_binding
+      - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+    missing_exit_evidence:
+      - two-account two-session four-task UI matrix
+      - delayed-network response UI probe
+      - logout re-login and cold-launch probe
+      - legacy workflow mixing probe
+  generic_agent_descriptions:
+    status: unverified
+    missing_exit_evidence:
+      - registry-derived Function/Suitable/Boundary contract test for every agent
+      - small-screen collapse and expand UI test
+  document_workflows_without_real_longform_or_citations:
+    status: unverified
+    missing_exit_evidence:
+      - multi-page Word two-edit redownload and hash E2E
+      - three-independent-source research report citation and revision E2E
+      - academic paper abstract/body/reference correspondence E2E
+release_and_product_gates:
+  simulator_unit_tests:
+    status: implemented
+    evidence: AIPlatformAppTests 207 passed, 0 failed, 0 skipped on iPhone 17 Pro iOS Simulator 26.1
+  simulator_ui_tests:
+    status: unverified
+  physical_device:
+    status: unverified
+  testflight:
+    status: absent
+  server_deployment:
+    status: absent
+  production_matrix:
+    status: absent
+  final_pptx_pdf_user_confirmation:
+    status: absent

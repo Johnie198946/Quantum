@@ -19,6 +19,7 @@ import jwt
 
 from backend.services.capability_catalog import (
     CapabilityContractError,
+    agent_description_for,
     describe_capability,
     invoke_capability,
     load_catalog,
@@ -55,6 +56,21 @@ def test_catalog_is_complete_unique_and_progressively_disclosed():
     bad_fallback["renderers"][0]["fallback"] = "missing"
     with pytest.raises(CapabilityContractError, match="invalid renderer fallback"):
         validate_catalog(bad_fallback)
+
+
+def test_agent_descriptions_are_registry_derived_distinct_and_bounded():
+    descriptions = load_catalog()["agent_descriptions"]
+    assert set(descriptions) == {"main_agent", "supervision", "coder", "knowledge"}
+    rendered = []
+    for agent_id in sorted(descriptions):
+        value = agent_description_for(agent_id)
+        assert set(value) == {"function", "suitable", "boundary"}
+        assert len(set(value.values())) == 3
+        text = f"功能：{value['function']}。适合：{value['suitable']}。边界：{value['boundary']}。"
+        assert len(text) <= 100
+        rendered.append(text)
+    assert len(set(rendered)) == len(rendered)
+    assert agent_description_for("unknown") == agent_description_for("main_agent")
 
 
 def test_capability_yaml_keys_match_declared_repository_schema():
@@ -400,8 +416,13 @@ def test_bridge_compiles_every_implemented_capability_as_a_native_tool(monkeypat
     assert text_schema["required"] == ["title", "text_material"]
     assert text_schema["properties"]["intended_use"]["default"] == "management_briefing"
     assert text_schema["properties"]["layout_style"]["default"] == "clean_professional_16_9"
+    assert text_schema["properties"]["presentation_review_gates"]["default"] == []
     contract = implemented["presentation.create_from_text"]["workflow_contract"]
     assert contract["clarification"].startswith("Ask only")
+    assert contract["confirmation_points"] == [
+        "qcp_invocation", "requirement_summary", "final_output",
+    ]
+    assert contract["optional_risk_review_gates"] == ["outline", "design"]
     assert contract["artifact"]["extension"] == "pptx"
     assert contract["preview"]["extension"] == "pdf"
     assert bridge._legacy_client_context_enabled(True, False) is False

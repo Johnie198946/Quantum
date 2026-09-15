@@ -1196,6 +1196,9 @@ public struct TenantAgentDTO: Codable, Identifiable, Hashable {
     public let allowedTools: [String]?
     public let capabilityAgentIds: [String]?
     public let allowNetwork: Bool?
+    public let functionDescription: String?
+    public let suitableDescription: String?
+    public let boundaryDescription: String?
 }
 
 public struct AgentEvaluationRunDTO: Codable, Identifiable {
@@ -2305,7 +2308,16 @@ public final class APIClient: ObservableObject {
     )] = [:]
     private var knowledgeNoteSyncHashes: [String: String] = [:]
 
-    public convenience init(baseURL: URL = URL(string: "https://120.24.248.58")!) {
+    public convenience init() {
+        #if DEBUG
+        let override = ProcessInfo.processInfo.environment["AI_LAB_E2E_BASE_URL"].flatMap(URL.init(string:))
+        #else
+        let override: URL? = nil
+        #endif
+        self.init(baseURL: override ?? URL(string: "https://120.24.248.58")!)
+    }
+
+    public convenience init(baseURL: URL) {
         self.init(
             baseURL: baseURL,
             sessionConfiguration: .default,

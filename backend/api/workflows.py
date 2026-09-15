@@ -155,6 +155,10 @@ class WorkflowCreate(BaseModel):
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
     output_kind: Literal["general", "presentation", "document"] = "general"
     source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
+    presentation_review_gates: list[Literal["outline", "design"]] = Field(
+        default_factory=list,
+        max_length=2,
+    )
 
 
 class ClarificationResponse(BaseModel):
@@ -312,6 +316,7 @@ def _preserved_requirement_source_context(snapshot: Any) -> dict[str, Any]:
             "clarification_strategy",
             "qcp_request_hash",
             "source_client_session_id",
+            "presentation_review_gates",
         )
         if snapshot.get(key)
     }
@@ -1032,6 +1037,10 @@ async def _create_workflow(
             requirements_snapshot.update(requirements_snapshot_overrides)
         if source_client_session_id:
             requirements_snapshot["source_client_session_id"] = source_client_session_id
+        if body.presentation_review_gates:
+            requirements_snapshot["presentation_review_gates"] = list(
+                dict.fromkeys(body.presentation_review_gates)
+            )
         if qcp_request_hash:
             requirements_snapshot["qcp_request_hash"] = qcp_request_hash
         if body.output_kind == "presentation":

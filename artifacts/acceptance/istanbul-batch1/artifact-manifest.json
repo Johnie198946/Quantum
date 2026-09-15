@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "title": "Istanbul · Between Continents",
+  "source_trace": "source-trace.json",
+  "material_manifest": "material-manifest.json",
+  "visual_gate_report": "visual-gate-report.json",
+  "artifacts": {
+    "istanbul-batch1.pptx": {
+      "sha256": "f839a5d61ee29a64ef48db4eaf438d0f815d79963bc26fed746d0b5f44f474ff",
+      "byte_size": 5149735
+    },
+    "istanbul-batch1.pdf": {
+      "sha256": "a3a31349d223350efa9bc40ddd87cd674348a0d718ec91edd215e40e6b573df5",
+      "byte_size": 2073279
+    },
+    "montage.png": {
+      "sha256": "196d33a2ecb7c4ec9794aa8e4f2fb861cf730f2a22440bf518eda671db58422a",
+      "byte_size": 948817
+    }
+  },
+  "visual_gate_passed": true,
+  "human_visual_approval": "pending"
+}

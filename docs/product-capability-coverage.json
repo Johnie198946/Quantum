@@ -27,7 +27,8 @@
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_word_workflow.py"
       ]
     },
     {
@@ -95,7 +96,8 @@
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_academic_paper_workflow.py"
       ]
     },
     {
@@ -119,7 +121,8 @@
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_research_report_workflow.py"
       ]
     },
     {
@@ -151,7 +154,7 @@
       ]
     }
   ],
-  "catalog_digest": "5e53bcb98734bed33157c06dda643df14ce2639af04febc852bfb6cf6fb86f39",
+  "catalog_digest": "db5bccbf93298e61ccfa38c4a468ffec60929d116c36e8723d9fe26d8d3541ae",
   "consumptions": [
     {
       "gates": [
@@ -199,6 +202,77 @@
     "implemented": 20,
     "partial": 0,
     "unverified": 0
+  },
+  "ios_coverage": {
+    "features": [
+      {
+        "automated_tests": [
+          "tests/e2e/test_word_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "document.word.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_word_create_from_text",
+        "ios_user_function": "Generate, revise, and download a multi-page Word document",
+        "local_evidence": "multi-page DOCX, two content edits, versioned re-render, repeated authenticated download, SHA-256 equality",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/e2e/test_research_report_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "report.research.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_research_report_create_from_text",
+        "ios_user_function": "Generate and revise a research report with traceable evidence",
+        "local_evidence": "three independently published accessible sources, exact citation/source correspondence, revision and redownload hashes",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/e2e/test_academic_paper_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "paper.academic.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_academic_paper_create_from_text",
+        "ios_user_function": "Generate an academic paper with verified citation correspondence",
+        "local_evidence": "abstract/body/references sections, exhaustive in-text/reference mapping, allowlisted verified source fixture, DOCX hash and redownload",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      }
+    ],
+    "source": "ops/acceptance/pcm-ios-coverage.yaml",
+    "status_values": [
+      "implemented",
+      "partial",
+      "absent",
+      "unverified"
+    ]
   },
   "protocol": "qcp",
   "total": 20,

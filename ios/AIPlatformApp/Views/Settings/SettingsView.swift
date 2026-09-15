@@ -10,23 +10,49 @@ import UIKit
 
 struct AgentDescriptionPresentation: Equatable {
     static let maximumLength = 100
-    static let collapsedLength = 60
 
     let full: String
 
-    init(name: String, raw: String) {
-        let normalized = raw
+    init(function: String?, suitable: String?, boundary: String?) {
+        func normalized(_ raw: String?, fallback: String) -> String {
+            let value = (raw ?? "")
             .replacingOccurrences(of: "\n", with: " ")
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
-        let functionSource = normalized.isEmpty ? "完成\(name)相关工作" : normalized
-        let function = String(functionSource.prefix(42))
-        full = "功能：\(function)。适合：目标明确的相关任务。边界：仅按授权执行，关键结果需人工确认。"
+            return String((value.isEmpty ? fallback : value).prefix(29))
+        }
+        let functionValue = normalized(function, fallback: "能力清单暂不可用")
+        let suitableValue = normalized(suitable, fallback: "请刷新后查看适用任务")
+        let boundaryValue = normalized(boundary, fallback: "未取得能力边界，暂不执行")
+        full = "功能：\(functionValue)。适合：\(suitableValue)。边界：\(boundaryValue)。"
     }
 
-    var collapsed: String? {
-        guard full.count > Self.collapsedLength else { return nil }
-        return String(full.prefix(Self.collapsedLength - 1)) + "…"
+    var isCollapsible: Bool { full.count > 34 }
+}
+
+struct AgentDescriptionText: View {
+    let text: String
+    let name: String
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(AppTheme.Colors.textSecondary)
+                .lineSpacing(1)
+                .lineLimit(isExpanded ? nil : 2)
+                .accessibilityIdentifier("agent-description-\(name)")
+            Button(isExpanded ? "收起描述" : "展开描述") {
+                withAnimation(AppTheme.Motion.quick) { isExpanded.toggle() }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.Colors.quantumBlue)
+            .frame(minHeight: AppTheme.Metrics.minimumTouchTarget, alignment: .leading)
+            .accessibilityIdentifier("agent-description-toggle")
+            .accessibilityValue(isExpanded ? "已展开" : "已折叠两行")
+        }
     }
 }
 
@@ -319,14 +345,15 @@ public struct SettingsView: View {
             artifactHeader(icon: "sparkles", title: "我创建的智能体", accent: AppTheme.Colors.quantumViolet)
             let rows = cloudAgents.map { agent in
                 let description = AgentDescriptionPresentation(
-                    name: agent.customName ?? agent.baseAgentId,
-                    raw: agent.privatePromptDelta
+                    function: agent.functionDescription,
+                    suitable: agent.suitableDescription,
+                    boundary: agent.boundaryDescription
                 )
                 return AgentRowData(
                     id: agent.id,
                     name: agent.customName ?? agent.baseAgentId,
                     responsibility: description.full,
-                    collapsedResponsibility: description.collapsed,
+                    collapsedResponsibility: description.isCollapsible ? description.full : nil,
                     createdAt: agent.createdAt ?? "",
                     accent: AppTheme.Colors.quantumViolet
                 )
@@ -455,18 +482,12 @@ public struct SettingsView: View {
                 .disabled(deleteDisabled)
                 .accessibilityLabel("删除 \(name)")
             }
-            Text(isExpanded?.wrappedValue == false ? (collapsedResponsibility ?? responsibility) : responsibility)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.Colors.textSecondary)
-                .lineSpacing(1)
             if let isExpanded {
-                Button(isExpanded.wrappedValue ? "收起描述" : "展开描述") {
-                    withAnimation(AppTheme.Motion.quick) { isExpanded.wrappedValue.toggle() }
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .buttonStyle(.plain)
-                .foregroundStyle(AppTheme.Colors.quantumBlue)
-                .accessibilityIdentifier("agent-description-toggle")
+                AgentDescriptionText(text: responsibility, name: name, isExpanded: isExpanded)
+            } else {
+                Text(responsibility)
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.Colors.textSecondary)
             }
             if !createdAt.isEmpty {
                 Text("创建于 \(createdAt)")

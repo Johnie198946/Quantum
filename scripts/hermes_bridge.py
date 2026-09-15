@@ -229,6 +229,7 @@ HERMES_BIN = os.environ.get(
     "HERMES_BIN", "/var/lib/quantumn-hermes/.local/bin/hermes"
 )
 HERMES_CWD = os.environ.get("HERMES_CWD", "/opt/ai-lab-platform")
+LOCAL_DATA_DIR = Path(os.environ.get("AI_LAB_DATA_DIR", str(Path.cwd() / "data")))
 # hermes serve 地址（本机回环·不暴露公网）
 HERMES_SERVE_URL = os.environ.get("HERMES_SERVE_URL", "http://127.0.0.1:9119")
 # hermes serve WebSocket PTY 地址
@@ -243,13 +244,13 @@ STATE_DB = os.environ.get(
 MAPPING_FILE = Path(
     os.environ.get(
         "HERMES_MAPPING_FILE",
-        "/opt/ai-lab-platform/data/session_mappings.json",
+        str(LOCAL_DATA_DIR / "session_mappings.json"),
     )
 )
 STATE_DB_MAPPING_FILE = Path(
     os.environ.get(
         "HERMES_STATE_DB_MAPPING_FILE",
-        "/opt/ai-lab-platform/data/session_state_dbs.json",
+        str(LOCAL_DATA_DIR / "session_state_dbs.json"),
     )
 )
 # 消费水位线持久化文件（user_id -> 已投递最大消息 id），供断点 0ms 回读判定
@@ -3705,7 +3706,7 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     if render_type == "data":
         return "只输出 CSV 表头与数据行，不要添加 Markdown 围栏。" if contract["extension"] == "csv" else "只输出合法 JSON 对象或数组；不要添加 Markdown 围栏或解释文字。"
     if render_type == "word":
-        return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
+        return "只输出 Word 正文纯文本，用空行分段；需要确定分页时使用换页符（\\f），平台将生成真实多页 DOCX；不要使用 Markdown 标记。"
     if render_type == "presentation_outline":
         return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"source_claim_ids":["批准事实 claim_id"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据；存在用户源材料时，每条批准事实必须至少映射到一页且不得引用未知 claim_id；数据不足时明确写出缺口；旅行、流程或历史主题优先规划时间线、图标网格和路线地图，只有上游提供已验证图片数据时才规划 image。'
     if render_type == "presentation_design":

@@ -11,7 +11,7 @@ started_at: 2026-09-15T11:21:20+08:00
 ## 当前状态
 
 - 开发已启动。
-- 当前阶段：来源追踪、素材验证、结构化审核后端与 iOS CAS 编辑闭环已完成；进入 session/generation 隔离前。
+- 当前阶段：Batch 1–5 的本地实现、真实本地后端 UI E2E、完整 Python 回归、iOS 单元测试及离线模拟器 UI 验收已完成；Batch 1 人工视觉确认、生产矩阵、真机/TestFlight、发布与 Batch 6 前置门禁仍未满足。
 - 发布门禁保持 NO-GO。
 
 ## 开工门禁
@@ -64,6 +64,12 @@ started_at: 2026-09-15T11:21:20+08:00
 - 本批后端 scope/chat/presentation 综合回归：`170 passed, 0 failed, 0 skipped, 8 warnings`。
 - 本批完整 `AIPlatformAppTests` 模拟器目标：`207 passed, 0 failed, 0 skipped`；xcresult 为 `Test-AIPlatformApp-2026.09.15_14-33-10-+0800.xcresult`。
 - 新增的聚焦测试覆盖跨 session tracking 拒绝、generation rollover 清缓存、迟到旧 generation 响应丢弃、直接创建透传 session、deep-link 拒绝和 artifact preview 拒绝。
+- Batch 1 新版伊斯坦布尔产物：7 页、7 类布局、6 个可编辑 SVG 图标、5 个可编辑地标、5 张经来源页核验的 Wikimedia 照片，以及带 ODbL 署名的真实 OpenStreetMap 底图；PPTX/PDF/渲染结构门禁 `10 passed, 0 failed, 0 skipped`。
+- Batch 2 本地真实后端模拟器 UI E2E：双客户端 CAS 编辑、服务端并发写、HTTP `412` 冲突、载入服务端版本、再次保存、杀 App 重启后持久化，`1 passed, 0 failed, 0 skipped`；xcresult：`/tmp/StructuredReviewLocalE2E.xcresult`。
+- Batch 4 离线模拟器 UI：小屏、键盘、折叠底栏、失败原因/重试、渐进披露和 Agent 描述，`6 passed, 0 failed, 0 skipped`；xcresult：`/tmp/AIPlatformAppUITests-fixtures.xcresult`。
+- 当前完整 `AIPlatformAppTests`：`208 passed, 0 failed, 0 skipped`；xcresult：`/tmp/AIPlatformAppTests-remediation.xcresult`。
+- Batch 5 三条可持久复核的文档 E2E：`3 passed, 0 failed, 0 skipped`；DOCX 与逐版本收据在 `artifacts/acceptance/document-e2e/`。
+- 完整 Python 回归最终结果见 `ops/acceptance/quantumn-document-ppt-local-evidence.yaml`；skipped 项单列，未计作通过。
 
 ## 发布
 
@@ -81,7 +87,9 @@ started_at: 2026-09-15T11:21:20+08:00
 
 ## 剩余风险
 
-- PPT 内容与视觉、owner/session/generation 串扰防护及文档类 PCM 尚未完成全量验收。
-- 未生成并由用户人工确认新版伊斯坦布尔 PPTX/PDF。
-- iOS 统一审核当前完成模拟器组件与合同验收，尚未完成真机和 TestFlight 验收。
-- Batch 3 代码闭环已完成，但生产退出矩阵尚未执行：双账号×双会话、四任务并发、快速切换、退出/重登、冷启动、网络延迟与 legacy 混入仍缺真实 UI/生产回执，因此整体继续 NO-GO。
+- 新版伊斯坦布尔 PPTX/PDF/montage 已生成并通过自动门禁，但用户人工视觉确认仍为 `pending`；自动规则不能代替该产品门禁。
+- Batch 3 本地 owner/session/generation 代码、后端双账号双会话矩阵及模拟器迟到响应测试已通过；生产环境双账号×双会话、四任务并发、快速切换、退出/重登、冷启动、网络延迟和 legacy 混入仍缺真实生产回执。
+- Batch 5 生产处理链的确定性 E2E 已生成最终 DOCX 和版本收据，但 clean-room 生产收据仍为 `unverified`。
+- 真机当前在 Xcode 中为 offline；TestFlight 未上传，服务器未部署，数据库迁移、监控和回滚演练未执行。
+- Batch 6 按方案禁止提前启动；必须等待 Batch 1–5 人工/生产门禁通过。
+- 因此整体验收继续 **NO-GO**。

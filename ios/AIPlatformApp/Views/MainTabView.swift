@@ -131,6 +131,15 @@ public struct MainTabView: View {
                         }
                 )
                 .transition(tabBarTransition)
+            } else {
+                Button("显示导航", systemImage: "chevron.up") {
+                    setTabBarCollapsed(false)
+                }
+                .buttonStyle(.bordered)
+                .frame(minWidth: 120, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .accessibilityIdentifier("main-tab-reveal")
+                .accessibilityHint("显示对话、任务、知识和设置标签")
+                .keyboardShortcut("t", modifiers: [.command, .shift])
             }
         }
     }

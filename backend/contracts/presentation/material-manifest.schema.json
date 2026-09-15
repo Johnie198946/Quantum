@@ -8,7 +8,7 @@
   "properties": {
     "source_url": {"type": "string", "minLength": 1, "maxLength": 2048},
     "author": {"type": "string", "minLength": 1, "maxLength": 300},
-    "license_id": {"enum": ["CC0-1.0", "CC-BY-4.0", "Pexels", "Unsplash", "user-provided"]},
+    "license_id": {"enum": ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "ODbL-1.0", "Public-Domain", "generated", "Pexels", "Unsplash", "user-provided"]},
     "license_url": {"type": "string", "minLength": 1, "maxLength": 2048},
     "commercial_use_allowed": {"const": true},
     "fetched_at": {"type": "string", "minLength": 1, "maxLength": 80},

@@ -1,7 +1,7 @@
 # Product Capability Manual
 
 QCP version: `1.0.0`
-Catalog digest: `5e53bcb98734bed33157c06dda643df14ce2639af04febc852bfb6cf6fb86f39`
+Catalog digest: `db5bccbf93298e61ccfa38c4a468ffec60929d116c36e8723d9fe26d8d3541ae`
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
 |---|---|---|---|---|---|---|---|
@@ -33,5 +33,13 @@ Catalog digest: `5e53bcb98734bed33157c06dda643df14ce2639af04febc852bfb6cf6fb86f3
 | `artifact.structured_consumption` | artifact | `durable_structured_consumption_receipt` | implemented |
 | `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
 | `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
+
+## iOS document-class E2E coverage
+
+| iOS user function | Capability | Event | Renderer | Handler | Consumer | Policy | Automated evidence | Production receipt | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| Generate, revise, and download a multi-page Word document | `document.word.create_from_text` | `document.created@1` | `workflow@1` | `backend/capability_handlers.py:_word_create_from_text` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | workflow-owner + artifact-owner | `tests/e2e/test_word_workflow.py`, `tests/test_product_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
+| Generate and revise a research report with traceable evidence | `report.research.create_from_text` | `document.created@1` | `workflow@1` | `backend/capability_handlers.py:_research_report_create_from_text` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | workflow-owner + artifact-owner | `tests/e2e/test_research_report_workflow.py`, `tests/test_product_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
+| Generate an academic paper with verified citation correspondence | `paper.academic.create_from_text` | `document.created@1` | `workflow@1` | `backend/capability_handlers.py:_academic_paper_create_from_text` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | workflow-owner + artifact-owner | `tests/e2e/test_academic_paper_workflow.py`, `tests/test_product_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
 
 PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.

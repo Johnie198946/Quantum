@@ -61,7 +61,9 @@ def test_material_validation_fails_closed_for_license_mime_dimensions_and_creden
     with pytest.raises(ValueError, match="public HTTPS"):
         validate_material_bytes(
             data,
-            **_metadata(source_url="https://user:secret@images.example.test/private.png"),
+            **_metadata(
+                source_url="https://user:secret@images.example.test/private.png"
+            ),
         )
     tiny = BytesIO()
     Image.new("RGB", (1, 1), "white").save(tiny, format="PNG")
@@ -108,3 +110,17 @@ def test_cache_rejects_tampered_bytes_and_corrupted_existing_entry(tmp_path):
     (tmp_path / ready["cache_path"]).write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="corruption"):
         cache_validated_material(data, manifest, cache_root=tmp_path)
+
+
+def test_generated_material_has_explicit_owned_license_and_non_network_provenance():
+    manifest = validate_material_bytes(
+        _png(),
+        **_metadata(
+            source_url="generated://acceptance/scene.png",
+            author="Deterministic test generator",
+            license_id="generated",
+            license_url="generated://license/owned-output",
+        ),
+    )
+    Draft202012Validator(_schema()).validate(manifest)
+    assert manifest["commercial_use_allowed"] is True

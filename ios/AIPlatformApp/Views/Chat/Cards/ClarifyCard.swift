@@ -19,6 +19,7 @@ public struct ClarifyCard: View {
 
     @State private var selectedIDs: Set<String> = []
     @State private var customText: String = ""
+    @FocusState private var customInputFocused: Bool
 
     public init(
         block: ClarifyBlock,
@@ -60,7 +61,9 @@ public struct ClarifyCard: View {
                 if block.choices.isEmpty {
                     customInputView
                 }
-                submitButtonView
+                if !block.choices.isEmpty || !customInputFocused {
+                    submitButtonView
+                }
             }
         }
         .padding(AppTheme.Spacing.xl)
@@ -70,6 +73,16 @@ public struct ClarifyCard: View {
         }
         .onChange(of: customText) { _, value in
             onDraftChange?(Array(selectedIDs).sorted(), value)
+        }
+        .toolbar {
+            if block.choices.isEmpty && customInputFocused {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button(block.submitLabel, action: submitMultiSelect)
+                        .disabled(!hasSelection)
+                        .accessibilityIdentifier("clarify-keyboard-primary-action")
+                }
+            }
         }
     }
 
@@ -133,6 +146,7 @@ public struct ClarifyCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(QuantumPrimaryButtonStyle())
+            .accessibilityIdentifier("clarify-primary-action")
         }
     }
 
@@ -277,16 +291,22 @@ public struct ClarifyCard: View {
                     .stroke(AppTheme.Colors.border.opacity(0.5), lineWidth: 0.5)
             )
             .accessibilityLabel("需求补充内容")
+            .accessibilityIdentifier("clarify-custom-input")
+            .focused($customInputFocused)
     }
 
     // MARK: - Multi-select Submit Button
     private var submitButtonView: some View {
-        let hasSelection = !selectedIDs.isEmpty || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return Button(action: submitMultiSelect) {
             Label(block.submitLabel, systemImage: "arrow.right")
         }
         .disabled(!hasSelection)
         .buttonStyle(QuantumPrimaryButtonStyle())
+        .accessibilityIdentifier("clarify-primary-action")
+    }
+
+    private var hasSelection: Bool {
+        !selectedIDs.isEmpty || !customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func submitMultiSelect() {
@@ -304,6 +324,7 @@ public struct ClarifyCard: View {
             selection = customText.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard !selection.isEmpty else { return }
+        customInputFocused = false
         onSubmit?(selection)
     }
 }
@@ -456,6 +477,7 @@ public struct RequirementConfirmationCard: View {
             .disabled(selectedID == nil)
             .buttonStyle(QuantumPrimaryButtonStyle())
             .accessibilityHint("提交当前选择并进入下一阶段")
+            .accessibilityIdentifier("requirement-confirm-primary-action")
         }
     }
 

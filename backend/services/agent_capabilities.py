@@ -185,6 +185,8 @@ async def match_explicit_tenant_agent(
 
 
 def capability_catalog() -> dict[str, Any]:
+    from backend.services.capability_catalog import agent_description_for
+
     return {
         "safe_tools": list(SAFE_GLOBAL_TOOLS),
         "privileged_tools": list(PRIVILEGED_TOOLS),
@@ -193,6 +195,7 @@ def capability_catalog() -> dict[str, Any]:
                 "id": str(item["id"]),
                 "name": str(item["name"]),
                 "description": str(item["role_desc"]),
+                "ui_description": agent_description_for(str(item["id"])),
                 "allowed_tools": list(SAFE_GLOBAL_TOOLS),
             }
             for item in AGENT_NODES

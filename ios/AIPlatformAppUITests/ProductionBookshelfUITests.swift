@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 
 final class ProductionBookshelfUITests: XCTestCase {
     private struct ExpectedPublication {
@@ -590,6 +591,82 @@ final class ChatKeyboardFixtureUITests: XCTestCase {
     }
 }
 
+final class Batch4NoviceUXFixtureUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launchArguments = ["-batch4Preview"]
+        app.launch()
+    }
+
+    func testDescriptionsRetryAndProgressiveDisclosure() {
+        let description = app.staticTexts["agent-description-知识助手"]
+        XCTAssertTrue(description.waitForExistence(timeout: 10))
+        XCTAssertTrue(description.label.contains("功能："))
+        XCTAssertTrue(description.label.contains("适合："))
+        XCTAssertTrue(description.label.contains("边界："))
+        XCTAssertLessThanOrEqual(description.label.count, 100)
+
+        let toggle = app.buttons["agent-description-toggle"]
+        XCTAssertEqual(toggle.value as? String, "已折叠两行")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "已展开")
+
+        XCTAssertTrue(app.descendants(matching: .any)["workflow-failure-cause"].exists)
+        let retry = app.buttons["workflow-retry-action"]
+        XCTAssertTrue(retry.exists && retry.isHittable)
+        retry.tap()
+        XCTAssertEqual(app.staticTexts["batch4-feedback"].label, "已请求重试同一任务")
+
+        let advancedContent = app.descendants(matching: .any)["batch4-advanced-content"]
+        XCTAssertFalse(advancedContent.exists)
+        app.buttons["高级选项"].tap()
+        XCTAssertTrue(advancedContent.waitForExistence(timeout: 3))
+        attachScreenshot(named: "batch4-description-retry-disclosure")
+    }
+
+    func testSmallScreenKeyboardKeepsCurrentPrimaryActionHittable() {
+        let input = app.textFields["clarify-custom-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        for _ in 0..<8 where !input.isHittable { app.swipeUp() }
+        XCTAssertTrue(input.isHittable)
+        input.tap()
+        input.typeText("客户提案")
+        let primary = app.buttons["clarify-keyboard-primary-action"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 5))
+        XCTAssertTrue(primary.isHittable, "键盘出现后当前步骤主操作被遮挡。")
+        attachScreenshot(named: "batch4-keyboard-primary-action")
+        primary.tap()
+        XCTAssertEqual(app.staticTexts["batch4-feedback"].label, "已确认并进入下一步")
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}
+
+final class CollapsedTabBarAccessibilityUITests: XCTestCase {
+    func testCollapsedTabBarHasKeyboardAccessibleRevealControl() {
+        let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launchArguments = ["-tabBarPreview", "-collapsedTabBarPreview"]
+        app.launch()
+        let reveal = app.buttons["main-tab-reveal"]
+        XCTAssertTrue(reveal.waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal.isHittable)
+        reveal.tap()
+        let tasks = app.buttons["main-tab-1"]
+        XCTAssertTrue(tasks.waitForExistence(timeout: 5))
+        XCTAssertTrue(tasks.isHittable)
+        tasks.tap()
+        XCTAssertTrue(tasks.isSelected)
+    }
+}
+
 final class ProductionLongBookAcceptanceUITests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
 
@@ -748,6 +825,157 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
     }
 }
 
+final class StructuredReviewLocalE2EUITests: XCTestCase {
+    private var baseURL: URL!
+    private var token: String!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:8765"))
+        token = localToken()
+    }
+
+    @MainActor
+    func testCASConflictAndRelaunchPersistenceAgainstRealBackend() async throws {
+        _ = try await request(
+            "PUT", path: "/api/v1/me/agreement-acceptance",
+            body: [
+                "agreement_version": "2026-09-06",
+                "idempotency_key": UUID().uuidString,
+                "source": "ios",
+            ]
+        )
+        let workflow = try await request(
+            "POST", path: "/api/v1/workflows",
+            body: [
+                "title": "结构化审核本地 E2E",
+                "description": "真实后端 CAS、冲突与重启持久化验收",
+                "output_kind": "presentation",
+            ]
+        )
+        let workflowJSON = try XCTUnwrap(workflow.json["workflow"] as? [String: Any])
+        let workflowID = try XCTUnwrap(workflowJSON["id"] as? String)
+        let path = "/api/v1/workflows/\(workflowID)/structured-reviews/final-draft"
+        let initialDocument: [String: Any] = [
+            "title": "可编辑全稿预览",
+            "fields": [
+                ["id": "title", "label": "标题", "type": "text", "required": true],
+                ["id": "summary", "label": "摘要", "type": "textarea", "required": true],
+            ],
+            "values": ["title": "伊斯坦布尔", "summary": "初稿"],
+        ]
+        _ = try await request(
+            "POST", path: path,
+            body: ["schema_id": "workflow.structured-review.v1", "document": initialDocument]
+        )
+
+        let app = launchApp(workflowID: workflowID)
+        let title = app.textFields["标题"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20))
+        replace(title, with: "本地版本")
+        app.buttons["保存审核"].tap()
+        XCTAssertTrue(app.staticTexts["版本 2"].waitForExistence(timeout: 20))
+
+        let head = try await request("GET", path: path)
+        let remoteDocument: [String: Any] = [
+            "title": "可编辑全稿预览",
+            "fields": initialDocument["fields"] as Any,
+            "values": ["title": "服务端版本", "summary": "远端并发修改"],
+        ]
+        _ = try await request(
+            "PUT", path: path,
+            headers: ["If-Match": try XCTUnwrap(head.etag)],
+            body: ["schema_id": "workflow.structured-review.v1", "document": remoteDocument]
+        )
+
+        replace(title, with: "本地迟到版本")
+        app.buttons["保存审核"].tap()
+        XCTAssertTrue(app.staticTexts["发现版本冲突"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "本地迟到版本")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "服务端版本")).firstMatch.exists)
+        app.buttons["载入服务端版本"].tap()
+        XCTAssertTrue(waitUntil(timeout: 20) { (title.value as? String) == "服务端版本" })
+        replace(title, with: "持久化终稿")
+        app.buttons["保存审核"].tap()
+        XCTAssertTrue(app.staticTexts["版本 4"].waitForExistence(timeout: 20))
+
+        app.terminate()
+        let relaunched = launchApp(workflowID: workflowID)
+        let persisted = relaunched.textFields["标题"]
+        XCTAssertTrue(persisted.waitForExistence(timeout: 20))
+        XCTAssertEqual(persisted.value as? String, "持久化终稿")
+    }
+
+    private func launchApp(workflowID: String) -> XCUIApplication {
+        let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launchArguments = ["-structuredReviewE2E", "-autoLogin"]
+        app.launchEnvironment["AI_LAB_E2E_BASE_URL"] = baseURL.absoluteString
+        app.launchEnvironment["AI_LAB_E2E_TOKEN"] = token
+        app.launchEnvironment["AI_LAB_E2E_WORKFLOW_ID"] = workflowID
+        app.launchEnvironment["AI_LAB_E2E_REVIEW_KEY"] = "final-draft"
+        app.launch()
+        return app
+    }
+
+    private func replace(_ field: XCUIElement, with value: String) {
+        field.tap()
+        field.typeKey("a", modifierFlags: .command)
+        field.typeText(value)
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return condition()
+    }
+
+    private func request(
+        _ method: String,
+        path: String,
+        headers: [String: String] = [:],
+        body: [String: Any]? = nil
+    ) async throws -> (json: [String: Any], etag: String?) {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = method
+        request.setValue("Bearer \(token!)", forHTTPHeaderField: "Authorization")
+        request.setValue("ios-unified-agreement-v1", forHTTPHeaderField: "X-Client-Contract")
+        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        guard (200..<300).contains(http.statusCode) else {
+            XCTFail("\(method) \(path) failed: \(http.statusCode) \(String(data: data, encoding: .utf8) ?? "")")
+            throw URLError(.badServerResponse)
+        }
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        return (json, http.value(forHTTPHeaderField: "ETag"))
+    }
+
+    private func localToken() -> String {
+        func encoded(_ value: Data) -> String {
+            value.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let header = encoded(Data(#"{"alg":"HS256","typ":"JWT"}"#.utf8))
+        let expires = Int(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        let payload = encoded(Data(#"{"sub":"local-e2e-owner","phone":"local-e2e-owner","tenant_id":"default","exp":\#(expires)}"#.utf8))
+        let signingInput = "\(header).\(payload)"
+        let signature = HMAC<SHA256>.authenticationCode(
+            for: Data(signingInput.utf8),
+            using: SymmetricKey(data: Data("test-secret".utf8))
+        )
+        return "\(signingInput).\(encoded(Data(signature)))"
+    }
+}
+
 final class IstanbulPresentationLiveE2ETests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
 
@@ -770,8 +998,6 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
             startTask.tap()
         }
 
-        try reviewGate(approveButton: "确认大纲", timeout: 600, screenshotName: "istanbul-outline-preview")
-        try reviewGate(approveButton: "确认并生成全稿", timeout: 600, screenshotName: "istanbul-design-preview")
         try reviewGate(approveButton: "确认并下载", timeout: 900, screenshotName: "istanbul-full-deck-preview")
         verifyCompletedPPTX()
     }
@@ -849,8 +1075,6 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 120) { startTask.exists && startTask.isHittable }, "Agent 已构建但启动入口未稳定显示。")
         startTask.tap()
 
-        try reviewGate(approveButton: "确认大纲", timeout: 600, screenshotName: "istanbul-outline-preview")
-        try reviewGate(approveButton: "确认并生成全稿", timeout: 600, screenshotName: "istanbul-design-preview")
         try reviewGate(approveButton: "确认并下载", timeout: 900, screenshotName: "istanbul-full-deck-preview")
         verifyCompletedPPTX()
     }

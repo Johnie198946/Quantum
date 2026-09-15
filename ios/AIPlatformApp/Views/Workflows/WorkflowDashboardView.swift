@@ -429,6 +429,24 @@ enum WorkflowDetailTransitionPolicy {
     }
 }
 
+struct WorkflowFailurePresentation: Equatable {
+    let cause: String
+    let action: String
+
+    static func make(execution: WorkflowExecutionDTO) -> Self? {
+        guard ["failed", "cancelled"].contains(execution.status) else { return nil }
+        let reported = execution.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nodeReported = execution.nodes.compactMap(\.errorMessage).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cause = [reported, nodeReported].compactMap { value in
+            value?.isEmpty == false ? value : nil
+        }.first ?? (execution.status == "cancelled"
+            ? "任务已由用户取消，已完成步骤仍保留。"
+            : "服务端未返回具体错误，可重新读取状态后重试。")
+        return Self(cause: cause, action: "从失败步骤继续同一任务")
+    }
+}
+
 private struct WorkflowDetailView: View {
     let workflow: WorkflowDTO
     let scope: WorkflowActivityCoordinator.Scope
@@ -1018,7 +1036,7 @@ private struct WorkflowClarificationView: View {
                             ReasoningCard(
                                 steps: model.reasoningSteps,
                                 isStreaming: ["planning", "building_agent"].contains(model.phase),
-                                initiallyExpanded: ["planning", "building_agent"].contains(model.phase)
+                                initiallyExpanded: false
                             )
                         }
                         ForEach(model.snapshot?.messages ?? []) { message in
@@ -1060,6 +1078,7 @@ private struct WorkflowClarificationView: View {
                     }
                     .padding(AppTheme.Metrics.contentGutter)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .background(AppTheme.Colors.background)
@@ -1255,23 +1274,24 @@ private struct WorkflowAgentReadyView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: AppTheme.Spacing.sm) {
+                Button(isStarting ? "正在启动…" : "启动任务", systemImage: "play.fill") { start() }
+                    .buttonStyle(.borderedProminent)
+                    .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+                    .controlSize(.large)
+                    .disabled(isStarting)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("workflow-primary-action")
+
                 Button("与此 Agent 对话", systemImage: "bubble.left.and.bubble.right.fill") {
                     appState.openChat(
                         agentId: agent.id,
                         agentName: agent.customName ?? workflow.title
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, minHeight: 44)
-
-                Button(isStarting ? "正在启动…" : "启动任务", systemImage: "play.fill") { start() }
-                    .buttonStyle(.bordered)
-                    .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
-                    .controlSize(.large)
-                    .disabled(isStarting)
-                    .frame(maxWidth: .infinity, minHeight: 44)
             }
                 .padding(AppTheme.Metrics.contentGutter)
                 .background(.ultraThinMaterial)
@@ -1325,6 +1345,7 @@ private struct WorkflowPlanReviewView: View {
     @State private var isGoalExpanded = false
     @State private var approvalRequestId = UUID().uuidString
     @State private var replanEvents: [WorkflowLifecycleEventDTO] = []
+    @State private var showsAdvancedOptions = false
 
     var body: some View {
         Group {
@@ -1336,15 +1357,28 @@ private struct WorkflowPlanReviewView: View {
                         if !draft.validationErrors.isEmpty {
                             WorkflowErrorBanner(message: draft.validationErrors.joined(separator: "\n"))
                         }
-                        nodeTimeline(plan: planBinding)
-                        if !replanReasoningSteps.isEmpty {
-                            ReasoningCard(steps: replanReasoningSteps, isStreaming: isSaving)
+                        DisclosureGroup(isExpanded: $showsAdvancedOptions) {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                                nodeTimeline(plan: planBinding)
+                                if !replanReasoningSteps.isEmpty {
+                                    ReasoningCard(steps: replanReasoningSteps, isStreaming: isSaving)
+                                }
+                                WorkflowReplanComposer(
+                                    isSaving: isSaving,
+                                    errorMessage: replanErrorMessage,
+                                    onSubmit: replan
+                                )
+                            }
+                            .padding(.top, AppTheme.Spacing.md)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("高级选项").font(AppTheme.Typography.sectionTitle)
+                                Text("按需调整执行步骤或要求重新规划")
+                                    .font(AppTheme.Typography.supporting)
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
                         }
-                        WorkflowReplanComposer(
-                            isSaving: isSaving,
-                            errorMessage: replanErrorMessage,
-                            onSubmit: replan
-                        )
+                        .accessibilityIdentifier("workflow-advanced-options")
                         if let errorMessage { WorkflowErrorBanner(message: errorMessage) }
                     }
                     .padding(AppTheme.Metrics.contentGutter)
@@ -1352,15 +1386,18 @@ private struct WorkflowPlanReviewView: View {
                 }
                 .safeAreaInset(edge: .bottom) {
                     HStack(spacing: AppTheme.Spacing.md) {
-                        Button("保存修改") { save() }
-                            .buttonStyle(.bordered)
-                            .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
-                            .frame(maxWidth: .infinity)
+                        if showsAdvancedOptions {
+                            Button("保存修改") { save() }
+                                .buttonStyle(.bordered)
+                                .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+                                .frame(maxWidth: .infinity)
+                        }
                         Button(isSaving ? "正在处理…" : "确认并构建 Agent") { approve() }
                             .buttonStyle(.borderedProminent)
                             .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                             .frame(maxWidth: .infinity)
                             .disabled(!draft.validationErrors.isEmpty)
+                            .accessibilityIdentifier("workflow-primary-action")
                     }
                     .controlSize(.large)
                     .padding(AppTheme.Metrics.contentGutter)
@@ -1885,9 +1922,12 @@ private struct WorkflowExecutionView: View {
                 ReasoningCard(
                     steps: executionReasoningSteps,
                     isStreaming: ["queued", "running"].contains(execution.status),
-                    initiallyExpanded: ["queued", "running"].contains(execution.status)
+                    initiallyExpanded: false
                 )
                 nodeProgress
+                if let failure = WorkflowFailurePresentation.make(execution: execution) {
+                    WorkflowFailureCard(failure: failure)
+                }
                 if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
                     artifactReview
                 }
@@ -2528,6 +2568,30 @@ private struct WorkflowErrorBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.Colors.statusError.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+}
+
+struct WorkflowFailureCard: View {
+    let failure: WorkflowFailurePresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Label("执行失败原因", systemImage: "exclamationmark.triangle.fill")
+                .font(AppTheme.Typography.label)
+                .foregroundStyle(AppTheme.Colors.statusError)
+            Text(failure.cause)
+                .font(AppTheme.Typography.supporting)
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+            Label("可执行操作：\(failure.action)", systemImage: "arrow.clockwise")
+                .font(AppTheme.Typography.supporting.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.quantumBlue)
+        }
+        .padding(AppTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Colors.statusError.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("workflow-failure-cause")
     }
 }
 

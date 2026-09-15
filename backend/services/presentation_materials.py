@@ -14,10 +14,18 @@ from urllib.parse import urlparse
 
 from PIL import Image, UnidentifiedImageError
 
-_RASTER_MIME = {"image/png": (b"\x89PNG\r\n\x1a\n", "png"), "image/jpeg": (b"\xff\xd8\xff", "jpg")}
+_RASTER_MIME = {
+    "image/png": (b"\x89PNG\r\n\x1a\n", "png"),
+    "image/jpeg": (b"\xff\xd8\xff", "jpg"),
+}
 _ALLOWED_LICENSES = {
     "CC0-1.0",
     "CC-BY-4.0",
+    "CC-BY-SA-3.0",
+    "CC-BY-SA-4.0",
+    "ODbL-1.0",
+    "Public-Domain",
+    "generated",
     "Pexels",
     "Unsplash",
     "user-provided",
@@ -29,8 +37,15 @@ _MAX_PIXELS = 24_000_000
 def _safe_url(value: str, *, allow_user_source: bool) -> str:
     if allow_user_source and value.startswith("user://"):
         return value
+    if allow_user_source and value.startswith("generated://"):
+        return value
     parsed = urlparse(value)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+    ):
         raise ValueError("material source URL must be public HTTPS or user-provided")
     return value
 
@@ -70,9 +85,13 @@ def _validate_svg(data: bytes) -> tuple[int, int]:
         for key, value in element.attrib.items():
             normalized_key = key.rsplit("}", 1)[-1].lower()
             normalized_value = str(value).strip().lower()
-            if normalized_key.startswith("on") or normalized_value.startswith("javascript:"):
+            if normalized_key.startswith("on") or normalized_value.startswith(
+                "javascript:"
+            ):
                 raise ValueError("SVG event handlers are forbidden")
-            if normalized_key == "href" and normalized_value.startswith(("http:", "https:", "data:", "file:")):
+            if normalized_key == "href" and normalized_value.startswith(
+                ("http:", "https:", "data:", "file:")
+            ):
                 raise ValueError("SVG external resources are forbidden")
     width, height = _svg_dimensions(root)
     if width < 16 or height < 16 or width * height > _MAX_PIXELS:
@@ -98,7 +117,7 @@ def validate_material_bytes(
         raise ValueError("material license does not permit commercial use")
     if not author.strip() or not fetched_at.strip():
         raise ValueError("material author and fetch time are required")
-    user_source = license_id == "user-provided"
+    user_source = license_id in {"user-provided", "generated"}
     _safe_url(source_url, allow_user_source=user_source)
     _safe_url(license_url, allow_user_source=user_source)
 
@@ -147,7 +166,10 @@ def cache_validated_material(
 ) -> dict[str, Any]:
     """Atomically cache only bytes that still match their validated manifest."""
     digest = hashlib.sha256(data).hexdigest()
-    if manifest.get("cache_status") != "validated" or manifest.get("content_hash") != digest:
+    if (
+        manifest.get("cache_status") != "validated"
+        or manifest.get("content_hash") != digest
+    ):
         raise ValueError("material bytes do not match validated manifest")
     extension = str(manifest.get("extension") or "")
     if extension not in {"png", "jpg", "svg"}:

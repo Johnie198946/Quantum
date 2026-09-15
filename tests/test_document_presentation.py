@@ -1165,7 +1165,7 @@ def test_workflow_retry_refreshes_expired_authorization_without_scope_widening(m
     assert run["knowledge_scope"] == []
 
 
-def test_presentation_scenario_analyzes_source_before_two_business_gates_and_binary_deck():
+def test_presentation_scenario_defaults_to_full_draft_review_and_binary_deck():
     workflow = type(
         "Workflow",
         (),
@@ -1182,13 +1182,14 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
         },
     )()
     plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
     assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
         None,
-        "outline",
-        "design",
+        None,
+        None,
         None,
     ]
-    assert plan["version"] == "2.0.0"
+    assert plan["version"] == "3.0.0"
     assert plan["nodes"][0]["id"] == "presentation_analysis"
     assert plan["nodes"][-1]["parameters"]["output_format"] == "presentation"
     assert {tuple(edge.values()) for edge in plan["edges"]} >= {
@@ -1197,6 +1198,34 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
         ("presentation_design", "presentation_deck"),
     }
     assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 4
+
+
+def test_presentation_risk_review_gates_require_explicit_policy():
+    snapshot = {
+        "scenario_id": "presentation-generation",
+        "text_material": "Approved source material.",
+        "presentation_review_gates": ["outline", "design"],
+    }
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "Regulated deck",
+            "requirements_snapshot": snapshot,
+        },
+    )()
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
+    assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
+        None,
+        "outline",
+        "design",
+        None,
+    ]
+
+    snapshot["presentation_review_gates"] = ["unknown"]
+    with pytest.raises(ValueError, match="presentation_review_gates"):
+        build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
 
 
 def test_presentation_scenario_without_upload_researches_user_topic_first():

@@ -185,6 +185,7 @@ class ResearchDeposit:
             host_job = get_job(cron_match.group(1)) or {}
             if isinstance(host_job.get("prompt"), str) and host_job["prompt"].strip():
                 decision_message = host_job["prompt"]
+        if platform == "cron":
             first_line = re.split(r"[\n。；;，,]", decision_message.strip(), maxsplit=1)[0]
             cron_writer = bool(WRITER_CONTROL.search(first_line))
         key = self.key(scope)

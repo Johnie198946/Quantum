@@ -8,7 +8,7 @@ from typing import Any
 SCENARIO_ID = "presentation-generation"
 LEGACY_SCENARIO_ID = "document-to-presentation"
 DOCUMENT_SCENARIO_ID = "document-generation"
-SCENARIO_VERSION = "2.0.0"
+SCENARIO_VERSION = "3.0.0"
 DEFAULT_THEME = {
     "colors": {
         "primary": "#8057E8",
@@ -66,6 +66,13 @@ def build_presentation_plan(
     if not is_presentation_workflow(workflow):
         return None
     snapshot = workflow.requirements_snapshot or {}
+    configured_review_gates = snapshot.get("presentation_review_gates") or []
+    if (
+        not isinstance(configured_review_gates, list)
+        or any(gate not in {"outline", "design"} for gate in configured_review_gates)
+    ):
+        raise ValueError("presentation_review_gates contains unsupported values")
+    review_gates = set(configured_review_gates)
     source = snapshot.get("source_document") or {}
     text_material = str(snapshot.get("text_material") or "").strip()
     should_research = not source and not text_material
@@ -103,7 +110,7 @@ def build_presentation_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "presentation_outline",
-                "approval_gate": "outline",
+                **({"approval_gate": "outline"} if "outline" in review_gates else {}),
                 "instruction": "基于分析和已确认需求设计逐页故事线。每页写明标题、页面作用、核心要点、source_claim_ids 与建议视觉；标题直接说明主题或有证据支持的结论，不得补造事实。",
                 "max_tokens": 8000,
             },
@@ -116,7 +123,7 @@ def build_presentation_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "presentation_design",
-                "approval_gate": "design",
+                **({"approval_gate": "design"} if "design" in review_gates else {}),
                 "instruction": "仅基于已批准大纲生成 3 至 5 张带真实内容的代表页，覆盖封面、关键正文以及适用的数据或结论页；同时给出完整配色与字体。保留 source_claim_ids，不得使用空占位符或虚构数据。",
                 "max_tokens": 7000,
             },

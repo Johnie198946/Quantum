@@ -248,6 +248,75 @@ class TestWorkflowsAPI(unittest.TestCase):
             "client_session_owner_conflict",
         )
 
+    def test_two_owners_two_sessions_authoritative_active_matrix(self):
+        matrix = [
+            ("alpha", "alpha-session-a"),
+            ("alpha", "alpha-session-b"),
+            ("gamma", "gamma-session-a"),
+            ("gamma", "gamma-session-b"),
+        ]
+        created: dict[tuple[str, str], str] = {}
+        for owner, client_session in matrix:
+            observed = self.request(
+                "POST",
+                "/api/chat",
+                sub=owner,
+                json={"question": "你是谁", "session_id": client_session},
+            )
+            self.assertEqual(observed.status_code, 200, observed.text)
+            response = self.request(
+                "POST",
+                "/api/v1/workflows",
+                sub=owner,
+                json={
+                    "title": f"{owner}-{client_session}",
+                    "description": "四任务并发会话隔离验收",
+                    "source_client_session_id": client_session,
+                },
+            )
+            self.assertEqual(response.status_code, 201, response.text)
+            created[(owner, client_session)] = response.json()["workflow"]["id"]
+
+        from backend.db import SessionLocal
+        from backend.models.workflow import WorkflowClarificationSession
+
+        async def activate_all():
+            async with SessionLocal() as db:
+                sessions = list(
+                    (
+                        await db.execute(
+                            select(WorkflowClarificationSession).where(
+                                WorkflowClarificationSession.workflow_id.in_(created.values())
+                            )
+                        )
+                    ).scalars().all()
+                )
+                self.assertEqual(len(sessions), 4)
+                for session in sessions:
+                    session.phase = "planning"
+                await db.commit()
+
+        asyncio.run(activate_all())
+        for owner, client_session in matrix:
+            active = self.request(
+                "GET",
+                "/api/v1/workflow-activities/active"
+                f"?source_client_session_id={client_session}",
+                sub=owner,
+            )
+            self.assertEqual(active.status_code, 200, active.text)
+            self.assertEqual(
+                [item["workflow"]["id"] for item in active.json()],
+                [created[(owner, client_session)]],
+            )
+            other_owner = "gamma" if owner == "alpha" else "alpha"
+            denied = self.request(
+                "GET",
+                f"/api/v1/workflows/{created[(owner, client_session)]}",
+                sub=other_owner,
+            )
+            self.assertEqual(denied.status_code, 404, denied.text)
+
     def test_legacy_workflow_without_clarification_session_is_not_tenant_wide(self):
         from backend.db import SessionLocal
         from backend.models.workflow import WorkflowDefinition
@@ -375,6 +444,64 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(document.status_code, 201, document.text)
         snapshot = document.json()["workflow"]["requirements_snapshot"]
         self.assertEqual(snapshot["scenario_id"], "document-generation")
+
+    def test_presentation_review_gates_are_opt_in_and_bounded(self):
+        default = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "默认三步 PPT",
+                "description": "根据已批准材料生成可编辑演示文稿",
+                "output_kind": "presentation",
+            },
+        )
+        self.assertEqual(default.status_code, 201, default.text)
+        self.assertNotIn(
+            "presentation_review_gates",
+            default.json()["workflow"]["requirements_snapshot"],
+        )
+
+        regulated = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "受控 PPT",
+                "description": "启用明确的风险审核门生成演示文稿",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["outline", "design", "outline"],
+            },
+        )
+        self.assertEqual(regulated.status_code, 422, regulated.text)
+
+        accepted = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "受控 PPT",
+                "description": "启用明确的风险审核门生成演示文稿",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["outline", "design"],
+            },
+        )
+        self.assertEqual(accepted.status_code, 201, accepted.text)
+        self.assertEqual(
+            accepted.json()["workflow"]["requirements_snapshot"][
+                "presentation_review_gates"
+            ],
+            ["outline", "design"],
+        )
+
+        invalid = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "非法门禁",
+                "description": "不允许客户端传入未知审核门",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["unknown"],
+            },
+        )
+        self.assertEqual(invalid.status_code, 422, invalid.text)
 
     def seed_project_result(self, *, history=False, add_member=False):
         from backend.db import SessionLocal, canonical_plan_hash

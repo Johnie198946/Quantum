@@ -1,0 +1,19 @@
+id: travel-editorial
+name: Travel Editorial
+version: 1.0.0
+license: generated
+colors:
+  primary: "#D85A3A"
+  text: "#172A3A"
+  muted: "#64727D"
+  pale: "#F3EBDD"
+  background: "#FFFDFC"
+  inverse: "#FFFFFF"
+fonts:
+  title: Avenir Next
+  body: Avenir Next
+visual_rules:
+  photo_treatment: natural-warm
+  map_treatment: editorial-atlas
+  minimum_body_pt: 18
+  maximum_consecutive_layout_repeats: 1

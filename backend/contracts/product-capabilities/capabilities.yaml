@@ -1,3 +1,21 @@
+agent_descriptions:
+  main_agent:
+    function: 拆解目标、编排已注册能力并汇总交付结果
+    suitable: 跨步骤任务、方案整理与进度协调
+    boundary: 只调用获授权能力；写入和执行须确认
+  supervision:
+    function: 审查方案、风险、证据与验收条件
+    suitable: 架构评审、质量把关与发布前检查
+    boundary: 不代替执行者修改或发布；结论需证据
+  coder:
+    function: 按批准方案实现代码、修复问题并运行测试
+    suitable: 明确范围的软件开发、调试与自动化验证
+    boundary: 不绕过权限或确认；生产发布需另行授权
+  knowledge:
+    function: 检索、整理、入库并追溯授权知识
+    suitable: 笔记查询、资料归纳与可追溯知识任务
+    boundary: 仅访问当前账号范围；未核实内容会标注
+
 capabilities:
   - id: knowledge.note.search
     version: 1.0.0
@@ -288,6 +306,7 @@ capabilities:
         layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
         slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
+        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: []}
         source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false
@@ -306,7 +325,8 @@ capabilities:
     workflow_contract:
       defaults: {audience: general_business_audience, intended_use: management_briefing, layout_style: clean_professional_16_9, slide_count: 10}
       clarification: Ask only when text material is missing or a blocking contradiction exists; otherwise present the governed defaults in the requirement confirmation.
-      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, design, final_output]
+      confirmation_points: [qcp_invocation, requirement_summary, final_output]
+      optional_risk_review_gates: [outline, design]
       artifact: {extension: pptx, mime_type: application/vnd.openxmlformats-officedocument.presentationml.presentation}
       preview: {extension: pdf, generated_from: exact_final_pptx_bytes}
       return: {preview: authenticated_artifact_reference, download: authenticated_artifact_download_reference}
@@ -349,7 +369,7 @@ capabilities:
       citations: {supported: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], fabricated_sources: forbidden}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_word_workflow.py]
     implementation_status: implemented
   - id: report.research.create_from_text
     version: 1.0.0
@@ -389,7 +409,7 @@ capabilities:
       citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_research_report_workflow.py]
     implementation_status: implemented
   - id: paper.academic.create_from_text
     version: 1.0.0
@@ -429,7 +449,7 @@ capabilities:
       citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_academic_paper_workflow.py]
     implementation_status: implemented
   - id: artifact.open
     version: 1.0.0

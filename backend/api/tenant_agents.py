@@ -98,6 +98,9 @@ class TenantAgentOut(BaseModel):
     allowed_tools: List[str] = Field(default_factory=list)
     capability_agent_ids: List[str] = Field(default_factory=list)
     allow_network: bool = True
+    function_description: str
+    suitable_description: str
+    boundary_description: str
 
 
 class AgentEvaluationCreate(BaseModel):
@@ -111,6 +114,8 @@ def _to_out(m: TenantAgentModel) -> TenantAgentOut:
     effective = preferred if visible is None else preferred & set(visible)
     locked = set() if visible is None else preferred - set(visible)
     manifest = dict(m.composition_manifest or {})
+    from backend.services.capability_catalog import agent_description_for
+    ui_description = agent_description_for(m.base_agent_id)
     return TenantAgentOut(
         id=m.id,
         tenant_id=m.tenant_id,
@@ -131,6 +136,9 @@ def _to_out(m: TenantAgentModel) -> TenantAgentOut:
             manifest.get("capability_agent_ids") or CAPABILITY_AGENT_IDS
         ),
         allow_network=bool(manifest.get("allow_network", True)),
+        function_description=ui_description["function"],
+        suitable_description=ui_description["suitable"],
+        boundary_description=ui_description["boundary"],
     )
 
 
@@ -393,7 +401,10 @@ def _sandbox_skill_agents(
     tenant_id: str, catalog: list[dict[str, Any]]
 ) -> List[TenantAgentOut]:
     """Project capability-scoped Bridge catalog entries as tenant Agents."""
+    from backend.services.capability_catalog import agent_description_for
+
     items: List[TenantAgentOut] = []
+    fallback = agent_description_for("main_agent")
     for skill in catalog:
         name = str(skill.get("name") or "")
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", name):
@@ -404,6 +415,9 @@ def _sandbox_skill_agents(
             custom_name=name,
             private_prompt_delta=str(skill.get("description") or "")[:2000],
             subscribed_knowledge_packs=[], is_active=True, created_at=None,
+            function_description=fallback["function"],
+            suitable_description=fallback["suitable"],
+            boundary_description=fallback["boundary"],
         ))
     return items
 

@@ -18,11 +18,14 @@ from pptx import Presentation
 from pptx.chart.data import ChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
+from backend.services.presentation_map import project_point, validate_geo_points
+from backend.services.presentation_materials import validate_material_bytes
 from backend.services.presentation_scenario import DEFAULT_THEME, validate_theme
+from backend.services.presentation_svg import parse_editable_svg
 
 _LAYOUT_FIELDS = {
     "title": {"layout", "title", "subtitle"},
@@ -33,6 +36,19 @@ _LAYOUT_FIELDS = {
     "table": {"layout", "title", "headers", "rows"},
     "chart": {"layout", "title", "categories", "series"},
     "timeline": {"layout", "title", "subtitle", "events"},
+    "hero_photo": {"layout", "title", "subtitle", "photo", "caption"},
+    "photo_collage": {"layout", "title", "subtitle", "photos"},
+    "geo_route_map": {
+        "layout",
+        "title",
+        "subtitle",
+        "map",
+        "attribution",
+        "points",
+    },
+    "icon_facts": {"layout", "title", "subtitle", "items"},
+    "quote_photo": {"layout", "title", "quote", "attribution", "photo"},
+    "data_story": {"layout", "title", "subtitle", "metric", "unit", "body", "facts"},
     "icon_grid": {"layout", "title", "subtitle", "items"},
     "route_map": {"layout", "title", "subtitle", "points"},
     "image": {"layout", "title", "subtitle", "image_data", "caption"},
@@ -50,6 +66,48 @@ _ICON_LABELS = {
     "walk": "WALK",
     "landmark": "SEE",
 }
+
+
+def _validated_material(
+    value: Any, *, expected: set[str]
+) -> tuple[bytes, dict[str, Any]]:
+    if not isinstance(value, dict) or set(value) != {"data_uri", "manifest"}:
+        raise ValueError("visual material needs only data_uri and manifest")
+    encoded, supplied = value.get("data_uri"), value.get("manifest")
+    if (
+        not isinstance(encoded, str)
+        or not isinstance(supplied, dict)
+        or "," not in encoded
+    ):
+        raise ValueError("visual material data or manifest is invalid")
+    header, payload = encoded.split(",", 1)
+    mime = {
+        "data:image/png;base64": "image/png",
+        "data:image/jpeg;base64": "image/jpeg",
+        "data:image/svg+xml;base64": "image/svg+xml",
+    }.get(header)
+    if mime not in expected:
+        raise ValueError("visual material MIME is not valid for this layout")
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except Exception as exc:
+        raise ValueError("visual material base64 is invalid") from exc
+    verified = validate_material_bytes(
+        raw,
+        declared_mime=mime,
+        source_url=str(supplied.get("source_url") or ""),
+        author=str(supplied.get("author") or ""),
+        license_id=str(supplied.get("license_id") or ""),
+        license_url=str(supplied.get("license_url") or ""),
+        fetched_at=str(supplied.get("fetched_at") or ""),
+        commercial_use_allowed=supplied.get("commercial_use_allowed") is True,
+    )
+    comparable = {key: supplied.get(key) for key in verified}
+    if comparable != verified or set(supplied) - (set(verified) | {"cache_path"}):
+        raise ValueError("visual material manifest does not match decoded bytes")
+    if supplied.get("cache_status") not in {"validated", "ready"}:
+        raise ValueError("visual material is not validated")
+    return raw, verified
 
 
 def _theme(value: dict[str, Any]) -> dict[str, Any]:
@@ -144,6 +202,68 @@ def _spec(content: str) -> dict[str, Any]:
                     raise ValueError(
                         f"slide {index} chart values must be finite numbers"
                     ) from exc
+        if layout in {"hero_photo", "quote_photo"}:
+            _validated_material(
+                slide.get("photo"), expected={"image/png", "image/jpeg"}
+            )
+        if layout == "photo_collage":
+            photos = slide.get("photos")
+            if not isinstance(photos, list) or not 2 <= len(photos) <= 4:
+                raise ValueError(f"slide {index} photo collage needs 2-4 photos")
+            for photo in photos:
+                if not isinstance(photo, dict) or set(photo) != {"material", "caption"}:
+                    raise ValueError(f"slide {index} photo collage entry is invalid")
+                if len(str(photo.get("caption") or "")) > 80:
+                    raise ValueError(f"slide {index} photo caption is too long")
+                _validated_material(
+                    photo.get("material"), expected={"image/png", "image/jpeg"}
+                )
+        if layout == "icon_facts":
+            items = slide.get("items")
+            if not isinstance(items, list) or not 2 <= len(items) <= 8:
+                raise ValueError(f"slide {index} icon facts needs 2-8 items")
+            for item in items:
+                if not isinstance(item, dict) or set(item) != {
+                    "icon",
+                    "title",
+                    "detail",
+                }:
+                    raise ValueError(f"slide {index} icon fact is invalid")
+                if (
+                    not str(item.get("title") or "").strip()
+                    or len(str(item.get("title"))) > 60
+                    or len(str(item.get("detail") or "")) > 120
+                ):
+                    raise ValueError(f"slide {index} icon fact text is invalid")
+                raw, _ = _validated_material(
+                    item.get("icon"), expected={"image/svg+xml"}
+                )
+                parse_editable_svg(raw)
+        if layout == "geo_route_map":
+            validate_geo_points(slide.get("points"))
+            if slide.get("map") is not None:
+                _validated_material(
+                    slide["map"], expected={"image/png", "image/jpeg"}
+                )
+        if layout == "data_story":
+            facts = slide.get("facts")
+            if (
+                not isinstance(facts, list)
+                or not 1 <= len(facts) <= 4
+                or any(len(str(fact)) > 120 for fact in facts)
+            ):
+                raise ValueError(f"slide {index} data story facts are invalid")
+            if (
+                len(str(slide.get("metric") or "")) > 16
+                or len(str(slide.get("body") or "")) > 280
+            ):
+                raise ValueError(f"slide {index} data story text is too long")
+        if layout == "quote_photo":
+            if (
+                not str(slide.get("quote") or "").strip()
+                or len(str(slide.get("quote"))) > 260
+            ):
+                raise ValueError(f"slide {index} quote is invalid")
         if layout in {"timeline", "icon_grid", "route_map"}:
             key = {"timeline": "events", "icon_grid": "items", "route_map": "points"}[
                 layout
@@ -193,7 +313,9 @@ def _spec(content: str) -> dict[str, Any]:
                 sum(item["side"] == side for item in items) > 4
                 for side in {"europe", "asia", "route"}
             ):
-                raise ValueError(f"slide {index} route-map has too many points per side")
+                raise ValueError(
+                    f"slide {index} route-map has too many points per side"
+                )
         if layout == "image":
             encoded = str(slide.get("image_data") or "")
             if not encoded.startswith(
@@ -216,7 +338,9 @@ def _spec(content: str) -> dict[str, Any]:
                 b"\x89PNG\r\n\x1a\n" if declared_format == "PNG" else b"\xff\xd8\xff"
             )
             if not raw.startswith(expected_magic):
-                raise ValueError(f"slide {index} image signature does not match MIME type")
+                raise ValueError(
+                    f"slide {index} image signature does not match MIME type"
+                )
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -225,7 +349,9 @@ def _spec(content: str) -> dict[str, Any]:
                         actual_format = image.format
                         image.verify()
                 if actual_format != declared_format:
-                    raise ValueError(f"slide {index} image format does not match MIME type")
+                    raise ValueError(
+                        f"slide {index} image format does not match MIME type"
+                    )
                 if width < 64 or height < 64 or width * height > 24_000_000:
                     raise ValueError(f"slide {index} image dimensions are invalid")
             except (
@@ -272,7 +398,7 @@ def _title(slide, title: str, theme: dict[str, Any], subtitle: str = "") -> None
             Inches(0.67), Inches(1.4), Inches(11.4), Inches(0.55)
         )
         sub.text_frame.text = subtitle
-        _text(sub, theme, 14, "muted")
+        _text(sub, theme, 18, "muted")
 
 
 def _bullets(
@@ -388,7 +514,7 @@ def _chart(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
 def _timeline(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
     events = spec["events"]
     _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
-    left, width, y = 1.0, 11.3, 3.25
+    left, width, y = 1.0, 11.3, 3.55
     line = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(left), Inches(y), Inches(width), Inches(0.05)
     )
@@ -412,12 +538,12 @@ def _timeline(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
         box_x = min(12.55 - box_width, max(0.55, x - box_width / 2))
         box = slide.shapes.add_textbox(
             Inches(box_x),
-            Inches(1.75 if index % 2 == 0 else 3.72),
+            Inches(2.02 if index % 2 == 0 else 3.88),
             Inches(box_width),
-            Inches(1.45),
+            Inches(1.32),
         )
         box.text_frame.text = f"{event.get('label', '')}\n{event.get('title', '')}\n{event.get('detail', '')}"
-        _text(box, theme, 13)
+        _text(box, theme, 18)
         for paragraph in box.text_frame.paragraphs:
             if paragraph.runs:
                 paragraph.runs[0].font.bold = True
@@ -508,6 +634,365 @@ def _route_map(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
         _text(box, theme, 12)
 
 
+def _add_picture_fit(
+    slide, raw: bytes, *, x: float, y: float, w: float, h: float, name: str
+):
+    with Image.open(BytesIO(raw)) as image:
+        ratio = image.width / image.height
+    frame_ratio = w / h
+    if ratio >= frame_ratio:
+        picture_w, picture_h = w, w / ratio
+        picture_x, picture_y = x, y + (h - picture_h) / 2
+    else:
+        picture_h, picture_w = h, h * ratio
+        picture_x, picture_y = x + (w - picture_w) / 2, y
+    picture = slide.shapes.add_picture(
+        BytesIO(raw),
+        Inches(picture_x),
+        Inches(picture_y),
+        width=Inches(picture_w),
+        height=Inches(picture_h),
+    )
+    picture.name = name
+    return picture
+
+
+def _hero_photo(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    raw, _ = _validated_material(spec["photo"], expected={"image/png", "image/jpeg"})
+    _add_picture_fit(slide, raw, x=0, y=0, w=13.333, h=7.5, name="photo:cover")
+    panel = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0.65), Inches(4.55), Inches(7.2), Inches(2.15)
+    )
+    panel.name = "panel:hero"
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = theme["colors"]["text"]
+    panel.fill.transparency = 10
+    panel.line.fill.background()
+    title = slide.shapes.add_textbox(
+        Inches(1.0), Inches(4.82), Inches(6.5), Inches(0.9)
+    )
+    title.name = "text:hero-title"
+    title.text_frame.text = str(spec.get("title") or "")
+    _text(title, theme, 34, "inverse", True, "title")
+    subtitle = slide.shapes.add_textbox(
+        Inches(1.02), Inches(5.78), Inches(6.3), Inches(0.58)
+    )
+    subtitle.name = "text:hero-subtitle"
+    subtitle.text_frame.text = str(spec.get("subtitle") or "")
+    _text(subtitle, theme, 18, "inverse")
+
+
+def _photo_collage(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
+    photos = spec["photos"]
+    columns = 2
+    rows = math.ceil(len(photos) / columns)
+    frame_w, frame_h = 5.75, 4.45 / rows
+    for index, photo in enumerate(photos):
+        raw, _ = _validated_material(
+            photo["material"], expected={"image/png", "image/jpeg"}
+        )
+        col, row = index % columns, index // columns
+        x, y = 0.7 + col * 6.05, 1.85 + row * (frame_h + 0.25)
+        backdrop = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(frame_w), Inches(frame_h)
+        )
+        backdrop.name = f"photo-frame:{index + 1}"
+        backdrop.fill.solid()
+        backdrop.fill.fore_color.rgb = theme["colors"]["pale"]
+        backdrop.line.fill.background()
+        _add_picture_fit(
+            slide,
+            raw,
+            x=x,
+            y=y,
+            w=frame_w,
+            h=frame_h - 0.42,
+            name=f"photo:scene-{index + 1}",
+        )
+        caption = slide.shapes.add_textbox(
+            Inches(x + 0.1),
+            Inches(y + frame_h - 0.4),
+            Inches(frame_w - 0.2),
+            Inches(0.3),
+        )
+        caption.name = f"source-caption:{index + 1}"
+        caption.text_frame.text = str(photo.get("caption") or "")
+        _text(caption, theme, 10, "muted")
+
+
+def _native_svg(
+    slide,
+    raw: bytes,
+    theme: dict[str, Any],
+    *,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    prefix: str,
+) -> int:
+    view, primitives = parse_editable_svg(raw)
+    vx, vy, vw, vh = view
+    sx, sy = w / vw, h / vh
+    count = 0
+    for primitive in primitives:
+        values = primitive.values
+        fill = (
+            RGBColor.from_string((primitive.fill or "#000000")[1:])
+            if primitive.fill
+            else None
+        )
+        stroke = (
+            RGBColor.from_string((primitive.stroke or "#000000")[1:])
+            if primitive.stroke
+            else theme["colors"]["primary"]
+        )
+        if primitive.kind == "circle":
+            cx, cy, radius = values
+            shape = slide.shapes.add_shape(
+                MSO_SHAPE.OVAL,
+                Inches(x + (cx - radius - vx) * sx),
+                Inches(y + (cy - radius - vy) * sy),
+                Inches(2 * radius * sx),
+                Inches(2 * radius * sy),
+            )
+            if fill:
+                shape.fill.solid()
+                shape.fill.fore_color.rgb = fill
+            else:
+                shape.fill.background()
+            shape.line.color.rgb = stroke
+            shape.name = f"vector:{prefix}:{count + 1}"
+            count += 1
+        elif primitive.kind == "rect":
+            px, py, pw, ph = values
+            shape = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE,
+                Inches(x + (px - vx) * sx),
+                Inches(y + (py - vy) * sy),
+                Inches(pw * sx),
+                Inches(ph * sy),
+            )
+            if fill:
+                shape.fill.solid()
+                shape.fill.fore_color.rgb = fill
+            else:
+                shape.fill.background()
+            shape.line.color.rgb = stroke
+            shape.name = f"vector:{prefix}:{count + 1}"
+            count += 1
+        else:
+            coords = values
+            for offset in range(0, len(coords) - 2, 2):
+                x1, y1, x2, y2 = coords[offset : offset + 4]
+                line = slide.shapes.add_connector(
+                    MSO_CONNECTOR.STRAIGHT,
+                    Inches(x + (x1 - vx) * sx),
+                    Inches(y + (y1 - vy) * sy),
+                    Inches(x + (x2 - vx) * sx),
+                    Inches(y + (y2 - vy) * sy),
+                )
+                line.line.color.rgb = stroke
+                line.line.width = Pt(max(1, primitive.stroke_width * min(sx, sy) * 12))
+                line.name = f"vector:{prefix}:{count + 1}"
+                count += 1
+    return count
+
+
+def _icon_facts(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
+    items = spec["items"]
+    columns = 3 if len(items) > 4 else 2
+    rows = math.ceil(len(items) / columns)
+    card_w, card_h = 11.85 / columns - 0.22, 4.7 / rows - 0.22
+    for index, item in enumerate(items):
+        col, row = index % columns, index // columns
+        x, y = 0.68 + col * (12.0 / columns), 1.78 + row * (4.7 / rows)
+        card = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Inches(x),
+            Inches(y),
+            Inches(card_w),
+            Inches(card_h),
+        )
+        card.name = f"card:icon-{index + 1}"
+        card.fill.solid()
+        card.fill.fore_color.rgb = theme["colors"]["pale"]
+        card.line.fill.background()
+        raw, _ = _validated_material(item["icon"], expected={"image/svg+xml"})
+        _native_svg(
+            slide,
+            raw,
+            theme,
+            x=x + 0.18,
+            y=y + 0.22,
+            w=0.72,
+            h=0.72,
+            prefix=str(index + 1),
+        )
+        box = slide.shapes.add_textbox(
+            Inches(x + 1.08),
+            Inches(y + 0.2),
+            Inches(card_w - 1.25),
+            Inches(card_h - 0.35),
+        )
+        box.name = f"text:icon-{index + 1}"
+        box.text_frame.text = f"{item['title']}\n{item.get('detail', '')}"
+        _text(box, theme, 18)
+        box.text_frame.paragraphs[0].runs[0].font.bold = True
+
+
+def _geo_route_map(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
+    points = validate_geo_points(spec["points"])
+    x, y, w, h = 0.7, 1.75, 11.9, 4.9
+    map_material = spec.get("map")
+    if map_material is not None:
+        raw, _ = _validated_material(
+            map_material, expected={"image/png", "image/jpeg"}
+        )
+        _add_picture_fit(
+            slide, raw, x=x, y=y, w=w, h=h, name="map:base-real"
+        )
+    else:
+        sea = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h)
+        )
+        sea.name = "map:bosphorus-water"
+        sea.fill.solid()
+        sea.fill.fore_color.rgb = RGBColor(0xA9, 0xD8, 0xE8)
+        sea.line.fill.background()
+        west = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w * 0.54), Inches(h)
+        )
+        west.name = "map:europe-land"
+        west.fill.solid()
+        west.fill.fore_color.rgb = RGBColor(0xE8, 0xDF, 0xC8)
+        west.line.fill.background()
+        east = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Inches(x + w * 0.62),
+            Inches(y),
+            Inches(w * 0.38),
+            Inches(h),
+        )
+        east.name = "map:asia-land"
+        east.fill.solid()
+        east.fill.fore_color.rgb = RGBColor(0xD7, 0xD7, 0xBD)
+        east.line.fill.background()
+    for label, lx in (
+        ("EUROPE", x + 0.35),
+        ("ASIA", x + 9.55),
+        ("BOSPHORUS", x + 6.45),
+    ):
+        box = slide.shapes.add_textbox(
+            Inches(lx), Inches(y + 0.2), Inches(1.9), Inches(0.35)
+        )
+        box.name = f"map:label-{label.lower()}"
+        box.text_frame.text = label
+        _text(box, theme, 18, "muted", True)
+    if spec.get("attribution"):
+        attribution = slide.shapes.add_textbox(
+            Inches(x + 3.75), Inches(y + h - 0.28), Inches(4.4), Inches(0.22)
+        )
+        attribution.name = "map:attribution"
+        attribution.text_frame.text = str(spec["attribution"])
+        _text(attribution, theme, 8, "muted")
+    projected = []
+    for point in points:
+        px, py = project_point(point, width=w, height=h)
+        projected.append((x + px, y + py))
+    for index in range(len(projected) - 1):
+        a, b = projected[index], projected[index + 1]
+        route = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Inches(a[0]),
+            Inches(a[1]),
+            Inches(b[0]),
+            Inches(b[1]),
+        )
+        route.name = f"map:route-{index + 1}"
+        route.line.color.rgb = theme["colors"]["primary"]
+        route.line.width = Pt(4)
+    side_slots = {"europe": 0, "asia": 0}
+    side_totals = {
+        side: sum(point.side == side for point in points) for side in side_slots
+    }
+    for index, (point, (px, py)) in enumerate(zip(points, projected), 1):
+        marker = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL,
+            Inches(px - 0.11),
+            Inches(py - 0.11),
+            Inches(0.22),
+            Inches(0.22),
+        )
+        marker.name = f"map:landmark-{index}"
+        marker.fill.solid()
+        marker.fill.fore_color.rgb = theme["colors"]["primary"]
+        marker.line.color.rgb = theme["colors"]["inverse"]
+        slot = side_slots[point.side]
+        side_slots[point.side] += 1
+        label_x = x + 0.28 if point.side == "europe" else x + 9.35
+        usable = 3.45
+        label_y = y + 0.82 + (usable * slot / max(1, side_totals[point.side] - 1))
+        anchor_x = label_x + 2.05 if point.side == "europe" else label_x
+        callout = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Inches(px),
+            Inches(py),
+            Inches(anchor_x),
+            Inches(label_y + 0.18),
+        )
+        callout.name = f"map:callout-{index}"
+        callout.line.color.rgb = theme["colors"]["muted"]
+        callout.line.width = Pt(1)
+        box = slide.shapes.add_textbox(
+            Inches(label_x), Inches(label_y), Inches(2.15), Inches(0.42)
+        )
+        box.name = f"map:landmark-label-{index}"
+        box.fill.solid()
+        box.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        box.fill.transparency = 10
+        box.line.fill.background()
+        box.text_frame.text = f"{index}. {point.name}"
+        _text(box, theme, 18, "text", True)
+
+
+def _data_story(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
+    metric = slide.shapes.add_textbox(
+        Inches(0.85), Inches(2.0), Inches(4.0), Inches(1.35)
+    )
+    metric.name = "text:metric"
+    metric.text_frame.text = f"{spec.get('metric', '')}{spec.get('unit', '')}"
+    _text(metric, theme, 48, "primary", True, "title")
+    body = slide.shapes.add_textbox(
+        Inches(0.9), Inches(3.45), Inches(4.1), Inches(2.25)
+    )
+    body.name = "text:data-body"
+    body.text_frame.text = str(spec.get("body") or "")
+    _text(body, theme, 20)
+    _bullets(slide, spec["facts"], theme, x=5.35, y=1.95, w=7.0, h=4.45)
+
+
+def _quote_photo(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
+    raw, _ = _validated_material(spec["photo"], expected={"image/png", "image/jpeg"})
+    _add_picture_fit(slide, raw, x=0, y=0, w=6.15, h=7.5, name="photo:quote")
+    quote = slide.shapes.add_textbox(
+        Inches(6.75), Inches(1.5), Inches(5.65), Inches(3.6)
+    )
+    quote.name = "text:quote"
+    quote.text_frame.text = f"“{spec.get('quote', '')}”"
+    _text(quote, theme, 28, "text", True, "title")
+    author = slide.shapes.add_textbox(
+        Inches(6.8), Inches(5.35), Inches(5.2), Inches(0.65)
+    )
+    author.name = "text:attribution"
+    author.text_frame.text = str(spec.get("attribution") or "")
+    _text(author, theme, 18, "muted")
+
+
 def _image(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
     _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
     raw = base64.b64decode(str(spec["image_data"]).split(",", 1)[1], validate=True)
@@ -550,7 +1035,19 @@ def build_pptx(content: str) -> bytes:
         background.fore_color.rgb = theme["colors"]["background"]
         kind = str(item.get("layout") or "bullets")
         title = str(item.get("title") or f"第 {index + 1} 页")
-        if kind == "title":
+        if kind == "hero_photo":
+            _hero_photo(slide, item, theme)
+        elif kind == "photo_collage":
+            _photo_collage(slide, item, theme)
+        elif kind == "geo_route_map":
+            _geo_route_map(slide, item, theme)
+        elif kind == "icon_facts":
+            _icon_facts(slide, item, theme)
+        elif kind == "quote_photo":
+            _quote_photo(slide, item, theme)
+        elif kind == "data_story":
+            _data_story(slide, item, theme)
+        elif kind == "title":
             box = slide.shapes.add_textbox(
                 Inches(1), Inches(2.1), Inches(11.3), Inches(1.3)
             )
@@ -613,9 +1110,16 @@ def build_pptx(content: str) -> bytes:
         else:
             _title(slide, title, theme, str(item.get("subtitle") or ""))
             _bullets(slide, item.get("bullets") or [], theme)
+        marker = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(0.01), Inches(0.01)
+        )
+        marker.name = f"layout:{kind}"
+        marker.fill.background()
+        marker.line.fill.background()
         number = slide.shapes.add_textbox(
             Inches(12.25), Inches(7.02), Inches(0.45), Inches(0.25)
         )
+        number.name = "page-number:footer"
         number.text_frame.text = str(index + 1)
         _text(number, theme, 9, "muted")
     buffer = BytesIO()
