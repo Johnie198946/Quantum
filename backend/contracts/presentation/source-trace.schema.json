@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://t-react.com/contracts/presentation/source-trace.schema.json",
+  "title": "Presentation source trace matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "record_count", "source_ids", "slide_ids", "content_hash", "records"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "record_count": {"type": "integer", "minimum": 1},
+    "source_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"}},
+    "slide_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"}},
+    "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "source_id", "span", "claim", "slide_id", "transform", "approval_state", "source_client_session_id", "content_hash"],
+        "properties": {
+          "claim_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"},
+          "source_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"},
+          "span": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": {"type": "integer", "minimum": 0},
+              "end": {"type": "integer", "minimum": 1}
+            }
+          },
+          "claim": {"type": "string", "minLength": 1, "maxLength": 4000},
+          "slide_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"},
+          "transform": {"enum": ["verbatim", "translated", "summarized", "visualized"]},
+          "approval_state": {"enum": ["pending", "approved", "rejected"]},
+          "source_client_session_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$"},
+          "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

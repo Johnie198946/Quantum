@@ -707,6 +707,7 @@ class WorkflowRunRequest(BaseModel):
     knowledge_policy_version: str = Field(..., min_length=8, max_length=80)
     agent_config: dict[str, Any] = Field(default_factory=dict)
     source_document: dict[str, Any] | None = None
+    source_material: dict[str, Any] | None = None
 
     @field_validator("agent_config")
     @classmethod
@@ -718,13 +719,51 @@ class WorkflowRunRequest(BaseModel):
     def _trusted_source_document(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if value is None:
             return None
-        allowed = {"source_id", "source_revision", "content_hash", "filename", "content_type", "text"}
+        allowed = {
+            "source_id", "source_revision", "content_hash", "filename", "content_type", "text",
+            "source_client_session_id", "scope_state",
+        }
         if set(value) - allowed or not re.fullmatch(r"doc_[a-f0-9]{32}", str(value.get("source_id") or "")) or not re.fullmatch(r"[a-f0-9]{64}", str(value.get("content_hash") or "")):
             raise ValueError("invalid private source document")
         text = str(value.get("text") or "")
         if not text or len(text) > 80_000:
             raise ValueError("private source document text exceeds 80000 characters; truncation is forbidden")
+        if value.get("source_client_session_id") is not None and not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}",
+            str(value.get("source_client_session_id") or ""),
+        ):
+            raise ValueError("invalid private source document session")
+        if value.get("scope_state") is not None and value.get("scope_state") not in {
+            "bound", "legacy_isolated"
+        }:
+            raise ValueError("invalid private source document scope state")
         return {key: value[key] for key in allowed if key in value}
+
+    @field_validator("source_material")
+    @classmethod
+    def _trusted_source_material(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        allowed = {
+            "source_id", "content_hash", "text", "source_client_session_id", "scope_state"
+        }
+        if set(value) != allowed:
+            raise ValueError("invalid inline source material fields")
+        text = str(value.get("text") or "")
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if (
+            not re.fullmatch(r"txt_[a-f0-9]{32}", str(value.get("source_id") or ""))
+            or value.get("content_hash") != digest
+            or not text
+            or len(text) > 80_000
+            or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}",
+                str(value.get("source_client_session_id") or ""),
+            )
+            or value.get("scope_state") not in {"bound", "legacy_isolated"}
+        ):
+            raise ValueError("invalid inline source material")
+        return {key: value[key] for key in allowed}
 
 
 class ClarificationTurn(BaseModel):
@@ -3668,7 +3707,7 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     if render_type == "word":
         return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
     if render_type == "presentation_outline":
-        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据，数据不足时明确写出缺口；旅行、流程或历史主题优先规划时间线、图标网格和路线地图，只有上游提供已验证图片数据时才规划 image。'
+        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"source_claim_ids":["批准事实 claim_id"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据；存在用户源材料时，每条批准事实必须至少映射到一页且不得引用未知 claim_id；数据不足时明确写出缺口；旅行、流程或历史主题优先规划时间线、图标网格和路线地图，只有上游提供已验证图片数据时才规划 image。'
     if render_type == "presentation_design":
         return '只输出合法 JSON：{"title":"设计样稿","theme":{"colors":{"primary":"#8057E8","text":"#191521","muted":"#686275","pale":"#F1EEFA","background":"#FFFFFF","inverse":"#FFFFFF"},"fonts":{"title":"Aptos","body":"Aptos"}},"slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"代表页标题","subtitle":"可选","bullets":["真实内容"],"events":[{"label":"时间","title":"事件","detail":"说明"}],"items":[{"icon":"camera|card|ferry|food|hotel|map|shield|train|walk|landmark","title":"主题","detail":"说明"}],"points":[{"name":"地点","side":"europe|asia|route","detail":"说明"}]}]}；theme 字段和值必须完整，slides 给出 3 至 5 张带真实内容、可渲染的代表页；旅行、流程或历史主题至少采用两种 timeline/icon_grid/route_map 视觉版式；image 只能复用上游已验证的 image_data，不得编造；每页仅保留所选版式需要的字段。'
     if render_type == "presentation":
@@ -3967,6 +4006,57 @@ def _bind_approved_presentation_inputs(
     )
 
 
+def _presentation_source_trace(run: dict[str, Any]) -> dict[str, Any] | None:
+    source = run.get("source_material") or run.get("source_document") or {}
+    source_text = str(source.get("text") or "")
+    client_session_id = str(source.get("source_client_session_id") or "")
+    source_id = str(source.get("source_id") or "")
+    if not source_text:
+        return None
+    if not client_session_id:
+        raise RuntimeError("presentation source is missing client-session provenance")
+    from backend.services.presentation_source_trace import (
+        bind_claims_to_slides,
+        build_source_claims,
+        build_trace_manifest,
+        validate_trace_matrix,
+    )
+
+    claims = build_source_claims(
+        source_text,
+        source_id=source_id,
+        source_client_session_id=client_session_id,
+        approval_state="approved",
+    )
+    outline, _ = _approved_presentation_outline(run)
+    bindings = []
+    for index, slide in enumerate(outline.get("slides") or [], 1):
+        if not isinstance(slide, dict):
+            continue
+        for claim_id in slide.get("source_claim_ids") or []:
+            bindings.append(
+                {
+                    "claim_id": str(claim_id),
+                    "slide_id": f"slide-{index:03d}",
+                    "transform": "summarized",
+                }
+            )
+    covered = {item["claim_id"] for item in bindings}
+    missing = [item["claim_id"] for item in claims if item["claim_id"] not in covered]
+    if missing:
+        raise RuntimeError(
+            "approved presentation outline does not cover every source claim: "
+            + ", ".join(missing[:8])
+        )
+    records = bind_claims_to_slides(claims, bindings)
+    validated = validate_trace_matrix(
+        records,
+        source_texts={source_id: source_text},
+        source_client_session_id=client_session_id,
+    )
+    return build_trace_manifest(validated)
+
+
 def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     params = node.get("parameters") or {}
     artifact_contract = _workflow_artifact_contract(node)
@@ -4014,6 +4104,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
                     "layout": item.get("layout"),
                     "title": item.get("title"),
                     "key_points": item.get("key_points") or [],
+                    "source_claim_ids": item.get("source_claim_ids") or [],
                 }
                 for item in approved_outline.get("slides") or []
                 if isinstance(item, dict)
@@ -4024,8 +4115,14 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             "可按渲染契约安全降级，不得删页）：\n"
             + json.dumps(approved_structure, ensure_ascii=False, separators=(",", ":"))
         )
-    source = run.get("source_document") or {}
+    source = run.get("source_material") or run.get("source_document") or {}
     source_text = str(source.get("text") or "")
+    is_presentation_run = any(
+        str((item.get("parameters") or {}).get("output_format") or "").startswith(
+            "presentation"
+        )
+        for item in run.get("plan", {}).get("nodes") or []
+    )
     plan_node_ids = {
         str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []
     }
@@ -4037,7 +4134,42 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     if source_text and current_id == source_node_id:
         if len(source_text) > 80_000:
             raise RuntimeError("私有源文档超过 80000 字符；文档生成工作流禁止静默截断")
-        upstream += f"\n\n私有源文档（{source.get('filename', 'document')}，共 {len(source_text)} 字符）：\n{source_text}"
+        from backend.services.presentation_source_trace import (
+            build_source_claims,
+            build_trace_manifest,
+        )
+
+        source_id = str(source.get("source_id") or "")
+        client_session_id = str(source.get("source_client_session_id") or "")
+        if is_presentation_run and client_session_id:
+            claims = build_source_claims(
+                source_text,
+                source_id=source_id,
+                source_client_session_id=client_session_id,
+                approval_state="approved",
+            )
+            trace = build_trace_manifest(claims)
+            compact_trace = {
+                "schema_version": trace["schema_version"],
+                "record_count": trace["record_count"],
+                "content_hash": trace["content_hash"],
+                "claims": [
+                    {
+                        "claim_id": item["claim_id"],
+                        "span": item["span"],
+                        "content_hash": item["content_hash"],
+                    }
+                    for item in claims
+                ],
+            }
+            upstream += (
+                "\n\n批准的用户材料事实清单（后续主张必须引用 claim_id；不得引入未批准事实）：\n"
+                + json.dumps(compact_trace, ensure_ascii=False, separators=(",", ":"))
+            )
+        upstream += (
+            f"\n\n用户源材料（{source.get('filename', source_id or 'material')}，"
+            f"共 {len(source_text)} 字符）：\n{source_text}"
+        )
     agent_config = run.get("agent_config") or {}
     composition = agent_config.get("composition") or {}
     allowed_agents = set(composition.get("capability_agent_ids") or []) | set(
@@ -4299,6 +4431,9 @@ def _workflow_run_sync(execution_id: str) -> None:
                     reply = _normalize_presentation_contract_reply(render_type, reply)
             if render_type == "presentation":
                 reply, approved_design, approved_outline = _bind_approved_presentation_inputs(run, reply)
+                source_trace = _presentation_source_trace(run)
+            else:
+                source_trace = None
             with _workflow_runs_lock:
                 run["hermes_session_id"] = hermes_sid
                 state.update({"status": "succeeded", "output": reply, "usage": node_usage})
@@ -4331,6 +4466,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                         "artifact_version": state["attempt"],
                         "approved_design": approved_design,
                         "approved_outline": approved_outline,
+                        "source_trace": source_trace,
                     },
                     message=f"完成：{node.get('name') or node_id}",
                 )

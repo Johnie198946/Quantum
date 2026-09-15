@@ -1,0 +1,7 @@
+Europe/Istanbul
+
+Istanbul serves as Turkey's bridge between Europe and Asia, straddling both continents across the Bosphorus Strait. Historically known as Byzantium and Constantinople, it was the capital of the Byzantine and Ottoman empires. Today, Istanbul is Turkey's largest city and economic center, home to over 15 million people. Its strategic position has made it a crucial commercial hub for millennia, while landmarks like the Hagia Sophia, Blue Mosque, and Topkapi Palace reflect its rich multicultural heritage. The city remains a vital link between Western and Eastern civilizations, blending modernity with centuries-old traditions.
+
+İstanbul Türkiye'nin Avrupa ve Asya kıtaları arasındaki köprüsü olarak Boğaz'ın iki yakasında yer almaktadır. Tarih boyunca Bizans ve Konstantinopolis olarak bilinen şehir, Bizans ve Osmanlı imparatorluklarının başkentliğini yapmıştır. Günümüzde İstanbul 15 milyondan fazla nüfusuyla Türkiye'nin en büyük şehri ve ekonomik merkezidir. Stratejik konumu binlerce yıldır önemli bir ticaret merkezi olmasını sağlarken Ayasofya, Sultanahmet Camii ve Topkapı Sarayı gibi yapılar zengin çok kültürlü mirasını yansıtmaktadır. Şehir modernlik ile yüzyıllar boyunca süregelen gelenekleri harmanlayarak Batı ve Doğu medeniyetleri arasında hayati bir bağlantı olmaya devam etmektedir.
+
+伊斯坦布尔作为土耳其连接欧洲和亚洲的桥梁 横跨博斯普鲁斯海峡两岸，分属两个大洲，历史上称为拜占庭和君士坦丁堡，曾是拜占庭帝国和奥斯曼帝国的首都。如今伊斯坦布尔是土耳其最大的城市和经济中心，拥有超过1500万人口。其战略位置使其数千年来一直是重要的商业中心，而圣索菲亚大教堂、蓝色清真寺和托普卡帕宫等地标则反映了其丰富的多元文化遗产。这座城市仍然是西方与东方文明之间的重要纽带，将现代性与数百年的传统融为一体。

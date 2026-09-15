@@ -1,9 +1,11 @@
 import hashlib
 import asyncio
 import base64
+import copy
 import json
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -1238,6 +1240,176 @@ def test_text_material_presentation_does_not_read_unscoped_private_knowledge():
         tuple(edge.values()) for edge in plan["edges"]
     }
     assert "用户提供的文字材料" in plan["nodes"][0]["parameters"]["instruction"]
+
+
+def test_inline_text_material_is_hash_bound_to_its_client_session():
+    from backend.services.workflow_executor import inline_source_material
+
+    material = inline_source_material(
+        {
+            "text_material": "只允许当前会话使用的伊斯坦布尔材料。",
+            "source_client_session_id": "session-istanbul",
+        },
+        workflow_id="wf-current",
+    )
+    assert material is not None
+    assert material["source_id"].startswith("txt_")
+    assert material["source_client_session_id"] == "session-istanbul"
+    assert material["scope_state"] == "bound"
+    assert material["content_hash"] == hashlib.sha256(
+        material["text"].encode("utf-8")
+    ).hexdigest()
+
+    legacy = inline_source_material(
+        {"text_material": "升级前材料"}, workflow_id="wf-legacy"
+    )
+    assert legacy is not None
+    assert legacy["source_client_session_id"] == "legacy-workflow:wf-legacy"
+    assert legacy["scope_state"] == "legacy_isolated"
+
+
+def test_bridge_injects_exact_claim_inventory_for_inline_presentation_material():
+    import scripts.hermes_bridge as bridge
+
+    text = "伊斯坦布尔横跨欧亚。博斯普鲁斯海峡连接两岸。"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    analysis = {
+        "id": "presentation_analysis",
+        "node_type": "LLM_INFERENCE",
+        "name": "分析",
+        "parameters": {"output_format": "markdown", "max_tokens": 5000},
+    }
+    deck = {
+        "id": "presentation_deck",
+        "node_type": "OUTPUT_FORMAT",
+        "name": "成品",
+        "parameters": {"output_format": "presentation", "max_tokens": 16000},
+    }
+    payload = {
+        "tenant_id": "tenant-a",
+        "execution_id": "exec-a",
+        "idempotency_key": "request-a",
+        "goal": "制作伊斯坦布尔 PPT",
+        "deliverable": "pptx",
+        "plan": {"nodes": [analysis, deck], "edges": []},
+        "knowledge_capability": "capability-token-value",
+        "knowledge_policy_version": "policy-v1",
+        "source_material": {
+            "source_id": f"txt_{digest[:32]}",
+            "content_hash": digest,
+            "text": text,
+            "source_client_session_id": "session-istanbul",
+            "scope_state": "bound",
+        },
+    }
+    run = bridge.WorkflowRunRequest.model_validate(payload).model_dump(exclude_none=True)
+    prompt = bridge._workflow_node_prompt(run, analysis)
+    assert text in prompt
+    assert "批准的用户材料事实清单" in prompt
+    assert f"txt_{digest[:32]}:c001" in prompt
+    assert "不得引入未批准事实" in prompt
+
+    tampered = copy.deepcopy(payload)
+    tampered["source_material"]["content_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="invalid inline source material"):
+        bridge.WorkflowRunRequest.model_validate(tampered)
+
+
+def test_final_presentation_source_trace_requires_complete_approved_outline_mapping():
+    import scripts.hermes_bridge as bridge
+    from backend.services.presentation_source_trace import build_source_claims
+
+    text = "伊斯坦布尔横跨欧亚。博斯普鲁斯海峡连接两岸。"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    claims = build_source_claims(
+        text,
+        source_id=f"txt_{digest[:32]}",
+        source_client_session_id="session-istanbul",
+        approval_state="approved",
+    )
+    outline_value = {
+        "title": "伊斯坦布尔",
+        "slides": [
+            {
+                "layout": "title",
+                "title": "横跨欧亚",
+                "source_claim_ids": [claim["claim_id"] for claim in claims],
+            }
+        ],
+    }
+    outline = json.dumps(outline_value, ensure_ascii=False, separators=(",", ":"))
+    run = {
+        "source_material": {
+            "source_id": f"txt_{digest[:32]}",
+            "content_hash": digest,
+            "text": text,
+            "source_client_session_id": "session-istanbul",
+            "scope_state": "bound",
+        },
+        "plan": {
+            "nodes": [
+                {
+                    "id": "presentation_outline",
+                    "parameters": {"output_format": "presentation_outline"},
+                }
+            ]
+        },
+        "nodes": {
+            "presentation_outline": {
+                "status": "succeeded",
+                "attempt": 1,
+                "output": outline,
+            }
+        },
+        "approved_gates": ["presentation_outline"],
+        "approved_gate_artifacts": {
+            "presentation_outline": {
+                "artifact_version": 1,
+                "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+            }
+        },
+    }
+    manifest = bridge._presentation_source_trace(run)
+    assert manifest is not None
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(
+        Path("backend/contracts/presentation/source-trace.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    Draft202012Validator(schema).validate(manifest)
+    assert manifest["record_count"] == len(claims)
+    assert manifest["slide_ids"] == ["slide-001"]
+    assert all(item["approval_state"] == "approved" for item in manifest["records"])
+
+    incomplete = copy.deepcopy(run)
+    incomplete_outline = copy.deepcopy(outline_value)
+    incomplete_outline["slides"][0]["source_claim_ids"] = [claims[0]["claim_id"]]
+    incomplete_text = json.dumps(incomplete_outline, ensure_ascii=False, separators=(",", ":"))
+    incomplete["nodes"]["presentation_outline"]["output"] = incomplete_text
+    incomplete["approved_gate_artifacts"]["presentation_outline"]["content_hash"] = (
+        hashlib.sha256(incomplete_text.encode()).hexdigest()
+    )
+    with pytest.raises(RuntimeError, match="does not cover every source claim"):
+        bridge._presentation_source_trace(incomplete)
+
+
+def test_artifact_storage_contract_preserves_source_trace_metadata():
+    from backend.services.workflow_executor import artifact_storage_contract
+
+    node = type(
+        "Node", (),
+        {"node_id": "presentation_deck", "agent_id": "main", "model_used": "m", "provider_used": "p", "attempt": 1},
+    )()
+    trace = {"schema_version": 1, "content_hash": "a" * 64, "records": [{"claim_id": "c1"}]}
+    extension, metadata = artifact_storage_contract(
+        {"render_type": "presentation", "source_trace": trace},
+        event_id="event-1",
+        node=node,  # type: ignore[arg-type]
+    )
+    assert extension == "pptx"
+    assert metadata["source_trace"] == trace
 
 
 def test_document_scenario_generates_real_word_output_with_two_confirmation_gates():

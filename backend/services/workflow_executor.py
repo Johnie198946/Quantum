@@ -8,6 +8,7 @@ context compression, model routing and exact usage accounting.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -236,6 +237,24 @@ def trusted_task_agent_config(task_agent: TenantAgentModel | None) -> dict[str, 
     return config
 
 
+def inline_source_material(
+    snapshot: dict[str, Any], *, workflow_id: str
+) -> dict[str, str] | None:
+    """Project approved inline text with a deterministic source and session scope."""
+    if not snapshot.get("text_material"):
+        return None
+    text = str(snapshot["text_material"])
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    bound_session = str(snapshot.get("source_client_session_id") or "")
+    return {
+        "source_id": f"txt_{digest[:32]}",
+        "content_hash": digest,
+        "text": text,
+        "source_client_session_id": bound_session or f"legacy-workflow:{workflow_id}",
+        "scope_state": "bound" if bound_session else "legacy_isolated",
+    }
+
+
 async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
     async with SessionLocal() as policy_db:
         mapping = (
@@ -287,13 +306,35 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         "max_tokens": plan.max_tokens,
         "agent_config": trusted_task_agent_config(task_agent),
     }
-    source = ((workflow.requirements_snapshot or {}).get("source_document") if workflow else None)
+    snapshot = (workflow.requirements_snapshot or {}) if workflow else {}
+    source = snapshot.get("source_document")
     if source:
         from backend.services.document_sources import document_text
         text, receipt = document_text(execution.tenant_key, str(workflow.created_by), str(source["source_id"]))
         if receipt["content_hash"] != source.get("content_hash") or receipt["source_revision"] != source.get("source_revision"):
             raise RuntimeError("source document revision changed after approval")
-        payload["source_document"] = {**source, "text": text}
+        source_scope = str(snapshot.get("source_client_session_id") or "")
+        payload["source_document"] = {
+            **source,
+            "text": text,
+            **(
+                {
+                    "source_client_session_id": source_scope,
+                    "scope_state": "bound",
+                }
+                if source_scope
+                else {
+                    "source_client_session_id": f"legacy-workflow:{execution.workflow_id}",
+                    "scope_state": "legacy_isolated",
+                }
+            ),
+        }
+    else:
+        inline_source = inline_source_material(
+            snapshot, workflow_id=execution.workflow_id
+        )
+        if inline_source:
+            payload["source_material"] = inline_source
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs",
@@ -521,6 +562,7 @@ def artifact_storage_contract(
         "artifact_version": int(artifact.get("artifact_version") or getattr(node, "attempt", 1) or 1),
         "approved_design": artifact.get("approved_design"),
         "approved_outline": artifact.get("approved_outline"),
+        "source_trace": artifact.get("source_trace"),
     }
     return extension, metadata
 
