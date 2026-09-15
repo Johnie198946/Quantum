@@ -43,6 +43,13 @@ started_at: 2026-09-15T11:21:20+08:00
 - iOS 新增统一 `StructuredReviewView`，按服务端 Schema 渲染 text、textarea、choice、number、toggle，并支持必填校验、保存与 Undo。
 - Workflow 的 Word/PPT 成果审核入口已接入统一组件；审核文档只在服务端明确返回 `404` 后创建，避免网络错误触发覆盖式初始化。
 - `412` 冲突显示本地/服务端逐字段 Diff；服务端同时返回 `remote_etag`，用户可选择载入远端或以远端最新版为 CAS 基线保留本地同名字段后再次保存。
+- Chat 请求现在建立服务端可验证的 tenant/user/client-session 注册；workflow 创建拒绝未注册会话及同租户 owner 冲突，不再只校验客户端字符串格式。
+- Workflow 将服务端派生的 session binding ID 与 source session 持久化为一等字段，并提供加法式启动迁移；legacy row 不从可变 JSON 反推可信归属。
+- Workflow/execution owner 检查改为 fail closed，`clarification_session_id` 为空也不再变成租户级可见；QCP 幂等重放返回已有 execution 前校验 workflow 身份。
+- active activity/execution API 支持精确 source-session 过滤；iOS 只请求当前会话并以服务端权威快照替换本地 active cache，不再永久累加旧 activity。
+- iOS 使用不可变 `ownerIdentity + clientSessionId + generation` scope token；切换账号/会话时递增 generation、取消 monitor 并清空 scope cache。
+- lifecycle SSE、polling、clarification、execution、artifact preview、structured review、deep link 与直接创建均在异步写 observable state 前复核 scope；迟到写入丢弃并写入本地 `workflow-scope` 日志。
+- 没有精确 source-session provenance 的 legacy workflow 不进入当前聊天 activity 投影，仍可在独立 Workflow 历史入口处理。
 
 ## 测试
 
@@ -54,6 +61,9 @@ started_at: 2026-09-15T11:21:20+08:00
 - iOS 模拟器 `WorkflowLifecycleDTOTests`：`146 passed, 0 failed, 0 skipped`；覆盖混合 JSON scalar、响应 Header/quoted ETag、`If-Match`、typed `412`、404 后创建及五类字段渲染。
 - iOS 模拟器渲染附件 `Structured-review-all-schema-fields` 已导出并人工检查：浅色、五类字段、版本、进度、Undo/保存均可见，无重叠或截断。
 - Xcode 工程 `plutil -lint`：通过；iOS Debug simulator build：通过。
+- 本批后端 scope/chat/presentation 综合回归：`170 passed, 0 failed, 0 skipped, 8 warnings`。
+- 本批完整 `AIPlatformAppTests` 模拟器目标：`207 passed, 0 failed, 0 skipped`；xcresult 为 `Test-AIPlatformApp-2026.09.15_14-33-10-+0800.xcresult`。
+- 新增的聚焦测试覆盖跨 session tracking 拒绝、generation rollover 清缓存、迟到旧 generation 响应丢弃、直接创建透传 session、deep-link 拒绝和 artifact preview 拒绝。
 
 ## 发布
 
@@ -62,6 +72,7 @@ started_at: 2026-09-15T11:21:20+08:00
   - b86ddb0f650fe9abf739da80d2b29a9b4f1491c5
   - 7486fec37246b9cd8456414cdf04f724cdc9ebd1
   - 6e4f099eb66c5bf7e432fc97ee9253a4de1e29fa
+  - a1dc239de8166119450b25afdf145ca6241a546c
 - remote_sha: not pushed
 - server_before: not captured
 - server_after: not deployed
@@ -73,3 +84,4 @@ started_at: 2026-09-15T11:21:20+08:00
 - PPT 内容与视觉、owner/session/generation 串扰防护及文档类 PCM 尚未完成全量验收。
 - 未生成并由用户人工确认新版伊斯坦布尔 PPTX/PDF。
 - iOS 统一审核当前完成模拟器组件与合同验收，尚未完成真机和 TestFlight 验收。
+- Batch 3 代码闭环已完成，但生产退出矩阵尚未执行：双账号×双会话、四任务并发、快速切换、退出/重登、冷启动、网络延迟与 legacy 混入仍缺真实 UI/生产回执，因此整体继续 NO-GO。
