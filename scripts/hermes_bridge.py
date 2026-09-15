@@ -3987,7 +3987,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 5000 if presentation_output else 8000 if document_output else 1800
+            upstream_limit = 8000 if presentation_output or document_output else 1800
             output = str(state["output"])
             if presentation_output or document_output:
                 if len(output) > upstream_limit:

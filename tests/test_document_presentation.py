@@ -745,6 +745,38 @@ def test_final_presentation_prompt_accepts_full_approved_context_above_chat_limi
     assert "已批准逐页大纲" in prompt
 
 
+def test_presentation_design_accepts_outline_within_its_declared_output_limit(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    outline_text = "o" * 7_000
+    outline = {
+        "id": "presentation_outline",
+        "name": "outline",
+        "node_type": "LLM_INFERENCE",
+        "parameters": {"output_format": "presentation_outline", "max_tokens": 8000},
+    }
+    design = {
+        "id": "presentation_design",
+        "name": "design",
+        "node_type": "LLM_INFERENCE",
+        "parameters": {"output_format": "presentation_design", "max_tokens": 8000},
+    }
+    monkeypatch.setattr(bridge, "_approved_presentation_outline", lambda run: ({}, {}))
+    run = {
+        "goal": "deck",
+        "deliverable": "pptx",
+        "plan": {
+            "nodes": [outline, design],
+            "edges": [{"source": "presentation_outline", "target": "presentation_design"}],
+        },
+        "nodes": {
+            "presentation_outline": {"status": "succeeded", "output": outline_text}
+        },
+    }
+    prompt = bridge._workflow_node_prompt(run, design)
+    assert outline_text in prompt
+
+
 def test_final_presentation_prompt_still_rejects_context_above_generation_limit(monkeypatch):
     import scripts.hermes_bridge as bridge
 
