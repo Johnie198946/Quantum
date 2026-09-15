@@ -35,12 +35,15 @@ started_at: 2026-09-15T11:21:20+08:00
 - 更新 presentation scenario 指令，禁止 analysis→outline→design 链路丢失 claim ID。
 - 新增素材验证与确定性缓存：PNG/JPEG/SVG magic bytes、解码、尺寸、许可、HTTPS/凭据、SVG active content/外链和缓存碰撞均 fail closed。
 - 新增素材 manifest JSON Schema；仅允许明确商业使用或用户提供素材。
+- 新增 Schema 驱动结构化审核文档与不可变 revision 表；审核状态由服务端持久化。
+- 新增 create/read/save/undo API，返回 quoted ETag；保存和撤销强制 `If-Match`，陈旧版本返回 `412` 且不覆盖远端。
+- 结构化审核严格绑定 workflow owner，并从服务端 requirements snapshot 继承 source client session；同租户其他用户不可读取。
+- PCM 注册 `structured_review` renderer 及 ready/saved/conflict 事件，为 iOS 统一组件保留旧 artifact fallback。
 
 ## 测试
 
-- 来源追踪、文档/PPT、工作流 API、PCM capability：`115 passed, 0 failed, 8 warnings`。
-- 素材验证与缓存：`4 passed, 0 failed, 4 warnings`。
-- 合计不同测试：`119 passed, 0 failed, 0 skipped`。
+- 来源追踪、文档/PPT、素材、工作流 API、PCM capability 综合回归：`121 passed, 0 failed, 0 skipped, 8 warnings`。
+- 结构化审核覆盖 Schema 校验、持久化、ETag/CAS、缺少前置条件、陈旧写冲突、Undo、新版本收据及同租户跨用户隔离。
 - Ruff（本次 Python 文件）：通过。
 - `git diff --check`：通过。
 - warnings 为既有 FastAPI lifespan 与 Pydantic v2 deprecated 提示；未计作失败，但后续重构需处理。
@@ -50,6 +53,7 @@ started_at: 2026-09-15T11:21:20+08:00
 - local_commits:
   - ebc23dccef444264f13cbd5d24ec60ea2df88ce0
   - b86ddb0f650fe9abf739da80d2b29a9b4f1491c5
+  - 7486fec37246b9cd8456414cdf04f724cdc9ebd1
 - remote_sha: not pushed
 - server_before: not captured
 - server_after: not deployed
