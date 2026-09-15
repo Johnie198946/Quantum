@@ -189,9 +189,14 @@ async def _navigation(data: dict[str, Any], _payload: dict[str, Any], _key: str 
 async def _workflow_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
     assert key
     workflow_id, request_hash = _qcp_workflow_identity("workflow.create", payload, key, data)
+    workflow_data = dict(data)
+    source_client_session_id = workflow_data.pop("source_client_session_id", None)
     return await _create_workflow(
-        WorkflowCreate(**data), payload,
+        WorkflowCreate(**workflow_data), payload,
         workflow_id=workflow_id, qcp_request_hash=request_hash,
+        requirements_snapshot_overrides={
+            "source_client_session_id": source_client_session_id
+        } if source_client_session_id else None,
     )
 
 
@@ -200,15 +205,20 @@ async def _presentation_create(data: dict[str, Any], payload: dict[str, Any], ke
     workflow_id, request_hash = _qcp_workflow_identity(
         "presentation.create_from_document", payload, key, data
     )
+    workflow_data = dict(data)
+    source_client_session_id = workflow_data.pop("source_client_session_id", None)
     return await _create_workflow(
         WorkflowCreate(
-            **data,
+            **workflow_data,
             desired_output="可编辑 PPTX 与渲染预览",
             output_kind="presentation",
         ),
         payload,
         workflow_id=workflow_id,
         qcp_request_hash=request_hash,
+        requirements_snapshot_overrides={
+            "source_client_session_id": source_client_session_id
+        } if source_client_session_id else None,
     )
 
 
@@ -258,6 +268,11 @@ async def _presentation_create_from_text(
         requirements_snapshot_overrides={
             "text_material": material,
             "presentation_defaults": normalized,
+            **(
+                {"source_client_session_id": data["source_client_session_id"]}
+                if data.get("source_client_session_id")
+                else {}
+            ),
             "artifact_contract": {
                 "extension": "pptx",
                 "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -337,6 +352,11 @@ async def _document_create_from_text(
         ),
         requirements_snapshot_overrides={
             "text_material": material,
+            **(
+                {"source_client_session_id": data["source_client_session_id"]}
+                if data.get("source_client_session_id")
+                else {}
+            ),
             "document_profile": {
                 **defaults,
                 "kind": document_kind,

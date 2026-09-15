@@ -3426,6 +3426,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         commitSession()
         let expectedEpoch = tenantEpoch
         let capabilityClient = capabilityClient
+        let sourceClientSessionId = messages[messageIndex].sessionId
         Task { [weak self] in
             do {
                 var completedWorkflow: WorkflowDTO?
@@ -3439,7 +3440,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                             description: proposal.input.description ?? "",
                             desiredOutput: proposal.input.desiredOutput ?? "",
                             sourceDocumentId: proposal.input.sourceDocumentId,
-                            outputKind: proposal.input.outputKind ?? "general"
+                            outputKind: proposal.input.outputKind ?? "general",
+                            sourceClientSessionId: sourceClientSessionId
                         ), confirmed: true, idempotencyKey: proposal.idempotencyKey
                     )
                     guard response.status == "completed", let created = response.events.first?.payload
@@ -3452,7 +3454,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                         input: PresentationCreateRequestDTO(
                             sourceDocumentId: proposal.input.sourceDocumentId ?? "",
                             title: proposal.input.title ?? "",
-                            description: proposal.input.description ?? ""
+                            description: proposal.input.description ?? "",
+                            sourceClientSessionId: sourceClientSessionId
                         ), confirmed: true, idempotencyKey: proposal.idempotencyKey
                     )
                     guard response.status == "completed", let created = response.events.first?.payload
@@ -3469,7 +3472,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                             intendedUse: proposal.input.intendedUse,
                             layoutStyle: proposal.input.layoutStyle,
                             slideCount: proposal.input.slideCount,
-                            clarificationStrategy: proposal.input.clarificationStrategy
+                            clarificationStrategy: proposal.input.clarificationStrategy,
+                            sourceClientSessionId: sourceClientSessionId
                         ), confirmed: true, idempotencyKey: proposal.idempotencyKey
                     )
                     guard response.status == "completed", let created = response.events.first?.payload
@@ -3490,7 +3494,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                             language: proposal.input.language,
                             citationStyle: proposal.input.citationStyle,
                             evidencePolicy: proposal.input.evidencePolicy,
-                            clarificationStrategy: proposal.input.clarificationStrategy
+                            clarificationStrategy: proposal.input.clarificationStrategy,
+                            sourceClientSessionId: sourceClientSessionId
                         ), confirmed: true, idempotencyKey: proposal.idempotencyKey
                     )
                     guard response.status == "completed", let created = response.events.first?.payload

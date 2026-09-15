@@ -222,7 +222,11 @@ async def test_first_class_document_capabilities_bind_format_evidence_and_review
         },
     }
     text_material = "V" * 32_000 if document_kind == "word" else "Verified source material"
-    data = {"title": "Governed document", "text_material": text_material}
+    data = {
+        "title": "Governed document",
+        "text_material": text_material,
+        "source_client_session_id": "chat-session-a",
+    }
     if focus_field:
         data[focus_field] = "What does the evidence support?"
     with patch(
@@ -250,7 +254,27 @@ async def test_first_class_document_capabilities_bind_format_evidence_and_review
     assert artifact["extension"] == "docx"
     assert artifact["version"] == artifact["content_hash"] == "required"
     assert options["requirements_snapshot_overrides"]["text_material"] == text_material
+    assert options["requirements_snapshot_overrides"]["source_client_session_id"] == "chat-session-a"
     assert text_material not in body.description
+
+
+def test_workflow_creation_capabilities_accept_bounded_client_session_provenance():
+    catalog = {item["id"]: item for item in load_catalog()["capabilities"]}
+    for capability_id in (
+        "workflow.create",
+        "presentation.create_from_document",
+        "presentation.create_from_text",
+        "document.word.create_from_text",
+        "report.research.create_from_text",
+        "paper.academic.create_from_text",
+    ):
+        field = catalog[capability_id]["input_schema"]["properties"][
+            "source_client_session_id"
+        ]
+        assert field == {"type": "string", "minLength": 1, "maxLength": 128}
+        assert "source_client_session_id" not in catalog[capability_id]["input_schema"][
+            "required"
+        ]
 
 
 def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():

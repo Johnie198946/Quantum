@@ -23,6 +23,14 @@
       ]
     },
     {
+      "id": "document.word.create_from_text",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ]
+    },
+    {
       "id": "knowledge.navigation",
       "status": "implemented",
       "tests": [
@@ -83,6 +91,14 @@
       ]
     },
     {
+      "id": "paper.academic.create_from_text",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ]
+    },
+    {
       "id": "presentation.create_from_document",
       "status": "implemented",
       "tests": [
@@ -92,6 +108,14 @@
     },
     {
       "id": "presentation.create_from_text",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ]
+    },
+    {
+      "id": "report.research.create_from_text",
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
@@ -127,7 +151,7 @@
       ]
     }
   ],
-  "catalog_digest": "8f3d20fe89ae37cf69e34c83dd331f7698300c59a777732ebcad2f89dbf72ea8",
+  "catalog_digest": "5e53bcb98734bed33157c06dda643df14ce2639af04febc852bfb6cf6fb86f39",
   "consumptions": [
     {
       "gates": [
@@ -172,11 +196,11 @@
     }
   ],
   "counts": {
-    "implemented": 17,
+    "implemented": 20,
     "partial": 0,
     "unverified": 0
   },
   "protocol": "qcp",
-  "total": 17,
+  "total": 20,
   "version": "1.0.0"
 }

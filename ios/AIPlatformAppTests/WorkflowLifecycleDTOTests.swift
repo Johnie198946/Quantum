@@ -5003,4 +5003,38 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         coordinator.track(workflow)
         XCTAssertTrue(coordinator.workflows.isEmpty)
     }
+
+    @MainActor
+    func testWorkflowActivityProjectionIsBoundToOriginatingChatSession() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        let workflowA = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-a","title":"A","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let workflowB = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-b","title":"B","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let legacy = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-legacy","title":"Legacy","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        func execution(_ id: String, workflowId: String) throws -> WorkflowExecutionDTO {
+            try JSONDecoder().decode(
+                WorkflowExecutionDTO.self,
+                from: Data("{\"id\":\"\(id)\",\"workflowId\":\"\(workflowId)\",\"planId\":\"plan\",\"status\":\"failed\",\"progress\":50,\"tokenBudget\":100,\"tokenUsed\":10,\"inputTokens\":null,\"outputTokens\":null,\"reasoningTokens\":null,\"cacheReadTokens\":null,\"cacheWriteTokens\":null,\"apiCalls\":null,\"estimatedCostUsd\":null,\"modelUsed\":null,\"providerUsed\":null,\"routeReason\":null,\"hermesSessionId\":null,\"artifactCount\":0,\"errorMessage\":\"retry\",\"startedAt\":null,\"finishedAt\":null,\"createdAt\":null,\"nodes\":[]}".utf8)
+            )
+        }
+        coordinator.trackExecution(try execution("execution-a", workflowId: workflowA.id), workflow: workflowA)
+        coordinator.trackExecution(try execution("execution-b", workflowId: workflowB.id), workflow: workflowB)
+        coordinator.trackExecution(try execution("execution-legacy", workflowId: legacy.id), workflow: legacy)
+
+        coordinator.selectClientSession("session-a")
+        XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowA.id])
+        coordinator.selectClientSession("session-b")
+        XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowB.id])
+        coordinator.selectClientSession(nil)
+        XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+    }
 }

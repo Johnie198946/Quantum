@@ -251,6 +251,7 @@ def plan_out(plan: WorkflowPlanVersion) -> dict[str, Any]:
 
 
 def workflow_out(row: WorkflowDefinition) -> dict[str, Any]:
+    snapshot = row.requirements_snapshot or {}
     return {
         "id": row.id,
         "title": row.title,
@@ -259,7 +260,8 @@ def workflow_out(row: WorkflowDefinition) -> dict[str, Any]:
         "status": row.status,
         "active_plan_id": row.active_plan_id,
         "clarification_session_id": row.clarification_session_id,
-        "requirements_snapshot": row.requirements_snapshot or {},
+        "requirements_snapshot": snapshot,
+        "source_client_session_id": snapshot.get("source_client_session_id"),
         "primary_agent_id": row.primary_agent_id,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -302,6 +304,7 @@ def _preserved_requirement_source_context(snapshot: Any) -> dict[str, Any]:
             "artifact_contract",
             "clarification_strategy",
             "qcp_request_hash",
+            "source_client_session_id",
         )
         if snapshot.get(key)
     }

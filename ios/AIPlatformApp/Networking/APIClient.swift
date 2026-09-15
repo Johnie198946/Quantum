@@ -1299,6 +1299,7 @@ public struct WorkflowDTO: Codable, Identifiable, Hashable {
     public let status: String
     public let activePlanId: String?
     public let clarificationSessionId: String?
+    public var sourceClientSessionId: String? = nil
     public let primaryAgentId: String?
     public let createdAt: String?
     public let updatedAt: String?
@@ -1721,12 +1722,14 @@ public struct WorkflowCreateRequestDTO: Encodable {
     public let desiredOutput: String
     public let sourceDocumentId: String?
     public let outputKind: String
+    public var sourceClientSessionId: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case title, description
         case desiredOutput = "desired_output"
         case sourceDocumentId = "source_document_id"
         case outputKind = "output_kind"
+        case sourceClientSessionId = "source_client_session_id"
     }
 }
 
@@ -1734,9 +1737,11 @@ public struct PresentationCreateRequestDTO: Encodable {
     public let sourceDocumentId: String
     public let title: String
     public let description: String
+    public var sourceClientSessionId: String? = nil
     enum CodingKeys: String, CodingKey {
         case sourceDocumentId = "source_document_id"
         case title, description
+        case sourceClientSessionId = "source_client_session_id"
     }
 }
 
@@ -1748,6 +1753,7 @@ public struct PresentationCreateFromTextRequestDTO: Encodable {
     public let layoutStyle: String?
     public let slideCount: Int?
     public let clarificationStrategy: String?
+    public var sourceClientSessionId: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -1757,6 +1763,7 @@ public struct PresentationCreateFromTextRequestDTO: Encodable {
         case layoutStyle = "layout_style"
         case slideCount = "slide_count"
         case clarificationStrategy = "clarification_strategy"
+        case sourceClientSessionId = "source_client_session_id"
     }
 }
 
@@ -1770,6 +1777,7 @@ public struct DocumentCreateFromTextRequestDTO: Encodable {
     public let citationStyle: String?
     public let evidencePolicy: String?
     public let clarificationStrategy: String?
+    public var sourceClientSessionId: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case title, thesis, audience, language
@@ -1778,6 +1786,7 @@ public struct DocumentCreateFromTextRequestDTO: Encodable {
         case citationStyle = "citation_style"
         case evidencePolicy = "evidence_policy"
         case clarificationStrategy = "clarification_strategy"
+        case sourceClientSessionId = "source_client_session_id"
     }
 }
 

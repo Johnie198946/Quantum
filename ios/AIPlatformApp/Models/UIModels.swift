@@ -2565,6 +2565,7 @@ public final class AppState: ObservableObject {
     }
 
     private func activateLocalAccount(notify: Bool = true) {
+        pendingWorkflowId = nil
         pendingKnowledgeNavigation = nil
         KnowledgeNoteStore.shared.activate(
             tenantKey: currentTenantKey, userId: currentUserId
@@ -2603,6 +2604,7 @@ public final class AppState: ObservableObject {
         self.pendingChatContextScope = nil
         self.pendingChatSessionContext = nil
         self.pendingKnowledgeNavigation = nil
+        self.pendingWorkflowId = nil
         self.isDevMode = false
         WorkflowActivityCoordinator.shared.deactivate()
         KnowledgeNoteStore.shared.deactivate()

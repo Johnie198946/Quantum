@@ -84,7 +84,13 @@ public struct MainTabView: View {
                 scheduleTabBarAutoCollapse()
             }
         }
-        .onAppear { scheduleTabBarAutoCollapse() }
+        .onAppear {
+            workflowActivities.selectClientSession(sessionManager.activeSessionId)
+            scheduleTabBarAutoCollapse()
+        }
+        .onChange(of: sessionManager.activeSessionId) { _, sessionId in
+            workflowActivities.selectClientSession(sessionId)
+        }
         .onDisappear { tabBarAutoCollapseTask?.cancel() }
     }
 

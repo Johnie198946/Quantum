@@ -604,6 +604,7 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     private var executionWorkflows: [String: WorkflowDTO] = [:]
     private var executionTasks: [String: Task<Void, Never>] = [:]
     private var activeOwnerScope: String?
+    private var activeClientSessionId: String?
 
     public func activate(tenantKey: String, userId: String) {
         let scope = tenantKey + "\u{0}" + userId
@@ -615,6 +616,13 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     public func deactivate() {
         clearTrackedState()
         activeOwnerScope = nil
+        activeClientSessionId = nil
+    }
+
+    public func selectClientSession(_ sessionId: String?) {
+        guard activeClientSessionId != sessionId else { return }
+        activeClientSessionId = sessionId
+        objectWillChange.send()
     }
 
     private func clearTrackedState() {
@@ -638,6 +646,8 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     public var visibleActivities: [Activity] {
         workflows.values.compactMap { workflow in
             guard !dismissedWorkflowIds.contains(workflow.id),
+                  let activeClientSessionId,
+                  workflow.sourceClientSessionId == activeClientSessionId,
                   let model = models[workflow.id],
                   ["clarifying", "clarifying_pending", "planning", "building_agent", "awaiting_approval", "needs_attention"].contains(model.phase)
             else { return nil }
@@ -657,6 +667,8 @@ public final class WorkflowActivityCoordinator: ObservableObject {
         executions.values.compactMap { execution in
             guard !dismissedWorkflowIds.contains(execution.workflowId),
                   let workflow = executionWorkflows[execution.workflowId],
+                  let activeClientSessionId,
+                  workflow.sourceClientSessionId == activeClientSessionId,
                   ["queued", "running", "awaiting_approval", "awaiting_review", "failed"].contains(execution.status)
             else { return nil }
             return ExecutionActivity(workflow: workflow, execution: execution)
