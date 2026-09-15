@@ -33,14 +33,17 @@ started_at: 2026-09-15T11:21:20+08:00
 - 批准大纲必须携带 `source_claim_ids`；最终 PPT 生成前强制所有原文 claim 均已批准并映射到页面。
 - source trace 写入最终 artifact metadata；未覆盖、未知 claim、篡改 hash 或跨 session 均 fail closed。
 - 更新 presentation scenario 指令，禁止 analysis→outline→design 链路丢失 claim ID。
+- 新增素材验证与确定性缓存：PNG/JPEG/SVG magic bytes、解码、尺寸、许可、HTTPS/凭据、SVG active content/外链和缓存碰撞均 fail closed。
+- 新增素材 manifest JSON Schema；仅允许明确商业使用或用户提供素材。
 
 ## 测试
 
-- `tests/test_presentation_source_trace.py + tests/test_document_presentation.py + tests/test_workflows_api.py + tests/test_product_capabilities.py`：`115 passed, 0 failed, 8 warnings`。
+- 来源追踪、文档/PPT、工作流 API、PCM capability：`115 passed, 0 failed, 8 warnings`。
+- 素材验证与缓存：`4 passed, 0 failed, 4 warnings`。
+- 合计不同测试：`119 passed, 0 failed, 0 skipped`。
 - Ruff（本次 Python 文件）：通过。
 - `git diff --check`：通过。
 - warnings 为既有 FastAPI lifespan 与 Pydantic v2 deprecated 提示；未计作失败，但后续重构需处理。
-- skipped：0。
 
 ## 发布
 

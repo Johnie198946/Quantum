@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://t-react.com/contracts/presentation/material-manifest.schema.json",
+  "title": "Presentation material manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_url", "author", "license_id", "license_url", "commercial_use_allowed", "fetched_at", "content_hash", "mime_type", "byte_size", "width", "height", "extension", "cache_status"],
+  "properties": {
+    "source_url": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "author": {"type": "string", "minLength": 1, "maxLength": 300},
+    "license_id": {"enum": ["CC0-1.0", "CC-BY-4.0", "Pexels", "Unsplash", "user-provided"]},
+    "license_url": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "commercial_use_allowed": {"const": true},
+    "fetched_at": {"type": "string", "minLength": 1, "maxLength": 80},
+    "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "mime_type": {"enum": ["image/png", "image/jpeg", "image/svg+xml"]},
+    "byte_size": {"type": "integer", "minimum": 32, "maximum": 8000000},
+    "width": {"type": "integer", "minimum": 16},
+    "height": {"type": "integer", "minimum": 16},
+    "extension": {"enum": ["png", "jpg", "svg"]},
+    "cache_status": {"enum": ["validated", "ready"]},
+    "cache_path": {"type": "string", "pattern": "^[a-f0-9]{64}\\.(png|jpg|svg)$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"cache_status": {"const": "ready"}}},
+      "then": {"required": ["cache_path"]}
+    }
+  ]
+}
