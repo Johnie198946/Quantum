@@ -1793,6 +1793,16 @@ private struct WorkflowExecutionView: View {
                 .background(AppTheme.Colors.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
+            if isStagedOutput,
+               ["awaiting_review", "completed"].contains(execution.status),
+               let artifact = visibleArtifacts.last {
+                StructuredReviewView(
+                    workflowId: workflow.id,
+                    reviewKey: "final-draft",
+                    initialDocument: structuredReviewSeed(from: artifact)
+                )
+                .id(artifact.id)
+            }
             if isStagedOutput && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
                 TextField(stagedFeedbackPrompt, text: $feedback, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -1805,6 +1815,24 @@ private struct WorkflowExecutionView: View {
                 }
             }
         }
+    }
+
+    private func structuredReviewSeed(from artifact: WorkflowArtifactDTO) -> StructuredReviewDocumentDTO {
+        var values: [String: JSONScalar] = ["deliverable_title": .string(artifact.title)]
+        if let version = artifact.metadata.artifactVersion {
+            values["artifact_version"] = .integer(Int64(version))
+        }
+        return StructuredReviewDocumentDTO(
+            title: artifact.title,
+            fields: [
+                .init(id: "deliverable_title", label: "成果标题", type: .text, required: true, options: nil),
+                .init(id: "review_notes", label: "审核意见", type: .textarea, required: false, options: nil),
+                .init(id: "decision", label: "审核结论", type: .choice, required: true, options: ["需要修改", "可以确认"]),
+                .init(id: "artifact_version", label: "成果版本", type: .number, required: false, options: nil),
+                .init(id: "preview_checked", label: "已检查成果预览", type: .toggle, required: true, options: nil),
+            ],
+            values: values
+        )
     }
 
     private var stagedReviewTitle: String {

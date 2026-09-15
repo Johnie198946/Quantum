@@ -614,6 +614,7 @@ def _review_conflict(head: WorkflowReviewRevision) -> HTTPException:
         "code": "structured_review_conflict",
         "message": "审核内容已更新，请合并后重试",
         "remote": _review_out(head),
+        "remote_etag": _review_etag(head),
     })
 
 

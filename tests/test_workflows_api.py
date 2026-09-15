@@ -183,6 +183,7 @@ class TestWorkflowsAPI(unittest.TestCase):
         })
         self.assertEqual(stale.status_code, 412, stale.text)
         self.assertEqual(stale.json()["detail"]["remote"]["version"], 2)
+        self.assertEqual(stale.json()["detail"]["remote_etag"], second_etag)
 
         undone = self.request("POST", f"{path}/undo", headers={"If-Match": second_etag})
         self.assertEqual(undone.status_code, 200, undone.text)

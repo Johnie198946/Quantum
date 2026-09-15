@@ -17,6 +17,7 @@
 		1EF0A40ED0CF79A929CB6F20 /* MarkdownBlockParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1D23EEB21DD2DD62B8D52D /* MarkdownBlockParser.swift */; };
 		254C1CD57C1EACE9BAAF30A1 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 682708AC3F789E460269179F /* ChatHistoryStore.swift */; };
 		347B8891FA73F4A13044017F /* WorkflowDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865230675174544683A40C47 /* WorkflowDashboardView.swift */; };
+		A7B2C3D4E5F60718293A4B5C /* StructuredReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C3D4E5F60718293A4B5C6D /* StructuredReviewView.swift */; };
 		353DDBE9B6F14BAA4DD7F20F /* ChatStatusCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F5BB3EF9C10F911B036B99 /* ChatStatusCards.swift */; };
 		364D6C336F779FC90000B64E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD70BD59CD071FB619837740 /* ChatView.swift */; };
 		3FFEAF19DF3D4DE1A028D6F0 /* PlusMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEA8E5B249F6B3A2259CE92A /* PlusMenuSheet.swift */; };
@@ -105,6 +106,7 @@
 		813DB031876CEDFE50599942 /* AIPlatformApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPlatformApp.entitlements; sourceTree = "<group>"; };
 		83AE56DBEAAD443368B0DC9F /* ProductionBookshelfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookshelfUITests.swift; sourceTree = "<group>"; };
 		865230675174544683A40C47 /* WorkflowDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowDashboardView.swift; sourceTree = "<group>"; };
+		B8C3D4E5F60718293A4B5C6D /* StructuredReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredReviewView.swift; sourceTree = "<group>"; };
 		8CC0682A56D72BAAB4097CFA /* WeChatLinkValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeChatLinkValidator.swift; sourceTree = "<group>"; };
 		9503A88EC7D490F2425318D0 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		95F6279732AE00F613FCAC2D /* KnowledgeNoteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeNoteStoreTests.swift; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 		4B27D90F0CECB894B4022B50 /* Workflows */ = {
 			isa = PBXGroup;
 			children = (
+				B8C3D4E5F60718293A4B5C6D /* StructuredReviewView.swift */,
 				865230675174544683A40C47 /* WorkflowDashboardView.swift */,
 			);
 			path = Workflows;
@@ -546,6 +549,7 @@
 				D2BBAD0E6CB91667F92E60EA /* VoiceInputView.swift in Sources */,
 				F3462447EFD8BB4DAFA14A1E /* WeChatLinkValidator.swift in Sources */,
 				347B8891FA73F4A13044017F /* WorkflowDashboardView.swift in Sources */,
+				A7B2C3D4E5F60718293A4B5C /* StructuredReviewView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

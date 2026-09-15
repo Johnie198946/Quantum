@@ -1678,6 +1678,127 @@ public struct WorkflowArtifactContentDTO: Codable {
     public let content: String
 }
 
+public enum JSONScalar: Codable, Hashable {
+    case string(String)
+    case integer(Int64)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else { throw DecodingError.typeMismatch(JSONScalar.self, .init(codingPath: decoder.codingPath, debugDescription: "Expected a JSON scalar")) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .integer(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+public enum StructuredReviewFieldType: String, Codable, Hashable {
+    case text, textarea, choice, number, toggle
+}
+
+public struct StructuredReviewFieldDTO: Codable, Hashable, Identifiable {
+    public let id: String
+    public let label: String
+    public let type: StructuredReviewFieldType
+    public let required: Bool
+    public let options: [String]?
+}
+
+public struct StructuredReviewDocumentDTO: Codable, Hashable {
+    public var title: String
+    public var fields: [StructuredReviewFieldDTO]
+    public var values: [String: JSONScalar]
+}
+
+public struct StructuredReviewRevisionDTO: Codable, Hashable {
+    public let workflowId: String
+    public let reviewKey: String
+    public let schemaId: String
+    public let version: Int
+    public let parentVersion: Int?
+    public let contentHash: String
+    public let document: StructuredReviewDocumentDTO
+    public let action: String
+    public let receiptId: String
+    public let sourceClientSessionId: String?
+    public let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case workflowId = "workflow_id"
+        case reviewKey = "review_key"
+        case schemaId = "schema_id"
+        case version
+        case parentVersion = "parent_version"
+        case contentHash = "content_hash"
+        case document, action
+        case receiptId = "receipt_id"
+        case sourceClientSessionId = "source_client_session_id"
+        case createdAt = "created_at"
+    }
+
+    private enum DecodingKeys: String, CodingKey {
+        case workflowId, reviewKey, schemaId, version, parentVersion, contentHash
+        case document, action, receiptId, sourceClientSessionId, createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        // APIClient applies convertFromSnakeCase before DTO decoding.
+        let container = try decoder.container(keyedBy: DecodingKeys.self)
+        workflowId = try container.decode(String.self, forKey: .workflowId)
+        reviewKey = try container.decode(String.self, forKey: .reviewKey)
+        schemaId = try container.decode(String.self, forKey: .schemaId)
+        version = try container.decode(Int.self, forKey: .version)
+        parentVersion = try container.decodeIfPresent(Int.self, forKey: .parentVersion)
+        contentHash = try container.decode(String.self, forKey: .contentHash)
+        document = try container.decode(StructuredReviewDocumentDTO.self, forKey: .document)
+        action = try container.decode(String.self, forKey: .action)
+        receiptId = try container.decode(String.self, forKey: .receiptId)
+        sourceClientSessionId = try container.decodeIfPresent(String.self, forKey: .sourceClientSessionId)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+}
+
+public struct StructuredReviewWriteDTO: Encodable {
+    public let schemaId: String
+    public let document: StructuredReviewDocumentDTO
+
+    enum CodingKeys: String, CodingKey {
+        case schemaId = "schema_id"
+        case document
+    }
+}
+
+public struct StructuredReviewConflictDTO: Codable, Hashable {
+    public let code: String
+    public let message: String
+    public let remote: StructuredReviewRevisionDTO
+    public let remoteEtag: String
+}
+
+private struct StructuredReviewConflictEnvelope: Decodable {
+    let detail: StructuredReviewConflictDTO
+}
+
+public struct StructuredReviewConflictError: Error, LocalizedError {
+    public let payload: StructuredReviewConflictDTO
+    public var errorDescription: String? { payload.message }
+}
+
 public struct WorkflowEventDTO: Codable, Identifiable {
     public let id: Int
     public let type: String
@@ -2147,6 +2268,13 @@ public enum AgreementReplayPolicy {
 
 // MARK: - 轻量网络层
 
+public struct APIResponse<Value> {
+    public let value: Value
+    public let httpResponse: HTTPURLResponse
+
+    public var etag: String? { httpResponse.value(forHTTPHeaderField: "ETag") }
+}
+
 @MainActor
 public final class APIClient: ObservableObject {
     public static let shared = APIClient()
@@ -2320,14 +2448,14 @@ public final class APIClient: ObservableObject {
     /// 底层请求执行：统一处理 401（不重试→needsReauth）、状态码、离线降级标注与 GET 幂等单次重试。
     /// - Parameter reauthOn401: 401 是否触发全局重登（清 token + needsReauth）。
     ///   主链路请求传 true；辅助/探测请求（如断点状态回读）传 false——失败静默降级，不误踢登录页。
-    private func perform(
+    private func performResponse(
         _ request: URLRequest,
         session: URLSession,
         canRetry: Bool,
         reauthOn401: Bool = true,
         credentialGeneration expectedGeneration: UInt64? = nil,
         anonymous: Bool = false
-    ) async throws -> Data {
+    ) async throws -> APIResponse<Data> {
         let requestGeneration = expectedGeneration ?? credentialGeneration
         guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
         var attempt = 0
@@ -2353,7 +2481,7 @@ public final class APIClient: ObservableObject {
                     throw APIError.fromHTTP(statusCode: http.statusCode, body: data)
                 }
                 isOfflineMode = false
-                return data
+                return APIResponse(value: data, httpResponse: http)
             } catch let urlError as URLError where urlError.code == .cancelled {
                 guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
                 throw urlError  // 请求取消，原样上抛，不误标离线
@@ -2373,6 +2501,20 @@ public final class APIClient: ObservableObject {
         }
     }
 
+    private func perform(
+        _ request: URLRequest,
+        session: URLSession,
+        canRetry: Bool,
+        reauthOn401: Bool = true,
+        credentialGeneration expectedGeneration: UInt64? = nil,
+        anonymous: Bool = false
+    ) async throws -> Data {
+        try await performResponse(
+            request, session: session, canRetry: canRetry, reauthOn401: reauthOn401,
+            credentialGeneration: expectedGeneration, anonymous: anonymous
+        ).value
+    }
+
     /// 发起请求并解码。401 自动清 token + 置 needsReauth；网络异常置 isOfflineMode。
     /// 调用方持有外层 Task 即可实现「请求取消」（URLSession.data(for:) 对 Task 取消敏感）。
     public func request<T: Decodable>(
@@ -2385,6 +2527,24 @@ public final class APIClient: ObservableObject {
         credentialGeneration expectedGeneration: UInt64? = nil,
         anonymous: Bool = false
     ) async throws -> T {
+        try await requestWithResponse(
+            type, path: path, method: method, body: body, queryItems: queryItems,
+            reauthOn401: reauthOn401, credentialGeneration: expectedGeneration,
+            anonymous: anonymous
+        ).value
+    }
+
+    public func requestWithResponse<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        method: String = "GET",
+        body: Encodable? = nil,
+        queryItems: [URLQueryItem] = [],
+        headers: [String: String] = [:],
+        reauthOn401: Bool = true,
+        credentialGeneration expectedGeneration: UInt64? = nil,
+        anonymous: Bool = false
+    ) async throws -> APIResponse<T> {
         let requestGeneration = expectedGeneration ?? credentialGeneration
         guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
         var components = URLComponents(
@@ -2404,14 +2564,15 @@ public final class APIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyClientContract(to: &request, includeAuthorization: !anonymous)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         if let body {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
         // 仅 GET 幂等请求自动重试；POST/PATCH/DELETE 由 UI 触发手动重试
-        let data: Data
+        let response: APIResponse<Data>
         do {
-            data = try await perform(
+            response = try await performResponse(
                 request, session: session, canRetry: method == "GET", reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
@@ -2425,13 +2586,16 @@ public final class APIClient: ObservableObject {
             let accepted = await withCheckedContinuation { agreementWaiters.append($0) }
             guard accepted, anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
             // A protected request is replayed exactly once after explicit acceptance.
-            data = try await perform(
+            response = try await performResponse(
                 request, session: session, canRetry: false, reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
         }
         do {
-            return try decoder.decode(T.self, from: data)
+            return APIResponse(
+                value: try decoder.decode(T.self, from: response.value),
+                httpResponse: response.httpResponse
+            )
         } catch {
             throw APIError.decoding(Self.describeDecodingError(error))
         }
@@ -2786,6 +2950,77 @@ public final class APIClient: ObservableObject {
 
     public func fetchWorkflow(id: String) async throws -> WorkflowDTO {
         try await request(WorkflowDTO.self, path: "workflows/\(encodedPath(id))")
+    }
+
+    public func createStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        schemaId: String,
+        document: StructuredReviewDocumentDTO
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        try await requestWithResponse(
+            StructuredReviewRevisionDTO.self,
+            path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))",
+            method: "POST",
+            body: StructuredReviewWriteDTO(schemaId: schemaId, document: document)
+        )
+    }
+
+    public func fetchStructuredReview(
+        workflowId: String,
+        reviewKey: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        try await requestWithResponse(
+            StructuredReviewRevisionDTO.self,
+            path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))"
+        )
+    }
+
+    public func saveStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        schemaId: String,
+        document: StructuredReviewDocumentDTO,
+        etag: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        do {
+            return try await requestWithResponse(
+                StructuredReviewRevisionDTO.self,
+                path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))",
+                method: "PUT",
+                body: StructuredReviewWriteDTO(schemaId: schemaId, document: document),
+                headers: ["If-Match": etag]
+            )
+        } catch APIError.server(412, let raw) {
+            throw try structuredReviewConflict(from: raw)
+        }
+    }
+
+    public func undoStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        etag: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        do {
+            return try await requestWithResponse(
+                StructuredReviewRevisionDTO.self,
+                path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))/undo",
+                method: "POST",
+                headers: ["If-Match": etag]
+            )
+        } catch APIError.server(412, let raw) {
+            throw try structuredReviewConflict(from: raw)
+        }
+    }
+
+    private func structuredReviewConflict(from raw: String) throws -> StructuredReviewConflictError {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let data = raw.data(using: .utf8),
+              let conflict = try? decoder.decode(StructuredReviewConflictEnvelope.self, from: data).detail else {
+            throw APIError.server(412, raw)
+        }
+        return StructuredReviewConflictError(payload: conflict)
     }
 
     public func deleteWorkflow(id: String) async throws {

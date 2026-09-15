@@ -63,7 +63,31 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         let responseBody: Data
         var responseStatus = 200
         var responseError: URLError?
+        var responseHeaders = ["Content-Type": "application/json"]
         switch (isContractOrigin, method, path) {
+        case (true, "GET", let reviewPath) where reviewPath.contains("/structured-reviews/final-draft"):
+            if reviewPath.contains("missing-review") {
+                responseStatus = 404
+                responseBody = Data(#"{"detail":"结构化审核不存在"}"#.utf8)
+            } else {
+                responseHeaders["ETag"] = #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#
+                responseBody = Self.structuredReviewResponse(version: 1, action: "create", title: "最终文稿")
+            }
+        case (true, "POST", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft"):
+            responseStatus = 201
+            responseHeaders["ETag"] = #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#
+            responseBody = Self.structuredReviewResponse(version: 1, action: "create", title: "最终文稿")
+        case (true, "PUT", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft"):
+            if request.value(forHTTPHeaderField: "If-Match") == #""stale""# {
+                responseStatus = 412
+                responseBody = Data(#"{"detail":{"code":"structured_review_conflict","message":"审核内容已更新，请合并后重试","remote":{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":2,"parent_version":1,"content_hash":"bbbbbbbb","document":{"title":"远端文稿","fields":[{"id":"title","label":"标题","type":"text","required":true}],"values":{"title":"远端值"}},"action":"save","receipt_id":"receipt-2","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"},"remote_etag":"\"sr:final-draft:2:bbbbbbbb\""}}"#.utf8)
+            } else {
+                responseHeaders["ETag"] = #""sr:final-draft:2:bbbbbbbbbbbbbbbb""#
+                responseBody = Self.structuredReviewResponse(version: 2, action: "save", title: "最终文稿")
+            }
+        case (true, "POST", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft/undo"):
+            responseHeaders["ETag"] = #""sr:final-draft:3:cccccccccccccccc""#
+            responseBody = Self.structuredReviewResponse(version: 3, action: "undo", title: "最终文稿")
         case (true, "GET", "/api/v1/auth/capabilities"):
             // TEST FIXTURE: delayed public success exposes credential-generation races.
             responseBody = Data(#"{"phone":{"enabled":true},"oauth":{"wechat":{"enabled":false},"alipay":{"enabled":true}}}"#.utf8)
@@ -106,7 +130,7 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             url: request.url!,
             statusCode: isAllowed ? responseStatus : 418,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         let deliver = { [self] in
             if let responseError {
@@ -144,9 +168,181 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static let subscriptionResponse = Data(#"{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"}"#.utf8)
+
+    private static func structuredReviewResponse(version: Int, action: String, title: String) -> Data {
+        Data("""
+        {"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":\(version),"parent_version":\(version == 1 ? "null" : String(version - 1)),"content_hash":"hash-\(version)","document":{"title":"\(title)","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"notes","label":"审核意见","type":"textarea","required":false},{"id":"decision","label":"审核结论","type":"choice","required":true,"options":["需要修改","可以确认"]},{"id":"score","label":"评分","type":"number","required":false},{"id":"checked","label":"已检查成果预览","type":"toggle","required":true}],"values":{"title":"\(title)","notes":"逐项核对来源与版式","decision":"可以确认","score":5,"checked":true}},"action":"\(action)","receipt_id":"receipt-\(version)","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}
+        """.utf8)
+    }
 }
 
 final class WorkflowLifecycleDTOTests: XCTestCase {
+    func testStructuredReviewDTOsPreserveMixedScalarValues() throws {
+        let payload = Data(#"{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":2,"parent_version":1,"content_hash":"hash","document":{"title":"最终文稿","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"sequence","label":"序号","type":"number","required":false},{"id":"score","label":"评分","type":"number","required":false},{"id":"approved","label":"确认","type":"toggle","required":false},{"id":"notes","label":"备注","type":"textarea","required":false}],"values":{"title":"真实标题","sequence":9007199254740991,"score":4.5,"approved":true,"notes":null}},"action":"save","receipt_id":"receipt-2","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let revision = try decoder.decode(StructuredReviewRevisionDTO.self, from: payload)
+
+        XCTAssertEqual(revision.document.values["title"], .string("真实标题"))
+        XCTAssertEqual(revision.document.values["sequence"], .integer(9_007_199_254_740_991))
+        XCTAssertEqual(revision.document.values["score"], .number(4.5))
+        XCTAssertEqual(revision.document.values["approved"], .bool(true))
+        XCTAssertEqual(revision.document.values["notes"], .null)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(revision.document)) as? [String: Any]
+        let values = try XCTUnwrap(encoded?["values"] as? [String: Any])
+        XCTAssertEqual(values["title"] as? String, "真实标题")
+        XCTAssertEqual(values["sequence"] as? Int64, 9_007_199_254_740_991)
+        XCTAssertEqual(values["score"] as? Double, 4.5)
+        XCTAssertEqual(values["approved"] as? Bool, true)
+        XCTAssertTrue(values["notes"] is NSNull)
+    }
+
+    @MainActor
+    func testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let document = StructuredReviewDocumentDTO(
+            title: "最终文稿",
+            fields: [.init(id: "title", label: "标题", type: .text, required: true, options: nil)],
+            values: ["title": .string("本地值")]
+        )
+
+        let created = try await client.createStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", document: document
+        )
+        let fetched = try await client.fetchStructuredReview(workflowId: "workflow-1", reviewKey: "final-draft")
+        let saved = try await client.saveStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", document: document,
+            etag: try XCTUnwrap(created.etag)
+        )
+        _ = try await client.undoStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            etag: try XCTUnwrap(saved.etag)
+        )
+        do {
+            _ = try await client.saveStructuredReview(
+                workflowId: "workflow-1", reviewKey: "final-draft",
+                schemaId: "workflow.structured-review.v1", document: document,
+                etag: #""stale""#
+            )
+            XCTFail("Expected a typed 412 conflict")
+        } catch let error as StructuredReviewConflictError {
+            let conflict = error.payload
+            XCTAssertEqual(conflict.code, "structured_review_conflict")
+            XCTAssertEqual(conflict.remote.version, 2)
+            XCTAssertEqual(conflict.remote.document.values["title"], .string("远端值"))
+            XCTAssertEqual(conflict.remoteEtag, #""sr:final-draft:2:bbbbbbbb""#)
+        }
+
+        XCTAssertEqual(created.etag, #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#)
+        XCTAssertEqual(fetched.etag, #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#)
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.httpMethod }, ["POST", "GET", "PUT", "POST", "PUT"])
+        XCTAssertEqual(requests[2].request.value(forHTTPHeaderField: "If-Match"), created.etag)
+        XCTAssertEqual(requests[3].request.value(forHTTPHeaderField: "If-Match"), saved.etag)
+        XCTAssertEqual(requests[4].request.value(forHTTPHeaderField: "If-Match"), #""stale""#)
+    }
+
+    @MainActor
+    func testStructuredReviewViewModelCreatesOnlyAfterServerNotFound() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let seed = StructuredReviewDocumentDTO(
+            title: "来自成果标题",
+            fields: [.init(id: "title", label: "标题", type: .text, required: true, options: nil)],
+            values: ["title": .string("来自成果标题")]
+        )
+        let model = StructuredReviewViewModel(
+            workflowId: "missing-review", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", initialDocument: seed,
+            apiClient: client
+        )
+
+        await model.load()
+
+        XCTAssertEqual(model.revision?.version, 1)
+        XCTAssertNil(model.errorMessage)
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.httpMethod }, ["GET", "POST"])
+        let createBody = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(requests.last?.body)) as? [String: Any]
+        )
+        let createdDocument = try XCTUnwrap(createBody["document"] as? [String: Any])
+        XCTAssertEqual(createdDocument["title"] as? String, "来自成果标题")
+    }
+
+    @MainActor
+    func testStructuredReviewRendersAllSchemaFieldTypesOnSimulator() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let seed = StructuredReviewDocumentDTO(title: "占位", fields: [], values: [:])
+        let model = StructuredReviewViewModel(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", initialDocument: seed,
+            apiClient: client
+        )
+        await model.load()
+
+        XCTAssertEqual(
+            Set(model.document.fields.map(\.type)),
+            Set([.text, .textarea, .choice, .number, .toggle])
+        )
+        XCTAssertEqual(model.revision?.version, 1)
+        XCTAssertNil(model.errorMessage)
+
+        let size = CGSize(width: 393, height: 844)
+        let controller = UIHostingController(
+            rootView: ScrollView {
+                StructuredReviewView(model: model)
+                    .padding(16)
+            }
+            .frame(width: size.width, height: size.height)
+            .background(AppTheme.Colors.background)
+        )
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<3 {
+            await Task.yield()
+            controller.view.layoutIfNeeded()
+        }
+
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            window.layer.render(in: context.cgContext)
+        }
+        let png = try XCTUnwrap(image.pngData())
+        XCTAssertGreaterThan(png.count, 20_000, "结构化审核页未形成有效模拟器渲染")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Structured-review-all-schema-fields"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testDocumentContributionStatusMapsToVisibleTransferState() {
         XCTAssertEqual(AttachmentTransferState.documentStatus("queued"), .compiling)
         XCTAssertEqual(AttachmentTransferState.documentStatus("privacy_reviewing"), .compiling)
