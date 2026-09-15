@@ -39,6 +39,7 @@ from backend.models.workflow import (
     WorkflowNodeRun,
     WorkflowPlanningJob,
     WorkflowPlanVersion,
+    WorkflowReviewRevision,
     WorkflowSessionMessage,
 )
 from backend.models.workspace import WorkspaceProcessRevision, WorkspaceWorkflowBinding
@@ -204,6 +205,11 @@ class StageReviewRequest(BaseModel):
     decision: Literal["approve", "revise"]
     comment: str = Field("", max_length=2000)
     slide_number: int | None = Field(None, ge=1, le=60)
+
+
+class StructuredReviewWrite(BaseModel):
+    schema_id: str = Field(..., min_length=1, max_length=160)
+    document: dict[str, Any]
 
 
 def plan_out(plan: WorkflowPlanVersion) -> dict[str, Any]:
@@ -493,6 +499,255 @@ async def owned_workflow(
     ):
         raise HTTPException(status_code=404, detail="工作流不存在")
     return row
+
+
+_REVIEW_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
+_REVIEW_FIELD_TYPES = {"text", "textarea", "choice", "number", "toggle"}
+
+
+def _validate_review_document(document: dict[str, Any]) -> dict[str, Any]:
+    if set(document) != {"title", "fields", "values"}:
+        raise HTTPException(status_code=422, detail="结构化审核文档字段不合法")
+    title, fields, values = document["title"], document["fields"], document["values"]
+    if not isinstance(title, str) or not title.strip() or len(title) > 160:
+        raise HTTPException(status_code=422, detail="结构化审核标题不合法")
+    if not isinstance(fields, list) or not 1 <= len(fields) <= 100 or not isinstance(values, dict):
+        raise HTTPException(status_code=422, detail="结构化审核字段不合法")
+    seen: set[str] = set()
+    for field in fields:
+        if not isinstance(field, dict) or not {"id", "label", "type", "required"} <= set(field):
+            raise HTTPException(status_code=422, detail="结构化审核字段定义不完整")
+        if set(field) - {"id", "label", "type", "required", "options"}:
+            raise HTTPException(status_code=422, detail="结构化审核字段包含未知属性")
+        field_id = field.get("id")
+        field_type = field.get("type")
+        label = field.get("label")
+        if (
+            not isinstance(field_id, str)
+            or not _REVIEW_KEY.fullmatch(field_id)
+            or field_id in seen
+            or field_type not in _REVIEW_FIELD_TYPES
+            or not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 160
+            or not isinstance(field.get("required"), bool)
+        ):
+            raise HTTPException(status_code=422, detail="结构化审核字段定义不合法")
+        seen.add(field_id)
+        options = field.get("options")
+        if field_type == "choice":
+            if (
+                not isinstance(options, list)
+                or not 1 <= len(options) <= 30
+                or any(not isinstance(item, str) or not item or len(item) > 160 for item in options)
+                or len(set(options)) != len(options)
+            ):
+                raise HTTPException(status_code=422, detail="结构化审核选项不合法")
+        elif options is not None:
+            raise HTTPException(status_code=422, detail="仅 choice 字段允许 options")
+    if len(values) > 100 or set(values) - seen:
+        raise HTTPException(status_code=422, detail="结构化审核值包含未知字段")
+    by_id = {field["id"]: field for field in fields}
+    for field_id, value in values.items():
+        field = by_id[field_id]
+        expected = field["type"]
+        valid = (
+            value is None
+            or (expected in {"text", "textarea"} and isinstance(value, str) and len(value) <= 12000)
+            or (expected == "choice" and isinstance(value, str) and value in field["options"])
+            or (expected == "number" and isinstance(value, (int, float)) and not isinstance(value, bool))
+            or (expected == "toggle" and isinstance(value, bool))
+        )
+        if not valid:
+            raise HTTPException(status_code=422, detail=f"结构化审核值类型不匹配：{field_id}")
+    if len(json.dumps(document, ensure_ascii=False, allow_nan=False).encode("utf-8")) > 100_000:
+        raise HTTPException(status_code=422, detail="结构化审核文档过大")
+    return document
+
+
+def _review_etag(row: WorkflowReviewRevision) -> str:
+    return f'"sr:{row.review_key}:{row.version}:{row.content_hash[:16]}"'
+
+
+def _review_out(row: WorkflowReviewRevision) -> dict[str, Any]:
+    return {
+        "workflow_id": row.workflow_id,
+        "review_key": row.review_key,
+        "schema_id": row.schema_id,
+        "version": row.version,
+        "parent_version": row.parent_version,
+        "content_hash": row.content_hash,
+        "document": row.document,
+        "action": row.action,
+        "receipt_id": row.receipt_id,
+        "source_client_session_id": row.source_client_session_id,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+async def _owned_review_workflow(db, workflow_id: str, payload: dict[str, Any]) -> WorkflowDefinition:
+    row = await db.scalar(select(WorkflowDefinition).where(
+        WorkflowDefinition.id == workflow_id,
+        WorkflowDefinition.tenant_key == tenant(),
+        WorkflowDefinition.created_by == current_user(payload),
+        WorkflowDefinition.archived_at.is_(None),
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="工作流不存在")
+    return row
+
+
+async def _review_head(db, workflow_id: str, review_key: str) -> WorkflowReviewRevision | None:
+    return await db.scalar(
+        select(WorkflowReviewRevision)
+        .where(
+            WorkflowReviewRevision.workflow_id == workflow_id,
+            WorkflowReviewRevision.review_key == review_key,
+        )
+        .order_by(WorkflowReviewRevision.version.desc())
+        .limit(1)
+    )
+
+
+def _review_conflict(head: WorkflowReviewRevision) -> HTTPException:
+    return HTTPException(status_code=412, detail={
+        "code": "structured_review_conflict",
+        "message": "审核内容已更新，请合并后重试",
+        "remote": _review_out(head),
+    })
+
+
+def _new_review_revision(
+    workflow: WorkflowDefinition,
+    *,
+    review_key: str,
+    body: StructuredReviewWrite,
+    version: int,
+    parent_version: int | None,
+    action: str,
+    actor: str,
+) -> WorkflowReviewRevision:
+    document = _validate_review_document(body.document)
+    snapshot = workflow.requirements_snapshot or {}
+    content_hash = canonical_plan_hash({"schema_id": body.schema_id, "document": document})
+    return WorkflowReviewRevision(
+        id=uid("wrr"), workflow_id=workflow.id, tenant_key=workflow.tenant_key,
+        owner_user_id=actor, source_client_session_id=snapshot.get("source_client_session_id"),
+        review_key=review_key, schema_id=body.schema_id, version=version,
+        parent_version=parent_version, content_hash=content_hash, document=document,
+        action=action, receipt_id=uid("wrc"), created_by=actor,
+    )
+
+
+@router.post("/workflows/{workflow_id}/structured-reviews/{review_key}", status_code=201)
+async def create_structured_review(
+    workflow_id: str, review_key: str, body: StructuredReviewWrite,
+    response: Response, payload: dict = Depends(require_auth),
+):
+    if not _REVIEW_KEY.fullmatch(review_key):
+        raise HTTPException(status_code=422, detail="审核标识不合法")
+    async with SessionLocal() as db:
+        workflow = await _owned_review_workflow(db, workflow_id, payload)
+        if await _review_head(db, workflow_id, review_key):
+            raise HTTPException(status_code=409, detail="结构化审核已存在")
+        row = _new_review_revision(
+            workflow, review_key=review_key, body=body, version=1,
+            parent_version=None, action="create", actor=current_user(payload),
+        )
+        db.add(row)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="结构化审核已存在") from exc
+        response.headers["ETag"] = _review_etag(row)
+        return _review_out(row)
+
+
+@router.get("/workflows/{workflow_id}/structured-reviews/{review_key}")
+async def get_structured_review(
+    workflow_id: str, review_key: str, response: Response,
+    payload: dict = Depends(require_auth),
+):
+    async with SessionLocal() as db:
+        await _owned_review_workflow(db, workflow_id, payload)
+        row = await _review_head(db, workflow_id, review_key)
+        if row is None:
+            raise HTTPException(status_code=404, detail="结构化审核不存在")
+        response.headers["ETag"] = _review_etag(row)
+        return _review_out(row)
+
+
+@router.put("/workflows/{workflow_id}/structured-reviews/{review_key}")
+async def save_structured_review(
+    workflow_id: str, review_key: str, body: StructuredReviewWrite,
+    response: Response, if_match: str | None = Header(None, alias="If-Match"),
+    payload: dict = Depends(require_auth),
+):
+    if if_match is None:
+        raise HTTPException(status_code=428, detail="保存结构化审核必须提供 If-Match")
+    async with SessionLocal() as db:
+        workflow = await _owned_review_workflow(db, workflow_id, payload)
+        head = await _review_head(db, workflow_id, review_key)
+        if head is None:
+            raise HTTPException(status_code=404, detail="结构化审核不存在")
+        if if_match != _review_etag(head):
+            raise _review_conflict(head)
+        row = _new_review_revision(
+            workflow, review_key=review_key, body=body, version=head.version + 1,
+            parent_version=head.version, action="save", actor=current_user(payload),
+        )
+        db.add(row)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            current = await _review_head(db, workflow_id, review_key)
+            if current is None:
+                raise HTTPException(status_code=409, detail="审核保存冲突") from exc
+            raise _review_conflict(current) from exc
+        response.headers["ETag"] = _review_etag(row)
+        return _review_out(row)
+
+
+@router.post("/workflows/{workflow_id}/structured-reviews/{review_key}/undo")
+async def undo_structured_review(
+    workflow_id: str, review_key: str, response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    payload: dict = Depends(require_auth),
+):
+    if if_match is None:
+        raise HTTPException(status_code=428, detail="撤销结构化审核必须提供 If-Match")
+    async with SessionLocal() as db:
+        workflow = await _owned_review_workflow(db, workflow_id, payload)
+        head = await _review_head(db, workflow_id, review_key)
+        if head is None:
+            raise HTTPException(status_code=404, detail="结构化审核不存在")
+        if if_match != _review_etag(head):
+            raise _review_conflict(head)
+        previous = await db.scalar(select(WorkflowReviewRevision).where(
+            WorkflowReviewRevision.workflow_id == workflow_id,
+            WorkflowReviewRevision.review_key == review_key,
+            WorkflowReviewRevision.version == head.version - 1,
+        ))
+        if previous is None:
+            raise HTTPException(status_code=409, detail="没有可撤销的审核版本")
+        body = StructuredReviewWrite(schema_id=previous.schema_id, document=previous.document)
+        row = _new_review_revision(
+            workflow, review_key=review_key, body=body, version=head.version + 1,
+            parent_version=head.version, action="undo", actor=current_user(payload),
+        )
+        db.add(row)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            current = await _review_head(db, workflow_id, review_key)
+            if current is None:
+                raise HTTPException(status_code=409, detail="审核撤销冲突") from exc
+            raise _review_conflict(current) from exc
+        response.headers["ETag"] = _review_etag(row)
+        return _review_out(row)
 
 
 async def owned_clarification(

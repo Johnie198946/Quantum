@@ -10,10 +10,12 @@ import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import jwt as jose_jwt
+from jsonschema import Draft202012Validator
 from sqlalchemy import delete, func, select
 
 os.environ.setdefault("AUTHEN_JWT_SECRET", "test-secret")
@@ -46,6 +48,7 @@ class TestWorkflowsAPI(unittest.TestCase):
             WorkflowNodeRun,
             WorkflowPlanningJob,
             WorkflowPlanVersion,
+            WorkflowReviewRevision,
             WorkflowClarificationSession,
             WorkflowLifecycleEvent,
             WorkflowSessionMessage,
@@ -82,6 +85,7 @@ class TestWorkflowsAPI(unittest.TestCase):
                     WorkflowArtifact,
                     WorkflowNodeRun,
                     WorkflowApproval,
+                    WorkflowReviewRevision,
                     WorkflowExecution,
                     WorkflowPlanningJob,
                     WorkflowPlanVersion,
@@ -106,12 +110,14 @@ class TestWorkflowsAPI(unittest.TestCase):
         auth.tenant_resolver = self._old_resolver
         auth._is_super_admin = self._old_super
 
-    def request(self, method: str, path: str, *, sub: str = "alpha", json=None):
+    def request(self, method: str, path: str, *, sub: str = "alpha", json=None, headers=None):
         async def run():
+            request_headers = {"Authorization": f"Bearer {token(sub)}"}
+            request_headers.update(headers or {})
             async with httpx.AsyncClient(
                 transport=self._transport,
                 base_url="http://testserver",
-                headers={"Authorization": f"Bearer {token(sub)}"},
+                headers=request_headers,
             ) as client:
                 return await client.request(method, path, json=json)
 
@@ -129,6 +135,76 @@ class TestWorkflowsAPI(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["workflow"]
+
+    def test_structured_review_persists_with_etag_cas_undo_and_owner_scope(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        first_document = {
+            "title": "最终文稿确认",
+            "fields": [
+                {"id": "summary", "label": "摘要", "type": "textarea", "required": True},
+                {"id": "tone", "label": "语气", "type": "choice", "required": False,
+                 "options": ["正式", "简洁"]},
+            ],
+            "values": {"summary": "第一版", "tone": "正式"},
+        }
+        schema = json.loads(Path(
+            "backend/contracts/workflow/structured-review.schema.json"
+        ).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema).validate(first_document)
+        created = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        first_etag = created.headers["etag"]
+        self.assertEqual(created.json()["version"], 1)
+        self.assertTrue(created.json()["receipt_id"].startswith("wrc_"))
+
+        denied = self.request("GET", path, sub="gamma")
+        self.assertEqual(denied.status_code, 404, denied.text)
+        missing_precondition = self.request("PUT", path, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(missing_precondition.status_code, 428, missing_precondition.text)
+
+        second_document = copy.deepcopy(first_document)
+        second_document["values"]["summary"] = "第二版"
+        saved = self.request("PUT", path, headers={"If-Match": first_etag}, json={
+            "schema_id": "workflow.structured-review.v1", "document": second_document,
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        second_etag = saved.headers["etag"]
+        self.assertEqual(saved.json()["version"], 2)
+        self.assertEqual(saved.json()["parent_version"], 1)
+
+        stale = self.request("PUT", path, headers={"If-Match": first_etag}, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(stale.status_code, 412, stale.text)
+        self.assertEqual(stale.json()["detail"]["remote"]["version"], 2)
+
+        undone = self.request("POST", f"{path}/undo", headers={"If-Match": second_etag})
+        self.assertEqual(undone.status_code, 200, undone.text)
+        self.assertEqual(undone.json()["version"], 3)
+        self.assertEqual(undone.json()["action"], "undo")
+        self.assertEqual(undone.json()["document"]["values"]["summary"], "第一版")
+        persisted = self.request("GET", path)
+        self.assertEqual(persisted.json()["version"], 3)
+        self.assertEqual(persisted.headers["etag"], undone.headers["etag"])
+
+    def test_structured_review_rejects_unknown_or_mistyped_fields(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        invalid = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v1",
+            "document": {
+                "title": "最终文稿确认",
+                "fields": [{"id": "approved", "label": "通过", "type": "toggle", "required": True}],
+                "values": {"approved": "yes", "unknown": "not allowed"},
+            },
+        })
+        self.assertEqual(invalid.status_code, 422, invalid.text)
 
     def test_explicit_output_kind_does_not_require_an_uploaded_file(self):
         presentation = self.request(

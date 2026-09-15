@@ -17,6 +17,12 @@ events:
     version: 1
   - id: presentation.created
     version: 1
+  - id: structured_review.ready
+    version: 1
+  - id: structured_review.saved
+    version: 1
+  - id: structured_review.conflict
+    version: 1
   - id: document.created
     version: 1
   - id: artifact.content

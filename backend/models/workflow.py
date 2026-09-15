@@ -356,3 +356,36 @@ class WorkflowApproval(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class WorkflowReviewRevision(Base):
+    """Immutable structured-review revision; latest version is the CAS head."""
+
+    __tablename__ = "workflow_review_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_id", "review_key", "version", name="uq_workflow_review_version"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"), index=True
+    )
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_client_session_id: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True
+    )
+    review_key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    schema_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    document: Mapped[dict] = mapped_column(JSON, nullable=False)
+    action: Mapped[str] = mapped_column(String(24), nullable=False, default="save")
+    receipt_id: Mapped[str] = mapped_column(String(48), nullable=False, unique=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
