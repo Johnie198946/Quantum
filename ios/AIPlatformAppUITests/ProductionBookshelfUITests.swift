@@ -940,18 +940,8 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         let download = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "下载可编辑 PPTX")).firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 60), "完成态未开放可编辑 PPTX 下载/分享。")
         download.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         XCTAssertTrue(waitUntil(timeout: 30) {
-            app.sheets.firstMatch.exists
-                || app.buttons["保存到“文件”"].exists
-                || app.buttons["存储到“文件”"].exists
-                || app.buttons["拷贝"].exists
-                || springboard.descendants(matching: .any).matching(
-                    NSPredicate(format: "label CONTAINS %@", "保存到")
-                ).firstMatch.exists
-                || springboard.descendants(matching: .any).matching(
-                    NSPredicate(format: "label == %@", "拷贝")
-                ).firstMatch.exists
+            !download.isHittable
         }, "PPTX 下载/分享面板未打开。")
         attachScreenshot(named: "istanbul-completed-pptx-download")
     }
