@@ -271,7 +271,12 @@ def test_workflow_creation_capabilities_accept_bounded_client_session_provenance
         field = catalog[capability_id]["input_schema"]["properties"][
             "source_client_session_id"
         ]
-        assert field == {"type": "string", "minLength": 1, "maxLength": 128}
+        assert field == {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+        }
         assert "source_client_session_id" not in catalog[capability_id]["input_schema"][
             "required"
         ]

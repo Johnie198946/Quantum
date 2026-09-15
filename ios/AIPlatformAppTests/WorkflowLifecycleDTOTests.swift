@@ -4764,6 +4764,58 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testDirectWorkflowCreationEncodesActiveClientSession() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        _ = try await api.createWorkflow(
+            title: "Delayed",
+            description: "delayed-switch",
+            desiredOutput: "report",
+            sourceClientSessionId: "session-direct"
+        )
+
+        let captured = try XCTUnwrap(APIContractURLProtocol.requests().last)
+        let envelope = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
+        )
+        let input = try XCTUnwrap(envelope["input"] as? [String: Any])
+        XCTAssertEqual(input["source_client_session_id"] as? String, "session-direct")
+    }
+
+    @MainActor
+    func testDirectWorkflowCreationFailsClosedWithoutClientSession() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        do {
+            _ = try await api.createWorkflow(
+                title: "Blocked",
+                description: "No active session",
+                desiredOutput: "report",
+                sourceClientSessionId: ""
+            )
+            XCTFail("Expected missing client session to fail closed")
+        } catch { }
+
+        XCTAssertTrue(APIContractURLProtocol.requests().isEmpty)
+    }
+
+    @MainActor
     func testInterruptedCapabilityProposalRestoresRetryWithSameRequestKey() async throws {
         struct Output: Decodable { let value: String }
         let proposalData = Data(#"{"proposal_id":"stable-proposal-1","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"applying"}"#.utf8)
@@ -5088,11 +5140,15 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
 
     @MainActor
     func testPendingWorkflowPresentBeforeConsumerMountsOpensAndClears() async throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "deep-link-tenant", userId: "deep-link-user")
+        coordinator.selectClientSession("session-first-mount")
+        defer { coordinator.deactivate() }
         let appState = AppState(activeTab: 0)
         appState.openWorkflow("workflow-first-mount")
         let workflow = try JSONDecoder().decode(
             WorkflowDTO.self,
-            from: Data(#"{"id":"workflow-first-mount","title":"First","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+            from: Data(#"{"id":"workflow-first-mount","title":"First","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-first-mount","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
         )
 
         let resolved = await appState.resolvePendingWorkflow { id in
@@ -5108,6 +5164,10 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     @MainActor
     func testPendingWorkflowFetchFailureKeepsRequestForRetry() async {
         enum ExpectedFailure: Error { case unavailable }
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "retry-tenant", userId: "retry-user")
+        coordinator.selectClientSession("session-retry")
+        defer { coordinator.deactivate() }
         let appState = AppState(activeTab: 0)
         appState.openWorkflow("workflow-retry")
 
@@ -5118,6 +5178,26 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertNil(resolved)
         XCTAssertEqual(appState.pendingWorkflowId, "workflow-retry")
         XCTAssertEqual(appState.activeTab, 1)
+    }
+
+    @MainActor
+    func testPendingWorkflowRejectsForeignClientSessionBeforeNavigation() async throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "foreign-link-tenant", userId: "foreign-link-user")
+        coordinator.selectClientSession("session-a")
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-session-b")
+        let foreign = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-session-b","title":"Foreign","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let resolved = await appState.resolvePendingWorkflow { _ in foreign }
+
+        XCTAssertNil(resolved)
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertEqual(appState.pendingWorkflowScopeError, "此工作流不属于当前对话会话，已阻止打开。")
     }
 
     func testAgentDescriptionContractAndCollapseBoundary() {
@@ -5182,15 +5262,20 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     func testWorkflowActivityOwnerSwitchClearsPreviousUsersProjection() throws {
         let coordinator = WorkflowActivityCoordinator()
         coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
         let workflow = try JSONDecoder().decode(
             WorkflowDTO.self,
-            from: Data(#"{"id":"workflow-user-a","title":"Private A","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+            from: Data(#"{"id":"workflow-user-a","title":"Private A","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
         )
         coordinator.track(workflow)
         XCTAssertEqual(coordinator.workflows[workflow.id], workflow)
+        let ownerA = try XCTUnwrap(coordinator.currentScope)
 
         coordinator.activate(tenantKey: "tenant-b", userId: "user-b")
+        coordinator.selectClientSession("session-b")
+        let ownerB = try XCTUnwrap(coordinator.currentScope)
 
+        XCTAssertGreaterThan(ownerB.generation, ownerA.generation)
         XCTAssertTrue(coordinator.workflows.isEmpty)
         XCTAssertTrue(coordinator.executions.isEmpty)
         XCTAssertTrue(coordinator.visibleActivities.isEmpty)
@@ -5204,6 +5289,7 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     func testWorkflowActivityProjectionIsBoundToOriginatingChatSession() throws {
         let coordinator = WorkflowActivityCoordinator()
         coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
         let workflowA = try JSONDecoder().decode(
             WorkflowDTO.self,
             from: Data(#"{"id":"workflow-a","title":"A","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
@@ -5226,11 +5312,51 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         coordinator.trackExecution(try execution("execution-b", workflowId: workflowB.id), workflow: workflowB)
         coordinator.trackExecution(try execution("execution-legacy", workflowId: legacy.id), workflow: legacy)
 
-        coordinator.selectClientSession("session-a")
         XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowA.id])
         coordinator.selectClientSession("session-b")
+        coordinator.trackExecution(try execution("execution-b", workflowId: workflowB.id), workflow: workflowB)
         XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowB.id])
         coordinator.selectClientSession(nil)
         XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+    }
+
+    @MainActor
+    func testDelayedGenerationCannotMutateReplacementSession() async throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let generationA = try XCTUnwrap(coordinator.currentScope)
+        let delayed = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"delayed-a","title":"Delayed","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let delayedResponse = Task { @MainActor in
+            coordinator.track(delayed, in: generationA)
+        }
+        coordinator.selectClientSession("session-b")
+        let generationB = try XCTUnwrap(coordinator.currentScope)
+        XCTAssertGreaterThan(generationB.generation, generationA.generation)
+
+        await delayedResponse.value
+
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
+    }
+
+    @MainActor
+    func testCrossSessionWorkflowIsRejectedBeforeTracking() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let foreign = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"foreign","title":"Foreign","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        coordinator.track(foreign)
+
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
     }
 }

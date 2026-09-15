@@ -173,7 +173,7 @@ capabilities:
     description: Create a real workflow draft through the existing workflow handler.
     positive_examples: ["Create a market research workflow"]
     negative_examples: ["Start an unapproved plan"]
-    input_schema: {type: object, properties: {title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document]}, source_client_session_id: {type: string, minLength: 1, maxLength: 128}}, required: [title, description], additionalProperties: false}
+    input_schema: {type: object, properties: {title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document]}, source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}}, required: [title, description], additionalProperties: false}
     output_schema: {type: object, required: [workflow]}
     effect: write
     risk: medium
@@ -257,7 +257,7 @@ capabilities:
     description: Create a presentation workflow bound to an existing parsed document.
     positive_examples: ["Create a PPT from this uploaded document"]
     negative_examples: ["Pretend an upload is a finished presentation"]
-    input_schema: {type: object, properties: {source_document_id: {type: string, minLength: 8, maxLength: 48}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, source_client_session_id: {type: string, minLength: 1, maxLength: 128}}, required: [source_document_id, title, description], additionalProperties: false}
+    input_schema: {type: object, properties: {source_document_id: {type: string, minLength: 8, maxLength: 48}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}}, required: [source_document_id, title, description], additionalProperties: false}
     output_schema: {type: object, required: [workflow]}
     effect: write
     risk: medium
@@ -288,7 +288,7 @@ capabilities:
         layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
         slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -328,7 +328,7 @@ capabilities:
         citation_style: {type: string, enum: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], default: none}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -368,7 +368,7 @@ capabilities:
         citation_style: {type: string, enum: [apa7, chicago_author_date, gbt7714, footnotes], default: apa7}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material, research_question]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -408,7 +408,7 @@ capabilities:
         citation_style: {type: string, enum: [apa7, mla9, chicago_author_date, gbt7714], default: apa7}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material, thesis]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}

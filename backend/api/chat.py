@@ -30,6 +30,7 @@ from backend.api.auth import require_auth
 from backend.api.catalog import compute_catalog
 from backend.api.identity import match_identity_rule
 from backend.db import SessionLocal
+from backend.services.workflow_session_scope import register_client_session
 from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
@@ -1019,6 +1020,7 @@ def _message_sse(answer: str, *, clarify: ClarifyPayload | None = None) -> Itera
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     """问答接口 — 身份规则优先，其余直接透传 Hermes 并经首屏熔断与 citations 提炼。"""
+    await register_client_session(payload, req.session_id, req.request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,
@@ -1753,6 +1755,7 @@ async def stream_chat(
     身份话术规则秒回：命中即合成 SSE 流直接返回，零 agent 拉起（「你是谁」秒答）。
     """
     effective_request_id = req.request_id or uuid.uuid4().hex
+    await register_client_session(payload, req.session_id, effective_request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,

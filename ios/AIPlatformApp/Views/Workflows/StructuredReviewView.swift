@@ -14,6 +14,8 @@ final class StructuredReviewViewModel: ObservableObject {
     let schemaId: String
     private let initialDocument: StructuredReviewDocumentDTO
     private let apiClient: APIClient
+    private let scope: WorkflowActivityCoordinator.Scope?
+    private let isScopeCurrent: (WorkflowActivityCoordinator.Scope) -> Bool
     private var etag: String?
 
     init(
@@ -21,7 +23,9 @@ final class StructuredReviewViewModel: ObservableObject {
         reviewKey: String,
         schemaId: String,
         initialDocument: StructuredReviewDocumentDTO,
-        apiClient: APIClient
+        apiClient: APIClient,
+        scope: WorkflowActivityCoordinator.Scope? = nil,
+        isScopeCurrent: @escaping (WorkflowActivityCoordinator.Scope) -> Bool = { _ in true }
     ) {
         self.workflowId = workflowId
         self.reviewKey = reviewKey
@@ -29,7 +33,11 @@ final class StructuredReviewViewModel: ObservableObject {
         self.initialDocument = initialDocument
         self.document = initialDocument
         self.apiClient = apiClient
+        self.scope = scope
+        self.isScopeCurrent = isScopeCurrent
     }
+
+    private var scopeIsCurrent: Bool { scope.map(isScopeCurrent) ?? true }
 
     var completedFieldCount: Int {
         document.fields.filter { field in
@@ -45,20 +53,24 @@ final class StructuredReviewViewModel: ObservableObject {
     }
 
     func load() async {
-        guard revision == nil, !isLoading else { return }
+        guard scopeIsCurrent, revision == nil, !isLoading else { return }
         isLoading = true
-        defer { isLoading = false }
+        defer { if scopeIsCurrent { isLoading = false } }
         do {
-            try apply(try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey))
+            let response = try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey)
+            guard scopeIsCurrent else { return }
+            try apply(response)
         } catch APIError.server(404, _) {
+            guard scopeIsCurrent else { return }
             await createAfterNotFound()
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func save() async {
-        guard !isSaving else { return }
+        guard scopeIsCurrent, !isSaving else { return }
         guard missingRequiredFields.isEmpty else {
             errorMessage = "请先填写：\(missingRequiredFields.joined(separator: "、"))"
             return
@@ -68,48 +80,59 @@ final class StructuredReviewViewModel: ObservableObject {
             return
         }
         isSaving = true
-        defer { isSaving = false }
+        defer { if scopeIsCurrent { isSaving = false } }
         do {
-            try apply(try await apiClient.saveStructuredReview(
+            let response = try await apiClient.saveStructuredReview(
                 workflowId: workflowId,
                 reviewKey: reviewKey,
                 schemaId: revision?.schemaId ?? schemaId,
                 document: document,
                 etag: etag
-            ))
+            )
+            guard scopeIsCurrent else { return }
+            try apply(response)
         } catch let error as StructuredReviewConflictError {
+            guard scopeIsCurrent else { return }
             conflict = error.payload
             errorMessage = error.payload.message
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func undo() async {
-        guard !isSaving, let etag else { return }
+        guard scopeIsCurrent, !isSaving, let etag else { return }
         isSaving = true
-        defer { isSaving = false }
+        defer { if scopeIsCurrent { isSaving = false } }
         do {
-            try apply(try await apiClient.undoStructuredReview(
+            let response = try await apiClient.undoStructuredReview(
                 workflowId: workflowId,
                 reviewKey: reviewKey,
                 etag: etag
-            ))
+            )
+            guard scopeIsCurrent else { return }
+            try apply(response)
         } catch let error as StructuredReviewConflictError {
+            guard scopeIsCurrent else { return }
             conflict = error.payload
             errorMessage = error.payload.message
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func loadRemoteConflict() async {
-        guard conflict != nil else { return }
+        guard scopeIsCurrent, conflict != nil else { return }
         isLoading = true
-        defer { isLoading = false }
+        defer { if scopeIsCurrent { isLoading = false } }
         do {
-            try apply(try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey))
+            let response = try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey)
+            guard scopeIsCurrent else { return }
+            try apply(response)
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -143,20 +166,28 @@ final class StructuredReviewViewModel: ObservableObject {
     }
 
     private func createAfterNotFound() async {
+        guard scopeIsCurrent else { return }
         do {
-            try apply(try await apiClient.createStructuredReview(
+            let response = try await apiClient.createStructuredReview(
                 workflowId: workflowId,
                 reviewKey: reviewKey,
                 schemaId: schemaId,
                 document: initialDocument
-            ))
+            )
+            guard scopeIsCurrent else { return }
+            try apply(response)
         } catch APIError.server(409, _) {
+            guard scopeIsCurrent else { return }
             do {
-                try apply(try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey))
+                let response = try await apiClient.fetchStructuredReview(workflowId: workflowId, reviewKey: reviewKey)
+                guard scopeIsCurrent else { return }
+                try apply(response)
             } catch {
+                guard scopeIsCurrent else { return }
                 errorMessage = error.localizedDescription
             }
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -180,14 +211,17 @@ public struct StructuredReviewView: View {
         workflowId: String,
         reviewKey: String,
         schemaId: String = "workflow.structured-review.v1",
-        initialDocument: StructuredReviewDocumentDTO
+        initialDocument: StructuredReviewDocumentDTO,
+        scope: WorkflowActivityCoordinator.Scope? = nil
     ) {
         _model = StateObject(wrappedValue: StructuredReviewViewModel(
             workflowId: workflowId,
             reviewKey: reviewKey,
             schemaId: schemaId,
             initialDocument: initialDocument,
-            apiClient: .shared
+            apiClient: .shared,
+            scope: scope,
+            isScopeCurrent: { WorkflowActivityCoordinator.shared.isCurrent($0) }
         ))
     }
 

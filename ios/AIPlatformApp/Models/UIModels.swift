@@ -2543,6 +2543,7 @@ public final class AppState: ObservableObject {
     @Published public var pendingChatContextScope: ChatContextScopeDTO? = nil
     @Published public var pendingChatSessionContext: ClientSessionContextDTO? = nil
     @Published public var pendingWorkflowId: String? = nil
+    @Published public var pendingWorkflowScopeError: String? = nil
     @Published public var pendingKnowledgeNavigation: KnowledgeNavigationTarget? = nil
     @Published public var pendingTopicSessionId: String? = nil
     /// 内存会话级 session_id（不持久化磁盘；404/401 清重发；账号切换清空）
@@ -2566,6 +2567,7 @@ public final class AppState: ObservableObject {
 
     private func activateLocalAccount(notify: Bool = true) {
         pendingWorkflowId = nil
+        pendingWorkflowScopeError = nil
         pendingKnowledgeNavigation = nil
         KnowledgeNoteStore.shared.activate(
             tenantKey: currentTenantKey, userId: currentUserId
@@ -2605,6 +2607,7 @@ public final class AppState: ObservableObject {
         self.pendingChatSessionContext = nil
         self.pendingKnowledgeNavigation = nil
         self.pendingWorkflowId = nil
+        self.pendingWorkflowScopeError = nil
         self.isDevMode = false
         WorkflowActivityCoordinator.shared.deactivate()
         KnowledgeNoteStore.shared.deactivate()
@@ -2634,6 +2637,7 @@ public final class AppState: ObservableObject {
 
     /// Routes every Hermes/QCP workflow event through one atomic UI action.
     public func openWorkflow(_ workflowId: String) {
+        pendingWorkflowScopeError = nil
         pendingWorkflowId = workflowId
         activeTab = 1
     }
@@ -2642,10 +2646,21 @@ public final class AppState: ObservableObject {
         using fetch: (String) async throws -> WorkflowDTO
     ) async -> WorkflowDTO? {
         guard let workflowId = pendingWorkflowId else { return nil }
+        guard let scope = WorkflowActivityCoordinator.shared.currentScope else {
+            pendingWorkflowScopeError = "当前对话会话不可用，无法打开此工作流。"
+            return nil
+        }
         do {
             let workflow = try await fetch(workflowId)
-            guard pendingWorkflowId == workflowId else { return nil }
+            guard pendingWorkflowId == workflowId,
+                  WorkflowActivityCoordinator.shared.isCurrent(scope) else { return nil }
+            guard WorkflowActivityCoordinator.shared.accepts(workflow, in: scope) else {
+                pendingWorkflowId = nil
+                pendingWorkflowScopeError = "此工作流不属于当前对话会话，已阻止打开。"
+                return nil
+            }
             pendingWorkflowId = nil
+            pendingWorkflowScopeError = nil
             return workflow
         } catch {
             return nil

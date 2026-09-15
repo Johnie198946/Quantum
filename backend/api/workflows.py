@@ -154,6 +154,7 @@ class WorkflowCreate(BaseModel):
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
     output_kind: Literal["general", "presentation", "document"] = "general"
+    source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
 
 
 class ClarificationResponse(BaseModel):
@@ -267,7 +268,7 @@ def workflow_out(row: WorkflowDefinition) -> dict[str, Any]:
         "active_plan_id": row.active_plan_id,
         "clarification_session_id": row.clarification_session_id,
         "requirements_snapshot": snapshot,
-        "source_client_session_id": snapshot.get("source_client_session_id"),
+        "source_client_session_id": row.source_client_session_id,
         "primary_agent_id": row.primary_agent_id,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -493,10 +494,7 @@ async def owned_workflow(
             )
         )
     ).scalar_one_or_none()
-    if row is None or (
-        row.clarification_session_id
-        and row.created_by != current_user(payload)
-    ):
+    if row is None or row.created_by != current_user(payload):
         raise HTTPException(status_code=404, detail="工作流不存在")
     return row
 
@@ -977,10 +975,7 @@ async def owned_execution(
         )
     ).scalar_one_or_none()
     workflow = await db.get(WorkflowDefinition, row.workflow_id) if row else None
-    if row is None or workflow is None or (
-        workflow.clarification_session_id
-        and workflow.created_by != current_user(payload)
-    ):
+    if row is None or workflow is None or workflow.created_by != current_user(payload):
         raise HTTPException(status_code=404, detail="工作流执行不存在")
     return row
 
@@ -994,6 +989,20 @@ async def _create_workflow(
     requirements_explicit: bool | None = None,
     requirements_snapshot_overrides: dict[str, Any] | None = None,
 ):
+    source_client_session_id = body.source_client_session_id or (
+        (requirements_snapshot_overrides or {}).get("source_client_session_id")
+    )
+    source_client_session_binding_id: str | None = None
+    if source_client_session_id:
+        from backend.services.workflow_session_scope import (
+            require_registered_client_session,
+        )
+
+        binding = await require_registered_client_session(
+            payload, str(source_client_session_id)
+        )
+        source_client_session_id = binding.session_id
+        source_client_session_binding_id = binding.id
     workflow_id = workflow_id or uid("wf")
     session_id = "wfs_" + workflow_id.removeprefix("wf_") if qcp_request_hash else uid("wfs")
     async with SessionLocal() as db:
@@ -1021,6 +1030,8 @@ async def _create_workflow(
         }
         if requirements_snapshot_overrides:
             requirements_snapshot.update(requirements_snapshot_overrides)
+        if source_client_session_id:
+            requirements_snapshot["source_client_session_id"] = source_client_session_id
         if qcp_request_hash:
             requirements_snapshot["qcp_request_hash"] = qcp_request_hash
         if body.output_kind == "presentation":
@@ -1102,6 +1113,8 @@ async def _create_workflow(
             status="clarifying",
             clarification_session_id=session_id,
             requirements_snapshot=requirements_snapshot,
+            source_client_session_binding_id=source_client_session_binding_id,
+            source_client_session_id=source_client_session_id,
         )
         clarification = WorkflowClarificationSession(
             id=session_id,
@@ -1554,7 +1567,10 @@ async def workflow_lifecycle_events(
 
 
 @router.get("/workflow-activities/active")
-async def active_workflow_activities(payload: dict = Depends(require_auth)):
+async def active_workflow_activities(
+    source_client_session_id: str | None = Query(None, min_length=1, max_length=100),
+    payload: dict = Depends(require_auth),
+):
     """Bootstrap resumable planning/building activities for an app foreground."""
     async with SessionLocal() as db:
         rows = list(
@@ -1577,6 +1593,11 @@ async def active_workflow_activities(payload: dict = Depends(require_auth)):
                 )
             ).all()
         )
+        if source_client_session_id is not None:
+            rows = [
+                row for row in rows
+                if row[0].source_client_session_id == source_client_session_id
+            ]
         result = []
         for workflow, session in rows:
             latest = (
@@ -1832,10 +1853,7 @@ async def list_workflows(payload: dict = Depends(require_auth)):
         )
         result = []
         for row in rows:
-            if (
-                row.clarification_session_id
-                and row.created_by != current_user(payload)
-            ):
+            if row.created_by != current_user(payload):
                 continue
             latest = (
                 await db.execute(
@@ -2617,6 +2635,11 @@ async def start_workflow(
             )
         ).scalar_one_or_none()
         if existing:
+            if existing.workflow_id != workflow.id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "idempotency_scope_conflict"},
+                )
             nodes = list(
                 (
                     await db.execute(
@@ -2676,7 +2699,10 @@ async def start_workflow(
 
 
 @router.get("/workflow-executions/active")
-async def active_workflow_executions(payload: dict = Depends(require_auth)):
+async def active_workflow_executions(
+    source_client_session_id: str | None = Query(None, min_length=1, max_length=100),
+    payload: dict = Depends(require_auth),
+):
     """Return resumable executions owned by the current user.
 
     This is the authority used after foregrounding or a cold app launch; an SSE
@@ -2694,6 +2720,11 @@ async def active_workflow_executions(payload: dict = Depends(require_auth)):
             )
             .order_by(WorkflowExecution.created_at.desc())
         )).all())
+        if source_client_session_id is not None:
+            rows = [
+                row for row in rows
+                if row[1].source_client_session_id == source_client_session_id
+            ]
         result = []
         for execution, workflow in rows:
             nodes = list((await db.execute(

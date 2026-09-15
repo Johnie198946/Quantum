@@ -3039,8 +3039,12 @@ public final class APIClient: ObservableObject {
         description: String,
         desiredOutput: String,
         sourceDocumentId: String? = nil,
-        outputKind: String = "general"
+        outputKind: String = "general",
+        sourceClientSessionId: String
     ) async throws -> WorkflowCreateResponseDTO {
+        guard !sourceClientSessionId.isEmpty else {
+            throw APIError.network("当前对话会话不可用，无法创建工作流")
+        }
         let key = UUID().uuidString
         let client = CapabilityClient(apiClient: self)
         let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO>
@@ -3048,7 +3052,8 @@ public final class APIClient: ObservableObject {
             QCPCapabilityID.workflowCreate,
             input: WorkflowCreateRequestDTO(
                 title: title, description: description, desiredOutput: desiredOutput,
-                sourceDocumentId: sourceDocumentId, outputKind: outputKind
+                sourceDocumentId: sourceDocumentId, outputKind: outputKind,
+                sourceClientSessionId: sourceClientSessionId
             ),
             confirmed: true,
             idempotencyKey: key
@@ -3068,17 +3073,23 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func fetchActiveWorkflowActivities() async throws -> [WorkflowActiveActivityDTO] {
+    public func fetchActiveWorkflowActivities(
+        clientSessionId: String
+    ) async throws -> [WorkflowActiveActivityDTO] {
         try await request(
             [WorkflowActiveActivityDTO].self,
-            path: "workflow-activities/active"
+            path: "workflow-activities/active",
+            queryItems: [URLQueryItem(name: "source_client_session_id", value: clientSessionId)]
         )
     }
 
-    public func fetchActiveWorkflowExecutions() async throws -> [WorkflowActiveExecutionDTO] {
+    public func fetchActiveWorkflowExecutions(
+        clientSessionId: String
+    ) async throws -> [WorkflowActiveExecutionDTO] {
         try await request(
             [WorkflowActiveExecutionDTO].self,
-            path: "workflow-executions/active"
+            path: "workflow-executions/active",
+            queryItems: [URLQueryItem(name: "source_client_session_id", value: clientSessionId)]
         )
     }
 

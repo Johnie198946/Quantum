@@ -49,6 +49,7 @@ class TestWorkflowsAPI(unittest.TestCase):
             WorkflowPlanningJob,
             WorkflowPlanVersion,
             WorkflowReviewRevision,
+            WorkflowClientSessionBinding,
             WorkflowClarificationSession,
             WorkflowLifecycleEvent,
             WorkflowSessionMessage,
@@ -93,6 +94,7 @@ class TestWorkflowsAPI(unittest.TestCase):
                     WorkflowSessionMessage,
                     WorkflowClarificationSession,
                     WorkflowDefinition,
+                    WorkflowClientSessionBinding,
                     ShowroomSession,
                     CustomerDemand,
                     AgentInvocationRelation,
@@ -135,6 +137,142 @@ class TestWorkflowsAPI(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["workflow"]
+
+    def test_source_client_session_requires_server_registration_and_owner_binding(self):
+        session_id = "chat-session-owner-bound"
+        unregistered = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "会话隔离任务",
+                "description": "仅允许当前服务端已登记会话创建此任务",
+                "source_client_session_id": session_id,
+            },
+        )
+        self.assertEqual(unregistered.status_code, 404, unregistered.text)
+        self.assertEqual(
+            unregistered.json()["detail"]["code"],
+            "client_session_not_registered",
+        )
+
+        observed = self.request(
+            "POST",
+            "/api/chat",
+            json={"question": "你是谁", "session_id": session_id},
+        )
+        self.assertEqual(observed.status_code, 200, observed.text)
+
+        created = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "会话隔离任务",
+                "description": "仅允许当前服务端已登记会话创建此任务",
+                "source_client_session_id": session_id,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        created_body = created.json()["workflow"]
+        snapshot = created_body["requirements_snapshot"]
+        self.assertEqual(snapshot["source_client_session_id"], session_id)
+        self.assertEqual(created_body["source_client_session_id"], session_id)
+
+        other_session_id = "session-beta-2"
+        registered_other = self.request(
+            "POST",
+            "/api/chat",
+            json={"question": "你是谁", "session_id": other_session_id},
+        )
+        self.assertEqual(registered_other.status_code, 200, registered_other.text)
+        other_created = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "Other session workflow",
+                "description": "Keep this workflow out of session alpha",
+                "source_client_session_id": other_session_id,
+            },
+        )
+        self.assertEqual(other_created.status_code, 201, other_created.text)
+
+        from backend.db import SessionLocal
+        from backend.models.workflow import (
+            WorkflowClarificationSession,
+            WorkflowDefinition,
+        )
+
+        async def mark_both_sessions_active():
+            async with SessionLocal() as db:
+                rows = list((await db.execute(
+                    select(WorkflowClarificationSession).where(
+                        WorkflowClarificationSession.workflow_id.in_([
+                            created_body["id"],
+                            other_created.json()["workflow"]["id"],
+                        ])
+                    )
+                )).scalars().all())
+                for row in rows:
+                    row.phase = "planning"
+                await db.commit()
+
+        asyncio.run(mark_both_sessions_active())
+        active_alpha = self.request(
+            "GET",
+            "/api/v1/workflow-activities/active"
+            f"?source_client_session_id={session_id}",
+        )
+        self.assertEqual(active_alpha.status_code, 200, active_alpha.text)
+        self.assertEqual(
+            [item["workflow"]["id"] for item in active_alpha.json()],
+            [created_body["id"]],
+        )
+
+        async def bound_scope():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, created.json()["workflow"]["id"])
+                return row.source_client_session_binding_id, row.source_client_session_id
+
+        binding_id, stored_session_id = asyncio.run(bound_scope())
+        self.assertTrue(binding_id.startswith("wcs_"))
+        self.assertEqual(stored_session_id, session_id)
+
+        owner_conflict = self.request(
+            "POST",
+            "/api/chat",
+            sub="gamma",
+            json={"question": "你是谁", "session_id": session_id},
+        )
+        self.assertEqual(owner_conflict.status_code, 409, owner_conflict.text)
+        self.assertEqual(
+            owner_conflict.json()["detail"]["code"],
+            "client_session_owner_conflict",
+        )
+
+    def test_legacy_workflow_without_clarification_session_is_not_tenant_wide(self):
+        from backend.db import SessionLocal
+        from backend.models.workflow import WorkflowDefinition
+
+        async def seed():
+            async with SessionLocal() as db:
+                db.add(WorkflowDefinition(
+                    id="wf_legacy_owner_only",
+                    tenant_key="tenant-alpha",
+                    created_by="alpha",
+                    title="历史工作流",
+                    description="没有澄清会话也必须保持所有者隔离",
+                    clarification_session_id=None,
+                ))
+                await db.commit()
+
+        asyncio.run(seed())
+        denied = self.request(
+            "GET", "/api/v1/workflows/wf_legacy_owner_only", sub="gamma"
+        )
+        self.assertEqual(denied.status_code, 404, denied.text)
+        listed = self.request("GET", "/api/v1/workflows", sub="gamma")
+        self.assertNotIn(
+            "wf_legacy_owner_only", {item["id"] for item in listed.json()}
+        )
 
     def test_structured_review_persists_with_etag_cas_undo_and_owner_scope(self):
         workflow = self.create()

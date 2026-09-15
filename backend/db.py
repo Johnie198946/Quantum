@@ -340,6 +340,25 @@ def _migrate_workflow_contract_columns(connection) -> None:
     """Add and backfill immutable plan/approval binding columns."""
     schema = inspect(connection)
     tables = set(schema.get_table_names())
+    if "workflows" in tables:
+        existing = {item["name"] for item in schema.get_columns("workflows")}
+        columns = {
+            "source_client_session_binding_id": "VARCHAR(64)",
+            "source_client_session_id": "VARCHAR(100)",
+        }
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(
+                    f'ALTER TABLE workflows ADD COLUMN "{name}" {definition}'
+                )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_workflows_source_client_session_binding_id "
+            "ON workflows (source_client_session_binding_id)"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_workflows_source_client_session_id "
+            "ON workflows (source_client_session_id)"
+        )
     if "workflow_plan_versions" in tables:
         existing = {item["name"] for item in schema.get_columns("workflow_plan_versions")}
         columns = {
