@@ -36,13 +36,13 @@ def test_istanbul_route_uses_real_coordinates_on_both_continents():
 def test_geo_route_fails_closed_for_unknown_or_fictional_points():
     with pytest.raises(ValueError, match="unknown Istanbul landmark"):
         resolve_istanbul_landmarks(["Hagia Sophia", "Imaginary Palace"])
-    with pytest.raises(ValueError, match="Europe and Asia"):
-        validate_geo_points(
-            [
-                {"name": "A", "longitude": 28.98, "latitude": 41.01, "side": "europe"},
-                {"name": "B", "longitude": 28.99, "latitude": 41.02, "side": "europe"},
-            ]
-        )
+    europe_only = validate_geo_points(
+        [
+            {"name": "A", "longitude": 28.98, "latitude": 41.01, "side": "europe"},
+            {"name": "B", "longitude": 28.99, "latitude": 41.02, "side": "europe"},
+        ]
+    )
+    assert {point.side for point in europe_only} == {"europe"}
     point = resolve_istanbul_landmarks(["Hagia Sophia", "Kadikoy"])[0]
     with pytest.raises(ValueError, match="outside Istanbul"):
         project_point(type(point)("Outside", 30.0, 42.0, "asia"), width=100, height=100)

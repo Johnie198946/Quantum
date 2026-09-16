@@ -5145,6 +5145,28 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testCreatedWorkflowOpenAtomicallyRestoresOwnerAndSessionScope() throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.deactivate()
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.currentTenantKey = "atomic-tenant"
+        appState.currentUserId = "atomic-user"
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-atomic","title":"Atomic","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":"clarification-atomic","sourceClientSessionId":"session-atomic","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        appState.openWorkflow(workflow)
+
+        XCTAssertEqual(coordinator.currentScope?.ownerIdentity, "atomic-tenant\u{0}atomic-user")
+        XCTAssertEqual(coordinator.currentScope?.clientSessionId, "session-atomic")
+        XCTAssertEqual(coordinator.workflows[workflow.id], workflow)
+        XCTAssertEqual(appState.pendingWorkflowId, workflow.id)
+        XCTAssertEqual(appState.activeTab, 1)
+    }
+
+    @MainActor
     func testPendingWorkflowPresentBeforeConsumerMountsOpensAndClears() async throws {
         let coordinator = WorkflowActivityCoordinator.shared
         coordinator.activate(tenantKey: "deep-link-tenant", userId: "deep-link-user")

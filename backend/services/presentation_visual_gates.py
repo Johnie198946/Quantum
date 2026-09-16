@@ -55,6 +55,7 @@ def inspect_pptx(pptx_path: Path) -> dict[str, Any]:
         if not meaningful:
             errors.append(f"slide {slide_index}: blank page")
         text_shapes = []
+        thin_decorations = []
         for shape in meaningful:
             total_shapes += 1
             if (
@@ -105,6 +106,11 @@ def inspect_pptx(pptx_path: Path) -> dict[str, Any]:
                         errors.append(
                             f"slide {slide_index}: text below 18pt in {shape.name}"
                         )
+            elif shape.shape_type != MSO_SHAPE_TYPE.PICTURE and (
+                (shape.width <= 73152 and shape.height >= 274320)
+                or (shape.height <= 73152 and shape.width >= 274320)
+            ):
+                thin_decorations.append(shape)
         for first_index, first in enumerate(text_shapes):
             first_box = (
                 first.left,
@@ -134,6 +140,24 @@ def inspect_pptx(pptx_path: Path) -> dict[str, Any]:
                         errors.append(
                             f"slide {slide_index}: overlapping text objects {first.name} and {second.name}"
                         )
+        for decoration in thin_decorations:
+            decoration_box = (
+                decoration.left,
+                decoration.top,
+                decoration.left + decoration.width,
+                decoration.top + decoration.height,
+            )
+            for text_shape in text_shapes:
+                overlap_width = min(decoration_box[2], text_shape.left + text_shape.width) - max(
+                    decoration_box[0], text_shape.left
+                )
+                overlap_height = min(decoration_box[3], text_shape.top + text_shape.height) - max(
+                    decoration_box[1], text_shape.top
+                )
+                if overlap_width > 1000 and overlap_height > 1000:
+                    errors.append(
+                        f"slide {slide_index}: decorative line {decoration.name} intersects text {text_shape.name}"
+                    )
     if len(set(layouts)) < 5:
         errors.append("deck uses fewer than five layout families")
     if any(left == right for left, right in zip(layouts, layouts[1:])):

@@ -176,7 +176,11 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
     ) as create:
         result = await invoke_capability(
             "presentation.create_from_text",
-            {"title": "因特拉肯旅行攻略", "text_material": "湖泊、雪山与少女峰路线"},
+            {
+                "title": "因特拉肯旅行攻略",
+                "text_material": "湖泊、雪山与少女峰路线",
+                "editorial_instruction": "地图主导，住宿与美食沿路线编排",
+            },
             payload={"tenant_key": "tenant-a", "user_id": "user-a"},
             confirmed=True,
             idempotency_key="interlaken-deck-1",
@@ -192,6 +196,10 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
     call_options = create.await_args.kwargs
     assert call_options["requirements_explicit"] is True
     assert call_options["requirements_snapshot_overrides"]["text_material"] == "湖泊、雪山与少女峰路线"
+    assert call_options["requirements_snapshot_overrides"]["editorial_instruction"] == "地图主导，住宿与美食沿路线编排"
+    assert call_options["requirements_snapshot_overrides"]["source_text_sha256"] == hashlib.sha256(
+        "湖泊、雪山与少女峰路线".encode("utf-8")
+    ).hexdigest()
     assert call_options["requirements_snapshot_overrides"]["artifact_contract"]["extension"] == "pptx"
     assert body.output_kind == "presentation"
     assert "management_briefing" in body.description
@@ -416,7 +424,10 @@ def test_bridge_compiles_every_implemented_capability_as_a_native_tool(monkeypat
     assert text_schema["required"] == ["title", "text_material"]
     assert text_schema["properties"]["intended_use"]["default"] == "management_briefing"
     assert text_schema["properties"]["layout_style"]["default"] == "clean_professional_16_9"
-    assert text_schema["properties"]["presentation_review_gates"]["default"] == []
+    assert text_schema["properties"]["presentation_review_gates"]["default"] == [
+        "outline",
+        "design",
+    ]
     contract = implemented["presentation.create_from_text"]["workflow_contract"]
     assert contract["clarification"].startswith("Ask only")
     assert contract["confirmation_points"] == [

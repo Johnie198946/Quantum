@@ -2642,6 +2642,18 @@ public final class AppState: ObservableObject {
         activeTab = 1
     }
 
+    /// Opens a workflow created by the active chat while preserving the
+    /// authoritative owner/session scope across the tab transition.
+    public func openWorkflow(_ workflow: WorkflowDTO) {
+        let activities = WorkflowActivityCoordinator.shared
+        if !currentTenantKey.isEmpty, !currentUserId.isEmpty {
+            activities.activate(tenantKey: currentTenantKey, userId: currentUserId)
+        }
+        activities.selectClientSession(workflow.sourceClientSessionId)
+        activities.track(workflow)
+        openWorkflow(workflow.id)
+    }
+
     public func resolvePendingWorkflow(
         using fetch: (String) async throws -> WorkflowDTO
     ) async -> WorkflowDTO? {

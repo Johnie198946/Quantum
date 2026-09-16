@@ -29,6 +29,16 @@ def auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+class TestComparisonIntent(unittest.TestCase):
+    def test_long_source_with_incidental_comparatively_expensive_phrase_is_not_mutated(self):
+        from backend.api.chat import _comparison_table_requested
+
+        source = "伊斯坦布尔路线材料。" * 60 + "这个浴场比较贵，但另一个便宜。"
+        self.assertFalse(_comparison_table_requested(source))
+        self.assertTrue(_comparison_table_requested("请对比公共交通和 Uber"))
+        self.assertTrue(_comparison_table_requested("A vs B 哪个好"))
+
+
 class TestRuntimeShardURL(unittest.TestCase):
     def test_server_owned_shard_map_preserves_only_the_endpoint_path(self):
         from backend.api.chat import _bridge_url_for_placement

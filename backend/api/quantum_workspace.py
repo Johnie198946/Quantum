@@ -124,6 +124,17 @@ from backend.services.qws_calibration import (
     propose_calibration,
     validate_autonomy_policy,
 )
+from backend.services.batch6_refactor_guard import require_batch6_execution_enabled
+from backend.services.qws_access import (
+    project_for_access as _project_for_access,
+    project_for_owner as _project_for_owner,
+)
+from backend.services.qws_session_context import (
+    compact_qws_business_snapshot as _compact_qws_business_snapshot,
+    context_changes as _context_changes,
+    normalize_card_context as _normalize_card_context,
+    task_from_card_context as _task_from_card_context,
+)
 from backend.services.project_intent import (
     build_intent_capsule,
     build_intent_snapshot,
@@ -1620,78 +1631,6 @@ def _draft_out(draft: WorkspaceProcessDraft) -> dict[str, Any]:
         "truth": "AI_PROPOSED",
         "process": draft.draft_snapshot,
     }
-
-
-async def _project_for_owner(
-    db, project_id: str, tenant_key: str, owner_user_id: str
-) -> WorkspaceProject:
-    project = await db.scalar(
-        select(WorkspaceProject).where(
-            WorkspaceProject.id == project_id,
-            WorkspaceProject.tenant_key == tenant_key,
-            WorkspaceProject.owner_user_id == owner_user_id,
-            WorkspaceProject.status != "deleted",
-        )
-    )
-    if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    return project
-
-
-async def _project_for_access(
-    db,
-    project_id: str,
-    tenant_key: str,
-    user_id: str,
-    required_scope: Literal["project:read", "project:write"],
-    *,
-    allow_closed_write: bool = False,
-) -> WorkspaceProject:
-    project = await db.scalar(
-        select(WorkspaceProject).where(
-            WorkspaceProject.id == project_id,
-            WorkspaceProject.tenant_key == tenant_key,
-            WorkspaceProject.status != "deleted",
-        )
-    )
-    if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    if (
-        project.status == "closed"
-        and required_scope == "project:write"
-        and not allow_closed_write
-    ):
-        raise HTTPException(status_code=409, detail="project_closed_read_only")
-    if project.owner_user_id == user_id:
-        return project
-    member = await db.scalar(
-        select(WorkspaceProjectMember).where(
-            WorkspaceProjectMember.project_id == project.id,
-            WorkspaceProjectMember.tenant_key == tenant_key,
-            WorkspaceProjectMember.user_id == user_id,
-            WorkspaceProjectMember.status == "ACTIVE",
-        )
-    )
-    if member is None:
-        # The project exists in this tenant; conceal membership only for a
-        # missing project/cross-tenant lookup, not for an existing memberless user.
-        member_exists = await db.scalar(
-            select(WorkspaceProjectMember.id).where(
-                WorkspaceProjectMember.project_id == project.id,
-                WorkspaceProjectMember.tenant_key == tenant_key,
-                WorkspaceProjectMember.user_id == user_id,
-            )
-        )
-        if member_exists is not None:
-            raise HTTPException(status_code=403, detail="active project membership required")
-        raise HTTPException(status_code=404, detail="project not found")
-    scopes = set(member.scopes or [])
-    allowed = required_scope in scopes or (
-        required_scope == "project:read" and "project:write" in scopes
-    )
-    if not allowed:
-        raise HTTPException(status_code=403, detail=f"{required_scope} scope required")
-    return project
 
 
 INTERACTIVE_HUMAN_AMR = {"pwd", "otp", "mfa", "passkey", "sms", "oidc", "oauth"}
@@ -5809,159 +5748,6 @@ async def edit_project_task(
         })
 
 
-_CARD_CONTEXT_MAX_BYTES = 512 * 1024
-
-
-def _normalize_card_context(
-    raw: dict[str, Any] | None,
-    *,
-    project: WorkspaceProject,
-    task: dict[str, Any],
-) -> dict[str, Any]:
-    context = raw or {
-        "schema_version": 1,
-        "project": {
-            "id": project.id,
-            "name": project.name,
-            "business_goal": project.goal,
-        },
-        "task": {
-            "qws_task_id": task["id"],
-            "title": task["title"],
-            "descriptions": [
-                {"source": "qws_summary", "content": task.get("summary") or ""}
-            ],
-            "status": task.get("status"),
-            "assignee": task.get("assignee_role"),
-            "deliverables": task.get("deliverables") or [],
-        },
-    }
-    try:
-        normalized = json.loads(json.dumps(context, ensure_ascii=False))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="card_context must be JSON serializable") from exc
-    if not isinstance(normalized, dict):
-        raise HTTPException(status_code=422, detail="card_context must be an object")
-    project_context = normalized.get("project")
-    task_context = normalized.get("task")
-    if not isinstance(project_context, dict) or not isinstance(task_context, dict):
-        raise HTTPException(status_code=422, detail="card_context project/task objects are required")
-    if str(project_context.get("id") or "") != project.id:
-        raise HTTPException(status_code=409, detail="card context project binding changed")
-    if str(task_context.get("qws_task_id") or "") != task["id"]:
-        raise HTTPException(status_code=409, detail="card context task binding changed")
-    encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded.encode("utf-8")) > _CARD_CONTEXT_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="card_context exceeds 512 KiB")
-    return normalized
-
-
-def _context_changes(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
-    if before == after:
-        return []
-    if isinstance(before, dict) and isinstance(after, dict):
-        changes: list[dict[str, Any]] = []
-        for key in sorted(set(before) | set(after)):
-            child_path = f"{path}.{key}" if path else key
-            if key not in before:
-                changes.append({"path": child_path, "change": "added", "after": after[key]})
-            elif key not in after:
-                changes.append({"path": child_path, "change": "removed", "before": before[key]})
-            else:
-                changes.extend(_context_changes(before[key], after[key], child_path))
-        return changes
-    if (
-        isinstance(before, list)
-        and isinstance(after, list)
-        and all(isinstance(item, dict) and item.get("id") is not None for item in before + after)
-    ):
-        before_by_id = {str(item["id"]): item for item in before}
-        after_by_id = {str(item["id"]): item for item in after}
-        changes = []
-        for item_id in sorted(set(before_by_id) | set(after_by_id)):
-            child_path = f"{path}[id={item_id}]"
-            if item_id not in before_by_id:
-                changes.append({"path": child_path, "change": "added", "after": after_by_id[item_id]})
-            elif item_id not in after_by_id:
-                changes.append({"path": child_path, "change": "removed", "before": before_by_id[item_id]})
-            else:
-                changes.extend(
-                    _context_changes(before_by_id[item_id], after_by_id[item_id], child_path)
-                )
-        return changes
-    return [{"path": path or "$", "change": "updated", "before": before, "after": after}]
-
-
-def _compact_qws_business_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Bound per-turn mutable business data; full sections stay server-readable."""
-    compact = deepcopy(snapshot)
-    compact["project_planning_history"] = []
-    compact["project_documents"] = [
-        {
-            key: item.get(key)
-            for key in ("id", "title", "status", "canonical", "source_refs")
-        }
-        for item in compact.get("project_documents") or []
-        if isinstance(item, dict)
-    ]
-    compact["session_directory"] = [
-        {
-            key: item.get(key)
-            for key in ("session_id", "task_id", "identifier", "title", "responsibility", "status", "is_current")
-        }
-        for item in compact.get("session_directory") or []
-        if isinstance(item, dict)
-    ]
-    task = compact.get("task") if isinstance(compact.get("task"), dict) else {}
-    if isinstance(task.get("comments"), list):
-        task["comments"] = task["comments"][-10:]
-    if isinstance(task.get("attachments"), list):
-        task["attachments"] = [
-            {key: item.get(key) for key in ("id", "filename", "content_type", "kind")}
-            for item in task["attachments"][-12:] if isinstance(item, dict)
-        ]
-    encoded = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded.encode("utf-8")) > 24 * 1024:
-        compact["session_directory"] = compact.get("session_directory", [])[:40]
-        compact["project_execution_log"] = (compact.get("project_execution_log") or [])[-20:]
-        if isinstance(task.get("descriptions"), list):
-            task["descriptions"] = [
-                {**item, "content": str(item.get("content") or "")[:3000]}
-                for item in task["descriptions"] if isinstance(item, dict)
-            ]
-    encoded = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded.encode("utf-8")) > 24 * 1024:
-        task = compact.get("task") if isinstance(compact.get("task"), dict) else {}
-        compact = {
-            "schema_version": compact.get("schema_version"),
-            "intent_capsule": compact.get("intent_capsule"),
-            "intent_migration_required": compact.get("intent_migration_required", False),
-            "project_overview": compact.get("project_overview"),
-            "task": {
-                key: (
-                    {
-                        **task.get(key),
-                        "canonical_entries": (task.get(key).get("canonical_entries") or [])[:40],
-                        "taskboard_entries": (task.get(key).get("taskboard_entries") or [])[:40],
-                    }
-                    if key == "relation_projection" and isinstance(task.get(key), dict)
-                    else task.get(key)
-                )
-                for key in (
-                    "qws_task_id", "dashi_task_id", "title", "status", "priority",
-                    "assignee", "labels", "due_date", "qws", "relation_projection",
-                )
-            },
-            "project_documents": compact.get("project_documents", [])[:20],
-            "session_directory": compact.get("session_directory", [])[:20],
-            "context_delta": compact.get("context_delta", [])[-40:],
-        }
-    encoded = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded.encode("utf-8")) > 24 * 1024:
-        raise HTTPException(status_code=413, detail="qws_business_context_exceeds_24k")
-    return compact
-
-
 async def _sync_task_conversation_context(
     db,
     *,
@@ -6011,46 +5797,6 @@ async def _sync_task_conversation_context(
         "revision": revision,
         "changes_count": len(changes),
         "context_hash": context_hash,
-    }
-
-
-def _task_from_card_context(
-    context: dict[str, Any] | None, *, expected_task_id: str
-) -> dict[str, Any] | None:
-    card = (context or {}).get("task")
-    if not isinstance(card, dict):
-        return None
-    if str(card.get("dashi_task_id") or "") != expected_task_id:
-        return None
-    if str(card.get("qws_task_id") or "") != expected_task_id:
-        return None
-    qws_value = card.get("qws")
-    qws: dict[str, Any] = qws_value if isinstance(qws_value, dict) else {}
-    descriptions = card.get("descriptions") if isinstance(card.get("descriptions"), list) else []
-    summary = next(
-        (
-            str(item.get("content") or "")
-            for item in descriptions
-            if isinstance(item, dict) and item.get("content")
-        ),
-        "",
-    )
-    assignee = card.get("assignee") if isinstance(card.get("assignee"), dict) else {}
-    return {
-        "id": expected_task_id,
-        "canonical_task_id": str(qws.get("canonical_task_id") or "") or None,
-        "title": str(card.get("title") or "Taskboard card"),
-        "summary": summary,
-        "status": str(card.get("status") or "UNSPECIFIED"),
-        "assignee_role": assignee.get("name"),
-        "deliverables": qws.get("deliverables") or [],
-        "stage_id": qws.get("stage_id") or "taskboard-card",
-        "workflow_id": qws.get("workflow_id"),
-        "binding_kind": (
-            "project_planning"
-            if qws.get("binding_kind") == "project_planning"
-            else "taskboard_card"
-        ),
     }
 
 
@@ -9233,6 +8979,7 @@ async def start_task_auto_execution(
     conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
     payload=Depends(require_auth),
 ) -> dict[str, Any]:
+    require_batch6_execution_enabled("qws_auto_execution")
     tenant_key, user_id = _scope(payload)
     authorization = request.headers.get("authorization") or ""
     if not authorization:

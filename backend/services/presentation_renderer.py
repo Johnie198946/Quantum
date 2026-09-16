@@ -44,6 +44,7 @@ _LAYOUT_FIELDS = {
         "subtitle",
         "map",
         "attribution",
+        "bounds",
         "points",
     },
     "icon_facts": {"layout", "title", "subtitle", "items"},
@@ -514,40 +515,29 @@ def _chart(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
 def _timeline(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
     events = spec["events"]
     _title(slide, str(spec.get("title") or ""), theme, str(spec.get("subtitle") or ""))
-    left, width, y = 1.0, 11.3, 3.55
-    line = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE, Inches(left), Inches(y), Inches(width), Inches(0.05)
-    )
-    line.fill.solid()
-    line.fill.fore_color.rgb = theme["colors"]["primary"]
-    line.line.fill.background()
-    step = width / max(1, len(events) - 1)
-    box_width = min(2.55, 10.8 / len(events))
+    columns = 2
+    rows = math.ceil(len(events) / columns)
+    row_height = 4.55 / rows
     for index, event in enumerate(events):
-        x = left + index * step
-        marker = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL,
-            Inches(x - 0.16),
-            Inches(y - 0.14),
-            Inches(0.34),
-            Inches(0.34),
+        column, row = index % columns, index // columns
+        box = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Inches(0.72 + column * 6.18),
+            Inches(2.05 + row * row_height),
+            Inches(5.72),
+            Inches(row_height - 0.14),
         )
-        marker.fill.solid()
-        marker.fill.fore_color.rgb = theme["colors"]["primary"]
-        marker.line.fill.background()
-        box_x = min(12.55 - box_width, max(0.55, x - box_width / 2))
-        box = slide.shapes.add_textbox(
-            Inches(box_x),
-            Inches(2.02 if index % 2 == 0 else 3.88),
-            Inches(box_width),
-            Inches(1.32),
-        )
-        box.text_frame.text = f"{event.get('label', '')}\n{event.get('title', '')}\n{event.get('detail', '')}"
+        box.name = f"timeline:event-{index + 1}"
+        box.fill.solid()
+        box.fill.fore_color.rgb = theme["colors"]["pale"]
+        box.line.color.rgb = theme["colors"]["primary"]
+        box.text_frame.text = f"{event.get('label', '')} · {event.get('title', '')}\n{event.get('detail', '')}"
         _text(box, theme, 18)
-        for paragraph in box.text_frame.paragraphs:
-            if paragraph.runs:
-                paragraph.runs[0].font.bold = True
-                break
+        box.text_frame.margin_left = Inches(0.16)
+        box.text_frame.margin_right = Inches(0.16)
+        box.text_frame.margin_top = Inches(0.08)
+        box.text_frame.margin_bottom = Inches(0.05)
+        box.text_frame.paragraphs[0].runs[0].font.bold = True
 
 
 def _icon_grid(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
@@ -899,9 +889,14 @@ def _geo_route_map(slide, spec: dict[str, Any], theme: dict[str, Any]) -> None:
         attribution.name = "map:attribution"
         attribution.text_frame.text = str(spec["attribution"])
         _text(attribution, theme, 8, "muted")
+    bounds = tuple(spec["bounds"]) if spec.get("bounds") else None
     projected = []
     for point in points:
-        px, py = project_point(point, width=w, height=h)
+        px, py = (
+            project_point(point, width=w, height=h, bounds=bounds)
+            if bounds
+            else project_point(point, width=w, height=h)
+        )
         projected.append((x + px, y + py))
     for index in range(len(projected) - 1):
         a, b = projected[index], projected[index + 1]

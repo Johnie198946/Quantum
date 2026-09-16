@@ -21,11 +21,26 @@ class GeoPoint:
 ISTANBUL_LANDMARKS: dict[str, GeoPoint] = {
     "Hagia Sophia": GeoPoint("Hagia Sophia", 28.9800, 41.0086, "europe"),
     "Blue Mosque": GeoPoint("Blue Mosque", 28.9768, 41.0054, "europe"),
+    "Blue Mosque / Hagia Sophia": GeoPoint(
+        "蓝色清真寺 / Hagia Sophia", 28.9784, 41.0070, "europe"
+    ),
     "Topkapi Palace": GeoPoint("Topkapi Palace", 28.9834, 41.0115, "europe"),
     "Galata Tower": GeoPoint("Galata Tower", 28.9741, 41.0256, "europe"),
     "Eminonu": GeoPoint("Eminönü", 28.9707, 41.0170, "europe"),
     "Uskudar": GeoPoint("Üsküdar", 29.0153, 41.0267, "asia"),
     "Kadikoy": GeoPoint("Kadıköy", 29.0250, 40.9909, "asia"),
+    "Suleymaniye Mosque": GeoPoint("苏莱曼尼清真寺", 28.9638, 41.0162, "europe"),
+    "Sarayburnu Park": GeoPoint("Sarayburnu Parkı", 28.9872, 41.0152, "europe"),
+    "Galata Bridge": GeoPoint("加拉塔大桥", 28.9730, 41.0202, "europe"),
+    "Grand Bazaar": GeoPoint("大巴扎", 28.9680, 41.0107, "europe"),
+    "Balat Colorful Stairs": GeoPoint("巴拉特彩色街区", 28.9490, 41.0295, "europe"),
+    "Seven Hills": GeoPoint("Seven Hills", 28.9797, 41.0058, "europe"),
+    "Eminonu Ferry": GeoPoint("Eminönü 轮渡", 28.9708, 41.0172, "europe"),
+    "Cemberlitas Hammam": GeoPoint("Çemberlitaş Hammam", 28.9715, 41.0085, "europe"),
+    "Istiklal Street": GeoPoint("独立大街", 28.9762, 41.0340, "europe"),
+    "Ortakoy Mosque": GeoPoint("奥塔科伊清真寺", 29.0270, 41.0472, "europe"),
+    "Kuzguncuk": GeoPoint("Kuzguncuk", 29.0296, 41.0374, "asia"),
+    "Nusr-Et Grand Bazaar": GeoPoint("Nusr-Et 大巴扎店", 28.9694, 41.0105, "europe"),
 }
 
 
@@ -72,8 +87,6 @@ def validate_geo_points(raw: Any) -> list[GeoPoint]:
         if not name or len(name) > 60 or len(detail) > 100:
             raise ValueError("geo route map point text is invalid")
         points.append(GeoPoint(name, longitude, latitude, side, detail))
-    if {point.side for point in points} != {"europe", "asia"}:
-        raise ValueError("geo route map must include landmarks on Europe and Asia")
     return points
 
 
@@ -81,6 +94,8 @@ def project_point(
     point: GeoPoint, *, width: float, height: float, bounds=ISTANBUL_BOUNDS
 ) -> tuple[float, float]:
     west, south, east, north = bounds
+    if not (west < east and south < north):
+        raise ValueError("map bounds must be ordered as west, south, east, north")
     if not (west <= point.longitude <= east and south <= point.latitude <= north):
         raise ValueError(f"point outside Istanbul map bounds: {point.name}")
     x = (point.longitude - west) / (east - west) * width

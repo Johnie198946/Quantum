@@ -19,27 +19,21 @@ def _sha256(text: str) -> str:
 
 
 def _nonblank_paragraph_spans(text: str) -> Iterable[tuple[int, int]]:
-    start: int | None = None
+    """Yield each non-blank source line as a provenance paragraph.
+
+    User-authored briefs frequently use emoji headings and numbered lines without
+    blank separators. Treating the whole block as one paragraph would merge
+    unrelated itinerary items until the next punctuation mark.
+    """
     offset = 0
     for line in text.splitlines(keepends=True):
         body = line.rstrip("\r\n")
         if body.strip():
-            if start is None:
-                start = offset + len(body) - len(body.lstrip())
-        elif start is not None:
-            end = offset
-            while end > start and text[end - 1].isspace():
-                end -= 1
+            start = offset + len(body) - len(body.lstrip())
+            end = offset + len(body.rstrip())
             if end > start:
                 yield start, end
-            start = None
         offset += len(line)
-    if start is not None:
-        end = len(text)
-        while end > start and text[end - 1].isspace():
-            end -= 1
-        if end > start:
-            yield start, end
 
 
 def _sentence_spans(text: str, start: int, end: int) -> Iterable[tuple[int, int]]:
@@ -123,7 +117,11 @@ def bind_claims_to_slides(
             raise ValueError("slide_id is invalid")
         if transform not in _TRANSFORMS:
             raise ValueError("transform is invalid")
-        source = by_id[claim_id]
+        # A claim may legitimately support more than one slide.  Never mutate
+        # the canonical claim object: reusing it here aliases earlier records,
+        # so a later binding rewrites their slide_id and creates false
+        # duplicate trace records during validation.
+        source = dict(by_id[claim_id])
         if source.get("approval_state") != "approved":
             raise ValueError(f"source claim is not approved: {claim_id}")
         key = (claim_id, slide_id)

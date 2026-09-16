@@ -205,6 +205,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func prewarmActiveSessionIfNeeded() {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["AI_LAB_E2E_DISABLE_PREWARM"] == "1" { return }
+#endif
         let sid = sessionManager.activeSessionID()
         guard hasAuthenticatedSession(), messages.isEmpty,
               prewarmedSessionIDs.insert(sid).inserted else { return }
@@ -512,17 +515,24 @@ public final class TenantSessionCoordinator: ObservableObject {
         } else if path == .workflow || path == .presentationReview {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let workflow: WorkflowDTO?
             if let created = try? decoder.decode(
                 WorkflowCreateResponseDTO.self, from: event.payload
             ) {
-                WorkflowActivityCoordinator.shared.track(created.workflow)
-                appState?.openWorkflow(created.workflow.id)
-            } else if let workflow = try? decoder.decode(
-                WorkflowDTO.self, from: event.payload
-            ) {
-                WorkflowActivityCoordinator.shared.track(workflow)
-                appState?.openWorkflow(workflow.id)
+                workflow = created.workflow
+            } else {
+                workflow = try? decoder.decode(WorkflowDTO.self, from: event.payload)
             }
+            guard let workflow,
+                  let sourceSessionId = messages.first(where: { $0.id == outputMessageId })?.sessionId,
+                  sessionManager.activeSessionID() == sourceSessionId,
+                  workflow.sourceClientSessionId == sourceSessionId else {
+                return false
+            }
+            // Re-assert owner + session and track the workflow atomically before
+            // switching tabs. A late account restore must not leave the task UI
+            // with a nil owner/session scope.
+            appState?.openWorkflow(workflow)
         } else if path == .artifact {
             showToast("工作流工件已就绪")
         }

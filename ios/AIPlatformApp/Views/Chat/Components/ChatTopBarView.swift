@@ -62,6 +62,7 @@ public struct ChatTopBarView: View {
             }
             .buttonStyle(SoftButtonStyle())
             .accessibilityLabel("新建会话")
+            .accessibilityIdentifier("chat-new-session")
 
             Menu {
                 Button(action: onHistoryTap) {

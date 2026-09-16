@@ -150,6 +150,16 @@ HERMES_BRIDGE_PREWARM_URL = os.environ.get(
 HERMES_BRIDGE_INTERNAL_TOKEN = os.environ.get("HERMES_BRIDGE_INTERNAL_TOKEN", "")
 
 
+def _comparison_table_requested(question: str) -> bool:
+    return len(question) <= 500 and bool(
+        re.search(
+            r"对比(?:一下|下)?|比较(?:一下|下)|\bvs\b|区别|差异|哪个好",
+            question,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _bridge_url_for_placement(
     default_url: str, placement: dict[str, object] | None,
 ) -> str:
@@ -1825,7 +1835,7 @@ async def stream_chat(
         quote = req.quoted_context.strip()
         if quote:
             goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
-    if re.search(r"对比|比较|vs|区别|差异|哪个好|对比一下", req.question, re.IGNORECASE):
+    if _comparison_table_requested(req.question):
         goal += (
             "\n\n（输出要求：本问题涉及两个及以上主体对比，请使用 Markdown 表格呈现，"
             "每行一个对比维度、首列为维度名；表格前后各空一行。禁止用罗列式 bullet 代替表格。"

@@ -1,0 +1,109 @@
+{
+  "sources": [
+    {
+      "source_id": "tr-mfa-cn-evisa-2024-09-26",
+      "claim": "中国普通护照当前应按土耳其官方 e-Visa/签证要求核验，不能把用户原文的‘免签’直接作为现行事实。",
+      "url": "https://beijing-emb.mfa.gov.tr/Mission/ShowAnnouncement/411690",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-002"
+      ],
+      "content_hash": "1d3b66c377ac623e6653d6a2ca61fa3499b9cf3e6a7c9cea4e2b7d803b57c0ee",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    },
+    {
+      "source_id": "metro-istanbul-network-map-v3-rev20-1",
+      "claim": "官方轨道交通图支持 M11、Gayrettepe、M2、Vezneciler、Laleli 与 T1/Sultanahmet 的路线元素。",
+      "url": "https://www.metro.istanbul/Content/assets/uploaded/%C4%B0stanbul%20Rayl%C4%B1%20Sistemler%20Haritas%C4%B1.pdf",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-002",
+        "slide-003"
+      ],
+      "content_hash": "6a42ecbae627b6fcb049a977c82f3d41c1793e45fd3eb64d6f7ce0ffd5fff513",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    },
+    {
+      "source_id": "ist-airport-m11-public-transport",
+      "claim": "Istanbul Airport 官方页面确认 M11 连接机场、Kağıthane 与 Gayrettepe；前往老城仍需后续换乘。",
+      "url": "https://istairport.com/en/airport/airport-transportation/intercity-transportation/public-transportation?locale=ru",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-002",
+        "slide-003"
+      ],
+      "content_hash": "ca4a596b459e57663380482085776bc0a9af20519ddc6bbcd8ab4de3c236a4ad",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    },
+    {
+      "source_id": "osm-copyright",
+      "claim": "地图底图必须注明 OpenStreetMap contributors，并遵守 ODbL。",
+      "url": "https://www.openstreetmap.org/copyright",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-004",
+        "slide-006"
+      ],
+      "content_hash": "5592650128bd8cd512c9dce9a6dd44a8bec5104f7c2b21469efe5cb38fbaf43f",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    },
+    {
+      "source_id": "uskudar-kuzguncuk-map-2020",
+      "claim": "Üsküdar/Kuzguncuk 在亚洲侧，Beşiktaş/Ortaköy 在欧洲侧。",
+      "url": "https://uskudar.bel.tr/userfiles/files/2019/Kuzguncuk%20Haritas%C4%B1.pdf",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-006",
+        "slide-007"
+      ],
+      "content_hash": "07435516524bb21d259bc770e82b111c0843247745b1b337a4cca7e6adab0fc7",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    },
+    {
+      "source_id": "sehir-hatlari-timetables",
+      "claim": "具体轮渡班次必须按航线、日期与星期在出发前复核；本次自动提取被官方站点 Cloudflare 403 阻挡，因此不写死任何班次。",
+      "url": "https://www.sehirhatlari.istanbul/en/timetables",
+      "kind": "official-primary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-005",
+        "slide-007"
+      ],
+      "verification_state": "current-schedule-unverified",
+      "access_error": "HTTP 403 / Cloudflare browser verification",
+      "content_hash": "04da1d44d2b79c3e77b15cae0aa47eb185a0d9d8da5ea4cc269c271ee3147eed",
+      "source_client_session_id": "session-istanbul-user-input",
+      "recheck_required": true
+    },
+    {
+      "source_id": "britannica-istanbul-geography-2026-06-03",
+      "claim": "独立反例：博斯普鲁斯海峡分隔欧洲伊斯坦布尔与亚洲岸的 Üsküdar/Kadıköy；金角湾两侧仍都属于欧洲侧。",
+      "url": "https://www.britannica.com/place/Istanbul",
+      "kind": "independent-secondary",
+      "checked_at": "2026-09-16",
+      "slide_ids": [
+        "slide-006",
+        "slide-007"
+      ],
+      "content_hash": "d4954489f2c3eaf3f535b2445eb63fb2d910da28b7b7b05179590f55f78b6269",
+      "source_client_session_id": "session-istanbul-user-input",
+      "verification_state": "verified",
+      "recheck_required": true
+    }
+  ]
+}

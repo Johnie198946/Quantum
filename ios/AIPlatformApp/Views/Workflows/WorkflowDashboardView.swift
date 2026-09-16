@@ -35,6 +35,7 @@ public struct WorkflowDashboardView: View {
                                         WorkflowSummaryCard(workflow: workflow)
                                     }
                                     .buttonStyle(SoftButtonStyle())
+                                    .accessibilityIdentifier("workflow-card-\(workflow.title)")
                                     .accessibilityHint("轻点查看详情，长按可删除任务")
                                     .contextMenu {
                                         Button(role: .destructive) {
@@ -1896,6 +1897,7 @@ private struct WorkflowExecutionView: View {
     @State private var lastExecutionEventId = 0
     @State private var feedback = ""
     @State private var slideNumber = 1
+    @State private var showsStructuredReview = false
 
     private var isPresentation: Bool { workflow.desiredOutput.lowercased().contains("pptx") }
     private var isDocument: Bool {
@@ -1949,6 +1951,25 @@ private struct WorkflowExecutionView: View {
                 currentPage: $slideNumber,
                 allowsDownload: execution.status == "completed"
             )
+        }
+        .sheet(isPresented: $showsStructuredReview) {
+            if let artifact = visibleArtifacts.last {
+                NavigationStack {
+                    StructuredReviewView(
+                        workflowId: workflow.id,
+                        reviewKey: "final-draft",
+                        initialDocument: structuredReviewSeed(from: artifact),
+                        scope: scope
+                    )
+                    .navigationTitle("结构化审核")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showsStructuredReview = false }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2092,14 +2113,14 @@ private struct WorkflowExecutionView: View {
             }
             if isStagedOutput,
                ["awaiting_review", "completed"].contains(execution.status),
-               let artifact = visibleArtifacts.last {
-                StructuredReviewView(
-                    workflowId: workflow.id,
-                    reviewKey: "final-draft",
-                    initialDocument: structuredReviewSeed(from: artifact),
-                    scope: scope
-                )
-                .id(artifact.id)
+               visibleArtifacts.last != nil {
+                Button("填写结构化审核", systemImage: "checklist") {
+                    showsStructuredReview = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .accessibilityIdentifier("open-structured-review")
             }
             if isStagedOutput && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
                 TextField(stagedFeedbackPrompt, text: $feedback, axis: .vertical)

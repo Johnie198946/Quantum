@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import logging
 import os
 import re
 import shutil
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -43,7 +45,7 @@ from backend.models.workflow import (
     WorkflowSessionMessage,
 )
 from backend.models.workspace import WorkspaceProcessRevision, WorkspaceWorkflowBinding
-from backend.api.quantum_workspace import _project_for_access
+from backend.services.qws_access import project_for_access as _project_for_access
 from backend.services.dsl_safety_compiler import DSLSafetyCompiler
 from backend.services.workflow_artifacts import (
     artifact_extension,
@@ -62,6 +64,13 @@ from backend.services.workflow_executor import (
     retry_remote,
 )
 from backend.services.workflow_planner import validate_plan_policy
+from backend.services.batch6_refactor_guard import require_batch6_execution_enabled
+from backend.services.workflow_reviews import (
+    REVIEW_KEY as _REVIEW_KEY,
+    review_etag as _review_etag,
+    review_out as _review_out,
+    validate_review_document as _validate_review_document,
+)
 from backend.services.workflow_contract import (
     PlanContractError,
     assert_plan_binding,
@@ -502,90 +511,6 @@ async def owned_workflow(
     if row is None or row.created_by != current_user(payload):
         raise HTTPException(status_code=404, detail="工作流不存在")
     return row
-
-
-_REVIEW_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_REVIEW_FIELD_TYPES = {"text", "textarea", "choice", "number", "toggle"}
-
-
-def _validate_review_document(document: dict[str, Any]) -> dict[str, Any]:
-    if set(document) != {"title", "fields", "values"}:
-        raise HTTPException(status_code=422, detail="结构化审核文档字段不合法")
-    title, fields, values = document["title"], document["fields"], document["values"]
-    if not isinstance(title, str) or not title.strip() or len(title) > 160:
-        raise HTTPException(status_code=422, detail="结构化审核标题不合法")
-    if not isinstance(fields, list) or not 1 <= len(fields) <= 100 or not isinstance(values, dict):
-        raise HTTPException(status_code=422, detail="结构化审核字段不合法")
-    seen: set[str] = set()
-    for field in fields:
-        if not isinstance(field, dict) or not {"id", "label", "type", "required"} <= set(field):
-            raise HTTPException(status_code=422, detail="结构化审核字段定义不完整")
-        if set(field) - {"id", "label", "type", "required", "options"}:
-            raise HTTPException(status_code=422, detail="结构化审核字段包含未知属性")
-        field_id = field.get("id")
-        field_type = field.get("type")
-        label = field.get("label")
-        if (
-            not isinstance(field_id, str)
-            or not _REVIEW_KEY.fullmatch(field_id)
-            or field_id in seen
-            or field_type not in _REVIEW_FIELD_TYPES
-            or not isinstance(label, str)
-            or not label.strip()
-            or len(label) > 160
-            or not isinstance(field.get("required"), bool)
-        ):
-            raise HTTPException(status_code=422, detail="结构化审核字段定义不合法")
-        seen.add(field_id)
-        options = field.get("options")
-        if field_type == "choice":
-            if (
-                not isinstance(options, list)
-                or not 1 <= len(options) <= 30
-                or any(not isinstance(item, str) or not item or len(item) > 160 for item in options)
-                or len(set(options)) != len(options)
-            ):
-                raise HTTPException(status_code=422, detail="结构化审核选项不合法")
-        elif options is not None:
-            raise HTTPException(status_code=422, detail="仅 choice 字段允许 options")
-    if len(values) > 100 or set(values) - seen:
-        raise HTTPException(status_code=422, detail="结构化审核值包含未知字段")
-    by_id = {field["id"]: field for field in fields}
-    for field_id, value in values.items():
-        field = by_id[field_id]
-        expected = field["type"]
-        valid = (
-            value is None
-            or (expected in {"text", "textarea"} and isinstance(value, str) and len(value) <= 12000)
-            or (expected == "choice" and isinstance(value, str) and value in field["options"])
-            or (expected == "number" and isinstance(value, (int, float)) and not isinstance(value, bool))
-            or (expected == "toggle" and isinstance(value, bool))
-        )
-        if not valid:
-            raise HTTPException(status_code=422, detail=f"结构化审核值类型不匹配：{field_id}")
-    if len(json.dumps(document, ensure_ascii=False, allow_nan=False).encode("utf-8")) > 100_000:
-        raise HTTPException(status_code=422, detail="结构化审核文档过大")
-    return document
-
-
-def _review_etag(row: WorkflowReviewRevision) -> str:
-    return f'"sr:{row.review_key}:{row.version}:{row.content_hash[:16]}"'
-
-
-def _review_out(row: WorkflowReviewRevision) -> dict[str, Any]:
-    return {
-        "workflow_id": row.workflow_id,
-        "review_key": row.review_key,
-        "schema_id": row.schema_id,
-        "version": row.version,
-        "parent_version": row.parent_version,
-        "content_hash": row.content_hash,
-        "document": row.document,
-        "action": row.action,
-        "receipt_id": row.receipt_id,
-        "source_client_session_id": row.source_client_session_id,
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-    }
 
 
 async def _owned_review_workflow(db, workflow_id: str, payload: dict[str, Any]) -> WorkflowDefinition:
@@ -2592,6 +2517,7 @@ async def approve_plan(
 async def start_workflow(
     workflow_id: str, body: ApprovalRequest, payload: dict = Depends(require_auth)
 ):
+    require_batch6_execution_enabled("workflow_api")
     async with SessionLocal() as db:
         workflow = await owned_workflow(db, workflow_id, payload)
         if workflow.status not in {"agent_ready", "ready"} or not workflow.active_plan_id:
@@ -2985,6 +2911,15 @@ async def get_evidence_report(execution_id: str, payload: dict = Depends(require
         )
 
 
+def _docx_page_count(data: bytes) -> int:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
+        return max(1, len(re.findall(r'<w:br\b[^>]*\bw:type="page"', document_xml)) + 1)
+    except (KeyError, zipfile.BadZipFile):
+        return 1
+
+
 @router.get("/workflow-executions/{execution_id}/artifacts/{artifact_id}/content")
 async def get_artifact_content(
     execution_id: str,
@@ -3022,13 +2957,18 @@ async def get_artifact_content(
             content = read_verified_artifact(path, artifact.content_hash)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        extension = artifact_extension(artifact)
+        page_count = None
+        if extension == "docx":
+            page_count = _docx_page_count(read_verified_artifact_bytes(path, artifact.content_hash))
         return {
             "id": artifact.id,
             "title": artifact.title,
             "kind": artifact.kind,
-            "extension": artifact_extension(artifact),
+            "extension": extension,
             "mime_type": artifact_mime_type(artifact),
             "content": content,
+            "page_count": page_count,
         }
 
 
@@ -3217,7 +3157,11 @@ async def review_presentation_stage(execution_id: str, body: StageReviewRequest,
             raise HTTPException(status_code=409, detail={"code": "stale_artifact_approval", "message": "成果版本已变化，请刷新后重新确认"})
         node = await db.get(WorkflowNodeRun, artifact.node_run_id) if artifact.node_run_id else None
         gate = str((metadata or {}).get("approval_gate") or "")
-        if not node or version != node.attempt or (execution.status == "awaiting_approval" and not gate):
+        if (
+            not node
+            or (gate and version != node.attempt)
+            or (execution.status == "awaiting_approval" and not gate)
+        ):
             raise HTTPException(status_code=409, detail="成果不属于可确认阶段")
         root = run_root(execution).resolve()
         artifact_path = (root / artifact.relative_path).resolve()
@@ -3246,7 +3190,10 @@ async def review_presentation_stage(execution_id: str, body: StageReviewRequest,
                 raise HTTPException(status_code=503, detail=f"Hermes 修订暂不可用：{str(exc)[:200]}") from exc
         elif gate:
             try:
-                await approve_remote_gate(execution.id, node.node_id, version, artifact.id, artifact.content_hash)
+                source_hash = str((metadata or {}).get("source_content_hash") or artifact.content_hash)
+                await approve_remote_gate(
+                    execution.id, node.node_id, version, artifact.id, source_hash
+                )
             except Exception as exc:
                 raise HTTPException(status_code=503, detail=f"Hermes 阶段确认暂不可用：{str(exc)[:200]}") from exc
             execution.status = "queued"

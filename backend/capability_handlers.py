@@ -227,6 +227,9 @@ async def _presentation_create_from_text(
 ) -> dict[str, Any]:
     """Create the governed text-to-deck workflow selected by Hermes."""
     assert key
+    presentation_review_gates = data.get("presentation_review_gates")
+    if presentation_review_gates is None:
+        presentation_review_gates = ["outline", "design"]
     normalized = {
         "audience": data.get("audience") or "general_business_audience",
         "intended_use": data.get("intended_use") or "management_briefing",
@@ -234,13 +237,14 @@ async def _presentation_create_from_text(
         "slide_count": int(data.get("slide_count") or 10),
         "clarification_strategy": data.get("clarification_strategy")
         or "use_defaults_unless_blocked",
-        "presentation_review_gates": list(data.get("presentation_review_gates") or []),
+        "presentation_review_gates": list(presentation_review_gates),
     }
     identity_input = {**data, **normalized}
     workflow_id, request_hash = _qcp_workflow_identity(
         "presentation.create_from_text", payload, key, identity_input
     )
     material = data["text_material"].strip()
+    editorial_instruction = str(data.get("editorial_instruction") or "").strip()
     description = (
         f"用户与场景：{normalized['audience']}；用途：{normalized['intended_use']}；"
         f"范围：根据以下文本材料制作 {normalized['slide_count']} 页演示文稿；"
@@ -269,6 +273,12 @@ async def _presentation_create_from_text(
         ),
         requirements_snapshot_overrides={
             "text_material": material,
+            "source_text_sha256": hashlib.sha256(material.encode("utf-8")).hexdigest(),
+            **(
+                {"editorial_instruction": editorial_instruction}
+                if editorial_instruction
+                else {}
+            ),
             "presentation_defaults": normalized,
             **(
                 {"source_client_session_id": data["source_client_session_id"]}

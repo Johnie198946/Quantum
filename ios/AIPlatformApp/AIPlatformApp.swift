@@ -25,9 +25,15 @@ public struct AIPlatformApp: App {
 
     public init() {
         let arguments = ProcessInfo.processInfo.arguments
+        let environment = ProcessInfo.processInfo.environment
+        #if DEBUG
+        if environment["AI_LAB_E2E_DISABLE_ANIMATIONS"] == "1" {
+            UIView.setAnimationsEnabled(false)
+        }
+        #endif
         let hasPersistedSession = !(KeychainStore.load() ?? "").isEmpty
 #if DEBUG
-        let hasE2EToken = !(ProcessInfo.processInfo.environment["AI_LAB_E2E_TOKEN"] ?? "").isEmpty
+        let hasE2EToken = !(environment["AI_LAB_E2E_TOKEN"] ?? "").isEmpty
         showBookshelfPreview = arguments.contains("-bookshelfPreview")
         showKnowledgeHomePreview = arguments.contains("-knowledgeHomePreview")
         showTabBarPreview = arguments.contains("-tabBarPreview")
@@ -176,22 +182,20 @@ private struct StructuredReviewE2EHost: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                StructuredReviewView(
-                    workflowId: workflowID,
-                    reviewKey: reviewKey,
-                    initialDocument: .init(
-                        title: "可编辑全稿预览",
-                        fields: [
-                            .init(id: "title", label: "标题", type: .text, required: true, options: nil),
-                            .init(id: "summary", label: "摘要", type: .textarea, required: true, options: nil),
-                        ],
-                        values: ["title": .string("伊斯坦布尔"), "summary": .string("初稿")]
-                    )
+            StructuredReviewView(
+                workflowId: workflowID,
+                reviewKey: reviewKey,
+                initialDocument: .init(
+                    title: "可编辑全稿预览",
+                    fields: [
+                        .init(id: "title", label: "标题", type: .text, required: true, options: nil),
+                        .init(id: "summary", label: "摘要", type: .textarea, required: true, options: nil),
+                    ],
+                    values: ["title": .string("伊斯坦布尔"), "summary": .string("初稿")]
                 )
-                .padding(AppTheme.Metrics.contentGutter)
-            }
+            )
             .navigationTitle("全稿预览")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

@@ -67,7 +67,7 @@ def test_real_istanbul_acceptance_package_passes_structural_and_rendered_gates(
         for item in photo_assets
     )
     trace = json.loads((tmp_path / "source-trace.json").read_text())
-    assert trace["record_count"] == 15
+    assert trace["record_count"] == 42
     assert all(record["approval_state"] == "approved" for record in trace["records"])
 
 
@@ -81,3 +81,28 @@ def test_visual_gate_rejects_deck_without_required_visual_system(tmp_path):
     report = inspect_pptx(path)
     assert report["errors"]
     assert any("five layout" in error for error in report["errors"])
+
+
+def test_visual_gate_rejects_thin_decoration_crossing_text(tmp_path):
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.util import Inches, Pt
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    marker = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, 1, 1)
+    marker.name = "layout:title"
+    marker.width = marker.height = 1
+    title = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(1))
+    title.name = "text:title"
+    title.text = "A sourced title"
+    title.text_frame.paragraphs[0].runs[0].font.size = Pt(24)
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(2.45), Inches(9), Inches(0.05)
+    )
+    line.name = "decorative:line"
+    path = tmp_path / "crossing-line.pptx"
+    presentation.save(path)
+
+    report = inspect_pptx(path)
+    assert any("decorative line decorative:line intersects text text:title" in error for error in report["errors"])

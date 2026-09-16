@@ -1,6 +1,10 @@
 import pytest
 
-from backend.services.workflow_executor import contiguous_bridge_events
+from backend.models.workflow import WorkflowDefinition, WorkflowExecution
+from backend.services.workflow_executor import (
+    artifact_identity_metadata,
+    contiguous_bridge_events,
+)
 
 
 def test_bridge_events_are_sorted_deduplicated_and_contiguous():
@@ -20,3 +24,20 @@ def test_bridge_event_gap_is_not_projected():
             [{"seq": 4, "event_id": "run:4"}],
             2,
         )
+
+
+def test_artifact_identity_uses_server_owned_workflow_scope():
+    metadata = artifact_identity_metadata(
+        WorkflowExecution(tenant_key="tenant-a"),
+        WorkflowDefinition(
+            created_by="signed-owner",
+            source_client_session_id="session-a",
+        ),
+        2,
+    )
+    assert metadata == {
+        "tenant_key": "tenant-a",
+        "owner_id": "signed-owner",
+        "source_client_session_id": "session-a",
+        "generation": 2,
+    }

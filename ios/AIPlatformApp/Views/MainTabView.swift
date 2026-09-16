@@ -85,7 +85,17 @@ public struct MainTabView: View {
             }
         }
         .onAppear { scheduleTabBarAutoCollapse() }
-        .task(id: sessionManager.activeSessionId) {
+        .task(id: workflowScopeTaskID) {
+            // Login/profile hydration and chat-session restoration complete on
+            // different async paths. Bind the owner before selecting the
+            // conversation so an early session cannot leave Task unscoped.
+            let tenantId = appState.currentTenantKey
+            let userId = appState.currentUserId
+            guard !tenantId.isEmpty, !userId.isEmpty else {
+                workflowActivities.deactivate()
+                return
+            }
+            workflowActivities.activate(tenantKey: tenantId, userId: userId)
             workflowActivities.selectClientSession(sessionManager.activeSessionId)
             await workflowActivities.bootstrap()
         }
@@ -163,6 +173,14 @@ public struct MainTabView: View {
             guard !Task.isCancelled else { return }
             setTabBarCollapsed(true, feedback: false)
         }
+    }
+
+    private var workflowScopeTaskID: String {
+        [
+            appState.currentTenantKey,
+            appState.currentUserId,
+            sessionManager.activeSessionId ?? ""
+        ].joined(separator: "\u{0}")
     }
 
     private var swipeToRevealNavigation: some Gesture {

@@ -206,6 +206,7 @@ final class StructuredReviewViewModel: ObservableObject {
 
 public struct StructuredReviewView: View {
     @StateObject private var model: StructuredReviewViewModel
+    @FocusState private var focusedFieldID: String?
 
     @MainActor public init(
         workflowId: String,
@@ -230,29 +231,42 @@ public struct StructuredReviewView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             header
             if model.isLoading && model.revision == nil {
                 ProgressView("正在读取结构化审核…")
                     .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
             } else if model.revision != nil {
-                fields
-                actions
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        fields
+                        if let conflict = model.conflict { conflictView(conflict) }
+                        if let error = model.errorMessage {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(AppTheme.Typography.supporting)
+                                .foregroundStyle(AppTheme.Colors.statusError)
+                                .accessibilityLabel("结构化审核错误：\(error)")
+                        }
+                    }
+                    .padding(.vertical, AppTheme.Spacing.sm)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .accessibilityIdentifier("structured-review-fields-scroll")
             }
-            if let conflict = model.conflict { conflictView(conflict) }
-            if let error = model.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(AppTheme.Typography.supporting)
-                    .foregroundStyle(AppTheme.Colors.statusError)
-                    .accessibilityLabel("结构化审核错误：\(error)")
+            if model.revision != nil {
+                Divider()
+                actions
             }
         }
         .padding(AppTheme.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
-                .stroke(AppTheme.Colors.border, lineWidth: 1)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") { focusedFieldID = nil }
+            }
         }
         .task { await model.load() }
     }
@@ -263,11 +277,13 @@ public struct StructuredReviewView: View {
                 Label("结构化审核", systemImage: "checklist")
                     .font(AppTheme.Typography.label)
                     .foregroundStyle(AppTheme.Icons.intelligence)
+                    .accessibilityIdentifier("structured-review-container")
                 Spacer()
                 if let revision = model.revision {
                     Text("版本 \(revision.version)")
                         .font(AppTheme.Typography.micro)
                         .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .accessibilityIdentifier("structured-review-version")
                 }
             }
             Text(model.document.title)
@@ -303,13 +319,17 @@ public struct StructuredReviewView: View {
             TextField(field.label, text: stringBinding(field.id))
                 .textFieldStyle(.roundedBorder)
                 .frame(minHeight: AppTheme.Metrics.inputHeight)
+                .focused($focusedFieldID, equals: field.id)
                 .accessibilityLabel(field.label)
+                .accessibilityIdentifier("structured-review-field-\(field.id)")
         case .textarea:
             TextField(field.label, text: stringBinding(field.id), axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...8)
                 .frame(minHeight: 96)
+                .focused($focusedFieldID, equals: field.id)
                 .accessibilityLabel(field.label)
+                .accessibilityIdentifier("structured-review-field-\(field.id)")
         case .choice:
             Picker(field.label, selection: stringBinding(field.id)) {
                 Text("请选择").tag("")
@@ -318,30 +338,41 @@ public struct StructuredReviewView: View {
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.inputHeight, alignment: .leading)
             .accessibilityLabel(field.label)
+            .accessibilityIdentifier("structured-review-field-\(field.id)")
         case .number:
             TextField(field.label, text: numberBinding(field.id))
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
                 .frame(minHeight: AppTheme.Metrics.inputHeight)
+                .focused($focusedFieldID, equals: field.id)
                 .accessibilityLabel(field.label)
+                .accessibilityIdentifier("structured-review-field-\(field.id)")
         case .toggle:
             Toggle(field.label, isOn: boolBinding(field.id))
                 .labelsHidden()
                 .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget, alignment: .leading)
                 .accessibilityLabel(field.label)
+                .accessibilityIdentifier("structured-review-field-\(field.id)")
         }
     }
 
     private var actions: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            Button("撤销", systemImage: "arrow.uturn.backward") { Task { await model.undo() } }
+            Button("撤销", systemImage: "arrow.uturn.backward") {
+                focusedFieldID = nil
+                Task { await model.undo() }
+            }
                 .buttonStyle(.bordered)
                 .disabled(model.isSaving || (model.revision?.version ?? 0) < 2)
-                .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
-            Button("保存审核", systemImage: "checkmark") { Task { await model.save() } }
+                .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
+            Button("保存审核", systemImage: "checkmark") {
+                focusedFieldID = nil
+                Task { await model.save() }
+            }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.isSaving)
-                .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .accessibilityIdentifier("structured-review-save")
             if model.isSaving { ProgressView().accessibilityLabel("正在保存审核") }
         }
         .controlSize(.large)

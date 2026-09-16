@@ -300,13 +300,14 @@ capabilities:
       type: object
       properties:
         title: {type: string, minLength: 1, maxLength: 160}
-        text_material: {type: string, minLength: 3, maxLength: 12000}
+        text_material: {type: string, minLength: 3, maxLength: 12000, description: "Verbatim user-provided source text. Copy it exactly; do not summarize, rewrite, correct, or mix instructions into this field."}
+        editorial_instruction: {type: string, minLength: 1, maxLength: 8000, description: "Optional orchestration and visual direction kept separate from the verbatim source."}
         audience: {type: string, minLength: 1, maxLength: 300, default: general_business_audience}
         intended_use: {type: string, enum: [management_briefing, client_proposal, internal_sharing, teaching, travel_guide], default: management_briefing}
         layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
         slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: []}
+        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: [outline, design]}
         source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false

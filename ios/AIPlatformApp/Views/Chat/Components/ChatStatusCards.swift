@@ -827,6 +827,7 @@ public struct CapabilityProposalCard: View {
                 HStack(spacing: 10) {
                     Button(proposal.state == .failed ? "重试" : "确认执行", action: onConfirm)
                         .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("capability-confirm-execute")
                     Button("放弃", action: onDiscard).buttonStyle(.bordered)
                 }
             }

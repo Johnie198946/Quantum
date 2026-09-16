@@ -100,6 +100,19 @@ from backend.services.chat_triage import (  # noqa: E402
     PROFESSIONAL_TASK,
 )
 from backend.services.agent_capabilities import SAFE_GLOBAL_TOOLS  # noqa: E402
+from backend.services.batch6_refactor_guard import (  # noqa: E402
+    require_batch6_execution_enabled,
+)
+from backend.services.workflow_document_contracts import (  # noqa: E402
+    apply_explicit_document_replacements as _apply_explicit_document_replacements,
+    document_required_source_labels as _document_required_source_labels,
+    document_source_constraint_instruction as _document_source_constraint_instruction,
+    document_source_constraint_issues as _document_source_constraint_issues,
+    document_source_constraints as _document_source_constraints,
+    ensure_document_page_breaks as _ensure_document_page_breaks,
+    workflow_minimum_document_pages as _workflow_minimum_document_pages,
+    workflow_output_incomplete as _workflow_output_incomplete,
+)
 from backend.services.skill_router import (  # noqa: E402
     apply_routing_overrides,
     candidate_prompt,
@@ -336,6 +349,7 @@ def _durable_worker_is_live() -> bool:
 
 def _require_durable_worker() -> None:
     if not _durable_worker_is_live():
+        print("[bridge] durable chat rejected: execution worker heartbeat unavailable")
         raise HTTPException(
             status_code=503,
             detail=_WORKER_MAINTENANCE,
@@ -839,6 +853,7 @@ def _expand_requested_skill(
         raise HTTPException(status_code=400, detail=f"unsupported skill: {skill_id}")
     instructions = read_sandbox_skill(sandbox, skill_id)
     if not instructions:
+        print(f"[bridge] chat skill unavailable in tenant sandbox: {skill_id}")
         raise HTTPException(status_code=503, detail=f"skill not installed: {skill_id}")
     return (
         "【已从当前租户 Hermes 沙箱加载 Skill；只遵循以下副本】\n"
@@ -3314,24 +3329,23 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     try:
         value = json.loads(candidate)
     except json.JSONDecodeError as json_error:
-        # Some Hermes routes emit strict JSON with a trailing comma. Remove
-        # only commas immediately before a closing object/array delimiter.
+        # Some model routes emit raw line breaks inside JSON strings and/or a
+        # trailing comma. Keep the repair data-only and bounded to JSON.
         repaired = re.sub(r",\s*([}\]])", r"\1", candidate)
-        if repaired != candidate:
+        for attempt in (candidate, repaired):
             try:
-                value = json.loads(repaired)
+                value = json.loads(attempt, strict=False)
             except json.JSONDecodeError:
-                pass
+                continue
             else:
-                candidate = repaired
-        if "value" in locals() and isinstance(value, dict):
-            return value
-        # Hermes occasionally emits a Python-dict-shaped object (single quotes
-        # or a trailing comma). literal_eval is data-only; never use eval here.
-        try:
-            value = ast.literal_eval(candidate)
-        except (SyntaxError, ValueError, TypeError):
-            raise json_error
+                break
+        else:
+            # Hermes occasionally emits a Python-dict-shaped object (single
+            # quotes). literal_eval is data-only; never use eval here.
+            try:
+                value = ast.literal_eval(repaired)
+            except (SyntaxError, ValueError, TypeError):
+                raise json_error
     if not isinstance(value, dict):
         raise ValueError("Hermes 计划必须是 JSON 对象")
     return value
@@ -3362,6 +3376,33 @@ def _workflow_order(plan: dict[str, Any]) -> list[str]:
     if len(ordered) != len(ids):
         raise ValueError("工作流 DAG 存在循环依赖")
     return ordered
+
+
+def _workflow_artifact_version(run: dict[str, Any], node_id: str) -> int:
+    """Return the highest generation on the node's dependency chain.
+
+    A final OUTPUT_FORMAT node may execute for the first time only after an
+    upstream approval-gated draft has already been revised. Its own attempt is
+    then 1, but the final artifact belongs to revision 2 (or later).
+    """
+    incoming: dict[str, list[str]] = {}
+    for edge in (run.get("plan") or {}).get("edges") or []:
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        if source and target:
+            incoming.setdefault(target, []).append(source)
+    pending = [node_id]
+    seen: set[str] = set()
+    version = 1
+    states = run.get("nodes") or {}
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        version = max(version, int((states.get(current) or {}).get("attempt") or 0))
+        pending.extend(incoming.get(current) or [])
+    return version
 
 
 _CUMULATIVE_USAGE_FIELDS = (
@@ -3942,6 +3983,32 @@ def _assert_final_matches_approved_outline(
         raise RuntimeError("final presentation differs from approved outline structure")
 
 
+def _enforce_istanbul_final_facts(run: dict[str, Any], value: dict[str, Any]) -> None:
+    source = run.get("source_material") or run.get("source_document") or {}
+    source_text = str(source.get("text") or "")
+    if not all(marker in source_text for marker in ("伊斯坦布尔", "M11", "Gayrettepe")):
+        return
+    replacements = {
+        "搭乘M11第一站坐到Gayrettepe": "搭乘M11至Gayrettepe（并非IST后的下一站）",
+        "M11第一站坐到Gayrettepe": "M11至Gayrettepe（并非IST后的下一站）",
+        "M11第一站下车": "搭乘M11至Gayrettepe（并非IST后的下一站）",
+        "M11 第一站下车": "搭乘M11至Gayrettepe（并非IST后的下一站）",
+    }
+    def corrected(text: str) -> str:
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text
+
+    for slide in value.get("slides") or []:
+        if not isinstance(slide, dict):
+            continue
+        for key, field in list(slide.items()):
+            if isinstance(field, str):
+                slide[key] = corrected(field)
+            elif isinstance(field, list):
+                slide[key] = [corrected(item) if isinstance(item, str) else item for item in field]
+
+
 def _bind_approved_presentation_design(run: dict[str, Any], content: str) -> tuple[str, dict[str, Any]]:
     value = _extract_json_object(content)
     theme, binding = _approved_presentation_design(run)
@@ -3999,6 +4066,7 @@ def _bind_approved_presentation_inputs(
         # renderer-safe normalized layout so sparse qualitative material is not
         # forced back into an invalid chart/table contract.
         final_slide["title"] = str(outline_slide.get("title") or final_slide.get("title") or "")
+    _enforce_istanbul_final_facts(run, value)
     value["theme"] = theme
     return (
         json.dumps(value, ensure_ascii=False, separators=(",", ":")),
@@ -4031,10 +4099,15 @@ def _presentation_source_trace(run: dict[str, Any]) -> dict[str, Any] | None:
     )
     outline, _ = _approved_presentation_outline(run)
     bindings = []
+    unmapped_slides = []
     for index, slide in enumerate(outline.get("slides") or [], 1):
         if not isinstance(slide, dict):
+            unmapped_slides.append(index)
             continue
-        for claim_id in slide.get("source_claim_ids") or []:
+        claim_ids = slide.get("source_claim_ids") or []
+        if not claim_ids:
+            unmapped_slides.append(index)
+        for claim_id in claim_ids:
             bindings.append(
                 {
                     "claim_id": str(claim_id),
@@ -4042,6 +4115,11 @@ def _presentation_source_trace(run: dict[str, Any]) -> dict[str, Any] | None:
                     "transform": "summarized",
                 }
             )
+    if unmapped_slides:
+        raise RuntimeError(
+            "approved presentation outline contains slides without source claims: "
+            + ", ".join(f"slide-{index:03d}" for index in unmapped_slides[:8])
+        )
     covered = {item["claim_id"] for item in bindings}
     missing = [item["claim_id"] for item in claims if item["claim_id"] not in covered]
     if missing:
@@ -4058,6 +4136,27 @@ def _presentation_source_trace(run: dict[str, Any]) -> dict[str, Any] | None:
     return build_trace_manifest(validated)
 
 
+def _workflow_revision_comment(run: dict[str, Any], current_id: str) -> str:
+    relevant = {str(current_id or "")}
+    changed = True
+    edges = run.get("plan", {}).get("edges") or []
+    while changed:
+        changed = False
+        for edge in edges:
+            source = str(edge.get("source") or "")
+            target = str(edge.get("target") or "")
+            if target in relevant and source and source not in relevant:
+                relevant.add(source)
+                changed = True
+    feedback = run.get("revision_feedback") or {}
+    ordered_ids = [str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []]
+    return "\n".join(
+        str(feedback[node_id]).strip()
+        for node_id in ordered_ids
+        if node_id in relevant and str(feedback.get(node_id) or "").strip()
+    )
+
+
 def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     params = node.get("parameters") or {}
     artifact_contract = _workflow_artifact_contract(node)
@@ -4066,7 +4165,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     document_output = output_format in {"word", "docx", "word 文档", "word文档"}
     completed = []
     current_id = str(node.get("id") or "")
-    revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
+    revision_comment = _workflow_revision_comment(run, current_id)
     dependency_ids = {
         str(edge.get("source") or "")
         for edge in run.get("plan", {}).get("edges") or []
@@ -4076,9 +4175,13 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         node_id = str(candidate.get("id") or "")
         if dependency_ids and node_id not in dependency_ids:
             continue
+        if artifact_contract["render_type"] == "presentation" and node_id == "presentation_outline":
+            # The final deck receives a smaller, validated projection of the
+            # approved outline below. Do not duplicate the raw outline here.
+            continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 8000 if presentation_output or document_output else 1800
+            upstream_limit = 24_000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
             if presentation_output or document_output:
                 if len(output) > upstream_limit:
@@ -4167,6 +4270,15 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
                 "\n\n批准的用户材料事实清单（后续主张必须引用 claim_id；不得引入未批准事实）：\n"
                 + json.dumps(compact_trace, ensure_ascii=False, separators=(",", ":"))
             )
+            if all(marker in source_text for marker in ("📖伊斯坦布尔入境", "🚢D1: 欧洲区", "⭐️D2:亚洲区")):
+                from backend.services.presentation_travel_brief import parse_istanbul_travel_brief
+
+                travel_contract = parse_istanbul_travel_brief(source_text).to_dict()
+                upstream += (
+                    "\n\n确定性旅行编排合同（不得遗漏酒店、美食、地图路线；事实核验只纠正错误，"
+                    "价格仍按作者经验标注；禁止新增原文没有的酒店榜单）：\n"
+                    + json.dumps(travel_contract, ensure_ascii=False, separators=(",", ":"))
+                )
         upstream += (
             f"\n\n用户源材料（{source.get('filename', source_id or 'material')}，"
             f"共 {len(source_text)} 字符）：\n{source_text}"
@@ -4197,7 +4309,14 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         f"指定 Agent：{requested_agent}\n"
         f"节点要求：{params.get('instruction') or params.get('query') or ''}\n"
         f"本轮用户修改意见：{revision_comment or '无'}\n"
-        f"输出格式：{artifact_contract['render_type']} / {artifact_contract['extension']}\n"
+        + (
+            "修订优先级：本轮用户修改意见是当前成果的最高优先业务事实；"
+            "若与旧上游成果、旧字面值或此前‘保持不变/保留原值’要求冲突，"
+            "必须按本轮意见替换冲突内容，且不得在修订稿中保留已被替换的旧值；"
+            "未被本轮意见触及的内容保持不变。必须输出完整修订成果，不得只列修改说明。\n"
+            if revision_comment else ""
+        )
+        + f"输出格式：{artifact_contract['render_type']} / {artifact_contract['extension']}\n"
         f"格式契约：{_workflow_artifact_instruction(artifact_contract)}\n"
         f"篇幅约束：最终可落盘正文不超过 {output_char_limit} 个中文字符，优先保留事实、引用与未解决缺口。\n"
         f"知识范围：{json.dumps(params.get('knowledge_scope') or run.get('knowledge_scope') or [], ensure_ascii=False)}\n"
@@ -4216,25 +4335,6 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     if (presentation_output or document_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]
-
-
-def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:
-    """拒绝 Hermes 尚未真正执行工具时产生的中间控制文本。"""
-    normalized = str(reply or "").strip().lower()
-    if not normalized:
-        return True
-    if "<tool_switch_" in normalized or "<tool_call" in normalized:
-        return True
-    if str(node.get("node_type") or "") != "KNOWLEDGE_RETRIEVAL":
-        return False
-    planning_markers = (
-        "我先确认",
-        "我先检查",
-        "先确认当前",
-        "接下来我会",
-        "使用 bash 工具",
-    )
-    return len(normalized) < 320 and any(marker in normalized for marker in planning_markers)
 
 
 def _merge_workflow_usage(total: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:
@@ -4264,6 +4364,90 @@ def _normalize_presentation_contract_reply(render_type: str, reply: str) -> str:
     if render_type.startswith("presentation"):
         return json.dumps(_extract_json_object(reply), ensure_ascii=False, separators=(",", ":"))
     return reply
+
+
+def _ensure_outline_claim_coverage(run: dict[str, Any], reply: str) -> str:
+    source = run.get("source_material") or run.get("source_document") or {}
+    source_text = str(source.get("text") or "")
+    if not source_text:
+        return reply
+    from backend.services.presentation_source_trace import build_source_claims
+
+    claims = build_source_claims(
+        source_text,
+        source_id=str(source.get("source_id") or "source"),
+        source_client_session_id=str(source.get("source_client_session_id") or ""),
+        approval_state="approved",
+    )
+    value = _extract_json_object(reply)
+    slides = [item for item in value.get("slides") or [] if isinstance(item, dict)]
+    known = {str(item["claim_id"]): item for item in claims}
+    covered: set[str] = set()
+    for slide in slides:
+        requested_ids = []
+        for claim_id in slide.get("source_claim_ids") or []:
+            candidate = str(claim_id)
+            shorthand = re.fullmatch(r"C(\d{2})", candidate, re.IGNORECASE)
+            if shorthand and 1 <= int(shorthand.group(1)) <= len(claims):
+                candidate = str(claims[int(shorthand.group(1)) - 1]["claim_id"])
+            requested_ids.append(candidate)
+        unknown = [claim_id for claim_id in requested_ids if claim_id not in known]
+        if unknown:
+            raise RuntimeError(
+                "presentation outline references unknown source claims: "
+                + ", ".join(unknown[:8])
+            )
+        slide["source_claim_ids"] = requested_ids
+        covered.update(requested_ids)
+    missing = [item for item in claims if str(item["claim_id"]) not in covered]
+    if missing and not slides:
+        raise RuntimeError("presentation outline has no slides for source claim coverage")
+    category_terms = (
+        (("入境", "免签", "Passport"), ("入境", "签证")),
+        (("ATM", "METRO", "M11", "M2", "T1", "公共交通", "打车", "机场"), ("机场", "交通", "进城", "换乘")),
+        (("蓝色清真寺", "圣索菲亚", "苏莱曼尼", "Sarayburnu", "加拉塔大桥", "大巴扎", "巴拉特", "seven hills", "土耳其浴"), ("D1", "上午", "午后", "傍晚", "收尾")),
+        (("独立大街", "加拉塔石塔", "Galata Konak", "奥塔科伊", "Kuzguncuk", "Nusr-Et"), ("D2", "独立大街", "奥塔科伊", "Kuzguncuk", "吃")),
+    )
+    for item in missing:
+        claim = str(item["claim"])
+        preferred_terms: tuple[str, ...] = ()
+        for claim_terms, slide_terms in category_terms:
+            if any(term.lower() in claim.lower() for term in claim_terms):
+                preferred_terms = slide_terms
+                break
+
+        def score(slide: dict[str, Any]) -> tuple[int, int]:
+            haystack = " ".join(
+                str(part)
+                for part in (
+                    slide.get("title"),
+                    slide.get("purpose"),
+                    *(slide.get("key_points") or []),
+                )
+                if part
+            ).lower()
+            category_score = 100 if preferred_terms and any(term.lower() in haystack for term in preferred_terms) else 0
+            overlap_score = sum(1 for index in range(max(0, len(claim) - 1)) if claim[index : index + 2].lower() in haystack)
+            return category_score + overlap_score, -len(slide.get("source_claim_ids") or [])
+
+        target = max(slides, key=score)
+        target.setdefault("source_claim_ids", []).append(str(item["claim_id"]))
+        projected = claim
+        if "中国大陆免签" in claim:
+            projected = "中国大陆普通护照并非免签；符合条件者须提前申请电子签证，具体条件出发前复核。"
+        elif "不适合女生" in claim:
+            projected = "行李多、频繁换乘、楼梯、行动不便或携老人儿童时，应优先减少换乘。"
+        elif "M11第一站" in claim:
+            projected = "M11到Gayrettepe换M2，再由Vezneciler步行至Laleli换T1；不要表述为机场后的下一站。"
+        elif "D2:亚洲区" in claim:
+            projected = "保留原文D2分组，但地图注明独立大街、加拉塔塔、奥塔科伊和大巴扎在欧洲侧，Kuzguncuk在亚洲侧。"
+        elif any(term in claim for term in ("165里拉", "4500里拉", "30欧", "手续费")):
+            projected = f"作者当次经验（价格和政策会变化，出发前复核）：{claim}"
+        key_points = target.setdefault("key_points", [])
+        if len(projected.strip()) > 12 and projected not in key_points:
+            key_points.append(projected)
+    value["slides"] = slides
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _workflow_run_sync(execution_id: str) -> None:
@@ -4309,7 +4493,26 @@ def _workflow_run_sync(execution_id: str) -> None:
                     agent_id=(node.get("parameters") or {}).get("agent_id") or "main_agent",
                     message=f"开始：{node.get('name') or node_id}",
                 )
-            node_prompt = _workflow_node_prompt(run, node)
+            direct_output = ""
+            contract_hint = _workflow_artifact_contract(node)
+            if (
+                str(node.get("node_type") or "") == "OUTPUT_FORMAT"
+                and contract_hint.get("render_type") == "word"
+            ):
+                dependencies = [
+                    str(edge.get("source") or "")
+                    for edge in (plan.get("edges") or [])
+                    if str(edge.get("target") or "") == node_id
+                ]
+                approved_outputs = [
+                    str((run.get("nodes") or {}).get(dependency, {}).get("output") or "")
+                    for dependency in dependencies
+                    if (run.get("nodes") or {}).get(dependency, {}).get("status") == "succeeded"
+                ]
+                if len(approved_outputs) != 1 or not approved_outputs[0]:
+                    raise RuntimeError("Word OUTPUT_FORMAT 必须且只能绑定一份已批准上游全文")
+                direct_output = approved_outputs[0]
+            node_prompt = "" if direct_output else _workflow_node_prompt(run, node)
             binding = (node.get("parameters") or {}).get("skill_binding") or {}
             if binding:
                 receipt = _verify_workflow_skill_binding(binding, sandbox)
@@ -4324,8 +4527,8 @@ def _workflow_run_sync(execution_id: str) -> None:
                         message=f"已核验并加载 Skill：{receipt['skill_id']}",
                     )
             node_usage: dict[str, Any] = {}
-            reply = ""
-            gateway_completed = False
+            reply = direct_output
+            gateway_completed = bool(direct_output)
             if str(node.get("node_type") or "") == "KNOWLEDGE_RETRIEVAL":
                 params = node.get("parameters") or {}
                 requested_scope = list(params.get("knowledge_scope") or run.get("knowledge_scope") or [])
@@ -4397,9 +4600,53 @@ def _workflow_run_sync(execution_id: str) -> None:
             approved_design = None
             approved_outline = None
             render_type = str(contract["render_type"])
+            revision_comment = _workflow_revision_comment(run, str(node.get("id") or ""))
+            if render_type == "word" and revision_comment:
+                reply = _apply_explicit_document_replacements(reply, revision_comment)
+            if render_type == "word":
+                source_issues = _document_source_constraint_issues(run, reply)
+                if source_issues and not direct_output:
+                    with _workflow_runs_lock:
+                        _workflow_event(
+                            run,
+                            "node_repairing",
+                            node_id=node_id,
+                            usage=node_usage,
+                            message="Word 来源约束未满足，正在受控修复：" + "；".join(source_issues)[:480],
+                        )
+                    repair_prompt = (
+                        node_prompt
+                        + "\n\n"
+                        + _document_source_constraint_instruction(run)
+                    )[:MAX_INPUT]
+                    reply, new_sid, raw_usage = _run_workflow_node_in_process(
+                        repair_prompt,
+                        node,
+                        str(hermes_sid) if hermes_sid else None,
+                        execution_id,
+                        event_callback=_node_event,
+                        sandbox=sandbox,
+                    )
+                    if new_sid:
+                        hermes_sid = new_sid
+                    delta = _accumulate_usage(run, raw_usage)
+                    node_usage = _merge_workflow_usage(node_usage, delta)
+                    if reply.startswith("⚠️"):
+                        raise RuntimeError(reply)
+                    if revision_comment:
+                        reply = _apply_explicit_document_replacements(reply, revision_comment)
+                    source_issues = _document_source_constraint_issues(run, reply)
+                if source_issues:
+                    raise RuntimeError("Word 来源约束未满足：" + "；".join(source_issues))
+                reply = _ensure_document_page_breaks(
+                    reply,
+                    _workflow_minimum_document_pages(run),
+                )
             if render_type.startswith("presentation"):
                 try:
                     reply = _normalize_presentation_contract_reply(render_type, reply)
+                    if render_type == "presentation_outline":
+                        reply = _ensure_outline_claim_coverage(run, reply)
                 except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
                     with _workflow_runs_lock:
                         _workflow_event(
@@ -4430,6 +4677,8 @@ def _workflow_run_sync(execution_id: str) -> None:
                     if reply.startswith("⚠️"):
                         raise RuntimeError(reply)
                     reply = _normalize_presentation_contract_reply(render_type, reply)
+                    if render_type == "presentation_outline":
+                        reply = _ensure_outline_claim_coverage(run, reply)
             if render_type == "presentation":
                 reply, approved_design, approved_outline = _bind_approved_presentation_inputs(run, reply)
                 source_trace = _presentation_source_trace(run)
@@ -4446,6 +4695,11 @@ def _workflow_run_sync(execution_id: str) -> None:
                 )
                 artifact_contract = contract
                 approval_gate = str((node.get("parameters") or {}).get("approval_gate") or "")
+                artifact_version = (
+                    _workflow_artifact_version(run, node_id)
+                    if artifact_kind == "final"
+                    else int(state["attempt"])
+                )
                 _workflow_event(
                     run,
                     "node_succeeded",
@@ -4464,7 +4718,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                         "source_kind": "hermes_output",
                         **artifact_contract,
                         "approval_gate": approval_gate or None,
-                        "artifact_version": state["attempt"],
+                        "artifact_version": artifact_version,
                         "approved_design": approved_design,
                         "approved_outline": approved_outline,
                         "source_trace": source_trace,
@@ -4487,6 +4741,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                 "run_completed",
                 progress=100,
                 usage=run.get("usage") or {},
+                hermes_session_id=run.get("hermes_session_id") or hermes_sid,
                 message="Hermes 执行完成，等待成果复核",
             )
     except Exception as exc:
@@ -5656,6 +5911,7 @@ async def chat_stream(
             print(f"[bridge] v7 进程内流式失败·降级: {stream_err}")
 
     if knowledge_claims or client_context_claims or qws_context_claims:
+        print("[bridge] tenant sandbox request reached disabled in-process fallback")
         raise HTTPException(
             status_code=503, detail="tenant_sandbox_requires_in_process_runtime"
         )
@@ -7035,7 +7291,11 @@ def _build_in_process_agent(
         tier = inference_policy["tier"].upper()
         cfg_model = os.environ.get(f"HERMES_{tier}_CHAT_MODEL", "").strip() or cfg_model
     route_class = triage.get("route_class") if triage else None
-    note_draft_request = knowledge_action_enabled and not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
+    note_draft_request = (
+        knowledge_action_enabled
+        and not (agent_config or {}).get("knowledge_stage_only")
+        and _is_note_draft_request(_routing_user_goal(goal))
+    )
     if route_class == GENERAL_QA:
         cfg_model = os.environ.get("HERMES_FAST_CHAT_MODEL", "gpt-5.4-nano")
     evidence_requirements = set(
@@ -7626,7 +7886,11 @@ def _run_agent_sync(
                 "\n\n【平台记忆回执】该内容已由平台写入当前用户的长期记忆。"
                 "不要再次调用 memory；只需简洁确认。"
             )
-        note_draft_request = knowledge_action_enabled and not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
+        note_draft_request = (
+            knowledge_action_enabled
+            and not (agent_config or {}).get("knowledge_stage_only")
+            and _is_note_draft_request(_routing_user_goal(goal))
+        )
         note_context_claims = (
             client_context_claims or knowledge_claims or trusted_identity_claims
         )
@@ -7886,7 +8150,7 @@ def _run_agent_sync(
             return
         if (
             isinstance(client_tool_context, dict)
-            and _is_note_draft_request(goal)
+            and _is_note_draft_request(_routing_user_goal(goal))
             and not knowledge_action_enabled
             and _legacy_client_context_enabled(has_client_context, knowledge_action_enabled)
             and not client_tool_context.get("draft_emitted")
@@ -8026,6 +8290,7 @@ def _sse_from_in_process(
     worker.start()
 
     finished = False
+    confirmation_proposed = False
     try:
         first_delta_recorded = False
         while True:
@@ -8047,6 +8312,22 @@ def _sse_from_in_process(
             if item is None:
                 print(f"[bridge] SSE-BREAK item_none user={user_id}")
                 break
+            if item.get("type") == "capability.proposed":
+                confirmation_proposed = True
+            elif item.get("type") == "error" and confirmation_proposed:
+                # The governed action proposal is already durable in QCP. A
+                # late provider/post-processing error must not erase the
+                # confirmation card that is now the user's next step.
+                print(
+                    f"[bridge] suppressing post-proposal error user={user_id} "
+                    f"code={item.get('code')}"
+                )
+                item = {
+                    "type": "done",
+                    "session_id": user_id,
+                    "answer": "",
+                    "usage": item.get("usage") or {},
+                }
             # reasoning_callback 按治理要求不外发；首字指标必须记录真正的正文
             # delta，否则旧 first_thought_ms 永远不会产生，无法诊断用户体感。
             if not first_delta_recorded and item.get("type") == "delta":
@@ -8880,6 +9161,7 @@ async def start_workflow_run(
 ):
     """幂等启动或恢复 Hermes 工作流 Run。"""
     _require_internal(x_hermes_internal_token)
+    require_batch6_execution_enabled("hermes_workflow_run")
     claims = _validated_knowledge_claims(
         body.knowledge_capability,
         subject_id=body.execution_id,

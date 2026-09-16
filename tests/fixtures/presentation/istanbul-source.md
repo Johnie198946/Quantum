@@ -1,7 +1,31 @@
-Europe/Istanbul
-
-Istanbul serves as Turkey's bridge between Europe and Asia, straddling both continents across the Bosphorus Strait. Historically known as Byzantium and Constantinople, it was the capital of the Byzantine and Ottoman empires. Today, Istanbul is Turkey's largest city and economic center, home to over 15 million people. Its strategic position has made it a crucial commercial hub for millennia, while landmarks like the Hagia Sophia, Blue Mosque, and Topkapi Palace reflect its rich multicultural heritage. The city remains a vital link between Western and Eastern civilizations, blending modernity with centuries-old traditions.
-
-İstanbul Türkiye'nin Avrupa ve Asya kıtaları arasındaki köprüsü olarak Boğaz'ın iki yakasında yer almaktadır. Tarih boyunca Bizans ve Konstantinopolis olarak bilinen şehir, Bizans ve Osmanlı imparatorluklarının başkentliğini yapmıştır. Günümüzde İstanbul 15 milyondan fazla nüfusuyla Türkiye'nin en büyük şehri ve ekonomik merkezidir. Stratejik konumu binlerce yıldır önemli bir ticaret merkezi olmasını sağlarken Ayasofya, Sultanahmet Camii ve Topkapı Sarayı gibi yapılar zengin çok kültürlü mirasını yansıtmaktadır. Şehir modernlik ile yüzyıllar boyunca süregelen gelenekleri harmanlayarak Batı ve Doğu medeniyetleri arasında hayati bir bağlantı olmaya devam etmektedir.
-
-伊斯坦布尔作为土耳其连接欧洲和亚洲的桥梁 横跨博斯普鲁斯海峡两岸，分属两个大洲，历史上称为拜占庭和君士坦丁堡，曾是拜占庭帝国和奥斯曼帝国的首都。如今伊斯坦布尔是土耳其最大的城市和经济中心，拥有超过1500万人口。其战略位置使其数千年来一直是重要的商业中心，而圣索菲亚大教堂、蓝色清真寺和托普卡帕宫等地标则反映了其丰富的多元文化遗产。这座城市仍然是西方与东方文明之间的重要纽带，将现代性与数百年的传统融为一体。
+穷游土耳其？教你躲开伊斯坦布尔的“价格刺客”，还能拍出大片！🌅
+第二次来伊斯坦布尔了，相比于第一次，的确被物价背刺不少…
+先给大家一个总纲，后续我会针对重点景点给一些细节的攻略：
+📖伊斯坦布尔入境
+土耳其对中国大陆免签。伊斯坦布尔IST机场Passport Control排队盖章入境即可
+🚃交通方法
+🔷如果乘坐公共交通：
+1️⃣在IST拿完行李，找到9号门附近的一排ATM机，找蓝色的 “is bankasi”，汇率不错免本地手续费。
+2️⃣找到红色标志 u METRO，顺着标志到地铁站内，在负二楼地铁站内有青色、蓝色、黄色三种机器，找蓝色机器买卡（制卡费165里拉）
+3️⃣使用Yandex Metro这个app可以看路线：搭乘M11第一站坐到Gayrettepe，下车换乘M2坐到Veznecıler - İstanbul Ünıversıtesı，出站向南走一条街到Laleli-İstanbul Üniversitesi，搭乘T1到Sultanahmet（蓝色清真寺/圣索菲亚大教堂）
+⚠️注意：公共交通虽然便宜，但只适合行李较少，腿脚麻利的人。不适合女生，不适合扶老携幼的家庭。不要问我为什么，因为爬高上低走路换乘真的很崩溃
+🔷如果打车：
+土耳其价格刺客太多了，建议打uber。从机场到蓝色清真寺，大概4500里拉
+🚶玩法
+一般来说，2天可以走完大多数主要景点，我的行程参考为：
+🚢D1: 欧洲区
+1️⃣蓝色清真寺/圣索菲亚大教堂：建议住在附近，走路前往。圣索菲亚是价格刺客！！对于历史爱好者建议前往，其他人慎重❗️
+2️⃣苏莱曼尼清真寺：在一个山头上，需要步行，不爱爬山的人慎重前往
+3️⃣İBB Sarayburnu Parkı看海：位于托普卡皮皇宫前方的海边，人少，可以从「居尔哈尼公园」穿过去
+4️⃣加拉塔大桥：步行前往，桥上很多当地人在钓鱼，拍照很出片
+5️⃣大巴扎（周边有007拍摄地 Sirkeci Lokantası 1912）：一个普通集市，人比较多，建议逛逛即可（撒盐哥的牛排店就在这里）
+6️⃣彩色巴拉特街区 Colorful Stairs：马卡龙色系的街区，很适合喝茶发呆，但是唯一需要的就是脚力，因为要爬山
+7️⃣seven hills 楼顶：我就住在这里，直接上楼喂海鸥
+8️⃣黄昏轮渡：算好时间，在轮渡上可以看日落黄昏，很棒
+9️⃣Kadırga Hamamı/Cemberlitas Hammam：如果有空可以去感受个土耳其浴。Kadırga Hamamı便宜一些，Cemberlitas Hammam由于过于知名，所以比较贵
+⭐️D2:亚洲区
+1️⃣独立大街：坐轮渡过去
+2️⃣加拉塔石塔：位于金角湾对面山顶上，也需要爬山，同时也是个价格刺客。为了拍照，可以选旁边的Galata Konak Cafe，立省30欧
+3️⃣奥塔科伊清真寺：潮汐🌊网红清真寺，个人觉得日落时分真的美炸了
+4️⃣库兹衮库克 Kuzguncuk Evleri：新晋的亚洲区休闲街区，适合买杯咖啡发呆一下午
+5️⃣撒盐哥的牛排店 Nusr-Et Steakhouse Kapalıçarşı Nusr-et Sandal Bedesteni：位于大巴扎，价格略贵，但是品质是可以的

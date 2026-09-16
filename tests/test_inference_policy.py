@@ -92,6 +92,32 @@ async def test_reservation_is_idempotent_bounded_and_missing_usage_is_not_zero(
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_monthly_quota_is_isolated_by_tenant_for_same_user(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'tenant-quota.db'}")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync: Base.metadata.create_all(
+                sync, tables=[InferenceReservation.__table__, LLMUsageRecord.__table__]
+            )
+        )
+    monkeypatch.setattr(inference_policy, "SessionLocal", factory)
+    monkeypatch.setenv("QUANTUM_MONTHLY_TOKEN_LIMIT", "10000")
+    decision = inference_policy.decide_inference(
+        {"sub": "shared-user", "tenant_key": "tenant-a"},
+        route_class="professional_task",
+    )
+    await inference_policy.reserve_inference(
+        {"sub": "shared-user", "tenant_key": "tenant-a"}, "request-a", decision
+    )
+    second = await inference_policy.reserve_inference(
+        {"sub": "shared-user", "tenant_key": "tenant-b"}, "request-b", decision
+    )
+    assert second.tenant_key == "tenant-b"
+    await engine.dispose()
+
+
 _AUTH = {"sub": "audit-user", "tenant_key": "audit-tenant"}
 _KEY = {"user_id": "audit-user", "request_id": "audit-request"}
 _USAGE = {"input_tokens": 200, "output_tokens": 35, "model": "synthetic-model"}

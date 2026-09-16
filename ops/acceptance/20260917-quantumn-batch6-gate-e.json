@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "gate": "E",
+  "status": "passed_local",
+  "scope": "batch6_structural_refactor_kill_switch_and_rollback_rehearsal",
+  "refactor": {
+    "qws": {
+      "api": "backend/api/quantum_workspace.py",
+      "access_boundary": "backend/services/qws_access.py",
+      "session_context_boundary": "backend/services/qws_session_context.py"
+    },
+    "workflow_api": {
+      "api": "backend/api/workflows.py",
+      "review_boundary": "backend/services/workflow_reviews.py"
+    },
+    "hermes_bridge": {
+      "entrypoint": "scripts/hermes_bridge.py",
+      "document_contract_boundary": "backend/services/workflow_document_contracts.py"
+    },
+    "kill_switch": {
+      "environment_variable": "AI_LAB_BATCH6_EXECUTION_KILL_SWITCH",
+      "guard": "backend/services/batch6_refactor_guard.py",
+      "new_execution_block_status": 503,
+      "status_cancel_and_read_paths_remain_available": true,
+      "does_not_select_a_second_runtime_or_state_machine": true
+    }
+  },
+  "behavior_golden": {
+    "baseline": {
+      "tests": 340,
+      "subtests": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "junit": "/tmp/Quantumn-E-Batch6-Baseline.xml",
+      "sha256": "7d5ed74aa11ea3335a1b61d8c5419cefe873f90acb3623213991d66d9bc9ff8b"
+    },
+    "post_refactor": {
+      "tests": 346,
+      "subtests": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "junit": "/tmp/Quantumn-E-Batch6-Final.xml",
+      "sha256": "45dc034ccd416419129d26331762750a86eb35e1643c836f91f2f7be651a0033",
+      "new_batch6_tests": 6
+    },
+    "preexisting_behavior_regressions": 0
+  },
+  "dependency_check": {
+    "scanned_local_modules": 188,
+    "cycles_involving_refactored_modules": 0,
+    "duplicate_extracted_function_definitions": 0
+  },
+  "rollback_rehearsal": {
+    "receipt": "/tmp/Quantumn-E-Batch6-Rollback-Rehearsal.json",
+    "sha256": "c7918513f279bec12ee0365c285c3a3010091d6e6ab82ac6bebb4664126feca9",
+    "kill_switch_blocked_new_execution": true,
+    "simulated_corruption_restored": true,
+    "working_tree_unchanged": true
+  },
+  "runtime_readback": {
+    "backend": {
+      "pid": 68323,
+      "url": "http://127.0.0.1:8765/health",
+      "http_status": 200,
+      "reported_status": "ok",
+      "reported_version": "0.8.0"
+    },
+    "hermes_bridge": {
+      "pid": 68324,
+      "url": "http://192.168.0.126:9118/health",
+      "http_status": 200,
+      "reported_status": "ok",
+      "reported_version": "v6.0",
+      "workflow_orchestration": true
+    }
+  },
+  "external_writes": {
+    "commit": false,
+    "push": false,
+    "deployment": false,
+    "archive": false,
+    "testflight": false
+  }
+}

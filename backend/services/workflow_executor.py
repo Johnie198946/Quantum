@@ -552,6 +552,12 @@ def artifact_storage_contract(
         extension, mime_type = "csv", "text/csv"
     metadata = {
         "bridge_event_id": event_id,
+        # Approval CAS is bound to the exact Hermes node output.  Renderers may
+        # turn that output into different bytes (for example Markdown -> DOCX),
+        # so the stored artifact hash cannot be reused for the remote gate.
+        "source_content_hash": hashlib.sha256(
+            str(artifact.get("content") or "").encode()
+        ).hexdigest(),
         "source_node_id": node.node_id,
         "agent_id": node.agent_id,
         "model": node.model_used,
@@ -567,6 +573,19 @@ def artifact_storage_contract(
     return extension, metadata
 
 
+def artifact_identity_metadata(
+    execution: WorkflowExecution,
+    workflow: WorkflowDefinition,
+    artifact_version: int,
+) -> dict[str, Any]:
+    return {
+        "tenant_key": execution.tenant_key,
+        "owner_id": workflow.created_by,
+        "source_client_session_id": workflow.source_client_session_id,
+        "generation": artifact_version,
+    }
+
+
 async def project_event(
     db: AsyncSession,
     execution: WorkflowExecution,
@@ -576,6 +595,11 @@ async def project_event(
     event_type = str(event.get("type") or "bridge_event")
     node_id = str(event.get("node_id") or "")
     message = str(event.get("message") or event_type)
+    raw_payload = event.get("payload")
+    payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
+    hermes_session_id = event.get("hermes_session_id") or payload.get("hermes_session_id")
+    if hermes_session_id:
+        execution.hermes_session_id = str(hermes_session_id)
     node = node_rows.get(node_id)
     if event_type == "run_started":
         execution.status = "running"
@@ -609,6 +633,18 @@ async def project_event(
             extension, artifact_metadata = artifact_storage_contract(
                 artifact, event_id=event_id, node=node
             )
+            workflow = await db.get(WorkflowDefinition, execution.workflow_id)
+            if workflow is None:
+                raise RuntimeError("workflow identity is missing during artifact projection")
+            artifact_metadata.update(artifact_identity_metadata(
+                execution, workflow, artifact_metadata["artifact_version"]
+            ))
+            identity_metadata = {
+                key: artifact_metadata[key]
+                for key in (
+                    "tenant_key", "owner_id", "source_client_session_id", "generation"
+                )
+            }
             try:
                 await _assert_approved_presentation_projection(
                     db, execution, artifact, artifact_metadata["render_type"]
@@ -644,7 +680,12 @@ async def project_event(
                     preview_artifact = store_artifact(
                         execution, node_run_id=node.id, kind="preview",
                         title=f"{stored.title} 预览", content=preview, source_kind="pptx_render",
-                        metadata={"parent_artifact_id": stored.id, "parent_content_hash": stored.content_hash, "artifact_version": artifact_metadata["artifact_version"]},
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": stored.id,
+                            "parent_content_hash": stored.content_hash,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        },
                         extension="pdf",
                     )
                     db.add(preview_artifact)
@@ -658,13 +699,24 @@ async def project_event(
                     sample = store_artifact(
                         execution, node_run_id=node.id, kind="draft", title=f"{stored.title} 可编辑样稿",
                         content=build_pptx(str(artifact["content"])), source_kind="design_sample",
-                        metadata={"parent_artifact_id": stored.id, "artifact_version": artifact_metadata["artifact_version"]}, extension="pptx",
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": stored.id,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        }, extension="pptx",
                     )
                     db.add(sample)
                     preview = store_artifact(
                         execution, node_run_id=node.id, kind="preview", title=f"{stored.title} 渲染预览",
                         content=render_pptx_pdf(run_root(execution) / sample.relative_path), source_kind="pptx_render",
-                        metadata={"parent_artifact_id": sample.id, "parent_content_hash": sample.content_hash, "design_artifact_id": stored.id, "design_content_hash": stored.content_hash, "artifact_version": artifact_metadata["artifact_version"]}, extension="pdf",
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": sample.id,
+                            "parent_content_hash": sample.content_hash,
+                            "design_artifact_id": stored.id,
+                            "design_content_hash": stored.content_hash,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        }, extension="pdf",
                     )
                     db.add(preview)
                     stored.metadata_json = {**stored.metadata_json, "preview_status": "ready", "preview_artifact_id": preview.id, "preview_content_hash": preview.content_hash, "sample_artifact_id": sample.id, "sample_content_hash": sample.content_hash}
