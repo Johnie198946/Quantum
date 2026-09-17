@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `cd367be1b5cf7a81bce53c016ad54b20d755d1d2ec2beb63d1e3f69bae936631`
+Catalog digest: `243e1e441f9e61cc079b1ab784f1c75e7ab14734abe90cdf99cc5c4d56afa579`
 
 ## Gateway 核心模块规范
 
@@ -291,9 +291,18 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
 |---|---|---|---|---|---|---|---|
+| `agent.create@1.0.0` | agent | write | required | required | `agent.changed` | `answer@1` | implemented |
+| `agent.delete@1.0.0` | agent | write | required | required | `agent.changed` | `answer@1` | implemented |
+| `agent.evaluate@1.0.0` | agent | write | required | required | `agent.changed` | `answer@1` | implemented |
+| `agent.evaluation_status@1.0.0` | agent | read | none | none | `agent.snapshot` | `answer@1` | implemented |
+| `agent.list@1.0.0` | agent | read | none | none | `agent.snapshot` | `answer@1` | implemented |
+| `agent.update@1.0.0` | agent | write | required | required | `agent.changed` | `answer@1` | implemented |
 | `artifact.consume_structured@1.0.0` | artifact | read | none | required | `artifact.consumed` | `artifact_consumption@1` | implemented |
 | `artifact.download@1.0.0` | artifact | read | none | none | `artifact.download_ready` | `artifact@1` | implemented |
 | `artifact.open@1.0.0` | artifact | read | none | none | `artifact.content` | `artifact@1` | implemented |
+| `bookshelf.open@1.0.0` | bookshelf | read | none | none | `bookshelf.opened` | `bookshelf@1` | implemented |
+| `bookshelf.search@1.0.0` | bookshelf | read | none | none | `bookshelf.results` | `bookshelf@1` | implemented |
+| `bookshelf.subscribe@1.0.0` | bookshelf | write | required | required | `bookshelf.subscription_changed` | `bookshelf@1` | implemented |
 | `document.word.create_from_text@1.0.0` | document | write | required | required | `document.created` | `workflow@1` | implemented |
 | `knowledge.navigation@1.0.0` | knowledge | client | none | none | `knowledge.navigation` | `knowledge_action@1` | implemented |
 | `knowledge.note.archive@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
@@ -303,10 +312,23 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `memory.create@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
+| `memory.delete@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
+| `memory.list@1.0.0` | memory | read | none | none | `memory.snapshot` | `answer@1` | implemented |
+| `memory.update@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `paper.academic.create_from_text@1.0.0` | paper | write | required | required | `document.created` | `workflow@1` | implemented |
 | `presentation.create_from_document@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `presentation.create_from_text@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
+| `profile.read@1.0.0` | profile | read | none | none | `profile.snapshot` | `answer@1` | implemented |
+| `profile.update@1.0.0` | profile | write | required | required | `profile.changed` | `answer@1` | implemented |
+| `project.create@1.0.0` | project | write | required | required | `project.created` | `answer@1` | implemented |
+| `project.list@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
+| `project.open@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `report.research.create_from_text@1.0.0` | report | write | required | required | `document.created` | `workflow@1` | implemented |
+| `task.create@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
+| `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
+| `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
 | `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.start@1.0.0` | workflow | execute | required | required | `workflow.started` | `workflow@1` | implemented |

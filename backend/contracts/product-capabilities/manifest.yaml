@@ -1,6 +1,6 @@
 protocol: qcp
 version: 1.0.0
-capabilities: [capabilities.yaml, bookshelf.yaml, memory.yaml, profile.yaml, agent.yaml]
+capabilities: [capabilities.yaml, bookshelf.yaml, memory.yaml, profile.yaml, agent.yaml, project_task.yaml]
 events: events.yaml
 renderers: renderers.yaml
 bindings: bindings.yaml

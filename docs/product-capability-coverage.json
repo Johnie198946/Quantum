@@ -1,6 +1,48 @@
 {
   "capabilities": [
     {
+      "id": "agent.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.evaluate",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.evaluation_status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
       "id": "artifact.consume_structured",
       "status": "implemented",
       "tests": [
@@ -20,6 +62,29 @@
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "bookshelf.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppUITests/ProductionBookshelfUITests.swift"
+      ]
+    },
+    {
+      "id": "bookshelf.search",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ]
+    },
+    {
+      "id": "bookshelf.subscribe",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py"
       ]
     },
     {
@@ -92,6 +157,34 @@
       ]
     },
     {
+      "id": "memory.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
       "id": "paper.academic.create_from_text",
       "status": "implemented",
       "tests": [
@@ -117,12 +210,75 @@
       ]
     },
     {
+      "id": "profile.read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_profile_capabilities.py"
+      ]
+    },
+    {
+      "id": "profile.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_profile_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
       "id": "report.research.create_from_text",
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
         "tests/test_document_presentation.py",
         "tests/e2e/test_research_report_workflow.py"
+      ]
+    },
+    {
+      "id": "task.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
       ]
     },
     {
@@ -154,7 +310,7 @@
       ]
     }
   ],
-  "catalog_digest": "cd367be1b5cf7a81bce53c016ad54b20d755d1d2ec2beb63d1e3f69bae936631",
+  "catalog_digest": "243e1e441f9e61cc079b1ab784f1c75e7ab14734abe90cdf99cc5c4d56afa579",
   "consumptions": [
     {
       "gates": [
@@ -199,7 +355,7 @@
     }
   ],
   "counts": {
-    "implemented": 20,
+    "implemented": 42,
     "partial": 0,
     "unverified": 0
   },
@@ -275,6 +431,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 20,
+  "total": 42,
   "version": "1.0.0"
 }

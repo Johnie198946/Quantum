@@ -69,3 +69,17 @@ bindings:
     handler: agent.evaluate
   - id: agent.evaluation_status
     handler: agent.evaluation_status
+  - id: project.list
+    handler: project.list
+  - id: project.create
+    handler: project.create
+  - id: project.open
+    handler: project.open
+  - id: task.list
+    handler: task.list
+  - id: task.create
+    handler: task.create
+  - id: task.update
+    handler: task.update
+  - id: task.status
+    handler: task.status

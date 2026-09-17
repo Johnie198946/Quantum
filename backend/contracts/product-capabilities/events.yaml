@@ -49,3 +49,11 @@ events:
     version: 1
   - id: agent.changed
     version: 1
+  - id: project.snapshot
+    version: 1
+  - id: project.created
+    version: 1
+  - id: task.snapshot
+    version: 1
+  - id: task.change_proposed
+    version: 1

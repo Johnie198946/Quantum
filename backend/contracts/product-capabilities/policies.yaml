@@ -15,3 +15,5 @@ policies:
     description: Profile reads and writes derive tenant and user identity only from the authenticated principal.
   - id: agent-owner
     description: Agent writes require an interactive human and enforce tenant plus owner isolation.
+  - id: qws-project-access
+    description: QWS derives tenant and user from the authenticated principal and enforces project membership, owner/write scope, revision CAS, and domain lifecycle rules.

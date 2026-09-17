@@ -635,6 +635,74 @@ async def _agent_evaluation_status(data: dict[str, Any], payload: dict[str, Any]
     return jsonable_encoder(await get_agent_evaluation(str(data["run_id"]), payload))
 
 
+def _response_payload(value: Any) -> Any:
+    """Unwrap direct FastAPI domain calls without changing their semantics."""
+    body = getattr(value, "body", None)
+    return json.loads(body) if isinstance(body, bytes) else jsonable_encoder(value)
+
+
+async def _project_list(_data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import list_projects
+
+    return {"projects": jsonable_encoder(await list_projects(payload))}
+
+
+async def _project_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import InstantiateProjectRequest, instantiate_project
+
+    assert key
+    body = InstantiateProjectRequest(request_id=key, **data)
+    return _response_payload(await instantiate_project("ipd-product-development", body, payload))
+
+
+async def _project_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import get_project
+
+    return {"project": jsonable_encoder(await get_project(data["project_id"], payload))}
+
+
+async def _task_list(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import get_project_process
+
+    process = jsonable_encoder(await get_project_process(data["project_id"], payload))
+    return {
+        "project_id": process["project_id"],
+        "process_revision": process["process_revision"],
+        "tasks": process.get("tasks") or [],
+    }
+
+
+async def _task_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import CreateProjectTaskRequest, create_project_task
+
+    assert key
+    body = dict(data)
+    project_id = str(body.pop("project_id"))
+    return _response_payload(await create_project_task(
+        project_id, CreateProjectTaskRequest(request_id=key, **body), payload
+    ))
+
+
+async def _task_update(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import EditProjectTaskRequest, edit_project_task
+
+    assert key
+    body = dict(data)
+    project_id = str(body.pop("project_id"))
+    task_id = str(body.pop("task_id"))
+    return _response_payload(await edit_project_task(
+        project_id, task_id, EditProjectTaskRequest(request_id=key, **body), payload
+    ))
+
+
+async def _task_status(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import get_project_task
+
+    return {"task": jsonable_encoder(await get_project_task(
+        data["project_id"], data["task_id"], payload
+    ))}
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -671,4 +739,11 @@ HANDLERS: dict[str, Handler] = {
     "agent.delete": _agent_delete,
     "agent.evaluate": _agent_evaluate,
     "agent.evaluation_status": _agent_evaluation_status,
+    "project.list": _project_list,
+    "project.create": _project_create,
+    "project.open": _project_open,
+    "task.list": _task_list,
+    "task.create": _task_create,
+    "task.update": _task_update,
+    "task.status": _task_status,
 }

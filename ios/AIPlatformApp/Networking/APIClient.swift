@@ -2107,6 +2107,10 @@ public enum RendererRegistry {
         "profile.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "agent.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "agent.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.created": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
     ]
 
     public static func route(for eventType: String, version: Int) -> QCPRenderingPath {
