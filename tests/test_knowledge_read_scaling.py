@@ -256,6 +256,27 @@ def fake_gateway_policy(monkeypatch):
     monkeypatch.setattr(gateway, "resolve_policy", policy)
 
 
+def test_live_document_filter_reuses_file_barrier_frontmatter(tmp_path, monkeypatch):
+    document = {"path": "wiki/topic.md"}
+    monkeypatch.setattr(
+        catalog,
+        "_apply_file_read_barrier",
+        lambda *_: {
+            **document,
+            "contribution_projection_id": "projection-1",
+            "publication_policy": catalog.CONTRIBUTION_PUBLICATION_POLICY,
+        },
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_live_frontmatter",
+        lambda *_: (_ for _ in ()).throw(AssertionError("duplicate frontmatter read")),
+    )
+    live, guarded = catalog._file_live_documents([document], tmp_path)
+    assert live == []
+    assert guarded[0][1:] == ("projection-1", "wiki/topic.md")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry", ["gateway", "http"])
 async def test_ready_responds_while_search_is_running(vault, tmp_path, monkeypatch, entry):

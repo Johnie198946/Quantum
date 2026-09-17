@@ -19,7 +19,8 @@ from sqlalchemy import select
 from backend.api import knowledge
 from backend.api.catalog import compute_catalog
 from backend.services.knowledge_catalog import (
-    SEARCH_CACHE, filter_database_live_documents, AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
+    SEARCH_CACHE, database_live_document_index, filter_database_live_documents,
+    AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
     run_knowledge_read,
 )
 from backend.api.tenant import current_visibility
@@ -394,10 +395,9 @@ async def capability_search(
             tenant_key, policy.policy_version, requested, body.query,
             {"tenant_knowledge"},
         )
-        candidates = await run_knowledge_read(knowledge.document_index, knowledge._vault())
-        live = await filter_database_live_documents(list(candidates.values()), knowledge._vault())
+        live_index = await database_live_document_index(knowledge._vault())
+        live = list(live_index.values())
         mark_perf("candidate_authorization_ms")
-        live_index = {item["path"]: item for item in live}
         # Model disclosure is narrower than internal read authorization. Never
         # send controlled detail upstream and hope a later SSE/final filter hides it.
         visible_index = {resolved["path"]: resolved for path in live_index
