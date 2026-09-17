@@ -1465,6 +1465,7 @@ def _identity_sse(
 async def _call_bridge_stream(
     goal: str,
     session_id: str,
+    client_session_id: Optional[str] = None,
     regenerate: bool = False,
     skill_id: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -1490,6 +1491,7 @@ async def _call_bridge_stream(
             json={
                 "goal": _bounded_bridge_goal(goal, knowledge_capability),
                 "session_id": session_id,
+                "client_session_id": client_session_id,
                 "regenerate": regenerate,
                 "skill_id": skill_id,
                 "request_id": request_id,
@@ -2004,6 +2006,7 @@ async def stream_chat(
                 "qws_business_context": qws_business_context,
                 "qws_context_capability": qws_context_capability,
                 "client_capabilities": req.client_capabilities,
+                "client_session_id": req.session_id,
             }
             kwargs["request_id"] = effective_request_id
             model_attempted = True

@@ -656,6 +656,7 @@ class GoalRequest(BaseModel):
     goal: str = Field(..., max_length=262_144)
     request_id: str | None = Field(None, min_length=8, max_length=100)
     session_id: str | None = None  # 前端传入的 user_id（用于映射 Hermes 原生 session）
+    client_session_id: str | None = Field(None, min_length=1, max_length=100)
     skill_id: str | None = Field(None, max_length=80)
     # 重新生成语义（2026-08-17 修复）：true 时作废旧 run（interrupt 旧 agent + discard 注册）
     # 再启动全新尝试——对齐 ChatGPT「重新生成」= 上次回答作废重跑，而非被并发防护拒绝
@@ -6158,6 +6159,7 @@ async def chat_stream(
                     agent_config=body.agent_config,
                     knowledge_capability=body.knowledge_capability,
                     knowledge_claims=knowledge_claims,
+                    client_session_id=body.client_session_id,
                     client_session_context=body.client_session_context,
                     client_context_claims=client_context_claims,
                     qws_business_context=body.qws_business_context,
@@ -8087,6 +8089,7 @@ def _run_agent_sync(
     agent_config: dict[str, Any] | None = None,
     knowledge_capability: str | None = None,
     knowledge_claims: dict[str, Any] | None = None,
+    client_session_id: str | None = None,
     client_session_context: dict[str, Any] | None = None,
     client_context_claims: dict[str, Any] | None = None,
     sandbox: TenantHermesSandbox | None = None,
@@ -8193,7 +8196,7 @@ def _run_agent_sync(
                         note_context_claims.get("policy_version") or "unknown"
                     ),
                 },
-                "client_session_id": transcript.get("session_id") or user_id,
+                "client_session_id": client_session_id or transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],
                 "account_scope": (
                     hashlib.sha256(str(note_context_claims.get("tenant_key") or "").encode()).hexdigest()[:20]
@@ -8513,6 +8516,7 @@ def _sse_from_in_process(
     agent_config: dict[str, Any] | None = None,
     knowledge_capability: str | None = None,
     knowledge_claims: dict[str, Any] | None = None,
+    client_session_id: str | None = None,
     client_session_context: dict[str, Any] | None = None,
     client_context_claims: dict[str, Any] | None = None,
     sandbox: TenantHermesSandbox | None = None,
@@ -8548,7 +8552,7 @@ def _sse_from_in_process(
         args=(
             goal, user_id, hermes_sid, stream_q, agent_holder,
             allow_local_files, agent_config, knowledge_capability, knowledge_claims,
-            client_session_context, client_context_claims, sandbox,
+            client_session_id, client_session_context, client_context_claims, sandbox,
             knowledge_action_enabled, qws_business_context, qcp_enabled, request_id,
             trusted_identity_claims,
         ),
