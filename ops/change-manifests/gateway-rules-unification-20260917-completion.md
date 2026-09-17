@@ -27,9 +27,11 @@
 - Post-push CI exposed five repository-wide Ruff findings: two missing EOF newlines in this change and three pre-existing findings (one dead Gateway variable, one test lambda, one missing EOF newline). All five were corrected without semantic expansion.
 - Expanded regression after the lint repair: `36 passed, 8 warnings`; repository-wide `python3 -m ruff check backend/ scripts/ tests/`: passed.
 - Final Python syntax, CI YAML parse, generated parity and `git diff --check`: passed.
+- GitHub Actions run `35198639870`: lint and frontend passed; build executed both new governance checks successfully, then failed at the repository-wide pytest step. This preserves the existing full-suite baseline blocker rather than weakening or skipping the gate.
+- A local Python 3.12 full-suite diagnostic is not an acceptance substitute for CI's Python 3.11 environment; it exposed broad dependency/test-isolation failures and is recorded only as diagnostic evidence.
 - Worktree check: clean baseline on `main`; rules changes and the five bounded Ruff remediations are isolated from unrelated work.
 
 ## Remaining risks
 
-- GitHub Actions execution is asynchronous; local checks passed and the workflow now enforces the same commands on future pushes.
+- Repository-wide CI remains red at the pre-existing full pytest gate; the new governance checker, PCM parity check, repository Ruff gate and focused regressions pass.
 - This change does not deploy or alter production runtime behavior.
