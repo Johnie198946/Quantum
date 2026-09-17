@@ -46,6 +46,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -127,6 +128,21 @@ except ModuleNotFoundError:  # pragma: no cover - direct ``python scripts/hermes
 
 app = FastAPI(title="Hermes Bridge v6.0")
 _bridge_async_loop: asyncio.AbstractEventLoop | None = None
+_bridge_async_loop_lock: Any = None
+
+
+def _run_bridge_coroutine(coro, *, timeout: float):
+    """Run DB-backed bridge work on the process-owned asyncio loop."""
+    loop = _bridge_async_loop
+    if loop is None or loop.is_closed():
+        return asyncio.run(coro)
+    if loop.is_running():
+        return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=timeout)
+    lock = _bridge_async_loop_lock
+    if lock is None:
+        return loop.run_until_complete(coro)
+    with lock:
+        return loop.run_until_complete(coro)
 CAPABILITY_DISPATCH_TIMEOUT_SECONDS = 30
 
 SKILL_ROUTING_OVERRIDES = _REPO_ROOT / "config" / "skill-routing-overrides.yaml"
@@ -3316,19 +3332,16 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             renderer_version="qcp-ios@1",
         )
         try:
-            if loop is not None and not loop.is_closed() and loop.is_running():
-                future = asyncio.run_coroutine_threadsafe(proposal, loop)
-                result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
-            else:
-                # Native Hermes tools may execute in a worker process which did not
-                # run FastAPI startup. Use a request-local loop rather than silently
-                # dropping a governed proposal.
-                result = asyncio.run(proposal)
+            result = _run_bridge_coroutine(
+                proposal,
+                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
+            )
         except TimeoutError:
             if "future" in locals():
                 future.cancel()
             return json.dumps({"success": False, "error": "async_dispatch_timeout"})
         except Exception:
+            traceback.print_exc()
             if inspect.getcoroutinestate(proposal) == inspect.CORO_CREATED:
                 proposal.close()
             return json.dumps({"success": False, "error": "proposal_persistence_failed"})
@@ -3377,11 +3390,10 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             idempotency_key=stable_key,
         )
         try:
-            if loop is not None and not loop.is_closed() and loop.is_running():
-                future = asyncio.run_coroutine_threadsafe(invocation, loop)
-                result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
-            else:
-                result = asyncio.run(invocation)
+            result = _run_bridge_coroutine(
+                invocation,
+                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
+            )
         except RuntimeError:
             invocation.close()
             return json.dumps({"success": False, "error": "async_dispatch_unavailable"})

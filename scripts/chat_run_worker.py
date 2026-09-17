@@ -49,6 +49,8 @@ if CLAIM_AFTER is not None and (not math.isfinite(CLAIM_AFTER) or CLAIM_AFTER < 
 _run_context = threading.local()
 _placement_loop = asyncio.new_event_loop()
 _placement_loop_lock = threading.Lock()
+bridge._bridge_async_loop = _placement_loop
+bridge._bridge_async_loop_lock = _placement_loop_lock
 _AUTO_INGEST_RE = re.compile(r"调研|研究|分析|评估|方案|报告|诊断|规划|research|analysis|report|plan", re.I)
 
 
