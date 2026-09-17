@@ -1437,38 +1437,161 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
       "capability": "workflow.approve",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "awaiting_plan_approval",
+          "plan_revision_cas"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.approved",
+      "handler": "workflow.approve",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            "expected_plan_hash": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expected_plan_revision": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id",
+            "expected_plan_hash",
+            "expected_plan_revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow",
+            "agent"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
       "capability": "workflow.revise",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "editable_plan",
+          "plan_revision_cas"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.revised",
+      "handler": "workflow.revise",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_network": {
+              "type": "boolean"
+            },
+            "deliverable": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "dsl": {
+              "type": "object"
+            },
+            "expected_plan_hash": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expected_plan_revision": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "knowledge_scope": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "max_tokens": {
+              "maximum": 999999,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id",
+            "dsl",
+            "deliverable",
+            "expected_plan_hash",
+            "expected_plan_revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "workflow_id",
+            "version",
+            "content_hash",
+            "activation_revision"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -2907,9 +3030,9 @@
     }
   ],
   "counts": {
-    "absent": 30,
+    "absent": 28,
     "implemented": 0,
-    "partial": 40,
+    "partial": 42,
     "unverified": 0
   },
   "pcm_version": "1.0.0",

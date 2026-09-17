@@ -32,7 +32,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 46
+    assert len(catalog["capabilities"]) == 48
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])

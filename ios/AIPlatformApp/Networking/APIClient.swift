@@ -2093,6 +2093,8 @@ public enum RendererRegistry {
         "workflow.summary": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.approved": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.revised": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
         "document.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),

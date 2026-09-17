@@ -25,8 +25,11 @@ from backend.api.knowledge_sync import (
 )
 from backend.api.workflows import (
     ApprovalRequest,
+    PlanEdit,
     WorkflowCreate,
     _create_workflow,
+    approve_plan,
+    edit_plan,
     get_artifact_content,
     get_execution,
     get_workflow,
@@ -468,6 +471,31 @@ async def _workflow_start(data: dict[str, Any], payload: dict[str, Any], key: st
     ), payload)
 
 
+async def _workflow_approve(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    assert key
+    return await approve_plan(data["workflow_id"], ApprovalRequest(
+        comment=data.get("comment", ""), request_id=key,
+        expected_hash=data["expected_plan_hash"],
+        expected_revision=data["expected_plan_revision"],
+    ), payload)
+
+
+async def _workflow_revise(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    assert key
+    return await edit_plan(data["workflow_id"], PlanEdit(
+        dsl=data["dsl"], deliverable=data["deliverable"],
+        allow_network=data.get("allow_network", True),
+        max_tokens=data.get("max_tokens", 999999),
+        knowledge_scope=data.get("knowledge_scope", []),
+        expected_hash=data["expected_plan_hash"],
+        expected_revision=data["expected_plan_revision"], request_id=key,
+    ), payload)
+
+
 async def _artifact_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
     return await get_artifact_content(data["execution_id"], data["artifact_id"], payload)
 
@@ -793,6 +821,8 @@ HANDLERS: dict[str, Handler] = {
     "workflow.open": _workflow_open,
     "workflow.status": _workflow_status,
     "workflow.start": _workflow_start,
+    "workflow.approve": _workflow_approve,
+    "workflow.revise": _workflow_revise,
     "presentation.create_from_document": _presentation_create,
     "presentation.create_from_text": _presentation_create_from_text,
     "document.word.create_from_text": _word_create_from_text,

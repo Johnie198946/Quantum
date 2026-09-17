@@ -23,6 +23,10 @@ bindings:
     handler: workflow.status
   - id: workflow.start
     handler: workflow.start
+  - id: workflow.approve
+    handler: workflow.approve
+  - id: workflow.revise
+    handler: workflow.revise
   - id: presentation.create_from_document
     handler: presentation.create_from_document
   - id: presentation.create_from_text

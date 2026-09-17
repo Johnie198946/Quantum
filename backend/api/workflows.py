@@ -200,6 +200,8 @@ class ReplanRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     comment: str = Field("", max_length=2000)
     request_id: str | None = Field(None, min_length=8, max_length=160)
+    expected_hash: str | None = Field(None, min_length=64, max_length=64)
+    expected_revision: int | None = Field(None, ge=1)
 
 
 class OutputApprovalRequest(BaseModel):
@@ -2369,6 +2371,23 @@ async def approve_plan(
         plan = await db.get(WorkflowPlanVersion, workflow.active_plan_id)
         if plan is None or plan.validation_errors:
             raise HTTPException(status_code=409, detail="计划校验未通过，不能构建 Agent")
+        if body.expected_hash is not None or body.expected_revision is not None:
+            try:
+                expected_hash, expected_revision = require_compare_and_set_inputs(
+                    expected_hash=body.expected_hash,
+                    expected_revision=body.expected_revision,
+                )
+                current_hash = plan.content_hash or canonical_plan_hash(plan.dsl or {})
+                if (
+                    expected_hash != current_hash
+                    or expected_revision != plan.activation_revision
+                ):
+                    raise PlanContractError("计划已被更新，请刷新后重试")
+            except PlanContractError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "resource_conflict", "message": str(exc)},
+                ) from exc
         existing = (
             await db.execute(
                 select(TenantAgentModel).where(

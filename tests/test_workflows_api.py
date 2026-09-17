@@ -1501,6 +1501,20 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(second.status_code, 201, second.text)
         self.assertEqual(first.json()["agent"]["id"], second.json()["agent"]["id"])
 
+    def test_approve_plan_rejects_stale_qcp_cas_binding(self):
+        body = self.create_ready()
+        plan = self.request("GET", f"/api/v1/workflows/{body['id']}/plan").json()
+        response = self.request(
+            "POST", f"/api/v1/workflows/{body['id']}/approve-plan",
+            json={
+                "request_id": "qcp-stale-approve-0001",
+                "expected_hash": "0" * 64,
+                "expected_revision": plan["activation_revision"],
+            },
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "resource_conflict")
+
     def test_active_workflow_rejects_second_start(self):
         body = self.create_ready()
         approved = self.request(

@@ -15,6 +15,10 @@ events:
     version: 1
   - id: workflow.started
     version: 1
+  - id: workflow.approved
+    version: 1
+  - id: workflow.revised
+    version: 1
   - id: presentation.created
     version: 1
   - id: structured_review.ready
