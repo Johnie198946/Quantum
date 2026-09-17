@@ -6051,6 +6051,7 @@ async def chat_stream(
                     "goal": goal,
                     "agent_config": body.agent_config,
                     "knowledge_claims": knowledge_claims,
+                    "client_session_id": body.client_session_id,
                     "client_session_context": body.client_session_context,
                     "client_context_claims": client_context_claims,
                     "qws_business_context": body.qws_business_context,

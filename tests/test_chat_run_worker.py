@@ -59,7 +59,7 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
         user_key="session-key",
         session_id="session-key",
         request_id="request-123",
-        execution_payload={"goal": "hello"},
+        execution_payload={"goal": "hello", "client_session_id": "client-session-123"},
     )
     claimed = store.claim_next("worker-test")
     assert claimed and claimed["run_id"] == run["run_id"]
@@ -68,8 +68,10 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
     monkeypatch.setattr(worker.bridge, "_hermes_session_for_request", lambda *_: None)
     monkeypatch.setattr(worker, "_renew_knowledge_capability", lambda *_: None)
 
-    def fake_run(goal, user_key, hermes_sid, sink, holder, *args):
+    def fake_run(goal, user_key, hermes_sid, sink, holder, *args, **kwargs):
         assert goal == "hello"
+        assert kwargs["client_session_id"] == "client-session-123"
+        assert hasattr(kwargs["sandbox"], "state_db")
         worker.bridge._qput(sink, {"type": "delta", "content": "hello"})
         worker.bridge._qput(sink, {
             "type": "done", "answer": "hello",
@@ -222,7 +224,7 @@ def test_worker_auto_ingests_high_confidence_research(monkeypatch, tmp_path):
     captured = []
     monkeypatch.setattr(worker, "persist_generated_private_note", lambda **kwargs: captured.append(kwargs))
 
-    def fake_run(_goal, _user_key, _hermes_sid, sink, _holder, *args):
+    def fake_run(_goal, _user_key, _hermes_sid, sink, _holder, *args, **kwargs):
         answer = "有来源支撑的华为财报研究结论。" * 12
         worker.bridge._qput(sink, {"type": "delta", "content": answer})
         worker.bridge._qput(sink, {"type": "done", "answer": answer})
