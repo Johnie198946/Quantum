@@ -35,8 +35,8 @@ from backend.services.knowledge_catalog import (
     _apply_file_read_barrier, run_knowledge_read,
 )
 
-# Candidate metadata is request-local, not an authorization cache. Every target
-# still passes the live file barrier, and HTTP boundaries recheck durable state.
+# Candidate metadata is request-local, not an authorization cache. HTTP
+# boundaries authorize it before search and recheck durable state before return.
 _CANDIDATE_INDEX: ContextVar = ContextVar("knowledge_candidate_index", default=None)
 
 
@@ -368,6 +368,11 @@ def _tokenize_query(text: str) -> List[str]:
         if len(token) >= 2 and token not in _QUERY_NOISE
     )
     return list(dict.fromkeys(candidates))
+
+
+def warm_query_tokenizer() -> None:
+    """Pay the optional tokenizer initialization cost during API startup."""
+    _tokenize_query("知识网关预热")
 
 
 def _aliases(text: str) -> List[str]:

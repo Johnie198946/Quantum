@@ -453,4 +453,14 @@ async def test_gateway_perf_observability_is_internal_optional_and_fail_open(vau
         ),
         "fixture",
     )
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert writes[-1].startswith(
+        b"knowledge_gateway_perf_v1 route=tenant_wiki_with_publication "
+    )
+
+
+def test_gateway_tokenizer_warmup_uses_production_tokenizer(monkeypatch):
+    calls = []
+    monkeypatch.setattr(k, "_tokenize_query", lambda query: calls.append(query))
+    k.warm_query_tokenizer()
+    assert calls == ["知识网关预热"]

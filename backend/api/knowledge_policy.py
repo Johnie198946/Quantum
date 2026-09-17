@@ -60,7 +60,9 @@ if _PERF_OBSERVE:
     ).start()
 
 
-def _emit_tenant_wiki_timing(timings: dict[str, float]) -> None:
+def _emit_tenant_wiki_timing(
+    timings: dict[str, float], *, publication_included: bool = False,
+) -> None:
     """Emit one bounded, non-identifying record during controlled benchmarks."""
     if not _PERF_OBSERVE:
         return
@@ -70,7 +72,8 @@ def _emit_tenant_wiki_timing(timings: dict[str, float]) -> None:
         "content_assembly_ms", "final_authorization_ms",
         "final_policy_audit_ms", "total_ms",
     )
-    line = "knowledge_gateway_perf_v1 route=tenant_wiki_success " + " ".join(
+    route = "tenant_wiki_with_publication" if publication_included else "tenant_wiki_success"
+    line = f"knowledge_gateway_perf_v1 route={route} " + " ".join(
         f"{phase}={max(0.0, float(timings.get(phase, 0.0))):.3f}"
         for phase in phases
     ) + "\n"
@@ -554,8 +557,9 @@ async def capability_search(
         "disclosure_limited": disclosure_limited,
         "docs": docs,
     }
-    if (_PERF_OBSERVE and requested_sources == {"tenant_knowledge"}
-            and not publication_included):
+    if _PERF_OBSERVE and requested_sources == {"tenant_knowledge"}:
         perf_timings["total_ms"] = (time.perf_counter() - perf_started) * 1000
-        _emit_tenant_wiki_timing(perf_timings)
+        _emit_tenant_wiki_timing(
+            perf_timings, publication_included=publication_included,
+        )
     return response

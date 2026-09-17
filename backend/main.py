@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from backend.api.errors import register_error_handlers
 from backend.api.screens import router as screens_router
 from backend.api.tasks import router as tasks_router
-from backend.api.knowledge import router as knowledge_router
+from backend.api.knowledge import router as knowledge_router, warm_query_tokenizer
 from backend.api.chat import router as chat_router
 from backend.api.register import router as register_router
 from backend.api.catalog import router as catalog_router
@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     """启动: 启动守卫 + 初始化数据库表(幂等) + 启动 Agent 调度器。"""
     # 启动守卫：JWT secret 为空 → 开发态全可见，隔离承诺不生效
     check_dev_visibility_guard()
+    warm_query_tokenizer()
     db_ready = True
     try:
         await init_db()
