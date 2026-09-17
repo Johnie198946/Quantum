@@ -39,6 +39,7 @@ IMPLEMENTED_HANDLERS = {
     "skill.list", "skill.create", "skill.update", "skill.delete",
     "project.list", "project.create", "project.open",
     "task.list", "task.create", "task.update", "task.status",
+    "schedule.list", "schedule.create", "schedule.update", "schedule.delete",
 }
 
 
@@ -289,6 +290,10 @@ async def execute_verified_capability(
     capability = describe_capability(capability_id)
     if capability is None:
         return _failure(capability_id, "capability_not_found", "Capability is not allowlisted")
+    tenant = str(payload.get("tenant_key") or "").strip()
+    user = str(payload.get("user_id") or payload.get("sub") or "").strip()
+    if not tenant or not user:
+        return _failure(capability_id, "not_authenticated", "Authenticated tenant and user required")
     if capability["implementation_status"] != "implemented":
         return _failure(capability_id, "capability_not_executable", "Capability is discovery-only in this version")
     try:

@@ -254,6 +254,34 @@
       ]
     },
     {
+      "id": "schedule.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
       "id": "skill.create",
       "status": "implemented",
       "tests": [
@@ -354,7 +382,7 @@
       ]
     }
   ],
-  "catalog_digest": "5e44bfc33e80395846527d1ca8af5e5b425032dc4e2b0f86b912866d89bdc098",
+  "catalog_digest": "0a3d79a71bd99581e3a8754f31663057ccd0daebc78ab5a0de437c8c2c7069b3",
   "consumptions": [
     {
       "gates": [
@@ -399,7 +427,7 @@
     }
   ],
   "counts": {
-    "implemented": 48,
+    "implemented": 52,
     "partial": 0,
     "unverified": 0
   },
@@ -475,6 +503,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 48,
+  "total": 52,
   "version": "1.0.0"
 }

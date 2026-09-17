@@ -808,6 +808,52 @@ async def _task_status(data: dict[str, Any], payload: dict[str, Any], _key: str 
     ))}
 
 
+async def _schedule_list(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.quantum_workspace import get_project_schedule
+
+    return {"schedule": jsonable_encoder(await get_project_schedule(data["project_id"], payload))}
+
+
+async def _schedule_mutation(
+    operation: str, data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.api.quantum_workspace import (
+        ProjectScheduleProposalRequest,
+        propose_project_schedule,
+    )
+
+    assert key
+    entry = {"task_id": data["task_id"]}
+    if operation != "DELETE":
+        entry.update(start_date=data["start_date"], due_date=data["due_date"])
+    else:
+        entry.update(start_date=None, due_date=None)
+    return _response_payload(await propose_project_schedule(
+        data["project_id"],
+        ProjectScheduleProposalRequest(
+            request_id=key,
+            expected_revision=data["expected_revision"],
+            entries=[entry],
+            operation=operation,
+        ),
+        payload,
+    ))
+
+
+async def _schedule_create(data, payload, key):
+    return await _schedule_mutation("CREATE", data, payload, key)
+
+
+async def _schedule_update(data, payload, key):
+    return await _schedule_mutation("UPDATE", data, payload, key)
+
+
+async def _schedule_delete(data, payload, key):
+    return await _schedule_mutation("DELETE", data, payload, key)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -857,4 +903,8 @@ HANDLERS: dict[str, Handler] = {
     "task.create": _task_create,
     "task.update": _task_update,
     "task.status": _task_status,
+    "schedule.list": _schedule_list,
+    "schedule.create": _schedule_create,
+    "schedule.update": _schedule_update,
+    "schedule.delete": _schedule_delete,
 }

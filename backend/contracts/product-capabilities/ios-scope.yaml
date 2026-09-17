@@ -73,6 +73,12 @@ capabilities:
   - schedule.update
   - schedule.delete
 annotations:
+  notification.list:
+    blocker: Existing notifications table/API is tenant-wide and has no user owner, so a tenant/user-bound capability cannot be registered safely.
+  notification.mark_read:
+    blocker: Existing read flag is tenant-global and has no user CAS or domain idempotency receipt; registering it would let one member change another member's state.
+  notification.preferences.update:
+    blocker: No notification preference model, persistence owner, or domain API exists.
   bookshelf.search:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
@@ -151,6 +157,18 @@ annotations:
   task.status:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  schedule.list:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  schedule.create:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  schedule.update:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  schedule.delete:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
   knowledge.note.search:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx

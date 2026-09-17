@@ -65,3 +65,7 @@ events:
     version: 1
   - id: task.change_proposed
     version: 1
+  - id: schedule.snapshot
+    version: 1
+  - id: schedule.change_proposed
+    version: 1

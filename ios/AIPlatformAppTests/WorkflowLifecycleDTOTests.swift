@@ -5098,6 +5098,9 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(RendererRegistry.route(for: "knowledge.navigation", version: 1), .navigation)
         XCTAssertEqual(RendererRegistry.route(for: "skill.snapshot", version: 1), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "skill.changed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.change_proposed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 0), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 0), .artifact)
         XCTAssertEqual(RendererRegistry.route(for: "unknown.event", version: 99), .answer)
 

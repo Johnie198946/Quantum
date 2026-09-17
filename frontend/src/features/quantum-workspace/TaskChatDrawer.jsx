@@ -4,6 +4,7 @@ import { platformApi } from "../../services/platformApi";
 import { HermesClarificationCard } from "./HermesClarificationCard";
 import { createHermesExecution, HermesExecutionTrace, updateHermesExecution } from "./HermesExecutionTrace";
 import { restoreTaskMessages } from "./taskChatMessages.js";
+import { consumeQCPEvent } from "./qcpEventRegistry.js";
 
 const visibleAssistantContent = (content) => String(content || "").replace(/```task_backfill\s*\n[\s\S]*?\n```/gi, "").trim();
 
@@ -321,6 +322,14 @@ export function TaskChatDrawer({ project, process, task, cardContext, refreshCar
       }
       const finalEvent = await platformApi.streamTaskMessage(activeConversation.id, { question: text, request_id: requestId, trigger: "user" }, (streamEvent) => {
         setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? updateHermesExecution(message, streamEvent, { context: "正在同步卡片上下文与权限", reasoning: "Hermes 正在理解任务", professional: "已识别为任务操作，租户技能可以参与" }) : message));
+        const capabilityEvent = consumeQCPEvent(streamEvent);
+        if (capabilityEvent) {
+          setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? {
+            ...message,
+            content: message.content || capabilityEvent.text,
+            capabilityEvents: [...(message.capabilityEvents || []), capabilityEvent],
+          } : message));
+        }
         if (streamEvent.type === "delta" && streamEvent.content) {
           setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? { ...message, content: `${message.content}${streamEvent.content}` } : message));
         }

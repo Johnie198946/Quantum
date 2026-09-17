@@ -2115,6 +2115,8 @@ public enum RendererRegistry {
         "project.created": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "schedule.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "schedule.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
     ]
 
     public static func route(for eventType: String, version: Int) -> QCPRenderingPath {

@@ -95,3 +95,11 @@ bindings:
     handler: task.update
   - id: task.status
     handler: task.status
+  - id: schedule.list
+    handler: schedule.list
+  - id: schedule.create
+    handler: schedule.create
+  - id: schedule.update
+    handler: schedule.update
+  - id: schedule.delete
+    handler: schedule.delete

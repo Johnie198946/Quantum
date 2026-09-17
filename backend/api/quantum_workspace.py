@@ -435,6 +435,7 @@ class ProjectScheduleProposalRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=8, max_length=100)
     expected_revision: int = Field(ge=0)
     entries: list[dict[str, Any]] = Field(min_length=1, max_length=500)
+    operation: Literal["UPSERT", "CREATE", "UPDATE", "DELETE"] = "UPSERT"
 
 
 class CreateFeedbackBatchRequest(BaseModel):
@@ -4253,6 +4254,15 @@ async def propose_project_schedule(
                 raise HTTPException(status_code=422, detail="schedule_due_date_precedes_start")
             seen.add(task_id)
             task = by_id[task_id]
+            is_scheduled = bool(task.get("planned_start_at") or task.get("planned_finish_at"))
+            if body.operation == "CREATE" and is_scheduled:
+                raise HTTPException(status_code=409, detail="schedule_already_exists")
+            if body.operation in {"UPDATE", "DELETE"} and not is_scheduled:
+                raise HTTPException(status_code=409, detail="schedule_not_found")
+            if body.operation in {"CREATE", "UPDATE"} and not (start_date and due_date):
+                raise HTTPException(status_code=422, detail="schedule_dates_required")
+            if body.operation == "DELETE" and (start_date is not None or due_date is not None):
+                raise HTTPException(status_code=422, detail="schedule_delete_requires_empty_dates")
             task["start_date"] = task["planned_start_at"] = start_date
             task["due_date"] = task["planned_finish_at"] = due_date
             task["task_revision"] = int(task.get("task_revision") or 1) + 1

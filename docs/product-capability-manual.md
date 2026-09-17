@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `5e44bfc33e80395846527d1ca8af5e5b425032dc4e2b0f86b912866d89bdc098`
+Catalog digest: `0a3d79a71bd99581e3a8754f31663057ccd0daebc78ab5a0de437c8c2c7069b3`
 
 ## Gateway 核心模块规范
 
@@ -325,6 +325,10 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `project.list@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `project.open@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `report.research.create_from_text@1.0.0` | report | write | required | required | `document.created` | `workflow@1` | implemented |
+| `schedule.create@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
+| `schedule.delete@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
+| `schedule.list@1.0.0` | schedule | read | none | none | `schedule.snapshot` | `answer@1` | implemented |
+| `schedule.update@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
 | `skill.create@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `skill.delete@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `skill.list@1.0.0` | skill | read | none | none | `skill.snapshot` | `answer@1` | implemented |

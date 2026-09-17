@@ -2961,78 +2961,257 @@
       "status": "absent"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_schedule_capabilities.py"
+      ],
       "capability": "schedule.list",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_member"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "schedule.snapshot",
+      "handler": "schedule.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-schedule-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_schedule_capabilities.py"
+      ],
       "capability": "schedule.create",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_writer",
+          "expected_project_revision",
+          "task_is_unscheduled"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "schedule.change_proposed",
+      "handler": "schedule.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-schedule-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "due_date": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "start_date": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            "task_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "task_id",
+            "expected_revision",
+            "start_date",
+            "due_date"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_schedule_capabilities.py"
+      ],
       "capability": "schedule.update",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_writer",
+          "expected_project_revision",
+          "task_is_scheduled"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "schedule.change_proposed",
+      "handler": "schedule.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-schedule-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "due_date": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "start_date": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            "task_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "task_id",
+            "expected_revision",
+            "start_date",
+            "due_date"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_schedule_capabilities.py"
+      ],
       "capability": "schedule.delete",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_writer",
+          "expected_project_revision",
+          "task_is_scheduled"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "schedule.change_proposed",
+      "handler": "schedule.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-schedule-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "task_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "task_id",
+            "expected_revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     }
   ],
   "counts": {
-    "absent": 28,
+    "absent": 24,
     "implemented": 0,
-    "partial": 42,
+    "partial": 46,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
