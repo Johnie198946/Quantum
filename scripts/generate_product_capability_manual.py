@@ -37,6 +37,8 @@ def outputs() -> tuple[str, str]:
     lines = [
         "# Product Capability Manual",
         "",
+        "> Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.",
+        "",
         f"QCP version: `{catalog['version']}`",
         f"Catalog digest: `{catalog_digest()}`",
         "",

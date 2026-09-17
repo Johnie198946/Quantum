@@ -124,3 +124,25 @@ negative_phrases:
 - 低于匹配阈值时返回空候选，继续使用当前 Agent 完成任务；禁止为了提高“调用率”强行选择 Skill。
 
 详细设计、评分和三轮攻防基线见 `docs/skill-routing-governance.md`。
+
+## 7. Gateway/Bridge 统一工程规则
+
+本节是所有 Capability Gateway、Domain Gateway（包括 Knowledge Gateway）、Hermes Bridge、Transport Adapter、客户端接入、工作流接入和后台任务接入工作的强制入口。凡涉及开发、对接、联调、Debug、性能优化、迁移或发布，开工前必须先读取 `docs/product-specs/capability-gateway.md`。
+
+### 7.1 单一真相源与优先级
+
+- `docs/product-specs/capability-gateway.md` 是 Gateway/Bridge 产品语义、模块边界、状态所有权、错误、回执、性能和验收标准的唯一规范真相源。
+- 本 `AGENTS.md` 只规定强制工程流程，不复制完整产品合同；`docs/product-capability-manual.md` 是生成视图，禁止手工修改；`docs/wiki-hermes-chat-architecture.md` 只解释运行链，不得另立冲突规则。
+- 代码、schema、Catalog、测试或运行态与规范不一致时，必须停止发布并显式解决差异；不得选择较宽松的一侧继续执行。产品语义变更必须先修改规范源，再重新生成 PCM、更新实现和测试。
+
+### 7.2 统一执行流程
+
+1. **开发前**：确认 capability/domain、契约版本、状态所有者、唯一 Handler、全部 adapter、错误/receipt schema、性能预算和旁路风险。
+2. **实现时**：复用 Gateway 与领域真相源；禁止客户端、Prompt、Skill、Worker 或 adapter 构造身份/授权状态、重解释 Bridge 裁决、直写 Store 或建立第二套 Runtime/索引/状态机。
+3. **对接时**：Hermes、HTTP、iOS/Web、Workflow 和后台任务必须归一到同一 capability contract、Handler、错误与 receipt 语义；adapter 只做协议转换和透传。
+4. **联调时**：至少验证成功、未授权、跨租户、版本不兼容、未知枚举、超时/断线、幂等重放/冲突和终态回读；不能以 HTTP 2xx、进程退出 0、queued/accepted 或单工具成功代替端到端完成。
+5. **Debug 时**：按 `request_id/run` → 类型化 receipt → 分阶段 timing → policy/capability/catalog/version → Gateway/Bridge 日志 → 客户端渲染的顺序定位；先区分 required、attempted、consumed、retrieval、failure 和 decision，禁止仅凭用户文案把问题归因为权限错误。
+6. **修复时**：修复状态所有者处的根因；禁止以扩大超时、fail-open、吞错、关键词/客户端版本特判、客户端重解释或复制门禁逻辑代替架构修复。
+7. **交付时**：执行规范生成检查、契约/安全/adapter 一致性测试、性能门禁、旁路检查和真实运行回执验收，并按第 3–5 节记录到 completion manifest。
+
+上述规则由 `scripts/check_governed_engineering_rules.py` 和 CI 防漂移检查强制验证。

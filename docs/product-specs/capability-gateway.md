@@ -245,3 +245,37 @@ Gateway 作为核心模块达到可发布状态，必须同时满足：
 - **可恢复**：超时、断线和进程重启后可通过同一 request/idempotency/receipt 继续判断，不重复副作用。
 - **可审计**：任何业务结果都能从 request 追踪到 policy、Handler、事件、验证和 receipt，且审计信息已脱敏。
 - **可退役**：版本和旧入口有量化退出条件，不形成永久双轨。
+
+### 10. 开发、接入、联调与 Debug 执行合同
+
+本文件是 Gateway/Bridge 产品语义的唯一规范真相源。仓库根 `AGENTS.md` 负责强制所有工程任务进入本合同；PCM 是由本文件生成的产品能力视图；架构文档只解释运行链。任何生成物、架构说明、实现、测试或运行态与本文件冲突时，必须阻断发布并显式修正规范或实现，不得静默选择更宽松的解释。
+
+#### 10.1 开发与变更设计
+
+动手前必须形成最小影响清单：capability/domain、契约和 receipt 版本、状态所有者、唯一 Handler、全部调用 adapter、业务真相源、授权与确认边界、幂等/CAS、错误集合、超时与性能预算、迁移和回滚点。新增字段或状态必须明确所有者和单调性；不得用一个字符串同时表达 requirement、attempt、retrieval、consumption 和 decision。
+
+变更只应发生在拥有该语义的模块：Gateway 负责可返回的领域证据，Bridge 负责最终消费与发送裁决，Domain Handler 负责最终业务授权和写入，adapter/Worker/客户端只做受控转换、透传和渲染。禁止为局部接入复制授权逻辑、候选索引、状态机或 Runtime。
+
+#### 10.2 对接与联调
+
+- 每个入口必须证明其 canonical input、服务端 principal、capability/version、Handler binding、错误、事件和 receipt 与其他入口等价；入口差异只能存在于协议和 renderer 层。
+- 联调矩阵至少覆盖：成功、认证失败、授权拒绝、跨租户、输入非法、版本/renderer 不兼容、未知枚举、确认缺失/重放、幂等重放/冲突、资源冲突、依赖超时、断线恢复、Handler 失败和回读验证失败。
+- Knowledge Gateway/Bridge 还必须覆盖 required/optional、attempted/unattempted、matched/no_match/insufficient/denied/timeout/system、consumed/not_exposed/unknown、发送前撤权/版本变化以及运行期直接和 deferred `knowledge_search`。
+- UI、Workflow 和后台任务必须使用 durable request/receipt 恢复状态；不得因重连生成新幂等键重复副作用，也不得将 queued、accepted、HTTP 2xx 或进程退出 0 显示为完成。
+
+#### 10.3 Debug 与事故定位
+
+Debug 必须按以下证据顺序进行，后层不得替代前层：
+
+1. 用 `request_id`、durable run ID 和终态确认请求是否实际执行、重试、取消或恢复。
+2. 读取版本化结构化 receipt；Knowledge 路径先核对 `required_internal_knowledge`、`attempted_internal_search`、`consumed_internal_knowledge`、`retrieval_status`、`failure_kind`、`consumption` 和 `decision`。
+3. 读取 Gateway/Handler/Bridge 的分阶段 timing，区分排队、授权、候选构建、检索/执行、返回前复核、发送前终检和客户端渲染。
+4. 回读当前 policy、entitlement、capability/catalog/schema/renderer 版本、资源/CAS 版本和部署 revision；历史 discovery 或缓存不得作为当前授权证据。
+5. 对照脱敏日志、事件和 receipt ID 还原跨组件链路；不得记录或外发 token、密钥、完整敏感正文和跨租户标识。
+6. 最后检查 adapter 和客户端展示。用户可见错误文案只能作为症状，不能据此把 timeout、no_match、malformed result 或系统错误判为授权拒绝。
+
+修复必须落在状态所有者，并补充能复现根因的回归。禁止用扩大安全超时、全局 fail-open、吞掉服务端错误、客户端重解释、关键词/版本特判、无界重试或第二套状态真相源掩盖问题。
+
+#### 10.4 完成证据
+
+完成声明必须同时给出：规范/契约版本、目标测试与结果、生成和防漂移检查、性能口径、旁路扫描、实际调用入口、durable run 终态、结构化 receipt、部署 revision（如发布）及剩余风险。模拟器、真机、测试环境和生产环境必须分别表述；测试通过不能替代生产回执，部署成功不能替代业务结果回读。

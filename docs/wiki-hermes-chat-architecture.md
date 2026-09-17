@@ -1,5 +1,7 @@
 # AI Lab Wiki 素材与 Hermes 对话架构
 
+> 本文只解释运行链和模块边界。Gateway/Bridge 产品语义以 `docs/product-specs/capability-gateway.md` 为唯一规范真相源，工程执行入口为仓库根 `AGENTS.md`；本文不得覆盖或放宽两者。
+
 ## 1. 领域边界
 
 AI Lab 有三个不同对象，不能再合并为一个“知识资产”：
