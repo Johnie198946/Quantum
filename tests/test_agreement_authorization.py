@@ -303,8 +303,9 @@ async def test_round3_real_worker_and_queue_to_red_and_green_with_live_evidence(
     monkeypatch.setattr(worker.bridge, "_tenant_sandbox_from_claims", lambda **kw: SimpleNamespace(state_db=tmp / "state.db"))
     outcomes = iter((COMPILE, SANITIZE, PRIVACY))
     calls = []
-    def inference(goal, user_key, sid, sink, holder, local, config, capability, *rest):
+    def inference(goal, user_key, sid, sink, holder, **kwargs):
         calls.append(sid)
+        config = kwargs["agent_config"]
         assert config["knowledge_stage_only"] is True
         worker.bridge._qput(sink, {"type": "done", "answer": json.dumps(next(outcomes))})
     monkeypatch.setattr(worker.bridge, "_run_agent_sync", inference)

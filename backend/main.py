@@ -102,6 +102,14 @@ async def lifespan(app: FastAPI):
             await resume_pending_planning()
         except Exception:
             logger.exception("Durable planning-job recovery failed; worker will retry")
+        try:
+            from backend.services.capability_gateway import reconcile_incomplete_invocations
+
+            reconciled = await reconcile_incomplete_invocations()
+            if reconciled:
+                logger.info("Reconciled %s incomplete capability invocations", reconciled)
+        except Exception:
+            logger.exception("Capability invocation reconciliation failed; status remains queryable")
         from backend.services.knowledge_pipeline_supervisor import (
             start_knowledge_pipeline_supervisor,
         )

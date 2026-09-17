@@ -73,9 +73,10 @@ def inference_fixture(monkeypatch, tmp_path):
                         lambda **_: SimpleNamespace(state_db=tmp_path / "state.db"))
 
     async def execute(store, output):
-        def inference(goal, user_key, sid, sink, holder, local, config, capability, *rest):
+        def inference(goal, user_key, sid, sink, holder, **kwargs):
+            config = kwargs["agent_config"]
             assert config["knowledge_stage_only"] and config["allowed_tools"] == []
-            assert not capability and not local
+            assert not kwargs["knowledge_capability"] and not kwargs["allow_local_files"]
             worker.bridge._qput(sink, {"type": "done", "answer": canonical(output)})
         monkeypatch.setattr(worker.bridge, "_run_agent_sync", inference)
         row = store.claim_next(worker.WORKER_ID)

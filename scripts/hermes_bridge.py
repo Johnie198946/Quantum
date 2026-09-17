@@ -137,7 +137,12 @@ def _run_bridge_coroutine(coro, *, timeout: float):
     if loop is None or loop.is_closed():
         return asyncio.run(coro)
     if loop.is_running():
-        return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=timeout)
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            future.cancel()
+            raise
     lock = _bridge_async_loop_lock
     if lock is None:
         return loop.run_until_complete(coro)
@@ -3303,7 +3308,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         identity = context.get("identity") if isinstance(context, dict) else None
         request_id = str((context or {}).get("request_id") or "")
         session_id = str((context or {}).get("client_session_id") or "")
-        loop = _bridge_async_loop
         if (
             not isinstance(identity, dict)
             or not str(identity.get("tenant_key") or "")
@@ -3337,8 +3341,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
                 timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
             )
         except TimeoutError:
-            if "future" in locals():
-                future.cancel()
             return json.dumps({"success": False, "error": "async_dispatch_timeout"})
         except Exception:
             traceback.print_exc()
@@ -3369,7 +3371,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     from backend.api.tenant import current_tenant
     from backend.services.capability_catalog import invoke_capability
 
-    loop = _bridge_async_loop
     tenant_token = current_tenant.set(str(identity["tenant_key"]))
     try:
         input_digest = hashlib.sha256(json.dumps(
@@ -3398,8 +3399,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             invocation.close()
             return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
         except TimeoutError:
-            if "future" in locals():
-                future.cancel()
             return json.dumps({"success": False, "error": "async_dispatch_timeout"})
         except Exception:
             return json.dumps({"success": False, "error": "async_dispatch_failed"})
@@ -9043,19 +9042,22 @@ async def chat(
                     hermes_sid,
                     event_queue,
                     agent_holder,
-                    False,
-                    body.agent_config,
-                    body.knowledge_capability,
-                    knowledge_claims,
-                    body.client_session_context,
-                    client_context_claims,
-                    sandbox,
-                    client_context_claims is not None
-                    and "knowledge_action_v1" in set(body.client_capabilities),
-                    body.qws_business_context,
-                    "qcp_v1" in set(body.client_capabilities),
-                    body.request_id,
-                    qws_context_claims,
+                    allow_local_files=False,
+                    agent_config=body.agent_config,
+                    knowledge_capability=body.knowledge_capability,
+                    knowledge_claims=knowledge_claims,
+                    client_session_id=body.client_session_id,
+                    client_session_context=body.client_session_context,
+                    client_context_claims=client_context_claims,
+                    sandbox=sandbox,
+                    knowledge_action_enabled=(
+                        client_context_claims is not None
+                        and "knowledge_action_v1" in set(body.client_capabilities)
+                    ),
+                    qws_business_context=body.qws_business_context,
+                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
+                    trusted_request_id=body.request_id,
+                    trusted_identity_claims=qws_context_claims,
                 )
                 events: list[dict[str, Any]] = []
                 while not event_queue.empty():
