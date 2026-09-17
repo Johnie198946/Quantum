@@ -36,6 +36,42 @@ from backend.api.workflows import (
 Handler = Callable[[dict[str, Any], dict[str, Any], str | None], Awaitable[dict[str, Any]]]
 
 
+async def verify_resource_versions(
+    capability_id: str,
+    data: dict[str, Any],
+    payload: dict[str, Any],
+    resource_versions: dict[str, Any],
+) -> None:
+    """Re-read CAS state at the domain boundary immediately before mutation."""
+    if capability_id in {"knowledge.note.update", "knowledge.note.archive"}:
+        note_id = str(data["note_id"])
+        expected = str(resource_versions.get(note_id) or "")
+        if expected != str(data.get("base_hash") or ""):
+            raise HTTPException(status_code=409, detail={"code": "resource_conflict"})
+        snapshot = await list_synced_notes(True, payload)
+        current = next((item for item in snapshot["items"] if item["note_id"] == note_id), None)
+        if current is None or str(current.get("content_hash") or "") != expected:
+            raise HTTPException(status_code=409, detail={"code": "resource_conflict"})
+    elif capability_id == "knowledge.note.merge":
+        expected = {
+            str(data["target_note_id"]): str(data["target_base_hash"]),
+            **{str(key): str(value) for key, value in data["source_versions"].items()},
+        }
+        if any(str(resource_versions.get(key) or "") != value for key, value in expected.items()):
+            raise HTTPException(status_code=409, detail={"code": "resource_conflict"})
+        snapshot = await list_synced_notes(True, payload)
+        current = {str(item["note_id"]): str(item.get("content_hash") or "") for item in snapshot["items"]}
+        if any(current.get(key) != value for key, value in expected.items()):
+            raise HTTPException(status_code=409, detail={"code": "resource_conflict"})
+    elif capability_id == "workflow.start":
+        workflow_id = str(data["workflow_id"])
+        expected = str(resource_versions.get(workflow_id) or "")
+        current = await get_workflow(workflow_id, payload)
+        accepted = {str(current.get("updated_at") or ""), str(current.get("active_plan_id") or "")}
+        if not expected or expected not in accepted:
+            raise HTTPException(status_code=409, detail={"code": "resource_conflict"})
+
+
 def _qcp_workflow_identity(
     capability_id: str, payload: dict[str, Any], key: str, data: dict[str, Any]
 ) -> tuple[str, str]:
@@ -455,6 +491,150 @@ async def _artifact_consume_structured(
     return await consume_structured_artifact(data, payload, key)
 
 
+async def _bookshelf_search(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.subscriptions import knowledge_bookshelves
+
+    catalog = await knowledge_bookshelves(payload)
+    terms = data["query"].casefold().split()
+    items = [
+        book
+        for shelf in catalog["bookshelves"]
+        for book in shelf["books"]
+        if all(
+            term in " ".join(
+                str(book.get(field) or "")
+                for field in ("title", "author", "summary", "series_title")
+            ).casefold()
+            for term in terms
+        )
+    ][: int(data.get("limit", 20))]
+    return {"items": items}
+
+
+async def _bookshelf_subscribe(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.subscriptions import (
+        BookSubscriptionWrite,
+        subscribe_book,
+        unsubscribe_book,
+    )
+
+    body = BookSubscriptionWrite(book_id=data["book_id"])
+    if data["action"] == "subscribe":
+        subscription = await subscribe_book(body, payload)
+        return {
+            "action": "subscribe",
+            "book_id": data["book_id"],
+            "subscription": jsonable_encoder(subscription),
+        }
+    result = await unsubscribe_book(body, payload)
+    return {"action": "unsubscribe", "book_id": data["book_id"], **result}
+
+
+async def _bookshelf_open(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.subscriptions import knowledge_book_body
+
+    return jsonable_encoder(await knowledge_book_body(data["book_id"], payload))
+
+
+async def _memory_list(
+    _data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.hot_memory import get_memory
+
+    return jsonable_encoder(await get_memory(payload))
+
+
+async def _memory_create(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.hot_memory import MemoryWriteRequest, create_memory
+
+    return jsonable_encoder(await create_memory(MemoryWriteRequest(**data), payload))
+
+
+async def _memory_update(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.hot_memory import MemoryReplaceRequest, replace_memory
+
+    return jsonable_encoder(await replace_memory(
+        data["memory_id"], MemoryReplaceRequest(content=data["content"]), payload
+    ))
+
+
+async def _memory_delete(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.hot_memory import remove_memory
+
+    return jsonable_encoder(await remove_memory(data["memory_id"], payload))
+
+
+async def _profile_read(
+    _data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.me import me
+
+    return jsonable_encoder(await me(payload))
+
+
+async def _profile_update(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.me import ProfileUpdate, patch_me
+
+    if not data:
+        raise HTTPException(status_code=422, detail={"code": "contract_invalid"})
+    return jsonable_encoder(await patch_me(ProfileUpdate(**data), payload))
+
+
+async def _agent_list(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import list_tenant_agents
+
+    rows = await list_tenant_agents(payload=payload, owned_only=bool(data.get("owned_only", False)))
+    return {"agents": jsonable_encoder(rows)}
+
+
+async def _agent_create(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import TenantAgentCreate, create_tenant_agent
+
+    return jsonable_encoder(await create_tenant_agent(TenantAgentCreate(**data), payload))
+
+
+async def _agent_update(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import TenantAgentCreate, update_tenant_agent
+
+    body = dict(data)
+    agent_id = str(body.pop("agent_id"))
+    return jsonable_encoder(await update_tenant_agent(agent_id, TenantAgentCreate(**body), payload))
+
+
+async def _agent_delete(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import delete_tenant_agent
+
+    await delete_tenant_agent(str(data["agent_id"]), payload)
+    return {"status": "deleted"}
+
+
+async def _agent_evaluate(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import AgentEvaluationCreate, create_agent_evaluation
+
+    body = AgentEvaluationCreate(request_id=str(data["request_id"]))
+    return jsonable_encoder(await create_agent_evaluation(str(data["agent_id"]), body, payload))
+
+
+async def _agent_evaluation_status(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    from backend.api.tenant_agents import get_agent_evaluation
+
+    return jsonable_encoder(await get_agent_evaluation(str(data["run_id"]), payload))
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -476,4 +656,19 @@ HANDLERS: dict[str, Handler] = {
     "artifact.open": _artifact_open,
     "artifact.download": _artifact_download,
     "artifact.consume_structured": _artifact_consume_structured,
+    "bookshelf.search": _bookshelf_search,
+    "bookshelf.subscribe": _bookshelf_subscribe,
+    "bookshelf.open": _bookshelf_open,
+    "memory.list": _memory_list,
+    "memory.create": _memory_create,
+    "memory.update": _memory_update,
+    "memory.delete": _memory_delete,
+    "profile.read": _profile_read,
+    "profile.update": _profile_update,
+    "agent.list": _agent_list,
+    "agent.create": _agent_create,
+    "agent.update": _agent_update,
+    "agent.delete": _agent_delete,
+    "agent.evaluate": _agent_evaluate,
+    "agent.evaluation_status": _agent_evaluation_status,
 }

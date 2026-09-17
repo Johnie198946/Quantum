@@ -1,0 +1,81 @@
+capabilities:
+  - id: bookshelf.search
+    version: 1.0.0
+    domain: bookshelf
+    description: Search the authenticated reader's currently authorized bookshelf.
+    positive_examples: ["搜索书架里的 AI 产品书籍"]
+    negative_examples: ["Search the public web"]
+    input_schema:
+      type: object
+      properties:
+        query: {type: string, minLength: 1, maxLength: 200}
+        limit: {type: integer, minimum: 1, maximum: 50}
+      required: [query]
+      additionalProperties: false
+    output_schema: {type: object, required: [items]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_reader, current_entitlements]
+    policy_ref: bookshelf-reader
+    handler_binding: bookshelf.search
+    idempotency: none
+    receipt: none
+    result_event: bookshelf.results
+    renderer: bookshelf
+    renderer_version: 1
+    tests: [tests/test_bookshelf_capabilities.py, ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift]
+    implementation_status: implemented
+  - id: bookshelf.subscribe
+    version: 1.0.0
+    domain: bookshelf
+    description: Subscribe to or unsubscribe from one currently authorized book.
+    positive_examples: ["把这本书加入我的书架"]
+    negative_examples: ["Subscribe a book for another user"]
+    input_schema:
+      type: object
+      properties:
+        book_id: {type: string, minLength: 1, maxLength: 384}
+        action: {type: string, enum: [subscribe, unsubscribe]}
+      required: [book_id, action]
+      additionalProperties: false
+    output_schema: {type: object, required: [action, book_id]}
+    effect: write
+    risk: low
+    confirmation: required
+    preconditions: [authenticated_reader, current_book_authorization]
+    policy_ref: bookshelf-reader
+    handler_binding: bookshelf.subscribe
+    idempotency: required
+    receipt: required
+    result_event: bookshelf.subscription_changed
+    renderer: bookshelf
+    renderer_version: 1
+    tests: [tests/test_bookshelf_capabilities.py]
+    implementation_status: implemented
+  - id: bookshelf.open
+    version: 1.0.0
+    domain: bookshelf
+    description: Open one currently authorized book at its current immutable content version.
+    positive_examples: ["打开这本书"]
+    negative_examples: ["Open a book from another account"]
+    input_schema:
+      type: object
+      properties:
+        book_id: {type: string, minLength: 1, maxLength: 384}
+      required: [book_id]
+      additionalProperties: false
+    output_schema: {type: object, required: [book_id, content_version, sections]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_reader, current_book_authorization]
+    policy_ref: bookshelf-reader
+    handler_binding: bookshelf.open
+    idempotency: none
+    receipt: none
+    result_event: bookshelf.opened
+    renderer: bookshelf
+    renderer_version: 1
+    tests: [tests/test_bookshelf_capabilities.py, ios/AIPlatformAppUITests/ProductionBookshelfUITests.swift]
+    implementation_status: implemented

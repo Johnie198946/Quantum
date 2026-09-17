@@ -31,3 +31,21 @@ events:
     version: 1
   - id: artifact.consumed
     version: 1
+  - id: bookshelf.results
+    version: 1
+  - id: bookshelf.subscription_changed
+    version: 1
+  - id: bookshelf.opened
+    version: 1
+  - id: memory.snapshot
+    version: 1
+  - id: memory.changed
+    version: 1
+  - id: profile.snapshot
+    version: 1
+  - id: profile.changed
+    version: 1
+  - id: agent.snapshot
+    version: 1
+  - id: agent.changed
+    version: 1

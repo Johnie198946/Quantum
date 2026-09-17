@@ -17,6 +17,7 @@ from backend.services.capability_catalog import (
 from backend.services.capability_gateway import (
     confirm_capability_proposal,
     create_capability_proposal,
+    invocation_status,
     proposal_status,
 )
 
@@ -27,7 +28,6 @@ router = APIRouter(prefix="/api/v1/capabilities", tags=["capabilities"])
 class CapabilityInvokeRequest(BaseModel):
     capability_id: str = Field(..., min_length=3, max_length=160)
     input: dict[str, Any] = Field(default_factory=dict)
-    confirmed: bool | None = None
     idempotency_key: str | None = Field(None, min_length=8, max_length=160)
 
 
@@ -100,17 +100,15 @@ async def status(proposal_id: str, payload: dict[str, Any] = Depends(require_aut
     return await proposal_status(proposal_id, payload=payload)
 
 
+@router.get("/invocations/{invocation_id}/status")
+async def execution_status(
+    invocation_id: str, payload: dict[str, Any] = Depends(require_auth)
+):
+    return await invocation_status(invocation_id, payload=payload)
+
+
 @router.post("/invoke")
 async def invoke(body: CapabilityInvokeRequest, payload: dict[str, Any] = Depends(require_auth)):
-    if body.confirmed is not None:
-        return {
-            "status": "failed", "capability_id": body.capability_id, "events": [],
-            "receipt": None,
-            "error": {
-                "code": "confirmation_protocol_upgrade_required",
-                "message": "confirmed is not an authorization signal; use proposals/confirm",
-            },
-        }
     return await invoke_capability(
         body.capability_id,
         body.input,

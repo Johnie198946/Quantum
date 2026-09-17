@@ -32,7 +32,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 20
+    assert len(catalog["capabilities"]) == 35
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])
@@ -124,7 +124,6 @@ async def test_capability_api_maps_domain_dto_validation_to_contract_failure():
             json={
                 "capability_id": "workflow.create",
                 "input": {"title": "x" * 161, "description": "valid description"},
-                "confirmed": True,
                 "idempotency_key": "dto-validation",
             },
         )
@@ -135,7 +134,6 @@ async def test_capability_api_maps_domain_dto_validation_to_contract_failure():
                 json={
                     "capability_id": "workflow.create",
                     "input": {"title": "x" * 161, "description": "valid description"},
-                    "confirmed": True,
                     "idempotency_key": "dto-validation-catch",
                 },
             )
@@ -338,7 +336,11 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
             bridge._client_context_tool_context.value = None
 
     try:
-        created, started, presentation = await asyncio.to_thread(invoke_all)
+        with patch(
+            "backend.services.capability_gateway._workflow_resource_version",
+            new=AsyncMock(return_value="plan-1"),
+        ):
+            created, started, presentation = await asyncio.to_thread(invoke_all)
     finally:
         bridge._bridge_async_loop = previous_loop
     assert {created["status"], started["status"], presentation["status"]} == {

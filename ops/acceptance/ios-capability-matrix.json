@@ -1,0 +1,2448 @@
+{
+  "capabilities": [
+    {
+      "automated_tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "bookshelf.search",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_entitlements"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "bookshelf.results",
+      "handler": "bookshelf.search",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "bookshelf-reader",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "bookshelf@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_bookshelf_capabilities.py"
+      ],
+      "capability": "bookshelf.subscribe",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "bookshelf.subscription_changed",
+      "handler": "bookshelf.subscribe",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "bookshelf-reader",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "bookshelf@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "subscribe",
+                "unsubscribe"
+              ],
+              "type": "string"
+            },
+            "book_id": {
+              "maxLength": 384,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "book_id",
+            "action"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action",
+            "book_id"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppUITests/ProductionBookshelfUITests.swift"
+      ],
+      "capability": "bookshelf.open",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "bookshelf.opened",
+      "handler": "bookshelf.open",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "bookshelf-reader",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "bookshelf@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "book_id": {
+              "maxLength": 384,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "book_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "book_id",
+            "content_version",
+            "sections"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_agent_capabilities.py"
+      ],
+      "capability": "agent.list",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "agent.snapshot",
+      "handler": "agent.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "agent-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "owned_only": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "agents"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_agent_capabilities.py"
+      ],
+      "capability": "agent.create",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "agent.changed",
+      "handler": "agent.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "agent-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_network": {
+              "type": "boolean"
+            },
+            "allowed_tools": {
+              "type": "array"
+            },
+            "base_agent_id": {
+              "type": "string"
+            },
+            "capability_agent_ids": {
+              "type": "array"
+            },
+            "custom_avatar": {
+              "type": "string"
+            },
+            "custom_name": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "private_prompt_delta": {
+              "type": "string"
+            },
+            "subscribed_knowledge_packs": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "base_agent_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_agent_capabilities.py"
+      ],
+      "capability": "agent.update",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "agent.changed",
+      "handler": "agent.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "agent-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            },
+            "allow_network": {
+              "type": "boolean"
+            },
+            "allowed_tools": {
+              "type": "array"
+            },
+            "base_agent_id": {
+              "type": "string"
+            },
+            "capability_agent_ids": {
+              "type": "array"
+            },
+            "custom_avatar": {
+              "type": "string"
+            },
+            "custom_name": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "private_prompt_delta": {
+              "type": "string"
+            },
+            "subscribed_knowledge_packs": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "agent_id",
+            "base_agent_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_agent_capabilities.py"
+      ],
+      "capability": "agent.delete",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "agent.changed",
+      "handler": "agent.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "agent-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_agent_capabilities.py"
+      ],
+      "capability": "agent.evaluate",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "agent.changed",
+      "handler": "agent.evaluate",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "agent-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [],
+      "capability": "skill.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "skill.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "skill.update",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "skill.delete",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [
+        "tests/test_memory_capabilities.py"
+      ],
+      "capability": "memory.list",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "memory.snapshot",
+      "handler": "memory.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "native-memory-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_memory_capabilities.py"
+      ],
+      "capability": "memory.create",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "memory.changed",
+      "handler": "memory.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "native-memory-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "maxLength": 2200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "target": {
+              "enum": [
+                "user",
+                "memory"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "content"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_memory_capabilities.py"
+      ],
+      "capability": "memory.update",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_memory_exists"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "memory.changed",
+      "handler": "memory.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "native-memory-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "maxLength": 2200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "memory_id": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_id",
+            "content"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_memory_capabilities.py"
+      ],
+      "capability": "memory.delete",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_memory_exists"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "memory.changed",
+      "handler": "memory.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "native-memory-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "memory_id": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "knowledge.note.search",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "knowledge.results",
+      "handler": "knowledge.search",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "personal-knowledge-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "include_archived": {
+              "type": "boolean"
+            },
+            "limit": {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "knowledge.note.read",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "knowledge.note",
+      "handler": "knowledge.read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "personal-knowledge-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "note"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "knowledge.note.create",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "markdown": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "markdown"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "note_id",
+            "content_hash"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.update",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.update",
+      "ios_consumer": null,
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "markdown": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "markdown",
+            "base_hash"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "note_id",
+            "content_hash"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.merge",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "target_and_source_hashes_match"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.merge",
+      "ios_consumer": null,
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "revised_content": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "source_versions": {
+              "type": "object"
+            },
+            "target_base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "target_note_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_note_id",
+            "target_base_hash",
+            "source_versions",
+            "revised_content"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "target_note_id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.archive",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.archive",
+      "ios_consumer": null,
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "note_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "note_id",
+            "archive_status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "knowledge.note.restore",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.restore",
+      "ios_consumer": null,
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "note_id",
+            "archive_status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "workflow.create",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.created",
+      "handler": "workflow.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "maxLength": 12000,
+              "minLength": 3,
+              "type": "string"
+            },
+            "desired_output": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "output_kind": {
+              "enum": [
+                "general",
+                "presentation",
+                "document"
+              ],
+              "type": "string"
+            },
+            "source_client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+              "type": "string"
+            },
+            "source_document_id": {
+              "maxLength": 48,
+              "minLength": 8,
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "description"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "workflow.open",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.open",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "workflow_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "workflow.status",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.status",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "execution_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "workflow.start",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "approved_plan"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.started",
+      "handler": "workflow.start",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "workflow_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [],
+      "capability": "workflow.approve",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "workflow.revise",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "workflow.cancel",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "project.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "project.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "project.update",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "project.delete",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "task.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "task.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "task.update",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "task.delete",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "task.execute",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_word_workflow.py"
+      ],
+      "capability": "document.word.create_from_text",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "document.created",
+      "handler": "document.word.create_from_text",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "default": "professional_reader",
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "citation_style": {
+              "default": "none",
+              "enum": [
+                "none",
+                "footnotes",
+                "apa7",
+                "mla9",
+                "chicago_author_date",
+                "gbt7714"
+              ],
+              "type": "string"
+            },
+            "clarification_strategy": {
+              "default": "use_defaults_unless_blocked",
+              "enum": [
+                "use_defaults_unless_blocked",
+                "ask_before_planning"
+              ],
+              "type": "string"
+            },
+            "evidence_policy": {
+              "default": "verified_public_sources",
+              "enum": [
+                "user_material_only",
+                "verified_public_sources"
+              ],
+              "type": "string"
+            },
+            "language": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "type": "string"
+            },
+            "source_client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+              "type": "string"
+            },
+            "text_material": {
+              "maxLength": 32000,
+              "minLength": 3,
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "text_material"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow",
+            "clarification_session",
+            "delivery"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_research_report_workflow.py"
+      ],
+      "capability": "report.research.create_from_text",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "document.created",
+      "handler": "report.research.create_from_text",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "default": "decision_maker",
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "citation_style": {
+              "default": "apa7",
+              "enum": [
+                "apa7",
+                "chicago_author_date",
+                "gbt7714",
+                "footnotes"
+              ],
+              "type": "string"
+            },
+            "clarification_strategy": {
+              "default": "use_defaults_unless_blocked",
+              "enum": [
+                "use_defaults_unless_blocked",
+                "ask_before_planning"
+              ],
+              "type": "string"
+            },
+            "evidence_policy": {
+              "default": "verified_public_sources",
+              "enum": [
+                "user_material_only",
+                "verified_public_sources"
+              ],
+              "type": "string"
+            },
+            "language": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "type": "string"
+            },
+            "research_question": {
+              "maxLength": 500,
+              "minLength": 3,
+              "type": "string"
+            },
+            "source_client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+              "type": "string"
+            },
+            "text_material": {
+              "maxLength": 32000,
+              "minLength": 3,
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "text_material",
+            "research_question"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow",
+            "clarification_session",
+            "delivery"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_academic_paper_workflow.py"
+      ],
+      "capability": "paper.academic.create_from_text",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "document.created",
+      "handler": "paper.academic.create_from_text",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "default": "academic_reader",
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "citation_style": {
+              "default": "apa7",
+              "enum": [
+                "apa7",
+                "mla9",
+                "chicago_author_date",
+                "gbt7714"
+              ],
+              "type": "string"
+            },
+            "clarification_strategy": {
+              "default": "use_defaults_unless_blocked",
+              "enum": [
+                "use_defaults_unless_blocked",
+                "ask_before_planning"
+              ],
+              "type": "string"
+            },
+            "evidence_policy": {
+              "default": "verified_public_sources",
+              "enum": [
+                "user_material_only",
+                "verified_public_sources"
+              ],
+              "type": "string"
+            },
+            "language": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "type": "string"
+            },
+            "source_client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+              "type": "string"
+            },
+            "text_material": {
+              "maxLength": 32000,
+              "minLength": 3,
+              "type": "string"
+            },
+            "thesis": {
+              "maxLength": 500,
+              "minLength": 3,
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "text_material",
+            "thesis"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow",
+            "clarification_session",
+            "delivery"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_product_capabilities.py",
+        "tests/test_document_presentation.py"
+      ],
+      "capability": "presentation.create_from_text",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "presentation.created",
+      "handler": "presentation.create_from_text",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "presentation_review@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "default": "general_business_audience",
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "clarification_strategy": {
+              "default": "use_defaults_unless_blocked",
+              "enum": [
+                "use_defaults_unless_blocked",
+                "ask_before_planning"
+              ],
+              "type": "string"
+            },
+            "editorial_instruction": {
+              "description": "Optional orchestration and visual direction kept separate from the verbatim source.",
+              "maxLength": 8000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "intended_use": {
+              "default": "management_briefing",
+              "enum": [
+                "management_briefing",
+                "client_proposal",
+                "internal_sharing",
+                "teaching",
+                "travel_guide"
+              ],
+              "type": "string"
+            },
+            "layout_style": {
+              "default": "clean_professional_16_9",
+              "enum": [
+                "clean_professional_16_9",
+                "brand_consistent_16_9",
+                "data_first_16_9",
+                "editorial_16_9"
+              ],
+              "type": "string"
+            },
+            "presentation_review_gates": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "outline",
+                  "design"
+                ],
+                "type": "string"
+              },
+              "maxItems": 2,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "slide_count": {
+              "default": 10,
+              "maximum": 30,
+              "minimum": 4,
+              "type": "integer"
+            },
+            "source_client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$",
+              "type": "string"
+            },
+            "text_material": {
+              "description": "Verbatim user-provided source text. Copy it exactly; do not summarize, rewrite, correct, or mix instructions into this field.",
+              "maxLength": 12000,
+              "minLength": 3,
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "text_material"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow",
+            "clarification_session",
+            "delivery"
+          ],
+          "type": "object"
+        },
+        "version": "1.1.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [],
+      "capability": "office.spreadsheet.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "office.pdf.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "data.analyze",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "media.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "hermes.session.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "hermes.session.open",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "hermes.session.resume",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "hermes.session.delete",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "file.pick",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "file.upload",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "file.download",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "photo.capture",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "photo.import",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "voice.record",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "voice.transcribe",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "share.present",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [
+        "tests/test_profile_capabilities.py"
+      ],
+      "capability": "profile.read",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "profile.snapshot",
+      "handler": "profile.read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "profile-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "user_id",
+            "tenant_key",
+            "username"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_profile_capabilities.py"
+      ],
+      "capability": "profile.update",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "profile.changed",
+      "handler": "profile.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "profile-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "avatar_url": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "username": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "user_id",
+            "tenant_key",
+            "username"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [],
+      "capability": "notification.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "notification.mark_read",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "notification.preferences.update",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "schedule.list",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "schedule.create",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "schedule.update",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    },
+    {
+      "automated_tests": [],
+      "capability": "schedule.delete",
+      "confirmation_cas_idempotency": null,
+      "event": null,
+      "handler": null,
+      "ios_consumer": null,
+      "policy": null,
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": null,
+      "renderer": null,
+      "schema": null,
+      "status": "absent"
+    }
+  ],
+  "counts": {
+    "absent": 39,
+    "implemented": 0,
+    "partial": 29,
+    "unverified": 0
+  },
+  "pcm_version": "1.0.0",
+  "protocol": "qcp",
+  "required_columns": [
+    "capability",
+    "schema",
+    "handler",
+    "policy",
+    "confirmation_cas_idempotency",
+    "event",
+    "renderer",
+    "ios_consumer",
+    "qws_consumer",
+    "automated_tests",
+    "production_receipt"
+  ],
+  "scope_version": 1,
+  "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
+  "total": 68
+}

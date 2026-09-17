@@ -1,11 +1,12 @@
 protocol: qcp
 version: 1.0.0
-capabilities: capabilities.yaml
+capabilities: [capabilities.yaml, bookshelf.yaml, memory.yaml, profile.yaml, agent.yaml]
 events: events.yaml
 renderers: renderers.yaml
 bindings: bindings.yaml
 policies: policies.yaml
 consumptions: consumptions.yaml
+ios_scope: ios-scope.yaml
 schemas:
   capability: capability.schema.json
   event: event.schema.json

@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.db import SessionLocal
 from backend.models.capability_gateway import CapabilityInvocation, CapabilityProposal
+from backend.models.workflow import WorkflowDefinition
 from backend.services.capability_catalog import (
     CapabilityContractError,
     describe_capability,
@@ -38,6 +39,34 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
+def _binding_digest(
+    *,
+    tenant: str,
+    user: str,
+    session_id: str,
+    request_id: str,
+    capability_id: str,
+    capability_version: str,
+    canonical_input: dict[str, Any],
+    resource_versions: dict[str, Any],
+    policy_version: str,
+    renderer_version: str,
+) -> str:
+    """Digest every authority-bearing proposal field, including CAS state."""
+    return _digest({
+        "tenant": tenant,
+        "user": user,
+        "session_id": session_id,
+        "request_id": request_id,
+        "capability_id": capability_id,
+        "capability_version": capability_version,
+        "input": canonical_input,
+        "resource_versions": resource_versions,
+        "policy_version": policy_version,
+        "renderer_version": renderer_version,
+    })
+
+
 def _principal(payload: dict[str, Any]) -> tuple[str, str]:
     tenant = str(payload.get("tenant_key") or "").strip()
     user = str(payload.get("user_id") or payload.get("sub") or "").strip()
@@ -51,6 +80,31 @@ def _failure(capability_id: str, code: str, message: str) -> dict[str, Any]:
         "status": "failed", "capability_id": capability_id, "events": [],
         "receipt": None, "error": {"code": code, "message": message[:300]},
     }
+
+
+async def _workflow_resource_version(
+    workflow_id: str, *, tenant: str, user: str
+) -> str:
+    """Read the owner-scoped CAS version without depending on the HTTP layer."""
+    async with SessionLocal() as db:
+        row = (
+            await db.execute(
+                select(WorkflowDefinition).where(
+                    WorkflowDefinition.id == workflow_id,
+                    WorkflowDefinition.tenant_key == tenant,
+                    WorkflowDefinition.created_by == user,
+                    WorkflowDefinition.archived_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+    if row is None:
+        raise CapabilityContractError("current CAS resource version unavailable")
+    value = row.active_plan_id or (
+        row.updated_at.isoformat() if row.updated_at is not None else ""
+    )
+    if not value:
+        raise CapabilityContractError("current CAS resource version unavailable")
+    return str(value)
 
 
 async def create_capability_proposal(
@@ -91,11 +145,63 @@ async def create_capability_proposal(
         if "source_client_session_id" in properties:
             canonical_input["source_client_session_id"] = session_id
         validate_instance(canonical_input, capability["input_schema"])
+        versions = dict(resource_versions or {})
+        if len(versions) > 64 or any(
+            not isinstance(key, str)
+            or not key
+            or len(key) > 160
+            or not isinstance(value, (str, int))
+            or isinstance(value, bool)
+            or len(str(value)) > 256
+            for key, value in versions.items()
+        ):
+            raise CapabilityContractError("resource_versions must be a bounded string/integer map")
+        derived_versions: dict[str, str] = {}
+        if capability_id in {"knowledge.note.update", "knowledge.note.archive"}:
+            derived_versions[str(canonical_input.get("note_id") or "")] = str(
+                canonical_input.get("base_hash") or ""
+            )
+        elif capability_id == "knowledge.note.merge":
+            derived_versions = {
+                str(canonical_input.get("target_note_id") or ""): str(
+                    canonical_input.get("target_base_hash") or ""
+                ),
+                **{
+                    str(key): str(value)
+                    for key, value in (canonical_input.get("source_versions") or {}).items()
+                },
+            }
+        elif capability_id == "workflow.start":
+            workflow_id = str(canonical_input.get("workflow_id") or "")
+            derived_versions[workflow_id] = await _workflow_resource_version(
+                workflow_id, tenant=tenant, user=user
+            )
+        if "" in derived_versions or any(not value for value in derived_versions.values()):
+            raise CapabilityContractError("current CAS resource version unavailable")
+        if any(
+            key in versions and str(versions[key]) != value
+            for key, value in derived_versions.items()
+        ):
+            raise CapabilityContractError("resource_versions conflict with canonical input or current state")
+        versions.update(derived_versions)
     except CapabilityContractError as exc:
         return _failure(capability_id, "contract_invalid", str(exc))
 
     canonical_input = json.loads(_canonical(canonical_input))
-    input_digest = _digest(canonical_input)
+    canonical_resource_versions = json.loads(_canonical(versions))
+    policy_version = str(payload.get("knowledge_policy_version") or "unknown")
+    input_digest = _binding_digest(
+        tenant=tenant,
+        user=user,
+        session_id=session_id,
+        request_id=request_id,
+        capability_id=capability_id,
+        capability_version=str(capability["version"]),
+        canonical_input=canonical_input,
+        resource_versions=canonical_resource_versions,
+        policy_version=policy_version,
+        renderer_version=renderer_version,
+    )
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     nonce = secrets.token_urlsafe(24)
@@ -112,8 +218,8 @@ async def create_capability_proposal(
         capability_version=str(capability["version"]),
         canonical_input=canonical_input,
         input_digest=input_digest,
-        resource_versions=dict(resource_versions or {}),
-        policy_version=str(payload.get("knowledge_policy_version") or "unknown"),
+        resource_versions=canonical_resource_versions,
+        policy_version=policy_version,
         renderer_version=renderer_version,
         idempotency_key=idempotency_key,
         token_hash=token_hash,
@@ -131,6 +237,7 @@ async def create_capability_proposal(
         "capability_version": capability["version"],
         "input": canonical_input,
         "input_digest": input_digest,
+        "resource_versions": canonical_resource_versions,
         "summary": capability["description"],
         "risk": capability["risk"],
         "state": "awaiting_confirmation",
@@ -193,7 +300,18 @@ async def confirm_capability_proposal(
                 proposal.state = "RECONCILE_REQUIRED"
                 proposal.error_code = "confirmation_invalid"
                 return _failure(capability_id, "confirmation_invalid", "Policy changed; create a new proposal")
-            if _digest(proposal.canonical_input) != proposal.input_digest:
+            if _binding_digest(
+                tenant=proposal.tenant_key,
+                user=proposal.user_id,
+                session_id=proposal.session_id,
+                request_id=proposal.request_id,
+                capability_id=proposal.capability_id,
+                capability_version=proposal.capability_version,
+                canonical_input=dict(proposal.canonical_input),
+                resource_versions=dict(proposal.resource_versions or {}),
+                policy_version=proposal.policy_version,
+                renderer_version=proposal.renderer_version,
+            ) != proposal.input_digest:
                 proposal.state = "RECONCILE_REQUIRED"
                 proposal.error_code = "contract_invalid"
                 return _failure(capability_id, "contract_invalid", "Stored proposal digest mismatch")
@@ -243,6 +361,7 @@ async def confirm_capability_proposal(
         payload=payload,
         idempotency_key=key,
         invocation_id=invocation_id,
+        resource_versions=dict(proposal.resource_versions or {}),
     )
     terminal = "VERIFIED" if result.get("status") == "completed" else "RECONCILE_REQUIRED"
     async with SessionLocal() as db:
@@ -284,3 +403,85 @@ async def proposal_status(
             "result": result,
             "error": None if not proposal.error_code else {"code": proposal.error_code},
         }
+
+
+async def invocation_status(
+    invocation_id: str, *, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Return a tenant/user-scoped durable execution and receipt state."""
+    try:
+        tenant, user = _principal(payload)
+    except CapabilityContractError as exc:
+        return _failure("", "not_authenticated", str(exc))
+    async with SessionLocal() as db:
+        invocation = await db.get(CapabilityInvocation, invocation_id)
+        if (
+            invocation is None
+            or invocation.tenant_key != tenant
+            or invocation.user_id != user
+        ):
+            return _failure("", "capability_not_found", "Invocation not found")
+        return {
+            "status": invocation.state.casefold(),
+            "capability_id": invocation.capability_id,
+            "capability_version": invocation.capability_version,
+            "proposal_id": invocation.proposal_id,
+            "invocation_id": invocation.id,
+            "result": invocation.result,
+            "error": None if not invocation.error_code else {
+                "code": invocation.error_code,
+                "message": invocation.error_detail,
+            },
+        }
+
+
+async def reconcile_incomplete_invocations(*, limit: int = 100) -> int:
+    """Idempotently finish APPLYING rows after a process crash.
+
+    Domain handlers receive the original idempotency key through the proposal;
+    therefore a crash after the side effect but before receipt persistence
+    replays the domain receipt instead of duplicating the write.
+    """
+    async with SessionLocal() as db:
+        rows = list((await db.execute(
+            select(CapabilityInvocation)
+            .where(CapabilityInvocation.state == "APPLYING")
+            .order_by(CapabilityInvocation.created_at)
+            .limit(max(1, min(limit, 1000)))
+        )).scalars().all())
+    reconciled = 0
+    for row in rows:
+        async with SessionLocal() as db:
+            invocation = await db.get(CapabilityInvocation, row.id, with_for_update=True)
+            if invocation is None or invocation.state != "APPLYING":
+                continue
+            proposal = await db.get(CapabilityProposal, invocation.proposal_id)
+            if proposal is None:
+                invocation.state = "RECONCILE_REQUIRED"
+                invocation.error_code = "proposal_missing"
+                invocation.error_detail = "Durable proposal is missing"
+                await db.commit()
+                continue
+            payload = {
+                "tenant_key": proposal.tenant_key,
+                "user_id": proposal.user_id,
+                "knowledge_policy_version": proposal.policy_version,
+            }
+            result = await execute_verified_capability(
+                proposal.capability_id,
+                dict(proposal.canonical_input),
+                payload=payload,
+                idempotency_key=str(proposal.idempotency_key or proposal.id),
+                invocation_id=invocation.id,
+                resource_versions=dict(proposal.resource_versions or {}),
+            )
+            terminal = "VERIFIED" if result.get("status") == "completed" else "RECONCILE_REQUIRED"
+            invocation.state = terminal
+            invocation.result = result
+            invocation.error_code = ((result.get("error") or {}).get("code"))
+            invocation.error_detail = ((result.get("error") or {}).get("message"))
+            proposal.state = terminal
+            proposal.error_code = invocation.error_code
+            await db.commit()
+            reconciled += 1
+    return reconciled

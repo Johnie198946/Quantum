@@ -7,3 +7,11 @@ policies:
     description: Workflow APIs derive tenant/user from JWT and enforce ownership and lifecycle state.
   - id: artifact-owner
     description: Artifact APIs verify execution ownership, path containment and content hash.
+  - id: bookshelf-reader
+    description: Bookshelf APIs derive tenant and reader from authentication and revalidate current book authorization.
+  - id: native-memory-owner
+    description: Native Hermes memory is resolved through the authenticated user's sandbox policy and owner identity.
+  - id: profile-owner
+    description: Profile reads and writes derive tenant and user identity only from the authenticated principal.
+  - id: agent-owner
+    description: Agent writes require an interactive human and enforce tenant plus owner isolation.

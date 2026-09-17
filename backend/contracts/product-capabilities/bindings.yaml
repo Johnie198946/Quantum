@@ -39,3 +39,33 @@ bindings:
     handler: artifact.download
   - id: artifact.consume_structured
     handler: artifact.consume_structured
+  - id: bookshelf.search
+    handler: bookshelf.search
+  - id: bookshelf.subscribe
+    handler: bookshelf.subscribe
+  - id: bookshelf.open
+    handler: bookshelf.open
+  - id: memory.list
+    handler: memory.list
+  - id: memory.create
+    handler: memory.create
+  - id: memory.update
+    handler: memory.update
+  - id: memory.delete
+    handler: memory.delete
+  - id: profile.read
+    handler: profile.read
+  - id: profile.update
+    handler: profile.update
+  - id: agent.list
+    handler: agent.list
+  - id: agent.create
+    handler: agent.create
+  - id: agent.update
+    handler: agent.update
+  - id: agent.delete
+    handler: agent.delete
+  - id: agent.evaluate
+    handler: agent.evaluate
+  - id: agent.evaluation_status
+    handler: agent.evaluation_status

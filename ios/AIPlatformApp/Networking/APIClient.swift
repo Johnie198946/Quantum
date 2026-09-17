@@ -2098,6 +2098,15 @@ public enum RendererRegistry {
         "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
         "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "bookshelf.results": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "bookshelf.subscription_changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "bookshelf.opened": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "memory.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "memory.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "profile.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "profile.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "agent.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "agent.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
     ]
 
     public static func route(for eventType: String, version: Int) -> QCPRenderingPath {
