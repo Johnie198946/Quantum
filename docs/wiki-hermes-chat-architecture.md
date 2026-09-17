@@ -33,6 +33,22 @@ iOS 问题
   -> 父 Agent 汇总并保留引用
 ```
 
+### 3.1 Knowledge Gateway 与发送门禁治理
+
+知识链路只有一个 Runtime，但存在三个不可合并的安全时点：请求开始授权、Knowledge Gateway 返回前重验、Hermes Bridge 发送前引用复核。请求内搜索、排序和 WikiLink 解析复用只读授权快照；快照只能缩权、请求结束销毁，不能替代后两次复核。
+
+职责固定如下：
+
+| 模块 | 唯一职责 | 禁止事项 |
+|---|---|---|
+| Chat API | 绑定 JWT tenant/user，签发短时 capability 和服务端 triage | 由客户端指定知识 requirement |
+| Chat Run Worker | 持久调度并原样传递能力、triage 和 receipt | 重算授权或发送裁决 |
+| Knowledge Gateway | 候选授权、检索、正文读取、返回前撤权与 policy 复核 | 决定最终自然语言答案可否发送 |
+| Hermes Bridge | 分别记录 required、attempted、consumed 与实际引用，覆盖预读和运行时知识工具，执行发送前终检 | 让能力缺失降低 required，或把 timeout、deny、no_match 合并为同一个错误 |
+| iOS/Web | 展示答案和结构化回执 | 吞错、放宽门禁或重解释权限 |
+
+普通公开问答允许可选内部预读，但只有在任何内部正文和元数据均未进入模型、公开工具成功且最终答案保留匹配 URL 时，Bridge 才可输出 `allowed_public_only`。明确要求内部知识、授权拒绝、消费状态不确定、引用撤权或版本变化均 fail closed。Gateway 超时不得简单通过增加 Bridge 超时时间解决。
+
 本次同时修复了：
 
 - 自然语言问题中的实体短语抽取，例如“超聚变是做什么的”可还原“超聚变”。

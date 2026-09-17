@@ -135,12 +135,16 @@ def _rel_visible(rel: str, vis: set[str] | frozenset[str] | None) -> bool:
     scope = _CANDIDATE_INDEX.get()
     vault = scope[0] if scope is not None else _vault()
     document = _candidate_documents(vault).get(rel)
-    if document is not None:
-        document = _apply_file_read_barrier(vault, document)
-    if document is None:
-        return False
     live_paths = AUTHORIZED_DOCUMENT_PATHS.get()
     if live_paths is not None and rel not in live_paths:
+        return False
+    # An authenticated request boundary installs only paths that have already
+    # passed the live file and durable database barriers. Re-reading the same
+    # frontmatter for every WikiLink adds no authorization boundary; the
+    # Gateway rechecks the complete response before it leaves the request.
+    if document is not None and live_paths is None:
+        document = _apply_file_read_barrier(vault, document)
+    if document is None:
         return False
     if document.get("disclosure_granularity") == "summary" and live_paths is None:
         return False

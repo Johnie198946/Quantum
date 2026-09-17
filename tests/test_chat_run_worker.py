@@ -71,7 +71,16 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
     def fake_run(goal, user_key, hermes_sid, sink, holder, *args):
         assert goal == "hello"
         worker.bridge._qput(sink, {"type": "delta", "content": "hello"})
-        worker.bridge._qput(sink, {"type": "done", "answer": "hello"})
+        worker.bridge._qput(sink, {
+            "type": "done", "answer": "hello",
+            "knowledge_receipt": {
+                "schema_version": "knowledge_gate_receipt.v2",
+                "required_internal_knowledge": False,
+                "attempted_internal_search": True,
+                "consumed_internal_knowledge": False,
+                "decision": "allowed_public_only",
+            },
+        })
 
     monkeypatch.setattr(worker.bridge, "_run_agent_sync", fake_run)
     worker.execute(store, claimed)
@@ -84,6 +93,8 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
         (1, "runtime_timing"), (2, "delta"), (3, "done"),
     ]
     assert events[0]["phase"] == "queue_claimed" and events[0]["queue_delay_ms"] >= 0
+    assert events[-1]["knowledge_receipt"]["schema_version"] == "knowledge_gate_receipt.v2"
+    assert events[-1]["knowledge_receipt"]["decision"] == "allowed_public_only"
 
 
 def test_worker_marks_hermes_invocation_failure_failed(monkeypatch, tmp_path):

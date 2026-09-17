@@ -99,6 +99,37 @@ def test_request_candidates_never_cache_live_authorization(vault, tmp_path):
     assert k._CANDIDATE_INDEX.get() is None
 
 
+def test_authorized_request_snapshot_avoids_per_link_file_rechecks(vault, tmp_path, monkeypatch):
+    documents, _ = vault(32)
+    links = " ".join(f"[[topic-{i}]]" for i in range(len(documents)))
+    for index in range(len(documents)):
+        target = tmp_path / f"wiki/topic-{index}.md"
+        target.write_text(
+            f"---\ntitle: topic-{index}\nstatus: active\n---\n"
+            f"# topic-{index}\nEvidence {links}.\n",
+            encoding="utf-8",
+        )
+    candidates = catalog.document_index(tmp_path)
+    reads = []
+    original_live = catalog._live_frontmatter
+
+    def live(*args, **kwargs):
+        reads.append(args[1])
+        return original_live(*args, **kwargs)
+
+    monkeypatch.setattr(catalog, "_live_frontmatter", live)
+    token = catalog.AUTHORIZED_DOCUMENT_PATHS.set(frozenset(candidates))
+    try:
+        with k._candidate_scope(tmp_path, candidates):
+            result = k._search_docs(tmp_path, "topic", len(documents))
+    finally:
+        catalog.AUTHORIZED_DOCUMENT_PATHS.reset(token)
+
+    assert len(result) == len(documents)
+    assert reads == []
+    assert k._CANDIDATE_INDEX.get() is None
+
+
 @pytest.mark.parametrize("change", ["symlink", "malformed", "unreadable"])
 def test_live_target_failure_is_not_legacy_approval(vault, tmp_path, monkeypatch, change):
     vault()

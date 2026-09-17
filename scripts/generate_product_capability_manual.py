@@ -19,6 +19,7 @@ from backend.services.capability_catalog import catalog_digest, load_catalog  # 
 MANUAL = ROOT / "docs" / "product-capability-manual.md"
 COVERAGE = ROOT / "docs" / "product-capability-coverage.json"
 IOS_COVERAGE = ROOT / "ops" / "acceptance" / "pcm-ios-coverage.yaml"
+GATEWAY_SPEC = ROOT / "docs" / "product-specs" / "capability-gateway.md"
 
 
 def outputs() -> tuple[str, str]:
@@ -26,6 +27,7 @@ def outputs() -> tuple[str, str]:
     capabilities = sorted(catalog["capabilities"], key=lambda item: item["id"])
     ios_coverage = yaml.safe_load(IOS_COVERAGE.read_text(encoding="utf-8"))
     ios_features = ios_coverage.get("features") or []
+    gateway_spec = GATEWAY_SPEC.read_text(encoding="utf-8").strip()
     capability_ids = {item["id"] for item in capabilities}
     unknown = sorted(
         {item.get("capability") for item in ios_features} - capability_ids
@@ -37,6 +39,10 @@ def outputs() -> tuple[str, str]:
         "",
         f"QCP version: `{catalog['version']}`",
         f"Catalog digest: `{catalog_digest()}`",
+        "",
+        gateway_spec,
+        "",
+        "## Capability inventory",
         "",
         "| Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |",
         "|---|---|---|---|---|---|---|---|",

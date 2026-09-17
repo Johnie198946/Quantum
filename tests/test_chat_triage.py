@@ -107,6 +107,15 @@ def test_personal_note_queries_route_to_user_note_search_not_platform_wiki():
     assert "user_note_search" not in release_notes.evidence_requirements
 
 
+def test_public_travel_and_internal_travel_policy_have_distinct_requirements():
+    public = classify_request("怎么去樱岛，和JR如何衔接？")
+    internal = classify_request("结合公司内部差旅政策规划樱岛行程")
+
+    assert public.route_class == GENERAL_QA
+    assert "knowledge_search" not in public.evidence_requirements
+    assert "knowledge_search" in internal.evidence_requirements
+
+
 def test_explicit_skill_agent_keeps_skill_discovery_enabled():
     from backend.api.chat import _skill_routing_enabled
     from backend.services.agent_capabilities import EffectiveAgent
