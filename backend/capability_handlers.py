@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import fcntl
+import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
+
+import httpx
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -635,6 +637,81 @@ async def _agent_evaluation_status(data: dict[str, Any], payload: dict[str, Any]
     return jsonable_encoder(await get_agent_evaluation(str(data["run_id"]), payload))
 
 
+async def _skill_context(payload: dict[str, Any]):
+    from backend.api.chat import _resolve_chat_policy
+
+    policy = await _resolve_chat_policy(payload)
+    user_id = str(payload.get("user_id") or payload.get("sub") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail={"code": "not_authenticated"})
+    return policy, user_id
+
+
+async def _skill_bridge_call(operation: Awaitable[dict[str, Any]]) -> dict[str, Any]:
+    try:
+        return await operation
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = "skill_bridge_rejected"
+        code = detail if isinstance(detail, str) else (detail or {}).get("code")
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail={"code": str(code or "skill_bridge_rejected")},
+        ) from exc
+
+
+async def _skill_list(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.services.hermes_sandbox_catalog import fetch_skill_catalog
+
+    policy, user_id = await _skill_context(payload)
+    skills = await _skill_bridge_call(fetch_skill_catalog(policy, user_id=user_id))
+    if data.get("owned_only"):
+        skills = [item for item in skills if item.get("scope") == "tenant"]
+    return {"skills": skills}
+
+
+async def _skill_create(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.services.hermes_sandbox_catalog import create_tenant_skill
+
+    assert key
+    policy, user_id = await _skill_context(payload)
+    return await _skill_bridge_call(create_tenant_skill(
+        policy, user_id=user_id, name=data["name"], content=data["content"],
+        idempotency_key=key,
+    ))
+
+
+async def _skill_update(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.services.hermes_sandbox_catalog import update_tenant_skill
+
+    assert key
+    policy, user_id = await _skill_context(payload)
+    return await _skill_bridge_call(update_tenant_skill(
+        policy, user_id=user_id, name=data["name"], content=data["content"],
+        idempotency_key=key,
+    ))
+
+
+async def _skill_delete(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.services.hermes_sandbox_catalog import delete_tenant_skill
+
+    assert key
+    policy, user_id = await _skill_context(payload)
+    return await _skill_bridge_call(delete_tenant_skill(
+        policy, user_id=user_id, name=data["name"], idempotency_key=key
+    ))
+
+
 def _response_payload(value: Any) -> Any:
     """Unwrap direct FastAPI domain calls without changing their semantics."""
     body = getattr(value, "body", None)
@@ -739,6 +816,10 @@ HANDLERS: dict[str, Handler] = {
     "agent.delete": _agent_delete,
     "agent.evaluate": _agent_evaluate,
     "agent.evaluation_status": _agent_evaluation_status,
+    "skill.list": _skill_list,
+    "skill.create": _skill_create,
+    "skill.update": _skill_update,
+    "skill.delete": _skill_delete,
     "project.list": _project_list,
     "project.create": _project_create,
     "project.open": _project_open,

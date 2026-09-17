@@ -254,6 +254,34 @@
       ]
     },
     {
+      "id": "skill.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
       "id": "task.create",
       "status": "implemented",
       "tests": [
@@ -310,7 +338,7 @@
       ]
     }
   ],
-  "catalog_digest": "243e1e441f9e61cc079b1ab784f1c75e7ab14734abe90cdf99cc5c4d56afa579",
+  "catalog_digest": "022e448c653ae93638f6e5b546509ba142b54c909edc65cbef0d4b6d50431bd4",
   "consumptions": [
     {
       "gates": [
@@ -355,7 +383,7 @@
     }
   ],
   "counts": {
-    "implemented": 42,
+    "implemented": 46,
     "partial": 0,
     "unverified": 0
   },
@@ -431,6 +459,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 42,
+  "total": 46,
   "version": "1.0.0"
 }

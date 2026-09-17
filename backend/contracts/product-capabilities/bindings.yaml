@@ -69,6 +69,14 @@ bindings:
     handler: agent.evaluate
   - id: agent.evaluation_status
     handler: agent.evaluation_status
+  - id: skill.list
+    handler: skill.list
+  - id: skill.create
+    handler: skill.create
+  - id: skill.update
+    handler: skill.update
+  - id: skill.delete
+    handler: skill.delete
   - id: project.list
     handler: project.list
   - id: project.create

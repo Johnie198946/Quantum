@@ -2107,6 +2107,8 @@ public enum RendererRegistry {
         "profile.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "agent.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "agent.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "skill.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "skill.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "project.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "project.created": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),

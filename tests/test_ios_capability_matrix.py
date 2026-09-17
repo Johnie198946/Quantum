@@ -39,7 +39,7 @@ def test_ios_matrix_truthfully_reports_release_blockers():
     result = module.generate()
     assert result["counts"] == {
         "implemented": 0,
-        "partial": 36,
-        "absent": 34,
+        "partial": 40,
+        "absent": 30,
         "unverified": 0,
     }

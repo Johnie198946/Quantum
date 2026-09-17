@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `243e1e441f9e61cc079b1ab784f1c75e7ab14734abe90cdf99cc5c4d56afa579`
+Catalog digest: `022e448c653ae93638f6e5b546509ba142b54c909edc65cbef0d4b6d50431bd4`
 
 ## Gateway 核心模块规范
 
@@ -325,6 +325,10 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `project.list@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `project.open@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `report.research.create_from_text@1.0.0` | report | write | required | required | `document.created` | `workflow@1` | implemented |
+| `skill.create@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
+| `skill.delete@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
+| `skill.list@1.0.0` | skill | read | none | none | `skill.snapshot` | `answer@1` | implemented |
+| `skill.update@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `task.create@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |

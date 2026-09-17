@@ -35,6 +35,7 @@ IMPLEMENTED_HANDLERS = {
     "profile.read", "profile.update",
     "agent.list", "agent.create", "agent.update", "agent.delete",
     "agent.evaluate", "agent.evaluation_status",
+    "skill.list", "skill.create", "skill.update", "skill.delete",
     "project.list", "project.create", "project.open",
     "task.list", "task.create", "task.update", "task.status",
 }

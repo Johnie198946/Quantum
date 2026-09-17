@@ -15,5 +15,7 @@ policies:
     description: Profile reads and writes derive tenant and user identity only from the authenticated principal.
   - id: agent-owner
     description: Agent writes require an interactive human and enforce tenant plus owner isolation.
+  - id: tenant-skill-owner
+    description: Skill access is bound to the signed tenant/user Hermes sandbox; only profile-owned custom Skills may be changed.
   - id: qws-project-access
     description: QWS derives tenant and user from the authenticated principal and enforces project membership, owner/write scope, revision CAS, and domain lifecycle rules.

@@ -49,6 +49,10 @@ events:
     version: 1
   - id: agent.changed
     version: 1
+  - id: skill.snapshot
+    version: 1
+  - id: skill.changed
+    version: 1
   - id: project.snapshot
     version: 1
   - id: project.created

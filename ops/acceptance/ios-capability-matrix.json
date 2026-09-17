@@ -443,72 +443,220 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_skill_capabilities.py"
+      ],
       "capability": "skill.list",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_skill_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "skill.snapshot",
+      "handler": "skill.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "tenant-skill-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "owned_only": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "output": {
+          "properties": {
+            "skills": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "skills"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_skill_capabilities.py"
+      ],
       "capability": "skill.create",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_skill_owner",
+          "governed_skill_content"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "skill.changed",
+      "handler": "skill.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "tenant-skill-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "maxLength": 200000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "content"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "name",
+            "sha256",
+            "scope",
+            "verified"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_skill_capabilities.py"
+      ],
       "capability": "skill.update",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_skill_owner",
+          "tenant_owned_skill",
+          "governed_skill_content"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "skill.changed",
+      "handler": "skill.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "tenant-skill-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "maxLength": 200000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "content"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "name",
+            "sha256",
+            "scope",
+            "verified"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_skill_capabilities.py"
+      ],
       "capability": "skill.delete",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_skill_owner",
+          "tenant_owned_skill"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "skill.changed",
+      "handler": "skill.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "tenant-skill-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "deleted",
+            "name",
+            "verified"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -2759,9 +2907,9 @@
     }
   ],
   "counts": {
-    "absent": 34,
+    "absent": 30,
     "implemented": 0,
-    "partial": 36,
+    "partial": 40,
     "unverified": 0
   },
   "pcm_version": "1.0.0",

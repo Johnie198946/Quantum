@@ -9813,23 +9813,109 @@ async def list_skills(
     }
 
 
-@app.delete("/v1/skills/{name}")
-async def delete_skill(
-    name: str,
-    x_knowledge_capability: str = Header(default=""),
-):
-    """Delete only a custom Skill in the signed tenant sandbox."""
+class SkillCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")
+    content: str = Field(..., min_length=1, max_length=200_000)
+
+
+class SkillUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(..., min_length=1, max_length=200_000)
+
+
+def _skill_sandbox(capability: str) -> TenantHermesSandbox:
     try:
-        claims = verify_capability(x_knowledge_capability)
+        claims = verify_capability(capability)
     except KnowledgeScopeDenied as exc:
         raise HTTPException(status_code=403, detail="sandbox_identity_denied") from exc
     if str(claims.get("entry_point") or "") != "skills":
         raise HTTPException(status_code=403, detail="sandbox_identity_denied")
-    sandbox = _tenant_sandbox_from_claims(
+    return _tenant_sandbox_from_claims(
         subject_id=str(claims.get("subject_id") or "skills"),
         knowledge_claims=claims,
         client_claims=None,
     )
+
+
+def _write_skill_and_verify(
+    sandbox: TenantHermesSandbox, *, name: str, content: str, replace: bool
+) -> dict[str, Any]:
+    catalog = _routed_skill_catalog(sandbox)
+    owned = {
+        str(item.get("name")): item
+        for item in catalog
+        if item.get("scope") == "tenant"
+    }
+    if replace and name not in owned:
+        raise HTTPException(status_code=404, detail="tenant_skill_not_found")
+    if not replace and any(item.get("name") == name for item in catalog):
+        raise HTTPException(status_code=409, detail="skill_exists")
+    try:
+        path = write_sandbox_skill(sandbox, name, content, replace=replace)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="skill_exists") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    record = next((
+        item for item in _routed_skill_catalog(sandbox)
+        if item.get("scope") == "tenant" and item.get("name") == name
+    ), None)
+    if (
+        record is None
+        or record.get("sha256") != digest
+        or read_sandbox_skill(sandbox, name) != content
+    ):
+        raise HTTPException(status_code=500, detail="tenant_skill_write_not_verified")
+    return {"name": name, "sha256": digest, "scope": "tenant", "verified": True}
+
+
+@app.post("/v1/skills")
+async def create_skill(
+    body: SkillCreateRequest,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="idempotency_key_required")
+    return _write_skill_and_verify(
+        _skill_sandbox(x_knowledge_capability),
+        name=body.name,
+        content=body.content,
+        replace=False,
+    )
+
+
+@app.put("/v1/skills/{name}")
+async def update_skill(
+    name: str,
+    body: SkillUpdateRequest,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="idempotency_key_required")
+    return _write_skill_and_verify(
+        _skill_sandbox(x_knowledge_capability),
+        name=name,
+        content=body.content,
+        replace=True,
+    )
+
+
+@app.delete("/v1/skills/{name}")
+async def delete_skill(
+    name: str,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    """Delete only a custom Skill in the signed tenant sandbox."""
+    if x_idempotency_key and len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="invalid_idempotency_key")
+    sandbox = _skill_sandbox(x_knowledge_capability)
     try:
         deleted = delete_sandbox_skill(sandbox, name)
     except ValueError as exc:
@@ -9842,7 +9928,7 @@ async def delete_skill(
         for item in remaining
     ):
         raise HTTPException(status_code=500, detail="tenant_skill_delete_not_verified")
-    return {"deleted": True, "name": name}
+    return {"deleted": True, "name": name, "verified": True}
 
 
 @app.get("/health")

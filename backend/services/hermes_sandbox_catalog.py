@@ -1,4 +1,4 @@
-"""Read-only catalog client for authenticated Hermes tenant sandboxes."""
+"""Signed catalog client for authenticated Hermes tenant sandboxes."""
 
 from __future__ import annotations
 
@@ -51,13 +51,53 @@ async def fetch_skill_catalog(
 
 
 async def delete_tenant_skill(
-    policy: KnowledgePolicy, *, user_id: str, name: str
+    policy: KnowledgePolicy, *, user_id: str, name: str,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     capability = _skill_capability(policy, user_id=user_id)
+    headers = {"X-Knowledge-Capability": capability}
+    if idempotency_key:
+        headers["X-Idempotency-Key"] = idempotency_key
     async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
         response = await client.delete(
             _bridge_base() + "/v1/skills/" + name,
-            headers={"X-Knowledge-Capability": capability},
+            headers=headers,
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def create_tenant_skill(
+    policy: KnowledgePolicy, *, user_id: str, name: str, content: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    capability = _skill_capability(policy, user_id=user_id)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
+        response = await client.post(
+            _bridge_base() + "/v1/skills",
+            headers={
+                "X-Knowledge-Capability": capability,
+                "X-Idempotency-Key": idempotency_key,
+            },
+            json={"name": name, "content": content},
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def update_tenant_skill(
+    policy: KnowledgePolicy, *, user_id: str, name: str, content: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    capability = _skill_capability(policy, user_id=user_id)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
+        response = await client.put(
+            _bridge_base() + "/v1/skills/" + name,
+            headers={
+                "X-Knowledge-Capability": capability,
+                "X-Idempotency-Key": idempotency_key,
+            },
+            json={"content": content},
         )
     response.raise_for_status()
     return response.json()

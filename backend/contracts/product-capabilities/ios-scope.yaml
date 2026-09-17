@@ -115,6 +115,18 @@ annotations:
   agent.evaluate:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  skill.list:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  skill.create:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  skill.update:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  skill.delete:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   agent.evaluation_status:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
