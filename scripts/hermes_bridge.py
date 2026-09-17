@@ -33,6 +33,7 @@ import contextvars
 import fcntl
 import hashlib
 import ipaddress
+import inspect
 import json
 import os
 import queue
@@ -3294,8 +3295,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             or not session_id
         ):
             return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
-        if loop is None or loop.is_closed() or not loop.is_running():
-            return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
         assert isinstance(context, dict)
         input_digest = hashlib.sha256(json.dumps(
             data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -3315,16 +3314,22 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             resource_versions=data.get("resource_versions") or {},
             renderer_version="qcp-ios@1",
         )
-        future = None
         try:
-            future = asyncio.run_coroutine_threadsafe(proposal, loop)
-            result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
+            if loop is not None and not loop.is_closed() and loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(proposal, loop)
+                result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
+            else:
+                # Native Hermes tools may execute in a worker process which did not
+                # run FastAPI startup. Use a request-local loop rather than silently
+                # dropping a governed proposal.
+                result = asyncio.run(proposal)
         except TimeoutError:
-            if future is not None:
+            if "future" in locals():
                 future.cancel()
             return json.dumps({"success": False, "error": "async_dispatch_timeout"})
         except Exception:
-            proposal.close()
+            if inspect.getcoroutinestate(proposal) == inspect.CORO_CREATED:
+                proposal.close()
             return json.dumps({"success": False, "error": "proposal_persistence_failed"})
         emit = context.get("emit")
         if callable(emit):
@@ -3351,8 +3356,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     from backend.services.capability_catalog import invoke_capability
 
     loop = _bridge_async_loop
-    if loop is None or loop.is_closed() or not loop.is_running():
-        return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
     tenant_token = current_tenant.set(str(identity["tenant_key"]))
     try:
         input_digest = hashlib.sha256(json.dumps(
@@ -3373,14 +3376,17 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             idempotency_key=stable_key,
         )
         try:
-            future = asyncio.run_coroutine_threadsafe(invocation, loop)
+            if loop is not None and not loop.is_closed() and loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(invocation, loop)
+                result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
+            else:
+                result = asyncio.run(invocation)
         except RuntimeError:
             invocation.close()
             return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
-        try:
-            result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
         except TimeoutError:
-            future.cancel()
+            if "future" in locals():
+                future.cancel()
             return json.dumps({"success": False, "error": "async_dispatch_timeout"})
         except Exception:
             return json.dumps({"success": False, "error": "async_dispatch_failed"})

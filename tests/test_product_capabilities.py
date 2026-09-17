@@ -354,6 +354,34 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
     assert "tenant_key" not in serialized and "user_id" not in serialized
 
 
+def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
+    events = []
+    previous_loop = bridge._bridge_async_loop
+    bridge._bridge_async_loop = None
+    bridge._client_context_tool_context.value = {
+        "emit": events.append,
+        "request_id": "request-worker-process",
+        "client_session_id": "chat-session-worker",
+        "identity": {
+            "tenant_key": "tenant-worker",
+            "user_id": "user-worker",
+            "knowledge_policy_version": "policy-worker",
+        },
+    }
+    try:
+        result = json.loads(bridge._app_capability_invoke_tool({
+            "capability_id": "workflow.create",
+            "input": {"title": "Worker workflow", "description": "valid workflow description"},
+        }))
+    finally:
+        bridge._client_context_tool_context.value = None
+        bridge._bridge_async_loop = previous_loop
+
+    assert result["status"] == "awaiting_confirmation"
+    assert [event["type"] for event in events] == ["capability.proposed"]
+    assert events[0]["payload"]["confirmation_token"]
+
+
 def test_bridge_knowledge_mutations_preserve_caller_cas_versions():
     stale_target = "a" * 64
     stale_source = "b" * 64
