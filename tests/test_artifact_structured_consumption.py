@@ -73,7 +73,7 @@ async def _invoke(execution, artifact, *, payload=None, key="request-structured"
     try:
         return await invoke_capability(
             "artifact.consume_structured", data, payload=payload,
-            confirmed=False, idempotency_key=key,
+            idempotency_key=key,
         )
     finally:
         current_tenant.reset(token)

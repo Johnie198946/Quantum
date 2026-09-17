@@ -21,6 +21,7 @@ from backend.services.capability_catalog import (
     CapabilityContractError,
     agent_description_for,
     describe_capability,
+    execute_verified_capability,
     invoke_capability,
     load_catalog,
     search_capabilities,
@@ -140,27 +141,23 @@ async def test_capability_api_maps_domain_dto_validation_to_contract_failure():
             )
 
     assert pcm_response.status_code == dto_response.status_code == 200
-    assert pcm_response.json()["error"] == {
-        "code": "contract_invalid", "message": "input.title: too long",
-    }
-    assert dto_response.json()["error"] == {
-        "code": "contract_invalid", "message": "Domain input validation failed",
-    }
+    assert pcm_response.json()["error"]["code"] == "confirmation_protocol_upgrade_required"
+    assert dto_response.json()["error"]["code"] == "confirmation_protocol_upgrade_required"
 
 
 @pytest.mark.asyncio
 async def test_invoke_rejects_authority_fields_and_missing_confirmation():
     payload = {"tenant_key": "tenant-a", "user_id": "user-a"}
-    injected = await invoke_capability(
+    injected = await execute_verified_capability(
         "knowledge.note.search", {"query": "x", "tenant_key": "other"},
-        payload=payload, confirmed=False, idempotency_key=None,
+        payload=payload, idempotency_key=None,
     )
     assert injected["error"]["code"] == "contract_invalid"
     unconfirmed = await invoke_capability(
         "knowledge.note.create", {"markdown": "# safe"}, payload=payload,
-        confirmed=False, idempotency_key="request-123",
+        idempotency_key="request-123",
     )
-    assert unconfirmed["error"]["code"] == "contract_invalid"
+    assert unconfirmed["error"]["code"] == "confirmation_protocol_upgrade_required"
 
 
 @pytest.mark.asyncio
@@ -174,7 +171,7 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
     with patch(
         "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
     ) as create:
-        result = await invoke_capability(
+        result = await execute_verified_capability(
             "presentation.create_from_text",
             {
                 "title": "因特拉肯旅行攻略",
@@ -182,7 +179,6 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
                 "editorial_instruction": "地图主导，住宿与美食沿路线编排",
             },
             payload={"tenant_key": "tenant-a", "user_id": "user-a"},
-            confirmed=True,
             idempotency_key="interlaken-deck-1",
         )
 
@@ -212,7 +208,7 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
     with patch(
         "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
     ) as clarify_create:
-        await invoke_capability(
+        await execute_verified_capability(
             "presentation.create_from_text",
             {
                 "title": "因特拉肯旅行攻略",
@@ -220,7 +216,6 @@ async def test_text_to_presentation_uses_governed_defaults_and_delivery_contract
                 "clarification_strategy": "ask_before_planning",
             },
             payload={"tenant_key": "tenant-a", "user_id": "user-a"},
-            confirmed=True,
             idempotency_key="interlaken-deck-ask",
         )
     assert clarify_create.await_args is not None
@@ -256,11 +251,10 @@ async def test_first_class_document_capabilities_bind_format_evidence_and_review
     with patch(
         "backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)
     ) as create:
-        result = await invoke_capability(
+        result = await execute_verified_capability(
             capability_id,
             data,
             payload={"tenant_key": "tenant-a", "user_id": "user-a"},
-            confirmed=True,
             idempotency_key=f"{document_kind}-1",
         )
 
@@ -306,31 +300,53 @@ def test_workflow_creation_capabilities_accept_bounded_client_session_provenance
         ]
 
 
-def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():
+@pytest.mark.asyncio
+async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():
     events = []
-    bridge._client_context_tool_context.value = {"emit": events.append}
-    try:
-        created = json.loads(bridge._app_capability_invoke_tool({
-            "capability_id": "workflow.create",
-            "input": {"title": "QCP workflow", "description": "valid workflow description"},
-        }))
-        started = json.loads(bridge._app_capability_invoke_tool({
-            "capability_id": "workflow.start", "input": {"workflow_id": "wf-1"},
-        }))
-        presentation = json.loads(bridge._app_capability_invoke_tool({
-            "capability_id": "presentation.create_from_document",
-            "input": {
-                "source_document_id": "source-document-1",
-                "title": "QCP deck", "description": "turn source into a deck",
+    loop = asyncio.get_running_loop()
+    previous_loop = bridge._bridge_async_loop
+    bridge._bridge_async_loop = loop
+
+    def invoke_all():
+        bridge._client_context_tool_context.value = {
+            "emit": events.append,
+            "request_id": "request-proposal-bridge",
+            "client_session_id": "chat-session-bridge",
+            "identity": {
+                "tenant_key": "tenant-bridge",
+                "user_id": "user-bridge",
+                "knowledge_policy_version": "policy-bridge",
             },
-        }))
+        }
+        try:
+            created = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "workflow.create",
+                "input": {"title": "QCP workflow", "description": "valid workflow description"},
+            }))
+            started = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "workflow.start", "input": {"workflow_id": "wf-1"},
+            }))
+            presentation = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "presentation.create_from_document",
+                "input": {
+                    "source_document_id": "source-document-1",
+                    "title": "QCP deck", "description": "turn source into a deck",
+                },
+            }))
+            return created, started, presentation
+        finally:
+            bridge._client_context_tool_context.value = None
+
+    try:
+        created, started, presentation = await asyncio.to_thread(invoke_all)
     finally:
-        bridge._client_context_tool_context.value = None
+        bridge._bridge_async_loop = previous_loop
     assert {created["status"], started["status"], presentation["status"]} == {
         "awaiting_confirmation"
     }
     assert all(item["receipt"] is None for item in (created, started, presentation))
     assert [event["type"] for event in events] == ["capability.proposed"] * 3
+    assert all(event["payload"].get("confirmation_token") for event in events)
     serialized = json.dumps(events)
     assert not {"tenant_key", "user_id", "confirmed", "idempotency_key"} & set(
         key for event in events for key in event["payload"]
@@ -420,14 +436,14 @@ def test_bridge_compiles_every_implemented_capability_as_a_native_tool(monkeypat
     )
     text_presentation = registered["app_presentation_create_from_text"]
     text_schema = text_presentation["schema"]["parameters"]
+    assert implemented["presentation.create_from_document"]["version"] == "1.1.0"
+    assert implemented["presentation.create_from_text"]["version"] == "1.1.0"
     assert text_schema == implemented["presentation.create_from_text"]["input_schema"]
+    text_schema = implemented["presentation.create_from_text"]["input_schema"]
     assert text_schema["required"] == ["title", "text_material"]
     assert text_schema["properties"]["intended_use"]["default"] == "management_briefing"
     assert text_schema["properties"]["layout_style"]["default"] == "clean_professional_16_9"
-    assert text_schema["properties"]["presentation_review_gates"]["default"] == [
-        "outline",
-        "design",
-    ]
+    assert text_schema["properties"]["presentation_review_gates"]["default"] == []
     contract = implemented["presentation.create_from_text"]["workflow_contract"]
     assert contract["clarification"].startswith("Ask only")
     assert contract["confirmation_points"] == [
@@ -696,7 +712,11 @@ def test_bridge_qcp_read_path_installs_only_trusted_invocation_identity(
         trusted_identity_claims={"tenant_key": "tenant-a", "user_id": "user-a"},
     )
 
-    assert observed["identity"] == {"tenant_key": "tenant-a", "user_id": "user-a"}
+    assert observed["identity"] == {
+        "tenant_key": "tenant-a",
+        "user_id": "user-a",
+        "knowledge_policy_version": "unknown",
+    }
     assert observed["request_id"] == "trusted-request-123"
     assert observed["build_kwargs"]["qcp_enabled"] is True
     assert bridge._client_context_tool_context.value is None
@@ -710,17 +730,17 @@ async def test_knowledge_create_idempotency_preserves_first_payload(tmp_path):
     key = "request-123"
     with patch.object(sync, "_sync_root", return_value=Path(tmp_path)), \
          patch.object(sync, "enqueue_note_contribution", AsyncMock(return_value=None)):
-        first = await invoke_capability(
+        first = await execute_verified_capability(
             "knowledge.note.create", {"markdown": "# original"}, payload=payload,
-            confirmed=True, idempotency_key=key,
+            idempotency_key=key,
         )
-        replay = await invoke_capability(
+        replay = await execute_verified_capability(
             "knowledge.note.create", {"markdown": "# original"}, payload=payload,
-            confirmed=True, idempotency_key=key,
+            idempotency_key=key,
         )
-        conflict = await invoke_capability(
+        conflict = await execute_verified_capability(
             "knowledge.note.create", {"markdown": "# changed"}, payload=payload,
-            confirmed=True, idempotency_key=key,
+            idempotency_key=key,
         )
         notes = await sync.list_synced_notes(False, payload)
 
@@ -771,44 +791,44 @@ async def test_knowledge_mutation_receipts_survive_cache_clear_and_are_scoped(tm
         await create(tenant_b)
         await create(user_b)
         update = {"note_id": "note-a", "markdown": revised, "base_hash": original_hash}
-        first = await invoke_capability(
+        first = await execute_verified_capability(
             "knowledge.note.update", update, payload=tenant_a,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
         load_catalog.cache_clear()
         import backend.capability_handlers as handlers
         importlib.reload(handlers)
-        replay = await invoke_capability(
+        replay = await execute_verified_capability(
             "knowledge.note.update", update, payload=tenant_a,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
-        conflict = await invoke_capability(
+        conflict = await execute_verified_capability(
             "knowledge.note.update", {**update, "markdown": "# conflict"}, payload=tenant_a,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
-        isolated_tenant = await invoke_capability(
+        isolated_tenant = await execute_verified_capability(
             "knowledge.note.update", update, payload=tenant_b,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
-        isolated_user = await invoke_capability(
+        isolated_user = await execute_verified_capability(
             "knowledge.note.update", update, payload=user_b,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
-        archived = await invoke_capability(
+        archived = await execute_verified_capability(
             "knowledge.note.archive", {"note_id": "note-a", "base_hash": revised_hash},
-            payload=tenant_a, confirmed=True, idempotency_key="shared-key",
+            payload=tenant_a, idempotency_key="shared-key",
         )
-        archive_replay = await invoke_capability(
+        archive_replay = await execute_verified_capability(
             "knowledge.note.archive", {"note_id": "note-a", "base_hash": revised_hash},
-            payload=tenant_a, confirmed=True, idempotency_key="shared-key",
+            payload=tenant_a, idempotency_key="shared-key",
         )
-        restored = await invoke_capability(
+        restored = await execute_verified_capability(
             "knowledge.note.restore", {"note_id": "note-a"}, payload=tenant_a,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
-        restore_conflict = await invoke_capability(
+        restore_conflict = await execute_verified_capability(
             "knowledge.note.restore", {"note_id": "other-note"}, payload=tenant_a,
-            confirmed=True, idempotency_key="shared-key",
+            idempotency_key="shared-key",
         )
 
     assert first == replay and first["events"][0]["payload"]["changed"] is True

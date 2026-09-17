@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-17T11:38:00+08:00",
+  "scope": "quantumn_development_and_test_artifacts_only",
+  "batches": [
+    {
+      "source": "/Users/dengzhaoyu",
+      "staging_trash": "/Users/dengzhaoyu/.Trash/dev-test-cleanup-20260917-113435",
+      "top_level_items": 14,
+      "file_count": 5829,
+      "bytes": 542495821
+    },
+    {
+      "source": "/tmp",
+      "staging_trash": "/Users/dengzhaoyu/.Trash/quantumn-dev-test-cleanup-20260917-1138",
+      "top_level_items": 429,
+      "file_count": 178794,
+      "bytes": 24601307158
+    }
+  ],
+  "total_top_level_items": 443,
+  "total_file_count": 184623,
+  "total_bytes": 25143802979,
+  "preserved": [
+    "/Users/dengzhaoyu/Projects/ai-lab-platform-ios-document-ppt-final-20260912",
+    "/Users/dengzhaoyu/Projects/ai-lab-platform-ios-document-ppt-final-20260912/ops/acceptance/20260917-quantumn-document-ppt-release-handoff.md"
+  ],
+  "services_stopped": [
+    "local acceptance backend :8765",
+    "local Hermes bridge :9118",
+    "workflow planning worker",
+    "workflow execution worker"
+  ],
+  "source_code_deleted": false,
+  "git_tracked_deletions_created": false,
+  "deletion_mode": "dedicated cleanup staging directories only; never entire Trash"
+}

@@ -1857,9 +1857,17 @@ private struct WorkflowPlanNodeEditor: View {
 
 // MARK: - 执行与成果复核
 
+struct PresentationProductStep {
+    static let labels = ["需求确认", "全稿预览", "下载"]
+
+    static func currentIndex(executionStatus: String) -> Int {
+        executionStatus == "completed" ? 2 : 1
+    }
+}
+
 private struct PresentationWorkflowStageHeader: View {
     let currentIndex: Int
-    private let stages = ["分析", "大纲", "版式", "生成", "验收"]
+    private let stages = PresentationProductStep.labels
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
@@ -1879,7 +1887,8 @@ private struct PresentationWorkflowStageHeader: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("PPT 工作流，第 \(currentIndex + 1) 步，共 5 步：\(stages[currentIndex])")
+        .accessibilityLabel("PPT 工作流，第 \(currentIndex + 1) 步，共 3 步：\(stages[currentIndex])")
+        .accessibilityIdentifier("presentation.three-step-header")
     }
 }
 
@@ -1898,6 +1907,7 @@ private struct WorkflowExecutionView: View {
     @State private var feedback = ""
     @State private var slideNumber = 1
     @State private var showsStructuredReview = false
+    @State private var showsAdvancedExecutionDetails = false
 
     private var isPresentation: Bool { workflow.desiredOutput.lowercased().contains("pptx") }
     private var isDocument: Bool {
@@ -1921,12 +1931,27 @@ private struct WorkflowExecutionView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 if isPresentation { PresentationWorkflowStageHeader(currentIndex: presentationStageIndex) }
                 executionHeader
-                ReasoningCard(
-                    steps: executionReasoningSteps,
-                    isStreaming: ["queued", "running"].contains(execution.status),
-                    initiallyExpanded: false
-                )
-                nodeProgress
+                if isPresentation {
+                    DisclosureGroup(isExpanded: $showsAdvancedExecutionDetails) {
+                        ReasoningCard(
+                            steps: executionReasoningSteps,
+                            isStreaming: ["queued", "running"].contains(execution.status),
+                            initiallyExpanded: false
+                        )
+                        nodeProgress
+                    } label: {
+                        Label("高级详情", systemImage: "slider.horizontal.3")
+                            .font(AppTheme.Typography.supporting)
+                    }
+                    .accessibilityIdentifier("presentation.advanced-details")
+                } else {
+                    ReasoningCard(
+                        steps: executionReasoningSteps,
+                        isStreaming: ["queued", "running"].contains(execution.status),
+                        initiallyExpanded: false
+                    )
+                    nodeProgress
+                }
                 if let failure = WorkflowFailurePresentation.make(execution: execution) {
                     WorkflowFailureCard(failure: failure)
                 }
@@ -1978,13 +2003,7 @@ private struct WorkflowExecutionView: View {
     }
 
     private var presentationStageIndex: Int {
-        if execution.status == "completed" || execution.status == "awaiting_review" { return 4 }
-        if execution.status == "awaiting_approval" { return activePresentationGate == "design" ? 2 : 1 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_deck" })?.status, status != "pending" { return 3 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_design" })?.status, status != "pending" { return 2 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_outline" })?.status, status != "pending" { return 1 }
-        if execution.nodes.first(where: { $0.nodeId == "presentation_analysis" })?.status == "succeeded" { return 1 }
-        return 0
+        PresentationProductStep.currentIndex(executionStatus: execution.status)
     }
 
     private var visibleArtifacts: [WorkflowArtifactDTO] {
@@ -2114,7 +2133,7 @@ private struct WorkflowExecutionView: View {
             if isStagedOutput,
                ["awaiting_review", "completed"].contains(execution.status),
                visibleArtifacts.last != nil {
-                Button("填写结构化审核", systemImage: "checklist") {
+                Button(isPresentation ? "编辑全稿内容" : "填写结构化审核", systemImage: "checklist") {
                     showsStructuredReview = true
                 }
                 .buttonStyle(.bordered)
@@ -2138,6 +2157,10 @@ private struct WorkflowExecutionView: View {
 
     private func structuredReviewSeed(from artifact: WorkflowArtifactDTO) -> StructuredReviewDocumentDTO {
         var values: [String: JSONScalar] = ["deliverable_title": .string(artifact.title)]
+        if isPresentation {
+            values["outline_items"] = .array([])
+            values["slides"] = .array([])
+        }
         if let version = artifact.metadata.artifactVersion {
             values["artifact_version"] = .integer(Int64(version))
         }
@@ -2149,7 +2172,11 @@ private struct WorkflowExecutionView: View {
                 .init(id: "decision", label: "审核结论", type: .choice, required: true, options: ["需要修改", "可以确认"]),
                 .init(id: "artifact_version", label: "成果版本", type: .number, required: false, options: nil),
                 .init(id: "preview_checked", label: "已检查成果预览", type: .toggle, required: true, options: nil),
-            ],
+            ] + (isPresentation ? [
+                .init(id: "outline_items", label: "内容清单", type: .list, required: false, options: nil),
+                .init(id: "slides", label: "页面结构", type: .pageStructure, required: false, options: nil),
+                .init(id: "cover_asset", label: "封面素材", type: .asset, required: false, options: nil),
+            ] : []),
             values: values
         )
     }

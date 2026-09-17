@@ -3281,32 +3281,56 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             },
         })
     if capability["confirmation"] == "required":
-        proposal_id = "qcp-proposal-" + hashlib.sha256(json.dumps(
-            {"capability_id": capability_id, "input": data},
-            sort_keys=True, separators=(",", ":"),
-        ).encode()).hexdigest()[:24]
-        event = {
-            "type": "capability.proposed", "version": 1,
-            "payload": {
-                "proposal_id": proposal_id,
-                "capability_id": capability_id,
-                "input": data,
-                "summary": capability["description"],
-                "risk": capability["risk"],
-                "state": "awaiting_confirmation",
-            },
-        }
         context = getattr(_client_context_tool_context, "value", None)
-        emit = context.get("emit") if isinstance(context, dict) else None
+        identity = context.get("identity") if isinstance(context, dict) else None
+        request_id = str((context or {}).get("request_id") or "")
+        session_id = str((context or {}).get("client_session_id") or "")
+        loop = _bridge_async_loop
+        if (
+            not isinstance(identity, dict)
+            or not str(identity.get("tenant_key") or "")
+            or not str(identity.get("user_id") or "")
+            or len(request_id) < 8
+            or not session_id
+        ):
+            return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+        if loop is None or loop.is_closed() or not loop.is_running():
+            return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
+        assert isinstance(context, dict)
+        input_digest = hashlib.sha256(json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode()).hexdigest()
+        stable_key = "bridge-" + hashlib.sha256(
+            f"{capability_id}:{request_id}:{input_digest}".encode()
+        ).hexdigest()
+        from backend.services.capability_gateway import create_capability_proposal
+        proposal = create_capability_proposal(
+            capability_id,
+            data,
+            payload=dict(identity),
+            session_id=session_id,
+            request_id=request_id,
+            idempotency_key=stable_key,
+            resource_versions=data.get("resource_versions") or {},
+            renderer_version="qcp-ios@1",
+        )
+        future = None
+        try:
+            future = asyncio.run_coroutine_threadsafe(proposal, loop)
+            result = future.result(timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS)
+        except TimeoutError:
+            if future is not None:
+                future.cancel()
+            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
+        except Exception:
+            proposal.close()
+            return json.dumps({"success": False, "error": "proposal_persistence_failed"})
+        emit = context.get("emit")
         if callable(emit):
-            emit(event)
-        return json.dumps({
-            "status": "awaiting_confirmation",
-            "capability_id": capability_id,
-            "events": [event],
-            "receipt": None,
-            "error": None,
-        }, ensure_ascii=False)
+            for event in result.get("events") or []:
+                emit(event)
+        return json.dumps(result, ensure_ascii=False)
     if capability_id not in {
         "workflow.create", "workflow.open", "workflow.status", "workflow.start",
         "presentation.create_from_document", "artifact.open", "artifact.download",
@@ -3346,7 +3370,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             capability_id,
             data,
             payload=dict(identity),
-            confirmed=False,
             idempotency_key=stable_key,
         )
         try:
@@ -4165,11 +4188,29 @@ def _approved_presentation_stage(
         raise RuntimeError(f"presentation {label} gate is missing")
     node_id = str(node.get("id") or "")
     state = (run.get("nodes") or {}).get(node_id) or {}
-    binding = (run.get("approved_gate_artifacts") or {}).get(node_id) or {}
     output = str(state.get("output") or "")
+    output_hash = hashlib.sha256(output.encode()).hexdigest()
+    attempt = int(state.get("attempt") or 0)
+    approval_gate = str((node.get("parameters") or {}).get("approval_gate") or "")
+    was_human_approved = node_id in set(run.get("approved_gates") or [])
+    if not approval_gate and not was_human_approved:
+        if (
+            state.get("status") != "succeeded"
+            or not output
+            or attempt < 1
+            or state.get("content_hash") != output_hash
+        ):
+            raise RuntimeError(f"verified presentation {label} is missing, stale, or tampered")
+        return _extract_json_object(output), {
+            "approval_mode": "generated_verified",
+            "node_id": node_id,
+            "content_hash": output_hash,
+            "artifact_version": attempt,
+        }
+    binding = (run.get("approved_gate_artifacts") or {}).get(node_id) or {}
     if (node_id not in set(run.get("approved_gates") or [])
-            or int(binding.get("artifact_version") or 0) != int(state.get("attempt") or 0)
-            or hashlib.sha256(output.encode()).hexdigest() != binding.get("content_hash")):
+            or int(binding.get("artifact_version") or 0) != attempt
+            or output_hash != binding.get("content_hash")):
         raise RuntimeError(f"approved presentation {label} is missing, stale, or tampered")
     return _extract_json_object(output), dict(binding)
 
@@ -4605,8 +4646,10 @@ def _ensure_outline_claim_coverage(run: dict[str, Any], reply: str) -> str:
         for claim_id in slide.get("source_claim_ids") or []:
             candidate = str(claim_id)
             shorthand = re.fullmatch(r"C(\d{2})", candidate, re.IGNORECASE)
-            if shorthand and 1 <= int(shorthand.group(1)) <= len(claims):
-                candidate = str(claims[int(shorthand.group(1)) - 1]["claim_id"])
+            stale_ordinal = re.fullmatch(r"c(\d{3}):[0-9a-f]{12}", candidate, re.IGNORECASE)
+            ordinal = shorthand or stale_ordinal
+            if ordinal and 1 <= int(ordinal.group(1)) <= len(claims):
+                candidate = str(claims[int(ordinal.group(1)) - 1]["claim_id"])
             requested_ids.append(candidate)
         unknown = [claim_id for claim_id in requested_ids if claim_id not in known]
         if unknown:
@@ -4903,7 +4946,12 @@ def _workflow_run_sync(execution_id: str) -> None:
                 source_trace = None
             with _workflow_runs_lock:
                 run["hermes_session_id"] = hermes_sid
-                state.update({"status": "succeeded", "output": reply, "usage": node_usage})
+                state.update({
+                    "status": "succeeded",
+                    "output": reply,
+                    "content_hash": hashlib.sha256(reply.encode()).hexdigest(),
+                    "usage": node_usage,
+                })
                 artifact_kind = (
                     "final" if node.get("node_type") == "OUTPUT_FORMAT"
                     else "review" if node.get("node_type") == "FILTER_PASS"
@@ -8135,6 +8183,9 @@ def _run_agent_sync(
                 "identity": {
                     "tenant_key": str(note_context_claims.get("tenant_key") or ""),
                     "user_id": str(note_context_claims.get("user_id") or ""),
+                    "knowledge_policy_version": str(
+                        note_context_claims.get("policy_version") or "unknown"
+                    ),
                 },
                 "client_session_id": transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],

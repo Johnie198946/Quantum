@@ -270,7 +270,7 @@ capabilities:
     tests: [tests/test_product_capabilities.py]
     implementation_status: implemented
   - id: presentation.create_from_document
-    version: 1.0.0
+    version: 1.1.0
     domain: presentation
     description: Create a presentation workflow bound to an existing parsed document.
     positive_examples: ["Create a PPT from this uploaded document"]
@@ -291,7 +291,7 @@ capabilities:
     tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
     implementation_status: implemented
   - id: presentation.create_from_text
-    version: 1.0.0
+    version: 1.1.0
     domain: presentation
     description: Create an editable PPTX workflow directly from user-provided text, using governed defaults and returning the workflow that will expose its rendered preview and authenticated download.
     positive_examples: ["Create a PPT about an Interlaken travel guide from these notes", "把这些文字材料直接做成因特拉肯旅行攻略 PPT"]
@@ -307,7 +307,7 @@ capabilities:
         layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
         slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: [outline, design]}
+        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: []}
         source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false

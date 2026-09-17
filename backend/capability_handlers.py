@@ -229,7 +229,7 @@ async def _presentation_create_from_text(
     assert key
     presentation_review_gates = data.get("presentation_review_gates")
     if presentation_review_gates is None:
-        presentation_review_gates = ["outline", "design"]
+        presentation_review_gates = []
     normalized = {
         "audience": data.get("audience") or "general_business_audience",
         "intended_use": data.get("intended_use") or "management_briefing",

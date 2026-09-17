@@ -68,7 +68,7 @@ def build_presentation_plan(
     snapshot = workflow.requirements_snapshot or {}
     configured_review_gates = snapshot.get("presentation_review_gates")
     if configured_review_gates is None:
-        configured_review_gates = ["outline", "design"]
+        configured_review_gates = []
     if (
         not isinstance(configured_review_gates, list)
         or any(gate not in {"outline", "design"} for gate in configured_review_gates)

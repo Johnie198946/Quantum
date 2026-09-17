@@ -473,14 +473,57 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
     public let input: CapabilityProposalInput
     public let summary: String
     public let risk: String
+    /// One-time server token. Decoded from the live event and never persisted.
+    public var confirmationToken: String?
+    public let expiresAt: String?
     public var state: CapabilityProposalState = .awaitingConfirmation
     public var errorMessage: String?
 
     enum CodingKeys: String, CodingKey {
-        case id = "proposal_id"
-        case capabilityId = "capability_id"
+        case id
+        case proposalId
+        case proposalIDSnake = "proposal_id"
+        case capabilityId
+        case capabilityIDSnake = "capability_id"
         case input, summary, risk, state
-        case errorMessage = "error_message"
+        case confirmationToken
+        case confirmationTokenSnake = "confirmation_token"
+        case expiresAt
+        case expiresAtSnake = "expires_at"
+        case errorMessage
+        case errorMessageSnake = "error_message"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(String.self, forKey: .id)
+            ?? values.decodeIfPresent(String.self, forKey: .proposalId)
+            ?? values.decode(String.self, forKey: .proposalIDSnake)
+        capabilityId = try values.decodeIfPresent(String.self, forKey: .capabilityId)
+            ?? values.decode(String.self, forKey: .capabilityIDSnake)
+        input = try values.decode(CapabilityProposalInput.self, forKey: .input)
+        summary = try values.decode(String.self, forKey: .summary)
+        risk = try values.decode(String.self, forKey: .risk)
+        confirmationToken = try values.decodeIfPresent(String.self, forKey: .confirmationToken)
+            ?? values.decodeIfPresent(String.self, forKey: .confirmationTokenSnake)
+        expiresAt = try values.decodeIfPresent(String.self, forKey: .expiresAt)
+            ?? values.decodeIfPresent(String.self, forKey: .expiresAtSnake)
+        state = try values.decodeIfPresent(CapabilityProposalState.self, forKey: .state) ?? .awaitingConfirmation
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+            ?? values.decodeIfPresent(String.self, forKey: .errorMessageSnake)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .proposalIDSnake)
+        try values.encode(capabilityId, forKey: .capabilityIDSnake)
+        try values.encode(input, forKey: .input)
+        try values.encode(summary, forKey: .summary)
+        try values.encode(risk, forKey: .risk)
+        try values.encodeIfPresent(expiresAt, forKey: .expiresAtSnake)
+        try values.encode(state, forKey: .state)
+        try values.encodeIfPresent(errorMessage, forKey: .errorMessageSnake)
+        // confirmationToken is intentionally excluded from durable chat history.
     }
 
     public var idempotencyKey: String { id }
@@ -488,8 +531,8 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
     public var restoredForRetry: Self {
         guard state == .applying else { return self }
         var restored = self
-        restored.state = .awaitingConfirmation
-        restored.errorMessage = nil
+        restored.state = confirmationToken == nil ? .failed : .awaitingConfirmation
+        restored.errorMessage = confirmationToken == nil ? "确认凭证已失效，请重新发起操作" : nil
         return restored
     }
 }

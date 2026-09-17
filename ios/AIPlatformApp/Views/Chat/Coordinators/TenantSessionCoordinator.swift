@@ -3439,91 +3439,34 @@ public final class TenantSessionCoordinator: ObservableObject {
         let sourceClientSessionId = messages[messageIndex].sessionId
         Task { [weak self] in
             do {
+                guard let confirmationToken = proposal.confirmationToken, !confirmationToken.isEmpty else {
+                    throw APIError.network("确认凭证已失效，请重新发起操作")
+                }
+                let response: QCPInvokeResponseDTO<JSONScalar> = try await capabilityClient.confirm(
+                    proposalId: proposal.id,
+                    confirmationToken: confirmationToken,
+                    sessionId: sourceClientSessionId
+                )
+                guard response.status == "completed" else {
+                    throw APIError.network(response.error?.message ?? "能力调用失败")
+                }
                 var completedWorkflow: WorkflowDTO?
                 var pendingWorkflowId: String?
-                switch proposal.capabilityId {
-                case QCPCapabilityID.workflowCreate:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: WorkflowCreateRequestDTO(
-                            title: proposal.input.title ?? "",
-                            description: proposal.input.description ?? "",
-                            desiredOutput: proposal.input.desiredOutput ?? "",
-                            sourceDocumentId: proposal.input.sourceDocumentId,
-                            outputKind: proposal.input.outputKind ?? "general",
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.presentationCreateFromDocument:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: PresentationCreateRequestDTO(
-                            sourceDocumentId: proposal.input.sourceDocumentId ?? "",
-                            title: proposal.input.title ?? "",
-                            description: proposal.input.description ?? "",
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.presentationCreateFromText:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: PresentationCreateFromTextRequestDTO(
-                            title: proposal.input.title ?? "",
-                            textMaterial: proposal.input.textMaterial ?? "",
-                            audience: proposal.input.audience,
-                            intendedUse: proposal.input.intendedUse,
-                            layoutStyle: proposal.input.layoutStyle,
-                            slideCount: proposal.input.slideCount,
-                            clarificationStrategy: proposal.input.clarificationStrategy,
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.documentWordCreateFromText,
-                     QCPCapabilityID.researchReportCreateFromText,
-                     QCPCapabilityID.academicPaperCreateFromText:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: DocumentCreateFromTextRequestDTO(
-                            title: proposal.input.title ?? "",
-                            textMaterial: proposal.input.textMaterial ?? "",
-                            researchQuestion: proposal.input.researchQuestion,
-                            thesis: proposal.input.thesis,
-                            audience: proposal.input.audience,
-                            language: proposal.input.language,
-                            citationStyle: proposal.input.citationStyle,
-                            evidencePolicy: proposal.input.evidencePolicy,
-                            clarificationStrategy: proposal.input.clarificationStrategy,
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.workflowStart:
-                    let response: QCPInvokeResponseDTO<WorkflowExecutionDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: WorkflowStartRequestDTO(workflowId: proposal.input.workflowId ?? ""),
-                        confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", response.events.first != nil
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = nil
-                    pendingWorkflowId = proposal.input.workflowId
-                default:
-                    throw APIError.network("不支持的确认操作")
+                for event in response.events {
+                    switch event.type {
+                    case "workflow.created", "presentation.created", "document.created":
+                        let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
+                        completedWorkflow = created.workflow
+                        pendingWorkflowId = created.workflow.id
+                    case "workflow.started":
+                        _ = try? Self.decodeCapabilityPayload(
+                            event.payload, as: WorkflowExecutionDTO.self
+                        )
+                        pendingWorkflowId = proposal.input.workflowId
+                    default:
+                        // Event type and renderer registry, not capability ID, own UI routing.
+                        _ = RendererRegistry.route(for: event.type, version: event.version)
+                    }
                 }
                 guard let self, self.tenantEpoch == expectedEpoch else { return }
                 if let completedWorkflow {
@@ -3545,6 +3488,13 @@ public final class TenantSessionCoordinator: ObservableObject {
                 )
             }
         }
+    }
+
+    private static func decodeCapabilityPayload<T: Decodable>(
+        _ payload: JSONScalar, as type: T.Type = T.self
+    ) throws -> T {
+        let data = try JSONEncoder().encode(payload)
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private func updateCapabilityProposal(

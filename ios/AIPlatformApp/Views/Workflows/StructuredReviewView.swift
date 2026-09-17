@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum StructuredReviewValueRestorer {
+    static func value(fieldID: String, from document: StructuredReviewDocumentDTO) -> JSONScalar? {
+        document.values[fieldID]
+    }
+}
+
 @MainActor
 final class StructuredReviewViewModel: ObservableObject {
     @Published var document: StructuredReviewDocumentDTO
@@ -13,6 +19,7 @@ final class StructuredReviewViewModel: ObservableObject {
     let reviewKey: String
     let schemaId: String
     private let initialDocument: StructuredReviewDocumentDTO
+    private var savedDocument: StructuredReviewDocumentDTO
     private let apiClient: APIClient
     private let scope: WorkflowActivityCoordinator.Scope?
     private let isScopeCurrent: (WorkflowActivityCoordinator.Scope) -> Bool
@@ -31,6 +38,7 @@ final class StructuredReviewViewModel: ObservableObject {
         self.reviewKey = reviewKey
         self.schemaId = schemaId
         self.initialDocument = initialDocument
+        self.savedDocument = initialDocument
         self.document = initialDocument
         self.apiClient = apiClient
         self.scope = scope
@@ -41,10 +49,7 @@ final class StructuredReviewViewModel: ObservableObject {
 
     var completedFieldCount: Int {
         document.fields.filter { field in
-            guard let value = document.values[field.id] else { return false }
-            if case .null = value { return false }
-            if case .string(let text) = value { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            return true
+            hasValue(document.values[field.id], for: field.type)
         }.count
     }
 
@@ -156,13 +161,50 @@ final class StructuredReviewViewModel: ObservableObject {
         errorMessage = nil
     }
 
+    func restoreSavedValue(fieldID: String) {
+        if let savedValue = StructuredReviewValueRestorer.value(fieldID: fieldID, from: savedDocument) {
+            document.values[fieldID] = savedValue
+        } else {
+            document.values.removeValue(forKey: fieldID)
+        }
+        errorMessage = nil
+    }
+
     private var missingRequiredFields: [String] {
         document.fields.filter { field in
-            guard field.required, let value = document.values[field.id] else { return field.required }
-            if case .null = value { return true }
-            if case .string(let text) = value { return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            return false
+            field.required && !hasValue(document.values[field.id], for: field.type)
         }.map(\.label)
+    }
+
+    private func hasValue(_ value: JSONScalar?, for type: StructuredReviewFieldType) -> Bool {
+        guard let value else { return false }
+        switch value {
+        case .null:
+            return false
+        case .string(let text):
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .array(let items):
+            guard !items.isEmpty else { return false }
+            if type == .list {
+                return items.contains {
+                    if case .string(let text) = $0 {
+                        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
+                    return false
+                }
+            }
+            return true
+        case .object(let object):
+            if type == .asset {
+                guard case .string(let name) = object["name"],
+                      case .string(let url) = object["url"] else { return false }
+                return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return !object.isEmpty
+        default:
+            return true
+        }
     }
 
     private func createAfterNotFound() async {
@@ -198,6 +240,7 @@ final class StructuredReviewViewModel: ObservableObject {
         }
         revision = response.value
         document = response.value.document
+        savedDocument = response.value.document
         self.etag = etag
         conflict = nil
         errorMessage = nil
@@ -211,7 +254,7 @@ public struct StructuredReviewView: View {
     @MainActor public init(
         workflowId: String,
         reviewKey: String,
-        schemaId: String = "workflow.structured-review.v1",
+        schemaId: String = "workflow.structured-review.v2",
         initialDocument: StructuredReviewDocumentDTO,
         scope: WorkflowActivityCoordinator.Scope? = nil
     ) {
@@ -353,6 +396,111 @@ public struct StructuredReviewView: View {
                 .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget, alignment: .leading)
                 .accessibilityLabel(field.label)
                 .accessibilityIdentifier("structured-review-field-\(field.id)")
+        case .list:
+            listEditor(field)
+        case .pageStructure:
+            pageStructureEditor(field)
+        case .asset:
+            assetEditor(field)
+        }
+    }
+
+    private func listEditor(_ field: StructuredReviewFieldDTO) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            ForEach(Array(arrayValue(field.id).indices), id: \.self) { index in
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    TextField("第 \(index + 1) 项", text: arrayStringBinding(field.id, index: index))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minHeight: AppTheme.Metrics.inputHeight)
+                        .accessibilityIdentifier("structured-review-field-\(field.id)-item-\(index)")
+                    Button("删除", systemImage: "minus.circle", role: .destructive) {
+                        removeArrayItem(field.id, index: index)
+                    }
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: AppTheme.Metrics.minimumTouchTarget, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                    .accessibilityLabel("删除\(field.label)第 \(index + 1) 项")
+                }
+            }
+            Button("添加一项", systemImage: "plus") {
+                appendArrayItem(field.id, value: .string(""))
+            }
+            .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+            .accessibilityIdentifier("structured-review-field-\(field.id)-add")
+        }
+    }
+
+    private func pageStructureEditor(_ field: StructuredReviewFieldDTO) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            ForEach(Array(arrayValue(field.id).indices), id: \.self) { index in
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    HStack {
+                        Text("第 \(index + 1) 页").font(AppTheme.Typography.supporting)
+                        Spacer()
+                        Button("上移", systemImage: "arrow.up") { moveArrayItem(field.id, from: index, offset: -1) }
+                            .labelStyle(.iconOnly)
+                            .disabled(index == 0)
+                        Button("下移", systemImage: "arrow.down") { moveArrayItem(field.id, from: index, offset: 1) }
+                            .labelStyle(.iconOnly)
+                            .disabled(index == arrayValue(field.id).count - 1)
+                        Button("删除", systemImage: "trash", role: .destructive) { removeArrayItem(field.id, index: index) }
+                            .labelStyle(.iconOnly)
+                    }
+                    .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+                    TextField("页面标题", text: pageStringBinding(field.id, index: index, key: "title"))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("structured-review-field-\(field.id)-page-\(index)-title")
+                    TextField("页面摘要", text: pageStringBinding(field.id, index: index, key: "summary"), axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...5)
+                        .accessibilityIdentifier("structured-review-field-\(field.id)-page-\(index)-summary")
+                }
+                .padding(AppTheme.Spacing.md)
+                .background(AppTheme.Colors.surfaceTint)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+            }
+            Button("添加页面", systemImage: "plus") {
+                appendArrayItem(field.id, value: .object([
+                    "id": .string("page-\(UUID().uuidString.lowercased())"),
+                    "title": .string("新页面"),
+                    "summary": .string(""),
+                ]))
+            }
+            .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+            .accessibilityIdentifier("structured-review-field-\(field.id)-add")
+        }
+    }
+
+    private func assetEditor(_ field: StructuredReviewFieldDTO) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            TextField("素材名称", text: objectStringBinding(field.id, key: "name"))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("structured-review-field-\(field.id)-name")
+            TextField("素材 URL", text: objectStringBinding(field.id, key: "url"))
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .accessibilityIdentifier("structured-review-field-\(field.id)-url")
+            TextField("来源 URL", text: objectStringBinding(field.id, key: "source_url"))
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .accessibilityIdentifier("structured-review-field-\(field.id)-source-url")
+            HStack(spacing: AppTheme.Spacing.md) {
+                if let url = assetURL(field.id) {
+                    Link("预览素材", destination: url)
+                        .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+                        .accessibilityIdentifier("structured-review-field-\(field.id)-preview")
+                }
+                Button("恢复已保存素材", systemImage: "arrow.uturn.backward") {
+                    focusedFieldID = nil
+                    model.restoreSavedValue(fieldID: field.id)
+                }
+                .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .accessibilityIdentifier("structured-review-field-\(field.id)-restore")
+            }
+            Text("替换后仍需服务端校验 MIME、哈希和许可记录。")
+                .font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.textSecondary)
         }
     }
 
@@ -445,12 +593,108 @@ public struct StructuredReviewView: View {
         )
     }
 
+    private func arrayValue(_ id: String) -> [JSONScalar] {
+        if case .array(let value) = model.document.values[id] { return value }
+        return []
+    }
+
+    private func arrayStringBinding(_ id: String, index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                let values = arrayValue(id)
+                guard values.indices.contains(index), case .string(let value) = values[index] else { return "" }
+                return value
+            },
+            set: { value in
+                var values = arrayValue(id)
+                guard values.indices.contains(index) else { return }
+                values[index] = .string(value)
+                model.document.values[id] = .array(values)
+            }
+        )
+    }
+
+    private func pageStringBinding(_ id: String, index: Int, key: String) -> Binding<String> {
+        Binding(
+            get: {
+                let values = arrayValue(id)
+                guard values.indices.contains(index),
+                      case .object(let page) = values[index],
+                      case .string(let value) = page[key] else { return "" }
+                return value
+            },
+            set: { value in
+                var values = arrayValue(id)
+                guard values.indices.contains(index), case .object(var page) = values[index] else { return }
+                page[key] = .string(value)
+                values[index] = .object(page)
+                model.document.values[id] = .array(values)
+            }
+        )
+    }
+
+    private func objectStringValue(_ id: String, key: String) -> String {
+        guard case .object(let object) = model.document.values[id],
+              case .string(let value) = object[key] else { return "" }
+        return value
+    }
+
+    private func assetURL(_ id: String) -> URL? {
+        guard let url = URL(string: objectStringValue(id, key: "url")),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
+
+    private func objectStringBinding(_ id: String, key: String) -> Binding<String> {
+        Binding(
+            get: {
+                objectStringValue(id, key: key)
+            },
+            set: { value in
+                var object: [String: JSONScalar]
+                if case .object(let current) = model.document.values[id] {
+                    object = current
+                } else {
+                    object = ["id": .string("asset-\(UUID().uuidString.lowercased())")]
+                }
+                object[key] = .string(value)
+                model.document.values[id] = .object(object)
+            }
+        )
+    }
+
+    private func appendArrayItem(_ id: String, value: JSONScalar) {
+        var values = arrayValue(id)
+        values.append(value)
+        model.document.values[id] = .array(values)
+    }
+
+    private func removeArrayItem(_ id: String, index: Int) {
+        var values = arrayValue(id)
+        guard values.indices.contains(index) else { return }
+        values.remove(at: index)
+        model.document.values[id] = .array(values)
+    }
+
+    private func moveArrayItem(_ id: String, from index: Int, offset: Int) {
+        var values = arrayValue(id)
+        let destination = index + offset
+        guard values.indices.contains(index), values.indices.contains(destination) else { return }
+        values.swapAt(index, destination)
+        model.document.values[id] = .array(values)
+    }
+
     private func display(_ value: JSONScalar?) -> String {
         switch value {
         case .string(let value): return value
         case .integer(let value): return value.formatted()
         case .number(let value): return value.formatted()
         case .bool(let value): return value ? "是" : "否"
+        case .array(let value): return "\(value.count) 项"
+        case .object(let value):
+            if case .string(let name) = value["name"] { return name }
+            return "\(value.count) 个字段"
         case .null, nil: return "未填写"
         }
     }

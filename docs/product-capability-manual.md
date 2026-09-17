@@ -304,8 +304,8 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `paper.academic.create_from_text@1.0.0` | paper | write | required | required | `document.created` | `workflow@1` | implemented |
-| `presentation.create_from_document@1.0.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
-| `presentation.create_from_text@1.0.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
+| `presentation.create_from_document@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
+| `presentation.create_from_text@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `report.research.create_from_text@1.0.0` | report | write | required | required | `document.created` | `workflow@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
 | `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |

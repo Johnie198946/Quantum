@@ -603,6 +603,46 @@ def test_bridge_outline_claim_coverage_rejects_unknown_claims_before_user_approv
     )
 
 
+def test_bridge_outline_claim_coverage_normalizes_stale_ordinal_hash():
+    import scripts.hermes_bridge as bridge
+    from backend.services.presentation_source_trace import build_source_claims
+
+    source_text = "第一条事实。第二条事实。"
+    source_id = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    run = {
+        "source_material": {
+            "text": source_text,
+            "source_id": source_id,
+            "source_client_session_id": "ios-session-1",
+        }
+    }
+    repaired = json.loads(
+        bridge._ensure_outline_claim_coverage(
+            run,
+            json.dumps(
+                {
+                    "title": "测试",
+                    "slides": [
+                        {
+                            "layout": "title",
+                            "title": "封面",
+                            "source_claim_ids": ["c001:9b2b75bb0f78"],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
+    claims = build_source_claims(
+        source_text,
+        source_id=source_id,
+        source_client_session_id="ios-session-1",
+        approval_state="approved",
+    )
+    assert repaired["slides"][0]["source_claim_ids"][0] == claims[0]["claim_id"]
+
+
 def test_bridge_distributes_missing_istanbul_claims_without_appendix_slides():
     import scripts.hermes_bridge as bridge
     from backend.services.presentation_source_trace import build_source_claims
@@ -1147,6 +1187,85 @@ async def test_workflow_projection_rechecks_approved_design_against_final_theme(
         )
 
 
+@pytest.mark.asyncio
+async def test_workflow_projection_accepts_only_matching_ungated_stage_artifacts(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    import backend.services.workflow_artifacts as artifacts
+    import backend.services.workflow_executor as executor
+
+    design_text = json.dumps({
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "sample"}],
+    })
+    outline_text = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+    (tmp_path / "design.json").write_text(design_text)
+    (tmp_path / "outline.json").write_text(outline_text)
+    design_hash = hashlib.sha256(design_text.encode()).hexdigest()
+    outline_hash = hashlib.sha256(outline_text.encode()).hexdigest()
+    design_node = SimpleNamespace(id="node-design", node_id="presentation_design")
+    outline_node = SimpleNamespace(id="node-outline", node_id="presentation_outline")
+    design = SimpleNamespace(
+        execution_id="exec-generated", node_run_id=design_node.id,
+        content_hash=design_hash, relative_path="design.json",
+        metadata_json={"artifact_version": 1, "render_type": "presentation_design"},
+    )
+    outline = SimpleNamespace(
+        execution_id="exec-generated", node_run_id=outline_node.id,
+        content_hash=outline_hash, relative_path="outline.json",
+        metadata_json={"artifact_version": 1, "render_type": "presentation_outline"},
+    )
+
+    class DB:
+        def __init__(self):
+            self.artifacts = iter([design, outline])
+
+        async def scalar(self, query):
+            return next(self.artifacts)
+
+    monkeypatch.setattr(artifacts, "run_root", lambda execution: tmp_path)
+    monkeypatch.setattr(
+        executor,
+        "_plan",
+        lambda db, execution: asyncio.sleep(0, result=SimpleNamespace(dsl={"nodes": [
+            {"id": "presentation_design", "parameters": {"output_format": "presentation_design"}},
+            {"id": "presentation_outline", "parameters": {"output_format": "presentation_outline"}},
+        ]})),
+    )
+    monkeypatch.setattr(
+        executor,
+        "_nodes",
+        lambda db, execution_id: asyncio.sleep(0, result={
+            design_node.node_id: design_node,
+            outline_node.node_id: outline_node,
+        }),
+    )
+    execution = SimpleNamespace(id="exec-generated", plan_id="plan-generated")
+    final = {
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "deck"}],
+    }
+    await executor._assert_approved_presentation_projection(
+        DB(), execution,
+        {
+            "approved_design": {
+                "approval_mode": "generated_verified", "node_id": design_node.node_id,
+                "content_hash": design_hash, "artifact_version": 1,
+            },
+            "approved_outline": {
+                "approval_mode": "generated_verified", "node_id": outline_node.node_id,
+                "content_hash": outline_hash, "artifact_version": 1,
+            },
+            "content": json.dumps(final),
+        },
+        "presentation",
+    )
+
+
 def test_final_presentation_requires_approved_outline_binding_and_structure():
     import scripts.hermes_bridge as bridge
 
@@ -1209,6 +1328,59 @@ def test_final_presentation_requires_approved_outline_binding_and_structure():
     assert len(rebuilt_slides) == len(json.loads(outline)["slides"])
     assert rebuilt_slides[1]["layout"] == "bullets"
     assert rebuilt_slides[1]["bullets"] == json.loads(outline)["slides"][1]["key_points"]
+    run["nodes"]["presentation_outline"]["output"] = outline + " "
+    with pytest.raises(RuntimeError, match="outline.*tampered"):
+        bridge._bind_approved_presentation_inputs(run, final)
+
+
+def test_default_presentation_binds_verified_ungated_outline_and_design():
+    import scripts.hermes_bridge as bridge
+
+    outline = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+    design = json.dumps({
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "sample"}],
+    })
+    run = {
+        "plan": {"nodes": [
+            {"id": "presentation_outline", "parameters": {"output_format": "presentation_outline"}},
+            {"id": "presentation_design", "parameters": {"output_format": "presentation_design"}},
+        ]},
+        "nodes": {
+            "presentation_outline": {
+                "status": "succeeded", "attempt": 1, "output": outline,
+                "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+            },
+            "presentation_design": {
+                "status": "succeeded", "attempt": 1, "output": design,
+                "content_hash": hashlib.sha256(design.encode()).hexdigest(),
+            },
+        },
+        "approved_gates": [],
+        "approved_gate_artifacts": {},
+    }
+    final = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+
+    _, design_binding, outline_binding = bridge._bind_approved_presentation_inputs(run, final)
+
+    assert design_binding == {
+        "approval_mode": "generated_verified",
+        "node_id": "presentation_design",
+        "content_hash": hashlib.sha256(design.encode()).hexdigest(),
+        "artifact_version": 1,
+    }
+    assert outline_binding == {
+        "approval_mode": "generated_verified",
+        "node_id": "presentation_outline",
+        "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+        "artifact_version": 1,
+    }
     run["nodes"]["presentation_outline"]["output"] = outline + " "
     with pytest.raises(RuntimeError, match="outline.*tampered"):
         bridge._bind_approved_presentation_inputs(run, final)
@@ -1349,8 +1521,8 @@ def test_presentation_scenario_defaults_to_full_draft_review_and_binary_deck():
     assert plan is not None
     assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
         None,
-        "outline",
-        "design",
+        None,
+        None,
         None,
     ]
     assert plan["version"] == "3.0.0"
@@ -1390,6 +1562,28 @@ def test_presentation_risk_review_gates_require_explicit_policy():
     snapshot["presentation_review_gates"] = ["unknown"]
     with pytest.raises(ValueError, match="presentation_review_gates"):
         build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+
+
+def test_presentation_default_path_has_no_intermediate_approval_gates():
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "Default three-step deck",
+            "description": "Requirements are already confirmed.",
+            "requirements_snapshot": {
+                "scenario_id": "presentation-generation",
+                "text_material": "Approved source material.",
+            },
+        },
+    )()
+
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+
+    assert plan is not None
+    assert [
+        node["parameters"].get("approval_gate") for node in plan["nodes"]
+    ] == [None, None, None, None]
 
 
 def test_presentation_scenario_without_upload_researches_user_topic_first():

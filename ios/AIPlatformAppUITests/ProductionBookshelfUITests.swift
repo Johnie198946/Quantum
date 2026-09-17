@@ -865,31 +865,81 @@ final class StructuredReviewLocalE2EUITests: XCTestCase {
             "fields": [
                 ["id": "title", "label": "标题", "type": "text", "required": true],
                 ["id": "summary", "label": "摘要", "type": "textarea", "required": true],
+                ["id": "agenda", "label": "内容清单", "type": "list", "required": false],
+                ["id": "pages", "label": "页面结构", "type": "page_structure", "required": false],
+                ["id": "hero", "label": "封面素材", "type": "asset", "required": false],
             ],
-            "values": ["title": "伊斯坦布尔", "summary": "初稿"],
+            "values": [
+                "title": "伊斯坦布尔",
+                "summary": "初稿",
+                "agenda": [],
+                "pages": [],
+                "hero": ["id": "asset-original", "name": "原素材", "url": "https://example.invalid/original.jpg"],
+            ],
         ]
         _ = try await request(
             "POST", path: path,
-            body: ["schema_id": "workflow.structured-review.v1", "document": initialDocument]
+            body: ["schema_id": "workflow.structured-review.v2", "document": initialDocument]
         )
 
         let app = launchApp(workflowID: workflowID)
         let title = app.textFields["标题"]
         XCTAssertTrue(title.waitForExistence(timeout: 20))
         replace(title, with: "本地版本")
-        app.buttons["保存审核"].tap()
+        title.typeKey(.return, modifierFlags: [])
+        let addAgenda = app.buttons["structured-review-field-agenda-add"]
+        XCTAssertTrue(scrollUntilHittable(addAgenda, in: app, timeout: 20))
+        addAgenda.tap()
+        let agendaItem = app.textFields["structured-review-field-agenda-item-0"]
+        XCTAssertTrue(agendaItem.waitForExistence(timeout: 10))
+        replace(agendaItem, with: "第一页结论")
+        agendaItem.typeKey(.return, modifierFlags: [])
+        let addPage = app.buttons["structured-review-field-pages-add"]
+        XCTAssertTrue(scrollUntilHittable(addPage, in: app, timeout: 20))
+        addPage.tap()
+        let pageTitle = app.textFields["structured-review-field-pages-page-0-title"]
+        XCTAssertTrue(pageTitle.waitForExistence(timeout: 10))
+        replace(pageTitle, with: "开场页")
+        pageTitle.typeKey(.return, modifierFlags: [])
+        let assetName = app.textFields["structured-review-field-hero-name"]
+        XCTAssertTrue(scrollUntilHittable(assetName, in: app, timeout: 20))
+        replace(assetName, with: "hero.jpg")
+        assetName.typeKey(.return, modifierFlags: [])
+        let assetURL = app.textFields["structured-review-field-hero-url"]
+        replace(assetURL, with: "https://example.invalid/hero.jpg")
+        assetURL.typeKey(.return, modifierFlags: [])
+        let assetPreview = app.descendants(matching: .any)["structured-review-field-hero-preview"]
+        XCTAssertTrue(assetPreview.waitForExistence(timeout: 10))
+        let restoreAsset = app.buttons["structured-review-field-hero-restore"]
+        XCTAssertTrue(restoreAsset.waitForExistence(timeout: 10))
+        restoreAsset.tap()
+        XCTAssertEqual(assetName.value as? String, "原素材")
+        XCTAssertEqual(assetURL.value as? String, "https://example.invalid/original.jpg")
+        replace(assetName, with: "hero.jpg")
+        assetName.typeKey(.return, modifierFlags: [])
+        replace(assetURL, with: "https://example.invalid/hero.jpg")
+        assetURL.typeKey(.return, modifierFlags: [])
+        let save = app.buttons["structured-review-save"]
+        XCTAssertTrue(scrollUntilHittable(save, in: app, timeout: 20))
+        save.tap()
         XCTAssertTrue(app.staticTexts["版本 2"].waitForExistence(timeout: 20))
 
         let head = try await request("GET", path: path)
         let remoteDocument: [String: Any] = [
             "title": "可编辑全稿预览",
             "fields": initialDocument["fields"] as Any,
-            "values": ["title": "服务端版本", "summary": "远端并发修改"],
+            "values": [
+                "title": "服务端版本",
+                "summary": "远端并发修改",
+                "agenda": ["第一页结论"],
+                "pages": [["id": "page-1", "title": "开场页", "summary": ""]],
+                "hero": ["id": "hero", "name": "hero.jpg", "url": "https://example.invalid/hero.jpg"],
+            ],
         ]
         _ = try await request(
             "PUT", path: path,
             headers: ["If-Match": try XCTUnwrap(head.etag)],
-            body: ["schema_id": "workflow.structured-review.v1", "document": remoteDocument]
+            body: ["schema_id": "workflow.structured-review.v2", "document": remoteDocument]
         )
 
         replace(title, with: "本地迟到版本")
@@ -902,12 +952,21 @@ final class StructuredReviewLocalE2EUITests: XCTestCase {
         replace(title, with: "持久化终稿")
         app.buttons["保存审核"].tap()
         XCTAssertTrue(app.staticTexts["版本 4"].waitForExistence(timeout: 20))
+        app.buttons["撤销"].tap()
+        XCTAssertTrue(app.staticTexts["版本 5"].waitForExistence(timeout: 20))
+        XCTAssertTrue(waitUntil(timeout: 20) { (title.value as? String) == "服务端版本" })
 
         app.terminate()
         let relaunched = launchApp(workflowID: workflowID)
         let persisted = relaunched.textFields["标题"]
         XCTAssertTrue(persisted.waitForExistence(timeout: 20))
-        XCTAssertEqual(persisted.value as? String, "持久化终稿")
+        XCTAssertEqual(persisted.value as? String, "服务端版本")
+        let persistedAgenda = relaunched.textFields["structured-review-field-agenda-item-0"]
+        XCTAssertTrue(scrollUntilHittable(persistedAgenda, in: relaunched, timeout: 20))
+        XCTAssertEqual(persistedAgenda.value as? String, "第一页结论")
+        let persistedPageTitle = relaunched.textFields["structured-review-field-pages-page-0-title"]
+        XCTAssertTrue(scrollUntilHittable(persistedPageTitle, in: relaunched, timeout: 20))
+        XCTAssertEqual(persistedPageTitle.value as? String, "开场页")
     }
 
     private func launchApp(workflowID: String) -> XCUIApplication {
@@ -925,6 +984,15 @@ final class StructuredReviewLocalE2EUITests: XCTestCase {
         field.tap()
         field.typeKey("a", modifierFlags: .command)
         field.typeText(value)
+    }
+
+    private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isHittable { return true }
+            app.swipeUp()
+        }
+        return element.exists && element.isHittable
     }
 
     private func waitUntil(timeout: TimeInterval, condition: () -> Bool) -> Bool {
@@ -1482,7 +1550,7 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         try completeFreshIstanbulWorkflow()
     }
 
-    func testCleanRoomIstanbulPresentationCompletesEveryGateAndDownloadsPPTX() throws {
+    func testCleanRoomIstanbulPresentationCompletesThreeStepFlowAndDownloadsPPTX() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["LIVE_ACCEPTANCE"] == "1" else {
             throw XCTSkip("Set LIVE_ACCEPTANCE=1 for the production clean-room test.")
@@ -1600,9 +1668,22 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 120) { startTask.exists && startTask.isHittable }, "Agent 已构建但启动入口未稳定显示。")
         startTask.tap()
 
-        try reviewGate(approveButton: "确认大纲", timeout: 900, screenshotName: "istanbul-outline-review")
-        try reviewGate(approveButton: "确认并生成全稿", timeout: 900, screenshotName: "istanbul-design-review")
-        try reviewGate(approveButton: "确认并下载", timeout: 900, screenshotName: "istanbul-full-deck-preview")
+        XCTAssertTrue(
+            app.otherElements["presentation.three-step-header"].waitForExistence(timeout: 120),
+            "PPT 任务没有显示三步产品路径。"
+        )
+        let confirmDownload = app.buttons["确认并下载"]
+        let confirmOutline = app.buttons["确认大纲"]
+        let confirmDesign = app.buttons["确认并生成全稿"]
+        XCTAssertTrue(
+            waitUntil(timeout: 900) {
+                confirmDownload.exists || confirmOutline.exists || confirmDesign.exists
+            },
+            "默认路径没有进入全稿预览。"
+        )
+        XCTAssertFalse(confirmOutline.exists, "默认路径不应要求用户确认内部大纲节点。")
+        XCTAssertFalse(confirmDesign.exists, "默认路径不应要求用户确认内部设计节点。")
+        try reviewGate(approveButton: "确认并下载", timeout: 30, screenshotName: "istanbul-full-deck-preview")
         verifyCompletedPPTX()
     }
 

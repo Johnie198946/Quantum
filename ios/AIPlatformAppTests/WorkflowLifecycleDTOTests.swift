@@ -94,12 +94,19 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         case (true, "GET", "/api/v1/workflow-activities/active"):
             responseStatus = 401
             responseBody = Data(#"{"detail":"test fixture unauthorized"}"#.utf8)
-        case (true, "POST", "/api/v1/capabilities/invoke"):
-            if String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true {
+        case (true, "POST", "/api/v1/capabilities/proposals"):
+            let delayed = String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true
+            let proposalId = delayed ? "delayed-proposal-123456" : "stable-proposal-123456"
+            let title = delayed ? "Delayed" : "QCP"
+            responseBody = Data("{\"status\":\"awaiting_confirmation\",\"capability_id\":\"workflow.create\",\"events\":[{\"type\":\"capability.proposed\",\"version\":1,\"payload\":{\"proposal_id\":\"\(proposalId)\",\"confirmation_token\":\"confirmation-token-abcdefghijklmnopqrstuvwxyz\",\"capability_id\":\"workflow.create\",\"input\":{\"title\":\"\(title)\",\"description\":\"Create workflow\"},\"summary\":\"Create\",\"risk\":\"medium\",\"state\":\"awaiting_confirmation\"}}],\"receipt\":null,\"error\":null}".utf8)
+        case (true, "POST", "/api/v1/capabilities/confirm"):
+            if String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-proposal") == true {
                 responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"workflow":{"id":"tenant-a-workflow","title":"Delayed","description":"delayed-switch","desired_output":"report","status":"clarifying","active_plan_id":null,"clarification_session_id":"clarification-1","primary_agent_id":null,"created_at":null,"updated_at":null,"latest_execution":null},"clarification_session":{"id":"clarification-1","workflow_id":"tenant-a-workflow","phase":"clarifying","round_number":1,"last_event_seq":1}}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
             } else {
                 responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"value":"ok"}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
             }
+        case (true, "POST", "/api/v1/capabilities/invoke"):
+            responseBody = Data(#"{"status":"completed","capability_id":"knowledge.note.search","events":[{"type":"knowledge.results","version":1,"payload":{"value":"ok"}}],"receipt":{"invocation_id":"qcp-read","capability_version":"1.0.0","status":"completed","event_type":"knowledge.results"},"error":null}"#.utf8)
         case (true, "GET", "/api/v1/legal/agreement"):
             responseBody = Data(#"{"version":"2026-09-06","title":"服务协议","updated_at":"2026-09-06T00:00:00Z","sections":[{"id":"service","title":"用户服务协议","clauses":["服务条款"]},{"id":"privacy","title":"隐私保护条款","clauses":["隐私条款"]},{"id":"knowledge-contribution","title":"知识共建协议","clauses":["共建条款"]}]}"#.utf8)
         case (true, "PUT", "/api/v1/me/agreement-acceptance"):
@@ -171,7 +178,7 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func structuredReviewResponse(version: Int, action: String, title: String) -> Data {
         Data("""
-        {"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":\(version),"parent_version":\(version == 1 ? "null" : String(version - 1)),"content_hash":"hash-\(version)","document":{"title":"\(title)","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"notes","label":"审核意见","type":"textarea","required":false},{"id":"decision","label":"审核结论","type":"choice","required":true,"options":["需要修改","可以确认"]},{"id":"score","label":"评分","type":"number","required":false},{"id":"checked","label":"已检查成果预览","type":"toggle","required":true}],"values":{"title":"\(title)","notes":"逐项核对来源与版式","decision":"可以确认","score":5,"checked":true}},"action":"\(action)","receipt_id":"receipt-\(version)","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}
+        {"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v2","version":\(version),"parent_version":\(version == 1 ? "null" : String(version - 1)),"content_hash":"hash-\(version)","document":{"title":"\(title)","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"notes","label":"审核意见","type":"textarea","required":false},{"id":"decision","label":"审核结论","type":"choice","required":true,"options":["需要修改","可以确认"]},{"id":"score","label":"评分","type":"number","required":false},{"id":"checked","label":"已检查成果预览","type":"toggle","required":true},{"id":"agenda","label":"要点列表","type":"list","required":true},{"id":"pages","label":"页面结构","type":"page_structure","required":true},{"id":"hero","label":"主视觉素材","type":"asset","required":true}],"values":{"title":"\(title)","notes":"逐项核对来源与版式","decision":"可以确认","score":5,"checked":true,"agenda":["背景","方案"],"pages":[{"id":"slide-1","title":"封面","summary":"主题视觉"}],"hero":{"id":"asset-1","name":"主视觉","url":"https://example.invalid/hero.jpg"}}},"action":"\(action)","receipt_id":"receipt-\(version)","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}
         """.utf8)
     }
 }
@@ -196,6 +203,33 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(values["score"] as? Double, 4.5)
         XCTAssertEqual(values["approved"] as? Bool, true)
         XCTAssertTrue(values["notes"] is NSNull)
+    }
+
+    func testStructuredReviewDTOsPreserveListsPageStructureAndAssets() throws {
+        let payload = Data(#"{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v2","version":3,"parent_version":2,"content_hash":"hash","document":{"title":"完整全稿","fields":[{"id":"agenda","label":"要点列表","type":"list","required":true},{"id":"pages","label":"页面结构","type":"page_structure","required":true},{"id":"hero","label":"主视觉素材","type":"asset","required":true}],"values":{"agenda":["背景","方案"],"pages":[{"id":"slide-1","title":"封面","summary":"主题视觉"},{"id":"slide-2","title":"路线","summary":"地理路线图"}],"hero":{"id":"asset-1","name":"博斯普鲁斯海峡","url":"https://example.invalid/hero.jpg","source_url":"https://example.invalid/source","mime_type":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"action":"save","receipt_id":"receipt-3","source_client_session_id":"session-a","created_at":"2026-09-17T00:00:00Z"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let revision = try decoder.decode(StructuredReviewRevisionDTO.self, from: payload)
+
+        XCTAssertEqual(revision.document.fields.map(\.type), [.list, .pageStructure, .asset])
+        XCTAssertEqual(revision.document.values["agenda"], .array([.string("背景"), .string("方案")]))
+        XCTAssertEqual(
+            revision.document.values["pages"],
+            .array([
+                .object(["id": .string("slide-1"), "title": .string("封面"), "summary": .string("主题视觉")]),
+                .object(["id": .string("slide-2"), "title": .string("路线"), "summary": .string("地理路线图")]),
+            ])
+        )
+        guard case .object(let asset) = revision.document.values["hero"] else {
+            return XCTFail("Expected asset object")
+        }
+        XCTAssertEqual(asset["name"], .string("博斯普鲁斯海峡"))
+        XCTAssertEqual(asset["mime_type"], .string("image/jpeg"))
+        XCTAssertEqual(asset["sha256"], .string(String(repeating: "a", count: 64)))
+        let encoded = try JSONEncoder().encode(revision.document)
+        let roundTrip = try decoder.decode(StructuredReviewDocumentDTO.self, from: encoded)
+        XCTAssertEqual(roundTrip, revision.document)
     }
 
     @MainActor
@@ -309,7 +343,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
         XCTAssertEqual(
             Set(model.document.fields.map(\.type)),
-            Set([.text, .textarea, .choice, .number, .toggle])
+            Set([.text, .textarea, .choice, .number, .toggle, .list, .pageStructure, .asset])
         )
         XCTAssertEqual(model.revision?.version, 1)
         XCTAssertNil(model.errorMessage)
@@ -1916,6 +1950,27 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(response.feedbackReceipt?.feedbackId, "42")
         XCTAssertEqual(response.feedbackReceipt?.signalType, "explicit")
         XCTAssertTrue(response.feedbackReceipt?.revocable == true)
+    }
+
+    func testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions() {
+        XCTAssertEqual(PresentationProductStep.labels, ["需求确认", "全稿预览", "下载"])
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "queued"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "running"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "awaiting_approval"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "awaiting_review"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "completed"), 2)
+    }
+
+    func testStructuredReviewRestoresLastSavedAssetValue() {
+        let saved = StructuredReviewDocumentDTO(
+            title: "审核",
+            fields: [StructuredReviewFieldDTO(id: "hero", label: "封面素材", type: .asset, required: false, options: nil)],
+            values: ["hero": .object(["name": .string("原素材"), "url": .string("https://example.invalid/original.jpg")])]
+        )
+        XCTAssertEqual(
+            StructuredReviewValueRestorer.value(fieldID: "hero", from: saved),
+            .object(["name": .string("原素材"), "url": .string("https://example.invalid/original.jpg")])
+        )
     }
 
     func testDocumentCapabilityProposalAndRendererRouteDecode() throws {
@@ -4742,25 +4797,24 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
             inMemoryToken: "[REDACTED]"
         )
 
-        let response: QCPInvokeResponseDTO<Output> = try await CapabilityClient(apiClient: api).invoke(
-            QCPCapabilityID.workflowCreate,
-            input: Input(title: "QCP"),
-            confirmed: true,
-            idempotencyKey: "request-123"
+        let response: QCPInvokeResponseDTO<Output> = try await CapabilityClient(apiClient: api).confirm(
+            proposalId: "stable-proposal-123456",
+            confirmationToken: "confirmation-token-abcdefghijklmnopqrstuvwxyz",
+            sessionId: "session-contract"
         )
 
         XCTAssertEqual(response.events.first?.payload.value, "ok")
         XCTAssertEqual(response.receipt?.eventType, "workflow.created")
         let captured = try XCTUnwrap(APIContractURLProtocol.requests().last)
-        XCTAssertEqual(captured.request.url?.path, "/api/v1/capabilities/invoke")
+        XCTAssertEqual(captured.request.url?.path, "/api/v1/capabilities/confirm")
         XCTAssertEqual(captured.request.value(forHTTPHeaderField: "Authorization"), "Bearer [REDACTED]")
         let body = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
         )
-        XCTAssertEqual(body["capability_id"] as? String, "workflow.create")
-        XCTAssertEqual(body["confirmed"] as? Bool, true)
-        XCTAssertEqual(body["idempotency_key"] as? String, "request-123")
-        XCTAssertNil((body["input"] as? [String: Any])?["tenant_key"])
+        XCTAssertEqual(body["proposal_id"] as? String, "stable-proposal-123456")
+        XCTAssertEqual(body["confirmation_token"] as? String, "confirmation-token-abcdefghijklmnopqrstuvwxyz")
+        XCTAssertEqual(body["session_id"] as? String, "session-contract")
+        XCTAssertNil(body["confirmed"])
     }
 
     @MainActor
@@ -4782,12 +4836,19 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
             sourceClientSessionId: "session-direct"
         )
 
-        let captured = try XCTUnwrap(APIContractURLProtocol.requests().last)
+        let captured = try XCTUnwrap(
+            APIContractURLProtocol.requests().first(where: {
+                $0.request.url?.path == "/api/v1/capabilities/proposals"
+            })
+        )
         let envelope = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
         )
         let input = try XCTUnwrap(envelope["input"] as? [String: Any])
         XCTAssertEqual(input["source_client_session_id"] as? String, "session-direct")
+        XCTAssertEqual(APIContractURLProtocol.requests().map(\.request.url?.path), [
+            "/api/v1/capabilities/proposals", "/api/v1/capabilities/confirm"
+        ])
     }
 
     @MainActor
@@ -4816,10 +4877,10 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     @MainActor
-    func testInterruptedCapabilityProposalRestoresRetryWithSameRequestKey() async throws {
-        struct Output: Decodable { let value: String }
-        let proposalData = Data(#"{"proposal_id":"stable-proposal-1","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"applying"}"#.utf8)
+    func testInterruptedCapabilityProposalDropsOneTimeTokenAndFailsClosed() async throws {
+        let proposalData = Data(#"{"proposal_id":"stable-proposal-1","confirmation_token":"confirmation-token-abcdefghijklmnopqrstuvwxyz","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"applying"}"#.utf8)
         let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: proposalData)
+        XCTAssertNotNil(proposal.confirmationToken)
         let message = ChatMessage(
             id: "message-1", sessionId: "session-1", role: .assistant, content: "",
             blocks: [.capabilityProposal(proposal)]
@@ -4830,30 +4891,10 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         guard case .capabilityProposal(let restored) = try XCTUnwrap(
             persisted.toChatMessage(sessionId: "session-1").blocks.first
         ) else { return XCTFail("expected restored proposal") }
-        XCTAssertEqual(restored.state, .awaitingConfirmation)
+        XCTAssertEqual(restored.state, .failed)
+        XCTAssertNil(restored.confirmationToken)
         XCTAssertEqual(restored.idempotencyKey, "stable-proposal-1")
-
-        APIContractURLProtocol.reset()
-        defer { APIContractURLProtocol.reset() }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [APIContractURLProtocol.self]
-        let client = CapabilityClient(apiClient: APIClient(
-            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
-            sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
-        ))
-        for _ in 0..<2 {
-            let _: QCPInvokeResponseDTO<Output> = try await client.invoke(
-                restored.capabilityId, input: restored.input, confirmed: true,
-                idempotencyKey: restored.idempotencyKey
-            )
-        }
-        let keys = try APIContractURLProtocol.requests().map { captured in
-            let body = try XCTUnwrap(
-                JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
-            )
-            return body["idempotency_key"] as? String
-        }
-        XCTAssertEqual(keys, ["stable-proposal-1", "stable-proposal-1"])
+        XCTAssertEqual(restored.errorMessage, "确认凭证已失效，请重新发起操作")
     }
 
     func testPersistedMessageRoundTripsEveryProposalAndDecodesLegacySingular() throws {
@@ -4906,7 +4947,7 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedCapabilityProposalCanRetryOrDiscardButTerminalStatesCannotRepeat() async throws {
+    func testFailedCapabilityProposalWithoutTokenFailsClosedAndCanDiscard() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -4952,24 +4993,18 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         coordinator.handleCapabilityProposal(
             messageId: "proposal-message", proposalId: "done-key", verb: "confirm"
         )
-        let navigationDeadline = ContinuousClock.now + .seconds(2)
-        while appState.pendingWorkflowId == nil && ContinuousClock.now < navigationDeadline {
-            await Task.yield()
-        }
+        try await Task.sleep(nanoseconds: 100_000_000)
 
         let proposals = coordinator.messages[0].blocks.compactMap {
             if case .capabilityProposal(let value) = $0 { return value }
             return nil
         }
-        XCTAssertEqual(proposals.first { $0.id == "retry-key" }?.state, .completed)
+        XCTAssertEqual(proposals.first { $0.id == "retry-key" }?.state, .failed)
         XCTAssertEqual(proposals.first { $0.id == "discard-key" }?.state, .discarded)
         XCTAssertEqual(proposals.first { $0.id == "done-key" }?.state, .completed)
-        XCTAssertEqual(appState.pendingWorkflowId, "tenant-a-workflow")
-        XCTAssertEqual(appState.activeTab, 1)
-        let bodies = try APIContractURLProtocol.requests().map {
-            try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap($0.body)) as? [String: Any])
-        }
-        XCTAssertEqual(bodies.compactMap { $0["idempotency_key"] as? String }, ["retry-key"])
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertEqual(appState.activeTab, 0)
+        XCTAssertTrue(APIContractURLProtocol.requests().isEmpty)
     }
 
     @MainActor
@@ -4986,7 +5021,7 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         let sessionId = manager.createSession()
         let proposal = try JSONDecoder().decode(
             CapabilityProposalBlock.self,
-            from: Data(#"{"proposal_id":"tenant-a-proposal","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+            from: Data(#"{"proposal_id":"tenant-a-proposal","confirmation_token":"tenant-a-token","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
         )
         manager.setMessages([ChatMessage(
             id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",

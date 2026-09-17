@@ -22,7 +22,7 @@ from backend.models.workflow import (
     WorkflowNodeRun,
     WorkflowPlanVersion,
 )
-from backend.services.capability_catalog import invoke_capability
+from backend.services.capability_catalog import execute_verified_capability
 from backend.services.workflow_executor import project_event
 
 
@@ -73,11 +73,11 @@ class DocumentWorkflowHarness:
     async def create(self, capability_id: str, data: dict) -> dict:
         tenant_token = current_tenant.set(self.tenant)
         try:
-            result = await invoke_capability(
+            result = await execute_verified_capability(
                 capability_id,
                 data,
                 payload=self.payload,
-                confirmed=True,
+
                 idempotency_key=f"batch5-{self.suffix}",
             )
         finally:

@@ -232,9 +232,33 @@ async def invoke_capability(
     data: dict[str, Any],
     *,
     payload: dict[str, Any],
-    confirmed: bool,
-    idempotency_key: str | None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
+    """Execute read/client effects only; mutations require the durable Gateway flow.
+
+    Mutation attempts receive a stable upgrade error; no boolean grants authority.
+    """
+    capability = describe_capability(capability_id)
+    if capability is not None and capability["confirmation"] == "required":
+        return _failure(
+            capability_id,
+            "confirmation_protocol_upgrade_required",
+            "Create a durable proposal and confirm it with a one-time token",
+        )
+    return await execute_verified_capability(
+        capability_id, data, payload=payload, idempotency_key=idempotency_key
+    )
+
+
+async def execute_verified_capability(
+    capability_id: str,
+    data: dict[str, Any],
+    *,
+    payload: dict[str, Any],
+    idempotency_key: str | None,
+    invocation_id: str | None = None,
+) -> dict[str, Any]:
+    """Internal dispatcher called only after Gateway confirmation or for reads."""
     from fastapi import HTTPException
     from backend.capability_handlers import HANDLERS
 
@@ -245,8 +269,6 @@ async def invoke_capability(
         return _failure(capability_id, "capability_not_executable", "Capability is discovery-only in this version")
     try:
         validate_instance(data, capability["input_schema"])
-        if capability["confirmation"] == "required" and not confirmed:
-            raise CapabilityContractError("explicit confirmation required")
         if capability["idempotency"] == "required" and not idempotency_key:
             raise CapabilityContractError("idempotency_key required")
         binding = next(
@@ -267,18 +289,19 @@ async def invoke_capability(
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
         return _failure(capability_id, str(detail.get("code") or "domain_rejected"), str(detail.get("message") or exc.detail))
-    invocation_seed = json.dumps(
-        {
-            "capability_id": capability_id,
-            "input": data,
-            "idempotency_key": idempotency_key,
-            "tenant_key": payload.get("tenant_key"),
-            "user_id": payload.get("user_id") or payload.get("sub"),
-        },
-        sort_keys=True, separators=(",", ":"),
-    )
-    import hashlib
-    invocation_id = "qcp-" + hashlib.sha256(invocation_seed.encode()).hexdigest()[:32]
+    if invocation_id is None:
+        invocation_seed = json.dumps(
+            {
+                "capability_id": capability_id,
+                "input": data,
+                "idempotency_key": idempotency_key,
+                "tenant_key": payload.get("tenant_key"),
+                "user_id": payload.get("user_id") or payload.get("sub"),
+            },
+            sort_keys=True, separators=(",", ":"),
+        )
+        import hashlib
+        invocation_id = "qcp-" + hashlib.sha256(invocation_seed.encode()).hexdigest()[:32]
     event = {"type": capability["result_event"], "version": 1, "payload": result}
     return {
         "status": "completed",

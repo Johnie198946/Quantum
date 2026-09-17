@@ -414,6 +414,48 @@ class TestWorkflowsAPI(unittest.TestCase):
         })
         self.assertEqual(invalid.status_code, 422, invalid.text)
 
+    def test_structured_review_schema_accepts_list_page_structure_and_asset_values(self):
+        schema = json.loads(Path(
+            "backend/contracts/workflow/structured-review-v2.schema.json"
+        ).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        document = {
+            "title": "完整全稿",
+            "fields": [
+                {"id": "agenda", "label": "要点列表", "type": "list", "required": True},
+                {"id": "pages", "label": "页面结构", "type": "page_structure", "required": True},
+                {"id": "hero", "label": "主视觉素材", "type": "asset", "required": True},
+            ],
+            "values": {
+                "agenda": ["背景", "方案"],
+                "pages": [
+                    {"id": "slide-1", "title": "封面", "summary": "主题视觉"},
+                    {"id": "slide-2", "title": "路线", "summary": "地理路线图"},
+                ],
+                "hero": {
+                    "id": "asset-1",
+                    "name": "博斯普鲁斯海峡",
+                    "url": "https://example.invalid/hero.jpg",
+                    "source_url": "https://example.invalid/source",
+                    "mime_type": "image/jpeg",
+                    "sha256": "a" * 64,
+                },
+            },
+        }
+
+        Draft202012Validator(schema).validate(document)
+
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        created_v2 = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v2", "document": document,
+        })
+        self.assertEqual(created_v2.status_code, 201, created_v2.text)
+        rejected_v1 = self.request("POST", f"{path}-legacy", json={
+            "schema_id": "workflow.structured-review.v1", "document": document,
+        })
+        self.assertEqual(rejected_v1.status_code, 422, rejected_v1.text)
+
     def test_explicit_output_kind_does_not_require_an_uploaded_file(self):
         presentation = self.request(
             "POST",
@@ -2095,6 +2137,15 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(recovered.status_code, 200, recovered.text)
         self.assertEqual(recovered.json()["content"], "# 节点成果\n\n证据与结论已整理。")
         self.assertTrue(content_path.is_file())
+
+        foreign_paths = [
+            f"/api/v1/workflow-executions/{execution.id}/artifacts",
+            f"/api/v1/workflow-executions/{execution.id}/artifacts/{artifact.id}/content",
+            f"/api/v1/workflow-executions/{execution.id}/artifacts/{artifact.id}/download",
+        ]
+        for path in foreign_paths:
+            denied = self.request("GET", path, sub="beta")
+            self.assertEqual(denied.status_code, 404, f"{path}: {denied.text}")
 
         content_path.unlink()
         artifact.content_hash = "0" * 64

@@ -556,7 +556,7 @@ def _new_review_revision(
     action: str,
     actor: str,
 ) -> WorkflowReviewRevision:
-    document = _validate_review_document(body.document)
+    document = _validate_review_document(body.document, schema_id=body.schema_id)
     snapshot = workflow.requirements_snapshot or {}
     content_hash = canonical_plan_hash({"schema_id": body.schema_id, "document": document})
     return WorkflowReviewRevision(

@@ -15,10 +15,83 @@ from fastapi import HTTPException
 from backend.models.workflow import WorkflowReviewRevision
 
 REVIEW_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_REVIEW_FIELD_TYPES = {"text", "textarea", "choice", "number", "toggle"}
+_REVIEW_FIELD_TYPES_BY_SCHEMA = {
+    "workflow.structured-review.v1": {"text", "textarea", "choice", "number", "toggle"},
+    "workflow.structured-review.v2": {
+        "text", "textarea", "choice", "number", "toggle", "list", "page_structure", "asset",
+    },
+}
 
 
-def validate_review_document(document: dict[str, Any]) -> dict[str, Any]:
+def _valid_review_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) <= 100
+        and all(isinstance(item, str) and len(item) <= 2000 for item in value)
+    )
+
+
+def _valid_page_structure(value: Any) -> bool:
+    if not isinstance(value, list) or len(value) > 60:
+        return False
+    seen: set[str] = set()
+    for page in value:
+        if not isinstance(page, dict) or not {"id", "title"} <= set(page):
+            return False
+        if set(page) - {"id", "title", "summary"}:
+            return False
+        page_id, title, summary = page.get("id"), page.get("title"), page.get("summary", "")
+        if (
+            not isinstance(page_id, str)
+            or not REVIEW_KEY.fullmatch(page_id)
+            or page_id in seen
+            or not isinstance(title, str)
+            or not title.strip()
+            or len(title) > 300
+            or not isinstance(summary, str)
+            or len(summary) > 2000
+        ):
+            return False
+        seen.add(page_id)
+    return True
+
+
+def _valid_asset(value: Any) -> bool:
+    if not isinstance(value, dict) or not {"id", "name", "url"} <= set(value):
+        return False
+    if set(value) - {"id", "name", "url", "source_url", "mime_type", "sha256", "license"}:
+        return False
+    asset_id, name, url = value.get("id"), value.get("name"), value.get("url")
+    if (
+        not isinstance(asset_id, str)
+        or not REVIEW_KEY.fullmatch(asset_id)
+        or not isinstance(name, str)
+        or not name.strip()
+        or len(name) > 300
+        or not isinstance(url, str)
+        or not url.startswith(("https://", "http://"))
+        or len(url) > 2000
+    ):
+        return False
+    for key, maximum in (("source_url", 2000), ("mime_type", 160), ("license", 300)):
+        optional = value.get(key)
+        if optional is not None and (not isinstance(optional, str) or len(optional) > maximum):
+            return False
+    source_url = value.get("source_url")
+    if source_url and not source_url.startswith(("https://", "http://")):
+        return False
+    digest = value.get("sha256")
+    return digest is None or (
+        isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+    )
+
+
+def validate_review_document(
+    document: dict[str, Any], *, schema_id: str = "workflow.structured-review.v1"
+) -> dict[str, Any]:
+    field_types = _REVIEW_FIELD_TYPES_BY_SCHEMA.get(schema_id)
+    if field_types is None:
+        raise HTTPException(status_code=422, detail="不支持的结构化审核 schema_id")
     if set(document) != {"title", "fields", "values"}:
         raise HTTPException(status_code=422, detail="结构化审核文档字段不合法")
     title, fields, values = document["title"], document["fields"], document["values"]
@@ -46,7 +119,7 @@ def validate_review_document(document: dict[str, Any]) -> dict[str, Any]:
             not isinstance(field_id, str)
             or not REVIEW_KEY.fullmatch(field_id)
             or field_id in seen
-            or field_type not in _REVIEW_FIELD_TYPES
+            or field_type not in field_types
             or not isinstance(label, str)
             or not label.strip()
             or len(label) > 160
@@ -92,6 +165,9 @@ def validate_review_document(document: dict[str, Any]) -> dict[str, Any]:
                 and not isinstance(value, bool)
             )
             or (expected == "toggle" and isinstance(value, bool))
+            or (expected == "list" and _valid_review_list(value))
+            or (expected == "page_structure" and _valid_page_structure(value))
+            or (expected == "asset" and _valid_asset(value))
         )
         if not valid:
             raise HTTPException(

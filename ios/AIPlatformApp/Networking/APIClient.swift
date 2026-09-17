@@ -1681,11 +1681,13 @@ public struct WorkflowArtifactContentDTO: Codable {
     public let content: String
 }
 
-public enum JSONScalar: Codable, Hashable {
+public indirect enum JSONScalar: Codable, Hashable {
     case string(String)
     case integer(Int64)
     case number(Double)
     case bool(Bool)
+    case array([JSONScalar])
+    case object([String: JSONScalar])
     case null
 
     public init(from decoder: Decoder) throws {
@@ -1695,7 +1697,9 @@ public enum JSONScalar: Codable, Hashable {
         else if let value = try? container.decode(Int64.self) { self = .integer(value) }
         else if let value = try? container.decode(Double.self) { self = .number(value) }
         else if let value = try? container.decode(String.self) { self = .string(value) }
-        else { throw DecodingError.typeMismatch(JSONScalar.self, .init(codingPath: decoder.codingPath, debugDescription: "Expected a JSON scalar")) }
+        else if let value = try? container.decode([JSONScalar].self) { self = .array(value) }
+        else if let value = try? container.decode([String: JSONScalar].self) { self = .object(value) }
+        else { throw DecodingError.typeMismatch(JSONScalar.self, .init(codingPath: decoder.codingPath, debugDescription: "Expected a JSON value")) }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1705,13 +1709,16 @@ public enum JSONScalar: Codable, Hashable {
         case .integer(let value): try container.encode(value)
         case .number(let value): try container.encode(value)
         case .bool(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
         case .null: try container.encodeNil()
         }
     }
 }
 
 public enum StructuredReviewFieldType: String, Codable, Hashable {
-    case text, textarea, choice, number, toggle
+    case text, textarea, choice, number, toggle, list, asset
+    case pageStructure = "page_structure"
 }
 
 public struct StructuredReviewFieldDTO: Codable, Hashable, Identifiable {
@@ -1958,12 +1965,41 @@ public struct QCPInvokeResponseDTO<Payload: Decodable>: Decodable {
 private struct QCPInvokeRequestDTO<Input: Encodable>: Encodable {
     let capabilityId: String
     let input: Input
-    let confirmed: Bool
     let idempotencyKey: String?
     enum CodingKeys: String, CodingKey {
         case capabilityId = "capability_id"
-        case input, confirmed
+        case input
         case idempotencyKey = "idempotency_key"
+    }
+}
+
+private struct QCPProposalRequestDTO<Input: Encodable>: Encodable {
+    let capabilityId: String
+    let input: Input
+    let sessionId: String
+    let requestId: String
+    let idempotencyKey: String?
+    let resourceVersions: [String: String]
+    let rendererVersion: String
+    enum CodingKeys: String, CodingKey {
+        case capabilityId = "capability_id"
+        case input
+        case sessionId = "session_id"
+        case requestId = "request_id"
+        case idempotencyKey = "idempotency_key"
+        case resourceVersions = "resource_versions"
+        case rendererVersion = "renderer_version"
+    }
+}
+
+private struct QCPConfirmRequestDTO: Encodable {
+    let proposalId: String
+    let confirmationToken: String
+    let sessionId: String
+    enum CodingKeys: String, CodingKey {
+        case proposalId = "proposal_id"
+        case confirmationToken = "confirmation_token"
+        case sessionId = "session_id"
     }
 }
 
@@ -1976,8 +2012,7 @@ public final class CapabilityClient {
     public func invoke<Input: Encodable, Output: Decodable>(
         _ capabilityId: String,
         input: Input,
-        confirmed: Bool,
-        idempotencyKey: String?
+        idempotencyKey: String? = nil
     ) async throws -> QCPInvokeResponseDTO<Output> {
         return try await apiClient.request(
             QCPInvokeResponseDTO<Output>.self,
@@ -1986,8 +2021,49 @@ public final class CapabilityClient {
             body: QCPInvokeRequestDTO(
                 capabilityId: capabilityId,
                 input: input,
-                confirmed: confirmed,
                 idempotencyKey: idempotencyKey
+            )
+        )
+    }
+
+    public func propose<Input: Encodable>(
+        _ capabilityId: String,
+        input: Input,
+        sessionId: String,
+        requestId: String,
+        idempotencyKey: String?,
+        resourceVersions: [String: String] = [:]
+    ) async throws -> QCPInvokeResponseDTO<CapabilityProposalBlock> {
+        try await apiClient.request(
+            QCPInvokeResponseDTO<CapabilityProposalBlock>.self,
+            path: "capabilities/proposals",
+            method: "POST",
+            body: QCPProposalRequestDTO(
+                capabilityId: capabilityId,
+                input: input,
+                sessionId: sessionId,
+                requestId: requestId,
+                idempotencyKey: idempotencyKey,
+                resourceVersions: resourceVersions,
+                rendererVersion: "qcp-ios@1"
+            )
+        )
+    }
+
+    public func confirm<Output: Decodable>(
+        proposalId: String,
+        confirmationToken: String,
+        sessionId: String,
+        as outputType: Output.Type = Output.self
+    ) async throws -> QCPInvokeResponseDTO<Output> {
+        try await apiClient.request(
+            QCPInvokeResponseDTO<Output>.self,
+            path: "capabilities/confirm",
+            method: "POST",
+            body: QCPConfirmRequestDTO(
+                proposalId: proposalId,
+                confirmationToken: confirmationToken,
+                sessionId: sessionId
             )
         )
     }
@@ -3058,17 +3134,29 @@ public final class APIClient: ObservableObject {
             throw APIError.network("当前对话会话不可用，无法创建工作流")
         }
         let key = UUID().uuidString
+        let requestId = UUID().uuidString
         let client = CapabilityClient(apiClient: self)
-        let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO>
-        response = try await client.invoke(
+        let input = WorkflowCreateRequestDTO(
+            title: title, description: description, desiredOutput: desiredOutput,
+            sourceDocumentId: sourceDocumentId, outputKind: outputKind,
+            sourceClientSessionId: sourceClientSessionId
+        )
+        let proposal = try await client.propose(
             QCPCapabilityID.workflowCreate,
-            input: WorkflowCreateRequestDTO(
-                title: title, description: description, desiredOutput: desiredOutput,
-                sourceDocumentId: sourceDocumentId, outputKind: outputKind,
-                sourceClientSessionId: sourceClientSessionId
-            ),
-            confirmed: true,
+            input: input,
+            sessionId: sourceClientSessionId,
+            requestId: requestId,
             idempotencyKey: key
+        )
+        guard proposal.status == "awaiting_confirmation",
+              let confirmation = proposal.events.first?.payload,
+              let token = confirmation.confirmationToken else {
+            throw APIError.network(proposal.error?.message ?? "能力提案失败")
+        }
+        let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await client.confirm(
+            proposalId: confirmation.id,
+            confirmationToken: token,
+            sessionId: sourceClientSessionId
         )
         guard response.status == "completed", let output = response.events.first?.payload,
               response.receipt != nil

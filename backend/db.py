@@ -70,6 +70,7 @@ async def init_db() -> None:
     import backend.models.workspace  # noqa: F401  (注册 QuantumWorkspace 控制面模型)
     import backend.models.resource_catalog  # noqa: F401  (注册数据集、模型、拓扑与监控注册表)
     import backend.models.feedback  # noqa: F401  (注册用户抱怨与日报投递账本)
+    import backend.models.capability_gateway  # noqa: F401  (注册 QCP 确认与幂等状态)
     from backend.services.knowledge_contribution_schema import (
         migrate_knowledge_contribution_v4,
     )

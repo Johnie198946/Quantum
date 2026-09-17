@@ -466,18 +466,56 @@ async def _assert_approved_presentation_projection(
 ) -> None:
     if render_type != "presentation":
         return
+
+    async def stage_artifact(binding: dict[str, Any], stage: str) -> WorkflowArtifact:
+        if binding.get("approval_mode") == "generated_verified":
+            node_id = str(binding.get("node_id") or "")
+            plan = await _plan(db, execution)
+            plan_node = next(
+                (item for item in plan.dsl.get("nodes") or [] if item.get("id") == node_id),
+                None,
+            )
+            nodes = await _nodes(db, execution.id)
+            node = nodes.get(node_id)
+            if (
+                not plan_node
+                or (plan_node.get("parameters") or {}).get("approval_gate")
+                or not node
+            ):
+                raise ValueError(f"verified presentation {stage} binding is missing or stale")
+            stored = await db.scalar(select(WorkflowArtifact).where(
+                WorkflowArtifact.execution_id == execution.id,
+                WorkflowArtifact.node_run_id == node.id,
+                WorkflowArtifact.content_hash == binding.get("content_hash"),
+            ))
+            metadata = stored.metadata_json if stored else {}
+            if (
+                not stored
+                or int(metadata.get("artifact_version") or 0)
+                    != int(binding.get("artifact_version") or 0)
+                or metadata.get("render_type") != f"presentation_{stage}"
+            ):
+                raise ValueError(f"verified presentation {stage} binding is missing or stale")
+            return stored
+        approval = await db.scalar(select(WorkflowApproval).where(
+            WorkflowApproval.execution_id == execution.id,
+            WorkflowApproval.approval_type == f"business_{stage}",
+            WorkflowApproval.decision == "approve",
+            WorkflowApproval.plan_id == binding.get("artifact_id"),
+            WorkflowApproval.plan_hash == binding.get("content_hash"),
+            WorkflowApproval.activation_revision == binding.get("artifact_version"),
+        ))
+        stored = await db.get(WorkflowArtifact, binding.get("artifact_id")) if approval else None
+        if (
+            not stored
+            or stored.execution_id != execution.id
+            or stored.content_hash != binding.get("content_hash")
+        ):
+            raise ValueError(f"approved presentation {stage} binding is missing or stale")
+        return stored
+
     binding = artifact.get("approved_design") or {}
-    approval = await db.scalar(select(WorkflowApproval).where(
-        WorkflowApproval.execution_id == execution.id,
-        WorkflowApproval.approval_type == "business_design",
-        WorkflowApproval.decision == "approve",
-        WorkflowApproval.plan_id == binding.get("artifact_id"),
-        WorkflowApproval.plan_hash == binding.get("content_hash"),
-        WorkflowApproval.activation_revision == binding.get("artifact_version"),
-    ))
-    design = await db.get(WorkflowArtifact, binding.get("artifact_id")) if approval else None
-    if not design or design.execution_id != execution.id or design.content_hash != binding.get("content_hash"):
-        raise ValueError("approved presentation design binding is missing or stale")
+    design = await stage_artifact(binding, "design")
     from backend.services.presentation_scenario import validate_theme
     from backend.services.workflow_artifacts import read_verified_artifact, run_root
     approved = json.loads(read_verified_artifact(run_root(execution) / design.relative_path, design.content_hash))
@@ -485,25 +523,7 @@ async def _assert_approved_presentation_projection(
     if validate_theme(final.get("theme")) != validate_theme(approved.get("theme")):
         raise ValueError("final presentation theme differs from approved design")
     outline_binding = artifact.get("approved_outline") or {}
-    outline_approval = await db.scalar(select(WorkflowApproval).where(
-        WorkflowApproval.execution_id == execution.id,
-        WorkflowApproval.approval_type == "business_outline",
-        WorkflowApproval.decision == "approve",
-        WorkflowApproval.plan_id == outline_binding.get("artifact_id"),
-        WorkflowApproval.plan_hash == outline_binding.get("content_hash"),
-        WorkflowApproval.activation_revision == outline_binding.get("artifact_version"),
-    ))
-    outline_artifact = (
-        await db.get(WorkflowArtifact, outline_binding.get("artifact_id"))
-        if outline_approval
-        else None
-    )
-    if (
-        not outline_artifact
-        or outline_artifact.execution_id != execution.id
-        or outline_artifact.content_hash != outline_binding.get("content_hash")
-    ):
-        raise ValueError("approved presentation outline binding is missing or stale")
+    outline_artifact = await stage_artifact(outline_binding, "outline")
     outline = json.loads(
         read_verified_artifact(
             run_root(execution) / outline_artifact.relative_path,
