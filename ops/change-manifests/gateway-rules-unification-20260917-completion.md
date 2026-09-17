@@ -1,11 +1,12 @@
 # Gateway engineering rules unification
 
 - task_id: `gateway-rules-unification-20260917`
-- status: `COMMITTED`
+- status: `PUSHED`
 - branch: `main`
 - base_sha: `2cfa3c827da3dbc0cf899f96d7b4bda753c5fdf1`
-- local_commit: commit containing this manifest
-- remote_sha: pending external-write approval
+- rules_commit: `f92cfa74a9535f215bde5f597bc604ec2fb784f8`
+- receipt_commit: commit containing this manifest
+- remote_rules_sha: `f92cfa74a9535f215bde5f597bc604ec2fb784f8` (verified with `git ls-remote`)
 - server_before: not applicable; documentation and CI governance only
 - server_after: not deployed
 - rollback_point: base SHA above
@@ -28,5 +29,5 @@
 
 ## Remaining risks
 
-- GitHub push and CI execution require explicit external-write authorization.
+- GitHub Actions execution is asynchronous; local checks passed and the workflow now enforces the same commands on future pushes.
 - This change does not deploy or alter production runtime behavior.
