@@ -24,8 +24,10 @@
 - `python3 scripts/generate_product_capability_manual.py --check`: passed.
 - `PYTHONPATH=. python3 scripts/check_governed_engineering_rules.py`: passed with `Gateway engineering rules: synchronized`.
 - `PYTHONPATH=. python3 -m pytest -q tests/test_governed_engineering_rules.py tests/test_product_capabilities.py`: `28 passed, 8 warnings`.
+- Post-push CI exposed five repository-wide Ruff findings: two missing EOF newlines in this change and three pre-existing findings (one dead Gateway variable, one test lambda, one missing EOF newline). All five were corrected without semantic expansion.
+- Expanded regression after the lint repair: `36 passed, 8 warnings`; repository-wide `python3 -m ruff check backend/ scripts/ tests/`: passed.
 - Final Python syntax, CI YAML parse, generated parity and `git diff --check`: passed.
-- Worktree check: clean baseline on `main`; only the nine task-scoped files listed by `git status` are modified or added.
+- Worktree check: clean baseline on `main`; rules changes and the five bounded Ruff remediations are isolated from unrelated work.
 
 ## Remaining risks
 

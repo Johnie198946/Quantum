@@ -396,7 +396,6 @@ async def capability_search(
             {"tenant_knowledge"},
         )
         live_index = await database_live_document_index(knowledge._vault())
-        live = list(live_index.values())
         mark_perf("candidate_authorization_ms")
         # Model disclosure is narrower than internal read authorization. Never
         # send controlled detail upstream and hope a later SSE/final filter hides it.

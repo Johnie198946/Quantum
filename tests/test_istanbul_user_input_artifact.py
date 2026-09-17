@@ -107,7 +107,10 @@ def test_user_input_artifact_covers_maps_lodging_food_and_source_boundaries(tmp_
     pptx = Presentation(tmp_path / "istanbul-user-input.pptx")
     pdf = PdfReader(tmp_path / "istanbul-user-input.pdf")
     assert len(pptx.slides) == len(pdf.pages) == 12
-    normalize = lambda value: re.sub(r"[^\w\u4e00-\u9fff]+", "", value or "")
+
+    def normalize(value):
+        return re.sub(r"[^\w\u4e00-\u9fff]+", "", value or "")
+
     for index, slide in enumerate(pptx.slides):
         slide_text = "".join(
             shape.text
