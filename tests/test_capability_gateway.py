@@ -41,6 +41,7 @@ async def test_confirmation_token_is_bound_single_use_and_durable():
     }
     proposal = await _proposal({"title": "Gateway", "description": "durable confirmation"})
     event = proposal["events"][0]["payload"]
+    assert event["input"]["source_client_session_id"] == "chat-session-gateway"
 
     wrong_session = await confirm_capability_proposal(
         event["proposal_id"], event["confirmation_token"],
@@ -58,6 +59,9 @@ async def test_confirmation_token_is_bound_single_use_and_durable():
     assert completed["status"] == "completed"
     assert completed["receipt"]["invocation_id"].startswith("qcp-")
     handler.assert_awaited_once()
+    assert handler.await_args.kwargs["requirements_snapshot_overrides"] == {
+        "source_client_session_id": "chat-session-gateway"
+    }
 
     replay = await confirm_capability_proposal(
         event["proposal_id"], event["confirmation_token"],

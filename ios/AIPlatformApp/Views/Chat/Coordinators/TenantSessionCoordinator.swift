@@ -3490,11 +3490,13 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
-    private static func decodeCapabilityPayload<T: Decodable>(
+    static func decodeCapabilityPayload<T: Decodable>(
         _ payload: JSONScalar, as type: T.Type = T.self
     ) throws -> T {
         let data = try JSONEncoder().encode(payload)
-        return try JSONDecoder().decode(T.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(T.self, from: data)
     }
 
     private func updateCapabilityProposal(

@@ -5050,6 +5050,39 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertTrue(coordinator.messages.isEmpty)
     }
 
+    func testCapabilityWorkflowCreatedPayloadDecodesProductionSnakeCase() throws {
+        let payload = try JSONDecoder().decode(JSONScalar.self, from: Data(#"""
+        {
+          "workflow": {
+            "id": "wf-production",
+            "title": "Production",
+            "description": "Create workflow",
+            "desired_output": "presentation",
+            "status": "clarifying",
+            "active_plan_id": null,
+            "clarification_session_id": "wfs-production",
+            "source_client_session_id": "client-session",
+            "primary_agent_id": null,
+            "created_at": "2026-09-17T13:05:18Z",
+            "updated_at": "2026-09-17T13:05:18Z"
+          },
+          "clarification_session": {
+            "id": "wfs-production",
+            "workflow_id": "wf-production",
+            "phase": "clarifying",
+            "round_number": 1,
+            "last_event_seq": 2
+          }
+        }
+        """#.utf8))
+        let created: WorkflowCreateResponseDTO = try TenantSessionCoordinator.decodeCapabilityPayload(payload)
+        XCTAssertEqual(created.workflow.id, "wf-production")
+        XCTAssertEqual(created.workflow.desiredOutput, "presentation")
+        XCTAssertEqual(created.workflow.clarificationSessionId, "wfs-production")
+        XCTAssertEqual(created.clarificationSession.workflowId, "wf-production")
+        XCTAssertEqual(created.clarificationSession.lastEventSeq, 2)
+    }
+
     func testRendererRegistryCoversSemanticPathsAndVersionFallbacks() throws {
         XCTAssertEqual(RendererRegistry.route(for: "answer_page", version: 1), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "clarify", version: 1), .clarify)

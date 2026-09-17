@@ -71,7 +71,6 @@ async def create_capability_proposal(
     if capability["implementation_status"] != "implemented":
         return _failure(capability_id, "capability_not_executable", "Capability is discovery-only")
     try:
-        validate_instance(data, capability["input_schema"])
         tenant, user = _principal(payload)
         session_id = str(session_id or "").strip()
         request_id = str(request_id or "").strip()
@@ -84,10 +83,18 @@ async def create_capability_proposal(
             raise CapabilityContractError("renderer_version required")
         if capability["idempotency"] == "required" and not idempotency_key:
             raise CapabilityContractError("idempotency_key required")
+        # Session scope is trusted Gateway context, never model/client authority.
+        # Capabilities that accept a source session always receive the bound
+        # confirmation session, overriding any untrusted input value.
+        canonical_input = dict(data)
+        properties = capability["input_schema"].get("properties") or {}
+        if "source_client_session_id" in properties:
+            canonical_input["source_client_session_id"] = session_id
+        validate_instance(canonical_input, capability["input_schema"])
     except CapabilityContractError as exc:
         return _failure(capability_id, "contract_invalid", str(exc))
 
-    canonical_input = json.loads(_canonical(data))
+    canonical_input = json.loads(_canonical(canonical_input))
     input_digest = _digest(canonical_input)
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
