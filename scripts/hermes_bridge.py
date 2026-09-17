@@ -8549,13 +8549,22 @@ def _sse_from_in_process(
 
     worker = threading.Thread(
         target=_run_agent_sync,
-        args=(
-            goal, user_id, hermes_sid, stream_q, agent_holder,
-            allow_local_files, agent_config, knowledge_capability, knowledge_claims,
-            client_session_id, client_session_context, client_context_claims, sandbox,
-            knowledge_action_enabled, qws_business_context, qcp_enabled, request_id,
-            trusted_identity_claims,
-        ),
+        args=(goal, user_id, hermes_sid, stream_q, agent_holder),
+        kwargs={
+            "allow_local_files": allow_local_files,
+            "agent_config": agent_config,
+            "knowledge_capability": knowledge_capability,
+            "knowledge_claims": knowledge_claims,
+            "client_session_id": client_session_id,
+            "client_session_context": client_session_context,
+            "client_context_claims": client_context_claims,
+            "sandbox": sandbox,
+            "knowledge_action_enabled": knowledge_action_enabled,
+            "qws_business_context": qws_business_context,
+            "qcp_enabled": qcp_enabled,
+            "trusted_request_id": request_id,
+            "trusted_identity_claims": trusted_identity_claims,
+        },
         daemon=True,
         name=f"agent-stream-{user_id[:12]}",
     )
