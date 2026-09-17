@@ -71,9 +71,9 @@ Bridge 消费裁决合同：
 - Bridge 必须分别记录权威布尔值 `required_internal_knowledge`、`attempted_internal_search`、`consumed_internal_knowledge`，以及引用复核和最终 `decision`；不得用单个 `knowledge_search:error` 同时表示这些事实。
 - `required_internal_knowledge` 仅由服务端 triage 的明确内部知识证据要求产生，并且与 capability、授权和工具当前是否可用完全独立。能力缺失只能产生 `denied/unavailable`，不能把 required 降成 false。普通问答的后台预读为 optional；客户端、Prompt 和模型不能选择或降低 requirement。
 - 服务端预读、Hermes 直接 `knowledge_search` 和 deferred `tool_call(name=knowledge_search)` 必须进入同一个 observer；任何正文或 title/snippet/path/version 等租户知识元数据进入 Hermes 上下文，都将 `consumed_internal_knowledge` 单调设置为 true，后续零命中不能回退。
-- 只有 `optional + not_exposed + independently_verified_public_URL` 才能在 Gateway `no_match|insufficient|timeout|system_error` 时发送纯公开答案。授权拒绝始终阻断。
+- `optional + not_exposed` 在 Gateway `no_match|insufficient|timeout|system_error` 时不得被知识安全门禁阻断；有成功公开 URL 时记为 `allowed_public_only`，否则记为 `allowed_without_internal_knowledge`。公开问答是否必须联网取证属于独立的回答质量策略，不能由知识授权门禁越权代管。授权拒绝始终阻断。
 - 只要内部正文或元数据已暴露给模型但没有可复核引用，`consumption` 必须为 `unknown` 并 fail closed；外网 URL 不能清洗或替代这次内部知识消费。
-- 内部引用必须经过发送前 `path + version` 复核才能得到 `allowed_internal`；纯公开放行必须得到 `allowed_public_only`。两者的 receipt semantic 不得相同。
+- 内部引用必须经过发送前 `path + version` 复核才能得到 `allowed_internal`；有公开工具证据时得到 `allowed_public_only`，无内部消费且无公开工具证据时得到 `allowed_without_internal_knowledge`。三者的 receipt semantic 不得相同。
 
 稳定状态合同：
 
@@ -84,7 +84,7 @@ Bridge 消费裁决合同：
 | Requirement | `required_internal_knowledge: bool` | 服务端 Triage + Bridge 复算 |
 | Attempt | `attempted_internal_search: bool` | Hermes Bridge observer |
 | Consumption | `consumed_internal_knowledge: bool`，附 `cited / not_exposed / unknown` 显示语义 | Hermes Bridge observer |
-| Decision | `allowed_internal / allowed_public_only / blocked_*` | Hermes Bridge |
+| Decision | `allowed_internal / allowed_public_only / allowed_without_internal_knowledge / blocked_*` | Hermes Bridge |
 
 类型化裁决从 `knowledge_gate_receipt.v2` 开始。新增状态必须通过版本化 receipt 扩展；旧字段在迁移期只作兼容显示，不再作为授权或发送判断真相源。任何组件收到未知枚举值时 fail closed，并保留原始错误码用于审计。
 

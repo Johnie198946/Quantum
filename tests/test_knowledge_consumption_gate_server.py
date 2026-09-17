@@ -169,11 +169,13 @@ def test_failed_web_payload_cannot_satisfy_server_gate(tool_name, payload):
     assert state["web_urls"] == set()
 
 
-def test_no_match_requires_successful_authorized_web_url():
+def test_optional_no_match_does_not_turn_knowledge_gate_into_general_qa_gate():
     state = {"status": "no_match", "requirement": "optional", "docs": [],
              "web_succeeded": False, "web_urls": set()}
     answer, receipt = bridge._finalize_knowledge_gate("模型常识", "cap", state)
-    assert "未命中" in answer and "semantic" not in receipt
+    assert answer.startswith("模型常识")
+    assert receipt["semantic"] == "no_internal_knowledge_consumed"
+    assert receipt["decision"] == "allowed_without_internal_knowledge"
     state.update(web_succeeded=True, web_urls={"https://example.com/source"})
     answer, receipt = bridge._finalize_knowledge_gate("公开资料 https://example.com/source", "cap", state)
     assert receipt["semantic"] == "public_evidence_only" and receipt["web_fallback"] is True
@@ -200,8 +202,8 @@ def test_deferred_web_tool_result_satisfies_gate():
     assert "知识回执：" in answer
 
 
-def test_deferred_failed_web_tool_result_does_not_satisfy_gate():
-    state = {"status": "no_match", "docs": [], "web_succeeded": False,
+def test_deferred_failed_web_tool_does_not_reblock_optional_public_turn():
+    state = {"status": "no_match", "requirement": "optional", "docs": [], "web_succeeded": False,
              "web_urls": set(), "tool_results": []}
     bridge._knowledge_gate_context.value = state
     try:
@@ -216,7 +218,8 @@ def test_deferred_failed_web_tool_result_does_not_satisfy_gate():
         "外部补证见 https://example.com/fail", "cap", state
     )
     assert receipt["status"] == "no_match"
-    assert "未命中" in answer
+    assert answer.startswith("外部补证见")
+    assert receipt["decision"] == "allowed_without_internal_knowledge"
 
 
 def test_failed_outer_wrapper_cannot_smuggle_successful_web_result():
@@ -226,7 +229,7 @@ def test_failed_outer_wrapper_cannot_smuggle_successful_web_result():
     ) == set()
 
 
-def test_optional_timeout_allows_only_independently_verified_public_answer(monkeypatch):
+def test_optional_timeout_without_exposure_does_not_block_general_answer(monkeypatch):
     monkeypatch.setattr(bridge, "_knowledge_search_tool", lambda *a, **k: json.dumps({
         "success": False,
         "error": "knowledge_gateway_timeout",
@@ -236,6 +239,9 @@ def test_optional_timeout_allows_only_independently_verified_public_answer(monke
     assert state["status"] == "timeout"
     assert state["failure_kind"] == "timeout"
     assert state["internal_context_exposed"] is False
+    answer, receipt = bridge._finalize_knowledge_gate("常规公开回答", "cap", state)
+    assert answer.startswith("常规公开回答")
+    assert receipt["decision"] == "allowed_without_internal_knowledge"
     state.update(web_succeeded=True, web_urls={"https://example.com/ferry"})
     answer, receipt = bridge._finalize_knowledge_gate(
         "公开交通信息 https://example.com/ferry", "cap", state

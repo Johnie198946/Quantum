@@ -2311,21 +2311,20 @@ def _finalize_knowledge_gate(answer: str, token: str, state: dict[str, Any]) -> 
             status = "error"
             failure_kind = "system"
     internal_passed = bool(status == "matched" and cited and not observation_uncertain)
-    public_only_passed = bool(
+    without_internal_passed = bool(
         not required_internal_knowledge
         and not consumed_internal_knowledge
         and not observation_uncertain
         and not cited
         and status in {"no_match", "insufficient", "timeout", "error"}
-        and web_ok
     )
-    passed = internal_passed or public_only_passed
+    passed = internal_passed or without_internal_passed
     consumption = "cited" if cited else ("unknown" if consumed_internal_knowledge else "not_exposed")
     decision = (
         "allowed_internal"
         if internal_passed
-        else "allowed_public_only"
-        if public_only_passed
+        else ("allowed_public_only" if web_ok else "allowed_without_internal_knowledge")
+        if without_internal_passed
         else f"blocked_{'authorization' if status == 'denied' else status}"
     )
     receipt: dict[str, Any] = {
@@ -2347,16 +2346,22 @@ def _finalize_knowledge_gate(answer: str, token: str, state: dict[str, Any]) -> 
     }
     if not passed:
         return _knowledge_gap_answer(status), receipt
-    receipt["semantic"] = "retrieved_and_cited" if internal_passed else "public_evidence_only"
+    receipt["semantic"] = (
+        "retrieved_and_cited"
+        if internal_passed
+        else "public_evidence_only" if web_ok else "no_internal_knowledge_consumed"
+    )
     receipt["versions"] = {path: str(known[path].get("version") or "") for path in cited}
     visible_sources = [
         f"{path}@{receipt['versions'][path]}" if receipt["versions"][path] else path
         for path in cited
-    ] or receipt["web_urls"]
+    ] or receipt["web_urls"] or ["未使用受控知识"]
     proof_scope = (
         "此回执仅证明受控知识已读取、引用并完成版本复核"
         if internal_passed
         else "此回执仅证明答案引用了成功工具返回的公开 URL，未暴露受控知识正文"
+        if web_ok
+        else "此回执仅证明本回合未向模型暴露受控知识，不证明回答已有外部证据"
     )
     visible_receipt = (
         "知识回执：" + receipt["semantic"] + "；来源="

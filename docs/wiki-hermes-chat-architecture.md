@@ -47,7 +47,7 @@ iOS 问题
 | Hermes Bridge | 分别记录 required、attempted、consumed 与实际引用，覆盖预读和运行时知识工具，执行发送前终检 | 让能力缺失降低 required，或把 timeout、deny、no_match 合并为同一个错误 |
 | iOS/Web | 展示答案和结构化回执 | 吞错、放宽门禁或重解释权限 |
 
-普通公开问答允许可选内部预读，但只有在任何内部正文和元数据均未进入模型、公开工具成功且最终答案保留匹配 URL 时，Bridge 才可输出 `allowed_public_only`。明确要求内部知识、授权拒绝、消费状态不确定、引用撤权或版本变化均 fail closed。Gateway 超时不得简单通过增加 Bridge 超时时间解决。
+普通公开问答允许可选内部预读；只要任何内部正文和元数据均未进入模型，知识安全门禁就不能因 `no_match/timeout/system_error` 覆盖普通回答。有成功公开 URL 时输出 `allowed_public_only`，否则输出 `allowed_without_internal_knowledge`；公开问答是否强制联网由独立质量策略负责。明确要求内部知识、授权拒绝、消费状态不确定、引用撤权或版本变化仍 fail closed。Gateway 超时不得简单通过增加 Bridge 超时时间解决。
 
 本次同时修复了：
 
