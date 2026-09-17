@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from backend.api import knowledge
+from backend.api.catalog import compute_catalog
 from backend.services.knowledge_catalog import (
-    SEARCH_CACHE, compute_catalog, filter_database_live_documents, AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
+    SEARCH_CACHE, filter_database_live_documents, AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
     run_knowledge_read,
 )
 from backend.api.tenant import current_visibility
