@@ -231,6 +231,13 @@
       ]
     },
     {
+      "id": "project.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
       "id": "project.list",
       "status": "implemented",
       "tests": [
@@ -396,7 +403,7 @@
       ]
     }
   ],
-  "catalog_digest": "8257338b1580c5a370be1fe2fbe0963f75aaa8f95b4a2d499988c1ceccfd158f",
+  "catalog_digest": "8b293e987b8910e084c19b7f972d7792b6201849176bde8e08685b9631664f78",
   "consumptions": [
     {
       "gates": [
@@ -441,7 +448,7 @@
     }
   ],
   "counts": {
-    "implemented": 54,
+    "implemented": 55,
     "partial": 0,
     "unverified": 0
   },
@@ -517,6 +524,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 54,
+  "total": 55,
   "version": "1.0.0"
 }

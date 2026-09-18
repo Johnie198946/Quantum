@@ -425,6 +425,11 @@ class ExpectedRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class ProjectArchiveProposalRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=8, max_length=100)
+
+
 class TaskArchiveProposalRequest(BaseModel):
     expected_revision: int = Field(ge=0)
     request_id: str = Field(min_length=8, max_length=100)
@@ -1005,6 +1010,7 @@ async def _create_project_change_proposal(
     db, *, project: WorkspaceProject, user_id: str, change_kind: str,
     request_id: str, proposed_process: dict[str, Any],
     project_fields: dict[str, Any] | None = None, title: str,
+    operation_name: str = "replace_project_state",
 ) -> WorkspaceProjectChangeProposal:
     if classify_project_change(change_kind) != "INTENT":
         raise ValueError("project change proposal requires an intent-impacting kind")
@@ -1037,6 +1043,7 @@ async def _create_project_change_proposal(
         operation = candidate.operations[0] if candidate.operations else {}
         return (
             candidate.change_kind == change_kind
+            and operation.get("op") == operation_name
             and idempotency_projection(operation.get("process"))
             == idempotency_projection(proposed_process)
             and (operation.get("project_fields") or {}) == (project_fields or {})
@@ -1079,7 +1086,7 @@ async def _create_project_change_proposal(
         base_intent_hash=project.active_intent_hash,
         base_process_revision=project.process_revision,
         operations=[{
-            "op": "replace_project_state",
+            "op": operation_name,
             "process": proposed_process,
             "project_fields": project_fields or {},
         }],
@@ -1547,6 +1554,26 @@ async def decide_project_change_proposal(
                 "proposal": _proposal_out(proposal),
             })
         operation = proposal.operations[0] if proposal.operations else {}
+        if operation.get("op") == "archive_project":
+            project.status = "deleted"
+            project.updated_at = datetime.now(timezone.utc)
+            proposal.status = "APPROVED"
+            proposal.decided_by = user_id
+            proposal.decided_at = datetime.now(timezone.utc)
+            db.add(WorkspaceAuditEvent(
+                id=f"audit_{uuid4().hex}", tenant_key=tenant_key,
+                project_id=project.id, actor_user_id=user_id,
+                event_type="project.archived", subject_id=proposal.id,
+                payload={"process_revision": project.process_revision},
+            ))
+            await db.commit()
+            await db.refresh(project)
+            await db.refresh(proposal)
+            return {
+                "proposal": _proposal_out(proposal),
+                "project": _project_out(project),
+                "process_revision": project.process_revision,
+            }
         if operation.get("op") != "replace_project_state" or not isinstance(operation.get("process"), dict):
             raise HTTPException(status_code=422, detail="unsupported_project_change_operation")
         for key, value in (operation.get("project_fields") or {}).items():
@@ -1594,6 +1621,35 @@ async def decide_project_change_proposal(
             "intent_hash": project.active_intent_hash,
             "contribution": contribution,
         }
+
+
+@router.post("/projects/{project_id}/archive-proposal", status_code=202)
+async def propose_project_archive(
+    project_id: str,
+    body: ProjectArchiveProposalRequest,
+    payload=Depends(require_auth),
+) -> dict[str, Any]:
+    tenant_key, user_id = _scope(payload)
+    _require_interactive_human(payload)
+    async with SessionLocal() as db:
+        project = await _project_for_owner(db, project_id, tenant_key, user_id)
+        if project.process_revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail={
+                "error": "project_revision_conflict",
+                "server_revision": project.process_revision,
+            })
+        proposal = await _create_project_change_proposal(
+            db,
+            project=project,
+            user_id=user_id,
+            change_kind="PROJECT_ARCHIVE",
+            request_id=body.request_id,
+            proposed_process=deepcopy(project.process_snapshot or {}),
+            project_fields={"status": "deleted"},
+            title="归档项目",
+            operation_name="archive_project",
+        )
+        return {"proposal": _proposal_out(proposal), "project": _project_out(project)}
 
 
 @router.delete("/projects/{project_id}", status_code=204)

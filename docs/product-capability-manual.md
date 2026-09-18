@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `8257338b1580c5a370be1fe2fbe0963f75aaa8f95b4a2d499988c1ceccfd158f`
+Catalog digest: `8b293e987b8910e084c19b7f972d7792b6201849176bde8e08685b9631664f78`
 
 ## Gateway 核心模块规范
 
@@ -322,6 +322,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `profile.read@1.0.0` | profile | read | none | none | `profile.snapshot` | `answer@1` | implemented |
 | `profile.update@1.0.0` | profile | write | required | required | `profile.changed` | `answer@1` | implemented |
 | `project.create@1.0.0` | project | write | required | required | `project.created` | `answer@1` | implemented |
+| `project.delete@1.0.0` | project | write | required | required | `project.change_proposed` | `answer@1` | implemented |
 | `project.list@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `project.open@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `project.update@1.0.0` | project | write | required | required | `project.change_proposed` | `answer@1` | implemented |

@@ -89,6 +89,8 @@ bindings:
     handler: project.open
   - id: project.update
     handler: project.update
+  - id: project.delete
+    handler: project.delete
   - id: task.list
     handler: task.list
   - id: task.create

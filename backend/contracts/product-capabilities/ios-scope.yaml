@@ -148,6 +148,9 @@ annotations:
   project.update:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  project.delete:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
   task.list:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx

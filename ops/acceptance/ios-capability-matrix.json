@@ -1844,21 +1844,59 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_project_task_capabilities.py"
+      ],
       "capability": "project.delete",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_owner",
+          "recent_interactive_authentication",
+          "expected_project_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "project.change_proposed",
+      "handler": "project.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-project-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "expected_revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal",
+            "project"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -3306,9 +3344,9 @@
     }
   ],
   "counts": {
-    "absent": 22,
+    "absent": 21,
     "implemented": 0,
-    "partial": 48,
+    "partial": 49,
     "unverified": 0
   },
   "pcm_version": "1.0.0",

@@ -30,13 +30,14 @@ TASK = "tsk_test"
 def test_project_task_contracts_are_registered_on_the_shared_gateway():
     catalog = {item["id"]: item for item in load_catalog()["capabilities"]}
     expected = {
-        "project.list", "project.create", "project.open", "project.update",
+        "project.list", "project.create", "project.open", "project.update", "project.delete",
         "task.list", "task.create", "task.update", "task.delete", "task.status",
     }
     assert expected <= set(catalog)
     assert "task.execute" not in catalog
     for capability_id in {
-        "project.create", "project.update", "task.create", "task.update", "task.delete",
+        "project.create", "project.update", "project.delete",
+        "task.create", "task.update", "task.delete",
     }:
         assert catalog[capability_id]["confirmation"] == "required"
         assert catalog[capability_id]["idempotency"] == "required"
@@ -197,6 +198,30 @@ async def test_project_update_reuses_qws_revisioned_proposal_path():
 
 
 @pytest.mark.asyncio
+async def test_project_delete_reuses_qws_archive_proposal_path():
+    response = {
+        "proposal": {"id": "proposal-project-delete", "status": "PROPOSED"},
+        "project": {"id": PROJECT, "status": "active"},
+    }
+    with patch(
+        "backend.api.quantum_workspace.propose_project_archive",
+        new=AsyncMock(return_value=response),
+    ) as archive:
+        result = await execute_verified_capability(
+            "project.delete",
+            {"project_id": PROJECT, "expected_revision": 7},
+            payload=AUTH,
+            idempotency_key="project-delete-001",
+        )
+    assert result["events"][0]["payload"]["proposal"]["id"] == "proposal-project-delete"
+    project_id, body, payload = archive.await_args.args
+    assert (project_id, body.request_id, body.expected_revision) == (
+        PROJECT, "project-delete-001", 7
+    )
+    assert payload == AUTH
+
+
+@pytest.mark.asyncio
 async def test_task_delete_is_soft_delete_via_qws_archive_proposal():
     response = JSONResponse(status_code=202, content={
         "proposal": {"id": "proposal-task-delete", "status": "PROPOSED"},
@@ -316,6 +341,9 @@ async def test_project_task_mutations_require_durable_confirmation_flow():
         ("project.update", {
             "project_id": PROJECT, "expected_revision": 1,
             "name": "Unsafe", "goal": "Must not execute",
+        }),
+        ("project.delete", {
+            "project_id": PROJECT, "expected_revision": 1,
         }),
         ("task.delete", {
             "project_id": PROJECT, "task_id": TASK, "expected_revision": 1,

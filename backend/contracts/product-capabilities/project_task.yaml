@@ -123,6 +123,35 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_project_task_capabilities.py]
     implementation_status: implemented
+  - id: project.delete
+    version: 1.0.0
+    domain: project
+    description: Archive an owned QWS project while preserving immutable audit history.
+    positive_examples: [Archive this project after confirmation.]
+    negative_examples: [Hard-delete project history or archive a stale project.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [project_id, expected_revision]
+      properties:
+        project_id: {type: string, minLength: 1, maxLength: 80}
+        expected_revision: {type: integer, minimum: 0}
+    output_schema:
+      type: object
+      required: [proposal, project]
+    effect: write
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_project_owner, recent_interactive_authentication, expected_project_revision]
+    policy_ref: qws-project-access
+    handler_binding: project.delete
+    idempotency: required
+    receipt: required
+    result_event: project.change_proposed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_project_task_capabilities.py]
+    implementation_status: implemented
   - id: task.list
     version: 1.0.0
     domain: task

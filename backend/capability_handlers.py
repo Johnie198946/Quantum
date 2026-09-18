@@ -777,6 +777,22 @@ async def _project_update(data: dict[str, Any], payload: dict[str, Any], key: st
     ))
 
 
+async def _project_delete(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import (
+        ProjectArchiveProposalRequest,
+        propose_project_archive,
+    )
+
+    assert key
+    return await propose_project_archive(
+        data["project_id"],
+        ProjectArchiveProposalRequest(
+            expected_revision=data["expected_revision"], request_id=key
+        ),
+        payload,
+    )
+
+
 async def _task_list(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
     from backend.api.quantum_workspace import get_project_process
 
@@ -928,6 +944,7 @@ HANDLERS: dict[str, Handler] = {
     "project.create": _project_create,
     "project.open": _project_open,
     "project.update": _project_update,
+    "project.delete": _project_delete,
     "task.list": _task_list,
     "task.create": _task_create,
     "task.update": _task_update,
