@@ -122,6 +122,13 @@ public struct ChatView: View {
                     onKnowledgeReferenced: { item in coordinator.referenceKnowledge(item) }
                 )
             }
+            .sheet(item: $coordinator.pendingClientAction) { action in
+                NativeClientActionHost(action: action) { status, metadata in
+                    coordinator.completeClientAction(
+                        action, status: status, metadata: metadata
+                    )
+                }
+            }
             .fullScreenCover(isPresented: $showingTopicDiscussion, onDismiss: returnToTopicParent) {
                 TargetedTopicDiscussionSheet(coordinator: coordinator)
             }

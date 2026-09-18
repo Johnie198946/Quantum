@@ -73,6 +73,21 @@ capabilities:
   - schedule.update
   - schedule.delete
 annotations:
+  file.pick:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  photo.capture:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  photo.import:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  voice.record:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  share.present:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
   hermes.session.list:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent

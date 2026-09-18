@@ -26,6 +26,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var thinkingDetail: String? = nil
     @Published public var liveProgress: String? = nil
     @Published public var toastMessage: String? = nil
+    @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
     @Published public private(set) var hasNewerMessages: Bool = false
@@ -535,8 +536,37 @@ public final class TenantSessionCoordinator: ObservableObject {
             appState?.openWorkflow(workflow)
         } else if path == .artifact {
             showToast("工作流工件已就绪")
+        } else if path == .clientAction {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let action = try? decoder.decode(ClientActionDTO.self, from: event.payload),
+                  action.state == "PENDING" else {
+                return false
+            }
+            pendingClientAction = action
         }
         return true
+    }
+
+    public func completeClientAction(
+        _ action: ClientActionDTO,
+        status: String,
+        metadata: [String: String] = [:]
+    ) {
+        guard pendingClientAction?.actionId == action.actionId else { return }
+        pendingClientAction = nil
+        Task { [weak self] in
+            do {
+                _ = try await CapabilityClient().recordClientActionReceipt(
+                    actionId: action.actionId,
+                    status: status,
+                    resultMetadata: metadata
+                )
+                self?.showToast(status == "SUCCEEDED" ? "设备操作已完成" : "设备操作已取消")
+            } catch {
+                self?.showToast("设备操作回执失败")
+            }
+        }
     }
 
     private func statusEventCursor(sessionId: String, outputMessageId: String) -> Int {

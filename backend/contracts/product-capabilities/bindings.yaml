@@ -125,3 +125,13 @@ bindings:
     handler: hermes.session.resume
   - id: hermes.session.delete
     handler: hermes.session.delete
+  - id: file.pick
+    handler: file.pick
+  - id: photo.capture
+    handler: photo.capture
+  - id: photo.import
+    handler: photo.import
+  - id: voice.record
+    handler: voice.record
+  - id: share.present
+    handler: share.present

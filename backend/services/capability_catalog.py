@@ -44,6 +44,7 @@ IMPLEMENTED_HANDLERS = {
     "notification.list", "notification.mark_read", "notification.preferences.update",
     "hermes.session.list", "hermes.session.open", "hermes.session.resume",
     "hermes.session.delete",
+    "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
 }
 
 

@@ -97,6 +97,13 @@
       ]
     },
     {
+      "id": "file.pick",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
       "id": "hermes.session.delete",
       "status": "implemented",
       "tests": [
@@ -243,6 +250,20 @@
       ]
     },
     {
+      "id": "photo.capture",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "photo.import",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
       "id": "presentation.create_from_document",
       "status": "implemented",
       "tests": [
@@ -345,6 +366,13 @@
       ]
     },
     {
+      "id": "share.present",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
       "id": "skill.create",
       "status": "implemented",
       "tests": [
@@ -408,6 +436,13 @@
       ]
     },
     {
+      "id": "voice.record",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
       "id": "workflow.approve",
       "status": "implemented",
       "tests": [
@@ -460,7 +495,7 @@
       ]
     }
   ],
-  "catalog_digest": "6227277c8c4db9a8982968f5dff30f98d82cb06f1c718c5e29507098e5c6e7ee",
+  "catalog_digest": "eaa0aca312a05da37fce48d22f48f006214dcf0d108cf56e9894266cf8beb5b3",
   "consumptions": [
     {
       "gates": [
@@ -505,7 +540,7 @@
     }
   ],
   "counts": {
-    "implemented": 63,
+    "implemented": 68,
     "partial": 0,
     "unverified": 0
   },
@@ -581,6 +616,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 63,
+  "total": 68,
   "version": "1.0.0"
 }

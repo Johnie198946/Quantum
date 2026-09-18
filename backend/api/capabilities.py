@@ -47,6 +47,11 @@ class CapabilityConfirmRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=128)
 
 
+class ClientActionReceiptRequest(BaseModel):
+    status: str = Field(..., pattern="^(SUCCEEDED|CANCELLED|FAILED)$")
+    result_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 @router.get("")
 async def search(
     query: str = Query("", max_length=200),
@@ -105,6 +110,19 @@ async def execution_status(
     invocation_id: str, payload: dict[str, Any] = Depends(require_auth)
 ):
     return await invocation_status(invocation_id, payload=payload)
+
+
+@router.post("/client-actions/{action_id}/receipt")
+async def client_action_receipt(
+    action_id: str,
+    body: ClientActionReceiptRequest,
+    payload: dict[str, Any] = Depends(require_auth),
+):
+    from backend.services.client_actions import record_client_action_receipt
+
+    return await record_client_action_receipt(
+        action_id, body.status, body.result_metadata, payload
+    )
 
 
 @router.post("/invoke")

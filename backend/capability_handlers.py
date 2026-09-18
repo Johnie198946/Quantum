@@ -972,6 +972,32 @@ async def _hermes_session_delete(data, payload, key):
     return await _hermes_session_action("delete", data, payload)
 
 
+async def _client_action(capability_id, data, payload, key):
+    from backend.services.client_actions import issue_client_action
+
+    return await issue_client_action(capability_id, data, payload, key)
+
+
+async def _file_pick(data, payload, key):
+    return await _client_action("file.pick", data, payload, key)
+
+
+async def _photo_capture(data, payload, key):
+    return await _client_action("photo.capture", data, payload, key)
+
+
+async def _photo_import(data, payload, key):
+    return await _client_action("photo.import", data, payload, key)
+
+
+async def _voice_record(data, payload, key):
+    return await _client_action("voice.record", data, payload, key)
+
+
+async def _share_present(data, payload, key):
+    return await _client_action("share.present", data, payload, key)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -1036,4 +1062,9 @@ HANDLERS: dict[str, Handler] = {
     "hermes.session.open": _hermes_session_open,
     "hermes.session.resume": _hermes_session_resume,
     "hermes.session.delete": _hermes_session_delete,
+    "file.pick": _file_pick,
+    "photo.capture": _photo_capture,
+    "photo.import": _photo_import,
+    "voice.record": _voice_record,
+    "share.present": _share_present,
 }

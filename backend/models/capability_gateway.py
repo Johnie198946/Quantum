@@ -68,3 +68,32 @@ class CapabilityInvocation(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class ClientActionInvocation(Base):
+    """Durable device-action state; issuance is not execution success."""
+
+    __tablename__ = "client_action_invocations"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key", "user_id", "idempotency_key_hash",
+            name="uq_client_action_owner_idempotency",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    capability_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING", index=True)
+    request_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    result_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

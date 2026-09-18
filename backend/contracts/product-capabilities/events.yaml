@@ -87,3 +87,5 @@ events:
     version: 1
   - id: hermes.session.deleted
     version: 1
+  - id: client.action.requested
+    version: 1

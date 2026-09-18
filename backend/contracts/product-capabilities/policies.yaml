@@ -25,3 +25,5 @@ policies:
     description: Notification rows and preferences are visible and mutable only to their authenticated tenant/user owner with domain revision CAS.
   - id: hermes-session-owner
     description: A registered client chat session binds tenant/user ownership before any bridge session lookup or mutation.
+  - id: client-action-owner
+    description: Native actions and their terminal receipts are restricted to the authenticated tenant/user owner and explicit supported action types.

@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `6227277c8c4db9a8982968f5dff30f98d82cb06f1c718c5e29507098e5c6e7ee`
+Catalog digest: `eaa0aca312a05da37fce48d22f48f006214dcf0d108cf56e9894266cf8beb5b3`
 
 ## Gateway 核心模块规范
 
@@ -304,6 +304,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `bookshelf.search@1.0.0` | bookshelf | read | none | none | `bookshelf.results` | `bookshelf@1` | implemented |
 | `bookshelf.subscribe@1.0.0` | bookshelf | write | required | required | `bookshelf.subscription_changed` | `bookshelf@1` | implemented |
 | `document.word.create_from_text@1.0.0` | document | write | required | required | `document.created` | `workflow@1` | implemented |
+| `file.pick@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `hermes.session.delete@1.0.0` | hermes_session | destructive | required | required | `hermes.session.deleted` | `hermes_session_detail@1` | implemented |
 | `hermes.session.list@1.0.0` | hermes_session | read | none | none | `hermes.session.listed` | `hermes_session_list@1` | implemented |
 | `hermes.session.open@1.0.0` | hermes_session | read | none | none | `hermes.session.opened` | `hermes_session_detail@1` | implemented |
@@ -324,6 +325,8 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `notification.mark_read@1.0.0` | notification | write | required | required | `notification.changed` | `answer@1` | implemented |
 | `notification.preferences.update@1.0.0` | notification | write | required | required | `notification.preferences_changed` | `answer@1` | implemented |
 | `paper.academic.create_from_text@1.0.0` | paper | write | required | required | `document.created` | `workflow@1` | implemented |
+| `photo.capture@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
+| `photo.import@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `presentation.create_from_document@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `presentation.create_from_text@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `profile.read@1.0.0` | profile | read | none | none | `profile.snapshot` | `answer@1` | implemented |
@@ -338,6 +341,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `schedule.delete@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
 | `schedule.list@1.0.0` | schedule | read | none | none | `schedule.snapshot` | `answer@1` | implemented |
 | `schedule.update@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
+| `share.present@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `skill.create@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `skill.delete@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `skill.list@1.0.0` | skill | read | none | none | `skill.snapshot` | `answer@1` | implemented |
@@ -347,6 +351,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `voice.record@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `workflow.approve@1.0.0` | workflow | write | required | required | `workflow.approved` | `workflow@1` | implemented |
 | `workflow.cancel@1.0.0` | workflow | write | required | required | `workflow.cancelled` | `workflow@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |

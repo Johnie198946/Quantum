@@ -5480,4 +5480,22 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertTrue(coordinator.workflows.isEmpty)
         XCTAssertTrue(coordinator.visibleActivities.isEmpty)
     }
+
+    func testClientActionRendererAndTypedPayloadDecode() throws {
+        XCTAssertEqual(
+            RendererRegistry.route(for: "client.action.requested", version: 1),
+            .clientAction
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let action = try decoder.decode(
+            ClientActionDTO.self,
+            from: Data(
+                #"{"action_id":"ca-1","capability_id":"file.pick","action_type":"file_picker","state":"PENDING","payload":{"allowed_types":["public.pdf"],"allows_multiple":true}}"#.utf8
+            )
+        )
+        XCTAssertEqual(action.actionId, "ca-1")
+        XCTAssertEqual(action.payload.allowedTypes, ["public.pdf"])
+        XCTAssertEqual(action.payload.allowsMultiple, true)
+    }
 }

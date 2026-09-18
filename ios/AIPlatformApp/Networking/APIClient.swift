@@ -2003,6 +2003,34 @@ private struct QCPConfirmRequestDTO: Encodable {
     }
 }
 
+public struct ClientActionPayloadDTO: Codable, Hashable {
+    public let allowedTypes: [String]?
+    public let allowsMultiple: Bool?
+    public let camera: String?
+    public let selectionLimit: Int?
+    public let maxSeconds: Int?
+    public let text: String?
+    public let artifactId: String?
+}
+
+public struct ClientActionDTO: Codable, Identifiable, Hashable {
+    public let actionId: String
+    public let capabilityId: String
+    public let actionType: String
+    public let state: String
+    public let payload: ClientActionPayloadDTO
+    public var id: String { actionId }
+}
+
+private struct ClientActionReceiptRequestDTO: Encodable {
+    let status: String
+    let resultMetadata: [String: String]
+    enum CodingKeys: String, CodingKey {
+        case status
+        case resultMetadata = "result_metadata"
+    }
+}
+
 @MainActor
 public final class CapabilityClient {
     private let apiClient: APIClient
@@ -2067,10 +2095,26 @@ public final class CapabilityClient {
             )
         )
     }
+
+    public func recordClientActionReceipt(
+        actionId: String,
+        status: String,
+        resultMetadata: [String: String] = [:]
+    ) async throws -> ClientActionDTO {
+        try await apiClient.request(
+            ClientActionDTO.self,
+            path: "capabilities/client-actions/\(actionId)/receipt",
+            method: "POST",
+            body: ClientActionReceiptRequestDTO(
+                status: status,
+                resultMetadata: resultMetadata
+            )
+        )
+    }
 }
 
 public enum QCPRenderingPath: String, Sendable {
-    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, artifactConsumption, navigation
+    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, artifactConsumption, navigation, clientAction
 }
 
 public struct QCPRendererRoute: Sendable, Equatable {
@@ -2118,6 +2162,7 @@ public enum RendererRegistry {
         "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "schedule.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "schedule.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "client.action.requested": .init(path: .clientAction, minimumVersion: 1, fallback: .answer),
     ]
 
     public static func route(for eventType: String, version: Int) -> QCPRenderingPath {

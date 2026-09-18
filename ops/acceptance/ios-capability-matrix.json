@@ -3008,21 +3008,57 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_client_action_capabilities.py"
+      ],
       "capability": "file.pick",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "supported_native_action"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "file.pick",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry",
+      "policy": "client-action-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed_types": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            },
+            "allows_multiple": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -3059,55 +3095,150 @@
       "status": "absent"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_client_action_capabilities.py"
+      ],
       "capability": "photo.capture",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "supported_native_action"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "photo.capture",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry",
+      "policy": "client-action-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "camera": {
+              "enum": [
+                "rear",
+                "front"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_client_action_capabilities.py"
+      ],
       "capability": "photo.import",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "supported_native_action"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "photo.import",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry",
+      "policy": "client-action-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "selection_limit": {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_client_action_capabilities.py"
+      ],
       "capability": "voice.record",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "supported_native_action"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "voice.record",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry",
+      "policy": "client-action-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "max_seconds": {
+              "maximum": 600,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -3127,21 +3258,55 @@
       "status": "absent"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_client_action_capabilities.py"
+      ],
       "capability": "share.present",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "supported_native_action"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "share.present",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry",
+      "policy": "client-action-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_id": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 20000,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -3652,9 +3817,9 @@
     }
   ],
   "counts": {
-    "absent": 13,
+    "absent": 8,
     "implemented": 0,
-    "partial": 57,
+    "partial": 62,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
