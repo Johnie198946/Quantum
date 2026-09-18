@@ -2580,6 +2580,12 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             try? FileManager.default.removeItem(at: accountRoot.appendingPathComponent(fingerprintA))
         }
         let sessionId = manager.createSession()
+        // Raise the per-session epoch before exhausting a write so A→B→A cannot
+        // accidentally pass only because both epochs start at zero.
+        for index in 0..<3 {
+            manager.truncateMessages(from: "missing-\(index)", sessionId: sessionId)
+        }
+        await manager.flushPendingPersistence()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
         defer { sqlite3_close(lockDatabase) }

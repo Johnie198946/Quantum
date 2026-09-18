@@ -2243,12 +2243,11 @@ public final class SessionManager: ObservableObject {
     private func discardRetainedPersistence(
         sessionId: String,
         accountFingerprint: String,
-        beforeSessionEpoch: Int
+        beforeSessionEpoch _: Int
     ) {
         let staleKeys = exhaustedPersistenceWrites.keys.filter {
             $0.sessionId == sessionId
                 && $0.accountFingerprint == accountFingerprint
-                && $0.sessionEpoch < beforeSessionEpoch
         }
         for key in staleKeys {
             exhaustedPersistenceWrites.removeValue(forKey: key)
