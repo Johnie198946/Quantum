@@ -109,6 +109,7 @@ async def test_structured_consumption_search_describe_invoke_and_receipt_replay(
     assert first["status"] == "completed"
     assert first["events"] == [{
         "type": "artifact.consumed", "version": 1,
+        "renderer": "artifact_consumption", "renderer_version": 1,
         "payload": first["events"][0]["payload"],
     }]
     result = first["events"][0]["payload"]

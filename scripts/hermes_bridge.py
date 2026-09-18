@@ -3942,6 +3942,8 @@ def _run_workflow_node_in_process(
             )
         result = result if isinstance(result, dict) else {}
         reply = str(result.get("final_response") or "").strip()
+        if _HERMES_PROVIDER_FAILURE_RE.fullmatch(reply):
+            raise HermesInvocationError
         return reply, getattr(agent, "session_id", None) or session_id, _usage_delta(result, usage_baseline)
     finally:
         if timeout_timer is not None:
@@ -8501,7 +8503,6 @@ def _run_agent_sync(
                 persistent_goal,
                 conversation_history=conversation_history,
             )
-        cache_keep = True
         result_dict = result if isinstance(result, dict) else {}
         raw_usage = (
             result_dict.get("usage")
@@ -8513,6 +8514,12 @@ def _run_agent_sync(
             result_dict.get("final_response") or ""
             if result_dict else str(result or "")
         )
+        # Hermes can return a provider transport failure as an exit-zero final
+        # response. It is not an assistant answer and must never be decorated
+        # with a knowledge receipt or retained as a successful cached turn.
+        if _HERMES_PROVIDER_FAILURE_RE.fullmatch(str(final or "").strip()):
+            raise HermesInvocationError
+        cache_keep = True
         client_tool_context = getattr(_client_context_tool_context, "value", None)
         if (
             isinstance(client_tool_context, dict)
@@ -8565,6 +8572,13 @@ def _run_agent_sync(
         if knowledge_receipt is not None:
             done_event["knowledge_receipt"] = knowledge_receipt
         _qput(stream_q, done_event)
+    except HermesInvocationError:
+        _qput(stream_q, {
+            "type": "error",
+            "code": HermesInvocationError.category,
+            "message": "模型服务暂时不可用，请稍后重试。",
+            "usage": result_usage or {},
+        })
     except Exception as e:
         print(f"[bridge] ⚠️ 进程内 agent 执行失败: {e}")
         # Completed usage survives post-processing errors. If Hermes raised

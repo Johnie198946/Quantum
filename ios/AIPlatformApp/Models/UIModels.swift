@@ -1003,7 +1003,7 @@ public extension ChatMessage {
     @discardableResult
     mutating func appendCapabilityBlock(from event: QCPStreamEvent) -> MessageBlock? {
         let block: MessageBlock
-        switch RendererRegistry.route(for: event.type, version: event.version) {
+        switch RendererRegistry.route(for: event) {
         case .confirmation:
             guard let proposal = try? JSONDecoder().decode(
                 CapabilityProposalBlock.self, from: event.payload
@@ -1192,6 +1192,8 @@ public final class SessionManager: ObservableObject {
     /// never cancel or replace this tail: each task captures its own account store.
     private var persistenceTail: Task<Void, Never>? = nil
     private var persistenceTaskGeneration: UInt64 = 0
+    private var exhaustedPersistenceMessageIDs: [PersistenceWriteKey: Set<String>] = [:]
+    private var failedPersistenceMutationCount: Int = 0
     private var accountEpoch: Int = 0
     /// Invalidates stale completion projections after a destructive session mutation.
     private var sessionPersistenceEpoch: [String: Int] = [:]
@@ -1725,6 +1727,10 @@ public final class SessionManager: ObservableObject {
         retryFailedBatch: Bool
     ) -> PersistenceDrainAction {
         if let messageCount {
+            exhaustedPersistenceMessageIDs[key]?.subtract(fingerprints.keys)
+            if exhaustedPersistenceMessageIDs[key]?.isEmpty == true {
+                exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            }
             finishPersistence(
                 sessionId: key.sessionId,
                 fingerprints: fingerprints,
@@ -1742,6 +1748,8 @@ public final class SessionManager: ObservableObject {
                 retry.merge(newer.messages)
             }
             pendingPersistenceWrites[key] = retry
+        } else {
+            exhaustedPersistenceMessageIDs[key, default: []].formUnion(batch.messages.map(\.id))
         }
         guard pendingPersistenceWrites[key] != nil else {
             scheduledPersistenceWrites.remove(key)
@@ -1807,6 +1815,7 @@ public final class SessionManager: ObservableObject {
             } catch {
                 let summary = try? store.summary(sessionId: sessionId)
                 let page = try? store.latest(sessionId: sessionId)
+                await self?.recordFailedPersistenceMutation()
                 await self?.restoreFailedDestructiveMutation(
                     mutation,
                     sessionId: sessionId,
@@ -1904,7 +1913,10 @@ public final class SessionManager: ObservableObject {
             // A newer snapshot may already be queued with only post-clear
             // messages. Reconcile after it so SQLite converges on the same
             // durable+new projection that the UI now presents.
-            enqueuePersistence(restoredMessages, for: sessionId)
+            let dirty = restoredMessages.filter {
+                persistedFingerprints[sessionId]?[$0.id] != fingerprint($0)
+            }
+            if !dirty.isEmpty { enqueuePersistence(dirty, for: sessionId) }
         }
     }
 
@@ -2063,6 +2075,25 @@ public final class SessionManager: ObservableObject {
         }
     }
 
+    /// Drains writes, retries, destructive mutations, and account reconciliation.
+    /// Injected stores remain caller-owned unless closure is explicitly requested.
+    public func shutdown(closeStore: Bool = false) async throws {
+        await flushPendingPersistence()
+        guard exhaustedPersistenceMessageIDs.isEmpty else {
+            throw ShutdownError.persistenceBatchExhausted
+        }
+        guard failedPersistenceMutationCount == 0 else {
+            failedPersistenceMutationCount = 0
+            throw ShutdownError.persistenceMutationFailed
+        }
+        if closeStore { try store.close() }
+    }
+
+    public enum ShutdownError: Error, Equatable {
+        case persistenceBatchExhausted
+        case persistenceMutationFailed
+    }
+
     var pendingPersistenceSnapshotCountForTesting: Int {
         pendingPersistenceWrites.count
     }
@@ -2095,6 +2126,7 @@ public final class SessionManager: ObservableObject {
             await previous?.value
             guard !Task.isCancelled else { return }
             guard (try? store.truncate(sessionId: sessionId, from: messageId)) != nil else {
+                await self?.recordFailedPersistenceMutation()
                 return
             }
             let count = (try? store.count(sessionId)) ?? 0
@@ -2109,6 +2141,10 @@ public final class SessionManager: ObservableObject {
             )
         }
         persistenceTaskGeneration &+= 1
+    }
+
+    private func recordFailedPersistenceMutation() {
+        failedPersistenceMutationCount &+= 1
     }
 
     public func clearSession(_ id: String) {
@@ -2219,7 +2255,21 @@ public final class SessionManager: ObservableObject {
         var projected = messages(for: sessionId)
         guard let index = projected.firstIndex(where: { $0.id == messageId }) else { return false }
         for event in events {
-            if RendererRegistry.route(for: event.type, version: event.version) == .artifactConsumption,
+            guard RendererRegistry.accepts(eventType: event.type, renderer: event.renderer) else {
+                return false
+            }
+            if event.type == "workflow.cancelled" {
+                guard RendererRegistry.route(for: event) == .workflow else { return false }
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                guard let cancellation = try? decoder.decode(
+                    WorkflowCancellationDTO.self, from: event.payload
+                ), cancellation.status == "cancelled" else {
+                    return false
+                }
+                continue
+            }
+            if RendererRegistry.route(for: event) == .artifactConsumption,
                ArtifactConsumptionBlock(event: event) == nil {
                 return false
             }

@@ -128,6 +128,39 @@ def test_failure_drops_cache_and_never_poison_next_baseline(harness):
     assert run()[-1]["usage"]["total_tokens"] == 1060
 
 
+def test_exit_zero_provider_failure_is_error_not_knowledge_answer(harness, monkeypatch):
+    agent, run, retained, _ = harness
+    original = agent.run_conversation
+
+    def provider_failure(*args, **kwargs):
+        result = original(*args, **kwargs)
+        result["final_response"] = "API call failed after 3 retries: Connection error."
+        return result
+
+    monkeypatch.setattr(agent, "run_conversation", provider_failure)
+    monkeypatch.setattr(bridge, "_knowledge_gate_requirement", lambda *args: "optional")
+    monkeypatch.setattr(bridge, "_perform_knowledge_preread", lambda *args, **kwargs: (
+        "", {
+            "status": "no_match", "retrieval_status": "no_match",
+            "requirement": "optional", "docs": [], "web_succeeded": False,
+            "web_urls": set(), "tool_results": [],
+        },
+    ))
+
+    events = run(
+        agent_config={"allowed_tools": ["knowledge_search"]},
+        knowledge_capability="cap",
+        knowledge_claims={"sources": ["tenant_knowledge"], "scopes": ["public"]},
+    )
+
+    assert events[-1]["type"] == "error"
+    assert events[-1]["code"] == "hermes_invocation_failed"
+    assert events[-1]["message"] == "模型服务暂时不可用，请稍后重试。"
+    assert not any(event["type"] == "done" for event in events)
+    assert not any("knowledge_receipt" in event for event in events)
+    assert retained == [False]
+
+
 def test_rebuilt_agent_same_session_does_not_subtract_previous_instance():
     old = CounterAgent()
     old.run_conversation("old")
@@ -247,3 +280,25 @@ def test_execution_error_retains_confirmed_counter_delta(harness):
     errors = [event for event in run() if event["type"] == "error"]
     assert errors[-1]["usage"]["total_tokens"] == 1060
     assert errors[-1]["usage"]["usage_scope"] == "turn"
+
+
+def test_workflow_provider_failure_text_is_classified_as_invocation_failure(monkeypatch, tmp_path):
+    agent = CounterAgent()
+    def provider_failure(goal, **kwargs):
+        return {"final_response": "API call failed after 3 retries: Connection error."}
+    agent.run_conversation = provider_failure  # type: ignore[method-assign]
+    db = SimpleNamespace(close=lambda: None)
+    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=lambda **kwargs: agent))
+    monkeypatch.setitem(sys.modules, "model_tools", SimpleNamespace(get_tool_definitions=lambda **kwargs: []))
+    monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda cwd: None))
+    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda cfg: {})
+    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda cfg: None)
+    monkeypatch.setattr(bridge, "_cache_request_overrides", lambda *args: {})
+    monkeypatch.setattr(bridge, "_ensure_tenant_skill_tool_registered", lambda: None)
+    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda sandbox: db)
+    with pytest.raises(bridge.HermesInvocationError):
+        bridge._run_workflow_node_in_process(
+            "hello", {"node_type": "LLM_INFERENCE", "parameters": {"max_tokens": 1000}},
+            sandbox=SimpleNamespace(root=tmp_path, hermes_home=tmp_path / "hermes-home"),  # type: ignore[arg-type]
+        )

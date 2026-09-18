@@ -74,19 +74,19 @@ capabilities:
   - schedule.delete
 annotations:
   task.execute:
-    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry
+    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   office.spreadsheet.create:
-    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry
+    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   office.pdf.create:
-    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry
+    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   data.analyze:
-    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry
+    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   media.create:
-    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry
+    ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   file.upload:
     ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift:NativeClientActionRegistry

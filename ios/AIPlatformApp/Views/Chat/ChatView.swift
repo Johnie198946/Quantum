@@ -98,6 +98,14 @@ public struct ChatView: View {
             } message: {
                 Text("此操作将清空当前会话所有消息记录。")
             }
+            .alert("本地消息保存失败", isPresented: Binding(
+                get: { coordinator.persistenceFailureMessage != nil },
+                set: { if !$0 { coordinator.acknowledgePersistenceFailure() } }
+            )) {
+                Button("知道了") { coordinator.acknowledgePersistenceFailure() }
+            } message: {
+                Text(coordinator.persistenceFailureMessage ?? "")
+            }
             .confirmationDialog(
                 "整理完成后如何处理来源会话？",
                 isPresented: Binding(

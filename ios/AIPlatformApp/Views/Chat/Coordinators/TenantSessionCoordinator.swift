@@ -26,6 +26,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var thinkingDetail: String? = nil
     @Published public var liveProgress: String? = nil
     @Published public var toastMessage: String? = nil
+    @Published public private(set) var persistenceFailureMessage: String? = nil
     @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
@@ -493,10 +494,23 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
-    private func dispatchCapabilityEvent(
+    func dispatchCapabilityEvent(
         _ event: QCPStreamEvent, outputMessageId: String
     ) async -> Bool {
-        let path = RendererRegistry.route(for: event.type, version: event.version)
+        guard RendererRegistry.accepts(eventType: event.type, renderer: event.renderer) else {
+            return false
+        }
+        let path = RendererRegistry.route(for: event)
+        if event.type == "workflow.cancelled" {
+            guard path == .workflow else { return false }
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let cancellation = try? decoder.decode(
+                WorkflowCancellationDTO.self, from: event.payload
+            ), cancellation.status == "cancelled" else { return false }
+            showToast("工作流已取消")
+            return true
+        }
         if path == .confirmation || path == .artifactConsumption {
             guard let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
                 return false
@@ -534,8 +548,11 @@ public final class TenantSessionCoordinator: ObservableObject {
             // switching tabs. A late account restore must not leave the task UI
             // with a nil owner/session scope.
             appState?.openWorkflow(workflow)
-        } else if path == .artifact {
+        } else if path == .artifact || path == .artifactCard
+                    || path == .dataAnalysisCard || path == .imageCard {
             showToast("工作流工件已就绪")
+        } else if path == .taskExecutionCard {
+            showToast("任务执行已排队")
         } else if path == .clientAction {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -544,6 +561,12 @@ public final class TenantSessionCoordinator: ObservableObject {
                 return false
             }
             pendingClientAction = action
+        } else if path == .bookshelf {
+            showToast("书架状态已更新")
+        } else if path == .hermesSessionList || path == .hermesSessionDetail {
+            showToast("Hermes 会话状态已更新")
+        } else if path == .knowledgeAction {
+            showToast("知识操作已更新")
         }
         return true
     }
@@ -860,6 +883,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     public func prepareForBackground() {
         guard let req = inflight else {
             commitSession()
+            validatePersistenceForBackground()
             tenantEpoch += 1
             stopStatusPolling()
             reconcilingMessageIDs.removeAll()
@@ -869,6 +893,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let outputId = outputMessageId(for: req)
         drainDeltaBuffer(messageId: outputId)
         commitSession()
+        validatePersistenceForBackground()
         if checkpointingRequestId == req.id || awaitingRunAcceptanceRequestId == req.id {
             // The Bridge has not accepted this Run yet. Keep the checkpoint task
             // alive; once durable local state exists it will submit the same request
@@ -885,6 +910,21 @@ public final class TenantSessionCoordinator: ObservableObject {
         confirmedRunningMessageIDs.removeAll()
         isGenerating = false
         inflight = nil
+    }
+
+    private func validatePersistenceForBackground() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+            } catch {
+                persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+            }
+        }
+    }
+
+    public func acknowledgePersistenceFailure() {
+        persistenceFailureMessage = nil
     }
 
     public func cancelAllTasksAndAnimations() {

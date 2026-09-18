@@ -8,6 +8,32 @@ import UIKit
 import Security
 @testable import AIPlatformApp
 
+extension XCTestCase {
+    @MainActor
+    func makeSessionManager(store: ChatHistoryStore) -> SessionManager {
+        let manager = SessionManager(store: store)
+        addTeardownBlock { try await manager.shutdown(closeStore: true) }
+        return manager
+    }
+
+    @MainActor
+    func consumeExpectedPersistenceMutationFailure(
+        _ manager: SessionManager,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        do {
+            try await manager.shutdown()
+            XCTFail("shutdown must expose the queued persistence mutation failure", file: file, line: line)
+        } catch {
+            XCTAssertEqual(
+                error as? SessionManager.ShutdownError,
+                .persistenceMutationFailed,
+                file: file, line: line
+            )
+        }
+    }
+}
+
 private final class LockedErrorBox: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [Error] = []
@@ -2002,8 +2028,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -2191,7 +2217,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
     func testChatHistoryStorePagesOneThousandMessagesWithinBudgets() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy")
@@ -2241,11 +2267,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionOrganizationLifecycleAndSourceContextAreRecoverable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let first = manager.createSession()
         manager.setMessages([
             ChatMessage(id: "m1", sessionId: first, role: .user, content: "项目预算是两万元")
@@ -2273,7 +2299,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         manager.setLifecycle(.active, for: first)
         XCTAssertTrue(manager.sortedSessionIDs(status: .active).contains(first))
 
-        let restored = SessionManager(
+        let restored = makeSessionManager(
             store: try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
         )
         XCTAssertNotNil(restored.sessionOrganizedAt[first])
@@ -2285,7 +2311,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let messages = (0..<30).map {
             PersistedMessage(ChatMessage(id: "legacy-\($0)", sessionId: "legacy", role: $0.isMultiple(of: 2) ? .user : .assistant, content: "历史 \($0)"))
         }
@@ -2313,7 +2339,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let source = legacy.appendingPathComponent("broken.json")
         try Data("not-json".utf8).write(to: source)
 
@@ -2326,7 +2352,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let duplicated = ChatMessage(id: "same-id", sessionId: "rollback", role: .assistant, content: "重复")
         let record = SessionRecord(
             id: "rollback", title: "应回滚", updatedAt: Date(),
@@ -2345,14 +2371,14 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(databaseURL: root.appendingPathComponent("history.sqlite"), legacyDirectory: root.appendingPathComponent("legacy"))
         let sessionId = "metadata-only"
         _ = try store.upsert((0..<100).map {
             ChatMessage(id: "cold-\($0)", sessionId: sessionId, role: .assistant, content: "消息 \($0)")
         }, sessionId: sessionId)
 
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         XCTAssertEqual(manager.messageCount(for: sessionId), 100)
         XCTAssertTrue(manager.sessions.isEmpty)
         XCTAssertLessThanOrEqual(manager.latestPage(for: sessionId).messages.count, ChatHistoryStore.pageMessageLimit)
@@ -2362,13 +2388,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCoordinatorReplacesVisibleHistoryPages() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(databaseURL: root.appendingPathComponent("history.sqlite"), legacyDirectory: root.appendingPathComponent("legacy"))
         let sessionId = "paging-ui"
         _ = try store.upsert((0..<60).map {
             ChatMessage(id: "page-\($0)", sessionId: sessionId, role: .assistant, content: "消息 \($0)")
         }, sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let coordinator = TenantSessionCoordinator(sessionManager: manager)
 
         XCTAssertEqual(coordinator.messages.last?.id, "page-59")
@@ -2392,12 +2418,12 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerPersistsMessagesOffMainActorInOrder() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let first = ChatMessage(
             id: "assistant", sessionId: sessionId, role: .assistant,
@@ -2420,15 +2446,110 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionManagerPersistsRunCursorOnlyChanges() async throws {
+    func testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let legacyURL = root.appendingPathComponent("legacy")
+        let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
+        var reopened: ChatHistoryStore?
+        defer {
+            try? reopened?.close()
+            try? store.close()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let manager = makeSessionManager(store: store)
+        let sessionId = manager.createSession()
+        manager.setMessages([
+            ChatMessage(id: "durable", sessionId: sessionId, role: .user, content: "persist me")
+        ], for: sessionId)
+
+        try await manager.shutdown(closeStore: true)
+
+        XCTAssertThrowsError(try store.summaries()) { error in
+            let error = error as NSError
+            XCTAssertEqual(error.domain, "ChatHistoryStore")
+            XCTAssertEqual(error.code, Int(SQLITE_MISUSE))
+            XCTAssertTrue(error.localizedDescription.contains("database is closed"))
+        }
+        XCTAssertThrowsError(try store.migrateLegacySessions())
+        reopened = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: legacyURL,
+            performLegacyMigration: false
+        )
+        XCTAssertEqual(try reopened?.message(sessionId: sessionId, id: "durable")?.content, "persist me")
+
+        let failedDatabaseURL = root.appendingPathComponent("failed.sqlite")
+        let failedStore = try ChatHistoryStore(
+            databaseURL: failedDatabaseURL,
+            legacyDirectory: root.appendingPathComponent("failed-legacy")
+        )
+        defer { try? failedStore.close() }
+        let failedManager = SessionManager(store: failedStore)
+        let failedSessionId = failedManager.createSession()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(failedDatabaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+
+        failedManager.setMessages([
+            ChatMessage(id: "dropped", sessionId: failedSessionId, role: .user, content: "must fail")
+        ], for: failedSessionId)
+
+        do {
+            try await failedManager.shutdown()
+            XCTFail("shutdown must not report success after an exhausted persistence batch")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceBatchExhausted)
+        }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        XCTAssertNil(try failedStore.message(sessionId: failedSessionId, id: "dropped"))
+    }
+
+    @MainActor
+    func testShutdownFailsAfterQueuedTruncationCannotReachSQLite() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
+        defer { try? store.close() }
         let manager = SessionManager(store: store)
+        let sessionId = manager.createSession()
+        let message = ChatMessage(
+            id: "truncate-me", sessionId: sessionId, role: .user, content: "durable"
+        )
+        manager.setMessages([message], for: sessionId)
+        await manager.flushPendingPersistence()
+
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+        manager.truncateMessages(from: message.id, sessionId: sessionId)
+
+        do {
+            try await manager.shutdown()
+            XCTFail("shutdown must fail after a queued truncation cannot reach SQLite")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceMutationFailed)
+        }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        XCTAssertNotNil(try store.message(sessionId: sessionId, id: message.id))
+    }
+
+    @MainActor
+    func testSessionManagerPersistsRunCursorOnlyChanges() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let store = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var pending = ChatMessage(
             id: "cursor-message", sessionId: sessionId, role: .assistant,
@@ -2462,13 +2583,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAccountTransitionsRetainQueuedWritesUntilDurable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2589,13 +2710,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2629,13 +2750,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFailedClearAndDeleteRestoreDurableProjection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let cleared = manager.createSession()
         let deleted = manager.createSession()
         let survivor = manager.createSession()
@@ -2668,18 +2789,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(sqlite3_exec(lockDatabase, "COMMIT", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(try store.count(cleared), 1)
         XCTAssertEqual(try store.count(deleted), 30)
+        await consumeExpectedPersistenceMutationFailure(manager)
     }
 
     @MainActor
     func testFailedClearMergesMessagesSentWhileMutationWasBlocked() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let oldMessage = ChatMessage(
             id: "before-clear", sessionId: sessionId,
@@ -2715,18 +2837,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(try store.count(sessionId), 2)
         XCTAssertNotNil(try store.message(sessionId: sessionId, id: oldMessage.id))
         XCTAssertNotNil(try store.message(sessionId: sessionId, id: newMessage.id))
+        await consumeExpectedPersistenceMutationFailure(manager)
     }
 
     @MainActor
     func testClearAndDeleteIgnoreOlderPersistenceCompletions() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
 
         let cleared = manager.createSession()
         var lockDatabase: OpaquePointer?
@@ -2760,7 +2883,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-history-concurrent-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy", isDirectory: true),
@@ -2824,7 +2947,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-checkpoint-leave-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
@@ -2837,7 +2960,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             role: .user, content: "继续执行"
         )
         try store.upsert([user], sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let otherSessionId = manager.createSession()
         manager.switchTo(sessionId)
         let coordinator = TenantSessionCoordinator(sessionManager: manager)
@@ -2886,7 +3009,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-ordered-writes-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
@@ -2900,7 +3023,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             content: "", isStreaming: true, pending: true
         )
         try store.upsert([user, pending], sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
 
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2947,13 +3070,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
 
         var lockDatabase: OpaquePointer?
@@ -2979,13 +3102,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-coalesced-stream-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var streaming = ChatMessage(
             id: "streaming", sessionId: sessionId, role: .assistant,
@@ -3032,13 +3155,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -3070,13 +3193,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-metadata-failure-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let source = ChatMessage(
             id: "source", sessionId: parent, role: .assistant,
@@ -3118,13 +3241,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let topics = try (0..<4).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -3156,13 +3279,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let topics = try (0..<4).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -3191,18 +3314,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(manager.topicSessions[topics[3].sessionId]?.state, .active)
         XCTAssertNil(try store.summary(sessionId: topics[0].sessionId))
         XCTAssertEqual(try store.summary(sessionId: topics[3].sessionId)?.topic?.state, .active)
+        await consumeExpectedPersistenceMutationFailure(manager)
     }
 
     @MainActor
     func testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let oldDatabaseURL = root.appendingPathComponent("old-history.sqlite")
         let oldStore = try ChatHistoryStore(
             databaseURL: oldDatabaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: oldStore)
+        let manager = makeSessionManager(store: oldStore)
         let oldSession = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(oldDatabaseURL.path, &lockDatabase), SQLITE_OK)
@@ -3219,7 +3343,10 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
         let accountDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("ChatHistory/accounts/\(manager.activeAccountFingerprint)")
-        defer { try? FileManager.default.removeItem(at: accountDirectory) }
+        addTeardownBlock {
+            try await manager.shutdown(closeStore: true)
+            try? FileManager.default.removeItem(at: accountDirectory)
+        }
         let parent = manager.createSession()
         let topics = try (0..<5).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -3263,11 +3390,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicSessionsCapQueuePromoteAndPersistMetadata() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
 
         let topics = try (0..<4).map { index in
@@ -3286,7 +3413,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(manager.topicSessions[topics[0].sessionId]?.state, .ended)
         XCTAssertEqual(manager.topicSessions[topics[3].sessionId]?.state, .active)
 
-        let restored = SessionManager(
+        let restored = makeSessionManager(
             store: try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
         )
         XCTAssertEqual(restored.topicSessions[topics[0].sessionId]?.state, .ended)
@@ -3456,11 +3583,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let projection = [
             ChatMessage(id: "user", sessionId: sessionId, role: .user, content: "长任务"),
@@ -3615,13 +3742,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         manager.setMessages([
             ChatMessage(
@@ -3676,8 +3803,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testInterruptionKeepsExistingPartialContentAndRunCursor() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3734,8 +3861,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testByteLimitedAnswerPagesCanExceedBlockLimitCeiling() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3780,8 +3907,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3844,8 +3971,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerRefreshesStaleStreamingCursorAfterCompletion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3893,8 +4020,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerCancellationRetainsLastCommittedPage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3946,8 +4073,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerRejectsNoProgressAndNonAdvancingCursor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4122,8 +4249,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4176,8 +4303,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testLateDurableCallbackCannotCrossAccountBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4223,9 +4350,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
-        let manager = SessionManager(store: try ChatHistoryStore(
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4251,7 +4378,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         ], for: sessionId)
         await manager.flushPendingPersistence()
 
-        let restoredManager = SessionManager(store: try ChatHistoryStore(
+        let restoredManager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4309,8 +4436,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4379,8 +4506,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCompletedWhileAwayUpdatesOriginalStoredMessage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4422,6 +4549,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                     events: isFirstPage ? [QCPStreamEvent(
                         type: "artifact.consumed", version: 1,
                         payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-away","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
+                        renderer: "artifact_consumption", rendererVersion: 1,
                         runId: "run-away", eventSequence: 8
                     )] : []
                 )
@@ -4467,8 +4595,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testRepeatedForegroundReconcileStartsOneDurableGET() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4542,8 +4670,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testExplicitStopAndRealFailureAreNotAutomaticallyResumed() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4623,8 +4751,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testLateDurableCallbackCannotCrossSessionBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4732,8 +4860,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
 
     func testLegacyClarifyContinuationCanFetchRemainingAnswer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4951,8 +5079,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -5012,8 +5140,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -5083,7 +5211,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(created.clarificationSession.lastEventSeq, 2)
     }
 
-    func testRendererRegistryCoversSemanticPathsAndVersionFallbacks() throws {
+    @MainActor
+    func testRendererRegistryCoversSemanticPathsAndVersionFallbacks() async throws {
         XCTAssertEqual(RendererRegistry.route(for: "answer_page", version: 1), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "clarify", version: 1), .clarify)
         XCTAssertEqual(RendererRegistry.route(for: "knowledge.action", version: 1), .knowledgeAction)
@@ -5091,8 +5220,17 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(RendererRegistry.route(for: "workflow.created", version: 1), .workflow)
         XCTAssertEqual(RendererRegistry.route(for: "workflow.approved", version: 1), .workflow)
         XCTAssertEqual(RendererRegistry.route(for: "workflow.revised", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.cancelled", version: 1), .workflow)
         XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
         XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.generated", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "task.execution_queued", version: 1), .taskExecutionCard)
+        XCTAssertFalse(RendererRegistry.accepts(
+            eventType: "artifact.generated", renderer: "task_execution_card"
+        ))
+        XCTAssertFalse(RendererRegistry.accepts(
+            eventType: "task.execution_queued", renderer: "image_card"
+        ))
         XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 1), .artifactConsumption)
         XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 0), .artifact)
         XCTAssertEqual(RendererRegistry.route(for: "knowledge.navigation", version: 1), .navigation)
@@ -5104,21 +5242,44 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 1), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "schedule.change_proposed", version: 1), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 0), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "notification.snapshot", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "hermes.session.listed", version: 1), .hermesSessionList)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "artifact_card", version: 1, rendererVersion: 1
+        ), .artifactCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "data_analysis_card", version: 1, rendererVersion: 1
+        ), .dataAnalysisCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "image_card", version: 1, rendererVersion: 1
+        ), .imageCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "task.execution_queued", renderer: "task_execution_card", version: 1, rendererVersion: 1
+        ), .taskExecutionCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "client.action.requested", renderer: "client_action", version: 2, rendererVersion: 1
+        ), .answer)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "wrong_renderer", version: 1, rendererVersion: 1
+        ), .answer)
         XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 0), .artifact)
         XCTAssertEqual(RendererRegistry.route(for: "unknown.event", version: 99), .answer)
 
         let event = try XCTUnwrap(APIClient.StreamEvent.parse([
             "type": "workflow.created", "version": 1,
+            "renderer": "workflow", "renderer_version": 1,
             "payload": ["workflow": ["id": "wf-1"]],
         ]))
         guard case .capability(let capability) = event else {
             return XCTFail("Expected semantic capability event")
         }
         XCTAssertEqual(capability.type, "workflow.created")
-        XCTAssertEqual(RendererRegistry.route(for: capability.type, version: capability.version), .workflow)
+        XCTAssertEqual(capability.renderer, "workflow")
+        XCTAssertEqual(RendererRegistry.route(for: capability), .workflow)
 
         let proposalEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
             "type": "capability.proposed", "version": 1,
+            "renderer": "confirmation", "renderer_version": 1,
             "payload": [
                 "proposal_id": "proposal-1", "capability_id": "workflow.create",
                 "input": ["title": "QCP", "description": "Create a workflow"],
@@ -5138,6 +5299,7 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
 
         let consumedEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
             "type": "artifact.consumed", "version": 1,
+            "renderer": "artifact_consumption", "renderer_version": 1,
             "run_id": "run-1", "event_sequence": 8,
             "payload": [
                 "structured_payload": ["value": "ok"],
@@ -5169,6 +5331,34 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         }.first)
         XCTAssertEqual(receipt.receiptId, "acr-1")
         XCTAssertLessThanOrEqual(receipt.structuredPreview.count, ArtifactConsumptionBlock.previewLimit)
+
+        let cancellationPayload = Data(#"{"request_id":"cancel-1","workflow_id":"wf-1","status":"cancelled","resource_revision":"2026-09-18T09:01:00Z","cancelled_execution_ids":["exec-1"],"cancelled_planning_job_ids":[]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let cancellation = try decoder.decode(WorkflowCancellationDTO.self, from: cancellationPayload)
+        XCTAssertEqual(cancellation.cancelledExecutionIds, ["exec-1"])
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        manager.setMessages([
+            ChatMessage(id: "output", sessionId: sessionId, role: .assistant, content: "")
+        ], for: sessionId)
+        let coordinator = TenantSessionCoordinator(sessionManager: manager)
+        let cancellationConsumed = await coordinator.dispatchCapabilityEvent(
+            QCPStreamEvent(
+                type: "workflow.cancelled", version: 1, payload: cancellationPayload,
+                renderer: "workflow", rendererVersion: 1
+            ),
+            outputMessageId: "output"
+        )
+        XCTAssertTrue(cancellationConsumed)
+        XCTAssertEqual(coordinator.toastMessage, "工作流已取消")
     }
 
     func testArtifactConsumptionPersistsRoundTripAndBoundsPreview() throws {

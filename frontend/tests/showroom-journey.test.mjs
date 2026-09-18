@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,8 +98,9 @@ test('exact-SHA bootstrap exports, verifies, and executes the target commit upda
   assert.match(deployExactScript, /sha256sum "\$REMOTE_SCRIPT"/);
   assert.match(deployExactScript, /bash "\$REMOTE_SCRIPT" "\$EXPECTED_SHA"/);
   assert.match(deployExactScript, /AI_LAB_DEPLOY_REMOTE_SUDO/);
-  assert.match(deployExactScript, /sudo -n env AI_LAB_SOURCE_ARCHIVE=/);
-  assert.match(deployExactScript, /AI_LAB_SOURCE_ARCHIVE="\$REMOTE_SOURCE" AI_LAB_SOURCE_ARCHIVE_SHA256=/);
+  assert.match(deployExactScript, /sudo -n env AI_LAB_EXPECTED_CURRENT_SHA=/);
+  assert.match(deployExactScript, /AI_LAB_SOURCE_ARCHIVE="\$REMOTE_SOURCE"/);
+  assert.match(deployExactScript, /AI_LAB_SOURCE_ARCHIVE_SHA256="\$SOURCE_HASH"/);
   assert.doesNotMatch(deployExactScript, /\/opt\/ai-lab-platform\/scripts\/update\.sh/);
 });
 
@@ -109,21 +110,23 @@ test('exact-SHA bootstrap executes the update script stored in the target commit
   const fakeBin = join(fixture, 'bin');
   const marker = join(fixture, 'executed-sha');
   const remotePathLog = join(fixture, 'remote-path');
+  const remoteFakeSource = join(fixture, 'remote-source.tar.gz');
   mkdirSync(join(repository, 'scripts'), { recursive: true });
   mkdirSync(fakeBin);
-  writeFileSync(join(repository, 'scripts', 'update.sh'), '#!/bin/bash\nset -eu\nprintf "%s" "$1" > "$DEPLOY_MARKER"\n');
+  writeFileSync(join(repository, 'scripts', 'update.sh'), '#!/bin/bash\nset -eu\ntest "$AI_LAB_EXPECTED_CURRENT_SHA" = "0000000000000000000000000000000000000000"\ntest -f "$AI_LAB_SOURCE_ARCHIVE"\ntest "$(shasum -a 256 "$AI_LAB_SOURCE_ARCHIVE" | cut -d" " -f1)" = "$AI_LAB_SOURCE_ARCHIVE_SHA256"\nprintf "%s" "$1" > "$DEPLOY_MARKER"\n');
   writeFileSync(join(fakeBin, 'scp'), `#!/bin/bash
 set -eu
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -q) shift ;;
-    -o|-i) shift 2 ;;
+    -F|-o|-i) shift 2 ;;
     *) break ;;
   esac
 done
 target="\${2#*:}"
 case "$target" in
-  /tmp/ai-lab-update.*) cp "$1" "$target" ;;
+  /tmp/ai-lab-update.*|/tmp/ai-lab-source.*) cp "$1" "$target" ;;
+  /opt/ai-lab-shared/offline-source/*.upload) cp "$1" "$REMOTE_FAKE_SOURCE.upload" ;;
   *) : ;;
 esac
 `);
@@ -131,7 +134,7 @@ esac
 set -eu
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -o|-i) shift 2 ;;
+    -F|-o|-i) shift 2 ;;
     *) break ;;
   esac
 done
@@ -143,20 +146,20 @@ if [ "$1" = "mktemp" ]; then
   exit 0
 fi
 if [ "$1" = "bash" ] && [ "$2" = "-s" ]; then
-  remote_script="$4"
-  expected_sha="$5"
-  expected_hash="$6"
-  test "$(shasum -a 256 "$remote_script" | cut -d' ' -f1)" = "$expected_hash"
-  bash "$remote_script" "$expected_sha"
-  exit 0
+  exec bash -s -- "$4" "$5" "$6" "$7" "$REMOTE_FAKE_SOURCE" "$9" "\${10}"
 fi
 case "$1" in
-  install) exit 0 ;;
+  install)
+    if [[ "$*" == *".upload"* ]]; then cp "$REMOTE_FAKE_SOURCE.upload" "$REMOTE_FAKE_SOURCE"; fi
+    exit 0
+    ;;
 esac
 exec "$@"
 `);
+  writeFileSync(join(fakeBin, 'sha256sum'), '#!/bin/bash\nexec shasum -a 256 "$@"\n');
   chmodSync(join(fakeBin, 'scp'), 0o755);
   chmodSync(join(fakeBin, 'ssh'), 0o755);
+  chmodSync(join(fakeBin, 'sha256sum'), 0o755);
   try {
     execFileSync('git', ['init', '-q'], { cwd: repository });
     execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repository });
@@ -164,16 +167,23 @@ exec "$@"
     execFileSync('git', ['add', 'scripts/update.sh'], { cwd: repository });
     execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repository });
     const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
-    execFileSync('bash', [fileURLToPath(new URL('../../scripts/deploy_exact_sha.sh', import.meta.url)), sha], {
+    const knownHosts = join(fixture, 'known_hosts');
+    writeFileSync(knownHosts, 'fixture-host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixtureOnlyNotARealKey\n');
+    const deployment = spawnSync('bash', [fileURLToPath(new URL('../../scripts/deploy_exact_sha.sh', import.meta.url)), sha], {
       cwd: repository,
+      encoding: 'utf8',
       env: {
         ...process.env,
         AI_LAB_DEPLOY_HOST: 'fake-host',
+        AI_LAB_DEPLOY_KNOWN_HOSTS_FILE: knownHosts,
+        AI_LAB_EXPECTED_CURRENT_SHA: '0'.repeat(40),
         DEPLOY_MARKER: marker,
         REMOTE_PATH_LOG: remotePathLog,
+        REMOTE_FAKE_SOURCE: remoteFakeSource,
         PATH: `${fakeBin}:${process.env.PATH}`,
       },
     });
+    assert.equal(deployment.status, 0, `stderr=${deployment.stderr}; stdout=${deployment.stdout}`);
     assert.equal(readFileSync(marker, 'utf8'), sha);
     assert.equal(existsSync(readFileSync(remotePathLog, 'utf8')), false);
   } finally {

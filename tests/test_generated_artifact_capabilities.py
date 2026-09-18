@@ -18,6 +18,7 @@ from backend.services.generated_artifacts import (
     generated_artifact_path,
     read_generated_artifact,
 )
+from backend.services.capability_catalog import execute_verified_capability
 
 
 def test_generated_artifacts_are_real_hashed_and_owner_bound(tmp_path, monkeypatch):
@@ -67,3 +68,31 @@ def test_generated_artifact_handlers_are_registered():
     assert {
         "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create"
     }.issubset(HANDLERS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capability_id,renderer", [
+    ("office.spreadsheet.create", "artifact_card"),
+    ("office.pdf.create", "artifact_card"),
+    ("data.analyze", "data_analysis_card"),
+    ("media.create", "image_card"),
+])
+async def test_shared_artifact_event_carries_contract_renderer(
+    tmp_path, monkeypatch, capability_id, renderer
+):
+    monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path))
+    inputs = {
+        "office.spreadsheet.create": {"columns": ["value"], "rows": [[1]]},
+        "office.pdf.create": {"content": "verified"},
+        "data.analyze": {"columns": ["value"], "rows": [[1]]},
+        "media.create": {"prompt": "verified"},
+    }
+    result = await execute_verified_capability(
+        capability_id, inputs[capability_id],
+        payload={"tenant_key": "tenant-a", "user_id": "user-a"},
+        idempotency_key=f"renderer-{capability_id}",
+    )
+    event = result["events"][0]
+    assert event["type"] == "artifact.generated"
+    assert event["renderer"] == renderer
+    assert event["renderer_version"] == 1

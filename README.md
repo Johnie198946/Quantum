@@ -88,7 +88,7 @@ MO 团队的知识引擎：自生长知识库 + Agent 自动编译 + 营销资�
 服务器位于大陆，github.com 直连被墙，走 codeload 官方通道：
 ```bash
 # 服务器上，仓库根目录（/opt/ai-lab-platform）
-bash scripts/update.sh   # 拉取最新代码 + 重建 + 健康检查
+AI_LAB_EXPECTED_CURRENT_SHA=<当前40位部署SHA> bash scripts/update.sh   # CAS 校验后拉取最新代码、重建并健康检查
 ```
 本地有更新时推送 GitHub 即可，服务器无需配 git/deploy key。
 

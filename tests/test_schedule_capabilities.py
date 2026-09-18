@@ -53,7 +53,9 @@ async def test_schedule_list_reuses_qws_tenant_user_state_owner():
             "schedule.list", {"project_id": PROJECT}, payload=AUTH, idempotency_key=None
         )
     assert result["events"][0] == {
-        "type": "schedule.snapshot", "version": 1, "payload": {"schedule": schedule}
+        "type": "schedule.snapshot", "version": 1,
+        "renderer": "answer", "renderer_version": 1,
+        "payload": {"schedule": schedule},
     }
     read.assert_awaited_once_with(PROJECT, AUTH)
 

@@ -52,7 +52,18 @@ public final class ChatHistoryStore: @unchecked Sendable {
         if performLegacyMigration { try migrateLegacySessions() }
     }
 
-    deinit { sqlite3_close(db) }
+    deinit { try? close() }
+
+    /// Closes this caller-owned connection after its asynchronous users have drained.
+    /// SessionManager.shutdown(closeStore:) provides that drain barrier when applicable.
+    public func close() throws {
+        try withConnectionLock {
+            guard let connection = db else { return }
+            let result = sqlite3_close(connection)
+            guard result == SQLITE_OK else { throw error("close", connection: connection) }
+            db = nil
+        }
+    }
 
     public func summaries() throws -> [StoredSessionSummary] {
         try query("SELECT id,title,updated_at,message_count,agent_id,agent_name,topic_payload,lifecycle_status,organized_at,archived_at,trashed_at FROM sessions ORDER BY updated_at DESC") { s in
@@ -284,6 +295,7 @@ public final class ChatHistoryStore: @unchecked Sendable {
     }
 
     public func migrateLegacySessions() throws {
+        try withConnectionLock { _ = try openConnection() }
         let fm=FileManager.default; guard let files=try? fm.contentsOfDirectory(at:legacyDirectory,includingPropertiesForKeys:nil).filter({$0.pathExtension=="json"}) else{return}
         for file in files {
             do {
@@ -357,28 +369,32 @@ public final class ChatHistoryStore: @unchecked Sendable {
     }
     private func exec(_ sql:String)throws {
         try withConnectionLock {
-            guard sqlite3_exec(db,sql,nil,nil,nil)==SQLITE_OK else{throw error(sql)}
+            let connection = try openConnection()
+            guard sqlite3_exec(connection,sql,nil,nil,nil)==SQLITE_OK else{throw error(sql, connection: connection)}
         }
     }
     private func run(_ sql:String,_ binds:(OpaquePointer?)->Void={_ in})throws {
         try withConnectionLock {
+            let connection = try openConnection()
             var s:OpaquePointer?
-            guard sqlite3_prepare_v2(db,sql,-1,&s,nil)==SQLITE_OK else{throw error(sql)}
+            guard sqlite3_prepare_v2(connection,sql,-1,&s,nil)==SQLITE_OK else{throw error(sql, connection: connection)}
             defer{sqlite3_finalize(s)}
             binds(s)
-            guard sqlite3_step(s)==SQLITE_DONE else{throw error(sql)}
+            guard sqlite3_step(s)==SQLITE_DONE else{throw error(sql, connection: connection)}
         }
     }
     private func runRequiringChange(_ sql:String,_ binds:(OpaquePointer?)->Void={_ in})throws {
         try withConnectionLock {
             try run(sql, binds)
-            guard sqlite3_changes(db) > 0 else { throw error("no rows changed: \(sql)") }
+            let connection = try openConnection()
+            guard sqlite3_changes(connection) > 0 else { throw error("no rows changed: \(sql)", connection: connection) }
         }
     }
     private func query<T>(_ sql:String,_ binds:(OpaquePointer?)->Void={_ in},_ map:(OpaquePointer?)->T)throws->[T] {
         try withConnectionLock {
+            let connection = try openConnection()
             var s:OpaquePointer?
-            guard sqlite3_prepare_v2(db,sql,-1,&s,nil)==SQLITE_OK else{throw error(sql)}
+            guard sqlite3_prepare_v2(connection,sql,-1,&s,nil)==SQLITE_OK else{throw error(sql, connection: connection)}
             defer{sqlite3_finalize(s)}
             binds(s)
             var r:[T]=[]
@@ -394,5 +410,16 @@ public final class ChatHistoryStore: @unchecked Sendable {
         guard sqlite3_column_type(s, i) != SQLITE_NULL else { return nil }
         return Date(timeIntervalSince1970: sqlite3_column_double(s, i))
     }
-    private func error(_ context:String)->NSError{NSError(domain:"ChatHistoryStore",code:Int(sqlite3_errcode(db)),userInfo:[NSLocalizedDescriptionKey:"\(context): \(db.flatMap(sqlite3_errmsg).map(String.init(cString:)) ?? "unknown")"])}
+    private func openConnection() throws -> OpaquePointer {
+        guard let db else { throw error("database is closed", connection: nil) }
+        return db
+    }
+    private func error(_ context:String, connection: OpaquePointer? = nil)->NSError {
+        let connection = connection ?? db
+        return NSError(
+            domain:"ChatHistoryStore",
+            code: connection.map { Int(sqlite3_errcode($0)) } ?? Int(SQLITE_MISUSE),
+            userInfo:[NSLocalizedDescriptionKey:"\(context): \(connection.map { String(cString: sqlite3_errmsg($0)) } ?? "connection unavailable")"]
+        )
+    }
 }

@@ -1154,6 +1154,7 @@ class TestInFlightUsers(unittest.TestCase):
             store.worker_heartbeat("worker-test")
             with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
                  patch.object(bridge, "DURABLE_CHAT_WORKER_ENABLED", True), \
+                 patch.object(bridge, "DURABLE_WORKER_HEARTBEAT_MAX_AGE", 60.0), \
                  patch.object(bridge, "_chat_run_store", store):
                 response = asyncio.run(chat_stream(GoalRequest(
                     goal="hi",

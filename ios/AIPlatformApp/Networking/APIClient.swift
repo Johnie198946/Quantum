@@ -1315,6 +1315,15 @@ public struct WorkflowCreateResponseDTO: Codable {
     public let clarificationSession: WorkflowClarificationSessionDTO
 }
 
+public struct WorkflowCancellationDTO: Codable, Hashable {
+    public let requestId: String
+    public let workflowId: String
+    public let status: String
+    public let resourceRevision: String
+    public let cancelledExecutionIds: [String]
+    public let cancelledPlanningJobIds: [String]
+}
+
 public struct WorkflowClarificationSessionDTO: Codable, Hashable {
     public let id: String
     public let workflowId: String
@@ -2121,7 +2130,10 @@ public final class CapabilityClient {
 }
 
 public enum QCPRenderingPath: String, Sendable {
-    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview, artifact, artifactConsumption, navigation, clientAction
+    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview
+    case artifact, artifactConsumption, navigation, clientAction, bookshelf
+    case hermesSessionList, hermesSessionDetail
+    case artifactCard, dataAnalysisCard, imageCard, taskExecutionCard
 }
 
 public struct QCPRendererRoute: Sendable, Equatable {
@@ -2131,6 +2143,25 @@ public struct QCPRendererRoute: Sendable, Equatable {
 }
 
 public enum RendererRegistry {
+    private static let rendererRoutes: [String: QCPRendererRoute] = [
+        "confirmation": .init(path: .confirmation, minimumVersion: 1, fallback: .answer),
+        "answer": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "clarify": .init(path: .clarify, minimumVersion: 1, fallback: .answer),
+        "knowledge_action": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "workflow": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "presentation_review": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "artifact": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "artifact_consumption": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
+        "bookshelf": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "hermes_session_list": .init(path: .hermesSessionList, minimumVersion: 1, fallback: .answer),
+        "hermes_session_detail": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "client_action": .init(path: .clientAction, minimumVersion: 1, fallback: .answer),
+        "artifact_card": .init(path: .artifactCard, minimumVersion: 1, fallback: .answer),
+        "data_analysis_card": .init(path: .dataAnalysisCard, minimumVersion: 1, fallback: .answer),
+        "image_card": .init(path: .imageCard, minimumVersion: 1, fallback: .answer),
+        "task_execution_card": .init(path: .taskExecutionCard, minimumVersion: 1, fallback: .answer),
+    ]
+
     private static let routes: [String: QCPRendererRoute] = [
         "capability.proposed": .init(path: .confirmation, minimumVersion: 1, fallback: .answer),
         "answer_page": .init(path: .answer, minimumVersion: 1, fallback: .answer),
@@ -2146,14 +2177,16 @@ public enum RendererRegistry {
         "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.approved": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "workflow.revised": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.cancelled": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
         "document.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
         "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
         "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
-        "bookshelf.results": .init(path: .answer, minimumVersion: 1, fallback: .answer),
-        "bookshelf.subscription_changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
-        "bookshelf.opened": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "artifact.generated": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "bookshelf.results": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "bookshelf.subscription_changed": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "bookshelf.opened": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
         "memory.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "memory.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "profile.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
@@ -2167,18 +2200,54 @@ public enum RendererRegistry {
         "project.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.execution_queued": .init(path: .taskExecutionCard, minimumVersion: 1, fallback: .answer),
         "schedule.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "schedule.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.preferences_changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "hermes.session.listed": .init(path: .hermesSessionList, minimumVersion: 1, fallback: .answer),
+        "hermes.session.opened": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "hermes.session.resumed": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "hermes.session.deleted": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
         "client.action.requested": .init(path: .clientAction, minimumVersion: 1, fallback: .answer),
     ]
 
-    public static func route(for eventType: String, version: Int) -> QCPRenderingPath {
-        guard let route = routes[eventType] else { return .answer }
-        return version >= route.minimumVersion ? route.path : route.fallback
+    public static func route(
+        for eventType: String, renderer: String? = nil,
+        version: Int, rendererVersion: Int? = nil
+    ) -> QCPRenderingPath {
+        guard let eventRoute = routes[eventType], version == eventRoute.minimumVersion else {
+            return routes[eventType]?.fallback ?? .answer
+        }
+        if let renderer {
+            guard accepts(eventType: eventType, renderer: renderer) else { return .answer }
+            guard let route = rendererRoutes[renderer] else { return .answer }
+            return rendererVersion == route.minimumVersion ? route.path : route.fallback
+        }
+        return eventRoute.path
+    }
+
+    public static func route(for event: QCPStreamEvent) -> QCPRenderingPath {
+        route(
+            for: event.type, renderer: event.renderer,
+            version: event.version, rendererVersion: event.rendererVersion
+        )
     }
 
     public static func metadata(for eventType: String) -> QCPRendererRoute? {
         routes[eventType]
+    }
+
+    public static func accepts(eventType: String, renderer: String?) -> Bool {
+        guard let renderer else { return false }
+        guard rendererRoutes[renderer] != nil else { return false }
+        let artifactRenderers: Set<String> = ["artifact_card", "data_analysis_card", "image_card"]
+        if eventType == "artifact.generated" { return artifactRenderers.contains(renderer) }
+        guard let eventRoute = routes[eventType], let rendererRoute = rendererRoutes[renderer] else {
+            return false
+        }
+        return eventRoute.path == rendererRoute.path
     }
 }
 
@@ -2214,29 +2283,37 @@ public struct QCPStreamEvent: Decodable, Sendable {
     public let type: String
     public let version: Int
     public let payload: Data
+    public let renderer: String?
+    public let rendererVersion: Int?
     public let runId: String?
     public let eventSequence: Int?
 
     public init(
         type: String, version: Int, payload: Data,
+        renderer: String? = nil, rendererVersion: Int? = nil,
         runId: String? = nil, eventSequence: Int? = nil
     ) {
         self.type = type
         self.version = version
         self.payload = payload
+        self.renderer = renderer
+        self.rendererVersion = rendererVersion
         self.runId = runId
         self.eventSequence = eventSequence
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, version, payload
+        case type, version, payload, renderer
+        case rendererVersion = "renderer_version"
         case runId, eventSequence
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         type = try container.decode(String.self, forKey: .type)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        version = try container.decode(Int.self, forKey: .version)
+        renderer = try container.decodeIfPresent(String.self, forKey: .renderer)
+        rendererVersion = try container.decodeIfPresent(Int.self, forKey: .rendererVersion)
         runId = try container.decodeIfPresent(String.self, forKey: .runId)
         eventSequence = try container.decodeIfPresent(Int.self, forKey: .eventSequence)
         let value = try container.decode(QCPJSONValue.self, forKey: .payload)
@@ -4082,15 +4159,21 @@ public final class APIClient: ObservableObject {
                     message: json["message"] as? String ?? ""
                 )
             default:
+                guard let version = json["version"] as? Int else { return nil }
+                guard let renderer = json["renderer"] as? String,
+                      let rendererVersion = json["renderer_version"] as? Int else { return nil }
                 guard RendererRegistry.metadata(for: type) != nil,
+                      RendererRegistry.accepts(eventType: type, renderer: renderer),
                       let payload = json["payload"],
                       JSONSerialization.isValidJSONObject(payload),
                       let data = try? JSONSerialization.data(withJSONObject: payload)
                 else { return nil }
                 return .capability(QCPStreamEvent(
                     type: type,
-                    version: json["version"] as? Int ?? 1,
+                    version: version,
                     payload: data,
+                    renderer: renderer,
+                    rendererVersion: rendererVersion,
                     runId: json["run_id"] as? String,
                     eventSequence: json["event_sequence"] as? Int
                 ))

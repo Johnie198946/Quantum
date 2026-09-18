@@ -2226,7 +2226,7 @@
       },
       "event": "task.execution_queued",
       "handler": "task.execute",
-      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry",
+      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry",
       "policy": "qws-project-access",
       "production_receipt": {
         "evidence": null,
@@ -2796,7 +2796,7 @@
       },
       "event": "artifact.generated",
       "handler": "office.spreadsheet.create",
-      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry",
+      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry",
       "policy": "generated-artifact-owner",
       "production_receipt": {
         "evidence": null,
@@ -2861,7 +2861,7 @@
       },
       "event": "artifact.generated",
       "handler": "office.pdf.create",
-      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry",
+      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry",
       "policy": "generated-artifact-owner",
       "production_receipt": {
         "evidence": null,
@@ -2917,7 +2917,7 @@
       },
       "event": "artifact.generated",
       "handler": "data.analyze",
-      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry",
+      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry",
       "policy": "generated-artifact-owner",
       "production_receipt": {
         "evidence": null,
@@ -2975,7 +2975,7 @@
       },
       "event": "artifact.generated",
       "handler": "media.create",
-      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:QCPRendererRegistry",
+      "ios_consumer": "ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry",
       "policy": "generated-artifact-owner",
       "production_receipt": {
         "evidence": null,

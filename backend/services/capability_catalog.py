@@ -347,7 +347,13 @@ async def execute_verified_capability(
         int(item["version"]) for item in load_catalog()["events"]
         if item["id"] == capability["result_event"]
     )
-    event = {"type": capability["result_event"], "version": event_version, "payload": result}
+    event = {
+        "type": capability["result_event"],
+        "version": event_version,
+        "renderer": capability["renderer"],
+        "renderer_version": capability["renderer_version"],
+        "payload": result,
+    }
     return {
         "status": "completed",
         "capability_id": capability_id,

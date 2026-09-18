@@ -66,6 +66,8 @@ async def test_workflow_cancel_reuses_domain_handler_with_cas_and_idempotency():
         )
     assert result["status"] == "completed"
     assert result["events"][0]["type"] == "workflow.cancelled"
+    assert result["events"][0]["renderer"] == "workflow"
+    assert result["events"][0]["renderer_version"] == 1
     workflow_id, body, payload = cancel.await_args.args
     assert workflow_id == "wf-cancel"
     assert body.request_id == "cancel-request-1"
