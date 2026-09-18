@@ -2588,7 +2588,9 @@ private struct KnowledgeBookReadingView: View {
                     ForEach(bookBody.sections) { section in
                         Button(section.title) {
                             onScopeChange(bookBody, section)
-                            withAnimation { proxy.scrollTo(section.id, anchor: .top) }
+                            withAnimation {
+                                proxy.scrollTo(section.id, anchor: UnitPoint(x: 0.5, y: 0.33))
+                            }
                         }
                         .accessibilityIdentifier("publication-reader-nav.\(section.id)")
                     }
@@ -2698,6 +2700,7 @@ private struct KnowledgeBookReadingView: View {
                 readerPage
             }
             .accessibilityIdentifier("publication-reader-body.\(book.id)")
+            .safeAreaPadding(.top, 104)
             .foregroundStyle(Color(red: 0.23, green: 0.17, blue: 0.11))
             .background(
                 ZStack {
@@ -2711,7 +2714,8 @@ private struct KnowledgeBookReadingView: View {
                 }
                 .ignoresSafeArea()
             )
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(Color(red: 0.96, green: 0.91, blue: 0.79), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 readerToolbar(bookBody: bookBody, proxy: proxy)
             }

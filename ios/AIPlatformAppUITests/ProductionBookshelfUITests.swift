@@ -532,15 +532,21 @@ final class ReaderFixtureUITests: XCTestCase {
         XCTAssertTrue((body.value as? String)?.contains("正文存活和章节导航") == true)
 
         openTableOfContentsAndTap("server-section-first")
-        XCTAssertTrue(app.staticTexts["第一章 起点"].waitForExistence(timeout: 5))
+        let first = app.staticTexts["第一章 起点"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        assertBelowReaderChrome(first)
         attachScreenshot(named: "fixture-reader-first-subscription-failed")
 
         openTableOfContentsAndTap("server-section-middle")
-        XCTAssertTrue(app.staticTexts["第五十一节 中段"].waitForExistence(timeout: 5))
+        let middle = app.staticTexts["第五十一节 中段"]
+        XCTAssertTrue(middle.waitForExistence(timeout: 5))
+        assertBelowReaderChrome(middle)
         attachScreenshot(named: "fixture-reader-middle")
 
         openTableOfContentsAndTap("server-section-last")
-        XCTAssertTrue(app.staticTexts["第一百零一节 终章"].waitForExistence(timeout: 5))
+        let last = app.staticTexts["第一百零一节 终章"]
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        assertBelowReaderChrome(last)
         attachScreenshot(named: "fixture-reader-last")
 
         app.buttons["返回书籍概述"].tap()
@@ -564,6 +570,19 @@ final class ReaderFixtureUITests: XCTestCase {
         XCTAssertTrue(section.exists)
         XCTAssertTrue(section.isHittable)
         section.tap()
+    }
+
+    private func assertBelowReaderChrome(_ element: XCUIElement) {
+        let back = app.buttons["返回书籍概述"]
+        let tableOfContents = app.buttons["publication-reader-toc.product-map"]
+        XCTAssertTrue(back.exists)
+        XCTAssertTrue(tableOfContents.exists)
+        let chromeBottom = max(back.frame.maxY, tableOfContents.frame.maxY)
+        XCTAssertGreaterThanOrEqual(
+            element.frame.minY,
+            chromeBottom + 24,
+            "Reader content must remain visibly separated from navigation controls."
+        )
     }
 
     private func attachScreenshot(named name: String) {
