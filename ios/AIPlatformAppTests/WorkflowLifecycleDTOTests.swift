@@ -31,6 +31,7 @@ extension XCTestCase {
                 file: file, line: line
             )
         }
+        manager.acknowledgeFailedPersistenceMutations()
     }
 }
 
@@ -2016,12 +2017,16 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
     @MainActor
     func testNonStreamingChatDecodesAndDispatchesQCPEvents() throws {
-        let data = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"proposal-1","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"创建工作流","risk":"medium","state":"awaiting_confirmation"}},{"type":"artifact.consumed","version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}}]}"#.utf8)
+        let data = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"renderer":"confirmation","renderer_version":1,"payload":{"proposal_id":"proposal-1","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"创建工作流","risk":"medium","state":"awaiting_confirmation"}},{"type":"artifact.consumed","version":1,"renderer":"artifact_consumption","renderer_version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}}]}"#.utf8)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(ChatResponseDTO.self, from: data)
         XCTAssertEqual(response.events?.map(\.type), ["capability.proposed", "artifact.consumed"])
+        XCTAssertEqual(response.events?.first?.renderer, "confirmation")
+        XCTAssertEqual(response.events?.first?.rendererVersion, 1)
         let artifactEvent = try XCTUnwrap(response.events?.last)
+        XCTAssertEqual(artifactEvent.renderer, "artifact_consumption")
+        XCTAssertEqual(artifactEvent.rendererVersion, 1)
         XCTAssertEqual(
             RendererRegistry.route(for: artifactEvent.type, version: artifactEvent.version),
             .artifactConsumption
@@ -2053,6 +2058,16 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         }.first
         XCTAssertEqual(consumption?.receiptId, "acr-1")
         XCTAssertEqual(consumption?.structuredPreview, #"{"value":"ok"}"#)
+
+        let malformedData = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"forged","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"伪造确认","risk":"medium","state":"awaiting_confirmation"}}]}"#.utf8)
+        let malformed = try decoder.decode(ChatResponseDTO.self, from: malformedData)
+        manager.applyResponse(sessionId: sessionID, requestId: "malformed", response: malformed)
+        XCTAssertFalse(manager.messages(for: sessionID).contains { message in
+            message.blocks.contains {
+                if case .capabilityProposal = $0 { return message.id == "malformed" }
+                return false
+            }
+        })
     }
 
     func testFeedbackReceiptSSEEventDecodes() throws {
@@ -2502,8 +2517,98 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceBatchExhausted)
         }
+        failedManager.activateAccount(
+            tenantKey: "tenant-\(UUID().uuidString)",
+            userId: "user-\(UUID().uuidString)"
+        )
         XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
-        XCTAssertNil(try failedStore.message(sessionId: failedSessionId, id: "dropped"))
+        try await failedManager.retryFailedPersistence()
+        XCTAssertEqual(
+            try failedStore.message(sessionId: failedSessionId, id: "dropped")?.content,
+            "must fail"
+        )
+    }
+
+    @MainActor
+    func testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let store = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        let manager = makeSessionManager(store: store)
+        let sessionId = manager.createSession()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+
+        manager.setMessages([
+            ChatMessage(id: "private", sessionId: sessionId, role: .user, content: "must stay deleted")
+        ], for: sessionId)
+        await manager.flushPendingPersistence()
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+
+        manager.clearSession(sessionId)
+        await manager.flushPendingPersistence()
+        try await manager.retryFailedPersistence()
+
+        XCTAssertNil(try store.message(sessionId: sessionId, id: "private"))
+        XCTAssertEqual(manager.pendingPersistenceSnapshotCountForTesting, 0)
+    }
+
+    @MainActor
+    func testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let bootstrap = try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("bootstrap.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        let manager = SessionManager(store: bootstrap)
+        let tenantA = "tenant-\(UUID().uuidString)"
+        let userA = "user-\(UUID().uuidString)"
+        manager.activateAccount(tenantKey: tenantA, userId: userA)
+        let fingerprintA = manager.activeAccountFingerprint
+        let accountRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ChatHistory/accounts")
+        let databaseURL = accountRoot.appendingPathComponent(fingerprintA).appendingPathComponent("history.sqlite")
+        addTeardownBlock {
+            try? await manager.shutdown(closeStore: true)
+            try? FileManager.default.removeItem(at: accountRoot.appendingPathComponent(fingerprintA))
+        }
+        let sessionId = manager.createSession()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+        manager.setMessages([
+            ChatMessage(id: "round-trip-private", sessionId: sessionId, role: .user, content: "must stay deleted")
+        ], for: sessionId)
+        await manager.flushPendingPersistence()
+
+        let tenantB = "tenant-\(UUID().uuidString)"
+        let userB = "user-\(UUID().uuidString)"
+        manager.activateAccount(tenantKey: tenantB, userId: userB)
+        let fingerprintB = manager.activeAccountFingerprint
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: accountRoot.appendingPathComponent(fingerprintB))
+        }
+        manager.activateAccount(tenantKey: tenantA, userId: userA)
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        manager.clearSession(sessionId)
+        await manager.flushPendingPersistence()
+        try await manager.retryFailedPersistence()
+
+        let verifier = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("verify-legacy"),
+            performLegacyMigration: false
+        )
+        defer { try? verifier.close() }
+        XCTAssertNil(try verifier.message(sessionId: sessionId, id: "round-trip-private"))
     }
 
     @MainActor
@@ -2538,6 +2643,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         }
         XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
         XCTAssertNotNil(try store.message(sessionId: sessionId, id: message.id))
+        do {
+            try await manager.shutdown()
+            XCTFail("a second shutdown must remain blocked until the user acknowledges the failed mutation")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceMutationFailed)
+        }
+        manager.acknowledgeFailedPersistenceMutations()
     }
 
     @MainActor
@@ -3314,7 +3426,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(manager.topicSessions[topics[3].sessionId]?.state, .active)
         XCTAssertNil(try store.summary(sessionId: topics[0].sessionId))
         XCTAssertEqual(try store.summary(sessionId: topics[3].sessionId)?.topic?.state, .active)
-        await consumeExpectedPersistenceMutationFailure(manager)
+        try await manager.shutdown()
     }
 
     @MainActor

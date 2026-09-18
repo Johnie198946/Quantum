@@ -27,6 +27,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var liveProgress: String? = nil
     @Published public var toastMessage: String? = nil
     @Published public private(set) var persistenceFailureMessage: String? = nil
+    @Published public private(set) var persistenceFailureCanRetry: Bool = true
     @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
@@ -917,14 +918,48 @@ public final class TenantSessionCoordinator: ObservableObject {
             guard let self else { return }
             do {
                 try await sessionManager.shutdown()
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureCanRetry = true
+                    persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+                }
             } catch {
+                persistenceFailureCanRetry = true
                 persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
             }
         }
     }
 
     public func acknowledgePersistenceFailure() {
+        if !persistenceFailureCanRetry {
+            sessionManager.acknowledgeFailedPersistenceMutations()
+        }
         persistenceFailureMessage = nil
+        persistenceFailureCanRetry = true
+    }
+
+    public func retryPersistenceFailure() {
+        guard persistenceFailureCanRetry else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+                persistenceFailureMessage = nil
+                persistenceFailureCanRetry = true
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+                }
+            } catch {
+                persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+            }
+        }
     }
 
     public func cancelAllTasksAndAnimations() {

@@ -20,6 +20,16 @@ test('new default entry is isolated from the legacy nine-screen app', () => {
   assert.match(readFileSync(new URL('legacy.html', root), 'utf8'), /app\.js/);
 });
 
+test('QWS capability proposals render an authenticated confirmation action', () => {
+  const drawer = readFileSync(new URL('../src/features/quantum-workspace/TaskChatDrawer.jsx', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../src/services/platformApi.js', import.meta.url), 'utf8');
+  assert.match(drawer, /event\.path === "confirmation"/);
+  assert.match(drawer, /confirmCapabilityProposal/);
+  assert.match(drawer, /确认执行/);
+  assert.match(api, /\/api\/v1\/capabilities\/confirm/);
+  assert.match(api, /confirmation_token/);
+});
+
 test('journey defines S0 through S10 and the five evidence contract fields', () => {
   for (let index = 0; index <= 10; index += 1) assert.match(script, new RegExp(`['"]S${index}['"]`));
   for (const field of ['customerQuestion', 'screenGoal', 'coreArtifact', 'chat', 'agentDesign', 'businessSystemNeed', 'tokenFactoryFeature', 'hardwareCommercialValue', 'evidenceStatus']) {

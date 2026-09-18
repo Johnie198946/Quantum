@@ -1,6 +1,7 @@
 const genericEvents = [
   "agent.changed", "agent.snapshot", "artifact.generated",
   "bookshelf.opened", "bookshelf.results", "bookshelf.subscription_changed",
+  "capability.proposed",
   "client.action.requested", "document.created",
   "hermes.session.deleted", "hermes.session.listed", "hermes.session.opened", "hermes.session.resumed",
   "knowledge.action", "knowledge.note", "knowledge.results",
@@ -12,6 +13,7 @@ const genericEvents = [
 ];
 
 const semanticRendererByEvent = new Map([
+  ["capability.proposed", "confirmation"],
   ["bookshelf.opened", "bookshelf"],
   ["bookshelf.results", "bookshelf"],
   ["bookshelf.subscription_changed", "bookshelf"],

@@ -18,7 +18,7 @@
 
 ## Final pre-commit verification
 
-- Python capability/deployment/provider scope: `250 passed / 0 failed`.
+- Python capability/deployment/provider scope: `279 passed / 0 failed`.
 - iOS simulator selected suites: `166 passed / 0 failed / 0 skipped` (`WorkflowLifecycleDTOTests` 151; total includes `ChatResponseRecoveryRegressionTests`).
 - Frontend complete Node test suite: passed.
 - Frontend production builds, including showroom gateway: passed.
@@ -26,6 +26,12 @@
 - `git diff --check`: passed.
 - Added-source scan: 0 absolute user paths, private-key blocks or credential assignments.
 - `--require-complete` is still expected to fail closed until 70 production receipts exist.
+
+## 2026-09-19 follow-up
+
+- `capability.proposed` is bound to the `confirmation` renderer and QWS posts the proposal token with the canonical bound `session_id` to `/api/v1/capabilities/confirm`.
+- Follow-up gates: Python targeted scope `279 passed`; frontend complete test/build passed; focused QCP/deployment `20 passed`; iOS `WorkflowLifecycleDTOTests` `153 passed / 0 failed`.
+- Production receipts remain pending; the matrix therefore correctly remains `partial: 70` until the exact SHA is deployed and verified.
 
 ## Delivery contract
 

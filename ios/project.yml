@@ -37,6 +37,7 @@ targets:
           - audio
         UIUserInterfaceStyle: Light
         NSMicrophoneUsageDescription: "用于语音交互输入，将你的语音实时转写为文字。"
+        NSCameraUsageDescription: "用于在你明确确认设备操作后拍摄并附加照片。"
         NSLocalNetworkUsageDescription: "用于连接本机开发服务完成真机端到端验收。"
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

@@ -348,6 +348,8 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
     }
     assert all(item["receipt"] is None for item in (created, started, presentation))
     assert [event["type"] for event in events] == ["capability.proposed"] * 3
+    assert all(event["renderer"] == "confirmation" for event in events)
+    assert all(event["renderer_version"] == 1 for event in events)
     assert all(event["payload"].get("confirmation_token") for event in events)
     serialized = json.dumps(events)
     assert not {"tenant_key", "user_id", "confirmed", "idempotency_key"} & set(
@@ -381,6 +383,8 @@ def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
 
     assert result["status"] == "awaiting_confirmation"
     assert [event["type"] for event in events] == ["capability.proposed"]
+    assert events[0]["renderer"] == "confirmation"
+    assert events[0]["renderer_version"] == 1
     assert events[0]["payload"]["confirmation_token"]
 
 

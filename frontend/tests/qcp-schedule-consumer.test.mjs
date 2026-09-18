@@ -56,6 +56,21 @@ test("QWS consumes project and task mutation events through the shared registry"
   assert.match(fallback.text, /保留服务端状态/);
 });
 
+test("QWS accepts only contracted capability confirmation envelopes", () => {
+  const proposal = consumeQCPEvent({
+    type: "capability.proposed",
+    version: 1,
+    renderer: "confirmation",
+    renderer_version: 1,
+    payload: { proposal_id: "proposal-1", confirmation_token: "opaque-token" },
+  });
+  assert.equal(proposal.path, "confirmation");
+  assert.equal(proposal.payload.confirmation_token, "opaque-token");
+  assert.equal(consumeQCPEvent({
+    type: "capability.proposed", version: 1, payload: { proposal_id: "proposal-1" },
+  }), null);
+});
+
 test("QWS schedule registry preserves unknown-version state with safe fallback", () => {
   const event = consumeQCPEvent({
     type: "schedule.snapshot",

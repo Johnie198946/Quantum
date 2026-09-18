@@ -1002,6 +1002,10 @@ public struct PersistedMessage: Codable, Sendable {
 public extension ChatMessage {
     @discardableResult
     mutating func appendCapabilityBlock(from event: QCPStreamEvent) -> MessageBlock? {
+        guard event.version == 1,
+              event.rendererVersion == 1,
+              RendererRegistry.accepts(eventType: event.type, renderer: event.renderer)
+        else { return nil }
         let block: MessageBlock
         switch RendererRegistry.route(for: event) {
         case .confirmation:
@@ -1165,6 +1169,7 @@ public final class SessionManager: ObservableObject {
     private var persistedFingerprints: [String: [String: Int]] = [:]
     private struct PersistenceWriteKey: Hashable, Sendable {
         let sessionId: String
+        let accountFingerprint: String
         let accountEpoch: Int
         let sessionEpoch: Int
     }
@@ -1181,6 +1186,14 @@ public final class SessionManager: ObservableObject {
 
         var messages: [ChatMessage] { order.compactMap { messagesById[$0] } }
     }
+    private struct ExhaustedPersistenceWrite: Sendable {
+        var batch: PendingPersistenceWrite
+        let store: ChatHistoryStore
+    }
+    private struct FailedPersistenceMutationKey: Hashable, Sendable {
+        let sessionId: String
+        let accountFingerprint: String
+    }
     private enum PersistenceDrainAction: Sendable { case stop, continueBeforeBarrier }
     /// A stream may update the same assistant message hundreds of times. Keep only
     /// the latest not-yet-written snapshot for each account/session epoch instead
@@ -1193,7 +1206,8 @@ public final class SessionManager: ObservableObject {
     private var persistenceTail: Task<Void, Never>? = nil
     private var persistenceTaskGeneration: UInt64 = 0
     private var exhaustedPersistenceMessageIDs: [PersistenceWriteKey: Set<String>] = [:]
-    private var failedPersistenceMutationCount: Int = 0
+    private var exhaustedPersistenceWrites: [PersistenceWriteKey: ExhaustedPersistenceWrite] = [:]
+    private var failedPersistenceMutations: Set<FailedPersistenceMutationKey> = []
     private var accountEpoch: Int = 0
     /// Invalidates stale completion projections after a destructive session mutation.
     private var sessionPersistenceEpoch: [String: Int] = [:]
@@ -1664,10 +1678,15 @@ public final class SessionManager: ObservableObject {
         guard sessionTitles[id] != nil else { return }
         let key = PersistenceWriteKey(
             sessionId: id,
+            accountFingerprint: accountFingerprint,
             accountEpoch: accountEpoch,
             sessionEpoch: sessionPersistenceEpoch[id, default: 0]
         )
         var pending = pendingPersistenceWrites[key] ?? PendingPersistenceWrite()
+        if let exhausted = exhaustedPersistenceWrites.removeValue(forKey: key) {
+            pending.merge(exhausted.batch.messages)
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+        }
         pending.merge(dirty)
         pendingPersistenceWrites[key] = pending
         guard scheduledPersistenceWrites.insert(key).inserted else { return }
@@ -1749,7 +1768,17 @@ public final class SessionManager: ObservableObject {
             }
             pendingPersistenceWrites[key] = retry
         } else {
-            exhaustedPersistenceMessageIDs[key, default: []].formUnion(batch.messages.map(\.id))
+            var exhausted = exhaustedPersistenceWrites.removeValue(forKey: key)?.batch
+                ?? PendingPersistenceWrite()
+            exhausted.merge(batch.messages)
+            if let newer = pendingPersistenceWrites.removeValue(forKey: key) {
+                exhausted.merge(newer.messages)
+            }
+            exhaustedPersistenceWrites[key] = ExhaustedPersistenceWrite(
+                batch: exhausted,
+                store: store
+            )
+            exhaustedPersistenceMessageIDs[key, default: []].formUnion(exhausted.messages.map(\.id))
         }
         guard pendingPersistenceWrites[key] != nil else {
             scheduledPersistenceWrites.remove(key)
@@ -1792,6 +1821,7 @@ public final class SessionManager: ObservableObject {
     ) {
         let previous = persistenceTail
         let store = self.store
+        let expectedAccountFingerprint = accountFingerprint
         let expectedAccountEpoch = accountEpoch
         let expectedSessionEpoch = sessionPersistenceEpoch[sessionId, default: 0]
         let expectedMetadataEpoch = sessionMetadataEpoch[sessionId, default: 0]
@@ -1808,6 +1838,7 @@ public final class SessionManager: ObservableObject {
                     sessionId: sessionId,
                     promotedTopic: promotedTopic,
                     queuedTopicBeforePromotion: queuedTopicBeforePromotion,
+                    expectedAccountFingerprint: expectedAccountFingerprint,
                     expectedAccountEpoch: expectedAccountEpoch,
                     expectedSessionEpoch: expectedSessionEpoch,
                     expectedMetadataEpoch: expectedMetadataEpoch
@@ -1815,7 +1846,10 @@ public final class SessionManager: ObservableObject {
             } catch {
                 let summary = try? store.summary(sessionId: sessionId)
                 let page = try? store.latest(sessionId: sessionId)
-                await self?.recordFailedPersistenceMutation()
+                await self?.recordFailedPersistenceMutation(
+                    sessionId: sessionId,
+                    accountFingerprint: expectedAccountFingerprint
+                )
                 await self?.restoreFailedDestructiveMutation(
                     mutation,
                     sessionId: sessionId,
@@ -1836,10 +1870,20 @@ public final class SessionManager: ObservableObject {
         sessionId: String,
         promotedTopic: TopicSessionMetadata?,
         queuedTopicBeforePromotion: TopicSessionMetadata?,
+        expectedAccountFingerprint: String,
         expectedAccountEpoch: Int,
         expectedSessionEpoch: Int,
         expectedMetadataEpoch: Int
     ) {
+        resolveFailedPersistenceMutation(
+            sessionId: sessionId,
+            accountFingerprint: expectedAccountFingerprint
+        )
+        discardRetainedPersistence(
+            sessionId: sessionId,
+            accountFingerprint: expectedAccountFingerprint,
+            beforeSessionEpoch: expectedSessionEpoch
+        )
         guard mutation == .delete, accountEpoch == expectedAccountEpoch else { return }
         if let promotedTopic {
             pendingTopicPromotionSessionIDs.remove(promotedTopic.sessionId)
@@ -2075,15 +2119,35 @@ public final class SessionManager: ObservableObject {
         }
     }
 
+    /// Replays retained payloads after a transient SQLite failure. Exhausted
+    /// writes remain in memory across account switches until this succeeds.
+    public func retryFailedPersistence() async throws {
+        await flushPendingPersistence()
+        let exhausted = exhaustedPersistenceWrites
+        exhaustedPersistenceWrites.removeAll()
+        for (key, record) in exhausted {
+            var pending = pendingPersistenceWrites[key] ?? PendingPersistenceWrite()
+            pending.merge(record.batch.messages)
+            pendingPersistenceWrites[key] = pending
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            if scheduledPersistenceWrites.insert(key).inserted {
+                schedulePersistenceDrain(for: key, store: record.store)
+            }
+        }
+        await flushPendingPersistence()
+        guard exhaustedPersistenceWrites.isEmpty else {
+            throw ShutdownError.persistenceBatchExhausted
+        }
+    }
+
     /// Drains writes, retries, destructive mutations, and account reconciliation.
     /// Injected stores remain caller-owned unless closure is explicitly requested.
     public func shutdown(closeStore: Bool = false) async throws {
         await flushPendingPersistence()
-        guard exhaustedPersistenceMessageIDs.isEmpty else {
-            throw ShutdownError.persistenceBatchExhausted
+        if !exhaustedPersistenceWrites.isEmpty {
+            try await retryFailedPersistence()
         }
-        guard failedPersistenceMutationCount == 0 else {
-            failedPersistenceMutationCount = 0
+        guard failedPersistenceMutations.isEmpty else {
             throw ShutdownError.persistenceMutationFailed
         }
         if closeStore { try store.close() }
@@ -2092,6 +2156,12 @@ public final class SessionManager: ObservableObject {
     public enum ShutdownError: Error, Equatable {
         case persistenceBatchExhausted
         case persistenceMutationFailed
+    }
+
+    /// Clears only the reported failure marker after the user explicitly accepts
+    /// that the destructive operation did not happen. It never mutates SQLite.
+    public func acknowledgeFailedPersistenceMutations() {
+        failedPersistenceMutations.removeAll()
     }
 
     var pendingPersistenceSnapshotCountForTesting: Int {
@@ -2120,15 +2190,28 @@ public final class SessionManager: ObservableObject {
         persistedFingerprints[sessionId]?.removeAll()
         let previous = persistenceTail
         let store = self.store
+        let expectedAccountFingerprint = accountFingerprint
         let expectedAccountEpoch = accountEpoch
         let expectedSessionEpoch = sessionPersistenceEpoch[sessionId, default: 0]
         persistenceTail = Task.detached(priority: .utility) { [weak self] in
             await previous?.value
             guard !Task.isCancelled else { return }
             guard (try? store.truncate(sessionId: sessionId, from: messageId)) != nil else {
-                await self?.recordFailedPersistenceMutation()
+                await self?.recordFailedPersistenceMutation(
+                    sessionId: sessionId,
+                    accountFingerprint: expectedAccountFingerprint
+                )
                 return
             }
+            await self?.resolveFailedPersistenceMutation(
+                sessionId: sessionId,
+                accountFingerprint: expectedAccountFingerprint
+            )
+            await self?.discardRetainedPersistence(
+                sessionId: sessionId,
+                accountFingerprint: expectedAccountFingerprint,
+                beforeSessionEpoch: expectedSessionEpoch
+            )
             let count = (try? store.count(sessionId)) ?? 0
             let summary = try? store.summary(sessionId: sessionId)
             await self?.finishPersistence(
@@ -2143,8 +2226,36 @@ public final class SessionManager: ObservableObject {
         persistenceTaskGeneration &+= 1
     }
 
-    private func recordFailedPersistenceMutation() {
-        failedPersistenceMutationCount &+= 1
+    private func recordFailedPersistenceMutation(sessionId: String, accountFingerprint: String) {
+        failedPersistenceMutations.insert(.init(
+            sessionId: sessionId,
+            accountFingerprint: accountFingerprint
+        ))
+    }
+
+    private func resolveFailedPersistenceMutation(sessionId: String, accountFingerprint: String) {
+        failedPersistenceMutations.remove(.init(
+            sessionId: sessionId,
+            accountFingerprint: accountFingerprint
+        ))
+    }
+
+    private func discardRetainedPersistence(
+        sessionId: String,
+        accountFingerprint: String,
+        beforeSessionEpoch: Int
+    ) {
+        let staleKeys = exhaustedPersistenceWrites.keys.filter {
+            $0.sessionId == sessionId
+                && $0.accountFingerprint == accountFingerprint
+                && $0.sessionEpoch < beforeSessionEpoch
+        }
+        for key in staleKeys {
+            exhaustedPersistenceWrites.removeValue(forKey: key)
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            pendingPersistenceWrites.removeValue(forKey: key)
+            scheduledPersistenceWrites.remove(key)
+        }
     }
 
     public func clearSession(_ id: String) {

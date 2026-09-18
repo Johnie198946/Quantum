@@ -247,7 +247,11 @@ async def create_capability_proposal(
     return {
         "status": "awaiting_confirmation",
         "capability_id": capability_id,
-        "events": [{"type": "capability.proposed", "version": 1, "payload": event_payload}],
+        "events": [{
+            "type": "capability.proposed", "version": 1,
+            "renderer": "confirmation", "renderer_version": 1,
+            "payload": event_payload,
+        }],
         "receipt": None,
         "error": None,
     }

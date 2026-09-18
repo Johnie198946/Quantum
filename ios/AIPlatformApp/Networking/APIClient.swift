@@ -2304,7 +2304,7 @@ public struct QCPStreamEvent: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case type, version, payload, renderer
-        case rendererVersion = "renderer_version"
+        case rendererVersion
         case runId, eventSequence
     }
 

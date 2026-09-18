@@ -23,6 +23,12 @@
 - Local result bundle retained outside the repository.
 - `git diff --check`: passed.
 
+## 2026-09-19 follow-up
+
+- Retained failed-write payloads are discarded after a later successful clear/delete/truncate barrier for the same account/session, preventing private-message resurrection.
+- Destructive-mutation failures remain shutdown-blocking until a successful same-account/session mutation or explicit acknowledgment that the failed operation did not occur; acknowledgment never mutates SQLite or claims persistence success.
+- Follow-up `WorkflowLifecycleDTOTests`: `153 passed / 0 failed`.
+
 ## Delivery contract
 
 - Commit and remote SHA: the commit containing this manifest.

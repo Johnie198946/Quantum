@@ -102,6 +102,9 @@ public struct ChatView: View {
                 get: { coordinator.persistenceFailureMessage != nil },
                 set: { if !$0 { coordinator.acknowledgePersistenceFailure() } }
             )) {
+                if coordinator.persistenceFailureCanRetry {
+                    Button("重试保存") { coordinator.retryPersistenceFailure() }
+                }
                 Button("知道了") { coordinator.acknowledgePersistenceFailure() }
             } message: {
                 Text(coordinator.persistenceFailureMessage ?? "")
