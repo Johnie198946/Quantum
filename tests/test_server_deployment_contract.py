@@ -51,6 +51,13 @@ def test_exact_sha_deploy_forwards_the_active_release_cas() -> None:
     assert 'AI_LAB_EXPECTED_CURRENT_SHA="$EXPECTED_CURRENT_SHA"' in script
 
 
+def test_exact_sha_deploy_uses_sudo_for_root_owned_archive_when_requested() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'sudo -n install -d -o root -g root -m 0755' in script
+    assert 'sudo -n install -o root -g root -m 0600' in script
+    assert 'sudo -n rm -f -- "$REMOTE_SOURCE"' in script
+
+
 def test_server_deploy_accepts_only_attested_root_owned_offline_source_archive() -> None:
     script = UPDATE_SCRIPT.read_text(encoding="utf-8")
     assert "AI_LAB_SOURCE_ARCHIVE_SHA256" in script

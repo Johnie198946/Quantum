@@ -150,7 +150,7 @@ if [ "$1" = "bash" ] && [ "$2" = "-s" ]; then
 fi
 case "$1" in
   install)
-    if [[ "$*" == *".upload"* ]]; then cp "$REMOTE_FAKE_SOURCE.upload" "$REMOTE_FAKE_SOURCE"; fi
+    if [ -f "\${@: -2:1}" ]; then cp "\${@: -2:1}" "$REMOTE_FAKE_SOURCE"; fi
     exit 0
     ;;
 esac
