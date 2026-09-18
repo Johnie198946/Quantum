@@ -97,7 +97,7 @@ async def init_db() -> None:
 
 
 def _migrate_notification_owner_columns(connection) -> None:
-    """Add principal ownership without guessing owners for legacy rows."""
+    """Add principal ownership without guessing owners or read time for legacy rows."""
     schema = inspect(connection)
     if "notifications" not in set(schema.get_table_names()):
         return
@@ -106,8 +106,17 @@ def _migrate_notification_owner_columns(connection) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE notifications ADD COLUMN user_id VARCHAR(128)"
         )
+    if "read_at" not in existing:
+        timestamp_type = "TIMESTAMP WITH TIME ZONE" if connection.dialect.name == "postgresql" else "DATETIME"
+        connection.exec_driver_sql(
+            f"ALTER TABLE notifications ADD COLUMN read_at {timestamp_type}"
+        )
     connection.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id)"
+    )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_notification_owner_read "
+        "ON notifications (tenant_key, user_id, read)"
     )
 
 

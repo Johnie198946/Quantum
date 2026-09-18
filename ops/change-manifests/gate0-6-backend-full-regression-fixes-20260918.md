@@ -13,6 +13,7 @@
 - Added ReportLab to the reproducible Linux dependency lock without deleting retained packages.
 - Updated stale `task.execute` and Notification absent assertions to their governed contracts.
 - Added provider-signature-compatible research revision handoff while retaining full lineage on the current governance pipeline.
+- Added additive `notifications.read_at` and owner/read index migration; legacy rows remain ownerless/unread-time unknown instead of guessed.
 
 ## Exact test environment
 

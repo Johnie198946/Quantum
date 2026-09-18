@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine, inspect
 
 from backend.api.notifications import (
     NotificationPreferenceRequest,
@@ -12,7 +13,7 @@ from backend.api.notifications import (
     mark_read,
     update_preferences,
 )
-from backend.db import SessionLocal
+from backend.db import SessionLocal, _migrate_notification_owner_columns
 from backend.models.notification import Notification
 from backend.services.capability_catalog import execute_verified_capability, invoke_capability, load_catalog
 
@@ -116,3 +117,32 @@ async def test_notification_qcp_read_and_unconfirmed_write():
         idempotency_key="notification-write-001",
     )
     assert denied["error"]["code"] == "confirmation_protocol_upgrade_required"
+
+
+def test_notification_migration_adds_owner_read_time_without_backfill(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE notifications ("
+            "id VARCHAR(64) PRIMARY KEY, tenant_key VARCHAR(100) NOT NULL, "
+            "read BOOLEAN NOT NULL DEFAULT 0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO notifications (id, tenant_key, read) "
+            "VALUES ('legacy', 'tenant-a', 0)"
+        )
+        _migrate_notification_owner_columns(connection)
+        columns = {
+            item["name"]
+            for item in inspect(connection).get_columns("notifications")
+        }
+        assert {"user_id", "read_at"} <= columns
+        row = connection.exec_driver_sql(
+            "SELECT user_id, read_at FROM notifications WHERE id='legacy'"
+        ).one()
+        assert row == (None, None)
+        indexes = {
+            item["name"]
+            for item in inspect(connection).get_indexes("notifications")
+        }
+        assert {"ix_notifications_user_id", "ix_notification_owner_read"} <= indexes
