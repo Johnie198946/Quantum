@@ -3536,6 +3536,8 @@ public final class TenantSessionCoordinator: ObservableObject {
             return
         }
         guard verb == "confirm" else { return }
+        let requiresFreshProposal = proposal.state == .failed
+            && Self.requiresFreshCapabilityProposal(errorMessage: proposal.errorMessage)
         proposal.state = .applying
         messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
         commitSession()
@@ -3544,6 +3546,28 @@ public final class TenantSessionCoordinator: ObservableObject {
         let sourceClientSessionId = messages[messageIndex].sessionId
         Task { [weak self] in
             do {
+                if requiresFreshProposal {
+                    let response = try await capabilityClient.propose(
+                        proposal.capabilityId,
+                        input: proposal.input,
+                        sessionId: sourceClientSessionId,
+                        requestId: UUID().uuidString,
+                        idempotencyKey: UUID().uuidString
+                    )
+                    guard response.status == "awaiting_confirmation",
+                          let refreshed = response.events.first(where: { $0.type == "capability.proposed" })?.payload
+                    else {
+                        throw APIError.network(response.error?.message ?? "未能生成新的确认提案")
+                    }
+                    guard let self, self.tenantEpoch == expectedEpoch else { return }
+                    self.replaceCapabilityProposal(
+                        messageId: messageId,
+                        proposalId: proposalId,
+                        with: refreshed
+                    )
+                    self.showToast("策略已更新，请确认新的提案")
+                    return
+                }
                 guard let confirmationToken = proposal.confirmationToken, !confirmationToken.isEmpty else {
                     throw APIError.network("确认凭证已失效，请重新发起操作")
                 }
@@ -3602,6 +3626,34 @@ public final class TenantSessionCoordinator: ObservableObject {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(T.self, from: data)
+    }
+
+    static func requiresFreshCapabilityProposal(errorMessage: String?) -> Bool {
+        guard let errorMessage else { return false }
+        let normalized = errorMessage.lowercased()
+        return normalized.contains("policy changed")
+            || normalized.contains("create a new proposal")
+            || normalized.contains("proposal expired")
+            || normalized.contains("confirmation token expired")
+            || normalized.contains("confirmation_token_expired")
+            || normalized.contains("确认凭证已失效")
+            || normalized.contains("重新生成提案")
+            || normalized.contains("新提案")
+    }
+
+    private func replaceCapabilityProposal(
+        messageId: String?,
+        proposalId: String,
+        with refreshed: CapabilityProposalBlock
+    ) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              })
+        else { return }
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(refreshed)
+        commitSession()
     }
 
     private func updateCapabilityProposal(

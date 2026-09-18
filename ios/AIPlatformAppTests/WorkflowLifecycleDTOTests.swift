@@ -2230,6 +2230,23 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(TenantSessionCoordinator.statusAllowsRegenerate("not_found"))
     }
 
+    @MainActor
+    func testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority() {
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "网络不可用: Policy changed; create a new proposal"
+        ))
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "确认凭证已失效，请重新生成提案"
+        ))
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "confirmation_token_expired"
+        ))
+        XCTAssertFalse(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "服务端正在更新或繁忙，请稍后重试（503）"
+        ))
+        XCTAssertFalse(TenantSessionCoordinator.requiresFreshCapabilityProposal(errorMessage: nil))
+    }
+
     func testChatHistoryStorePagesOneThousandMessagesWithinBudgets() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
