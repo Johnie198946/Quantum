@@ -1016,13 +1016,13 @@
       },
       "event": "knowledge.action",
       "handler": "knowledge.update",
-      "ios_consumer": null,
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "personal-knowledge-confirmed-mutation",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "knowledge_action@1",
       "schema": {
         "input": {
@@ -1075,13 +1075,13 @@
       },
       "event": "knowledge.action",
       "handler": "knowledge.merge",
-      "ios_consumer": null,
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "personal-knowledge-confirmed-mutation",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "knowledge_action@1",
       "schema": {
         "input": {
@@ -1137,13 +1137,13 @@
       },
       "event": "knowledge.action",
       "handler": "knowledge.archive",
-      "ios_consumer": null,
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "personal-knowledge-confirmed-mutation",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "knowledge_action@1",
       "schema": {
         "input": {
@@ -1188,13 +1188,13 @@
       },
       "event": "knowledge.action",
       "handler": "knowledge.restore",
-      "ios_consumer": null,
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "personal-knowledge-confirmed-mutation",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "knowledge_action@1",
       "schema": {
         "input": {
