@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `39688c8c807b28bdc117cb89595c79e9d80968a4bb9379889a577a1368455233`
+Catalog digest: `6227277c8c4db9a8982968f5dff30f98d82cb06f1c718c5e29507098e5c6e7ee`
 
 ## Gateway 核心模块规范
 
@@ -304,6 +304,10 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `bookshelf.search@1.0.0` | bookshelf | read | none | none | `bookshelf.results` | `bookshelf@1` | implemented |
 | `bookshelf.subscribe@1.0.0` | bookshelf | write | required | required | `bookshelf.subscription_changed` | `bookshelf@1` | implemented |
 | `document.word.create_from_text@1.0.0` | document | write | required | required | `document.created` | `workflow@1` | implemented |
+| `hermes.session.delete@1.0.0` | hermes_session | destructive | required | required | `hermes.session.deleted` | `hermes_session_detail@1` | implemented |
+| `hermes.session.list@1.0.0` | hermes_session | read | none | none | `hermes.session.listed` | `hermes_session_list@1` | implemented |
+| `hermes.session.open@1.0.0` | hermes_session | read | none | none | `hermes.session.opened` | `hermes_session_detail@1` | implemented |
+| `hermes.session.resume@1.0.0` | hermes_session | write | required | required | `hermes.session.resumed` | `hermes_session_detail@1` | implemented |
 | `knowledge.navigation@1.0.0` | knowledge | client | none | none | `knowledge.navigation` | `knowledge_action@1` | implemented |
 | `knowledge.note.archive@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.create@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |

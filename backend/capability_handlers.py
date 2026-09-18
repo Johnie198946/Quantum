@@ -948,6 +948,30 @@ async def _notification_preferences_update(
     return await update_preferences(NotificationPreferenceRequest(**data), payload)
 
 
+async def _hermes_session_action(
+    action: str, data: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
+    from backend.services.hermes_sessions import owner_session_action
+
+    return await owner_session_action(action, data, payload)
+
+
+async def _hermes_session_list(data, payload, key):
+    return await _hermes_session_action("list", data, payload)
+
+
+async def _hermes_session_open(data, payload, key):
+    return await _hermes_session_action("open", data, payload)
+
+
+async def _hermes_session_resume(data, payload, key):
+    return await _hermes_session_action("resume", data, payload)
+
+
+async def _hermes_session_delete(data, payload, key):
+    return await _hermes_session_action("delete", data, payload)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -1008,4 +1032,8 @@ HANDLERS: dict[str, Handler] = {
     "notification.list": _notification_list,
     "notification.mark_read": _notification_mark_read,
     "notification.preferences.update": _notification_preferences_update,
+    "hermes.session.list": _hermes_session_list,
+    "hermes.session.open": _hermes_session_open,
+    "hermes.session.resume": _hermes_session_resume,
+    "hermes.session.delete": _hermes_session_delete,
 }

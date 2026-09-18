@@ -39,3 +39,11 @@ renderers:
     version: 1
     fallback: answer
     fallback_version: 1
+  - id: hermes_session_list
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: hermes_session_detail
+    version: 1
+    fallback: answer
+    fallback_version: 1

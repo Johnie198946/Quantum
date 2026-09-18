@@ -97,6 +97,34 @@
       ]
     },
     {
+      "id": "hermes.session.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.resume",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
       "id": "knowledge.navigation",
       "status": "implemented",
       "tests": [
@@ -432,7 +460,7 @@
       ]
     }
   ],
-  "catalog_digest": "39688c8c807b28bdc117cb89595c79e9d80968a4bb9379889a577a1368455233",
+  "catalog_digest": "6227277c8c4db9a8982968f5dff30f98d82cb06f1c718c5e29507098e5c6e7ee",
   "consumptions": [
     {
       "gates": [
@@ -477,7 +505,7 @@
     }
   ],
   "counts": {
-    "implemented": 59,
+    "implemented": 63,
     "partial": 0,
     "unverified": 0
   },
@@ -553,6 +581,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 59,
+  "total": 63,
   "version": "1.0.0"
 }

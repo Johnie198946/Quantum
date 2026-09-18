@@ -6000,6 +6000,97 @@ async def durable_chat_blocks(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class OwnerSessionRequest(BaseModel):
+    session_key: str
+
+
+def _require_owner_session(
+    body: OwnerSessionRequest,
+    internal_token: str | None,
+    tenant_id: str | None,
+    user_id: str | None,
+) -> tuple[str, TenantHermesSandbox]:
+    _require_internal_strict(internal_token)
+    tenant, user = str(tenant_id or ""), str(user_id or "")
+    if not tenant or not user:
+        raise HTTPException(status_code=403, detail="owner_context_required")
+    prefix = (
+        f"t{hashlib.sha256(tenant.encode()).hexdigest()[:12]}-"
+        f"u{hashlib.sha256(user.encode()).hexdigest()[:12]}-"
+    )
+    session_key = str(body.session_key or "")
+    if not session_key.startswith(prefix) or len(session_key) > 100:
+        raise HTTPException(status_code=403, detail="session_owner_mismatch")
+    return session_key, ensure_tenant_sandbox(tenant_key=tenant, user_id=user)
+
+
+def _owner_session_snapshot(session_key: str, sandbox: TenantHermesSandbox) -> dict[str, Any]:
+    with _mapping_lock:
+        hermes_id = _user_session_map.get(session_key)
+    if not hermes_id:
+        raise HTTPException(status_code=404, detail="hermes_session_not_found")
+    db = _create_sandbox_session_db(sandbox)
+    row = db.get_session(hermes_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="hermes_session_not_found")
+    return {
+        "client_session_key": session_key,
+        "hermes_session_id": hermes_id,
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at") or row.get("last_active_at"),
+        "ended_at": row.get("ended_at"),
+        "end_reason": row.get("end_reason"),
+    }
+
+
+@app.post("/v1/owner-sessions/resolve")
+async def owner_session_resolve(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    return _owner_session_snapshot(key, sandbox)
+
+
+@app.post("/v1/owner-sessions/resume")
+async def owner_session_resume(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    snapshot = _owner_session_snapshot(key, sandbox)
+    db = _create_sandbox_session_db(sandbox)
+    db.reopen_session(snapshot["hermes_session_id"])
+    snapshot["resumed"] = True
+    return snapshot
+
+
+@app.post("/v1/owner-sessions/delete")
+async def owner_session_delete(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    snapshot = _owner_session_snapshot(key, sandbox)
+    db = _create_sandbox_session_db(sandbox)
+    if not db.delete_session(snapshot["hermes_session_id"]):
+        raise HTTPException(status_code=409, detail="hermes_session_delete_failed")
+    _sync_session_mappings(user_id=key, delete=True)
+    return {**snapshot, "deleted": True}
+
+
 @app.post("/v1/chat/stream")
 async def chat_stream(
     body: GoalRequest,

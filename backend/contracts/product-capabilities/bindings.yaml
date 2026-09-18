@@ -117,3 +117,11 @@ bindings:
     handler: notification.mark_read
   - id: notification.preferences.update
     handler: notification.preferences.update
+  - id: hermes.session.list
+    handler: hermes.session.list
+  - id: hermes.session.open
+    handler: hermes.session.open
+  - id: hermes.session.resume
+    handler: hermes.session.resume
+  - id: hermes.session.delete
+    handler: hermes.session.delete

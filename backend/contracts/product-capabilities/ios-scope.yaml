@@ -73,6 +73,18 @@ capabilities:
   - schedule.update
   - schedule.delete
 annotations:
+  hermes.session.list:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  hermes.session.open:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  hermes.session.resume:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
+  hermes.session.delete:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent
   notification.list:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent

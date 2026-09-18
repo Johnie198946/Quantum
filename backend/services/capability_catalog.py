@@ -42,6 +42,8 @@ IMPLEMENTED_HANDLERS = {
     "task.list", "task.create", "task.update", "task.delete", "task.status",
     "schedule.list", "schedule.create", "schedule.update", "schedule.delete",
     "notification.list", "notification.mark_read", "notification.preferences.update",
+    "hermes.session.list", "hermes.session.open", "hermes.session.resume",
+    "hermes.session.delete",
 }
 
 

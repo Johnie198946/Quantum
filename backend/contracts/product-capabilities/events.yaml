@@ -79,3 +79,11 @@ events:
     version: 1
   - id: notification.preferences_changed
     version: 1
+  - id: hermes.session.listed
+    version: 1
+  - id: hermes.session.opened
+    version: 1
+  - id: hermes.session.resumed
+    version: 1
+  - id: hermes.session.deleted
+    version: 1

@@ -1,0 +1,113 @@
+capabilities:
+  - id: hermes.session.list
+    version: 1.0.0
+    domain: hermes_session
+    description: List the current owner-bound Hermes session for a registered client chat session.
+    positive_examples: [Show this chat session.]
+    negative_examples: [List every Hermes session on the server.]
+    input_schema:
+      type: object
+      required: [client_session_id]
+      additionalProperties: false
+      properties:
+        client_session_id: {type: string, minLength: 1, maxLength: 100}
+    output_schema:
+      type: object
+      required: [sessions, count]
+      properties:
+        sessions: {type: array, items: {type: object}}
+        count: {type: integer, minimum: 0, maximum: 1}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [registered_client_session_owner, bridge_owner_namespace]
+    policy_ref: hermes-session-owner
+    handler_binding: hermes.session.list
+    idempotency: none
+    receipt: none
+    result_event: hermes.session.listed
+    renderer: hermes_session_list
+    renderer_version: 1
+    tests: [tests/test_hermes_session_capabilities.py]
+    implementation_status: implemented
+
+  - id: hermes.session.open
+    version: 1.0.0
+    domain: hermes_session
+    description: Resolve metadata for the owner-bound Hermes session behind a registered client chat session.
+    positive_examples: [Open this chat session.]
+    negative_examples: [Open another user's Hermes session ID.]
+    input_schema:
+      type: object
+      required: [client_session_id]
+      additionalProperties: false
+      properties:
+        client_session_id: {type: string, minLength: 1, maxLength: 100}
+    output_schema: {type: object}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [registered_client_session_owner, bridge_owner_namespace]
+    policy_ref: hermes-session-owner
+    handler_binding: hermes.session.open
+    idempotency: none
+    receipt: none
+    result_event: hermes.session.opened
+    renderer: hermes_session_detail
+    renderer_version: 1
+    tests: [tests/test_hermes_session_capabilities.py]
+    implementation_status: implemented
+
+  - id: hermes.session.resume
+    version: 1.0.0
+    domain: hermes_session
+    description: Resume the owner-bound Hermes session behind a registered client chat session.
+    positive_examples: [Resume this chat.]
+    negative_examples: [Resume an arbitrary Hermes session ID.]
+    input_schema:
+      type: object
+      required: [client_session_id]
+      additionalProperties: false
+      properties:
+        client_session_id: {type: string, minLength: 1, maxLength: 100}
+    output_schema: {type: object, required: [resumed], properties: {resumed: {type: boolean}}}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [registered_client_session_owner, bridge_owner_namespace]
+    policy_ref: hermes-session-owner
+    handler_binding: hermes.session.resume
+    idempotency: required
+    receipt: required
+    result_event: hermes.session.resumed
+    renderer: hermes_session_detail
+    renderer_version: 1
+    tests: [tests/test_hermes_session_capabilities.py]
+    implementation_status: implemented
+
+  - id: hermes.session.delete
+    version: 1.0.0
+    domain: hermes_session
+    description: Permanently delete the owner-bound Hermes session and its messages.
+    positive_examples: [Delete this chat session.]
+    negative_examples: [Delete another user's Hermes session.]
+    input_schema:
+      type: object
+      required: [client_session_id]
+      additionalProperties: false
+      properties:
+        client_session_id: {type: string, minLength: 1, maxLength: 100}
+    output_schema: {type: object, required: [deleted], properties: {deleted: {type: boolean}}}
+    effect: destructive
+    risk: high
+    confirmation: required
+    preconditions: [registered_client_session_owner, bridge_owner_namespace]
+    policy_ref: hermes-session-owner
+    handler_binding: hermes.session.delete
+    idempotency: required
+    receipt: required
+    result_event: hermes.session.deleted
+    renderer: hermes_session_detail
+    renderer_version: 1
+    tests: [tests/test_hermes_session_capabilities.py]
+    implementation_status: implemented

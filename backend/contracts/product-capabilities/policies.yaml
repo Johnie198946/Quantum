@@ -23,3 +23,5 @@ policies:
     description: Project schedule reads and proposals reuse QWS tenant membership, write scope, process revision CAS, and durable project change receipts.
   - id: notification-owner
     description: Notification rows and preferences are visible and mutable only to their authenticated tenant/user owner with domain revision CAS.
+  - id: hermes-session-owner
+    description: A registered client chat session binds tenant/user ownership before any bridge session lookup or mutation.

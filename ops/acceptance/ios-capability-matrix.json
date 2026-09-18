@@ -2795,72 +2795,217 @@
       "status": "absent"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ],
       "capability": "hermes.session.list",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "registered_client_session_owner",
+          "bridge_owner_namespace"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "hermes.session.listed",
+      "handler": "hermes.session.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "hermes-session-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "hermes_session_list@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_session_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "properties": {
+            "count": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sessions": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "sessions",
+            "count"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ],
       "capability": "hermes.session.open",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "registered_client_session_owner",
+          "bridge_owner_namespace"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "hermes.session.opened",
+      "handler": "hermes.session.open",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "hermes-session-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "hermes_session_detail@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_session_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ],
       "capability": "hermes.session.resume",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "registered_client_session_owner",
+          "bridge_owner_namespace"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "hermes.session.resumed",
+      "handler": "hermes.session.resume",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "hermes-session-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "hermes_session_detail@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_session_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "properties": {
+            "resumed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "resumed"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ],
       "capability": "hermes.session.delete",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "registered_client_session_owner",
+          "bridge_owner_namespace"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "hermes.session.deleted",
+      "handler": "hermes.session.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "hermes-session-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "hermes_session_detail@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "client_session_id": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_session_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "properties": {
+            "deleted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -3507,9 +3652,9 @@
     }
   ],
   "counts": {
-    "absent": 17,
+    "absent": 13,
     "implemented": 0,
-    "partial": 53,
+    "partial": 57,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
