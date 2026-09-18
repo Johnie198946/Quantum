@@ -40,7 +40,7 @@ if [[ ! "$EXPECTED_CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 2
 fi
 LOCAL_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/ai-lab-update.XXXXXX")"
-LOCAL_SOURCE="$(mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX.tar.gz")"
+LOCAL_SOURCE="$(mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX")"
 REMOTE_SCRIPT=""
 REMOTE_SOURCE="/opt/ai-lab-shared/offline-source/ai-lab-platform-$EXPECTED_SHA.tar.gz"
 REMOTE_SOURCE_UPLOAD=""
@@ -52,7 +52,7 @@ cleanup() {
   if [[ "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
     ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" rm -f -- "$REMOTE_SCRIPT" >/dev/null 2>&1 || true
   fi
-  if [[ "$REMOTE_SOURCE_UPLOAD" =~ ^/tmp/ai-lab-source\.[A-Za-z0-9]{6}\.tar\.gz$ ]]; then
+  if [[ "$REMOTE_SOURCE_UPLOAD" =~ ^/tmp/ai-lab-source\.[A-Za-z0-9]{6}$ ]]; then
     ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" rm -f -- "$REMOTE_SOURCE_UPLOAD" >/dev/null 2>&1 || true
   fi
   if [ "$REMOTE_SUDO" = "1" ]; then
@@ -78,8 +78,8 @@ if [[ ! "$REMOTE_SCRIPT" =~ ^/tmp/ai-lab-update\.[A-Za-z0-9]{6}$ ]]; then
 fi
 
 scp "${SCP_OPTIONS[@]}" "$LOCAL_SCRIPT" "$DEPLOY_HOST:$REMOTE_SCRIPT"
-REMOTE_SOURCE_UPLOAD="$(ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" mktemp /tmp/ai-lab-source.XXXXXX.tar.gz)"
-if [[ ! "$REMOTE_SOURCE_UPLOAD" =~ ^/tmp/ai-lab-source\.[A-Za-z0-9]{6}\.tar\.gz$ ]]; then
+REMOTE_SOURCE_UPLOAD="$(ssh "${SSH_OPTIONS[@]}" "$DEPLOY_HOST" mktemp /tmp/ai-lab-source.XXXXXX)"
+if [[ ! "$REMOTE_SOURCE_UPLOAD" =~ ^/tmp/ai-lab-source\.[A-Za-z0-9]{6}$ ]]; then
   echo "ERROR: 远端未返回受控的源码临时路径" >&2
   exit 1
 fi

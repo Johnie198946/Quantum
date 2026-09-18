@@ -34,6 +34,13 @@ def test_exact_sha_deploy_transfers_an_attested_local_source_archive() -> None:
     assert 'AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH"' in script
 
 
+def test_exact_sha_deploy_uses_portable_trailing_mktemp_templates() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX"' in script
+    assert 'mktemp /tmp/ai-lab-source.XXXXXX)' in script
+    assert "XXXXXX.tar.gz" not in script
+
+
 def test_exact_sha_deploy_can_pin_the_trusted_known_hosts_file() -> None:
     script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
     assert 'KNOWN_HOSTS_FILE="${AI_LAB_DEPLOY_KNOWN_HOSTS_FILE:?' in script
