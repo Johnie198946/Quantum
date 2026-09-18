@@ -30,10 +30,12 @@ WRITE_INPUT = {
 }
 
 
-def test_schedule_contracts_are_modular_and_notifications_remain_absent():
+def test_schedule_and_notification_contracts_are_registered():
     catalog = {item["id"]: item for item in load_catalog()["capabilities"]}
     assert {"schedule.list", "schedule.create", "schedule.update", "schedule.delete"} <= set(catalog)
-    assert not {"notification.list", "notification.mark_read", "notification.preferences.update"} & set(catalog)
+    assert {"notification.list", "notification.mark_read", "notification.preferences.update"} <= set(catalog)
+    assert catalog["schedule.list"]["domain"] == "schedule"
+    assert catalog["notification.list"]["domain"] == "notification"
     for capability_id in {"schedule.create", "schedule.update", "schedule.delete"}:
         assert catalog[capability_id]["confirmation"] == "required"
         assert catalog[capability_id]["idempotency"] == "required"

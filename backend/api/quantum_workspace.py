@@ -9110,6 +9110,7 @@ async def start_task_auto_execution(
     conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
     payload=Depends(require_auth),
 ) -> dict[str, Any]:
+    require_batch6_execution_enabled("qws_auto_execution")
     authorization = request.headers.get("authorization") or ""
     return await queue_task_auto_execution(
         conversation_id, body, payload, authorization

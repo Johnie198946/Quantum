@@ -1,4 +1,4 @@
-"""Governed task execution using an ephemeral delegated user token."""
+"""Ephemeral delegated credentials for governed task execution."""
 
 from __future__ import annotations
 
@@ -9,60 +9,45 @@ from typing import Any
 import jwt
 from fastapi import HTTPException
 
-from backend.api import auth as auth_api
 
-
-def _mint_delegated_token(payload: dict[str, Any], request_id: str) -> str:
+def mint_task_execution_token(
+    data: dict[str, Any],
+    payload: dict[str, Any],
+    idempotency_key: str,
+    *,
+    secret: str,
+    algorithm: str,
+    issuer: str,
+    audience: str,
+) -> str:
+    required = ("conversation_id", "task_id", "expected_intent_hash", "instruction")
+    missing = [name for name in required if not str(data.get(name) or "").strip()]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "missing_task_execution_cas", "fields": missing},
+        )
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "delegation_unavailable", "message": "JWT secret is unavailable"},
+        )
     user_id = str(payload.get("user_id") or payload.get("sub") or "")
-    if not user_id or not auth_api.AUTHEN_JWT_SECRET:
-        raise HTTPException(status_code=503, detail={"code": "delegated_auth_unavailable"})
+    if not user_id:
+        raise HTTPException(status_code=401, detail={"code": "missing_user_identity"})
     now = datetime.now(timezone.utc)
-    return jwt.encode(
-        {
-            "sub": user_id,
-            "iat": now,
-            "nbf": now,
-            "exp": now + timedelta(minutes=20),
-            "iss": auth_api.AUTHEN_JWT_ISSUER,
-            "aud": auth_api.AUTHEN_JWT_AUDIENCE,
-            "token_use": "access",
-            "purpose": "qcp_task_execute",
-            "delegation_request_id": request_id,
-            "jti": uuid.uuid4().hex,
-        },
-        auth_api.AUTHEN_JWT_SECRET,
-        algorithm=auth_api.AUTHEN_JWT_ALGORITHM,
-    )
-
-
-async def execute_task(
-    data: dict[str, Any], payload: dict[str, Any], idempotency_key: str | None
-) -> dict[str, Any]:
-    from backend.api.quantum_workspace import (
-        AutoExecuteTaskRequest,
-        queue_task_auto_execution,
-    )
-
-    conversation_id = str(data.get("conversation_id") or "")
-    task_id = str(data.get("task_id") or "")
-    instruction = str(data.get("instruction") or "")
-    expected_intent_hash = str(data.get("expected_intent_hash") or "")
-    if not all((conversation_id, task_id, instruction, expected_intent_hash, idempotency_key)):
-        raise HTTPException(status_code=422, detail={"code": "task_execution_input_incomplete"})
-    request_id = f"qcp-{idempotency_key}"[:100]
-    delegated = _mint_delegated_token(payload, request_id)
-    result = await queue_task_auto_execution(
-        conversation_id,
-        AutoExecuteTaskRequest(instruction=instruction, request_id=request_id),
-        payload,
-        f"Bearer {delegated}",
-        expected_task_id=task_id,
-        expected_intent_hash=expected_intent_hash,
-    )
-    return {
-        **result,
-        "conversation_id": conversation_id,
-        "task_id": task_id,
-        "intent_hash": expected_intent_hash,
-        "delegated_token_persisted": False,
+    claims = {
+        "sub": user_id,
+        "token_use": "access",
+        "iss": issuer,
+        "aud": audience,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=20)).timestamp()),
+        "jti": uuid.uuid4().hex,
+        "purpose": "qcp_task_execute",
+        "qcp_request_id": idempotency_key,
+        "qcp_task_id": str(data["task_id"]),
+        "qcp_conversation_id": str(data["conversation_id"]),
+        "qcp_expected_intent_hash": str(data["expected_intent_hash"]),
     }
+    return jwt.encode(claims, secret, algorithm=algorithm)

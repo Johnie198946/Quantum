@@ -10,6 +10,7 @@ finalizer adapter; a host must call it even on interrupt/error for a hard gate.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import importlib.util
 import json
 import math
@@ -476,13 +477,24 @@ class ResearchDeposit:
                 metadata = yaml.safe_load(content.decode().split("---", 2)[1])
                 if metadata.get("confidence") == 0:
                     confidence = 0  # Legacy immutable null-as-zero raw, repair only.
-            receipt = self.pipeline().deposit_research(
+            deposit = self.pipeline().deposit_research
+            deposit_signature = inspect.signature(deposit)
+            supports_revision_link = "revision_link" in deposit_signature.parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in deposit_signature.parameters.values()
+            )
+            revision_kwargs = (
+                {"revision_link": record["revision_link"]}
+                if record.get("revision_link") and supports_revision_link
+                else {}
+            )
+            receipt = deposit(
                 self.vault(), task_id=record["scope"]["task_id"],
                 source_revision=record["source_revision"], title=payload["title"], body=payload["body"],
                 source_urls=payload["source_urls"], confidence=confidence,
                 policy_version=POLICY_VERSION, profile="default", owner="local_owner",
                 evidence_status="research_analysis", no_save=False,
-                **({"revision_link": record["revision_link"]} if record.get("revision_link") else {}))
+                **revision_kwargs)
             record["receipt"] = dict(receipt, binding={"scope": record["scope"],
                 "policy_version": POLICY_VERSION, "source_revision": record["source_revision"]},
                 storage_scope=STORAGE_SCOPE)

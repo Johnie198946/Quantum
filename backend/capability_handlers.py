@@ -1042,9 +1042,31 @@ async def _media_create(data, payload, key):
 
 
 async def _task_execute(data, payload, key):
-    from backend.services.task_execution import execute_task
+    from backend.api import auth as auth_api
+    from backend.api import quantum_workspace as qws
+    from backend.services.task_execution import mint_task_execution_token
 
-    return await execute_task(data, payload, key)
+    token = mint_task_execution_token(
+        data,
+        payload,
+        key,
+        secret=auth_api.AUTHEN_JWT_SECRET,
+        algorithm=auth_api.AUTHEN_JWT_ALGORITHM,
+        issuer=auth_api.AUTHEN_JWT_ISSUER,
+        audience=auth_api.AUTHEN_JWT_AUDIENCE,
+    )
+    body = qws.AutoExecuteTaskRequest(
+        instruction=str(data["instruction"]),
+        request_id=key,
+    )
+    return await qws.queue_task_auto_execution(
+        str(data["conversation_id"]),
+        body,
+        payload,
+        f"Bearer {token}",
+        expected_task_id=str(data["task_id"]),
+        expected_intent_hash=str(data["expected_intent_hash"]),
+    )
 
 
 HANDLERS: dict[str, Handler] = {

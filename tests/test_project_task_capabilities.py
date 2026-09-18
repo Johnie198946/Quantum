@@ -31,13 +31,12 @@ def test_project_task_contracts_are_registered_on_the_shared_gateway():
     catalog = {item["id"]: item for item in load_catalog()["capabilities"]}
     expected = {
         "project.list", "project.create", "project.open", "project.update", "project.delete",
-        "task.list", "task.create", "task.update", "task.delete", "task.status",
+        "task.list", "task.create", "task.update", "task.delete", "task.status", "task.execute",
     }
     assert expected <= set(catalog)
-    assert "task.execute" not in catalog
     for capability_id in {
         "project.create", "project.update", "project.delete",
-        "task.create", "task.update", "task.delete",
+        "task.create", "task.update", "task.delete", "task.execute",
     }:
         assert catalog[capability_id]["confirmation"] == "required"
         assert catalog[capability_id]["idempotency"] == "required"
