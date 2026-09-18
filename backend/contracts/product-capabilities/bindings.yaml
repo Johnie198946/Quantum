@@ -135,3 +135,19 @@ bindings:
     handler: voice.record
   - id: share.present
     handler: share.present
+  - id: file.upload
+    handler: file.upload
+  - id: file.download
+    handler: file.download
+  - id: voice.transcribe
+    handler: voice.transcribe
+  - id: office.spreadsheet.create
+    handler: office.spreadsheet.create
+  - id: office.pdf.create
+    handler: office.pdf.create
+  - id: data.analyze
+    handler: data.analyze
+  - id: media.create
+    handler: media.create
+  - id: task.execute
+    handler: task.execute

@@ -89,3 +89,7 @@ events:
     version: 1
   - id: client.action.requested
     version: 1
+  - id: artifact.generated
+    version: 1
+  - id: task.execution_queued
+    version: 1

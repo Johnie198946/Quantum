@@ -130,3 +130,82 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_client_action_capabilities.py]
     implementation_status: implemented
+
+  - id: file.upload
+    version: 1.0.0
+    domain: client_action
+    description: Pick and upload a private document through the authenticated owner-bound document API.
+    positive_examples: [Upload this document.]
+    negative_examples: [Mark a local pick as uploaded without a server receipt.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        allowed_types: {type: array, items: {type: string}, maxItems: 20}
+    output_schema: {type: object, required: [action_id, action_type, state, payload]}
+    effect: client_action
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_client_action_owner, supported_native_action]
+    policy_ref: client-action-owner
+    handler_binding: file.upload
+    idempotency: required
+    receipt: required
+    result_event: client.action.requested
+    renderer: client_action
+    renderer_version: 1
+    tests: [tests/test_client_action_capabilities.py]
+    implementation_status: implemented
+
+  - id: file.download
+    version: 1.0.0
+    domain: client_action
+    description: Download an owner-bound private document by source ID on the authenticated iOS client.
+    positive_examples: [Download my uploaded document.]
+    negative_examples: [Download an arbitrary URL.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [source_id]
+      properties:
+        source_id: {type: string, minLength: 8, maxLength: 128}
+    output_schema: {type: object, required: [action_id, action_type, state, payload]}
+    effect: client_action
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_client_action_owner, supported_native_action]
+    policy_ref: client-action-owner
+    handler_binding: file.download
+    idempotency: required
+    receipt: required
+    result_event: client.action.requested
+    renderer: client_action
+    renderer_version: 1
+    tests: [tests/test_client_action_capabilities.py]
+    implementation_status: implemented
+
+  - id: voice.transcribe
+    version: 1.0.0
+    domain: client_action
+    description: Record audio on iOS and transcribe it through the authenticated fail-closed speech API.
+    positive_examples: [Transcribe a voice note.]
+    negative_examples: [Return an empty successful transcript when speech service is unavailable.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        max_seconds: {type: integer, minimum: 1, maximum: 300}
+    output_schema: {type: object, required: [action_id, action_type, state, payload]}
+    effect: client_action
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_client_action_owner, supported_native_action]
+    policy_ref: client-action-owner
+    handler_binding: voice.transcribe
+    idempotency: required
+    receipt: required
+    result_event: client.action.requested
+    renderer: client_action
+    renderer_version: 1
+    tests: [tests/test_client_action_capabilities.py, tests/test_voice_transcription_capability.py]
+    implementation_status: implemented

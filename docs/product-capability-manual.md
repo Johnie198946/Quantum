@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `eaa0aca312a05da37fce48d22f48f006214dcf0d108cf56e9894266cf8beb5b3`
+Catalog digest: `441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104`
 
 ## Gateway 核心模块规范
 
@@ -303,8 +303,11 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `bookshelf.open@1.0.0` | bookshelf | read | none | none | `bookshelf.opened` | `bookshelf@1` | implemented |
 | `bookshelf.search@1.0.0` | bookshelf | read | none | none | `bookshelf.results` | `bookshelf@1` | implemented |
 | `bookshelf.subscribe@1.0.0` | bookshelf | write | required | required | `bookshelf.subscription_changed` | `bookshelf@1` | implemented |
+| `data.analyze@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `data_analysis_card@1` | implemented |
 | `document.word.create_from_text@1.0.0` | document | write | required | required | `document.created` | `workflow@1` | implemented |
+| `file.download@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `file.pick@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
+| `file.upload@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `hermes.session.delete@1.0.0` | hermes_session | destructive | required | required | `hermes.session.deleted` | `hermes_session_detail@1` | implemented |
 | `hermes.session.list@1.0.0` | hermes_session | read | none | none | `hermes.session.listed` | `hermes_session_list@1` | implemented |
 | `hermes.session.open@1.0.0` | hermes_session | read | none | none | `hermes.session.opened` | `hermes_session_detail@1` | implemented |
@@ -317,6 +320,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `media.create@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `image_card@1` | implemented |
 | `memory.create@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.delete@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.list@1.0.0` | memory | read | none | none | `memory.snapshot` | `answer@1` | implemented |
@@ -324,6 +328,8 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `notification.list@1.0.0` | notification | read | none | none | `notification.snapshot` | `answer@1` | implemented |
 | `notification.mark_read@1.0.0` | notification | write | required | required | `notification.changed` | `answer@1` | implemented |
 | `notification.preferences.update@1.0.0` | notification | write | required | required | `notification.preferences_changed` | `answer@1` | implemented |
+| `office.pdf.create@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `artifact_card@1` | implemented |
+| `office.spreadsheet.create@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `artifact_card@1` | implemented |
 | `paper.academic.create_from_text@1.0.0` | paper | write | required | required | `document.created` | `workflow@1` | implemented |
 | `photo.capture@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `photo.import@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
@@ -348,10 +354,12 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `skill.update@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `task.create@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `task.delete@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `task.execute@1.0.0` | task | execute | required | required | `task.execution_queued` | `task_execution_card@1` | implemented |
 | `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `voice.record@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
+| `voice.transcribe@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `workflow.approve@1.0.0` | workflow | write | required | required | `workflow.approved` | `workflow@1` | implemented |
 | `workflow.cancel@1.0.0` | workflow | write | required | required | `workflow.cancelled` | `workflow@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |

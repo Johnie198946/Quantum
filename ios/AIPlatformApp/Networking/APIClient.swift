@@ -2011,6 +2011,13 @@ public struct ClientActionPayloadDTO: Codable, Hashable {
     public let maxSeconds: Int?
     public let text: String?
     public let artifactId: String?
+    public let sourceId: String?
+}
+
+public struct VoiceTranscriptionDTO: Codable, Hashable {
+    public let text: String
+    public let language: String
+    public let status: String
 }
 
 public struct ClientActionDTO: Codable, Identifiable, Hashable {
@@ -3469,6 +3476,17 @@ public final class APIClient: ObservableObject {
         applyClientContract(to: &request)
         let response = try await perform(request, session: session, canRetry: false)
         return try decoder.decode(DocumentReceiptDTO.self, from: response)
+    }
+
+    public func transcribeVoice(data: Data, contentType: String) async throws -> VoiceTranscriptionDTO {
+        let url = baseURL.appendingPathComponent("api/v1/documents/voice/transcriptions")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        applyClientContract(to: &request)
+        let response = try await perform(request, session: session, canRetry: false)
+        return try decoder.decode(VoiceTranscriptionDTO.self, from: response)
     }
 
     public func fetchDocument(sourceId: String) async throws -> DocumentReceiptDTO {

@@ -306,3 +306,35 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_project_task_capabilities.py]
     implementation_status: implemented
+
+  - id: task.execute
+    version: 1.0.0
+    domain: task
+    description: Queue an owner-bound QWS task conversation using an ephemeral delegated user token.
+    positive_examples: [Execute this confirmed task now.]
+    negative_examples: [Persist the client bearer in a durable Gateway invocation.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, task_id, expected_intent_hash, instruction]
+      properties:
+        conversation_id: {type: string, minLength: 8, maxLength: 80}
+        task_id: {type: string, minLength: 1, maxLength: 40}
+        expected_intent_hash: {type: string, minLength: 64, maxLength: 64}
+        instruction: {type: string, minLength: 1, maxLength: 12000}
+    output_schema:
+      type: object
+      required: [request_id, state, conversation_id, task_id, intent_hash, delegated_token_persisted]
+    effect: execute
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_project_writer, confirmed_project_intent, expected_task_and_intent_cas]
+    policy_ref: qws-project-access
+    handler_binding: task.execute
+    idempotency: required
+    receipt: required
+    result_event: task.execution_queued
+    renderer: task_execution_card
+    renderer_version: 1
+    tests: [tests/test_task_execute_capability.py]
+    implementation_status: implemented

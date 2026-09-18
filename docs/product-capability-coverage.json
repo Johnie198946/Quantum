@@ -88,6 +88,13 @@
       ]
     },
     {
+      "id": "data.analyze",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
       "id": "document.word.create_from_text",
       "status": "implemented",
       "tests": [
@@ -97,7 +104,21 @@
       ]
     },
     {
+      "id": "file.download",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
       "id": "file.pick",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "file.upload",
       "status": "implemented",
       "tests": [
         "tests/test_client_action_capabilities.py"
@@ -192,6 +213,13 @@
       ]
     },
     {
+      "id": "media.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
       "id": "memory.create",
       "status": "implemented",
       "tests": [
@@ -238,6 +266,20 @@
       "status": "implemented",
       "tests": [
         "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "office.pdf.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
+      "id": "office.spreadsheet.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
       ]
     },
     {
@@ -415,6 +457,13 @@
       ]
     },
     {
+      "id": "task.execute",
+      "status": "implemented",
+      "tests": [
+        "tests/test_task_execute_capability.py"
+      ]
+    },
+    {
       "id": "task.list",
       "status": "implemented",
       "tests": [
@@ -440,6 +489,14 @@
       "status": "implemented",
       "tests": [
         "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "voice.transcribe",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py",
+        "tests/test_voice_transcription_capability.py"
       ]
     },
     {
@@ -495,7 +552,7 @@
       ]
     }
   ],
-  "catalog_digest": "eaa0aca312a05da37fce48d22f48f006214dcf0d108cf56e9894266cf8beb5b3",
+  "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
   "consumptions": [
     {
       "gates": [
@@ -540,7 +597,7 @@
     }
   ],
   "counts": {
-    "implemented": 68,
+    "implemented": 76,
     "partial": 0,
     "unverified": 0
   },
@@ -616,6 +673,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 68,
+  "total": 76,
   "version": "1.0.0"
 }

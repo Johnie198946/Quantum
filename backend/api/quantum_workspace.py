@@ -8801,12 +8801,15 @@ async def _wait_for_review_dependencies(
     )
     if not is_review:
         return
+    deadline = asyncio.get_running_loop().time() + 900
     while True:
         task = await _read_taskboard_task(
             project_id=project_id, task_id=task_id, authorization=authorization
         )
         if _review_dependencies_ready(task):
             return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise HTTPException(status_code=409, detail="review_dependencies_timeout")
         await asyncio.sleep(10)
 
 
@@ -9040,20 +9043,21 @@ async def _run_task_auto_execution(
         )
 
 
-@router.post("/task-conversations/{conversation_id}/auto-execute", status_code=202)
-async def start_task_auto_execution(
-    conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
-    payload=Depends(require_auth),
+async def queue_task_auto_execution(
+    conversation_id: str,
+    body: AutoExecuteTaskRequest,
+    payload: dict[str, Any],
+    authorization: str,
+    *,
+    expected_task_id: str | None = None,
+    expected_intent_hash: str | None = None,
 ) -> dict[str, Any]:
     require_batch6_execution_enabled("qws_auto_execution")
-    tenant_key, user_id = _scope(payload)
-    authorization = request.headers.get("authorization") or ""
     if not authorization:
         raise HTTPException(status_code=401, detail="authenticated Taskboard write required")
+    tenant_key, user_id = _scope(payload)
     async with SessionLocal() as db:
-        conversation = await _conversation_for_tenant(
-            db, conversation_id, tenant_key, user_id
-        )
+        conversation = await _conversation_for_tenant(db, conversation_id, tenant_key, user_id)
         project = await _project_for_access(
             db, conversation.project_id, tenant_key, user_id, "project:write"
         )
@@ -9068,6 +9072,10 @@ async def start_task_auto_execution(
         canonical_task_id = str(
             (conversation.binding or {}).get("canonical_task_id") or conversation.task_id
         )
+        if expected_task_id is not None and canonical_task_id != expected_task_id:
+            raise HTTPException(status_code=409, detail="task_execution_target_changed")
+        if expected_intent_hash is not None and project.active_intent_hash != expected_intent_hash:
+            raise HTTPException(status_code=409, detail="project_intent_changed")
         canonical_task = next((
             item for item in (project.process_snapshot or {}).get("tasks") or []
             if isinstance(item, dict) and str(item.get("id")) == canonical_task_id
@@ -9095,6 +9103,17 @@ async def start_task_auto_execution(
     _AUTO_EXECUTION_TASKS.add(task)
     task.add_done_callback(_AUTO_EXECUTION_TASKS.discard)
     return {"request_id": body.request_id, "state": "queued"}
+
+
+@router.post("/task-conversations/{conversation_id}/auto-execute", status_code=202)
+async def start_task_auto_execution(
+    conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
+    payload=Depends(require_auth),
+) -> dict[str, Any]:
+    authorization = request.headers.get("authorization") or ""
+    return await queue_task_auto_execution(
+        conversation_id, body, payload, authorization
+    )
 
 
 @router.get("/task-conversations/{conversation_id}/auto-execution")

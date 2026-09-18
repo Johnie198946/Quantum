@@ -998,6 +998,55 @@ async def _share_present(data, payload, key):
     return await _client_action("share.present", data, payload, key)
 
 
+async def _file_upload(data, payload, key):
+    return await _client_action("file.upload", data, payload, key)
+
+
+async def _file_download(data, payload, key):
+    return await _client_action("file.download", data, payload, key)
+
+
+async def _voice_transcribe(data, payload, key):
+    return await _client_action("voice.transcribe", data, payload, key)
+
+
+def _generated_owner(payload: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(payload.get("tenant_key") or ""),
+        str(payload.get("user_id") or payload.get("sub") or ""),
+    )
+
+
+async def _spreadsheet_create(data, payload, key):
+    from backend.services.generated_artifacts import create_spreadsheet
+
+    return create_spreadsheet(*_generated_owner(payload), data)
+
+
+async def _pdf_create(data, payload, key):
+    from backend.services.generated_artifacts import create_pdf
+
+    return create_pdf(*_generated_owner(payload), data)
+
+
+async def _data_analyze(data, payload, key):
+    from backend.services.generated_artifacts import analyze_data
+
+    return analyze_data(*_generated_owner(payload), data)
+
+
+async def _media_create(data, payload, key):
+    from backend.services.generated_artifacts import create_media
+
+    return create_media(*_generated_owner(payload), data)
+
+
+async def _task_execute(data, payload, key):
+    from backend.services.task_execution import execute_task
+
+    return await execute_task(data, payload, key)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -1067,4 +1116,12 @@ HANDLERS: dict[str, Handler] = {
     "photo.import": _photo_import,
     "voice.record": _voice_record,
     "share.present": _share_present,
+    "file.upload": _file_upload,
+    "file.download": _file_download,
+    "voice.transcribe": _voice_transcribe,
+    "office.spreadsheet.create": _spreadsheet_create,
+    "office.pdf.create": _pdf_create,
+    "data.analyze": _data_analyze,
+    "media.create": _media_create,
+    "task.execute": _task_execute,
 }

@@ -39,6 +39,12 @@ private enum NativeClientActionRegistry {
             NativeVoiceRecorderAction(action: action, onComplete: onComplete)
         case "share_sheet":
             NativeShareAction(action: action, onComplete: onComplete)
+        case "file_upload":
+            NativeFileUploadAction(action: action, onComplete: onComplete)
+        case "file_download":
+            NativeFileDownloadAction(action: action, onComplete: onComplete)
+        case "voice_transcribe":
+            NativeVoiceTranscriptionAction(action: action, onComplete: onComplete)
         default:
             UnsupportedNativeAction(action: action, onComplete: onComplete)
         }
@@ -259,6 +265,13 @@ private final class NativeVoiceRecorder: NSObject, ObservableObject, AVAudioReco
         return Date().timeIntervalSince(startedAt ?? Date())
     }
 
+    func recordedData() throws -> Data {
+        guard let url = recorder?.url else {
+            throw NSError(domain: "voice", code: 2)
+        }
+        return try Data(contentsOf: url, options: [.mappedIfSafe])
+    }
+
     func cancel() {
         recorder?.stop()
         if let url = recorder?.url { try? FileManager.default.removeItem(at: url) }
@@ -296,6 +309,139 @@ private struct ShareController: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct NativeFileUploadAction: View {
+    let action: ClientActionDTO
+    let onComplete: (String, [String: String]) -> Void
+    @State private var presented = false
+    @State private var uploading = false
+
+    var body: some View {
+        ActionShell(title: "上传文件", cancel: { onComplete("CANCELLED", [:]) }) {
+            ProgressView(uploading ? "正在上传…" : "正在打开文件选择器…")
+                .onAppear { presented = true }
+                .fileImporter(
+                    isPresented: $presented,
+                    allowedContentTypes: [.pdf, UTType(filenameExtension: "docx") ?? .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    guard case .success(let urls) = result, let url = urls.first else {
+                        if case .failure(let error) = result,
+                           (error as NSError).code != NSUserCancelledError {
+                            onComplete("FAILED", ["error_code": "file_picker_failed"])
+                        } else {
+                            onComplete("CANCELLED", [:])
+                        }
+                        return
+                    }
+                    uploading = true
+                    Task {
+                        let accessed = url.startAccessingSecurityScopedResource()
+                        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                        do {
+                            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                            let ext = url.pathExtension.lowercased()
+                            let mime = ext == "pdf"
+                                ? "application/pdf"
+                                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            let receipt = try await APIClient.shared.uploadDocument(
+                                data: data, filename: url.lastPathComponent, contentType: mime
+                            )
+                            onComplete("SUCCEEDED", [
+                                "source_id": receipt.sourceId,
+                                "content_hash": receipt.contentHash,
+                                "source_revision": String(receipt.sourceRevision)
+                            ])
+                        } catch {
+                            onComplete("FAILED", ["error_code": "file_upload_failed"])
+                        }
+                    }
+                }
+        }
+    }
+}
+
+private struct NativeFileDownloadAction: View {
+    let action: ClientActionDTO
+    let onComplete: (String, [String: String]) -> Void
+
+    var body: some View {
+        ActionShell(title: "下载文件", cancel: { onComplete("CANCELLED", [:]) }) {
+            ProgressView("正在下载并校验…")
+                .task {
+                    guard let sourceId = action.payload.sourceId else {
+                        onComplete("FAILED", ["error_code": "source_id_missing"])
+                        return
+                    }
+                    do {
+                        let receipt = try await APIClient.shared.fetchDocument(sourceId: sourceId)
+                        let data = try await APIClient.shared.downloadAuthenticated(
+                            path: "documents/\(sourceId)/download",
+                            expectedHash: receipt.contentHash
+                        )
+                        let destination = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(receipt.filename)
+                        try data.write(to: destination, options: [.atomic])
+                        onComplete("SUCCEEDED", [
+                            "source_id": sourceId,
+                            "content_hash": receipt.contentHash,
+                            "byte_size": String(data.count)
+                        ])
+                    } catch {
+                        onComplete("FAILED", ["error_code": "file_download_failed"])
+                    }
+                }
+        }
+    }
+}
+
+private struct NativeVoiceTranscriptionAction: View {
+    let action: ClientActionDTO
+    let onComplete: (String, [String: String]) -> Void
+    @StateObject private var recorder = NativeVoiceRecorder()
+    @State private var transcribing = false
+
+    var body: some View {
+        ActionShell(title: "语音转写", cancel: {
+            recorder.cancel()
+            onComplete("CANCELLED", [:])
+        }) {
+            VStack(spacing: 24) {
+                Image(systemName: recorder.isRecording ? "waveform.circle.fill" : "text.bubble")
+                    .font(.system(size: 72))
+                Text(transcribing ? "正在转写" : recorder.isRecording ? "正在录音" : "准备录音")
+                Button(recorder.isRecording ? "完成并转写" : "开始录音") {
+                    if recorder.isRecording {
+                        _ = recorder.stop()
+                        transcribing = true
+                        Task {
+                            do {
+                                let response = try await APIClient.shared.transcribeVoice(
+                                    data: recorder.recordedData(), contentType: "audio/m4a"
+                                )
+                                onComplete("SUCCEEDED", [
+                                    "transcript": response.text,
+                                    "language": response.language
+                                ])
+                            } catch {
+                                onComplete("FAILED", ["error_code": "voice_transcription_failed"])
+                            }
+                        }
+                    } else {
+                        recorder.start(maxSeconds: action.payload.maxSeconds ?? 300) { error in
+                            if error != nil {
+                                onComplete("FAILED", ["error_code": "microphone_unavailable"])
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(transcribing)
+            }
+            .padding()
+        }
+    }
 }
 
 private struct UnsupportedNativeAction: View {

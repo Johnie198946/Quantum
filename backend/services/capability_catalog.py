@@ -45,6 +45,9 @@ IMPLEMENTED_HANDLERS = {
     "hermes.session.list", "hermes.session.open", "hermes.session.resume",
     "hermes.session.delete",
     "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
+    "file.upload", "file.download", "voice.transcribe",
+    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create",
+    "task.execute",
 }
 
 
