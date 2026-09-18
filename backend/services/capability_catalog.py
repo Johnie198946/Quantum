@@ -25,6 +25,7 @@ IMPLEMENTED_HANDLERS = {
     "knowledge.merge", "knowledge.archive", "knowledge.restore",
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "workflow.approve", "workflow.revise",
+    "workflow.cancel",
     "presentation.create_from_document",
     "presentation.create_from_text",
     "document.word.create_from_text", "report.research.create_from_text",

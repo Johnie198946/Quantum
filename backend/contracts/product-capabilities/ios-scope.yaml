@@ -205,6 +205,9 @@ annotations:
   workflow.revise:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  workflow.cancel:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   document.word.create_from_text:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx

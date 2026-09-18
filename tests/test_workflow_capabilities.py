@@ -23,18 +23,54 @@ PLAN_DSL = {
 }
 
 
-def test_workflow_approve_and_revise_are_registered_but_cancel_remains_absent():
+def test_workflow_approve_revise_and_cancel_are_registered():
     approve = describe_capability("workflow.approve")
     revise = describe_capability("workflow.revise")
+    cancel = describe_capability("workflow.cancel")
     assert approve and approve["implementation_status"] == "implemented"
     assert revise and revise["implementation_status"] == "implemented"
-    assert describe_capability("workflow.cancel") is None
+    assert cancel and cancel["implementation_status"] == "implemented"
     assert approve["preconditions"] == [
         "authenticated_owner", "awaiting_plan_approval", "plan_revision_cas"
     ]
     assert revise["preconditions"] == [
         "authenticated_owner", "editable_plan", "plan_revision_cas"
     ]
+    assert cancel["preconditions"] == [
+        "authenticated_owner", "cancellable_workflow", "workflow_updated_at_cas"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_workflow_cancel_reuses_domain_handler_with_cas_and_idempotency():
+    domain_result = {
+        "request_id": "cancel-request-1",
+        "workflow_id": "wf-cancel",
+        "status": "cancelled",
+        "resource_revision": "2026-09-18T09:01:00.000000+00:00",
+        "cancelled_execution_ids": [],
+        "cancelled_planning_job_ids": [],
+    }
+    with patch(
+        "backend.capability_handlers.cancel_workflow",
+        new=AsyncMock(return_value=domain_result),
+    ) as cancel:
+        result = await execute_verified_capability(
+            "workflow.cancel",
+            {
+                "workflow_id": "wf-cancel",
+                "expected_updated_at": "2026-09-18T09:00:00+00:00",
+            },
+            payload=PAYLOAD,
+            idempotency_key="cancel-request-1",
+        )
+    assert result["status"] == "completed"
+    assert result["events"][0]["type"] == "workflow.cancelled"
+    workflow_id, body, payload = cancel.await_args.args
+    assert workflow_id == "wf-cancel"
+    assert body.request_id == "cancel-request-1"
+    assert body.expected_updated_at.isoformat() == "2026-09-18T09:00:00+00:00"
+    assert payload == PAYLOAD
 
 
 @pytest.mark.asyncio

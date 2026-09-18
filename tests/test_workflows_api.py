@@ -949,6 +949,137 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertIsNotNone(archived_at)
         self.assertEqual(phase, "archived")
 
+    def test_cancel_is_cas_guarded_and_durably_replays_receipt(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/cancel"
+        denied = self.request(
+            "POST",
+            path,
+            sub="gamma",
+            json={
+                "request_id": "workflow-cancel-owner-check",
+                "expected_updated_at": workflow["updated_at"],
+            },
+        )
+        self.assertEqual(denied.status_code, 404, denied.text)
+
+        stale = self.request(
+            "POST",
+            path,
+            json={
+                "request_id": "workflow-cancel-stale-revision",
+                "expected_updated_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        self.assertEqual(stale.status_code, 412, stale.text)
+        self.assertEqual(stale.json()["detail"]["code"], "workflow_revision_conflict")
+
+        payload = {
+            "request_id": "workflow-cancel-durable-request",
+            "expected_updated_at": workflow["updated_at"],
+        }
+        completed = self.request("POST", path, json=payload)
+        self.assertEqual(completed.status_code, 200, completed.text)
+        receipt = completed.json()
+        self.assertEqual(receipt["status"], "cancelled")
+        self.assertEqual(receipt["request_id"], payload["request_id"])
+
+        replay = self.request("POST", path, json=payload)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json(), receipt)
+
+        conflict = self.request(
+            "POST",
+            path,
+            json={
+                **payload,
+                "expected_updated_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(
+            conflict.json()["detail"]["code"], "idempotency_payload_conflict"
+        )
+        self.assertEqual(
+            self.request("GET", f"/api/v1/workflows/{workflow['id']}").status_code,
+            404,
+        )
+
+    def test_cancel_remote_failure_does_not_archive_or_write_receipt(self):
+        from backend.db import SessionLocal
+        from backend.models.workflow import (
+            WorkflowDefinition,
+            WorkflowExecution,
+            WorkflowPlanVersion,
+        )
+
+        workflow = self.create()
+
+        async def seed_running_execution():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, workflow["id"])
+                plan = WorkflowPlanVersion(
+                    id=f"wfp_cancel_{uuid.uuid4().hex[:12]}",
+                    workflow_id=row.id,
+                    version=1,
+                    dsl={"plan_id": "cancel-plan", "name": "Cancel", "version": "1.0.0", "nodes": [], "edges": []},
+                    goal="Cancel safely",
+                    deliverable="Receipt",
+                )
+                db.add(plan)
+                await db.flush()
+                row.active_plan_id = plan.id
+                execution = WorkflowExecution(
+                    id=f"wfe_cancel_{uuid.uuid4().hex[:12]}",
+                    workflow_id=row.id,
+                    plan_id=plan.id,
+                    tenant_key="tenant-alpha",
+                    status="running",
+                    idempotency_key=f"cancel-running-{uuid.uuid4().hex}",
+                )
+                db.add(execution)
+                await db.commit()
+                await db.refresh(row)
+                return row.updated_at.isoformat(), execution.id
+
+        expected_updated_at, execution_id = asyncio.run(seed_running_execution())
+        with patch(
+            "backend.api.workflows.cancel_remote",
+            new=AsyncMock(side_effect=RuntimeError("remote unavailable")),
+        ) as remote_cancel:
+            response = self.request(
+                "POST",
+                f"/api/v1/workflows/{workflow['id']}/cancel",
+                json={
+                    "request_id": "workflow-cancel-remote-failure",
+                    "expected_updated_at": expected_updated_at,
+                },
+            )
+        self.assertEqual(response.status_code, 502, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"], "workflow_remote_cancel_failed"
+        )
+        remote_cancel.assert_awaited_once_with(execution_id)
+
+        async def persisted_state():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, workflow["id"])
+                execution = await db.get(WorkflowExecution, execution_id)
+                return (
+                    row.status,
+                    row.archived_at,
+                    row.cancel_request_id,
+                    row.cancellation_receipt,
+                    execution.status,
+                )
+
+        state = asyncio.run(persisted_state())
+        self.assertNotEqual(state[0], "archived")
+        self.assertIsNone(state[1])
+        self.assertIsNone(state[2])
+        self.assertIsNone(state[3])
+        self.assertEqual(state[4], "running")
+
     def test_clarification_phase_column_fits_confirmation_state(self):
         from backend.models.workflow import WorkflowClarificationSession
 

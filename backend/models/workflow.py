@@ -26,6 +26,14 @@ def _workflow_plan_hash(context) -> str:
 
 class WorkflowDefinition(Base):
     __tablename__ = "workflows"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key",
+            "created_by",
+            "cancel_request_id",
+            name="uq_workflows_cancel_request_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -51,6 +59,9 @@ class WorkflowDefinition(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    cancel_request_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    cancel_request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cancellation_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

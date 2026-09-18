@@ -26,9 +26,11 @@ from backend.api.knowledge_sync import (
 from backend.api.workflows import (
     ApprovalRequest,
     PlanEdit,
+    WorkflowCancelRequest,
     WorkflowCreate,
     _create_workflow,
     approve_plan,
+    cancel_workflow,
     edit_plan,
     get_artifact_content,
     get_execution,
@@ -496,6 +498,20 @@ async def _workflow_revise(
     ), payload)
 
 
+async def _workflow_cancel(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    assert key
+    return await cancel_workflow(
+        data["workflow_id"],
+        WorkflowCancelRequest(
+            request_id=key,
+            expected_updated_at=data["expected_updated_at"],
+        ),
+        payload,
+    )
+
+
 async def _artifact_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
     return await get_artifact_content(data["execution_id"], data["artifact_id"], payload)
 
@@ -913,6 +929,7 @@ HANDLERS: dict[str, Handler] = {
     "workflow.start": _workflow_start,
     "workflow.approve": _workflow_approve,
     "workflow.revise": _workflow_revise,
+    "workflow.cancel": _workflow_cancel,
     "presentation.create_from_document": _presentation_create,
     "presentation.create_from_text": _presentation_create_from_text,
     "document.word.create_from_text": _word_create_from_text,

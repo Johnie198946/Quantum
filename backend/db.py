@@ -291,6 +291,9 @@ def _migrate_workflow_lifecycle_columns(connection) -> None:
             "clarification_session_id": "VARCHAR(48)",
             "requirements_snapshot": "JSON NOT NULL DEFAULT '{}'",
             "primary_agent_id": "VARCHAR(32)",
+            "cancel_request_id": "VARCHAR(160)",
+            "cancel_request_hash": "VARCHAR(64)",
+            "cancellation_receipt": "JSON",
         }
         for name, definition in columns.items():
             if name not in existing:
@@ -300,6 +303,10 @@ def _migrate_workflow_lifecycle_columns(connection) -> None:
         connection.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_workflows_clarification_session_id "
             "ON workflows (clarification_session_id)"
+        )
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflows_cancel_request_id "
+            "ON workflows (tenant_key, created_by, cancel_request_id)"
         )
     if (
         "workflow_clarification_sessions" in tables

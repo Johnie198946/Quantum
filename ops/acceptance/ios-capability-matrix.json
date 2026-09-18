@@ -1594,21 +1594,66 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
       "capability": "workflow.cancel",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "cancellable_workflow",
+          "workflow_updated_at_cas"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.cancelled",
+      "handler": "workflow.cancel",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "workflow-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_updated_at": {
+              "format": "date-time",
+              "maxLength": 40,
+              "minLength": 20,
+              "type": "string"
+            },
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id",
+            "expected_updated_at"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "request_id",
+            "workflow_id",
+            "status",
+            "resource_revision",
+            "cancelled_execution_ids",
+            "cancelled_planning_job_ids"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -3344,9 +3389,9 @@
     }
   ],
   "counts": {
-    "absent": 21,
+    "absent": 20,
     "implemented": 0,
-    "partial": 49,
+    "partial": 50,
     "unverified": 0
   },
   "pcm_version": "1.0.0",

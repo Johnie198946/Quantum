@@ -367,6 +367,14 @@
       ]
     },
     {
+      "id": "workflow.cancel",
+      "status": "implemented",
+      "tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
       "id": "workflow.create",
       "status": "implemented",
       "tests": [
@@ -403,7 +411,7 @@
       ]
     }
   ],
-  "catalog_digest": "8b293e987b8910e084c19b7f972d7792b6201849176bde8e08685b9631664f78",
+  "catalog_digest": "8fb9a15cf3560827c6510fb82a571218c07eca7d320ad536a14a13d817f71708",
   "consumptions": [
     {
       "gates": [
@@ -448,7 +456,7 @@
     }
   ],
   "counts": {
-    "implemented": 55,
+    "implemented": 56,
     "partial": 0,
     "unverified": 0
   },
@@ -524,6 +532,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 55,
+  "total": 56,
   "version": "1.0.0"
 }

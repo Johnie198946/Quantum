@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `8b293e987b8910e084c19b7f972d7792b6201849176bde8e08685b9631664f78`
+Catalog digest: `8fb9a15cf3560827c6510fb82a571218c07eca7d320ad536a14a13d817f71708`
 
 ## Gateway 核心模块规范
 
@@ -341,6 +341,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `workflow.approve@1.0.0` | workflow | write | required | required | `workflow.approved` | `workflow@1` | implemented |
+| `workflow.cancel@1.0.0` | workflow | write | required | required | `workflow.cancelled` | `workflow@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
 | `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.revise@1.0.0` | workflow | write | required | required | `workflow.revised` | `workflow@1` | implemented |

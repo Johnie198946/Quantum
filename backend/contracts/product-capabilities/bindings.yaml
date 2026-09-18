@@ -27,6 +27,8 @@ bindings:
     handler: workflow.approve
   - id: workflow.revise
     handler: workflow.revise
+  - id: workflow.cancel
+    handler: workflow.cancel
   - id: presentation.create_from_document
     handler: presentation.create_from_document
   - id: presentation.create_from_text
