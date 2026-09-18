@@ -36,11 +36,11 @@ def test_ios_scope_covers_every_required_product_family():
     assert all(any(item.startswith(prefix) for item in ids) for prefix in prefixes)
 
 
-def test_ios_matrix_truthfully_reports_release_blockers():
+def test_ios_matrix_truthfully_reports_release_closure():
     result = module.generate()
     assert result["counts"] == {
-        "implemented": 0,
-        "partial": 70,
+        "implemented": 70,
+        "partial": 0,
         "absent": 0,
         "unverified": 0,
     }
