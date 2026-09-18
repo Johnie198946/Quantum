@@ -111,3 +111,9 @@ bindings:
     handler: schedule.update
   - id: schedule.delete
     handler: schedule.delete
+  - id: notification.list
+    handler: notification.list
+  - id: notification.mark_read
+    handler: notification.mark_read
+  - id: notification.preferences.update
+    handler: notification.preferences.update

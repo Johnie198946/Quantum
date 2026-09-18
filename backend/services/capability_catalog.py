@@ -41,6 +41,7 @@ IMPLEMENTED_HANDLERS = {
     "project.list", "project.create", "project.open", "project.update", "project.delete",
     "task.list", "task.create", "task.update", "task.delete", "task.status",
     "schedule.list", "schedule.create", "schedule.update", "schedule.delete",
+    "notification.list", "notification.mark_read", "notification.preferences.update",
 }
 
 

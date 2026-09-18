@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `8fb9a15cf3560827c6510fb82a571218c07eca7d320ad536a14a13d817f71708`
+Catalog digest: `39688c8c807b28bdc117cb89595c79e9d80968a4bb9379889a577a1368455233`
 
 ## Gateway 核心模块规范
 
@@ -316,6 +316,9 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `memory.delete@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.list@1.0.0` | memory | read | none | none | `memory.snapshot` | `answer@1` | implemented |
 | `memory.update@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
+| `notification.list@1.0.0` | notification | read | none | none | `notification.snapshot` | `answer@1` | implemented |
+| `notification.mark_read@1.0.0` | notification | write | required | required | `notification.changed` | `answer@1` | implemented |
+| `notification.preferences.update@1.0.0` | notification | write | required | required | `notification.preferences_changed` | `answer@1` | implemented |
 | `paper.academic.create_from_text@1.0.0` | paper | write | required | required | `document.created` | `workflow@1` | implemented |
 | `presentation.create_from_document@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |
 | `presentation.create_from_text@1.1.0` | presentation | write | required | required | `presentation.created` | `presentation_review@1` | implemented |

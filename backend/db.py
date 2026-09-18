@@ -92,7 +92,23 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_llm_usage_identity)
         await conn.run_sync(_migrate_workspace_delivery_contract)
         await conn.run_sync(_migrate_workspace_intent_columns)
+        await conn.run_sync(_migrate_notification_owner_columns)
     await _backfill_workspace_intent_drafts()
+
+
+def _migrate_notification_owner_columns(connection) -> None:
+    """Add principal ownership without guessing owners for legacy rows."""
+    schema = inspect(connection)
+    if "notifications" not in set(schema.get_table_names()):
+        return
+    existing = {item["name"] for item in schema.get_columns("notifications")}
+    if "user_id" not in existing:
+        connection.exec_driver_sql(
+            "ALTER TABLE notifications ADD COLUMN user_id VARCHAR(128)"
+        )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id)"
+    )
 
 
 def _migrate_llm_usage_identity(connection) -> None:

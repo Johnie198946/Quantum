@@ -73,3 +73,9 @@ events:
     version: 1
   - id: schedule.change_proposed
     version: 1
+  - id: notification.snapshot
+    version: 1
+  - id: notification.changed
+    version: 1
+  - id: notification.preferences_changed
+    version: 1

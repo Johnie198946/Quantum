@@ -185,6 +185,27 @@
       ]
     },
     {
+      "id": "notification.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "notification.mark_read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "notification.preferences.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
       "id": "paper.academic.create_from_text",
       "status": "implemented",
       "tests": [
@@ -411,7 +432,7 @@
       ]
     }
   ],
-  "catalog_digest": "8fb9a15cf3560827c6510fb82a571218c07eca7d320ad536a14a13d817f71708",
+  "catalog_digest": "39688c8c807b28bdc117cb89595c79e9d80968a4bb9379889a577a1368455233",
   "consumptions": [
     {
       "gates": [
@@ -456,7 +477,7 @@
     }
   ],
   "counts": {
-    "implemented": 56,
+    "implemented": 59,
     "partial": 0,
     "unverified": 0
   },
@@ -532,6 +553,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 56,
+  "total": 59,
   "version": "1.0.0"
 }

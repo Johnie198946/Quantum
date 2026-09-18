@@ -914,6 +914,40 @@ async def _schedule_delete(data, payload, key):
     return await _schedule_mutation("DELETE", data, payload, key)
 
 
+async def _notification_list(
+    data: dict[str, Any], payload: dict[str, Any], _key: str | None
+) -> dict[str, Any]:
+    from backend.api.notifications import list_notifications
+
+    return await list_notifications(
+        limit=int(data.get("limit", 50)),
+        unread_only=bool(data.get("unread_only", False)),
+        payload=payload,
+    )
+
+
+async def _notification_mark_read(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.api.notifications import NotificationReadRequest, mark_read
+
+    assert key
+    return await mark_read(
+        int(data["notification_id"]),
+        NotificationReadRequest(expected_read=bool(data["expected_read"])),
+        payload,
+    )
+
+
+async def _notification_preferences_update(
+    data: dict[str, Any], payload: dict[str, Any], key: str | None
+) -> dict[str, Any]:
+    from backend.api.notifications import NotificationPreferenceRequest, update_preferences
+
+    assert key
+    return await update_preferences(NotificationPreferenceRequest(**data), payload)
+
+
 HANDLERS: dict[str, Handler] = {
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
@@ -971,4 +1005,7 @@ HANDLERS: dict[str, Handler] = {
     "schedule.create": _schedule_create,
     "schedule.update": _schedule_update,
     "schedule.delete": _schedule_delete,
+    "notification.list": _notification_list,
+    "notification.mark_read": _notification_mark_read,
+    "notification.preferences.update": _notification_preferences_update,
 }

@@ -3090,55 +3090,173 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_notification_capabilities.py"
+      ],
       "capability": "notification.list",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_notification_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "notification.snapshot",
+      "handler": "notification.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "notification-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "unread_only": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "total",
+            "unread",
+            "items"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_notification_capabilities.py"
+      ],
       "capability": "notification.mark_read",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_notification_owner",
+          "notification_unread_cas"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "notification.changed",
+      "handler": "notification.mark_read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "notification-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_read": {
+              "type": "boolean"
+            },
+            "notification_id": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "notification_id",
+            "expected_read"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "ok",
+            "id",
+            "read"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_notification_capabilities.py"
+      ],
       "capability": "notification.preferences.update",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_notification_owner",
+          "notification_preferences_revision_cas"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "notification.preferences_changed",
+      "handler": "notification.preferences.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "notification-owner",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "items": {
+                "enum": [
+                  "inapp",
+                  "feishu",
+                  "weixin",
+                  "email"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "expected_revision",
+            "enabled",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "enabled",
+            "channels",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -3389,9 +3507,9 @@
     }
   ],
   "counts": {
-    "absent": 20,
+    "absent": 17,
     "implemented": 0,
-    "partial": 50,
+    "partial": 53,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
