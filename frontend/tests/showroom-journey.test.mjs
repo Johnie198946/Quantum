@@ -98,7 +98,8 @@ test('exact-SHA bootstrap exports, verifies, and executes the target commit upda
   assert.match(deployExactScript, /sha256sum "\$REMOTE_SCRIPT"/);
   assert.match(deployExactScript, /bash "\$REMOTE_SCRIPT" "\$EXPECTED_SHA"/);
   assert.match(deployExactScript, /AI_LAB_DEPLOY_REMOTE_SUDO/);
-  assert.match(deployExactScript, /sudo -n bash "\$REMOTE_SCRIPT" "\$EXPECTED_SHA"/);
+  assert.match(deployExactScript, /sudo -n env AI_LAB_SOURCE_ARCHIVE=/);
+  assert.match(deployExactScript, /AI_LAB_SOURCE_ARCHIVE="\$REMOTE_SOURCE" AI_LAB_SOURCE_ARCHIVE_SHA256=/);
   assert.doesNotMatch(deployExactScript, /\/opt\/ai-lab-platform\/scripts\/update\.sh/);
 });
 
@@ -111,8 +112,49 @@ test('exact-SHA bootstrap executes the update script stored in the target commit
   mkdirSync(join(repository, 'scripts'), { recursive: true });
   mkdirSync(fakeBin);
   writeFileSync(join(repository, 'scripts', 'update.sh'), '#!/bin/bash\nset -eu\nprintf "%s" "$1" > "$DEPLOY_MARKER"\n');
-  writeFileSync(join(fakeBin, 'scp'), '#!/bin/bash\nset -eu\ncp "$2" "${3#*:}"\n');
-  writeFileSync(join(fakeBin, 'ssh'), '#!/bin/bash\nset -eu\nif [ "$1" = "-o" ]; then shift 2; fi\nshift\nif [ "$1" = "mktemp" ]; then\n  path="$("$@")"\n  printf "%s" "$path" > "$REMOTE_PATH_LOG"\n  printf "%s\\n" "$path"\n  exit 0\nfi\nexec "$@"\n');
+  writeFileSync(join(fakeBin, 'scp'), `#!/bin/bash
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -q) shift ;;
+    -o|-i) shift 2 ;;
+    *) break ;;
+  esac
+done
+target="\${2#*:}"
+case "$target" in
+  /tmp/ai-lab-update.*) cp "$1" "$target" ;;
+  *) : ;;
+esac
+`);
+  writeFileSync(join(fakeBin, 'ssh'), `#!/bin/bash
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o|-i) shift 2 ;;
+    *) break ;;
+  esac
+done
+shift
+if [ "$1" = "mktemp" ]; then
+  path="$("$@")"
+  printf "%s" "$path" > "$REMOTE_PATH_LOG"
+  printf "%s\\n" "$path"
+  exit 0
+fi
+if [ "$1" = "bash" ] && [ "$2" = "-s" ]; then
+  remote_script="$4"
+  expected_sha="$5"
+  expected_hash="$6"
+  test "$(shasum -a 256 "$remote_script" | cut -d' ' -f1)" = "$expected_hash"
+  bash "$remote_script" "$expected_sha"
+  exit 0
+fi
+case "$1" in
+  install) exit 0 ;;
+esac
+exec "$@"
+`);
   chmodSync(join(fakeBin, 'scp'), 0o755);
   chmodSync(join(fakeBin, 'ssh'), 0o755);
   try {
