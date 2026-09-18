@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `0a3d79a71bd99581e3a8754f31663057ccd0daebc78ab5a0de437c8c2c7069b3`
+Catalog digest: `8257338b1580c5a370be1fe2fbe0963f75aaa8f95b4a2d499988c1ceccfd158f`
 
 ## Gateway 核心模块规范
 
@@ -324,6 +324,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `project.create@1.0.0` | project | write | required | required | `project.created` | `answer@1` | implemented |
 | `project.list@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
 | `project.open@1.0.0` | project | read | none | none | `project.snapshot` | `answer@1` | implemented |
+| `project.update@1.0.0` | project | write | required | required | `project.change_proposed` | `answer@1` | implemented |
 | `report.research.create_from_text@1.0.0` | report | write | required | required | `document.created` | `workflow@1` | implemented |
 | `schedule.create@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
 | `schedule.delete@1.0.0` | schedule | write | required | required | `schedule.change_proposed` | `answer@1` | implemented |
@@ -334,6 +335,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `skill.list@1.0.0` | skill | read | none | none | `skill.snapshot` | `answer@1` | implemented |
 | `skill.update@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `task.create@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `task.delete@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |

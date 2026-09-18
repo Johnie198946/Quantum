@@ -87,6 +87,8 @@ bindings:
     handler: project.create
   - id: project.open
     handler: project.open
+  - id: project.update
+    handler: project.update
   - id: task.list
     handler: task.list
   - id: task.create
@@ -95,6 +97,8 @@ bindings:
     handler: task.update
   - id: task.status
     handler: task.status
+  - id: task.delete
+    handler: task.delete
   - id: schedule.list
     handler: schedule.list
   - id: schedule.create

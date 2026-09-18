@@ -89,6 +89,40 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_project_task_capabilities.py]
     implementation_status: implemented
+  - id: project.update
+    version: 1.0.0
+    domain: project
+    description: Propose definition changes to an owned QWS project using revision CAS.
+    positive_examples: [Update this project's name and goal.]
+    negative_examples: [Overwrite a stale or cross-tenant project.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [project_id, expected_revision, name, goal]
+      properties:
+        project_id: {type: string, minLength: 1, maxLength: 80}
+        expected_revision: {type: integer, minimum: 0}
+        name: {type: string, minLength: 1, maxLength: 160}
+        goal: {type: string, minLength: 1, maxLength: 4000}
+        desired_outputs:
+          type: array
+          items: {type: string}
+    output_schema:
+      type: object
+      required: [proposal]
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_project_writer, expected_project_revision]
+    policy_ref: qws-project-access
+    handler_binding: project.update
+    idempotency: required
+    receipt: required
+    result_event: project.change_proposed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_project_task_capabilities.py]
+    implementation_status: implemented
   - id: task.list
     version: 1.0.0
     domain: task
@@ -209,6 +243,36 @@ capabilities:
     idempotency: none
     receipt: none
     result_event: task.snapshot
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_project_task_capabilities.py]
+    implementation_status: implemented
+  - id: task.delete
+    version: 1.0.0
+    domain: task
+    description: Soft-delete a canonical QWS task through the governed archive proposal path.
+    positive_examples: [Delete this task from the active project plan.]
+    negative_examples: [Hard-delete task audit history or delete with a stale revision.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [project_id, task_id, expected_revision]
+      properties:
+        project_id: {type: string, minLength: 1, maxLength: 80}
+        task_id: {type: string, minLength: 1, maxLength: 80}
+        expected_revision: {type: integer, minimum: 0}
+    output_schema:
+      type: object
+      required: [proposal, task_preview]
+    effect: write
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_project_writer, expected_project_revision]
+    policy_ref: qws-project-access
+    handler_binding: task.delete
+    idempotency: required
+    receipt: required
+    result_event: task.change_proposed
     renderer: answer
     renderer_version: 1
     tests: [tests/test_project_task_capabilities.py]

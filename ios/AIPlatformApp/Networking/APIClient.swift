@@ -2113,6 +2113,7 @@ public enum RendererRegistry {
         "skill.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "project.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "project.created": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
         "schedule.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),

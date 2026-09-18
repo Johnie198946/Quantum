@@ -20,6 +20,33 @@ test("QWS consumes schedule events through the shared registry", () => {
   assert.match(proposal.text, /proposal-1/);
 });
 
+test("QWS consumes project and task mutation events through the shared registry", () => {
+  const project = consumeQCPEvent({
+    type: "project.change_proposed",
+    version: 1,
+    payload: { proposal: { id: "project-proposal-1" } },
+  });
+  assert.equal(project.path, "answer");
+  assert.match(project.text, /project-proposal-1/);
+
+  const task = consumeQCPEvent({
+    type: "task.change_proposed",
+    version: 1,
+    payload: { proposal: { id: "task-proposal-1" } },
+  });
+  assert.equal(task.path, "answer");
+  assert.match(task.text, /task-proposal-1/);
+
+  const fallback = consumeQCPEvent({
+    type: "project.change_proposed",
+    version: 0,
+    payload: { proposal: { id: "preserved" } },
+  });
+  assert.equal(fallback.path, "answer");
+  assert.equal(fallback.payload.proposal.id, "preserved");
+  assert.match(fallback.text, /保留服务端状态/);
+});
+
 test("QWS schedule registry preserves unknown-version state with safe fallback", () => {
   const event = consumeQCPEvent({
     type: "schedule.snapshot",

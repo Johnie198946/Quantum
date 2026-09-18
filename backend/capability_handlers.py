@@ -766,6 +766,17 @@ async def _project_open(data: dict[str, Any], payload: dict[str, Any], _key: str
     return {"project": jsonable_encoder(await get_project(data["project_id"], payload))}
 
 
+async def _project_update(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import UpdateProjectRequest, update_project
+
+    assert key
+    body = dict(data)
+    project_id = str(body.pop("project_id"))
+    return _response_payload(await update_project(
+        project_id, UpdateProjectRequest(request_id=key, **body), payload
+    ))
+
+
 async def _task_list(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
     from backend.api.quantum_workspace import get_project_process
 
@@ -806,6 +817,23 @@ async def _task_status(data: dict[str, Any], payload: dict[str, Any], _key: str 
     return {"task": jsonable_encoder(await get_project_task(
         data["project_id"], data["task_id"], payload
     ))}
+
+
+async def _task_delete(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.api.quantum_workspace import (
+        TaskArchiveProposalRequest,
+        propose_project_task_archive,
+    )
+
+    assert key
+    return _response_payload(await propose_project_task_archive(
+        data["project_id"],
+        data["task_id"],
+        TaskArchiveProposalRequest(
+            expected_revision=data["expected_revision"], request_id=key, action="ARCHIVE"
+        ),
+        payload,
+    ))
 
 
 async def _schedule_list(
@@ -899,9 +927,11 @@ HANDLERS: dict[str, Handler] = {
     "project.list": _project_list,
     "project.create": _project_create,
     "project.open": _project_open,
+    "project.update": _project_update,
     "task.list": _task_list,
     "task.create": _task_create,
     "task.update": _task_update,
+    "task.delete": _task_delete,
     "task.status": _task_status,
     "schedule.list": _schedule_list,
     "schedule.create": _schedule_create,

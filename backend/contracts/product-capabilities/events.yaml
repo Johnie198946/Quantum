@@ -61,6 +61,8 @@ events:
     version: 1
   - id: project.created
     version: 1
+  - id: project.change_proposed
+    version: 1
   - id: task.snapshot
     version: 1
   - id: task.change_proposed

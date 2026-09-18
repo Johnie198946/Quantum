@@ -1773,21 +1773,75 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_project_task_capabilities.py"
+      ],
       "capability": "project.update",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_writer",
+          "expected_project_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "project.change_proposed",
+      "handler": "project.update",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-project-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "desired_outputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "goal": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "expected_revision",
+            "name",
+            "goal"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -2014,21 +2068,64 @@
       "status": "partial"
     },
     {
-      "automated_tests": [],
+      "automated_tests": [
+        "tests/test_project_task_capabilities.py"
+      ],
       "capability": "task.delete",
-      "confirmation_cas_idempotency": null,
-      "event": null,
-      "handler": null,
-      "ios_consumer": null,
-      "policy": null,
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_project_writer",
+          "expected_project_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "task.change_proposed",
+      "handler": "task.delete",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+      "policy": "qws-project-access",
       "production_receipt": {
         "evidence": null,
         "status": "unverified"
       },
-      "qws_consumer": null,
-      "renderer": null,
-      "schema": null,
-      "status": "absent"
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "project_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "task_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "project_id",
+            "task_id",
+            "expected_revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "proposal",
+            "task_preview"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     },
     {
       "automated_tests": [],
@@ -3209,9 +3306,9 @@
     }
   ],
   "counts": {
-    "absent": 24,
+    "absent": 22,
     "implemented": 0,
-    "partial": 46,
+    "partial": 48,
     "unverified": 0
   },
   "pcm_version": "1.0.0",

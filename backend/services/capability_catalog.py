@@ -37,8 +37,8 @@ IMPLEMENTED_HANDLERS = {
     "agent.list", "agent.create", "agent.update", "agent.delete",
     "agent.evaluate", "agent.evaluation_status",
     "skill.list", "skill.create", "skill.update", "skill.delete",
-    "project.list", "project.create", "project.open",
-    "task.list", "task.create", "task.update", "task.status",
+    "project.list", "project.create", "project.open", "project.update",
+    "task.list", "task.create", "task.update", "task.delete", "task.status",
     "schedule.list", "schedule.create", "schedule.update", "schedule.delete",
 }
 

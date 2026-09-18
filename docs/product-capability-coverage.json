@@ -245,6 +245,13 @@
       ]
     },
     {
+      "id": "project.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
       "id": "report.research.create_from_text",
       "status": "implemented",
       "tests": [
@@ -317,6 +324,13 @@
       ]
     },
     {
+      "id": "task.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
       "id": "task.list",
       "status": "implemented",
       "tests": [
@@ -382,7 +396,7 @@
       ]
     }
   ],
-  "catalog_digest": "0a3d79a71bd99581e3a8754f31663057ccd0daebc78ab5a0de437c8c2c7069b3",
+  "catalog_digest": "8257338b1580c5a370be1fe2fbe0963f75aaa8f95b4a2d499988c1ceccfd158f",
   "consumptions": [
     {
       "gates": [
@@ -427,7 +441,7 @@
     }
   ],
   "counts": {
-    "implemented": 52,
+    "implemented": 54,
     "partial": 0,
     "unverified": 0
   },
@@ -503,6 +517,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 52,
+  "total": 54,
   "version": "1.0.0"
 }
