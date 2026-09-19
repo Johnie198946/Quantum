@@ -137,6 +137,15 @@ def test_missing_daily_series_are_reported(tmp_path):
     assert store.status_report(now=at(3))["missing"] == [{"series_id": "ai-practice", "series_title": "趣味AI落地经历", "issue_date": "2026-09-08", "status": "missing"}]
 
 
+def test_concept_fables_becomes_required_on_launch_date(tmp_path):
+    store = PublicationStore(tmp_path)
+    launch = at(3, day=19)
+    missing = store.status_report(now=launch)["missing"]
+    assert {item["series_id"] for item in missing} == {
+        "ai-history", "ai-practice", "concept-fables",
+    }
+
+
 def test_overdue_unpublished_series_report_actual_state(tmp_path):
     store = PublicationStore(tmp_path)
     blocked = ready(store, bundle())

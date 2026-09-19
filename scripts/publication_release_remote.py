@@ -22,7 +22,11 @@ OPERATOR = (
     "python", "/app/scripts/publication_operator.py",
     "--root", "/app/data/runtime/publications",
 )
-DAILY_SERIES = ("ai-history", "ai-practice")
+DAILY_SERIES_START = {
+    "ai-history": date.min,
+    "ai-practice": date.min,
+    "concept-fables": date(2026, 9, 19),
+}
 STATES = ("draft", "staged", "scheduled", "blocked", "published", "withdrawn")
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
 UNKNOWN = "unknown"
@@ -221,16 +225,22 @@ def _today() -> str:
     return datetime.now(SHANGHAI).date().isoformat()
 
 
+def _daily_series(day: str) -> tuple[str, ...]:
+    actual = date.fromisoformat(day)
+    return tuple(series for series, starts_on in DAILY_SERIES_START.items() if starts_on <= actual)
+
+
 def _summary(status: dict | None = None, before: dict | None = None) -> dict:
     day = _today()
+    daily_series = _daily_series(day)
     if status is None:
         return {
             "issues": {"blocked": UNKNOWN, "missing": UNKNOWN},
             "observed_published_publication_id_delta": UNKNOWN,
             "released_edition_ids": UNKNOWN,
             "today": {
-                "date": day, "expected": len(DAILY_SERIES), "published": UNKNOWN,
-                "by_series": {series: UNKNOWN for series in DAILY_SERIES},
+                "date": day, "expected": len(daily_series), "published": UNKNOWN,
+                "by_series": {series: UNKNOWN for series in daily_series},
             },
             "totals": {**{state: UNKNOWN for state in STATES}, "missing": UNKNOWN},
         }
@@ -242,7 +252,7 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
             item["publication_id"] for item in items
             if item.get("state") == "published" and item.get("issue_date") == day and item.get("series_id") == series
         })
-        for series in DAILY_SERIES
+        for series in daily_series
     }
     before_ids = {
         item["publication_id"] for item in (before or {}).get("items", []) if item.get("state") == "published"
@@ -267,7 +277,10 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
         },
         "observed_published_publication_id_delta": sorted(after_ids - before_ids) if before is not None else UNKNOWN,
         "released_edition_ids": UNKNOWN,
-        "today": {"date": day, "expected": len(DAILY_SERIES), "published": sum(published.values()), "by_series": published},
+        "today": {
+            "date": day, "expected": len(daily_series), "published": sum(published.values()),
+            "by_series": published,
+        },
         "totals": totals,
     }
 

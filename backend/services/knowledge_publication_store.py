@@ -25,6 +25,8 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 SERIES = {
     "ai-history": {"title": "AI的前世今生", "cover_theme": "history", "kind": "daily"},
     "ai-practice": {"title": "趣味AI落地经历", "cover_theme": "practice", "kind": "daily"},
+    "concept-fables": {"title": "概念寓言", "cover_theme": "methodology", "kind": "daily",
+                       "starts_on": "2026-09-19"},
     "quantumn-originals": {"title": "Quantumn 原创书籍", "cover_theme": "original", "kind": "original_collection"},
     "anthropic-originals": {"title": "Anthropic 原作", "cover_theme": "original", "kind": "original_collection"},
     "follow-builders-sources": {"title": "Follow Builders 公开来源索引", "cover_theme": "external", "kind": "source_index"},
@@ -971,6 +973,9 @@ class PublicationStore:
         result = []
         for key, value in SERIES.items():
             if value["kind"] != "daily":
+                continue
+            starts_on = value.get("starts_on")
+            if starts_on and local.date() < date.fromisoformat(starts_on):
                 continue
             editions = [item for item in rows if item["series_id"] == key]
             if any(item["state"] == "published" for item in editions):

@@ -38,6 +38,9 @@ EDITORIAL_BRIEF_FIELDS = {
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _NON_BODY = re.compile(r"^(?:前言|序言|序|目录|来源|参考(?:资料|文献)?|引用|附录|致谢|preface|contents|references|sources|bibliography|appendix)(?:\s|[:：、.\-]|$)", re.I)
+_VISIBLE_CHAPTER = re.compile(r"第\s*([0-9一二三四五六七八九十百]+)\s*[章节]")
+_CHINESE_DIGITS = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+                   "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 
 
 def _canonical(value):
@@ -50,6 +53,23 @@ def _hash(text):
 
 def _text(value, minimum=1):
     return isinstance(value, str) and len(value.strip()) >= minimum
+
+
+def _chapter_number(title: str):
+    match = _VISIBLE_CHAPTER.search(unicodedata.normalize("NFKC", title))
+    if not match:
+        return None
+    value = match.group(1)
+    if value.isdigit():
+        return int(value)
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, right = value.split("十", 1)
+        tens = _CHINESE_DIGITS.get(left, 1) if left else 1
+        ones = _CHINESE_DIGITS.get(right, 0) if right else 0
+        return tens * 10 + ones
+    return _CHINESE_DIGITS.get(value)
 
 
 def _inline(token):
@@ -241,6 +261,12 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
     if not isinstance(objectives, list) or not objectives or any(not _text(o, 10) for o in objectives):
         reasons.add("contract.learning_objectives")
     chapters = metrics["chapters"]
+    visible_numbers = [_chapter_number(c["title"]) for c in chapters]
+    if fmt == "chapter" and (any(number is not None for number in visible_numbers) or "本章" in body):
+        reasons.add("quality.orphan_chapter_number")
+    if fmt == "book" and any(number is not None for number in visible_numbers):
+        if visible_numbers != list(range(1, len(chapters) + 1)):
+            reasons.add("quality.chapter_sequence")
     expected = [{k: c[k] for k in ("id", "title", "body_hash")} for c in chapters]
     if contract.get("chapters") != expected:
         reasons.add("contract.chapters")
