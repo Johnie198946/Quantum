@@ -1,5 +1,6 @@
 """Isolated synthetic native DB tests; never production review evidence."""
 import hashlib
+import base64
 import json
 import sqlite3
 
@@ -50,6 +51,17 @@ def test_exact_native_completed_output_is_signed_and_readonly(native):
     assert verify_review_proof(proof, public, **expected) == []
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
     assert "content" not in proof
+
+
+def test_base64_review_material_survives_markdown_fences(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        first = json.loads(conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0].split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        manuscript = first.pop("manuscript")
+        first["manuscript_b64"] = base64.b64encode(manuscript.encode()).decode()
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (REQUEST_START + json.dumps(first) + REQUEST_END,))
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
 
 
 @pytest.mark.parametrize("sql", [

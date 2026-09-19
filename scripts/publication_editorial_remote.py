@@ -325,7 +325,11 @@ def review_input(root, remote):
             bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
             manuscript = read(local_path(path.parent, item["body_file"])).decode()
             verify_target(bundle, manuscript)
-            request = {"manuscript": manuscript, "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner", "profile": "default",
+            # Cron injects script stdout into Markdown. Raw manuscripts may contain
+            # fenced code blocks, which that envelope can rewrite before the
+            # request reaches the native session. Base64 keeps the signed bytes
+            # transport-stable; the reviewer still reads the frozen body_file.
+            request = {"manuscript_b64": base64.b64encode(manuscript.encode()).decode(), "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner", "profile": "default",
                        **{k: contract[k] for k in ("issue_id", "revision", "attempt_id", "writer_sessions")},
                        "editorial_target_hash": contract["target_hash"]}
             files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}

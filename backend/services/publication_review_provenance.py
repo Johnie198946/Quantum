@@ -94,6 +94,11 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         if not isinstance(writers, list) or not writers or reviewer in writers:
             raise ValueError("native reviewer is not independent")
         manuscript, contract = request.get("manuscript"), request.get("quality_contract")
+        if manuscript is None and isinstance(request.get("manuscript_b64"), str):
+            try:
+                manuscript = base64.b64decode(request["manuscript_b64"], validate=True).decode()
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("native request lacks actual review material") from exc
         if not isinstance(manuscript, str) or not isinstance(contract, dict):
             raise ValueError("native request lacks actual review material")
         if (contract.get("writer_sessions") != writers
