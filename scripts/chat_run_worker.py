@@ -49,6 +49,8 @@ if CLAIM_AFTER is not None and (not math.isfinite(CLAIM_AFTER) or CLAIM_AFTER < 
 _run_context = threading.local()
 _placement_loop = asyncio.new_event_loop()
 _placement_loop_lock = threading.Lock()
+bridge._bridge_async_loop = _placement_loop
+bridge._bridge_async_loop_lock = _placement_loop_lock
 _AUTO_INGEST_RE = re.compile(r"调研|研究|分析|评估|方案|报告|诊断|规划|research|analysis|report|plan", re.I)
 
 
@@ -289,14 +291,20 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
         bridge._run_agent_sync(
             str(payload.get("goal") or ""), user_key,
             (user_key if stage_spec else bridge._hermes_session_for_request(user_key, payload.get("client_session_context"))),
-            sink, agent_holder, False, payload.get("agent_config"),
-            (None if stage_spec else _renew_knowledge_capability(claims)), claims or None,
-            payload.get("client_session_context"), client_claims or None, sandbox,
-            bool(payload.get("knowledge_action_enabled")),
-            payload.get("qws_business_context"),
-            bool(payload.get("qcp_enabled")),
-            str(run.get("request_id") or ""),
-            qws_claims or None,
+            sink, agent_holder,
+            allow_local_files=False,
+            agent_config=payload.get("agent_config"),
+            knowledge_capability=(None if stage_spec else _renew_knowledge_capability(claims)),
+            knowledge_claims=claims or None,
+            client_session_id=payload.get("client_session_id"),
+            client_session_context=payload.get("client_session_context"),
+            client_context_claims=client_claims or None,
+            sandbox=sandbox,
+            knowledge_action_enabled=bool(payload.get("knowledge_action_enabled")),
+            qws_business_context=payload.get("qws_business_context"),
+            qcp_enabled=bool(payload.get("qcp_enabled")),
+            trusted_request_id=str(run.get("request_id") or ""),
+            trusted_identity_claims=qws_claims or None,
         )
         snapshot = store.get_unchecked(run_id)
         triage = dict((payload.get("agent_config") or {}).get("triage") or {})

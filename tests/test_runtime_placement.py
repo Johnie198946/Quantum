@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -46,4 +47,28 @@ async def test_placement_is_sticky_and_migration_requires_a_frozen_generation(
     assert (migrated.shard_id, migrated.generation) == ("shard-2", 2)
     with pytest.raises(runtime_placement.RuntimePlacementConflict, match="shard_mismatch"):
         await runtime_placement.claim_runtime_placement(auth)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sqlite_resolve_creates_one_placement(tmp_path, monkeypatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'concurrent.db'}")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(lambda sync: Base.metadata.create_all(
+            sync, tables=[RuntimePlacement.__table__]
+        ))
+    monkeypatch.setattr(runtime_placement, "SessionLocal", factory)
+    monkeypatch.setattr(runtime_placement, "engine", engine)
+    monkeypatch.setenv("QUANTUM_RUNTIME_SHARDS", "shard-1")
+    auth = {"sub": "same-user", "tenant_key": "same-tenant"}
+
+    first, second = await asyncio.gather(
+        runtime_placement.resolve_runtime_placement(auth),
+        runtime_placement.resolve_runtime_placement(auth),
+    )
+
+    assert first == second
+    async with factory() as session:
+        assert len((await session.execute(RuntimePlacement.__table__.select())).all()) == 1
     await engine.dispose()

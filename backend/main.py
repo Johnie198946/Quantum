@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from backend.api.errors import register_error_handlers
 from backend.api.screens import router as screens_router
 from backend.api.tasks import router as tasks_router
-from backend.api.knowledge import router as knowledge_router
+from backend.api.knowledge import router as knowledge_router, warm_query_tokenizer
 from backend.api.chat import router as chat_router
 from backend.api.register import router as register_router
 from backend.api.catalog import router as catalog_router
@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     """启动: 启动守卫 + 初始化数据库表(幂等) + 启动 Agent 调度器。"""
     # 启动守卫：JWT secret 为空 → 开发态全可见，隔离承诺不生效
     check_dev_visibility_guard()
+    warm_query_tokenizer()
     db_ready = True
     try:
         await init_db()
@@ -101,6 +102,14 @@ async def lifespan(app: FastAPI):
             await resume_pending_planning()
         except Exception:
             logger.exception("Durable planning-job recovery failed; worker will retry")
+        try:
+            from backend.services.capability_gateway import reconcile_incomplete_invocations
+
+            reconciled = await reconcile_incomplete_invocations()
+            if reconciled:
+                logger.info("Reconciled %s incomplete capability invocations", reconciled)
+        except Exception:
+            logger.exception("Capability invocation reconciliation failed; status remains queryable")
         from backend.services.knowledge_pipeline_supervisor import (
             start_knowledge_pipeline_supervisor,
         )

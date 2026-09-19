@@ -272,6 +272,14 @@ class TestTenantAgentsAPI(unittest.TestCase):
         self.assertEqual(agent["allowed_tools"], ["web_search"])
         self.assertEqual(agent["capability_agent_ids"], ["knowledge"])
         self.assertEqual(agent["visibility"], "private")
+        self.assertIn("检索", agent["function_description"])
+        self.assertIn("笔记", agent["suitable_description"])
+        self.assertIn("当前账号", agent["boundary_description"])
+        self.assertEqual(len({
+            agent["function_description"],
+            agent["suitable_description"],
+            agent["boundary_description"],
+        }), 3)
 
         started = self._request(
             "POST", f"/api/v1/tenant-agents/{agent['id']}/evaluations",

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-09-17T00:07:51Z",
+  "scope": "original_remediation_plan_truth_addendum_and_current_closeout",
+  "supersedes_overall_claim_only": "ops/acceptance/20260917-quantumn-document-ppt-final-acceptance.json",
+  "does_not_invalidate_historical_evidence": true,
+  "git": {
+    "head": "27f6a4aad6c824e2ecf46329acbac069d522474c",
+    "origin_main": "27f6a4aad6c824e2ecf46329acbac069d522474c",
+    "working_tree": "dirty_in_progress",
+    "changed_paths": 17
+  },
+  "historical_count_correction": {
+    "claim": "Gate F executed 11 XCTest cases",
+    "status": "verified",
+    "source": "/tmp/Quantumn-F-iOS-UI-Build40.xcresult",
+    "read_method": "xcrun xcresulttool get test-results summary",
+    "tests": 11,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "note": "The previously suspected count of 9 is disproved by direct xcresult readback. Product scenarios and XCTest cases remain separately named."
+  },
+  "acceptance_semantics": {
+    "implemented": "source and focused tests exist",
+    "simulator_ui_verified": "new xcresult from the current dirty tree exists and was parsed",
+    "production_verified": "deployed target SHA was read back and a production product chain returned a validated artifact",
+    "released": "ASC/TestFlight/device receipts all exist for the same SHA"
+  },
+  "requirements": {
+    "ppt_default_three_step": {
+      "status": "implemented_local_pending_ui",
+      "evidence": [
+        "backend presentation_review_gates defaults to []",
+        "PresentationProductStep exposes 需求确认/全稿预览/下载",
+        "focused Python tests passed",
+        "focused iOS unit tests passed"
+      ],
+      "remaining": ["current-tree simulator UI chain", "production chain"]
+    },
+    "structured_review_composite_editing": {
+      "status": "implemented_local_ui_running",
+      "coverage": ["list add/delete/reorder", "page add/delete/reorder/title/summary", "asset name/url/source replacement", "CAS conflict", "undo", "cold relaunch"],
+      "evidence": ["3 focused backend tests passed", "3 focused iOS unit tests passed"],
+      "remaining": ["parse current UI xcresult", "production chain"]
+    },
+    "session_isolation_matrix": {
+      "status": "partial",
+      "historical_evidence": ["four concurrent Backend/Hermes sessions", "two owners x two sessions", "cross-owner 404", "legacy isolation", "iOS generation and owner/session unit tests"],
+      "new_ui_test": "ProductionSessionIsolationUITests.swift",
+      "remaining": ["parse current UI xcresult", "artifact/download projection in full live matrix"]
+    },
+    "novice_acceptance": {
+      "status": "partial",
+      "automation": "historical six fixture UI tests; current-tree rerun pending",
+      "human_observation": "pending an independent first-time human; automation cannot substitute"
+    },
+    "full_regression": {"status": "pending_current_tree"},
+    "production_product_matrix": {"status": "pending"},
+    "build_41_testflight_device": {"status": "authorized_pending_execution"}
+  },
+  "overall": "in_progress_no_release_claim"
+}

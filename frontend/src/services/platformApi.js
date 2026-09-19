@@ -569,6 +569,12 @@ export const platformApi = {
   streamTaskMessage(conversationId, payload, onEvent) {
     return streamRequest(`/api/v1/task-conversations/${conversationId}/messages/stream`, payload, onEvent);
   },
+  confirmCapabilityProposal(proposalId, confirmationToken, sessionId) {
+    return request("/api/v1/capabilities/confirm", {
+      method: "POST",
+      body: { proposal_id: proposalId, confirmation_token: confirmationToken, session_id: sessionId },
+    });
+  },
   startTaskAutoExecution(conversationId, payload) {
     return request(`/api/v1/task-conversations/${conversationId}/auto-execute`, { method: "POST", body: payload });
   },

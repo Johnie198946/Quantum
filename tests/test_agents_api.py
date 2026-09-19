@@ -84,6 +84,7 @@ def test_notifications_flow():
             tenant = agent.tenant_key if agent else "u-1"
             n = Notification(
                 tenant_key=tenant,
+                user_id="1",
                 agent_id="test-agent",
                 title="测试通知",
                 content="测试内容",

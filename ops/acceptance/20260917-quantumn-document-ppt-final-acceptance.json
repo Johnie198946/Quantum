@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-17T02:29:09+08:00",
+  "scope": "quantumn_ios_document_ppt_remediation_gates_a_through_f",
+  "status": "passed_local_acceptance",
+  "release_status": "blocked_pending_gate_g_authorization",
+  "repository": "/Users/dengzhaoyu/Projects/ai-lab-platform-ios-document-ppt-final-20260912",
+  "git": {
+    "branch": "main",
+    "head": "ec5f9361630e5006510962688f71a8754f0c7985",
+    "origin_main_ahead": 11,
+    "origin_main_behind": 0,
+    "working_tree": "dirty_preserved",
+    "changed_paths": 66,
+    "diff_check": "passed",
+    "committed": false,
+    "pushed": false,
+    "deployed": false,
+    "archived": false,
+    "testflight_uploaded": false,
+    "device_release_acceptance": false
+  },
+  "gates": {
+    "A": {
+      "status": "passed",
+      "evidence": "/tmp/Quantumn-A-Istanbul-Final.xcresult",
+      "tests": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "B": {
+      "status": "passed",
+      "evidence": [
+        "/tmp/Quantumn-B-Word-Final.xcresult",
+        "/tmp/Quantumn-B-ResearchReport-Final.xcresult",
+        "/tmp/Quantumn-B-AcademicPaper-Final.xcresult"
+      ],
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "C": {
+      "status": "passed",
+      "unit_evidence": "/tmp/Quantumn-C-Isolation-Unit.xcresult",
+      "unit_tests": 5,
+      "unit_passed": 5,
+      "unit_failed": 0,
+      "unit_skipped": 0,
+      "post_refactor_live_matrix": "/tmp/Quantumn-F-Gate-C-Live-Matrix.json",
+      "post_refactor_live_matrix_sha256": "ca964296abd3aedbe66a283cbddafd3ca159ee19c8e41d69b5c07578a0ca976b",
+      "live_chat_runs": 4,
+      "live_workflows": 4,
+      "assertions": {
+        "four_concurrent_backend_hermes_sessions": true,
+        "no_foreign_chat_marker": true,
+        "four_session_scoped_active_workflows": true,
+        "cross_owner_workflow_reads_return_404": true,
+        "legacy_workflow_owner_scoped_and_not_session_active": true
+      }
+    },
+    "D": {
+      "status": "passed",
+      "automation_xcresult": "/tmp/Quantumn-D-Unified-Build40.xcresult",
+      "automation_tests": 4,
+      "automation_passed": 4,
+      "automation_failed": 0,
+      "automation_skipped": 0,
+      "pptx": "/tmp/Quantumn-D-Istanbul-Final.pptx",
+      "pptx_sha256": "143d289d17e9dd3693a6017637a60f2e74e889cb3ead0e1946c1d84e279f0add",
+      "pdf": "/tmp/Quantumn-D-Istanbul-Visual/Quantumn-D-Istanbul-Final.pdf",
+      "pdf_sha256": "b10327aea2c17ce9d9bb9821f2771277c05025a1e44c71db3255a17f8fed58b0",
+      "slides": 14,
+      "montage": "/tmp/Quantumn-D-Istanbul-Visual/Quantumn-D-Istanbul-Montage.png",
+      "montage_sha256": "df8fa2a0a0d5becc1208bae04408986add309fed790fe4c1a6dd1e7b59d255dd",
+      "user_visual_approval": true,
+      "user_approval_note": "通过。后续专项优化"
+    },
+    "E": {
+      "status": "passed",
+      "receipt": "ops/acceptance/20260917-quantumn-batch6-gate-e.json",
+      "behavior_golden_baseline_tests": 340,
+      "behavior_golden_post_refactor_tests": 346,
+      "behavior_regressions": 0,
+      "new_batch6_tests": 6,
+      "cycles_involving_refactored_modules": 0,
+      "duplicate_extracted_function_definitions": 0,
+      "kill_switch_verified": true,
+      "rollback_rehearsal": "/tmp/Quantumn-E-Batch6-Rollback-Rehearsal.json",
+      "rollback_rehearsal_sha256": "c7918513f279bec12ee0365c285c3a3010091d6e6ab82ac6bebb4664126feca9",
+      "rollback_verified": true,
+      "working_tree_unchanged_by_rehearsal": true
+    },
+    "F": {
+      "status": "passed",
+      "clean_build": {
+        "derived_data": "/tmp/QuantumnCloseoutBuild40",
+        "xctestrun": "/tmp/QuantumnCloseoutBuild40/Build/Products/AIPlatformApp_iphonesimulator26.1-arm64.xctestrun",
+        "exit_code": 0,
+        "marketing_version": "1.0.3",
+        "build_number": "40"
+      },
+      "python_full": {
+        "junit": "/tmp/Quantumn-F-Python-Full.xml",
+        "junit_sha256": "4bf0eb647d29f7a9a7f67e91a50a1fd3495ec2c9520258aaf60834962a43e2a6",
+        "tests": 2639,
+        "passed": 2621,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 18,
+        "exit_code": 0,
+        "pipeline_module": "/Users/dengzhaoyu/Projects/ai-lab-vault-governance/tools/article_research_pipeline.py",
+        "skip_reasons": {
+          "superseded_v1_browser_orchestration": 1,
+          "superseded_v1_browser_backfill_fixture": 1,
+          "opt_in_installed_catalog": 14,
+          "opt_in_private_local_vault_fixture": 1,
+          "requires_real_hermes_and_writer_checkouts": 1
+        }
+      },
+      "python_preflight_incident": {
+        "status": "resolved",
+        "initial_failures": 4,
+        "cause": "default test path selected stale ai-lab-vault-deposition pipeline lacking revision_link; canonical governance pipeline already implements the required contract",
+        "fix": "reran with RESEARCH_PIPELINE_MODULE pinned to the canonical ai-lab-vault-governance source of truth",
+        "targeted_rerun": "4 passed",
+        "full_rerun": "2621 passed, 18 explained skips, 0 failed, 0 errors"
+      },
+      "ios_unit": {
+        "xcresult": "/tmp/Quantumn-F-iOS-Unit-Build40.xcresult",
+        "summary": "/tmp/Quantumn-F-iOS-Unit-Build40-summary.json",
+        "summary_sha256": "897f053d9b95327650630a64497f3aeee8bea7d1a5cacbdd72ce3a7d38b291f0",
+        "tests": 209,
+        "passed": 209,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      "ios_ui": {
+        "xcresult": "/tmp/Quantumn-F-iOS-UI-Build40.xcresult",
+        "summary": "/tmp/Quantumn-F-iOS-UI-Build40-summary.json",
+        "summary_sha256": "673f766df204a3dfd12a9a4fe02314a44825e8846b387491c7a3a46a3515a5a6",
+        "tests": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0,
+        "executed_zero_tests": false,
+        "coverage": [
+          "Batch 4 novice UX fixtures (6)",
+          "Word live product chain",
+          "Research report live product chain",
+          "Academic paper fail-closed live product chain",
+          "Istanbul clean-room presentation live product chain",
+          "Structured Review CAS conflict and relaunch persistence"
+        ],
+        "final_deck_preview": "/tmp/Quantumn-F-iOS-UI-Attachments/6E84F2BE-3CDF-4548-903B-71675D3CA7FF.png",
+        "final_deck_preview_sha256": "36d1ee7653ecc32bd85247185450cfc36689da71f3cb0f7dffce65c6b8c89955",
+        "final_deck_page_indicator": "2 / 14",
+        "preview_obvious_rendering_defects": false
+      },
+      "post_test_runtime": {
+        "backend_health": "http_200_ok_v0.8.0",
+        "hermes_bridge_health": "http_200_ok_v6.0",
+        "workflow_orchestration": true
+      },
+      "security": {
+        "changed_text_secret_scan": "passed",
+        "private_key_matches": 0,
+        "aws_access_key_matches": 0,
+        "github_token_matches": 0,
+        "slack_token_matches": 0,
+        "jwt_matches": 0,
+        "bearer_literal_matches": 0,
+        "temporary_jwt_mode": "0600",
+        "git_diff_check": "passed"
+      }
+    }
+  },
+  "gate_g": {
+    "status": "not_authorized_not_executed",
+    "requires_separate_explicit_authorization": true,
+    "prohibited_until_authorized": [
+      "commit main",
+      "push GitHub",
+      "server deployment",
+      "Archive",
+      "TestFlight upload",
+      "device release acceptance"
+    ]
+  },
+  "overall": {
+    "gates_a_through_f": "passed",
+    "ready_to_request_gate_g_authorization": true,
+    "released": false,
+    "release_decision": "NO-GO until Gate G is explicitly authorized and verified"
+  }
+}

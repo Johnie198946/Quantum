@@ -26,6 +26,14 @@ def _workflow_plan_hash(context) -> str:
 
 class WorkflowDefinition(Base):
     __tablename__ = "workflows"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key",
+            "created_by",
+            "cancel_request_id",
+            name="uq_workflows_cancel_request_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -41,10 +49,19 @@ class WorkflowDefinition(Base):
         String(48), nullable=True, unique=True
     )
     requirements_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_client_session_binding_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    source_client_session_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
     primary_agent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    cancel_request_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    cancel_request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cancellation_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -57,6 +74,29 @@ class WorkflowDefinition(Base):
     )
     executions: Mapped[list["WorkflowExecution"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
+    )
+
+
+class WorkflowClientSessionBinding(Base):
+    """Server-observed ownership binding for a client chat session."""
+
+    __tablename__ = "workflow_client_session_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key", "session_id", name="uq_workflow_client_session_binding"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    last_request_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
@@ -353,6 +393,39 @@ class WorkflowApproval(Base):
     decision: Mapped[str] = mapped_column(String(24), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(64), default="")
     comment: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class WorkflowReviewRevision(Base):
+    """Immutable structured-review revision; latest version is the CAS head."""
+
+    __tablename__ = "workflow_review_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_id", "review_key", "version", name="uq_workflow_review_version"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"), index=True
+    )
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_client_session_id: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True
+    )
+    review_key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    schema_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    document: Mapped[dict] = mapped_column(JSON, nullable=False)
+    action: Mapped[str] = mapped_column(String(24), nullable=False, default="save")
+    receipt_id: Mapped[str] = mapped_column(String(48), nullable=False, unique=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

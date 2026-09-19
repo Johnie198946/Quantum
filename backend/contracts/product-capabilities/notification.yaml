@@ -1,0 +1,91 @@
+capabilities:
+  - id: notification.list
+    version: 1.0.0
+    domain: notification
+    description: Read notifications owned by the authenticated tenant user.
+    positive_examples: [Show my unread notifications.]
+    negative_examples: [Read another user's notifications or expose legacy ownerless rows.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        unread_only: {type: boolean}
+        limit: {type: integer, minimum: 1, maximum: 200}
+    output_schema:
+      type: object
+      required: [total, unread, items]
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_notification_owner]
+    policy_ref: notification-owner
+    handler_binding: notification.list
+    idempotency: none
+    receipt: none
+    result_event: notification.snapshot
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_notification_capabilities.py]
+    implementation_status: implemented
+  - id: notification.mark_read
+    version: 1.0.0
+    domain: notification
+    description: Mark one notification owned by the authenticated user as read with unread-state CAS.
+    positive_examples: [Mark this notification read.]
+    negative_examples: [Mark another user's notification or replay against changed read state.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [notification_id, expected_read]
+      properties:
+        notification_id: {type: integer, minimum: 1}
+        expected_read: {type: boolean}
+    output_schema:
+      type: object
+      required: [ok, id, read]
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_notification_owner, notification_unread_cas]
+    policy_ref: notification-owner
+    handler_binding: notification.mark_read
+    idempotency: required
+    receipt: required
+    result_event: notification.changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_notification_capabilities.py]
+    implementation_status: implemented
+  - id: notification.preferences.update
+    version: 1.0.0
+    domain: notification
+    description: Update authenticated-user notification channels and enabled state with revision CAS.
+    positive_examples: [Disable email notifications and keep in-app alerts.]
+    negative_examples: [Update another user's preferences or overwrite a newer revision.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, enabled, channels]
+      properties:
+        expected_revision: {type: integer, minimum: 0}
+        enabled: {type: boolean}
+        channels:
+          type: array
+          items: {type: string, enum: [inapp, feishu, weixin, email]}
+    output_schema:
+      type: object
+      required: [enabled, channels, revision]
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_notification_owner, notification_preferences_revision_cas]
+    policy_ref: notification-owner
+    handler_binding: notification.preferences.update
+    idempotency: required
+    receipt: required
+    result_event: notification.preferences_changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_notification_capabilities.py]
+    implementation_status: implemented

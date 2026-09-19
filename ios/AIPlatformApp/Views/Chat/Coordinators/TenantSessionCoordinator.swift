@@ -26,6 +26,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var thinkingDetail: String? = nil
     @Published public var liveProgress: String? = nil
     @Published public var toastMessage: String? = nil
+    @Published public private(set) var persistenceFailureMessage: String? = nil
+    @Published public private(set) var persistenceFailureCanRetry: Bool = true
+    @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
     @Published public private(set) var hasNewerMessages: Bool = false
@@ -212,6 +215,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func prewarmActiveSessionIfNeeded() {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["AI_LAB_E2E_DISABLE_PREWARM"] == "1" { return }
+#endif
         let sid = sessionManager.activeSessionID()
         guard hasAuthenticatedSession(), messages.isEmpty,
               prewarmedSessionIDs.insert(sid).inserted else { return }
@@ -496,10 +502,23 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
-    private func dispatchCapabilityEvent(
+    func dispatchCapabilityEvent(
         _ event: QCPStreamEvent, outputMessageId: String
     ) async -> Bool {
-        let path = RendererRegistry.route(for: event.type, version: event.version)
+        guard RendererRegistry.accepts(eventType: event.type, renderer: event.renderer) else {
+            return false
+        }
+        let path = RendererRegistry.route(for: event)
+        if event.type == "workflow.cancelled" {
+            guard path == .workflow else { return false }
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let cancellation = try? decoder.decode(
+                WorkflowCancellationDTO.self, from: event.payload
+            ), cancellation.status == "cancelled" else { return false }
+            showToast("工作流已取消")
+            return true
+        }
         if path == .confirmation || path == .artifactConsumption {
             guard let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
                 return false
@@ -525,23 +544,66 @@ public final class TenantSessionCoordinator: ObservableObject {
             ) {
                 workflow = created.workflow
             } else {
-                workflow = try? decoder.decode(
-                WorkflowDTO.self, from: event.payload
-                )
+                workflow = try? decoder.decode(WorkflowDTO.self, from: event.payload)
             }
-            if let workflow {
-                WorkflowActivityCoordinator.shared.track(workflow)
-                if let index = messages.firstIndex(where: { $0.id == outputMessageId }),
-                   !messages[index].blocks.contains(where: { $0.id == "workflow_\(workflow.id)" }) {
-                    messages[index].blocks.append(.workflow(workflow))
-                    commitSession()
-                }
-                appState?.openWorkflow(workflow.id)
+            guard let workflow,
+                  let sourceSessionId = messages.first(where: { $0.id == outputMessageId })?.sessionId,
+                  sessionManager.activeSessionID() == sourceSessionId,
+                  workflow.sourceClientSessionId == sourceSessionId else {
+                return false
             }
-        } else if path == .artifact {
+            WorkflowActivityCoordinator.shared.track(workflow)
+            if let index = messages.firstIndex(where: { $0.id == outputMessageId }),
+               !messages[index].blocks.contains(where: { $0.id == "workflow_\(workflow.id)" }) {
+                messages[index].blocks.append(.workflow(workflow))
+                commitSession()
+            }
+            // Re-assert owner + session and track the workflow atomically before
+            // switching tabs. A late account restore must not leave the task UI
+            // with a nil owner/session scope.
+            appState?.openWorkflow(workflow)
+        } else if path == .artifact || path == .artifactCard
+                    || path == .dataAnalysisCard || path == .imageCard {
             showToast("工作流工件已就绪")
+        } else if path == .taskExecutionCard {
+            showToast("任务执行已排队")
+        } else if path == .clientAction {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let action = try? decoder.decode(ClientActionDTO.self, from: event.payload),
+                  action.state == "PENDING" else {
+                return false
+            }
+            pendingClientAction = action
+        } else if path == .bookshelf {
+            showToast("书架状态已更新")
+        } else if path == .hermesSessionList || path == .hermesSessionDetail {
+            showToast("Hermes 会话状态已更新")
+        } else if path == .knowledgeAction {
+            showToast("知识操作已更新")
         }
         return true
+    }
+
+    public func completeClientAction(
+        _ action: ClientActionDTO,
+        status: String,
+        metadata: [String: String] = [:]
+    ) {
+        guard pendingClientAction?.actionId == action.actionId else { return }
+        pendingClientAction = nil
+        Task { [weak self] in
+            do {
+                _ = try await CapabilityClient().recordClientActionReceipt(
+                    actionId: action.actionId,
+                    status: status,
+                    resultMetadata: metadata
+                )
+                self?.showToast(status == "SUCCEEDED" ? "设备操作已完成" : "设备操作已取消")
+            } catch {
+                self?.showToast("设备操作回执失败")
+            }
+        }
     }
 
     private func statusEventCursor(sessionId: String, outputMessageId: String) -> Int {
@@ -835,6 +897,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     public func prepareForBackground() {
         guard let req = inflight else {
             commitSession()
+            validatePersistenceForBackground()
             tenantEpoch += 1
             stopStatusPolling()
             reconcilingMessageIDs.removeAll()
@@ -844,6 +907,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let outputId = outputMessageId(for: req)
         drainDeltaBuffer(messageId: outputId)
         commitSession()
+        validatePersistenceForBackground()
         if checkpointingRequestId == req.id || awaitingRunAcceptanceRequestId == req.id {
             // The Bridge has not accepted this Run yet. Keep the checkpoint task
             // alive; once durable local state exists it will submit the same request
@@ -860,6 +924,55 @@ public final class TenantSessionCoordinator: ObservableObject {
         confirmedRunningMessageIDs.removeAll()
         isGenerating = false
         inflight = nil
+    }
+
+    private func validatePersistenceForBackground() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureCanRetry = true
+                    persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+                }
+            } catch {
+                persistenceFailureCanRetry = true
+                persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+            }
+        }
+    }
+
+    public func acknowledgePersistenceFailure() {
+        if !persistenceFailureCanRetry {
+            sessionManager.acknowledgeFailedPersistenceMutations()
+        }
+        persistenceFailureMessage = nil
+        persistenceFailureCanRetry = true
+    }
+
+    public func retryPersistenceFailure() {
+        guard persistenceFailureCanRetry else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+                persistenceFailureMessage = nil
+                persistenceFailureCanRetry = true
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+                }
+            } catch {
+                persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+            }
+        }
     }
 
     public func cancelAllTasksAndAnimations() {
@@ -3445,6 +3558,8 @@ public final class TenantSessionCoordinator: ObservableObject {
             return
         }
         guard verb == "confirm" else { return }
+        let requiresFreshProposal = proposal.state == .failed
+            && Self.requiresFreshCapabilityProposal(errorMessage: proposal.errorMessage)
         proposal.state = .applying
         messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
         commitSession()
@@ -3453,91 +3568,56 @@ public final class TenantSessionCoordinator: ObservableObject {
         let sourceClientSessionId = messages[messageIndex].sessionId
         Task { [weak self] in
             do {
+                if requiresFreshProposal {
+                    let response = try await capabilityClient.propose(
+                        proposal.capabilityId,
+                        input: proposal.input,
+                        sessionId: sourceClientSessionId,
+                        requestId: UUID().uuidString,
+                        idempotencyKey: UUID().uuidString
+                    )
+                    guard response.status == "awaiting_confirmation",
+                          let refreshed = response.events.first(where: { $0.type == "capability.proposed" })?.payload
+                    else {
+                        throw APIError.network(response.error?.message ?? "未能生成新的确认提案")
+                    }
+                    guard let self, self.tenantEpoch == expectedEpoch else { return }
+                    self.replaceCapabilityProposal(
+                        messageId: messageId,
+                        proposalId: proposalId,
+                        with: refreshed
+                    )
+                    self.showToast("策略已更新，请确认新的提案")
+                    return
+                }
+                guard let confirmationToken = proposal.confirmationToken, !confirmationToken.isEmpty else {
+                    throw APIError.network("确认凭证已失效，请重新发起操作")
+                }
+                let response: QCPInvokeResponseDTO<JSONScalar> = try await capabilityClient.confirm(
+                    proposalId: proposal.id,
+                    confirmationToken: confirmationToken,
+                    sessionId: sourceClientSessionId
+                )
+                guard response.status == "completed" else {
+                    throw APIError.network(response.error?.message ?? "能力调用失败")
+                }
                 var completedWorkflow: WorkflowDTO?
                 var pendingWorkflowId: String?
-                switch proposal.capabilityId {
-                case QCPCapabilityID.workflowCreate:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: WorkflowCreateRequestDTO(
-                            title: proposal.input.title ?? "",
-                            description: proposal.input.description ?? "",
-                            desiredOutput: proposal.input.desiredOutput ?? "",
-                            sourceDocumentId: proposal.input.sourceDocumentId,
-                            outputKind: proposal.input.outputKind ?? "general",
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.presentationCreateFromDocument:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: PresentationCreateRequestDTO(
-                            sourceDocumentId: proposal.input.sourceDocumentId ?? "",
-                            title: proposal.input.title ?? "",
-                            description: proposal.input.description ?? "",
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.presentationCreateFromText:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: PresentationCreateFromTextRequestDTO(
-                            title: proposal.input.title ?? "",
-                            textMaterial: proposal.input.textMaterial ?? "",
-                            audience: proposal.input.audience,
-                            intendedUse: proposal.input.intendedUse,
-                            layoutStyle: proposal.input.layoutStyle,
-                            slideCount: proposal.input.slideCount,
-                            clarificationStrategy: proposal.input.clarificationStrategy,
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.documentWordCreateFromText,
-                     QCPCapabilityID.researchReportCreateFromText,
-                     QCPCapabilityID.academicPaperCreateFromText:
-                    let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: DocumentCreateFromTextRequestDTO(
-                            title: proposal.input.title ?? "",
-                            textMaterial: proposal.input.textMaterial ?? "",
-                            researchQuestion: proposal.input.researchQuestion,
-                            thesis: proposal.input.thesis,
-                            audience: proposal.input.audience,
-                            language: proposal.input.language,
-                            citationStyle: proposal.input.citationStyle,
-                            evidencePolicy: proposal.input.evidencePolicy,
-                            clarificationStrategy: proposal.input.clarificationStrategy,
-                            sourceClientSessionId: sourceClientSessionId
-                        ), confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", let created = response.events.first?.payload
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = created.workflow
-                    pendingWorkflowId = created.workflow.id
-                case QCPCapabilityID.workflowStart:
-                    let response: QCPInvokeResponseDTO<WorkflowExecutionDTO> = try await capabilityClient.invoke(
-                        proposal.capabilityId,
-                        input: WorkflowStartRequestDTO(workflowId: proposal.input.workflowId ?? ""),
-                        confirmed: true, idempotencyKey: proposal.idempotencyKey
-                    )
-                    guard response.status == "completed", response.events.first != nil
-                    else { throw APIError.network(response.error?.message ?? "能力调用失败") }
-                    completedWorkflow = nil
-                    pendingWorkflowId = proposal.input.workflowId
-                default:
-                    throw APIError.network("不支持的确认操作")
+                for event in response.events {
+                    switch event.type {
+                    case "workflow.created", "presentation.created", "document.created":
+                        let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
+                        completedWorkflow = created.workflow
+                        pendingWorkflowId = created.workflow.id
+                    case "workflow.started":
+                        _ = try? Self.decodeCapabilityPayload(
+                            event.payload, as: WorkflowExecutionDTO.self
+                        )
+                        pendingWorkflowId = proposal.input.workflowId
+                    default:
+                        // Event type and renderer registry, not capability ID, own UI routing.
+                        _ = RendererRegistry.route(for: event.type, version: event.version)
+                    }
                 }
                 guard let self, self.tenantEpoch == expectedEpoch else { return }
                 if let completedWorkflow {
@@ -3563,6 +3643,43 @@ public final class TenantSessionCoordinator: ObservableObject {
                 )
             }
         }
+    }
+
+    static func decodeCapabilityPayload<T: Decodable>(
+        _ payload: JSONScalar, as type: T.Type = T.self
+    ) throws -> T {
+        let data = try JSONEncoder().encode(payload)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(T.self, from: data)
+    }
+
+    static func requiresFreshCapabilityProposal(errorMessage: String?) -> Bool {
+        guard let errorMessage else { return false }
+        let normalized = errorMessage.lowercased()
+        return normalized.contains("policy changed")
+            || normalized.contains("create a new proposal")
+            || normalized.contains("proposal expired")
+            || normalized.contains("confirmation token expired")
+            || normalized.contains("confirmation_token_expired")
+            || normalized.contains("确认凭证已失效")
+            || normalized.contains("重新生成提案")
+            || normalized.contains("新提案")
+    }
+
+    private func replaceCapabilityProposal(
+        messageId: String?,
+        proposalId: String,
+        with refreshed: CapabilityProposalBlock
+    ) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              })
+        else { return }
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(refreshed)
+        commitSession()
     }
 
     private func updateCapabilityProposal(

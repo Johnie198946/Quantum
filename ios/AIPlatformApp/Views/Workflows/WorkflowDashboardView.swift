@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import OSLog
 import PDFKit
 
 // MARK: - 工作流主页
@@ -35,6 +36,7 @@ public struct WorkflowDashboardView: View {
                                         WorkflowSummaryCard(workflow: workflow)
                                     }
                                     .buttonStyle(SoftButtonStyle())
+                                    .accessibilityIdentifier("workflow-card-\(workflow.title)")
                                     .accessibilityHint("轻点查看详情，长按可删除任务")
                                     .contextMenu {
                                         Button(role: .destructive) {
@@ -47,14 +49,19 @@ public struct WorkflowDashboardView: View {
                             }
                             .padding(AppTheme.Metrics.contentGutter)
                         }
-                        .refreshable { await model.load() }
+                        .refreshable { await load() }
                     }
                 }
             }
             .navigationTitle("")
             .navigationDestination(for: WorkflowDTO.self) { workflow in
-                WorkflowDetailView(workflow: workflow) {
-                    await model.load()
+                if let scope = workflowActivities.scope(for: workflow) {
+                    WorkflowDetailView(workflow: workflow, scope: scope) {
+                        await load()
+                    }
+                } else {
+                    WorkflowErrorBanner(message: "此工作流不属于当前对话会话。")
+                        .padding()
                 }
             }
             .toolbar {
@@ -66,7 +73,7 @@ public struct WorkflowDashboardView: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let error = model.errorMessage {
+                if let error = model.errorMessage ?? appState.pendingWorkflowScopeError {
                     WorkflowErrorBanner(message: error)
                         .padding(.top, AppTheme.Spacing.sm)
                 }
@@ -75,14 +82,14 @@ public struct WorkflowDashboardView: View {
                 WorkflowCreateSheet { created in
                     showingCreate = false
                     clarificationWorkflow = created.workflow
-                    await model.load()
+                    await load()
                 }
             }
             .fullScreenCover(item: $clarificationWorkflow) { workflow in
                 NavigationStack {
                     WorkflowClarificationView(workflow: workflow) {
                         clarificationWorkflow = nil
-                        await model.load()
+                        await load()
                     }
                 }
             }
@@ -100,14 +107,27 @@ public struct WorkflowDashboardView: View {
                 if let workflow = pendingDeletion {
                     Button("删除“\(workflow.title)”", role: .destructive) {
                         pendingDeletion = nil
-                        Task { await model.delete(workflow) }
+                        Task {
+                            guard let scope = workflowActivities.scope(for: workflow) else {
+                                model.rejectMissingScope()
+                                return
+                            }
+                            await model.delete(workflow, scope: scope)
+                        }
                     }
                 }
                 Button("取消", role: .cancel) { pendingDeletion = nil }
             } message: {
                 Text("任务将从列表中移除，正在执行的工作也会停止。")
             }
-            .task { await model.load() }
+            .task(id: workflowActivities.currentScope) { await load() }
+            .onChange(of: workflowActivities.currentScope) { _, _ in
+                navigationPath.removeAll()
+                clarificationWorkflow = nil
+                pendingDeletion = nil
+                showingCreate = false
+                model.clearForScopeChange()
+            }
             .task(id: appState.pendingWorkflowId) {
                 guard appState.pendingWorkflowId != nil else { return }
                 if let workflow = await appState.resolvePendingWorkflow(using: { workflowId in
@@ -120,6 +140,14 @@ public struct WorkflowDashboardView: View {
                 }
             }
         }
+    }
+
+    private func load() async {
+        guard let scope = workflowActivities.currentScope else {
+            model.rejectMissingScope()
+            return
+        }
+        await model.load(scope: scope)
     }
 
     private var emptyState: some View {
@@ -230,25 +258,44 @@ private final class WorkflowDashboardModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    func load() async {
+    func load(scope: WorkflowActivityCoordinator.Scope) async {
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if WorkflowActivityCoordinator.shared.isCurrent(scope) { isLoading = false }
+        }
         do {
-            workflows = try await APIClient.shared.fetchWorkflows()
+            let loaded = try await APIClient.shared.fetchWorkflows()
+            guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
+            workflows = loaded.filter { WorkflowActivityCoordinator.shared.accepts($0, in: scope) }
             errorMessage = nil
         } catch {
+            guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
-    func delete(_ workflow: WorkflowDTO) async {
+    func delete(_ workflow: WorkflowDTO, scope: WorkflowActivityCoordinator.Scope) async {
         do {
             try await APIClient.shared.deleteWorkflow(id: workflow.id)
+            guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
             workflows.removeAll { $0.id == workflow.id }
             errorMessage = nil
         } catch {
+            guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
             errorMessage = "删除失败：\(error.localizedDescription)"
         }
+    }
+
+    func rejectMissingScope() {
+        workflows.removeAll()
+        isLoading = false
+        errorMessage = "当前对话会话不可用，请先选择或新建对话。"
+    }
+
+    func clearForScopeChange() {
+        workflows.removeAll()
+        isLoading = false
+        errorMessage = nil
     }
 }
 
@@ -355,6 +402,7 @@ struct WorkflowSummaryCard: View {
 private struct WorkflowCreateSheet: View {
     let onCreated: (WorkflowCreateResponseDTO) async -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @State private var title = ""
     @State private var description = ""
     @State private var output = "研究报告（Markdown）"
@@ -490,6 +538,10 @@ private struct WorkflowCreateSheet: View {
     }
 
     private func submit() {
+        guard let scope = workflowActivities.currentScope else {
+            errorMessage = "当前对话会话不可用，请先选择或新建对话。"
+            return
+        }
         isSubmitting = true
         errorMessage = nil
         Task {
@@ -498,10 +550,14 @@ private struct WorkflowCreateSheet: View {
                 let created = try await APIClient.shared.createWorkflow(
                     title: title.isEmpty ? String(description.prefix(24)) : title,
                     description: description, desiredOutput: deliverable,
-                    outputKind: outputKind
+                    outputKind: outputKind,
+                    sourceClientSessionId: scope.clientSessionId
                 )
+                guard workflowActivities.isCurrent(scope),
+                      workflowActivities.accepts(created.workflow, in: scope) else { return }
                 await onCreated(created)
             } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
                 errorMessage = error.localizedDescription
                 isSubmitting = false
             }
@@ -521,14 +577,39 @@ enum WorkflowDetailTransitionPolicy {
     }
 }
 
+struct WorkflowFailurePresentation: Equatable {
+    let cause: String
+    let action: String
+
+    static func make(execution: WorkflowExecutionDTO) -> Self? {
+        guard ["failed", "cancelled"].contains(execution.status) else { return nil }
+        let reported = execution.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nodeReported = execution.nodes.compactMap(\.errorMessage).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cause = [reported, nodeReported].compactMap { value in
+            value?.isEmpty == false ? value : nil
+        }.first ?? (execution.status == "cancelled"
+            ? "任务已由用户取消，已完成步骤仍保留。"
+            : "服务端未返回具体错误，可重新读取状态后重试。")
+        return Self(cause: cause, action: "从失败步骤继续同一任务")
+    }
+}
+
 private struct WorkflowDetailView: View {
     let workflow: WorkflowDTO
+    let scope: WorkflowActivityCoordinator.Scope
     let onChanged: () async -> Void
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @State private var current: WorkflowDTO
     @State private var execution: WorkflowExecutionDTO?
 
-    init(workflow: WorkflowDTO, onChanged: @escaping () async -> Void) {
+    init(
+        workflow: WorkflowDTO,
+        scope: WorkflowActivityCoordinator.Scope,
+        onChanged: @escaping () async -> Void
+    ) {
         self.workflow = workflow
+        self.scope = scope
         self.onChanged = onChanged
         _current = State(initialValue: workflow)
         _execution = State(initialValue: workflow.latestExecution)
@@ -543,29 +624,34 @@ private struct WorkflowDetailView: View {
                     .padding(.vertical, AppTheme.Spacing.md)
 
                 Group {
-                    if WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                    if !workflowActivities.isCurrent(scope) {
+                        WorkflowErrorBanner(message: "对话会话已切换，此工作流页面已停止更新。")
+                            .padding()
+                    } else if WorkflowDetailTransitionPolicy.showsLifecycleSession(
                         status: current.status,
                         hasExecution: execution != nil
                     ) {
                         WorkflowClarificationView(workflow: current) {
                             await refresh()
+                            guard workflowActivities.isCurrent(scope) else { return }
                             await onChanged()
                         }
                     } else if current.status == "awaiting_approval" && execution == nil {
-                        WorkflowPlanReviewView(workflow: current) { buildResult in
+                        WorkflowPlanReviewView(workflow: current, scope: scope) { buildResult in
                             current = buildResult.workflow
                             Task {
                                 await refresh()
+                                guard workflowActivities.isCurrent(scope) else { return }
                                 await onChanged()
                             }
                         }
                     } else if current.status == "agent_ready", let agent = current.agent, execution == nil {
-                        WorkflowAgentReadyView(workflow: current, agent: agent) { started in
+                        WorkflowAgentReadyView(workflow: current, agent: agent, scope: scope) { started in
                             execution = started
                             Task { await onChanged() }
                         }
                     } else if let execution {
-                        WorkflowExecutionView(workflow: current, initialExecution: execution)
+                        WorkflowExecutionView(workflow: current, initialExecution: execution, scope: scope)
                     } else {
                         ProgressView("正在恢复工作流状态…")
                     }
@@ -578,9 +664,11 @@ private struct WorkflowDetailView: View {
     }
 
     private func refresh() async {
+        guard workflowActivities.isCurrent(scope) else { return }
         do {
             let remote = try await APIClient.shared.fetchWorkflow(id: workflow.id)
-            guard WorkflowDetailTransitionPolicy.accepts(
+            guard workflowActivities.accepts(remote, in: scope),
+                  WorkflowDetailTransitionPolicy.accepts(
                 remoteStatus: remote.status,
                 over: current.status
             ) else { return }
@@ -606,14 +694,31 @@ public final class WorkflowClarificationModel: ObservableObject {
     @Published var optimisticPlanningMessage: String?
     private var streamActive = false
     private var streamTask: Task<Void, Never>?
+    private let scope: WorkflowActivityCoordinator.Scope?
+    private let isScopeCurrent: (WorkflowActivityCoordinator.Scope) -> Bool
 
-    init(workflowId: String) { self.workflowId = workflowId }
+    init(
+        workflowId: String,
+        scope: WorkflowActivityCoordinator.Scope?,
+        isScopeCurrent: @escaping (WorkflowActivityCoordinator.Scope) -> Bool
+    ) {
+        self.workflowId = workflowId
+        self.scope = scope
+        self.isScopeCurrent = isScopeCurrent
+        if scope == nil { errorMessage = "此工作流不属于当前对话会话。" }
+    }
+
+    private var scopeIsCurrent: Bool {
+        guard let scope else { return false }
+        return isScopeCurrent(scope)
+    }
 
     func startTracking() {
-        guard streamTask == nil else { return }
+        guard scopeIsCurrent, streamTask == nil else { return }
         streamTask = Task { [weak self] in
             await self?.start()
-            self?.streamTask = nil
+            guard let self, self.scopeIsCurrent else { return }
+            self.streamTask = nil
         }
     }
 
@@ -628,12 +733,14 @@ public final class WorkflowClarificationModel: ObservableObject {
     var lastEventId: Int { events.map(\.id).max() ?? 0 }
 
     func start() async {
-        guard !streamActive else { return }
+        guard scopeIsCurrent, !streamActive else { return }
         streamActive = true
         connectionState = "connecting"
-        defer { streamActive = false }
+        defer {
+            if scopeIsCurrent { streamActive = false }
+        }
         await refresh()
-        guard !Task.isCancelled,
+        guard scopeIsCurrent, !Task.isCancelled,
               !["awaiting_approval", "agent_ready", "needs_attention"].contains(phase) else { return }
         var retries = 0
         while !Task.isCancelled {
@@ -642,33 +749,42 @@ public final class WorkflowClarificationModel: ObservableObject {
                 for try await event in APIClient.shared.workflowLifecycleEventStream(
                     workflowId: workflowId, after: lastEventId
                 ) {
+                    guard scopeIsCurrent, !Task.isCancelled else { return }
                     retries = 0
                     if !events.contains(where: { $0.id == event.id }) { events.append(event) }
                     optimisticPlanningMessage = nil
                     if ["plan_ready", "agent_built", "planning_failed"].contains(event.type) {
                         await refresh()
+                        guard scopeIsCurrent else { return }
                     }
                 }
+                guard scopeIsCurrent else { return }
                 connectionState = "idle"
                 return
             } catch is CancellationError {
                 return
             } catch {
+                guard scopeIsCurrent else { return }
                 retries += 1
                 connectionState = "reconnecting"
                 errorMessage = "进度连接已中断，正在恢复同一任务…"
                 let delay = UInt64(min(retries, 8)) * 1_000_000_000
                 try? await Task.sleep(nanoseconds: delay)
+                guard scopeIsCurrent else { return }
                 await refresh()
             }
         }
     }
 
     func refresh() async {
+        guard scopeIsCurrent else { return }
         isLoading = snapshot == nil
-        defer { isLoading = false }
+        defer {
+            if scopeIsCurrent { isLoading = false }
+        }
         do {
             let loaded = try await APIClient.shared.fetchWorkflowClarification(workflowId: workflowId)
+            guard scopeIsCurrent else { return }
             snapshot = loaded
             events = loaded.events
             errorMessage = nil
@@ -676,50 +792,68 @@ public final class WorkflowClarificationModel: ObservableObject {
                 connectionState = "idle"
             }
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = "无法恢复任务会话：\(error.localizedDescription)"
         }
     }
 
     func respond(_ response: String) async {
-        guard !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard scopeIsCurrent,
+              !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         isSubmitting = true
         if response.hasPrefix("确认") || response.contains("进入方案") {
             optimisticPlanningMessage = "规划请求已提交到云端，离开此页不会中断"
         }
-        defer { isSubmitting = false }
+        defer {
+            if scopeIsCurrent { isSubmitting = false }
+        }
         do {
             _ = try await APIClient.shared.respondToWorkflowClarification(
                 workflowId: workflowId, response: response
             )
+            guard scopeIsCurrent else { return }
             await refresh()
+            guard scopeIsCurrent else { return }
             if phase == "planning" {
                 startTracking()
             }
         } catch {
+            guard scopeIsCurrent else { return }
             optimisticPlanningMessage = nil
             errorMessage = "提交失败，需求进度已保留：\(error.localizedDescription)"
         }
     }
 
     func retryPlanning() async {
+        guard scopeIsCurrent else { return }
         isSubmitting = true
-        defer { isSubmitting = false }
+        defer {
+            if scopeIsCurrent { isSubmitting = false }
+        }
         do {
             _ = try await APIClient.shared.retryWorkflowPlanning(workflowId: workflowId)
+            guard scopeIsCurrent else { return }
             await refresh()
+            guard scopeIsCurrent else { return }
             startTracking()
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = "规划重试失败，已有内容不会丢失：\(error.localizedDescription)"
         }
     }
 
     func reopenClarification() async {
+        guard scopeIsCurrent else { return }
         isSubmitting = true
-        defer { isSubmitting = false }
+        defer {
+            if scopeIsCurrent { isSubmitting = false }
+        }
         do {
             _ = try await APIClient.shared.reopenWorkflowClarification(workflowId: workflowId)
+            guard scopeIsCurrent else { return }
             await refresh()
         } catch {
+            guard scopeIsCurrent else { return }
             errorMessage = "无法继续澄清：\(error.localizedDescription)"
         }
     }
@@ -749,6 +883,16 @@ public final class WorkflowClarificationModel: ObservableObject {
 @MainActor
 public final class WorkflowActivityCoordinator: ObservableObject {
     public static let shared = WorkflowActivityCoordinator()
+    private static let scopeLogger = Logger(
+        subsystem: "com.quantumn.aiplatform",
+        category: "workflow-scope"
+    )
+
+    public struct Scope: Hashable, Sendable {
+        public let ownerIdentity: String
+        public let clientSessionId: String
+        public let generation: UInt64
+    }
 
     @Published public private(set) var workflows: [String: WorkflowDTO] = [:]
     @Published public private(set) var dismissedWorkflowIds: Set<String> = []
@@ -761,24 +905,63 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     private var executionTasks: [String: Task<Void, Never>] = [:]
     private var activeOwnerScope: String?
     private var activeClientSessionId: String?
+    private var generation: UInt64 = 0
+
+    public var currentScope: Scope? {
+        guard let ownerIdentity = activeOwnerScope,
+              let clientSessionId = activeClientSessionId else { return nil }
+        return Scope(
+            ownerIdentity: ownerIdentity,
+            clientSessionId: clientSessionId,
+            generation: generation
+        )
+    }
+
+    public func isCurrent(_ scope: Scope) -> Bool {
+        let matches = currentScope == scope
+        if !matches {
+            Self.scopeLogger.notice(
+                "Dropped stale workflow state write for generation \(scope.generation, privacy: .public)"
+            )
+        }
+        return matches
+    }
+
+    public func accepts(_ workflow: WorkflowDTO, in scope: Scope) -> Bool {
+        isCurrent(scope) && workflow.sourceClientSessionId == scope.clientSessionId
+    }
+
+    public func scope(for workflow: WorkflowDTO) -> Scope? {
+        guard let scope = currentScope, accepts(workflow, in: scope) else { return nil }
+        return scope
+    }
 
     public func activate(tenantKey: String, userId: String) {
         let scope = tenantKey + "\u{0}" + userId
         guard activeOwnerScope != scope else { return }
-        clearTrackedState()
+        advanceGenerationAndClear()
         activeOwnerScope = scope
+        activeClientSessionId = nil
     }
 
     public func deactivate() {
-        clearTrackedState()
+        guard activeOwnerScope != nil || activeClientSessionId != nil else { return }
+        advanceGenerationAndClear()
         activeOwnerScope = nil
         activeClientSessionId = nil
     }
 
     public func selectClientSession(_ sessionId: String?) {
+        let sessionId = sessionId.flatMap { $0.isEmpty ? nil : $0 }
         guard activeClientSessionId != sessionId else { return }
+        advanceGenerationAndClear()
         activeClientSessionId = sessionId
         objectWillChange.send()
+    }
+
+    private func advanceGenerationAndClear() {
+        generation += 1
+        clearTrackedState()
     }
 
     private func clearTrackedState() {
@@ -836,27 +1019,47 @@ public final class WorkflowActivityCoordinator: ObservableObject {
 
     public func model(for workflow: WorkflowDTO) -> WorkflowClarificationModel {
         if let existing = models[workflow.id] { return existing }
-        let model = WorkflowClarificationModel(workflowId: workflow.id)
+        let scope = scope(for: workflow)
+        let model = WorkflowClarificationModel(
+            workflowId: workflow.id,
+            scope: scope,
+            isScopeCurrent: { [weak self] token in self?.isCurrent(token) == true }
+        )
+        guard let scope else { return model }
         models[workflow.id] = model
         subscriptions[workflow.id] = model.objectWillChange.sink { [weak self, weak model] _ in
             DispatchQueue.main.async { [weak self, weak model] in
-                guard let self, let model else { return }
+                guard let self, let model, self.isCurrent(scope) else { return }
                 UserDefaults.standard.set(model.lastEventId, forKey: "workflow.cursor.\(workflow.id)")
-                self.schedulePublish()
+                self.schedulePublish(scope: scope)
             }
         }
         return model
     }
 
     public func track(_ workflow: WorkflowDTO) {
-        guard activeOwnerScope != nil else { return }
+        guard let scope = currentScope else { return }
+        track(workflow, in: scope)
+    }
+
+    func track(_ workflow: WorkflowDTO, in scope: Scope) {
+        guard accepts(workflow, in: scope) else { return }
         if workflows[workflow.id] != workflow { workflows[workflow.id] = workflow }
         if dismissedWorkflowIds.contains(workflow.id) { dismissedWorkflowIds.remove(workflow.id) }
         model(for: workflow).startTracking()
     }
 
     public func trackExecution(_ execution: WorkflowExecutionDTO, workflow: WorkflowDTO) {
-        guard let ownerScope = activeOwnerScope else { return }
+        guard let scope = currentScope else { return }
+        trackExecution(execution, workflow: workflow, in: scope)
+    }
+
+    private func trackExecution(
+        _ execution: WorkflowExecutionDTO,
+        workflow: WorkflowDTO,
+        in scope: Scope
+    ) {
+        guard accepts(workflow, in: scope) else { return }
         executionWorkflows[workflow.id] = workflow
         if executions[execution.id] != execution { executions[execution.id] = execution }
         if dismissedWorkflowIds.contains(workflow.id) { dismissedWorkflowIds.remove(workflow.id) }
@@ -864,11 +1067,13 @@ public final class WorkflowActivityCoordinator: ObservableObject {
               executionTasks[execution.id] == nil else { return }
         executionTasks[execution.id] = Task { [weak self] in
             guard let self else { return }
-            defer { self.executionTasks[execution.id] = nil }
+            defer {
+                if self.isCurrent(scope) { self.executionTasks[execution.id] = nil }
+            }
             while !Task.isCancelled {
                 do {
                     let snapshot = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
-                    guard self.activeOwnerScope == ownerScope, !Task.isCancelled else { return }
+                    guard self.isCurrent(scope), !Task.isCancelled else { return }
                     if self.executions[snapshot.id] != snapshot { self.executions[snapshot.id] = snapshot }
                     if ["awaiting_approval", "awaiting_review", "completed", "failed", "cancelled"].contains(snapshot.status) { return }
                 } catch {
@@ -879,34 +1084,55 @@ public final class WorkflowActivityCoordinator: ObservableObject {
         }
     }
 
-    private func schedulePublish() {
-        guard !publishScheduled else { return }
+    private func schedulePublish(scope: Scope) {
+        guard isCurrent(scope), !publishScheduled else { return }
         publishScheduled = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.isCurrent(scope) else { return }
             self.publishScheduled = false
             self.objectWillChange.send()
         }
     }
 
     public func bootstrap() async {
-        guard let ownerScope = activeOwnerScope else { return }
+        guard let scope = currentScope else { return }
         do {
-            let activities = try await APIClient.shared.fetchActiveWorkflowActivities()
-            guard activeOwnerScope == ownerScope else { return }
+            async let activitiesRequest = APIClient.shared.fetchActiveWorkflowActivities(
+                clientSessionId: scope.clientSessionId
+            )
+            async let executionsRequest = APIClient.shared.fetchActiveWorkflowExecutions(
+                clientSessionId: scope.clientSessionId
+            )
+            let (activities, active) = try await (activitiesRequest, executionsRequest)
+            guard isCurrent(scope) else { return }
+            let authoritativeWorkflowIds = Set(
+                activities.map(\.workflow.id) + active.map(\.workflow.id)
+            )
+            let authoritativeExecutionIds = Set(active.map(\.execution.id))
+            for workflowId in Array(workflows.keys) where !authoritativeWorkflowIds.contains(workflowId) {
+                models[workflowId]?.stopTracking()
+                models.removeValue(forKey: workflowId)
+                workflows.removeValue(forKey: workflowId)
+                dismissedWorkflowIds.remove(workflowId)
+            }
+            for executionId in Array(executions.keys) where !authoritativeExecutionIds.contains(executionId) {
+                executionTasks[executionId]?.cancel()
+                executionTasks.removeValue(forKey: executionId)
+                if let execution = executions[executionId] {
+                    executionWorkflows.removeValue(forKey: execution.workflowId)
+                }
+                executions.removeValue(forKey: executionId)
+            }
             for activity in activities {
-                track(activity.workflow)
+                track(activity.workflow, in: scope)
+            }
+            for item in active {
+                trackExecution(item.execution, workflow: item.workflow, in: scope)
             }
         } catch {
+            guard isCurrent(scope) else { return }
             // Existing models retain their last durable snapshot while offline.
-            schedulePublish()
-        }
-        do {
-            let active = try await APIClient.shared.fetchActiveWorkflowExecutions()
-            guard activeOwnerScope == ownerScope else { return }
-            for item in active { trackExecution(item.execution, workflow: item.workflow) }
-        } catch {
-            schedulePublish()
+            schedulePublish(scope: scope)
         }
     }
 
@@ -917,7 +1143,9 @@ public final class WorkflowActivityCoordinator: ObservableObject {
     }
 
     public func resumeFromForeground() async {
+        guard let scope = currentScope else { return }
         await bootstrap()
+        guard isCurrent(scope) else { return }
         for activity in visibleActivities { activity.model.startTracking() }
         for activity in visibleExecutionActivities {
             trackExecution(activity.execution, workflow: activity.workflow)
@@ -965,7 +1193,7 @@ private struct WorkflowClarificationView: View {
                             ReasoningCard(
                                 steps: model.reasoningSteps,
                                 isStreaming: ["planning", "building_agent"].contains(model.phase),
-                                initiallyExpanded: ["planning", "building_agent"].contains(model.phase)
+                                initiallyExpanded: false
                             )
                         }
                         ForEach(model.snapshot?.messages ?? []) { message in
@@ -1007,6 +1235,7 @@ private struct WorkflowClarificationView: View {
                     }
                     .padding(AppTheme.Metrics.contentGutter)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .background(AppTheme.Colors.background)
@@ -1161,8 +1390,10 @@ private struct WorkflowTaskStageHeader: View {
 
 private struct WorkflowAgentReadyView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     let workflow: WorkflowDTO
     let agent: WorkflowTaskAgentDTO
+    let scope: WorkflowActivityCoordinator.Scope
     let onStarted: (WorkflowExecutionDTO) -> Void
     @State private var isStarting = false
     @State private var errorMessage: String?
@@ -1200,23 +1431,24 @@ private struct WorkflowAgentReadyView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: AppTheme.Spacing.sm) {
+                Button(isStarting ? "正在启动…" : "启动任务", systemImage: "play.fill") { start() }
+                    .buttonStyle(.borderedProminent)
+                    .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+                    .controlSize(.large)
+                    .disabled(isStarting)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("workflow-primary-action")
+
                 Button("与此 Agent 对话", systemImage: "bubble.left.and.bubble.right.fill") {
                     appState.openChat(
                         agentId: agent.id,
                         agentName: agent.customName ?? workflow.title
                     )
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, minHeight: 44)
-
-                Button(isStarting ? "正在启动…" : "启动任务", systemImage: "play.fill") { start() }
-                    .buttonStyle(.bordered)
-                    .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
-                    .controlSize(.large)
-                    .disabled(isStarting)
-                    .frame(maxWidth: .infinity, minHeight: 44)
             }
                 .padding(AppTheme.Metrics.contentGutter)
                 .background(.ultraThinMaterial)
@@ -1236,14 +1468,20 @@ private struct WorkflowAgentReadyView: View {
     }
 
     private func start() {
+        guard workflowActivities.accepts(workflow, in: scope) else {
+            errorMessage = "对话会话已切换，无法启动此工作流。"
+            return
+        }
         isStarting = true
         Task {
             do {
                 let execution = try await APIClient.shared.startWorkflow(
                     workflowId: workflow.id, requestId: requestId
                 )
+                guard workflowActivities.isCurrent(scope) else { return }
                 onStarted(execution)
             } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
                 errorMessage = error.localizedDescription
                 isStarting = false
             }
@@ -1253,7 +1491,9 @@ private struct WorkflowAgentReadyView: View {
 
 private struct WorkflowPlanReviewView: View {
     let workflow: WorkflowDTO
+    let scope: WorkflowActivityCoordinator.Scope
     let onApproved: (WorkflowAgentBuildResponseDTO) -> Void
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @State private var plan: WorkflowPlanDTO?
     @State private var tenantAgents: [TenantAgentDTO] = []
     @State private var isSaving = false
@@ -1263,6 +1503,7 @@ private struct WorkflowPlanReviewView: View {
     @State private var approvalRequestId = UUID().uuidString
     @State private var replanEvents: [WorkflowLifecycleEventDTO] = []
     @State private var showingCanvas = false
+    @State private var showsAdvancedOptions = false
 
     var body: some View {
         Group {
@@ -1274,15 +1515,28 @@ private struct WorkflowPlanReviewView: View {
                         if !draft.validationErrors.isEmpty {
                             WorkflowErrorBanner(message: draft.validationErrors.joined(separator: "\n"))
                         }
-                        nodeTimeline(plan: planBinding)
-                        if !replanReasoningSteps.isEmpty {
-                            ReasoningCard(steps: replanReasoningSteps, isStreaming: isSaving)
+                        DisclosureGroup(isExpanded: $showsAdvancedOptions) {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                                nodeTimeline(plan: planBinding)
+                                if !replanReasoningSteps.isEmpty {
+                                    ReasoningCard(steps: replanReasoningSteps, isStreaming: isSaving)
+                                }
+                                WorkflowReplanComposer(
+                                    isSaving: isSaving,
+                                    errorMessage: replanErrorMessage,
+                                    onSubmit: replan
+                                )
+                            }
+                            .padding(.top, AppTheme.Spacing.md)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("高级选项").font(AppTheme.Typography.sectionTitle)
+                                Text("按需调整执行步骤或要求重新规划")
+                                    .font(AppTheme.Typography.supporting)
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
                         }
-                        WorkflowReplanComposer(
-                            isSaving: isSaving,
-                            errorMessage: replanErrorMessage,
-                            onSubmit: replan
-                        )
+                        .accessibilityIdentifier("workflow-advanced-options")
                         if let errorMessage { WorkflowErrorBanner(message: errorMessage) }
                     }
                     .padding(AppTheme.Metrics.contentGutter)
@@ -1290,15 +1544,18 @@ private struct WorkflowPlanReviewView: View {
                 }
                 .safeAreaInset(edge: .bottom) {
                     HStack(spacing: AppTheme.Spacing.md) {
-                        Button("保存修改") { save() }
-                            .buttonStyle(.bordered)
-                            .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
-                            .frame(maxWidth: .infinity)
+                        if showsAdvancedOptions {
+                            Button("保存修改") { save() }
+                                .buttonStyle(.bordered)
+                                .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+                                .frame(maxWidth: .infinity)
+                        }
                         Button(isSaving ? "正在处理…" : "确认并构建 Agent") { approve() }
                             .buttonStyle(.borderedProminent)
                             .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                             .frame(maxWidth: .infinity)
                             .disabled(!draft.validationErrors.isEmpty)
+                            .accessibilityIdentifier("workflow-primary-action")
                     }
                     .controlSize(.large)
                     .padding(AppTheme.Metrics.contentGutter)
@@ -1475,38 +1732,57 @@ private struct WorkflowPlanReviewView: View {
     }
 
     private func load() async {
+        guard workflowActivities.accepts(workflow, in: scope) else {
+            errorMessage = "对话会话已切换，无法读取此工作流。"
+            return
+        }
         do {
             async let loadedPlan = APIClient.shared.fetchWorkflowPlan(workflowId: workflow.id)
             async let loadedAgents = APIClient.shared.fetchTenantAgents()
-            plan = try await loadedPlan
-            tenantAgents = (try? await loadedAgents) ?? []
-        } catch { errorMessage = error.localizedDescription }
+            let loadedPlanValue = try await loadedPlan
+            let loadedAgentsValue = (try? await loadedAgents) ?? []
+            guard workflowActivities.isCurrent(scope) else { return }
+            plan = loadedPlanValue
+            tenantAgents = loadedAgentsValue
+        } catch {
+            guard workflowActivities.isCurrent(scope) else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func save() {
-        guard let plan else { return }
+        guard let plan, workflowActivities.accepts(workflow, in: scope) else { return }
         isSaving = true
         Task {
             do {
-                self.plan = try await APIClient.shared.updateWorkflowPlan(workflowId: workflow.id, plan: plan)
+                let updated = try await APIClient.shared.updateWorkflowPlan(workflowId: workflow.id, plan: plan)
+                guard workflowActivities.isCurrent(scope) else { return }
+                self.plan = updated
                 errorMessage = nil
-            } catch { errorMessage = error.localizedDescription }
+            } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
+                errorMessage = error.localizedDescription
+            }
+            guard workflowActivities.isCurrent(scope) else { return }
             isSaving = false
         }
     }
 
     private func approve() {
-        guard let plan else { return }
+        guard let plan, workflowActivities.accepts(workflow, in: scope) else { return }
         isSaving = true
         Task {
             do {
                 _ = try await APIClient.shared.updateWorkflowPlan(workflowId: workflow.id, plan: plan)
+                guard workflowActivities.isCurrent(scope) else { return }
                 let buildResult = try await APIClient.shared.approveWorkflowPlan(
                     workflowId: workflow.id,
                     requestId: approvalRequestId
                 )
+                guard workflowActivities.isCurrent(scope) else { return }
                 onApproved(buildResult)
             } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
                 errorMessage = error.localizedDescription
                 isSaving = false
             }
@@ -1514,6 +1790,7 @@ private struct WorkflowPlanReviewView: View {
     }
 
     private func replan(instruction: String) {
+        guard workflowActivities.accepts(workflow, in: scope) else { return }
         isSaving = true
         errorMessage = nil
         replanErrorMessage = nil
@@ -1522,6 +1799,7 @@ private struct WorkflowPlanReviewView: View {
                 let startedSession = try await APIClient.shared.replanWorkflow(
                     workflowId: workflow.id, instruction: instruction
                 )
+                guard workflowActivities.isCurrent(scope) else { return }
                 replanEvents.removeAll()
                 var cursor = startedSession.lastEventSeq
                 var finished = false
@@ -1531,6 +1809,7 @@ private struct WorkflowPlanReviewView: View {
                         for try await event in APIClient.shared.workflowLifecycleEventStream(
                             workflowId: workflow.id, after: cursor
                         ) {
+                            guard workflowActivities.isCurrent(scope) else { return }
                             reconnectAttempt = 0
                             cursor = max(cursor, event.id)
                             if !replanEvents.contains(where: { $0.id == event.id }) {
@@ -1544,7 +1823,9 @@ private struct WorkflowPlanReviewView: View {
                                 break
                             }
                             if event.type == "plan_ready" {
-                                plan = try await APIClient.shared.fetchWorkflowPlan(workflowId: workflow.id)
+                                let loaded = try await APIClient.shared.fetchWorkflowPlan(workflowId: workflow.id)
+                                guard workflowActivities.isCurrent(scope) else { return }
+                                plan = loaded
                                 finished = true
                                 break
                             }
@@ -1552,13 +1833,19 @@ private struct WorkflowPlanReviewView: View {
                     } catch is CancellationError {
                         return
                     } catch {
+                        guard workflowActivities.isCurrent(scope) else { return }
                         reconnectAttempt += 1
                         replanErrorMessage = "进度连接中断，正在恢复同一规划任务…"
                         let delay = UInt64(min(reconnectAttempt, 8)) * 1_000_000_000
                         try? await Task.sleep(nanoseconds: delay)
+                        guard workflowActivities.isCurrent(scope) else { return }
                     }
                 }
-            } catch { replanErrorMessage = error.localizedDescription }
+            } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
+                replanErrorMessage = error.localizedDescription
+            }
+            guard workflowActivities.isCurrent(scope) else { return }
             isSaving = false
         }
     }
@@ -2692,9 +2979,17 @@ private struct WorkflowCanvasNodeInspector: View {
 
 // MARK: - 执行与成果复核
 
+struct PresentationProductStep {
+    static let labels = ["需求确认", "全稿预览", "下载"]
+
+    static func currentIndex(executionStatus: String) -> Int {
+        executionStatus == "completed" ? 2 : 1
+    }
+}
+
 private struct PresentationWorkflowStageHeader: View {
     let currentIndex: Int
-    private let stages = ["分析", "大纲", "版式", "生成", "验收"]
+    private let stages = PresentationProductStep.labels
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
@@ -2714,12 +3009,15 @@ private struct PresentationWorkflowStageHeader: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("PPT 工作流，第 \(currentIndex + 1) 步，共 5 步：\(stages[currentIndex])")
+        .accessibilityLabel("PPT 工作流，第 \(currentIndex + 1) 步，共 3 步：\(stages[currentIndex])")
+        .accessibilityIdentifier("presentation.three-step-header")
     }
 }
 
 private struct WorkflowExecutionView: View {
     let workflow: WorkflowDTO
+    let scope: WorkflowActivityCoordinator.Scope
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @State private var execution: WorkflowExecutionDTO
     @State private var artifacts: [WorkflowArtifactDTO] = []
     @State private var selectedArtifacts: Set<String> = []
@@ -2730,6 +3028,8 @@ private struct WorkflowExecutionView: View {
     @State private var lastExecutionEventId = 0
     @State private var feedback = ""
     @State private var slideNumber = 1
+    @State private var showsStructuredReview = false
+    @State private var showsAdvancedExecutionDetails = false
 
     private var isPresentation: Bool { workflow.desiredOutput.lowercased().contains("pptx") }
     private var isDocument: Bool {
@@ -2738,8 +3038,13 @@ private struct WorkflowExecutionView: View {
     }
     private var isStagedOutput: Bool { isPresentation || isDocument }
 
-    init(workflow: WorkflowDTO, initialExecution: WorkflowExecutionDTO) {
+    init(
+        workflow: WorkflowDTO,
+        initialExecution: WorkflowExecutionDTO,
+        scope: WorkflowActivityCoordinator.Scope
+    ) {
         self.workflow = workflow
+        self.scope = scope
         _execution = State(initialValue: initialExecution)
     }
 
@@ -2748,12 +3053,30 @@ private struct WorkflowExecutionView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 if isPresentation { PresentationWorkflowStageHeader(currentIndex: presentationStageIndex) }
                 executionHeader
-                ReasoningCard(
-                    steps: executionReasoningSteps,
-                    isStreaming: ["queued", "running"].contains(execution.status),
-                    initiallyExpanded: ["queued", "running"].contains(execution.status)
-                )
-                nodeProgress
+                if isPresentation {
+                    DisclosureGroup(isExpanded: $showsAdvancedExecutionDetails) {
+                        ReasoningCard(
+                            steps: executionReasoningSteps,
+                            isStreaming: ["queued", "running"].contains(execution.status),
+                            initiallyExpanded: false
+                        )
+                        nodeProgress
+                    } label: {
+                        Label("高级详情", systemImage: "slider.horizontal.3")
+                            .font(AppTheme.Typography.supporting)
+                    }
+                    .accessibilityIdentifier("presentation.advanced-details")
+                } else {
+                    ReasoningCard(
+                        steps: executionReasoningSteps,
+                        isStreaming: ["queued", "running"].contains(execution.status),
+                        initiallyExpanded: false
+                    )
+                    nodeProgress
+                }
+                if let failure = WorkflowFailurePresentation.make(execution: execution) {
+                    WorkflowFailureCard(failure: failure)
+                }
                 if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
                     artifactReview
                 }
@@ -2771,9 +3094,29 @@ private struct WorkflowExecutionView: View {
             WorkflowArtifactPreview(
                 executionId: execution.id,
                 artifact: artifact,
+                scope: scope,
                 currentPage: $slideNumber,
                 allowsDownload: execution.status == "completed"
             )
+        }
+        .sheet(isPresented: $showsStructuredReview) {
+            if let artifact = visibleArtifacts.last {
+                NavigationStack {
+                    StructuredReviewView(
+                        workflowId: workflow.id,
+                        reviewKey: "final-draft",
+                        initialDocument: structuredReviewSeed(from: artifact),
+                        scope: scope
+                    )
+                    .navigationTitle("结构化审核")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showsStructuredReview = false }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2782,13 +3125,7 @@ private struct WorkflowExecutionView: View {
     }
 
     private var presentationStageIndex: Int {
-        if execution.status == "completed" || execution.status == "awaiting_review" { return 4 }
-        if execution.status == "awaiting_approval" { return activePresentationGate == "design" ? 2 : 1 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_deck" })?.status, status != "pending" { return 3 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_design" })?.status, status != "pending" { return 2 }
-        if let status = execution.nodes.first(where: { $0.nodeId == "presentation_outline" })?.status, status != "pending" { return 1 }
-        if execution.nodes.first(where: { $0.nodeId == "presentation_analysis" })?.status == "succeeded" { return 1 }
-        return 0
+        PresentationProductStep.currentIndex(executionStatus: execution.status)
     }
 
     private var visibleArtifacts: [WorkflowArtifactDTO] {
@@ -2915,6 +3252,17 @@ private struct WorkflowExecutionView: View {
                 .background(AppTheme.Colors.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
+            if isStagedOutput,
+               ["awaiting_review", "completed"].contains(execution.status),
+               visibleArtifacts.last != nil {
+                Button(isPresentation ? "编辑全稿内容" : "填写结构化审核", systemImage: "checklist") {
+                    showsStructuredReview = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                .accessibilityIdentifier("open-structured-review")
+            }
             if isStagedOutput && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
                 TextField(stagedFeedbackPrompt, text: $feedback, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -2927,6 +3275,32 @@ private struct WorkflowExecutionView: View {
                 }
             }
         }
+    }
+
+    private func structuredReviewSeed(from artifact: WorkflowArtifactDTO) -> StructuredReviewDocumentDTO {
+        var values: [String: JSONScalar] = ["deliverable_title": .string(artifact.title)]
+        if isPresentation {
+            values["outline_items"] = .array([])
+            values["slides"] = .array([])
+        }
+        if let version = artifact.metadata.artifactVersion {
+            values["artifact_version"] = .integer(Int64(version))
+        }
+        return StructuredReviewDocumentDTO(
+            title: artifact.title,
+            fields: [
+                .init(id: "deliverable_title", label: "成果标题", type: .text, required: true, options: nil),
+                .init(id: "review_notes", label: "审核意见", type: .textarea, required: false, options: nil),
+                .init(id: "decision", label: "审核结论", type: .choice, required: true, options: ["需要修改", "可以确认"]),
+                .init(id: "artifact_version", label: "成果版本", type: .number, required: false, options: nil),
+                .init(id: "preview_checked", label: "已检查成果预览", type: .toggle, required: true, options: nil),
+            ] + (isPresentation ? [
+                .init(id: "outline_items", label: "内容清单", type: .list, required: false, options: nil),
+                .init(id: "slides", label: "页面结构", type: .pageStructure, required: false, options: nil),
+                .init(id: "cover_asset", label: "封面素材", type: .asset, required: false, options: nil),
+            ] : []),
+            values: values
+        )
     }
 
     private var stagedReviewTitle: String {
@@ -3010,28 +3384,39 @@ private struct WorkflowExecutionView: View {
     }
 
     private func monitor() async {
+        guard workflowActivities.accepts(workflow, in: scope) else { return }
         do {
-            execution = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+            let initial = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = initial
             if !["awaiting_approval", "awaiting_review", "completed", "failed", "cancelled"].contains(execution.status) {
                 for try await event in APIClient.shared.workflowEventStream(
                     executionId: execution.id,
                     after: lastExecutionEventId
                 ) {
+                    guard workflowActivities.isCurrent(scope) else { return }
                     if event.id > lastExecutionEventId {
                         executionEvents.append(event)
                         lastExecutionEventId = event.id
                     }
-                    execution = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+                    let snapshot = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+                    guard workflowActivities.isCurrent(scope) else { return }
+                    execution = snapshot
                 }
             }
         } catch {
+            guard workflowActivities.isCurrent(scope) else { return }
             // SSE 在代理或弱网下不可用时，下面的持久状态轮询接管恢复。
         }
         while !Task.isCancelled {
             do {
-                execution = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+                let snapshot = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+                guard workflowActivities.isCurrent(scope) else { return }
+                execution = snapshot
                 if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
-                    artifacts = try await APIClient.shared.fetchWorkflowArtifacts(executionId: execution.id)
+                    let loaded = try await APIClient.shared.fetchWorkflowArtifacts(executionId: execution.id)
+                    guard workflowActivities.isCurrent(scope) else { return }
+                    artifacts = loaded
                     if selectedArtifacts.isEmpty {
                         selectedArtifacts = Set(artifacts.filter(\.selectedForPublish).map(\.id))
                     }
@@ -3039,20 +3424,37 @@ private struct WorkflowExecutionView: View {
                 }
                 if ["failed", "cancelled"].contains(execution.status) { return }
             } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
                 errorMessage = error.localizedDescription
             }
             try? await Task.sleep(for: .seconds(2))
+            guard workflowActivities.isCurrent(scope) else { return }
         }
     }
 
-    private func cancel() { perform { execution = try await APIClient.shared.cancelWorkflowExecution(id: execution.id) } }
-    private func retry() { perform { execution = try await APIClient.shared.retryWorkflowExecution(id: execution.id); await monitor() } }
+    private func cancel() {
+        perform {
+            let updated = try await APIClient.shared.cancelWorkflowExecution(id: execution.id)
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
+        }
+    }
+    private func retry() {
+        perform {
+            let updated = try await APIClient.shared.retryWorkflowExecution(id: execution.id)
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
+            await monitor()
+        }
+    }
     private func requestRevision() {
         let nodeId = execution.nodes.first(where: { $0.nodeType == "FILTER_PASS" })?.nodeId ?? execution.nodes.last?.nodeId ?? "review_output"
         perform {
-            execution = try await APIClient.shared.requestWorkflowRevision(
+            let updated = try await APIClient.shared.requestWorkflowRevision(
                 executionId: execution.id, nodeId: nodeId, comment: "请根据复核意见重新检查并完善成果"
             )
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
             await monitor()
         }
     }
@@ -3061,7 +3463,10 @@ private struct WorkflowExecutionView: View {
             try await APIClient.shared.approveWorkflowOutput(
                 executionId: execution.id, artifactIds: Array(selectedArtifacts)
             )
-            execution = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+            guard workflowActivities.isCurrent(scope) else { return }
+            let updated = try await APIClient.shared.fetchWorkflowExecution(id: execution.id)
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
         }
     }
     private func reviewPresentation(decision: String, perSlide: Bool = false) {
@@ -3071,7 +3476,9 @@ private struct WorkflowExecutionView: View {
         }) else { errorMessage = "待确认成果尚未同步"; return }
         if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errorMessage = "请填写修改意见"; return }
         perform {
-            execution = try await APIClient.shared.reviewPresentationStage(executionId: execution.id, artifact: artifact, decision: decision, comment: feedback, slideNumber: perSlide ? slideNumber : nil)
+            let updated = try await APIClient.shared.reviewPresentationStage(executionId: execution.id, artifact: artifact, decision: decision, comment: feedback, slideNumber: perSlide ? slideNumber : nil)
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
             feedback = ""
             if decision == "approve" && execution.status == "completed" { selectedArtifact = artifact }
             else { await monitor() }
@@ -3089,22 +3496,35 @@ private struct WorkflowExecutionView: View {
             return
         }
         perform {
-            execution = try await APIClient.shared.reviewPresentationStage(
+            let updated = try await APIClient.shared.reviewPresentationStage(
                 executionId: execution.id,
                 artifact: artifact,
                 decision: decision,
                 comment: feedback
             )
+            guard workflowActivities.isCurrent(scope) else { return }
+            execution = updated
             feedback = ""
             if decision == "approve" && execution.status == "completed" { selectedArtifact = artifact }
             else { await monitor() }
         }
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
+        guard workflowActivities.accepts(workflow, in: scope) else {
+            errorMessage = "对话会话已切换，无法执行此操作。"
+            return
+        }
         isWorking = true
         Task {
-            do { try await operation(); errorMessage = nil }
-            catch { errorMessage = error.localizedDescription }
+            do {
+                try await operation()
+                guard workflowActivities.isCurrent(scope) else { return }
+                errorMessage = nil
+            } catch {
+                guard workflowActivities.isCurrent(scope) else { return }
+                errorMessage = error.localizedDescription
+            }
+            guard workflowActivities.isCurrent(scope) else { return }
             isWorking = false
         }
     }
@@ -3129,6 +3549,7 @@ private struct WorkflowExecutionView: View {
 private struct WorkflowArtifactPreview: View {
     let executionId: String
     let artifact: WorkflowArtifactDTO
+    let scope: WorkflowActivityCoordinator.Scope
     @Binding var currentPage: Int
     let allowsDownload: Bool
     @State private var content: String?
@@ -3138,6 +3559,7 @@ private struct WorkflowArtifactPreview: View {
     @State private var savedTravelNote = false
     @State private var showingTravelNoteSave = false
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
 
     private var isTravelArtifact: Bool {
         if artifact.metadata.renderType == "travel_plan_v1" { return true }
@@ -3209,18 +3631,26 @@ private struct WorkflowArtifactPreview: View {
                 }
             }
             .task {
+                guard workflowActivities.isCurrent(scope) else {
+                    errorMessage = "对话会话已切换，无法读取此成果。"
+                    return
+                }
                 do {
                     if artifact.extension == "pptx" {
                         let deck = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
+                        guard workflowActivities.isCurrent(scope) else { return }
                         downloadURL = try InboxFileManager.shared.storePrivateFile(deck, sourceId: artifact.id, revision: artifact.metadata.artifactVersion ?? 1, filename: "\(artifact.title).pptx")
                         guard let previewId = artifact.metadata.previewArtifactId, let previewHash = artifact.metadata.previewContentHash else { throw APIError.network(artifact.metadata.previewError ?? "PPTX 已生成，但渲染预览不可用") }
                         let pdf = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(previewId)/download", expectedHash: previewHash)
+                        guard workflowActivities.isCurrent(scope) else { return }
                         guard let document = PDFDocument(data: pdf) else { throw APIError.decoding("渲染预览不是有效 PDF") }; pdfDocument = document
                     } else if let previewId = artifact.metadata.previewArtifactId, let previewHash = artifact.metadata.previewContentHash {
                         let pdf = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(previewId)/download", expectedHash: previewHash)
+                        guard workflowActivities.isCurrent(scope) else { return }
                         guard let document = PDFDocument(data: pdf) else { throw APIError.decoding("设计样稿预览不是有效 PDF") }; pdfDocument = document
                     } else if artifact.extension == "pdf" {
                         let pdf = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
+                        guard workflowActivities.isCurrent(scope) else { return }
                         guard let document = PDFDocument(data: pdf) else { throw APIError.decoding("预览不是有效 PDF") }; pdfDocument = document
                     } else {
                         if artifact.extension == "docx" {
@@ -3228,6 +3658,7 @@ private struct WorkflowArtifactPreview: View {
                                 path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download",
                                 expectedHash: artifact.contentHash
                             )
+                            guard workflowActivities.isCurrent(scope) else { return }
                             downloadURL = try InboxFileManager.shared.storePrivateFile(
                                 document,
                                 sourceId: artifact.id,
@@ -3235,9 +3666,14 @@ private struct WorkflowArtifactPreview: View {
                                 filename: "\(artifact.title).docx"
                             )
                         }
-                        content = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: artifact.id).content
+                        let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: artifact.id).content
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        content = loaded
                     }
-                } catch { errorMessage = error.localizedDescription }
+                } catch {
+                    guard workflowActivities.isCurrent(scope) else { return }
+                    errorMessage = error.localizedDescription
+                }
             }
         }
         .preferredColorScheme(.light)
@@ -3871,6 +4307,30 @@ private struct WorkflowErrorBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.Colors.statusError.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+}
+
+struct WorkflowFailureCard: View {
+    let failure: WorkflowFailurePresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Label("执行失败原因", systemImage: "exclamationmark.triangle.fill")
+                .font(AppTheme.Typography.label)
+                .foregroundStyle(AppTheme.Colors.statusError)
+            Text(failure.cause)
+                .font(AppTheme.Typography.supporting)
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+            Label("可执行操作：\(failure.action)", systemImage: "arrow.clockwise")
+                .font(AppTheme.Typography.supporting.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.quantumBlue)
+        }
+        .padding(AppTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Colors.statusError.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("workflow-failure-cause")
     }
 }
 

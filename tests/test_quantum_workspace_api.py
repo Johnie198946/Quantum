@@ -130,6 +130,42 @@ def test_project_home_supports_update_and_owner_delete(_reset_database):
     assert client.get(f"/api/v1/projects/{project_id}").status_code == 404
 
 
+def test_project_archive_proposal_is_idempotent_cas_guarded_and_auditable(_reset_database):
+    client = _reset_database
+    project_id = _create_project(client, "governed-project-archive")
+    confirmed = _confirm_legacy_intent(client, project_id)
+    body = {
+        "request_id": "project-archive-0001",
+        "expected_revision": confirmed["process_revision"],
+    }
+
+    proposed = client.post(f"/api/v1/projects/{project_id}/archive-proposal", json=body)
+    assert proposed.status_code == 202
+    proposal = proposed.json()["proposal"]
+    assert proposal["change_kind"] == "PROJECT_ARCHIVE"
+    assert proposal["status"] == "PROPOSED"
+
+    replay = client.post(f"/api/v1/projects/{project_id}/archive-proposal", json=body)
+    assert replay.status_code == 202
+    assert replay.json()["proposal"]["id"] == proposal["id"]
+
+    stale = client.post(
+        f"/api/v1/projects/{project_id}/archive-proposal",
+        json={**body, "request_id": "project-archive-stale", "expected_revision": body["expected_revision"] + 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["error"] == "project_revision_conflict"
+
+    approved = client.post(
+        f"/api/v1/projects/{project_id}/change-proposals/{proposal['id']}/decision",
+        json={"expected_process_revision": body["expected_revision"], "decision": "APPROVE"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["proposal"]["status"] == "APPROVED"
+    assert approved.json()["project"]["status"] == "deleted"
+    assert client.get(f"/api/v1/projects/{project_id}").status_code == 404
+
+
 def test_workspace_bootstrap_returns_project_and_process_in_one_request(_reset_database):
     client = _reset_database
     project_id = _create_project(client, "workspace-bootstrap")
@@ -1717,6 +1753,79 @@ def test_taskboard_schedule_and_graph_share_one_revision(_reset_database):
     )
     assert stale.status_code == 409
     assert stale.json()["detail"]["server_revision"] == 2
+
+
+def test_schedule_proposals_enforce_operation_cas_replay_and_state_readback(_reset_database):
+    client = _reset_database
+    project_id, _ = _create_applied_process(client, "schedule-qcp")
+    confirmed = _confirm_legacy_intent(client, project_id)
+    process = client.get(f"/api/v1/projects/{project_id}/process").json()
+    task_id = process["tasks"][0]["id"]
+    endpoint = f"/api/v1/projects/{project_id}/schedule-proposal"
+
+    create_body = {
+        "request_id": "schedule-create-domain-001",
+        "expected_revision": confirmed["process_revision"],
+        "operation": "CREATE",
+        "entries": [{
+            "task_id": task_id,
+            "start_date": "2026-09-20",
+            "due_date": "2026-09-22",
+        }],
+    }
+    created = client.post(endpoint, json=create_body)
+    replay = client.post(endpoint, json=create_body)
+    assert created.status_code == replay.status_code == 202
+    assert replay.json()["proposal"]["id"] == created.json()["proposal"]["id"]
+
+    conflict = client.post(endpoint, json={
+        **create_body,
+        "entries": [{
+            "task_id": task_id,
+            "start_date": "2026-09-20",
+            "due_date": "2026-09-23",
+        }],
+    })
+    assert conflict.status_code == 409
+    approved = _approve_intent_proposal(client, project_id, created)
+    revision = approved["process_revision"]
+    scheduled = client.get(f"/api/v1/projects/{project_id}/schedule").json()
+    item = next(row for row in scheduled["tasks"] if row["id"] == task_id)
+    assert (item["planned_start_at"], item["planned_finish_at"]) == (
+        "2026-09-20", "2026-09-22"
+    )
+
+    duplicate_create = client.post(endpoint, json={
+        **create_body, "request_id": "schedule-create-domain-002",
+        "expected_revision": revision,
+    })
+    assert duplicate_create.status_code == 409
+    assert duplicate_create.json()["detail"] == "schedule_already_exists"
+
+    updated = client.post(endpoint, json={
+        "request_id": "schedule-update-domain-001",
+        "expected_revision": revision,
+        "operation": "UPDATE",
+        "entries": [{
+            "task_id": task_id,
+            "start_date": "2026-09-21",
+            "due_date": "2026-09-24",
+        }],
+    })
+    approved = _approve_intent_proposal(client, project_id, updated)
+    revision = approved["process_revision"]
+
+    deleted = client.post(endpoint, json={
+        "request_id": "schedule-delete-domain-001",
+        "expected_revision": revision,
+        "operation": "DELETE",
+        "entries": [{"task_id": task_id, "start_date": None, "due_date": None}],
+    })
+    _approve_intent_proposal(client, project_id, deleted)
+    final = client.get(f"/api/v1/projects/{project_id}/schedule").json()
+    item = next(row for row in final["tasks"] if row["id"] == task_id)
+    assert item["schedule_status"] == "UNSCHEDULED"
+    assert item["planned_start_at"] is item["planned_finish_at"] is None
 
 
 def test_workflow_designer_persists_configured_nodes_edges_and_rejects_stale_revision(

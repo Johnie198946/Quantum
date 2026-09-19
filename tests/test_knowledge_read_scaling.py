@@ -99,6 +99,37 @@ def test_request_candidates_never_cache_live_authorization(vault, tmp_path):
     assert k._CANDIDATE_INDEX.get() is None
 
 
+def test_authorized_request_snapshot_avoids_per_link_file_rechecks(vault, tmp_path, monkeypatch):
+    documents, _ = vault(32)
+    links = " ".join(f"[[topic-{i}]]" for i in range(len(documents)))
+    for index in range(len(documents)):
+        target = tmp_path / f"wiki/topic-{index}.md"
+        target.write_text(
+            f"---\ntitle: topic-{index}\nstatus: active\n---\n"
+            f"# topic-{index}\nEvidence {links}.\n",
+            encoding="utf-8",
+        )
+    candidates = catalog.document_index(tmp_path)
+    reads = []
+    original_live = catalog._live_frontmatter
+
+    def live(*args, **kwargs):
+        reads.append(args[1])
+        return original_live(*args, **kwargs)
+
+    monkeypatch.setattr(catalog, "_live_frontmatter", live)
+    token = catalog.AUTHORIZED_DOCUMENT_PATHS.set(frozenset(candidates))
+    try:
+        with k._candidate_scope(tmp_path, candidates):
+            result = k._search_docs(tmp_path, "topic", len(documents))
+    finally:
+        catalog.AUTHORIZED_DOCUMENT_PATHS.reset(token)
+
+    assert len(result) == len(documents)
+    assert reads == []
+    assert k._CANDIDATE_INDEX.get() is None
+
+
 @pytest.mark.parametrize("change", ["symlink", "malformed", "unreadable"])
 def test_live_target_failure_is_not_legacy_approval(vault, tmp_path, monkeypatch, change):
     vault()
@@ -223,6 +254,27 @@ def fake_gateway_policy(monkeypatch):
     async def policy(*args, **kwargs):
         return SimpleNamespace(policy_version="fixture-v1"), None
     monkeypatch.setattr(gateway, "resolve_policy", policy)
+
+
+def test_live_document_filter_reuses_file_barrier_frontmatter(tmp_path, monkeypatch):
+    document = {"path": "wiki/topic.md"}
+    monkeypatch.setattr(
+        catalog,
+        "_apply_file_read_barrier",
+        lambda *_: {
+            **document,
+            "contribution_projection_id": "projection-1",
+            "publication_policy": catalog.CONTRIBUTION_PUBLICATION_POLICY,
+        },
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_live_frontmatter",
+        lambda *_: (_ for _ in ()).throw(AssertionError("duplicate frontmatter read")),
+    )
+    live, guarded = catalog._file_live_documents([document], tmp_path)
+    assert live == []
+    assert guarded[0][1:] == ("projection-1", "wiki/topic.md")
 
 
 @pytest.mark.asyncio
@@ -422,4 +474,14 @@ async def test_gateway_perf_observability_is_internal_optional_and_fail_open(vau
         ),
         "fixture",
     )
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert writes[-1].startswith(
+        b"knowledge_gateway_perf_v1 route=tenant_wiki_with_publication "
+    )
+
+
+def test_gateway_tokenizer_warmup_uses_production_tokenizer(monkeypatch):
+    calls = []
+    monkeypatch.setattr(k, "_tokenize_query", lambda query: calls.append(query))
+    k.warm_query_tokenizer()
+    assert calls == ["知识网关预热"]

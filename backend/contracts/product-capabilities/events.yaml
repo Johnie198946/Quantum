@@ -15,7 +15,19 @@ events:
     version: 1
   - id: workflow.started
     version: 1
+  - id: workflow.approved
+    version: 1
+  - id: workflow.revised
+    version: 1
+  - id: workflow.cancelled
+    version: 1
   - id: presentation.created
+    version: 1
+  - id: structured_review.ready
+    version: 1
+  - id: structured_review.saved
+    version: 1
+  - id: structured_review.conflict
     version: 1
   - id: document.created
     version: 1
@@ -24,4 +36,60 @@ events:
   - id: artifact.download_ready
     version: 1
   - id: artifact.consumed
+    version: 1
+  - id: bookshelf.results
+    version: 1
+  - id: bookshelf.subscription_changed
+    version: 1
+  - id: bookshelf.opened
+    version: 1
+  - id: memory.snapshot
+    version: 1
+  - id: memory.changed
+    version: 1
+  - id: profile.snapshot
+    version: 1
+  - id: profile.changed
+    version: 1
+  - id: agent.snapshot
+    version: 1
+  - id: agent.changed
+    version: 1
+  - id: skill.snapshot
+    version: 1
+  - id: skill.changed
+    version: 1
+  - id: project.snapshot
+    version: 1
+  - id: project.created
+    version: 1
+  - id: project.change_proposed
+    version: 1
+  - id: task.snapshot
+    version: 1
+  - id: task.change_proposed
+    version: 1
+  - id: schedule.snapshot
+    version: 1
+  - id: schedule.change_proposed
+    version: 1
+  - id: notification.snapshot
+    version: 1
+  - id: notification.changed
+    version: 1
+  - id: notification.preferences_changed
+    version: 1
+  - id: hermes.session.listed
+    version: 1
+  - id: hermes.session.opened
+    version: 1
+  - id: hermes.session.resumed
+    version: 1
+  - id: hermes.session.deleted
+    version: 1
+  - id: client.action.requested
+    version: 1
+  - id: artifact.generated
+    version: 1
+  - id: task.execution_queued
     version: 1

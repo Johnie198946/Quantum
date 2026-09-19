@@ -28,5 +28,5 @@ def test_deploy_current_release_cas(tmp_path, mode):
         env.pop("AI_LAB_EXPECTED_CURRENT_SHA")
     before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
     result = subprocess.run(["bash", "-c", "set -e\n" + source[start:stop]], env=env, capture_output=True, text=True)
-    assert (result.returncode == 0) == (mode in {"match", "legacy"}), result.stderr
+    assert (result.returncode == 0) == (mode == "match"), result.stderr
     assert sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*")) == before

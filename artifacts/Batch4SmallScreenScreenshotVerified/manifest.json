@@ -1,0 +1,17 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "50E7C601-7768-4D4F-9C99-189E8ADDD220",
+        "deviceName" : "iPhone 16e",
+        "exportedFileName" : "3204A7DC-EF92-40B8-B85C-5A489CEC7560.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "batch4-keyboard-primary-action_0_2B92CFBF-8B3B-4A8A-A9CB-03D39E99E20A.png",
+        "timestamp" : 1789458451.752
+      }
+    ],
+    "testIdentifier" : "Batch4NoviceUXFixtureUITests/testSmallScreenKeyboardKeepsCurrentPrimaryActionHittable()",
+    "testIdentifierURL" : "test://com.apple.xcode/AIPlatformApp/AIPlatformAppUITests/Batch4NoviceUXFixtureUITests/testSmallScreenKeyboardKeepsCurrentPrimaryActionHittable"
+  }
+]

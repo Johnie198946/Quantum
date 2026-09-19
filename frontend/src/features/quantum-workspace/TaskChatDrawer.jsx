@@ -4,6 +4,7 @@ import { platformApi } from "../../services/platformApi";
 import { HermesClarificationCard } from "./HermesClarificationCard";
 import { createHermesExecution, HermesExecutionTrace, updateHermesExecution } from "./HermesExecutionTrace";
 import { restoreTaskMessages } from "./taskChatMessages.js";
+import { consumeQCPEvent } from "./qcpEventRegistry.js";
 
 const visibleAssistantContent = (content) => String(content || "").replace(/```task_backfill\s*\n[\s\S]*?\n```/gi, "").trim();
 
@@ -321,6 +322,14 @@ export function TaskChatDrawer({ project, process, task, cardContext, refreshCar
       }
       const finalEvent = await platformApi.streamTaskMessage(activeConversation.id, { question: text, request_id: requestId, trigger: "user" }, (streamEvent) => {
         setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? updateHermesExecution(message, streamEvent, { context: "正在同步卡片上下文与权限", reasoning: "Hermes 正在理解任务", professional: "已识别为任务操作，租户技能可以参与" }) : message));
+        const capabilityEvent = consumeQCPEvent(streamEvent);
+        if (capabilityEvent) {
+          setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? {
+            ...message,
+            content: message.content || capabilityEvent.text,
+            capabilityEvents: [...(message.capabilityEvents || []), capabilityEvent],
+          } : message));
+        }
         if (streamEvent.type === "delta" && streamEvent.content) {
           setMessages((current) => current.map((message) => message.id === `${requestId}-assistant` ? { ...message, content: `${message.content}${streamEvent.content}` } : message));
         }
@@ -451,6 +460,35 @@ export function TaskChatDrawer({ project, process, task, cardContext, refreshCar
     }
   };
 
+  const confirmCapability = async (messageId, capabilityEvent) => {
+    const proposal = capabilityEvent?.payload;
+    if (!conversation || !proposal?.proposal_id || !proposal?.confirmation_token || proposalBusy) return;
+    const busyKey = `capability:${proposal.proposal_id}`;
+    setProposalBusy(busyKey);
+    setError("");
+    try {
+      const capabilitySessionId = conversation.binding?.session_id || conversation.session_id;
+      if (!capabilitySessionId) throw new Error("能力操作缺少绑定 Session，无法安全确认");
+      const result = await platformApi.confirmCapabilityProposal(
+        proposal.proposal_id, proposal.confirmation_token, capabilitySessionId,
+      );
+      const completed = (result.events || []).map(consumeQCPEvent).filter(Boolean);
+      if (!completed.length) throw new Error("能力确认缺少可验证的完成事件");
+      setMessages((current) => current.map((message) => message.id === messageId ? {
+        ...message,
+        capabilityEvents: (message.capabilityEvents || []).flatMap((event) =>
+          event?.payload?.proposal_id === proposal.proposal_id
+            ? completed
+            : [event]
+        ),
+      } : message));
+    } catch (reason) {
+      setError(reason.message || "能力操作确认失败");
+    } finally {
+      setProposalBusy("");
+    }
+  };
+
   return (
     <aside className="qw-chat-drawer" aria-label={`${task.title} 任务对话`}>
       <header><div><span className="qw-eyebrow">AI Lab · AI 员工 Session</span><h3>{task.title}</h3></div><div className="qw-chat-header-actions"><button type="button" disabled={!refreshCardContext || contextRefreshing || busy} onClick={refreshContext} aria-label="刷新任务上下文" title="仅在卡片内容变化后刷新"><RefreshCw size={16} />{contextRefreshing ? "同步中" : "刷新上下文"}</button><button type="button" onClick={onClose} aria-label="关闭任务对话"><X size={18} /></button></div></header>
@@ -459,7 +497,7 @@ export function TaskChatDrawer({ project, process, task, cardContext, refreshCar
       <div className="qw-chat-messages" ref={messagesRef} aria-live="polite" onScroll={(event) => { const element = event.currentTarget; followsLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }}>
         {!messages.length && <div className="qw-chat-empty"><Bot size={22} /><strong>项目、当前任务和直接依赖已绑定</strong><span>上下文按 revision/hash 留痕；连续交流复用快照，卡片变化后再点“刷新上下文”。要求 AI 回填时会先生成方案，确认后才写入。</span></div>}
         {messages.map((message) => {
-          return <article key={message.id} className={`qw-message ${message.role} ${message.failed ? "failed" : ""}`}><small>{message.role === "user" ? "你" : assistantLabel}</small>{message.role === "assistant" && <HermesExecutionTrace execution={message.execution} pending={message.pending} waitingForClarification={message.waitingForClarification} clock={clock} />}<p>{message.role === "assistant" ? visibleAssistantContent(message.content) || (message.waitingForClarification ? "请先回答下方问题，AI 会把结论整理到正确字段。" : message.pending ? "正在处理当前任务…" : "") : message.content}</p></article>;
+          return <article key={message.id} className={`qw-message ${message.role} ${message.failed ? "failed" : ""}`}><small>{message.role === "user" ? "你" : assistantLabel}</small>{message.role === "assistant" && <HermesExecutionTrace execution={message.execution} pending={message.pending} waitingForClarification={message.waitingForClarification} clock={clock} />}<p>{message.role === "assistant" ? visibleAssistantContent(message.content) || (message.waitingForClarification ? "请先回答下方问题，AI 会把结论整理到正确字段。" : message.pending ? "正在处理当前任务…" : "") : message.content}</p>{message.role === "assistant" && message.capabilityEvents?.length > 0 && <ul className="qw-capability-events" aria-label="能力事件">{message.capabilityEvents.map((event, index) => <li key={`${event.path}-${index}`} data-renderer={event.path}>{event.path === "confirmation" ? <div className="qw-capability-confirmation"><strong>{event.payload?.summary || "此操作需要确认"}</strong><span>{event.payload?.risk ? `风险：${event.payload.risk}` : event.text}</span><button type="button" className="qw-button primary" onClick={() => confirmCapability(message.id, event)} disabled={proposalBusy === `capability:${event.payload?.proposal_id}`}>{proposalBusy === `capability:${event.payload?.proposal_id}` ? "确认中…" : "确认执行"}</button></div> : event.text}</li>)}</ul>}</article>;
         })}
         <HermesClarificationCard clarification={clarification} busy={clarificationBusy} responseText={clarificationText} onResponseTextChange={setClarificationText} selections={clarificationSelections} onSelectionsChange={setClarificationSelections} onSubmit={submitClarification} idPrefix="qw-task-clarification" continuationLabel="回答后将继续生成字段级回填方案。" />
         {proposals.map((proposal) => <section key={proposal.id} className={`qw-backfill-proposal ${proposal.status}`}>

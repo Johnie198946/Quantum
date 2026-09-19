@@ -1,3 +1,21 @@
+agent_descriptions:
+  main_agent:
+    function: 拆解目标、编排已注册能力并汇总交付结果
+    suitable: 跨步骤任务、方案整理与进度协调
+    boundary: 只调用获授权能力；写入和执行须确认
+  supervision:
+    function: 审查方案、风险、证据与验收条件
+    suitable: 架构评审、质量把关与发布前检查
+    boundary: 不代替执行者修改或发布；结论需证据
+  coder:
+    function: 按批准方案实现代码、修复问题并运行测试
+    suitable: 明确范围的软件开发、调试与自动化验证
+    boundary: 不绕过权限或确认；生产发布需另行授权
+  knowledge:
+    function: 检索、整理、入库并追溯授权知识
+    suitable: 笔记查询、资料归纳与可追溯知识任务
+    boundary: 仅访问当前账号范围；未核实内容会标注
+
 capabilities:
   - id: knowledge.note.search
     version: 1.0.0
@@ -173,7 +191,7 @@ capabilities:
     description: Create a real workflow draft through the existing workflow handler.
     positive_examples: ["Create a market research workflow"]
     negative_examples: ["Start an unapproved plan"]
-    input_schema: {type: object, properties: {title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document]}, source_client_session_id: {type: string, minLength: 1, maxLength: 128}}, required: [title, description], additionalProperties: false}
+    input_schema: {type: object, properties: {title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document]}, source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}}, required: [title, description], additionalProperties: false}
     output_schema: {type: object, required: [workflow]}
     effect: write
     risk: medium
@@ -252,12 +270,12 @@ capabilities:
     tests: [tests/test_product_capabilities.py]
     implementation_status: implemented
   - id: presentation.create_from_document
-    version: 1.0.0
+    version: 1.1.0
     domain: presentation
     description: Create a presentation workflow bound to an existing parsed document.
     positive_examples: ["Create a PPT from this uploaded document"]
     negative_examples: ["Pretend an upload is a finished presentation"]
-    input_schema: {type: object, properties: {source_document_id: {type: string, minLength: 8, maxLength: 48}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, source_client_session_id: {type: string, minLength: 1, maxLength: 128}}, required: [source_document_id, title, description], additionalProperties: false}
+    input_schema: {type: object, properties: {source_document_id: {type: string, minLength: 8, maxLength: 48}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}}, required: [source_document_id, title, description], additionalProperties: false}
     output_schema: {type: object, required: [workflow]}
     effect: write
     risk: medium
@@ -273,7 +291,7 @@ capabilities:
     tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
     implementation_status: implemented
   - id: presentation.create_from_text
-    version: 1.0.0
+    version: 1.1.0
     domain: presentation
     description: Create an editable PPTX workflow directly from user-provided text, using governed defaults and returning the workflow that will expose its rendered preview and authenticated download.
     positive_examples: ["Create a PPT about an Interlaken travel guide from these notes", "把这些文字材料直接做成因特拉肯旅行攻略 PPT"]
@@ -282,13 +300,15 @@ capabilities:
       type: object
       properties:
         title: {type: string, minLength: 1, maxLength: 160}
-        text_material: {type: string, minLength: 3, maxLength: 12000}
+        text_material: {type: string, minLength: 3, maxLength: 12000, description: "Verbatim user-provided source text. Copy it exactly; do not summarize, rewrite, correct, or mix instructions into this field."}
+        editorial_instruction: {type: string, minLength: 1, maxLength: 8000, description: "Optional orchestration and visual direction kept separate from the verbatim source."}
         audience: {type: string, minLength: 1, maxLength: 300, default: general_business_audience}
         intended_use: {type: string, enum: [management_briefing, client_proposal, internal_sharing, teaching, travel_guide], default: management_briefing}
         layout_style: {type: string, enum: [clean_professional_16_9, brand_consistent_16_9, data_first_16_9, editorial_16_9], default: clean_professional_16_9}
         slide_count: {type: integer, minimum: 4, maximum: 30, default: 10}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        presentation_review_gates: {type: array, items: {type: string, enum: [outline, design]}, uniqueItems: true, maxItems: 2, default: []}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -306,7 +326,8 @@ capabilities:
     workflow_contract:
       defaults: {audience: general_business_audience, intended_use: management_briefing, layout_style: clean_professional_16_9, slide_count: 10}
       clarification: Ask only when text material is missing or a blocking contradiction exists; otherwise present the governed defaults in the requirement confirmation.
-      confirmation_points: [qcp_invocation, requirement_summary, plan, outline, design, final_output]
+      confirmation_points: [qcp_invocation, requirement_summary, final_output]
+      optional_risk_review_gates: [outline, design]
       artifact: {extension: pptx, mime_type: application/vnd.openxmlformats-officedocument.presentationml.presentation}
       preview: {extension: pdf, generated_from: exact_final_pptx_bytes}
       return: {preview: authenticated_artifact_reference, download: authenticated_artifact_download_reference}
@@ -328,7 +349,7 @@ capabilities:
         citation_style: {type: string, enum: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], default: none}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -349,7 +370,7 @@ capabilities:
       citations: {supported: [none, footnotes, apa7, mla9, chicago_author_date, gbt7714], fabricated_sources: forbidden}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_word_workflow.py]
     implementation_status: implemented
   - id: report.research.create_from_text
     version: 1.0.0
@@ -368,7 +389,7 @@ capabilities:
         citation_style: {type: string, enum: [apa7, chicago_author_date, gbt7714, footnotes], default: apa7}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material, research_question]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -389,7 +410,7 @@ capabilities:
       citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_research_report_workflow.py]
     implementation_status: implemented
   - id: paper.academic.create_from_text
     version: 1.0.0
@@ -408,7 +429,7 @@ capabilities:
         citation_style: {type: string, enum: [apa7, mla9, chicago_author_date, gbt7714], default: apa7}
         evidence_policy: {type: string, enum: [user_material_only, verified_public_sources], default: verified_public_sources}
         clarification_strategy: {type: string, enum: [use_defaults_unless_blocked, ask_before_planning], default: use_defaults_unless_blocked}
-        source_client_session_id: {type: string, minLength: 1, maxLength: 128}
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}
       required: [title, text_material, thesis]
       additionalProperties: false
     output_schema: {type: object, required: [workflow, clarification_session, delivery]}
@@ -429,7 +450,7 @@ capabilities:
       citations: {required: true, fabricated_sources: forbidden, unresolved_sources: mark_for_verification}
       confirmation_points: [qcp_invocation, requirement_summary, plan, outline, content, final_output]
       delivery: {version: required, content_hash: required, download: authenticated}
-    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py]
+    tests: [tests/test_product_capabilities.py, tests/test_document_presentation.py, tests/e2e/test_academic_paper_workflow.py]
     implementation_status: implemented
   - id: artifact.open
     version: 1.0.0

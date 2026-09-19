@@ -8,6 +8,7 @@ context compression, model routing and exact usage accounting.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -236,6 +237,24 @@ def trusted_task_agent_config(task_agent: TenantAgentModel | None) -> dict[str, 
     return config
 
 
+def inline_source_material(
+    snapshot: dict[str, Any], *, workflow_id: str
+) -> dict[str, str] | None:
+    """Project approved inline text with a deterministic source and session scope."""
+    if not snapshot.get("text_material"):
+        return None
+    text = str(snapshot["text_material"])
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    bound_session = str(snapshot.get("source_client_session_id") or "")
+    return {
+        "source_id": f"txt_{digest[:32]}",
+        "content_hash": digest,
+        "text": text,
+        "source_client_session_id": bound_session or f"legacy-workflow:{workflow_id}",
+        "scope_state": "bound" if bound_session else "legacy_isolated",
+    }
+
+
 async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
     async with SessionLocal() as policy_db:
         mapping = (
@@ -287,13 +306,35 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         "max_tokens": plan.max_tokens,
         "agent_config": trusted_task_agent_config(task_agent),
     }
-    source = ((workflow.requirements_snapshot or {}).get("source_document") if workflow else None)
+    snapshot = (workflow.requirements_snapshot or {}) if workflow else {}
+    source = snapshot.get("source_document")
     if source:
         from backend.services.document_sources import document_text
         text, receipt = document_text(execution.tenant_key, str(workflow.created_by), str(source["source_id"]))
         if receipt["content_hash"] != source.get("content_hash") or receipt["source_revision"] != source.get("source_revision"):
             raise RuntimeError("source document revision changed after approval")
-        payload["source_document"] = {**source, "text": text}
+        source_scope = str(snapshot.get("source_client_session_id") or "")
+        payload["source_document"] = {
+            **source,
+            "text": text,
+            **(
+                {
+                    "source_client_session_id": source_scope,
+                    "scope_state": "bound",
+                }
+                if source_scope
+                else {
+                    "source_client_session_id": f"legacy-workflow:{execution.workflow_id}",
+                    "scope_state": "legacy_isolated",
+                }
+            ),
+        }
+    else:
+        inline_source = inline_source_material(
+            snapshot, workflow_id=execution.workflow_id
+        )
+        if inline_source:
+            payload["source_material"] = inline_source
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs",
@@ -425,18 +466,56 @@ async def _assert_approved_presentation_projection(
 ) -> None:
     if render_type != "presentation":
         return
+
+    async def stage_artifact(binding: dict[str, Any], stage: str) -> WorkflowArtifact:
+        if binding.get("approval_mode") == "generated_verified":
+            node_id = str(binding.get("node_id") or "")
+            plan = await _plan(db, execution)
+            plan_node = next(
+                (item for item in plan.dsl.get("nodes") or [] if item.get("id") == node_id),
+                None,
+            )
+            nodes = await _nodes(db, execution.id)
+            node = nodes.get(node_id)
+            if (
+                not plan_node
+                or (plan_node.get("parameters") or {}).get("approval_gate")
+                or not node
+            ):
+                raise ValueError(f"verified presentation {stage} binding is missing or stale")
+            stored = await db.scalar(select(WorkflowArtifact).where(
+                WorkflowArtifact.execution_id == execution.id,
+                WorkflowArtifact.node_run_id == node.id,
+                WorkflowArtifact.content_hash == binding.get("content_hash"),
+            ))
+            metadata = stored.metadata_json if stored else {}
+            if (
+                not stored
+                or int(metadata.get("artifact_version") or 0)
+                    != int(binding.get("artifact_version") or 0)
+                or metadata.get("render_type") != f"presentation_{stage}"
+            ):
+                raise ValueError(f"verified presentation {stage} binding is missing or stale")
+            return stored
+        approval = await db.scalar(select(WorkflowApproval).where(
+            WorkflowApproval.execution_id == execution.id,
+            WorkflowApproval.approval_type == f"business_{stage}",
+            WorkflowApproval.decision == "approve",
+            WorkflowApproval.plan_id == binding.get("artifact_id"),
+            WorkflowApproval.plan_hash == binding.get("content_hash"),
+            WorkflowApproval.activation_revision == binding.get("artifact_version"),
+        ))
+        stored = await db.get(WorkflowArtifact, binding.get("artifact_id")) if approval else None
+        if (
+            not stored
+            or stored.execution_id != execution.id
+            or stored.content_hash != binding.get("content_hash")
+        ):
+            raise ValueError(f"approved presentation {stage} binding is missing or stale")
+        return stored
+
     binding = artifact.get("approved_design") or {}
-    approval = await db.scalar(select(WorkflowApproval).where(
-        WorkflowApproval.execution_id == execution.id,
-        WorkflowApproval.approval_type == "business_design",
-        WorkflowApproval.decision == "approve",
-        WorkflowApproval.plan_id == binding.get("artifact_id"),
-        WorkflowApproval.plan_hash == binding.get("content_hash"),
-        WorkflowApproval.activation_revision == binding.get("artifact_version"),
-    ))
-    design = await db.get(WorkflowArtifact, binding.get("artifact_id")) if approval else None
-    if not design or design.execution_id != execution.id or design.content_hash != binding.get("content_hash"):
-        raise ValueError("approved presentation design binding is missing or stale")
+    design = await stage_artifact(binding, "design")
     from backend.services.presentation_scenario import validate_theme
     from backend.services.workflow_artifacts import read_verified_artifact, run_root
     approved = json.loads(read_verified_artifact(run_root(execution) / design.relative_path, design.content_hash))
@@ -444,25 +523,7 @@ async def _assert_approved_presentation_projection(
     if validate_theme(final.get("theme")) != validate_theme(approved.get("theme")):
         raise ValueError("final presentation theme differs from approved design")
     outline_binding = artifact.get("approved_outline") or {}
-    outline_approval = await db.scalar(select(WorkflowApproval).where(
-        WorkflowApproval.execution_id == execution.id,
-        WorkflowApproval.approval_type == "business_outline",
-        WorkflowApproval.decision == "approve",
-        WorkflowApproval.plan_id == outline_binding.get("artifact_id"),
-        WorkflowApproval.plan_hash == outline_binding.get("content_hash"),
-        WorkflowApproval.activation_revision == outline_binding.get("artifact_version"),
-    ))
-    outline_artifact = (
-        await db.get(WorkflowArtifact, outline_binding.get("artifact_id"))
-        if outline_approval
-        else None
-    )
-    if (
-        not outline_artifact
-        or outline_artifact.execution_id != execution.id
-        or outline_artifact.content_hash != outline_binding.get("content_hash")
-    ):
-        raise ValueError("approved presentation outline binding is missing or stale")
+    outline_artifact = await stage_artifact(outline_binding, "outline")
     outline = json.loads(
         read_verified_artifact(
             run_root(execution) / outline_artifact.relative_path,
@@ -511,6 +572,12 @@ def artifact_storage_contract(
         extension, mime_type = "csv", "text/csv"
     metadata = {
         "bridge_event_id": event_id,
+        # Approval CAS is bound to the exact Hermes node output.  Renderers may
+        # turn that output into different bytes (for example Markdown -> DOCX),
+        # so the stored artifact hash cannot be reused for the remote gate.
+        "source_content_hash": hashlib.sha256(
+            str(artifact.get("content") or "").encode()
+        ).hexdigest(),
         "source_node_id": node.node_id,
         "agent_id": node.agent_id,
         "model": node.model_used,
@@ -521,8 +588,22 @@ def artifact_storage_contract(
         "artifact_version": int(artifact.get("artifact_version") or getattr(node, "attempt", 1) or 1),
         "approved_design": artifact.get("approved_design"),
         "approved_outline": artifact.get("approved_outline"),
+        "source_trace": artifact.get("source_trace"),
     }
     return extension, metadata
+
+
+def artifact_identity_metadata(
+    execution: WorkflowExecution,
+    workflow: WorkflowDefinition,
+    artifact_version: int,
+) -> dict[str, Any]:
+    return {
+        "tenant_key": execution.tenant_key,
+        "owner_id": workflow.created_by,
+        "source_client_session_id": workflow.source_client_session_id,
+        "generation": artifact_version,
+    }
 
 
 async def project_event(
@@ -534,6 +615,11 @@ async def project_event(
     event_type = str(event.get("type") or "bridge_event")
     node_id = str(event.get("node_id") or "")
     message = str(event.get("message") or event_type)
+    raw_payload = event.get("payload")
+    payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
+    hermes_session_id = event.get("hermes_session_id") or payload.get("hermes_session_id")
+    if hermes_session_id:
+        execution.hermes_session_id = str(hermes_session_id)
     node = node_rows.get(node_id)
     if event_type == "run_started":
         execution.status = "running"
@@ -567,6 +653,18 @@ async def project_event(
             extension, artifact_metadata = artifact_storage_contract(
                 artifact, event_id=event_id, node=node
             )
+            workflow = await db.get(WorkflowDefinition, execution.workflow_id)
+            if workflow is None:
+                raise RuntimeError("workflow identity is missing during artifact projection")
+            artifact_metadata.update(artifact_identity_metadata(
+                execution, workflow, artifact_metadata["artifact_version"]
+            ))
+            identity_metadata = {
+                key: artifact_metadata[key]
+                for key in (
+                    "tenant_key", "owner_id", "source_client_session_id", "generation"
+                )
+            }
             try:
                 await _assert_approved_presentation_projection(
                     db, execution, artifact, artifact_metadata["render_type"]
@@ -602,7 +700,12 @@ async def project_event(
                     preview_artifact = store_artifact(
                         execution, node_run_id=node.id, kind="preview",
                         title=f"{stored.title} 预览", content=preview, source_kind="pptx_render",
-                        metadata={"parent_artifact_id": stored.id, "parent_content_hash": stored.content_hash, "artifact_version": artifact_metadata["artifact_version"]},
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": stored.id,
+                            "parent_content_hash": stored.content_hash,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        },
                         extension="pdf",
                     )
                     db.add(preview_artifact)
@@ -616,13 +719,24 @@ async def project_event(
                     sample = store_artifact(
                         execution, node_run_id=node.id, kind="draft", title=f"{stored.title} 可编辑样稿",
                         content=build_pptx(str(artifact["content"])), source_kind="design_sample",
-                        metadata={"parent_artifact_id": stored.id, "artifact_version": artifact_metadata["artifact_version"]}, extension="pptx",
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": stored.id,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        }, extension="pptx",
                     )
                     db.add(sample)
                     preview = store_artifact(
                         execution, node_run_id=node.id, kind="preview", title=f"{stored.title} 渲染预览",
                         content=render_pptx_pdf(run_root(execution) / sample.relative_path), source_kind="pptx_render",
-                        metadata={"parent_artifact_id": sample.id, "parent_content_hash": sample.content_hash, "design_artifact_id": stored.id, "design_content_hash": stored.content_hash, "artifact_version": artifact_metadata["artifact_version"]}, extension="pdf",
+                        metadata={
+                            **identity_metadata,
+                            "parent_artifact_id": sample.id,
+                            "parent_content_hash": sample.content_hash,
+                            "design_artifact_id": stored.id,
+                            "design_content_hash": stored.content_hash,
+                            "artifact_version": artifact_metadata["artifact_version"],
+                        }, extension="pdf",
                     )
                     db.add(preview)
                     stored.metadata_json = {**stored.metadata_json, "preview_status": "ready", "preview_artifact_id": preview.id, "preview_content_hash": preview.content_hash, "sample_artifact_id": sample.id, "sample_content_hash": sample.content_hash}

@@ -23,6 +23,10 @@ renderers:
     version: 1
     fallback: artifact
     fallback_version: 1
+  - id: structured_review
+    version: 1
+    fallback: artifact
+    fallback_version: 1
   - id: artifact
     version: 1
     fallback: answer
@@ -30,4 +34,36 @@ renderers:
   - id: artifact_consumption
     version: 1
     fallback: artifact
+    fallback_version: 1
+  - id: bookshelf
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: hermes_session_list
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: hermes_session_detail
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: client_action
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: artifact_card
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: data_analysis_card
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: image_card
+    version: 1
+    fallback: answer
+    fallback_version: 1
+  - id: task_execution_card
+    version: 1
+    fallback: answer
     fallback_version: 1

@@ -15,6 +15,7 @@ PyJWT[crypto]>=2.13.0
 # Security floors for transitive runtime dependencies.
 cryptography>=50.0.0
 email-validator>=2.0
+jsonschema>=4.0
 pytest>=8.0
 pytest-asyncio>=0.24
 ruff>=0.6
@@ -24,3 +25,5 @@ python-docx>=1.2
 openpyxl>=3.1
 python-pptx>=1.0
 pillow>=12.3.0
+reportlab>=4.4,<5
+pypdfium2>=5.0

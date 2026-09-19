@@ -1538,16 +1538,14 @@ if [ ! -d "$CURRENT_DIR" ]; then
   echo "ERROR: 当前 release 不存在: $CURRENT_DIR" >&2
   exit 1
 fi
-if [ -n "${AI_LAB_EXPECTED_CURRENT_SHA:-}" ]; then
-  if [[ ! "$AI_LAB_EXPECTED_CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]] || [ ! -f "$CURRENT_DIR/.deployed-sha" ]; then
-    echo "ERROR: invalid expected current SHA or missing active marker" >&2
-    exit 1
-  fi
-  CURRENT_SHA="$(< "$CURRENT_DIR/.deployed-sha")"
-  if [ "$CURRENT_SHA" != "$AI_LAB_EXPECTED_CURRENT_SHA" ]; then
-    echo "ERROR: active release changed since preflight; refusing deployment" >&2
-    exit 1
-  fi
+if [[ ! "${AI_LAB_EXPECTED_CURRENT_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || [ ! -f "$CURRENT_DIR/.deployed-sha" ]; then
+  echo "ERROR: AI_LAB_EXPECTED_CURRENT_SHA is required and active marker must exist" >&2
+  exit 1
+fi
+CURRENT_SHA="$(< "$CURRENT_DIR/.deployed-sha")"
+if [ "$CURRENT_SHA" != "$AI_LAB_EXPECTED_CURRENT_SHA" ]; then
+  echo "ERROR: active release changed since preflight; refusing deployment" >&2
+  exit 1
 fi
 # End active-release CAS: no Docker/data/release mutation precedes this check.
 cd "$CURRENT_DIR"

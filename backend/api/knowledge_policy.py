@@ -17,8 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from backend.api import knowledge
+from backend.api.catalog import compute_catalog
 from backend.services.knowledge_catalog import (
-    SEARCH_CACHE, compute_catalog, filter_database_live_documents, AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
+    SEARCH_CACHE, database_live_document_index, filter_database_live_documents,
+    AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
     run_knowledge_read,
 )
 from backend.api.tenant import current_visibility
@@ -60,7 +62,9 @@ if _PERF_OBSERVE:
     ).start()
 
 
-def _emit_tenant_wiki_timing(timings: dict[str, float]) -> None:
+def _emit_tenant_wiki_timing(
+    timings: dict[str, float], *, publication_included: bool = False,
+) -> None:
     """Emit one bounded, non-identifying record during controlled benchmarks."""
     if not _PERF_OBSERVE:
         return
@@ -70,7 +74,8 @@ def _emit_tenant_wiki_timing(timings: dict[str, float]) -> None:
         "content_assembly_ms", "final_authorization_ms",
         "final_policy_audit_ms", "total_ms",
     )
-    line = "knowledge_gateway_perf_v1 route=tenant_wiki_success " + " ".join(
+    route = "tenant_wiki_with_publication" if publication_included else "tenant_wiki_success"
+    line = f"knowledge_gateway_perf_v1 route={route} " + " ".join(
         f"{phase}={max(0.0, float(timings.get(phase, 0.0))):.3f}"
         for phase in phases
     ) + "\n"
@@ -390,10 +395,8 @@ async def capability_search(
             tenant_key, policy.policy_version, requested, body.query,
             {"tenant_knowledge"},
         )
-        candidates = await run_knowledge_read(knowledge.document_index, knowledge._vault())
-        live = await filter_database_live_documents(list(candidates.values()), knowledge._vault())
+        live_index = await database_live_document_index(knowledge._vault())
         mark_perf("candidate_authorization_ms")
-        live_index = {item["path"]: item for item in live}
         # Model disclosure is narrower than internal read authorization. Never
         # send controlled detail upstream and hope a later SSE/final filter hides it.
         visible_index = {resolved["path"]: resolved for path in live_index
@@ -554,8 +557,9 @@ async def capability_search(
         "disclosure_limited": disclosure_limited,
         "docs": docs,
     }
-    if (_PERF_OBSERVE and requested_sources == {"tenant_knowledge"}
-            and not publication_included):
+    if _PERF_OBSERVE and requested_sources == {"tenant_knowledge"}:
         perf_timings["total_ms"] = (time.perf_counter() - perf_started) * 1000
-        _emit_tenant_wiki_timing(perf_timings)
+        _emit_tenant_wiki_timing(
+            perf_timings, publication_included=publication_included,
+        )
     return response

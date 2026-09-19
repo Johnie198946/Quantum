@@ -10,10 +10,12 @@ import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import jwt as jose_jwt
+from jsonschema import Draft202012Validator
 from sqlalchemy import delete, func, select
 
 os.environ.setdefault("AUTHEN_JWT_SECRET", "test-secret")
@@ -46,6 +48,8 @@ class TestWorkflowsAPI(unittest.TestCase):
             WorkflowNodeRun,
             WorkflowPlanningJob,
             WorkflowPlanVersion,
+            WorkflowReviewRevision,
+            WorkflowClientSessionBinding,
             WorkflowClarificationSession,
             WorkflowLifecycleEvent,
             WorkflowSessionMessage,
@@ -82,6 +86,7 @@ class TestWorkflowsAPI(unittest.TestCase):
                     WorkflowArtifact,
                     WorkflowNodeRun,
                     WorkflowApproval,
+                    WorkflowReviewRevision,
                     WorkflowExecution,
                     WorkflowPlanningJob,
                     WorkflowPlanVersion,
@@ -89,6 +94,7 @@ class TestWorkflowsAPI(unittest.TestCase):
                     WorkflowSessionMessage,
                     WorkflowClarificationSession,
                     WorkflowDefinition,
+                    WorkflowClientSessionBinding,
                     ShowroomSession,
                     CustomerDemand,
                     AgentInvocationRelation,
@@ -106,12 +112,14 @@ class TestWorkflowsAPI(unittest.TestCase):
         auth.tenant_resolver = self._old_resolver
         auth._is_super_admin = self._old_super
 
-    def request(self, method: str, path: str, *, sub: str = "alpha", json=None):
+    def request(self, method: str, path: str, *, sub: str = "alpha", json=None, headers=None):
         async def run():
+            request_headers = {"Authorization": f"Bearer {token(sub)}"}
+            request_headers.update(headers or {})
             async with httpx.AsyncClient(
                 transport=self._transport,
                 base_url="http://testserver",
-                headers={"Authorization": f"Bearer {token(sub)}"},
+                headers=request_headers,
             ) as client:
                 return await client.request(method, path, json=json)
 
@@ -129,6 +137,324 @@ class TestWorkflowsAPI(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["workflow"]
+
+    def test_source_client_session_requires_server_registration_and_owner_binding(self):
+        session_id = "chat-session-owner-bound"
+        unregistered = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "会话隔离任务",
+                "description": "仅允许当前服务端已登记会话创建此任务",
+                "source_client_session_id": session_id,
+            },
+        )
+        self.assertEqual(unregistered.status_code, 404, unregistered.text)
+        self.assertEqual(
+            unregistered.json()["detail"]["code"],
+            "client_session_not_registered",
+        )
+
+        observed = self.request(
+            "POST",
+            "/api/chat",
+            json={"question": "你是谁", "session_id": session_id},
+        )
+        self.assertEqual(observed.status_code, 200, observed.text)
+
+        created = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "会话隔离任务",
+                "description": "仅允许当前服务端已登记会话创建此任务",
+                "source_client_session_id": session_id,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        created_body = created.json()["workflow"]
+        snapshot = created_body["requirements_snapshot"]
+        self.assertEqual(snapshot["source_client_session_id"], session_id)
+        self.assertEqual(created_body["source_client_session_id"], session_id)
+
+        other_session_id = "session-beta-2"
+        registered_other = self.request(
+            "POST",
+            "/api/chat",
+            json={"question": "你是谁", "session_id": other_session_id},
+        )
+        self.assertEqual(registered_other.status_code, 200, registered_other.text)
+        other_created = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "Other session workflow",
+                "description": "Keep this workflow out of session alpha",
+                "source_client_session_id": other_session_id,
+            },
+        )
+        self.assertEqual(other_created.status_code, 201, other_created.text)
+
+        from backend.db import SessionLocal
+        from backend.models.workflow import (
+            WorkflowClarificationSession,
+            WorkflowDefinition,
+        )
+
+        async def mark_both_sessions_active():
+            async with SessionLocal() as db:
+                rows = list((await db.execute(
+                    select(WorkflowClarificationSession).where(
+                        WorkflowClarificationSession.workflow_id.in_([
+                            created_body["id"],
+                            other_created.json()["workflow"]["id"],
+                        ])
+                    )
+                )).scalars().all())
+                for row in rows:
+                    row.phase = "planning"
+                await db.commit()
+
+        asyncio.run(mark_both_sessions_active())
+        active_alpha = self.request(
+            "GET",
+            "/api/v1/workflow-activities/active"
+            f"?source_client_session_id={session_id}",
+        )
+        self.assertEqual(active_alpha.status_code, 200, active_alpha.text)
+        self.assertEqual(
+            [item["workflow"]["id"] for item in active_alpha.json()],
+            [created_body["id"]],
+        )
+
+        async def bound_scope():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, created.json()["workflow"]["id"])
+                return row.source_client_session_binding_id, row.source_client_session_id
+
+        binding_id, stored_session_id = asyncio.run(bound_scope())
+        self.assertTrue(binding_id.startswith("wcs_"))
+        self.assertEqual(stored_session_id, session_id)
+
+        owner_conflict = self.request(
+            "POST",
+            "/api/chat",
+            sub="gamma",
+            json={"question": "你是谁", "session_id": session_id},
+        )
+        self.assertEqual(owner_conflict.status_code, 409, owner_conflict.text)
+        self.assertEqual(
+            owner_conflict.json()["detail"]["code"],
+            "client_session_owner_conflict",
+        )
+
+    def test_two_owners_two_sessions_authoritative_active_matrix(self):
+        matrix = [
+            ("alpha", "alpha-session-a"),
+            ("alpha", "alpha-session-b"),
+            ("gamma", "gamma-session-a"),
+            ("gamma", "gamma-session-b"),
+        ]
+        created: dict[tuple[str, str], str] = {}
+        for owner, client_session in matrix:
+            observed = self.request(
+                "POST",
+                "/api/chat",
+                sub=owner,
+                json={"question": "你是谁", "session_id": client_session},
+            )
+            self.assertEqual(observed.status_code, 200, observed.text)
+            response = self.request(
+                "POST",
+                "/api/v1/workflows",
+                sub=owner,
+                json={
+                    "title": f"{owner}-{client_session}",
+                    "description": "四任务并发会话隔离验收",
+                    "source_client_session_id": client_session,
+                },
+            )
+            self.assertEqual(response.status_code, 201, response.text)
+            created[(owner, client_session)] = response.json()["workflow"]["id"]
+
+        from backend.db import SessionLocal
+        from backend.models.workflow import WorkflowClarificationSession
+
+        async def activate_all():
+            async with SessionLocal() as db:
+                sessions = list(
+                    (
+                        await db.execute(
+                            select(WorkflowClarificationSession).where(
+                                WorkflowClarificationSession.workflow_id.in_(created.values())
+                            )
+                        )
+                    ).scalars().all()
+                )
+                self.assertEqual(len(sessions), 4)
+                for session in sessions:
+                    session.phase = "planning"
+                await db.commit()
+
+        asyncio.run(activate_all())
+        for owner, client_session in matrix:
+            active = self.request(
+                "GET",
+                "/api/v1/workflow-activities/active"
+                f"?source_client_session_id={client_session}",
+                sub=owner,
+            )
+            self.assertEqual(active.status_code, 200, active.text)
+            self.assertEqual(
+                [item["workflow"]["id"] for item in active.json()],
+                [created[(owner, client_session)]],
+            )
+            other_owner = "gamma" if owner == "alpha" else "alpha"
+            denied = self.request(
+                "GET",
+                f"/api/v1/workflows/{created[(owner, client_session)]}",
+                sub=other_owner,
+            )
+            self.assertEqual(denied.status_code, 404, denied.text)
+
+    def test_legacy_workflow_without_clarification_session_is_not_tenant_wide(self):
+        from backend.db import SessionLocal
+        from backend.models.workflow import WorkflowDefinition
+
+        async def seed():
+            async with SessionLocal() as db:
+                db.add(WorkflowDefinition(
+                    id="wf_legacy_owner_only",
+                    tenant_key="tenant-alpha",
+                    created_by="alpha",
+                    title="历史工作流",
+                    description="没有澄清会话也必须保持所有者隔离",
+                    clarification_session_id=None,
+                ))
+                await db.commit()
+
+        asyncio.run(seed())
+        denied = self.request(
+            "GET", "/api/v1/workflows/wf_legacy_owner_only", sub="gamma"
+        )
+        self.assertEqual(denied.status_code, 404, denied.text)
+        listed = self.request("GET", "/api/v1/workflows", sub="gamma")
+        self.assertNotIn(
+            "wf_legacy_owner_only", {item["id"] for item in listed.json()}
+        )
+
+    def test_structured_review_persists_with_etag_cas_undo_and_owner_scope(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        first_document = {
+            "title": "最终文稿确认",
+            "fields": [
+                {"id": "summary", "label": "摘要", "type": "textarea", "required": True},
+                {"id": "tone", "label": "语气", "type": "choice", "required": False,
+                 "options": ["正式", "简洁"]},
+            ],
+            "values": {"summary": "第一版", "tone": "正式"},
+        }
+        schema = json.loads(Path(
+            "backend/contracts/workflow/structured-review.schema.json"
+        ).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema).validate(first_document)
+        created = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        first_etag = created.headers["etag"]
+        self.assertEqual(created.json()["version"], 1)
+        self.assertTrue(created.json()["receipt_id"].startswith("wrc_"))
+
+        denied = self.request("GET", path, sub="gamma")
+        self.assertEqual(denied.status_code, 404, denied.text)
+        missing_precondition = self.request("PUT", path, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(missing_precondition.status_code, 428, missing_precondition.text)
+
+        second_document = copy.deepcopy(first_document)
+        second_document["values"]["summary"] = "第二版"
+        saved = self.request("PUT", path, headers={"If-Match": first_etag}, json={
+            "schema_id": "workflow.structured-review.v1", "document": second_document,
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        second_etag = saved.headers["etag"]
+        self.assertEqual(saved.json()["version"], 2)
+        self.assertEqual(saved.json()["parent_version"], 1)
+
+        stale = self.request("PUT", path, headers={"If-Match": first_etag}, json={
+            "schema_id": "workflow.structured-review.v1", "document": first_document,
+        })
+        self.assertEqual(stale.status_code, 412, stale.text)
+        self.assertEqual(stale.json()["detail"]["remote"]["version"], 2)
+        self.assertEqual(stale.json()["detail"]["remote_etag"], second_etag)
+
+        undone = self.request("POST", f"{path}/undo", headers={"If-Match": second_etag})
+        self.assertEqual(undone.status_code, 200, undone.text)
+        self.assertEqual(undone.json()["version"], 3)
+        self.assertEqual(undone.json()["action"], "undo")
+        self.assertEqual(undone.json()["document"]["values"]["summary"], "第一版")
+        persisted = self.request("GET", path)
+        self.assertEqual(persisted.json()["version"], 3)
+        self.assertEqual(persisted.headers["etag"], undone.headers["etag"])
+
+    def test_structured_review_rejects_unknown_or_mistyped_fields(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        invalid = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v1",
+            "document": {
+                "title": "最终文稿确认",
+                "fields": [{"id": "approved", "label": "通过", "type": "toggle", "required": True}],
+                "values": {"approved": "yes", "unknown": "not allowed"},
+            },
+        })
+        self.assertEqual(invalid.status_code, 422, invalid.text)
+
+    def test_structured_review_schema_accepts_list_page_structure_and_asset_values(self):
+        schema = json.loads(Path(
+            "backend/contracts/workflow/structured-review-v2.schema.json"
+        ).read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        document = {
+            "title": "完整全稿",
+            "fields": [
+                {"id": "agenda", "label": "要点列表", "type": "list", "required": True},
+                {"id": "pages", "label": "页面结构", "type": "page_structure", "required": True},
+                {"id": "hero", "label": "主视觉素材", "type": "asset", "required": True},
+            ],
+            "values": {
+                "agenda": ["背景", "方案"],
+                "pages": [
+                    {"id": "slide-1", "title": "封面", "summary": "主题视觉"},
+                    {"id": "slide-2", "title": "路线", "summary": "地理路线图"},
+                ],
+                "hero": {
+                    "id": "asset-1",
+                    "name": "博斯普鲁斯海峡",
+                    "url": "https://example.invalid/hero.jpg",
+                    "source_url": "https://example.invalid/source",
+                    "mime_type": "image/jpeg",
+                    "sha256": "a" * 64,
+                },
+            },
+        }
+
+        Draft202012Validator(schema).validate(document)
+
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/structured-reviews/final-draft"
+        created_v2 = self.request("POST", path, json={
+            "schema_id": "workflow.structured-review.v2", "document": document,
+        })
+        self.assertEqual(created_v2.status_code, 201, created_v2.text)
+        rejected_v1 = self.request("POST", f"{path}-legacy", json={
+            "schema_id": "workflow.structured-review.v1", "document": document,
+        })
+        self.assertEqual(rejected_v1.status_code, 422, rejected_v1.text)
 
     def test_explicit_output_kind_does_not_require_an_uploaded_file(self):
         presentation = self.request(
@@ -160,6 +486,64 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(document.status_code, 201, document.text)
         snapshot = document.json()["workflow"]["requirements_snapshot"]
         self.assertEqual(snapshot["scenario_id"], "document-generation")
+
+    def test_presentation_review_gates_are_opt_in_and_bounded(self):
+        default = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "默认三步 PPT",
+                "description": "根据已批准材料生成可编辑演示文稿",
+                "output_kind": "presentation",
+            },
+        )
+        self.assertEqual(default.status_code, 201, default.text)
+        self.assertNotIn(
+            "presentation_review_gates",
+            default.json()["workflow"]["requirements_snapshot"],
+        )
+
+        regulated = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "受控 PPT",
+                "description": "启用明确的风险审核门生成演示文稿",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["outline", "design", "outline"],
+            },
+        )
+        self.assertEqual(regulated.status_code, 422, regulated.text)
+
+        accepted = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "受控 PPT",
+                "description": "启用明确的风险审核门生成演示文稿",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["outline", "design"],
+            },
+        )
+        self.assertEqual(accepted.status_code, 201, accepted.text)
+        self.assertEqual(
+            accepted.json()["workflow"]["requirements_snapshot"][
+                "presentation_review_gates"
+            ],
+            ["outline", "design"],
+        )
+
+        invalid = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "非法门禁",
+                "description": "不允许客户端传入未知审核门",
+                "output_kind": "presentation",
+                "presentation_review_gates": ["unknown"],
+            },
+        )
+        self.assertEqual(invalid.status_code, 422, invalid.text)
 
     def seed_project_result(self, *, history=False, add_member=False):
         from backend.db import SessionLocal, canonical_plan_hash
@@ -564,6 +948,137 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(status, "archived")
         self.assertIsNotNone(archived_at)
         self.assertEqual(phase, "archived")
+
+    def test_cancel_is_cas_guarded_and_durably_replays_receipt(self):
+        workflow = self.create()
+        path = f"/api/v1/workflows/{workflow['id']}/cancel"
+        denied = self.request(
+            "POST",
+            path,
+            sub="gamma",
+            json={
+                "request_id": "workflow-cancel-owner-check",
+                "expected_updated_at": workflow["updated_at"],
+            },
+        )
+        self.assertEqual(denied.status_code, 404, denied.text)
+
+        stale = self.request(
+            "POST",
+            path,
+            json={
+                "request_id": "workflow-cancel-stale-revision",
+                "expected_updated_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        self.assertEqual(stale.status_code, 412, stale.text)
+        self.assertEqual(stale.json()["detail"]["code"], "workflow_revision_conflict")
+
+        payload = {
+            "request_id": "workflow-cancel-durable-request",
+            "expected_updated_at": workflow["updated_at"],
+        }
+        completed = self.request("POST", path, json=payload)
+        self.assertEqual(completed.status_code, 200, completed.text)
+        receipt = completed.json()
+        self.assertEqual(receipt["status"], "cancelled")
+        self.assertEqual(receipt["request_id"], payload["request_id"])
+
+        replay = self.request("POST", path, json=payload)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json(), receipt)
+
+        conflict = self.request(
+            "POST",
+            path,
+            json={
+                **payload,
+                "expected_updated_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(
+            conflict.json()["detail"]["code"], "idempotency_payload_conflict"
+        )
+        self.assertEqual(
+            self.request("GET", f"/api/v1/workflows/{workflow['id']}").status_code,
+            404,
+        )
+
+    def test_cancel_remote_failure_does_not_archive_or_write_receipt(self):
+        from backend.db import SessionLocal
+        from backend.models.workflow import (
+            WorkflowDefinition,
+            WorkflowExecution,
+            WorkflowPlanVersion,
+        )
+
+        workflow = self.create()
+
+        async def seed_running_execution():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, workflow["id"])
+                plan = WorkflowPlanVersion(
+                    id=f"wfp_cancel_{uuid.uuid4().hex[:12]}",
+                    workflow_id=row.id,
+                    version=1,
+                    dsl={"plan_id": "cancel-plan", "name": "Cancel", "version": "1.0.0", "nodes": [], "edges": []},
+                    goal="Cancel safely",
+                    deliverable="Receipt",
+                )
+                db.add(plan)
+                await db.flush()
+                row.active_plan_id = plan.id
+                execution = WorkflowExecution(
+                    id=f"wfe_cancel_{uuid.uuid4().hex[:12]}",
+                    workflow_id=row.id,
+                    plan_id=plan.id,
+                    tenant_key="tenant-alpha",
+                    status="running",
+                    idempotency_key=f"cancel-running-{uuid.uuid4().hex}",
+                )
+                db.add(execution)
+                await db.commit()
+                await db.refresh(row)
+                return row.updated_at.isoformat(), execution.id
+
+        expected_updated_at, execution_id = asyncio.run(seed_running_execution())
+        with patch(
+            "backend.api.workflows.cancel_remote",
+            new=AsyncMock(side_effect=RuntimeError("remote unavailable")),
+        ) as remote_cancel:
+            response = self.request(
+                "POST",
+                f"/api/v1/workflows/{workflow['id']}/cancel",
+                json={
+                    "request_id": "workflow-cancel-remote-failure",
+                    "expected_updated_at": expected_updated_at,
+                },
+            )
+        self.assertEqual(response.status_code, 502, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"], "workflow_remote_cancel_failed"
+        )
+        remote_cancel.assert_awaited_once_with(execution_id)
+
+        async def persisted_state():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, workflow["id"])
+                execution = await db.get(WorkflowExecution, execution_id)
+                return (
+                    row.status,
+                    row.archived_at,
+                    row.cancel_request_id,
+                    row.cancellation_receipt,
+                    execution.status,
+                )
+
+        state = asyncio.run(persisted_state())
+        self.assertNotEqual(state[0], "archived")
+        self.assertIsNone(state[1])
+        self.assertIsNone(state[2])
+        self.assertIsNone(state[3])
+        self.assertEqual(state[4], "running")
 
     def test_clarification_phase_column_fits_confirmation_state(self):
         from backend.models.workflow import WorkflowClarificationSession
@@ -1116,6 +1631,20 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(first.status_code, 201, first.text)
         self.assertEqual(second.status_code, 201, second.text)
         self.assertEqual(first.json()["agent"]["id"], second.json()["agent"]["id"])
+
+    def test_approve_plan_rejects_stale_qcp_cas_binding(self):
+        body = self.create_ready()
+        plan = self.request("GET", f"/api/v1/workflows/{body['id']}/plan").json()
+        response = self.request(
+            "POST", f"/api/v1/workflows/{body['id']}/approve-plan",
+            json={
+                "request_id": "qcp-stale-approve-0001",
+                "expected_hash": "0" * 64,
+                "expected_revision": plan["activation_revision"],
+            },
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "resource_conflict")
 
     def test_active_workflow_rejects_second_start(self):
         body = self.create_ready()
@@ -1753,6 +2282,15 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(recovered.status_code, 200, recovered.text)
         self.assertEqual(recovered.json()["content"], "# 节点成果\n\n证据与结论已整理。")
         self.assertTrue(content_path.is_file())
+
+        foreign_paths = [
+            f"/api/v1/workflow-executions/{execution.id}/artifacts",
+            f"/api/v1/workflow-executions/{execution.id}/artifacts/{artifact.id}/content",
+            f"/api/v1/workflow-executions/{execution.id}/artifacts/{artifact.id}/download",
+        ]
+        for path in foreign_paths:
+            denied = self.request("GET", path, sub="beta")
+            self.assertEqual(denied.status_code, 404, f"{path}: {denied.text}")
 
         content_path.unlink()
         artifact.content_hash = "0" * 64

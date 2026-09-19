@@ -7,3 +7,25 @@ policies:
     description: Workflow APIs derive tenant/user from JWT and enforce ownership and lifecycle state.
   - id: artifact-owner
     description: Artifact APIs verify execution ownership, path containment and content hash.
+  - id: bookshelf-reader
+    description: Bookshelf APIs derive tenant and reader from authentication and revalidate current book authorization.
+  - id: native-memory-owner
+    description: Native Hermes memory is resolved through the authenticated user's sandbox policy and owner identity.
+  - id: profile-owner
+    description: Profile reads and writes derive tenant and user identity only from the authenticated principal.
+  - id: agent-owner
+    description: Agent writes require an interactive human and enforce tenant plus owner isolation.
+  - id: tenant-skill-owner
+    description: Skill access is bound to the signed tenant/user Hermes sandbox; only profile-owned custom Skills may be changed.
+  - id: qws-project-access
+    description: QWS derives tenant and user from the authenticated principal and enforces project membership, owner/write scope, revision CAS, and domain lifecycle rules.
+  - id: qws-schedule-access
+    description: Project schedule reads and proposals reuse QWS tenant membership, write scope, process revision CAS, and durable project change receipts.
+  - id: notification-owner
+    description: Notification rows and preferences are visible and mutable only to their authenticated tenant/user owner with domain revision CAS.
+  - id: hermes-session-owner
+    description: A registered client chat session binds tenant/user ownership before any bridge session lookup or mutation.
+  - id: client-action-owner
+    description: Native actions and their terminal receipts are restricted to the authenticated tenant/user owner and explicit supported action types.
+  - id: generated-artifact-owner
+    description: Generated artifacts are immutable, hash-addressed, and readable only by their authenticated tenant/user owner.

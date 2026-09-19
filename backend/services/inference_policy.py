@@ -120,6 +120,7 @@ async def reserve_inference(
             used = int(await db.scalar(
                 select(func.coalesce(func.sum(counted), 0)).where(
                     InferenceReservation.user_id == user_id,
+                    InferenceReservation.tenant_key == tenant_key,
                     InferenceReservation.state.in_(_OPEN_STATES),
                     InferenceReservation.created_at >= datetime.now(timezone.utc).replace(
                         day=1, hour=0, minute=0, second=0, microsecond=0

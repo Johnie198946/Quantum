@@ -46,6 +46,213 @@ def isolated_session_mappings(bridge, sessions: dict[str, str]):
 
 
 class TestBridgeCLIParms(unittest.TestCase):
+    def test_extract_json_object_repairs_raw_newline_and_trailing_comma(self):
+        from scripts.hermes_bridge import _extract_json_object
+
+        parsed = _extract_json_object('{"title":"line one\nline two","slides":[],}')
+
+        self.assertEqual(parsed["title"], "line one\nline two")
+        self.assertEqual(parsed["slides"], [])
+
+    def test_explicit_document_replacements_override_superseded_values(self):
+        from scripts.hermes_bridge import _apply_explicit_document_replacements
+
+        revised = _apply_explicit_document_replacements(
+            "# Nimbus Expansion Brief\nRevenue: USD 2.0 million.",
+            "第一处：将原来的“Nimbus Expansion Brief”改为“Executive Brief”；"
+            "第二处：将 USD 2.0 million 改为 USD 2.4 million",
+        )
+
+        self.assertIn("# Executive Brief", revised)
+        self.assertIn("USD 2.4 million", revised)
+        self.assertNotIn("Nimbus Expansion Brief", revised)
+        self.assertNotIn("USD 2.0 million", revised)
+
+    def test_explicit_document_replacements_fail_closed_when_unverifiable(self):
+        from scripts.hermes_bridge import _apply_explicit_document_replacements
+
+        with self.assertRaisesRegex(RuntimeError, "修订失败"):
+            _apply_explicit_document_replacements(
+                "No matching value.",
+                "将 USD 2.0 million 改为 USD 2.4 million",
+            )
+
+    def test_downstream_document_inherits_upstream_revision_comment(self):
+        from scripts.hermes_bridge import _workflow_revision_comment
+
+        run = {
+            "plan": {
+                "nodes": [{"id": "draft"}, {"id": "final"}],
+                "edges": [{"source": "draft", "target": "final"}],
+            },
+            "revision_feedback": {"draft": "将 USD 2.0 million 改为 USD 2.4 million"},
+        }
+
+        self.assertEqual(
+            _workflow_revision_comment(run, "final"),
+            "将 USD 2.0 million 改为 USD 2.4 million",
+        )
+
+    def test_word_pagination_uses_minimum_pages_from_approved_outputs(self):
+        from scripts.hermes_bridge import (
+            _ensure_document_page_breaks,
+            _workflow_minimum_document_pages,
+        )
+
+        run = {
+            "goal": "生成正式 Word 文档",
+            "nodes": {"analysis": {"output": "最终文档不少于三页"}},
+        }
+        text = "\n\n".join(f"段落 {index}" for index in range(9))
+        rendered = _ensure_document_page_breaks(
+            text,
+            _workflow_minimum_document_pages(run),
+        )
+
+        self.assertEqual(rendered.count("\f") + 1, 3)
+        self.assertIn("段落 0", rendered)
+        self.assertIn("段落 8", rendered)
+
+    def test_word_pagination_reads_english_minimum_from_bound_source_material(self):
+        from scripts.hermes_bridge import _workflow_minimum_document_pages
+
+        for wording in (
+            "Produce a complete paper of at least three rendered pages.",
+            "Produce an editable DOCX of at least three full pages.",
+        ):
+            with self.subTest(wording=wording):
+                run = {
+                    "goal": "Create an academic paper",
+                    "source_material": {"text": wording},
+                }
+
+                self.assertEqual(_workflow_minimum_document_pages(run), 3)
+
+    def test_document_source_constraints_require_verified_dois_and_reject_excluded_url(self):
+        from scripts.hermes_bridge import _document_source_constraint_issues
+
+        run = {
+            "source_material": {
+                "text": """
+Verified source 1:
+Paper. https://doi.org/10.1038/example.1
+Verified source 2:
+Paper. https://doi.org/10.1371/example.2
+The same verified allowlist may also be written as DOI 10.5555/example.3.
+Fail-closed exclusion:
+- https://unverified.invalid/fabricated-paper could not be verified.
+Substantive direction:
+Write the paper.
+"""
+            }
+        }
+        issues = _document_source_constraint_issues(
+            run,
+            "References\n10.1038/example.1\nNo citation to unverified.invalid is included.",
+        )
+
+        self.assertIn("缺少已核验 DOI：10.1371/example.2", issues)
+        self.assertIn("缺少已核验 DOI：10.5555/example.3", issues)
+        self.assertTrue(any("unverified.invalid" in issue for issue in issues))
+        self.assertEqual(
+            _document_source_constraint_issues(
+                run,
+                "References\n10.1038/example.1\n10.1371/example.2\n10.5555/example.3",
+            ),
+            [],
+        )
+
+    def test_document_source_constraints_split_chinese_punctuation_doi_allowlist(self):
+        from scripts.hermes_bridge import _document_source_constraints
+
+        run = {
+            "source_material": {
+                "text": (
+                    "只允许引用 DOI 10.1038/s41562-016-0021、"
+                    "10.1371/journal.pbio.1001745、10.1038/sdata.2016.18。"
+                    "故意提供的未核实来源 https://unverified.invalid/fabricated-paper 必须 fail closed。"
+                )
+            }
+        }
+
+        verified, forbidden = _document_source_constraints(run)
+        self.assertEqual(
+            verified,
+            [
+                "10.1038/s41562-016-0021",
+                "10.1371/journal.pbio.1001745",
+                "10.1038/sdata.2016.18",
+            ],
+        )
+        self.assertIn("unverified.invalid", forbidden)
+
+    def test_document_source_constraints_preserve_explicit_source_labels(self):
+        from scripts.hermes_bridge import (
+            _document_required_source_labels,
+            _document_source_constraint_instruction,
+            _document_source_constraint_issues,
+        )
+
+        run = {
+            "source_material": {
+                "text": (
+                    "Only use [S1] https://example.com/one, "
+                    "[S2] https://example.com/two, and [S3] https://example.com/three."
+                )
+            }
+        }
+        self.assertEqual(_document_required_source_labels(run), ["[S1]", "[S2]", "[S3]"])
+        issues = _document_source_constraint_issues(run, "正文 [1][2][3]")
+        self.assertEqual(
+            issues,
+            [
+                "缺少指定来源标签：[S1]",
+                "缺少指定来源标签：[S2]",
+                "缺少指定来源标签：[S3]",
+            ],
+        )
+        instruction = _document_source_constraint_instruction(run)
+        self.assertIn("不得改成纯数字脚注", instruction)
+        self.assertEqual(
+            _document_source_constraint_issues(run, "正文 [S1][S2][S3]"),
+            [],
+        )
+
+    def test_document_source_constraints_require_declared_sections(self):
+        from scripts.hermes_bridge import _document_source_constraint_issues
+
+        run = {
+            "source_material": {
+                "text": (
+                    "The paper must contain, in this order: Abstract, Keywords, Introduction, "
+                    "Method, Results, Discussion, Conclusion, and References."
+                )
+            }
+        }
+        issues = _document_source_constraint_issues(
+            run,
+            "Abstract\nKeywords\nIntroduction\nMethod\nDiscussion\nConclusion\nReferences",
+        )
+        self.assertIn("缺少必需章节：Results", issues)
+
+    def test_final_artifact_inherits_highest_upstream_revision(self):
+        from scripts import hermes_bridge as bridge
+
+        run = {
+            "plan": {
+                "edges": [
+                    {"source": "analysis", "target": "draft"},
+                    {"source": "draft", "target": "file"},
+                ]
+            },
+            "nodes": {
+                "analysis": {"attempt": 1},
+                "draft": {"attempt": 2},
+                "file": {"attempt": 1},
+            },
+        }
+        self.assertEqual(bridge._workflow_artifact_version(run, "file"), 2)
+
     def test_runtime_admission_rejects_an_overflowing_queue(self):
         from scripts import hermes_bridge as bridge
 

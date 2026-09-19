@@ -24,12 +24,30 @@ IMPLEMENTED_HANDLERS = {
     "knowledge.search", "knowledge.read", "knowledge.create", "knowledge.update",
     "knowledge.merge", "knowledge.archive", "knowledge.restore",
     "client.knowledge.navigation", "workflow.open", "workflow.status",
-    "workflow.create", "workflow.start", "presentation.create_from_document",
+    "workflow.create", "workflow.start", "workflow.approve", "workflow.revise",
+    "workflow.cancel",
+    "presentation.create_from_document",
     "presentation.create_from_text",
     "document.word.create_from_text", "report.research.create_from_text",
     "paper.academic.create_from_text",
     "artifact.open", "artifact.download",
     "artifact.consume_structured",
+    "bookshelf.search", "bookshelf.subscribe", "bookshelf.open",
+    "memory.list", "memory.create", "memory.update", "memory.delete",
+    "profile.read", "profile.update",
+    "agent.list", "agent.create", "agent.update", "agent.delete",
+    "agent.evaluate", "agent.evaluation_status",
+    "skill.list", "skill.create", "skill.update", "skill.delete",
+    "project.list", "project.create", "project.open", "project.update", "project.delete",
+    "task.list", "task.create", "task.update", "task.delete", "task.status",
+    "schedule.list", "schedule.create", "schedule.update", "schedule.delete",
+    "notification.list", "notification.mark_read", "notification.preferences.update",
+    "hermes.session.list", "hermes.session.open", "hermes.session.resume",
+    "hermes.session.delete",
+    "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
+    "file.upload", "file.download", "voice.transcribe",
+    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create",
+    "task.execute",
 }
 
 
@@ -47,10 +65,26 @@ def _yaml(name: str) -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def load_catalog() -> dict[str, Any]:
     manifest = _yaml("manifest.yaml")
+    capability_files = manifest["capabilities"]
+    if isinstance(capability_files, str):
+        capability_files = [capability_files]
+    capability_documents = [_yaml(str(name)) for name in capability_files]
     catalog = {
         "protocol": manifest.get("protocol"),
         "version": manifest.get("version"),
-        "capabilities": _yaml(str(manifest["capabilities"]))["capabilities"],
+        "capabilities": [
+            capability
+            for document in capability_documents
+            for capability in document["capabilities"]
+        ],
+        "agent_descriptions": next(
+            (
+                document["agent_descriptions"]
+                for document in capability_documents
+                if document.get("agent_descriptions")
+            ),
+            {},
+        ),
         "events": _yaml(str(manifest["events"]))["events"],
         "renderers": _yaml(str(manifest["renderers"]))["renderers"],
         "bindings": _yaml(str(manifest["bindings"]))["bindings"],
@@ -76,6 +110,29 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
     bindings = catalog.get("bindings") or []
     policies = catalog.get("policies") or []
     consumptions = catalog.get("consumptions") or []
+    agent_descriptions = catalog.get("agent_descriptions") or {}
+    required_description_parts = {"function", "suitable", "boundary"}
+    if not isinstance(agent_descriptions, dict) or not agent_descriptions:
+        raise CapabilityContractError("agent descriptions required")
+    rendered_descriptions: set[str] = set()
+    rendered_parts: set[tuple[str, str, str]] = set()
+    for agent_id, description in agent_descriptions.items():
+        if not isinstance(description, dict) or set(description) != required_description_parts:
+            raise CapabilityContractError(f"{agent_id}: invalid agent description fields")
+        parts = (
+            str(description["function"]).strip(),
+            str(description["suitable"]).strip(),
+            str(description["boundary"]).strip(),
+        )
+        if any(not part for part in parts) or len(set(parts)) != 3:
+            raise CapabilityContractError(f"{agent_id}: agent description parts must be distinct")
+        rendered = f"功能：{parts[0]}。适合：{parts[1]}。边界：{parts[2]}。"
+        if len(rendered) > 100:
+            raise CapabilityContractError(f"{agent_id}: agent description exceeds 100 characters")
+        if rendered in rendered_descriptions or parts in rendered_parts:
+            raise CapabilityContractError(f"{agent_id}: duplicate agent description")
+        rendered_descriptions.add(rendered)
+        rendered_parts.add(parts)
     capability_ids = _unique(capabilities, "id", "capability ids")
     if len(capability_ids) != len(capabilities):
         raise CapabilityContractError("capability id missing")
@@ -122,6 +179,13 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
         gates = consumption.get("gates") or []
         if not refs or len(refs) != len(set(refs)) or len(gates) != len(set(gates)):
             raise CapabilityContractError(f"{consumption.get('id')}: invalid consumption references")
+
+
+def agent_description_for(agent_id: str) -> dict[str, str]:
+    """Return structured PCM UI copy, never a private-prompt excerpt."""
+    descriptions = load_catalog()["agent_descriptions"]
+    value = descriptions.get(agent_id) or descriptions["main_agent"]
+    return {key: str(value[key]) for key in ("function", "suitable", "boundary")}
 
 
 def search_capabilities(query: str, *, limit: int = 5) -> list[dict[str, Any]]:
@@ -200,21 +264,48 @@ async def invoke_capability(
     data: dict[str, Any],
     *,
     payload: dict[str, Any],
-    confirmed: bool,
-    idempotency_key: str | None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
+    """Execute read/client effects only; mutations require the durable Gateway flow.
+
+    Mutation attempts receive a stable upgrade error; no boolean grants authority.
+    """
+    capability = describe_capability(capability_id)
+    if capability is not None and capability["confirmation"] == "required":
+        return _failure(
+            capability_id,
+            "confirmation_protocol_upgrade_required",
+            "Create a durable proposal and confirm it with a one-time token",
+        )
+    return await execute_verified_capability(
+        capability_id, data, payload=payload, idempotency_key=idempotency_key
+    )
+
+
+async def execute_verified_capability(
+    capability_id: str,
+    data: dict[str, Any],
+    *,
+    payload: dict[str, Any],
+    idempotency_key: str | None,
+    invocation_id: str | None = None,
+    resource_versions: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Internal dispatcher called only after Gateway confirmation or for reads."""
     from fastapi import HTTPException
-    from backend.capability_handlers import HANDLERS
+    from backend.capability_handlers import HANDLERS, verify_resource_versions
 
     capability = describe_capability(capability_id)
     if capability is None:
         return _failure(capability_id, "capability_not_found", "Capability is not allowlisted")
+    tenant = str(payload.get("tenant_key") or "").strip()
+    user = str(payload.get("user_id") or payload.get("sub") or "").strip()
+    if not tenant or not user:
+        return _failure(capability_id, "not_authenticated", "Authenticated tenant and user required")
     if capability["implementation_status"] != "implemented":
         return _failure(capability_id, "capability_not_executable", "Capability is discovery-only in this version")
     try:
         validate_instance(data, capability["input_schema"])
-        if capability["confirmation"] == "required" and not confirmed:
-            raise CapabilityContractError("explicit confirmation required")
         if capability["idempotency"] == "required" and not idempotency_key:
             raise CapabilityContractError("idempotency_key required")
         binding = next(
@@ -224,6 +315,10 @@ async def invoke_capability(
         handler = HANDLERS.get(binding)
         if handler is None:
             return _failure(capability_id, "handler_unavailable", "Capability handler is unavailable")
+        if resource_versions is not None:
+            await verify_resource_versions(
+                capability_id, data, payload, dict(resource_versions)
+            )
         result = await handler(data, payload, idempotency_key)
         validate_instance(result, capability["output_schema"], "output")
     except CapabilityContractError as exc:
@@ -235,28 +330,42 @@ async def invoke_capability(
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
         return _failure(capability_id, str(detail.get("code") or "domain_rejected"), str(detail.get("message") or exc.detail))
-    invocation_seed = json.dumps(
-        {
-            "capability_id": capability_id,
-            "input": data,
-            "idempotency_key": idempotency_key,
-            "tenant_key": payload.get("tenant_key"),
-            "user_id": payload.get("user_id") or payload.get("sub"),
-        },
-        sort_keys=True, separators=(",", ":"),
+    if invocation_id is None:
+        invocation_seed = json.dumps(
+            {
+                "capability_id": capability_id,
+                "input": data,
+                "idempotency_key": idempotency_key,
+                "tenant_key": payload.get("tenant_key"),
+                "user_id": payload.get("user_id") or payload.get("sub"),
+            },
+            sort_keys=True, separators=(",", ":"),
+        )
+        import hashlib
+        invocation_id = "qcp-" + hashlib.sha256(invocation_seed.encode()).hexdigest()[:32]
+    event_version = next(
+        int(item["version"]) for item in load_catalog()["events"]
+        if item["id"] == capability["result_event"]
     )
-    import hashlib
-    invocation_id = "qcp-" + hashlib.sha256(invocation_seed.encode()).hexdigest()[:32]
-    event = {"type": capability["result_event"], "version": 1, "payload": result}
+    event = {
+        "type": capability["result_event"],
+        "version": event_version,
+        "renderer": capability["renderer"],
+        "renderer_version": capability["renderer_version"],
+        "payload": result,
+    }
     return {
         "status": "completed",
         "capability_id": capability_id,
         "events": [event],
         "receipt": {
+            "version": 1,
             "invocation_id": invocation_id,
             "capability_version": capability["version"],
             "status": "completed",
             "event_type": capability["result_event"],
+            "event_version": event_version,
+            "resource_versions": dict(resource_versions or {}),
         },
         "error": None,
     }

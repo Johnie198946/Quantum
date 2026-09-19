@@ -295,8 +295,7 @@ def _apply_file_read_barrier(vault: Path, item: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def document_index(vault: Path | None = None) -> dict[str, dict[str, Any]]:
-    vault = vault or _vault()
+def _document_candidates(vault: Path) -> dict[str, dict[str, Any]]:
     manifest = load_manifest(vault)
     compiled = {
         str(item["path"]): item
@@ -305,9 +304,14 @@ def document_index(vault: Path | None = None) -> dict[str, dict[str, Any]]:
     }
     for item in approved_color_documents(vault):
         compiled[str(item["path"])] = item
+    return compiled
+
+
+def document_index(vault: Path | None = None) -> dict[str, dict[str, Any]]:
+    vault = vault or _vault()
     return {
         path: live
-        for path, item in compiled.items()
+        for path, item in _document_candidates(vault).items()
         if (live := _apply_file_read_barrier(vault, item)) is not None
     }
 
@@ -354,12 +358,10 @@ def _file_live_documents(documents, vault):
         item = _apply_file_read_barrier(vault, document)
         if item is None:
             continue
-        metadata = _live_frontmatter(vault, relative)
-        if metadata is _UNREADABLE_FRONTMATTER:
-            continue
-        projection_id = str(metadata.get("contribution_projection_id")
-                            or item.get("contribution_projection_id") or "")
-        policy = str(metadata.get("publication_policy") or item.get("publication_policy") or "")
+        # _apply_file_read_barrier has already parsed current frontmatter and
+        # copied both governance fields into the returned snapshot.
+        projection_id = str(item.get("contribution_projection_id") or "")
+        policy = str(item.get("publication_policy") or "")
         if projection_id or policy == CONTRIBUTION_PUBLICATION_POLICY:
             guarded.append((item, projection_id, relative))
         else:
@@ -483,6 +485,17 @@ async def filter_database_live_documents(
                     "purpose_publication_validated": is_purpose}
             live.append(item)
     return live
+
+
+async def database_live_document_index(
+    vault: Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Authorize file and durable state once, returning a request snapshot."""
+    vault = vault or _vault()
+    live = await filter_database_live_documents(
+        list(_document_candidates(vault).values()), vault,
+    )
+    return {item["path"]: item for item in live}
 
 
 def filter_database_live_documents_sync(

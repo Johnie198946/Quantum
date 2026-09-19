@@ -34,6 +34,37 @@ def test_exact_sha_deploy_transfers_an_attested_local_source_archive() -> None:
     assert 'AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH"' in script
 
 
+def test_exact_sha_deploy_uses_portable_trailing_mktemp_templates() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX"' in script
+    assert 'mktemp /tmp/ai-lab-source.XXXXXX)' in script
+    assert "XXXXXX.tar.gz" not in script
+
+
+def test_exact_sha_deploy_can_pin_the_trusted_known_hosts_file() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'KNOWN_HOSTS_FILE="${AI_LAB_DEPLOY_KNOWN_HOSTS_FILE:?' in script
+    assert "SSH_OPTIONS=(-F /dev/null -o BatchMode=yes)" in script
+    assert "SCP_OPTIONS=(-q -F /dev/null -o BatchMode=yes)" in script
+    assert 'SSH_OPTIONS+=(-o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS_FILE")' in script
+    assert 'SCP_OPTIONS+=(-o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS_FILE")' in script
+
+
+def test_exact_sha_deploy_forwards_the_active_release_cas() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'EXPECTED_CURRENT_SHA="${AI_LAB_EXPECTED_CURRENT_SHA:?' in script
+    assert 'if [[ ! "$EXPECTED_CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]]' in script
+    assert '"$REMOTE_SOURCE" "$SOURCE_HASH" "$EXPECTED_CURRENT_SHA"' in script
+    assert 'AI_LAB_EXPECTED_CURRENT_SHA="$EXPECTED_CURRENT_SHA"' in script
+
+
+def test_exact_sha_deploy_uses_sudo_for_root_owned_archive_when_requested() -> None:
+    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    assert 'sudo -n install -d -o root -g root -m 0755' in script
+    assert 'sudo -n install -o root -g root -m 0600' in script
+    assert 'sudo -n rm -f -- "$REMOTE_SOURCE"' in script
+
+
 def test_server_deploy_accepts_only_attested_root_owned_offline_source_archive() -> None:
     script = UPDATE_SCRIPT.read_text(encoding="utf-8")
     assert "AI_LAB_SOURCE_ARCHIVE_SHA256" in script

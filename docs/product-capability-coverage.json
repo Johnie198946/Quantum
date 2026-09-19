@@ -1,6 +1,48 @@
 {
   "capabilities": [
     {
+      "id": "agent.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.evaluate",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.evaluation_status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
+      "id": "agent.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_agent_capabilities.py"
+      ]
+    },
+    {
       "id": "artifact.consume_structured",
       "status": "implemented",
       "tests": [
@@ -23,11 +65,91 @@
       ]
     },
     {
+      "id": "bookshelf.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppUITests/ProductionBookshelfUITests.swift"
+      ]
+    },
+    {
+      "id": "bookshelf.search",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ]
+    },
+    {
+      "id": "bookshelf.subscribe",
+      "status": "implemented",
+      "tests": [
+        "tests/test_bookshelf_capabilities.py"
+      ]
+    },
+    {
+      "id": "data.analyze",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
       "id": "document.word.create_from_text",
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_word_workflow.py"
+      ]
+    },
+    {
+      "id": "file.download",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "file.pick",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "file.upload",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
+      ]
+    },
+    {
+      "id": "hermes.session.resume",
+      "status": "implemented",
+      "tests": [
+        "tests/test_hermes_session_capabilities.py"
       ]
     },
     {
@@ -91,11 +213,96 @@
       ]
     },
     {
+      "id": "media.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "memory.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_memory_capabilities.py"
+      ]
+    },
+    {
+      "id": "notification.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "notification.mark_read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "notification.preferences.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_notification_capabilities.py"
+      ]
+    },
+    {
+      "id": "office.pdf.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
+      "id": "office.spreadsheet.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_generated_artifact_capabilities.py"
+      ]
+    },
+    {
       "id": "paper.academic.create_from_text",
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_academic_paper_workflow.py"
+      ]
+    },
+    {
+      "id": "photo.capture",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "photo.import",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
       ]
     },
     {
@@ -115,11 +322,197 @@
       ]
     },
     {
+      "id": "profile.read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_profile_capabilities.py"
+      ]
+    },
+    {
+      "id": "profile.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_profile_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.open",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "project.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
       "id": "report.research.create_from_text",
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py",
-        "tests/test_document_presentation.py"
+        "tests/test_document_presentation.py",
+        "tests/e2e/test_research_report_workflow.py"
+      ]
+    },
+    {
+      "id": "schedule.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "schedule.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_schedule_capabilities.py"
+      ]
+    },
+    {
+      "id": "share.present",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "skill.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_skill_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.create",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.delete",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.execute",
+      "status": "implemented",
+      "tests": [
+        "tests/test_task_execute_capability.py"
+      ]
+    },
+    {
+      "id": "task.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "task.update",
+      "status": "implemented",
+      "tests": [
+        "tests/test_project_task_capabilities.py"
+      ]
+    },
+    {
+      "id": "voice.record",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py"
+      ]
+    },
+    {
+      "id": "voice.transcribe",
+      "status": "implemented",
+      "tests": [
+        "tests/test_client_action_capabilities.py",
+        "tests/test_voice_transcription_capability.py"
+      ]
+    },
+    {
+      "id": "workflow.approve",
+      "status": "implemented",
+      "tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "workflow.cancel",
+      "status": "implemented",
+      "tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
       ]
     },
     {
@@ -137,6 +530,14 @@
       ]
     },
     {
+      "id": "workflow.revise",
+      "status": "implemented",
+      "tests": [
+        "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
       "id": "workflow.start",
       "status": "implemented",
       "tests": [
@@ -151,7 +552,7 @@
       ]
     }
   ],
-  "catalog_digest": "5e53bcb98734bed33157c06dda643df14ce2639af04febc852bfb6cf6fb86f39",
+  "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
   "consumptions": [
     {
       "gates": [
@@ -196,11 +597,82 @@
     }
   ],
   "counts": {
-    "implemented": 20,
+    "implemented": 76,
     "partial": 0,
     "unverified": 0
   },
+  "ios_coverage": {
+    "features": [
+      {
+        "automated_tests": [
+          "tests/e2e/test_word_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "document.word.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_word_create_from_text",
+        "ios_user_function": "Generate, revise, and download a multi-page Word document",
+        "local_evidence": "multi-page DOCX, two content edits, versioned re-render, repeated authenticated download, SHA-256 equality",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/e2e/test_research_report_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "report.research.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_research_report_create_from_text",
+        "ios_user_function": "Generate and revise a research report with traceable evidence",
+        "local_evidence": "three independently published accessible sources, exact citation/source correspondence, revision and redownload hashes",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/e2e/test_academic_paper_workflow.py",
+          "tests/test_product_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "paper.academic.create_from_text",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
+        "event": "document.created@1",
+        "handler": "backend/capability_handlers.py:_academic_paper_create_from_text",
+        "ios_user_function": "Generate an academic paper with verified citation correspondence",
+        "local_evidence": "abstract/body/references sections, exhaustive in-text/reference mapping, allowlisted verified source fixture, DOCX hash and redownload",
+        "policy": "workflow-owner + artifact-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "renderer": "workflow@1",
+        "status": "partial"
+      }
+    ],
+    "source": "ops/acceptance/pcm-ios-coverage.yaml",
+    "status_values": [
+      "implemented",
+      "partial",
+      "absent",
+      "unverified"
+    ]
+  },
   "protocol": "qcp",
-  "total": 20,
+  "total": 76,
   "version": "1.0.0"
 }

@@ -1,9 +1,11 @@
 import hashlib
 import asyncio
 import base64
+import copy
 import json
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -547,6 +549,148 @@ def test_visual_presentation_layouts_are_editable_and_images_are_bounded():
         build_pptx(json.dumps(spec))
 
 
+def test_bridge_outline_claim_coverage_rejects_unknown_claims_before_user_approval():
+    import scripts.hermes_bridge as bridge
+
+    source_text = "第一条事实。第二条事实。"
+    source_id = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    run = {
+        "source_material": {
+            "text": source_text,
+            "source_id": source_id,
+            "source_client_session_id": "ios-session-1",
+        }
+    }
+    with pytest.raises(RuntimeError, match="unknown source claims"):
+        bridge._ensure_outline_claim_coverage(
+            run,
+            json.dumps(
+                {
+                    "title": "测试",
+                    "slides": [
+                        {
+                            "layout": "title",
+                            "title": "封面",
+                            "source_claim_ids": ["unknown-claim"],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    shorthand = json.loads(
+        bridge._ensure_outline_claim_coverage(
+            run,
+            json.dumps(
+                {
+                    "title": "测试",
+                    "slides": [
+                        {
+                            "layout": "title",
+                            "title": "封面",
+                            "source_claim_ids": ["C01"],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
+    assert shorthand["slides"][0]["source_claim_ids"][0] != "C01"
+    assert shorthand["slides"][0]["source_claim_ids"][0].endswith(
+        hashlib.sha256("第一条事实。".encode()).hexdigest()[:12]
+    )
+
+
+def test_bridge_outline_claim_coverage_normalizes_stale_ordinal_hash():
+    import scripts.hermes_bridge as bridge
+    from backend.services.presentation_source_trace import build_source_claims
+
+    source_text = "第一条事实。第二条事实。"
+    source_id = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    run = {
+        "source_material": {
+            "text": source_text,
+            "source_id": source_id,
+            "source_client_session_id": "ios-session-1",
+        }
+    }
+    repaired = json.loads(
+        bridge._ensure_outline_claim_coverage(
+            run,
+            json.dumps(
+                {
+                    "title": "测试",
+                    "slides": [
+                        {
+                            "layout": "title",
+                            "title": "封面",
+                            "source_claim_ids": ["c001:9b2b75bb0f78"],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
+    claims = build_source_claims(
+        source_text,
+        source_id=source_id,
+        source_client_session_id="ios-session-1",
+        approval_state="approved",
+    )
+    assert repaired["slides"][0]["source_claim_ids"][0] == claims[0]["claim_id"]
+
+
+def test_bridge_distributes_missing_istanbul_claims_without_appendix_slides():
+    import scripts.hermes_bridge as bridge
+    from backend.services.presentation_source_trace import build_source_claims
+
+    source_text = (Path(__file__).parent / "fixtures/presentation/istanbul-source.md").read_text()
+    digest = hashlib.sha256(source_text.encode()).hexdigest()
+    run = {
+        "source_material": {
+            "text": source_text,
+            "source_id": f"txt_{digest[:32]}",
+            "source_client_session_id": "ios-session-1",
+        }
+    }
+    outline = {
+        "title": "伊斯坦布尔",
+        "slides": [
+            {"layout": "title", "title": "伊斯坦布尔两日总览", "key_points": [], "source_claim_ids": []},
+            {"layout": "bullets", "title": "入境与签证", "key_points": [], "source_claim_ids": []},
+            {"layout": "timeline", "title": "机场交通与换乘", "key_points": [], "source_claim_ids": []},
+            {"layout": "route_map", "title": "D1 欧洲侧", "key_points": [], "source_claim_ids": []},
+            {"layout": "route_map", "title": "D2 欧洲侧到亚洲侧", "key_points": [], "source_claim_ids": []},
+        ],
+    }
+    repaired = json.loads(
+        bridge._ensure_outline_claim_coverage(run, json.dumps(outline, ensure_ascii=False))
+    )
+    assert len(repaired["slides"]) == len(outline["slides"])
+    assert all("原文完整性补充" not in slide["title"] for slide in repaired["slides"])
+    claims = build_source_claims(
+        source_text,
+        source_id=f"txt_{digest[:32]}",
+        source_client_session_id="ios-session-1",
+        approval_state="approved",
+    )
+    bound = {
+        claim_id
+        for slide in repaired["slides"]
+        for claim_id in slide["source_claim_ids"]
+    }
+    assert bound == {claim["claim_id"] for claim in claims}
+    projected = "\n".join(
+        point for slide in repaired["slides"] for point in slide.get("key_points") or []
+    )
+    assert "普通护照并非免签" in projected
+    assert "不适合女生" not in projected
+    assert "Kuzguncuk在亚洲侧" in projected
+
+
 def test_bridge_visual_layout_normalization_is_renderer_safe_and_fail_closed():
     import scripts.hermes_bridge as bridge
 
@@ -777,6 +921,68 @@ def test_presentation_design_accepts_outline_within_its_declared_output_limit(mo
     assert outline_text in prompt
 
 
+def test_presentation_design_accepts_full_fourteen_slide_outline(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    outline_text = "o" * 18_000
+    outline = {
+        "id": "presentation_outline",
+        "name": "outline",
+        "node_type": "LLM_INFERENCE",
+        "parameters": {"output_format": "presentation_outline", "max_tokens": 8000},
+    }
+    design = {
+        "id": "presentation_design",
+        "name": "design",
+        "node_type": "LLM_INFERENCE",
+        "parameters": {"output_format": "presentation_design", "max_tokens": 8000},
+    }
+    monkeypatch.setattr(bridge, "_approved_presentation_outline", lambda run: ({}, {}))
+    run = {
+        "goal": "deck",
+        "deliverable": "pptx",
+        "plan": {
+            "nodes": [outline, design],
+            "edges": [{"source": "presentation_outline", "target": "presentation_design"}],
+        },
+        "nodes": {"presentation_outline": {"status": "succeeded", "output": outline_text}},
+    }
+    prompt = bridge._workflow_node_prompt(run, design)
+    assert outline_text in prompt
+
+
+def test_final_presentation_uses_approved_outline_projection_without_raw_duplication(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    approved_outline = {
+        "title": "Istanbul",
+        "slides": [{"layout": "route_map", "title": "D1", "key_points": ["route"]}],
+    }
+    monkeypatch.setattr(bridge, "_approved_presentation_outline", lambda run: (approved_outline, {}))
+    outline = {"id": "presentation_outline", "name": "outline", "parameters": {"output_format": "presentation_outline"}}
+    design = {"id": "presentation_design", "name": "design", "parameters": {"output_format": "presentation_design"}}
+    deck = {"id": "presentation_deck", "name": "deck", "node_type": "OUTPUT_FORMAT", "parameters": {"output_format": "presentation", "max_tokens": 16000}}
+    run = {
+        "goal": "deck",
+        "deliverable": "pptx",
+        "plan": {
+            "nodes": [outline, design, deck],
+            "edges": [
+                {"source": "presentation_outline", "target": "presentation_deck"},
+                {"source": "presentation_design", "target": "presentation_deck"},
+            ],
+        },
+        "nodes": {
+            "presentation_outline": {"status": "succeeded", "output": "RAW_OUTLINE_MUST_NOT_REPEAT"},
+            "presentation_design": {"status": "succeeded", "output": "approved design"},
+        },
+    }
+    prompt = bridge._workflow_node_prompt(run, deck)
+    assert "RAW_OUTLINE_MUST_NOT_REPEAT" not in prompt
+    assert "已批准逐页大纲" in prompt
+    assert "approved design" in prompt
+
+
 def test_final_presentation_prompt_still_rejects_context_above_generation_limit(monkeypatch):
     import scripts.hermes_bridge as bridge
 
@@ -981,6 +1187,85 @@ async def test_workflow_projection_rechecks_approved_design_against_final_theme(
         )
 
 
+@pytest.mark.asyncio
+async def test_workflow_projection_accepts_only_matching_ungated_stage_artifacts(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    import backend.services.workflow_artifacts as artifacts
+    import backend.services.workflow_executor as executor
+
+    design_text = json.dumps({
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "sample"}],
+    })
+    outline_text = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+    (tmp_path / "design.json").write_text(design_text)
+    (tmp_path / "outline.json").write_text(outline_text)
+    design_hash = hashlib.sha256(design_text.encode()).hexdigest()
+    outline_hash = hashlib.sha256(outline_text.encode()).hexdigest()
+    design_node = SimpleNamespace(id="node-design", node_id="presentation_design")
+    outline_node = SimpleNamespace(id="node-outline", node_id="presentation_outline")
+    design = SimpleNamespace(
+        execution_id="exec-generated", node_run_id=design_node.id,
+        content_hash=design_hash, relative_path="design.json",
+        metadata_json={"artifact_version": 1, "render_type": "presentation_design"},
+    )
+    outline = SimpleNamespace(
+        execution_id="exec-generated", node_run_id=outline_node.id,
+        content_hash=outline_hash, relative_path="outline.json",
+        metadata_json={"artifact_version": 1, "render_type": "presentation_outline"},
+    )
+
+    class DB:
+        def __init__(self):
+            self.artifacts = iter([design, outline])
+
+        async def scalar(self, query):
+            return next(self.artifacts)
+
+    monkeypatch.setattr(artifacts, "run_root", lambda execution: tmp_path)
+    monkeypatch.setattr(
+        executor,
+        "_plan",
+        lambda db, execution: asyncio.sleep(0, result=SimpleNamespace(dsl={"nodes": [
+            {"id": "presentation_design", "parameters": {"output_format": "presentation_design"}},
+            {"id": "presentation_outline", "parameters": {"output_format": "presentation_outline"}},
+        ]})),
+    )
+    monkeypatch.setattr(
+        executor,
+        "_nodes",
+        lambda db, execution_id: asyncio.sleep(0, result={
+            design_node.node_id: design_node,
+            outline_node.node_id: outline_node,
+        }),
+    )
+    execution = SimpleNamespace(id="exec-generated", plan_id="plan-generated")
+    final = {
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "deck"}],
+    }
+    await executor._assert_approved_presentation_projection(
+        DB(), execution,
+        {
+            "approved_design": {
+                "approval_mode": "generated_verified", "node_id": design_node.node_id,
+                "content_hash": design_hash, "artifact_version": 1,
+            },
+            "approved_outline": {
+                "approval_mode": "generated_verified", "node_id": outline_node.node_id,
+                "content_hash": outline_hash, "artifact_version": 1,
+            },
+            "content": json.dumps(final),
+        },
+        "presentation",
+    )
+
+
 def test_final_presentation_requires_approved_outline_binding_and_structure():
     import scripts.hermes_bridge as bridge
 
@@ -1043,6 +1328,59 @@ def test_final_presentation_requires_approved_outline_binding_and_structure():
     assert len(rebuilt_slides) == len(json.loads(outline)["slides"])
     assert rebuilt_slides[1]["layout"] == "bullets"
     assert rebuilt_slides[1]["bullets"] == json.loads(outline)["slides"][1]["key_points"]
+    run["nodes"]["presentation_outline"]["output"] = outline + " "
+    with pytest.raises(RuntimeError, match="outline.*tampered"):
+        bridge._bind_approved_presentation_inputs(run, final)
+
+
+def test_default_presentation_binds_verified_ungated_outline_and_design():
+    import scripts.hermes_bridge as bridge
+
+    outline = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+    design = json.dumps({
+        "theme": THEME_A,
+        "slides": [{"layout": "title", "title": "sample"}],
+    })
+    run = {
+        "plan": {"nodes": [
+            {"id": "presentation_outline", "parameters": {"output_format": "presentation_outline"}},
+            {"id": "presentation_design", "parameters": {"output_format": "presentation_design"}},
+        ]},
+        "nodes": {
+            "presentation_outline": {
+                "status": "succeeded", "attempt": 1, "output": outline,
+                "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+            },
+            "presentation_design": {
+                "status": "succeeded", "attempt": 1, "output": design,
+                "content_hash": hashlib.sha256(design.encode()).hexdigest(),
+            },
+        },
+        "approved_gates": [],
+        "approved_gate_artifacts": {},
+    }
+    final = json.dumps({
+        "title": "deck",
+        "slides": [{"layout": "title", "title": "deck"}],
+    })
+
+    _, design_binding, outline_binding = bridge._bind_approved_presentation_inputs(run, final)
+
+    assert design_binding == {
+        "approval_mode": "generated_verified",
+        "node_id": "presentation_design",
+        "content_hash": hashlib.sha256(design.encode()).hexdigest(),
+        "artifact_version": 1,
+    }
+    assert outline_binding == {
+        "approval_mode": "generated_verified",
+        "node_id": "presentation_outline",
+        "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+        "artifact_version": 1,
+    }
     run["nodes"]["presentation_outline"]["output"] = outline + " "
     with pytest.raises(RuntimeError, match="outline.*tampered"):
         bridge._bind_approved_presentation_inputs(run, final)
@@ -1163,7 +1501,7 @@ def test_workflow_retry_refreshes_expired_authorization_without_scope_widening(m
     assert run["knowledge_scope"] == []
 
 
-def test_presentation_scenario_analyzes_source_before_two_business_gates_and_binary_deck():
+def test_presentation_scenario_defaults_to_full_draft_review_and_binary_deck():
     workflow = type(
         "Workflow",
         (),
@@ -1180,13 +1518,14 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
         },
     )()
     plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
     assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
         None,
-        "outline",
-        "design",
+        None,
+        None,
         None,
     ]
-    assert plan["version"] == "2.0.0"
+    assert plan["version"] == "3.0.0"
     assert plan["nodes"][0]["id"] == "presentation_analysis"
     assert plan["nodes"][-1]["parameters"]["output_format"] == "presentation"
     assert {tuple(edge.values()) for edge in plan["edges"]} >= {
@@ -1195,6 +1534,56 @@ def test_presentation_scenario_analyzes_source_before_two_business_gates_and_bin
         ("presentation_design", "presentation_deck"),
     }
     assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 4
+
+
+def test_presentation_risk_review_gates_require_explicit_policy():
+    snapshot = {
+        "scenario_id": "presentation-generation",
+        "text_material": "Approved source material.",
+        "presentation_review_gates": ["outline", "design"],
+    }
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "Regulated deck",
+            "requirements_snapshot": snapshot,
+        },
+    )()
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
+    assert [node["parameters"].get("approval_gate") for node in plan["nodes"]] == [
+        None,
+        "outline",
+        "design",
+        None,
+    ]
+
+    snapshot["presentation_review_gates"] = ["unknown"]
+    with pytest.raises(ValueError, match="presentation_review_gates"):
+        build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+
+
+def test_presentation_default_path_has_no_intermediate_approval_gates():
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "Default three-step deck",
+            "description": "Requirements are already confirmed.",
+            "requirements_snapshot": {
+                "scenario_id": "presentation-generation",
+                "text_material": "Approved source material.",
+            },
+        },
+    )()
+
+    plan = build_presentation_plan(workflow, plan_id="plan", knowledge_scope=[])
+
+    assert plan is not None
+    assert [
+        node["parameters"].get("approval_gate") for node in plan["nodes"]
+    ] == [None, None, None, None]
 
 
 def test_presentation_scenario_without_upload_researches_user_topic_first():
@@ -1240,6 +1629,260 @@ def test_text_material_presentation_does_not_read_unscoped_private_knowledge():
     assert "用户提供的文字材料" in plan["nodes"][0]["parameters"]["instruction"]
 
 
+def test_inline_text_material_is_hash_bound_to_its_client_session():
+    from backend.services.workflow_executor import inline_source_material
+
+    material = inline_source_material(
+        {
+            "text_material": "只允许当前会话使用的伊斯坦布尔材料。",
+            "source_client_session_id": "session-istanbul",
+        },
+        workflow_id="wf-current",
+    )
+    assert material is not None
+    assert material["source_id"].startswith("txt_")
+    assert material["source_client_session_id"] == "session-istanbul"
+    assert material["scope_state"] == "bound"
+    assert material["content_hash"] == hashlib.sha256(
+        material["text"].encode("utf-8")
+    ).hexdigest()
+
+    legacy = inline_source_material(
+        {"text_material": "升级前材料"}, workflow_id="wf-legacy"
+    )
+    assert legacy is not None
+    assert legacy["source_client_session_id"] == "legacy-workflow:wf-legacy"
+    assert legacy["scope_state"] == "legacy_isolated"
+
+
+def test_bridge_injects_exact_claim_inventory_for_inline_presentation_material():
+    import scripts.hermes_bridge as bridge
+
+    text = "伊斯坦布尔横跨欧亚。博斯普鲁斯海峡连接两岸。"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    analysis = {
+        "id": "presentation_analysis",
+        "node_type": "LLM_INFERENCE",
+        "name": "分析",
+        "parameters": {"output_format": "markdown", "max_tokens": 5000},
+    }
+    deck = {
+        "id": "presentation_deck",
+        "node_type": "OUTPUT_FORMAT",
+        "name": "成品",
+        "parameters": {"output_format": "presentation", "max_tokens": 16000},
+    }
+    payload = {
+        "tenant_id": "tenant-a",
+        "execution_id": "exec-a",
+        "idempotency_key": "request-a",
+        "goal": "制作伊斯坦布尔 PPT",
+        "deliverable": "pptx",
+        "plan": {"nodes": [analysis, deck], "edges": []},
+        "knowledge_capability": "capability-token-value",
+        "knowledge_policy_version": "policy-v1",
+        "source_material": {
+            "source_id": f"txt_{digest[:32]}",
+            "content_hash": digest,
+            "text": text,
+            "source_client_session_id": "session-istanbul",
+            "scope_state": "bound",
+        },
+    }
+    run = bridge.WorkflowRunRequest.model_validate(payload).model_dump(exclude_none=True)
+    prompt = bridge._workflow_node_prompt(run, analysis)
+    assert text in prompt
+    assert "批准的用户材料事实清单" in prompt
+    assert f"txt_{digest[:32]}:c001" in prompt
+    assert "不得引入未批准事实" in prompt
+
+    tampered = copy.deepcopy(payload)
+    tampered["source_material"]["content_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="invalid inline source material"):
+        bridge.WorkflowRunRequest.model_validate(tampered)
+
+
+def test_bridge_injects_deterministic_istanbul_travel_contract():
+    import scripts.hermes_bridge as bridge
+
+    text = (Path(__file__).parent / "fixtures/presentation/istanbul-source.md").read_text()
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    analysis = {
+        "id": "presentation_analysis",
+        "node_type": "LLM_INFERENCE",
+        "name": "分析",
+        "parameters": {"output_format": "markdown", "max_tokens": 5000},
+    }
+    deck = {
+        "id": "presentation_deck",
+        "node_type": "OUTPUT_FORMAT",
+        "name": "成品",
+        "parameters": {"output_format": "presentation", "max_tokens": 16000},
+    }
+    run = bridge.WorkflowRunRequest.model_validate(
+        {
+            "tenant_id": "tenant-a",
+            "execution_id": "exec-istanbul-contract",
+            "idempotency_key": "request-istanbul-contract",
+            "goal": "制作伊斯坦布尔 PPT",
+            "deliverable": "pptx",
+            "plan": {"nodes": [analysis, deck], "edges": []},
+            "knowledge_capability": "capability-token-value",
+            "knowledge_policy_version": "policy-v1",
+            "source_material": {
+                "source_id": f"txt_{digest[:32]}",
+                "content_hash": digest,
+                "text": text,
+                "source_client_session_id": "session-istanbul",
+                "scope_state": "bound",
+            },
+        }
+    ).model_dump(exclude_none=True)
+
+    prompt = bridge._workflow_node_prompt(run, analysis)
+    assert "确定性旅行编排合同" in prompt
+    assert "禁止新增原文没有的酒店榜单" in prompt
+    assert "中国大陆普通护照旅游或商务不是免签" in prompt
+    assert "M11到Gayrettepe，再换M2" in prompt
+    assert "Kuzguncuk在亚洲侧" in prompt
+    assert "165里拉制卡费" in prompt
+
+
+def test_bridge_corrects_m11_first_stop_wording_in_final_deck():
+    import scripts.hermes_bridge as bridge
+
+    run = {
+        "source_material": {
+            "text": "伊斯坦布尔 IST 搭乘M11第一站坐到Gayrettepe",
+        }
+    }
+    value = {
+        "slides": [
+            {
+                "title": "机场进城",
+                "body": "M11第一站下车，换乘M2",
+                "bullets": ["搭乘M11第一站坐到Gayrettepe"],
+            }
+        ]
+    }
+
+    bridge._enforce_istanbul_final_facts(run, value)
+
+    rendered = json.dumps(value, ensure_ascii=False)
+    assert "M11第一站" not in rendered
+    assert "M11至Gayrettepe（并非IST后的下一站）" in rendered
+
+
+def test_final_presentation_source_trace_requires_complete_approved_outline_mapping():
+    import scripts.hermes_bridge as bridge
+    from backend.services.presentation_source_trace import build_source_claims
+
+    text = "伊斯坦布尔横跨欧亚。博斯普鲁斯海峡连接两岸。"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    claims = build_source_claims(
+        text,
+        source_id=f"txt_{digest[:32]}",
+        source_client_session_id="session-istanbul",
+        approval_state="approved",
+    )
+    outline_value = {
+        "title": "伊斯坦布尔",
+        "slides": [
+            {
+                "layout": "title",
+                "title": "横跨欧亚",
+                "source_claim_ids": [claim["claim_id"] for claim in claims],
+            }
+        ],
+    }
+    outline = json.dumps(outline_value, ensure_ascii=False, separators=(",", ":"))
+    run = {
+        "source_material": {
+            "source_id": f"txt_{digest[:32]}",
+            "content_hash": digest,
+            "text": text,
+            "source_client_session_id": "session-istanbul",
+            "scope_state": "bound",
+        },
+        "plan": {
+            "nodes": [
+                {
+                    "id": "presentation_outline",
+                    "parameters": {"output_format": "presentation_outline"},
+                }
+            ]
+        },
+        "nodes": {
+            "presentation_outline": {
+                "status": "succeeded",
+                "attempt": 1,
+                "output": outline,
+            }
+        },
+        "approved_gates": ["presentation_outline"],
+        "approved_gate_artifacts": {
+            "presentation_outline": {
+                "artifact_version": 1,
+                "content_hash": hashlib.sha256(outline.encode()).hexdigest(),
+            }
+        },
+    }
+    manifest = bridge._presentation_source_trace(run)
+    assert manifest is not None
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(
+        Path("backend/contracts/presentation/source-trace.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    Draft202012Validator(schema).validate(manifest)
+    assert manifest["record_count"] == len(claims)
+    assert manifest["slide_ids"] == ["slide-001"]
+    assert all(item["approval_state"] == "approved" for item in manifest["records"])
+
+    incomplete = copy.deepcopy(run)
+    incomplete_outline = copy.deepcopy(outline_value)
+    incomplete_outline["slides"][0]["source_claim_ids"] = [claims[0]["claim_id"]]
+    incomplete_text = json.dumps(incomplete_outline, ensure_ascii=False, separators=(",", ":"))
+    incomplete["nodes"]["presentation_outline"]["output"] = incomplete_text
+    incomplete["approved_gate_artifacts"]["presentation_outline"]["content_hash"] = (
+        hashlib.sha256(incomplete_text.encode()).hexdigest()
+    )
+    with pytest.raises(RuntimeError, match="does not cover every source claim"):
+        bridge._presentation_source_trace(incomplete)
+
+    unmapped = copy.deepcopy(run)
+    unmapped_outline = copy.deepcopy(outline_value)
+    unmapped_outline["slides"].append(
+        {"layout": "content", "title": "无来源页面", "source_claim_ids": []}
+    )
+    unmapped_text = json.dumps(unmapped_outline, ensure_ascii=False, separators=(",", ":"))
+    unmapped["nodes"]["presentation_outline"]["output"] = unmapped_text
+    unmapped["approved_gate_artifacts"]["presentation_outline"]["content_hash"] = (
+        hashlib.sha256(unmapped_text.encode()).hexdigest()
+    )
+    with pytest.raises(RuntimeError, match="slides without source claims"):
+        bridge._presentation_source_trace(unmapped)
+
+
+def test_artifact_storage_contract_preserves_source_trace_metadata():
+    from backend.services.workflow_executor import artifact_storage_contract
+
+    node = type(
+        "Node", (),
+        {"node_id": "presentation_deck", "agent_id": "main", "model_used": "m", "provider_used": "p", "attempt": 1},
+    )()
+    trace = {"schema_version": 1, "content_hash": "a" * 64, "records": [{"claim_id": "c1"}]}
+    extension, metadata = artifact_storage_contract(
+        {"render_type": "presentation", "source_trace": trace},
+        event_id="event-1",
+        node=node,  # type: ignore[arg-type]
+    )
+    assert extension == "pptx"
+    assert metadata["source_trace"] == trace
+
+
 def test_document_scenario_generates_real_word_output_with_two_confirmation_gates():
     from backend.services.presentation_scenario import build_document_plan
 
@@ -1262,6 +1905,36 @@ def test_document_scenario_generates_real_word_output_with_two_confirmation_gate
     ]
     assert plan["nodes"][-1]["parameters"]["output_format"] == "word"
     assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 5
+
+
+def test_document_scenario_uses_bound_text_without_unrelated_knowledge_retrieval():
+    from backend.services.presentation_scenario import build_document_plan
+
+    workflow = type(
+        "Workflow",
+        (),
+        {
+            "title": "经营计划",
+            "description": "根据已提供材料生成 Word",
+            "requirements_snapshot": {
+                "scenario_id": "document-generation",
+                "text_material": "收入目标与交付里程碑均已由用户提供。",
+                "document_profile": {"kind": "word", "evidence_policy": "user_material_only"},
+            },
+        },
+    )()
+
+    plan = build_document_plan(workflow, plan_id="plan", knowledge_scope=[])
+    assert plan is not None
+
+    assert [node["id"] for node in plan["nodes"]] == [
+        "document_analysis",
+        "document_outline",
+        "document_draft",
+        "document_file",
+    ]
+    assert all(node["node_type"] != "KNOWLEDGE_RETRIEVAL" for node in plan["nodes"])
+    assert len(DSLSafetyCompiler.compile_and_validate(plan).nodes) == 4
 
 
 def test_presentation_workflow_uses_presentation_questions_and_reads_source_in_analysis():

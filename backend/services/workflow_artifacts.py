@@ -83,11 +83,21 @@ def _xml_safe_text(value: str) -> str:
 
 
 def _docx_bytes(content: str) -> bytes:
-    paragraphs = content.split("\n\n") or [""]
-    body = "".join(
-        f'<w:p><w:r><w:t xml:space="preserve">{escape(_xml_safe_text(paragraph))}</w:t></w:r></w:p>'
-        for paragraph in paragraphs
-    )
+    # A form feed is the governed plain-text page-break token emitted by the
+    # document workflow.  Keeping the token in the renderer (rather than
+    # estimating pagination from font metrics) makes DOCX pagination and
+    # revision hashes deterministic on every host.
+    pages = content.split("\f") or [""]
+    rendered_pages: list[str] = []
+    for page_number, page in enumerate(pages):
+        paragraphs = page.split("\n\n") or [""]
+        rendered_pages.extend(
+            f'<w:p><w:r><w:t xml:space="preserve">{escape(_xml_safe_text(paragraph))}</w:t></w:r></w:p>'
+            for paragraph in paragraphs
+        )
+        if page_number < len(pages) - 1:
+            rendered_pages.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+    body = "".join(rendered_pages)
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

@@ -30,6 +30,7 @@ from backend.api.auth import require_auth
 from backend.api.catalog import compute_catalog
 from backend.api.identity import match_identity_rule
 from backend.db import SessionLocal
+from backend.services.workflow_session_scope import register_client_session
 from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
@@ -147,6 +148,16 @@ HERMES_BRIDGE_PREWARM_URL = os.environ.get(
     "http://host.docker.internal:9118/v1/chat/prewarm",
 )
 HERMES_BRIDGE_INTERNAL_TOKEN = os.environ.get("HERMES_BRIDGE_INTERNAL_TOKEN", "")
+
+
+def _comparison_table_requested(question: str) -> bool:
+    return len(question) <= 500 and bool(
+        re.search(
+            r"对比(?:一下|下)?|比较(?:一下|下)|\bvs\b|区别|差异|哪个好",
+            question,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _bridge_url_for_placement(
@@ -1019,6 +1030,7 @@ def _message_sse(answer: str, *, clarify: ClarifyPayload | None = None) -> Itera
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     """问答接口 — 身份规则优先，其余直接透传 Hermes 并经首屏熔断与 citations 提炼。"""
+    await register_client_session(payload, req.session_id, req.request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,
@@ -1453,6 +1465,7 @@ def _identity_sse(
 async def _call_bridge_stream(
     goal: str,
     session_id: str,
+    client_session_id: Optional[str] = None,
     regenerate: bool = False,
     skill_id: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -1478,6 +1491,7 @@ async def _call_bridge_stream(
             json={
                 "goal": _bounded_bridge_goal(goal, knowledge_capability),
                 "session_id": session_id,
+                "client_session_id": client_session_id,
                 "regenerate": regenerate,
                 "skill_id": skill_id,
                 "request_id": request_id,
@@ -1753,6 +1767,7 @@ async def stream_chat(
     身份话术规则秒回：命中即合成 SSE 流直接返回，零 agent 拉起（「你是谁」秒答）。
     """
     effective_request_id = req.request_id or uuid.uuid4().hex
+    await register_client_session(payload, req.session_id, effective_request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,
@@ -1826,7 +1841,7 @@ async def stream_chat(
                 # Trusted platform marker: selected text carried with an
                 # authorized reading scope, not an ungrounded Wiki question.
                 goal = "[SERVER_SELECTION_CONTEXT]\n" + goal
-    if re.search(r"对比|比较|vs|区别|差异|哪个好|对比一下", req.question, re.IGNORECASE):
+    if _comparison_table_requested(req.question):
         goal += (
             "\n\n（输出要求：本问题涉及两个及以上主体对比，请使用 Markdown 表格呈现，"
             "每行一个对比维度、首列为维度名；表格前后各空一行。禁止用罗列式 bullet 代替表格。"
@@ -1995,6 +2010,7 @@ async def stream_chat(
                 "qws_business_context": qws_business_context,
                 "qws_context_capability": qws_context_capability,
                 "client_capabilities": req.client_capabilities,
+                "client_session_id": req.session_id,
             }
             kwargs["request_id"] = effective_request_id
             model_attempted = True

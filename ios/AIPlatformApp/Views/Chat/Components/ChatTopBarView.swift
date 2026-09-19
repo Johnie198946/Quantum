@@ -42,6 +42,7 @@ public struct ChatTopBarView: View {
             }
             .buttonStyle(SoftButtonStyle())
             .accessibilityLabel("会话列表")
+            .accessibilityIdentifier("chat-history")
 
             Button(action: onTitleTap) {
                 Text(title.isEmpty ? "新对话" : title)

@@ -71,11 +71,19 @@ public struct MainTabView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.isDevMode)
-        .onAppear {
+        .task(id: workflowScopeTaskID) {
+            // Login/profile hydration and chat-session restoration complete on
+            // different async paths. Bind the owner before selecting the
+            // conversation so an early session cannot leave Task unscoped.
+            let tenantId = appState.currentTenantKey
+            let userId = appState.currentUserId
+            guard !tenantId.isEmpty, !userId.isEmpty else {
+                workflowActivities.deactivate()
+                return
+            }
+            workflowActivities.activate(tenantKey: tenantId, userId: userId)
             workflowActivities.selectClientSession(sessionManager.activeSessionId)
-        }
-        .onChange(of: sessionManager.activeSessionId) { _, sessionId in
-            workflowActivities.selectClientSession(sessionId)
+            await workflowActivities.bootstrap()
         }
     }
 
@@ -107,6 +115,14 @@ public struct MainTabView: View {
             }
             QuantumFloatingTabBar(selection: $appState.activeTab)
         }
+    }
+
+    private var workflowScopeTaskID: String {
+        [
+            appState.currentTenantKey,
+            appState.currentUserId,
+            sessionManager.activeSessionId ?? ""
+        ].joined(separator: "\u{0}")
     }
 }
 

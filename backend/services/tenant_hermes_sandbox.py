@@ -9,6 +9,7 @@ are never used as path segments.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
 import hashlib
 import json
 import os
@@ -177,7 +178,14 @@ def ensure_tenant_sandbox(
                 # final rename is atomic and never exposes a partial template.
                 payload = staging / "payload"
                 _copy_template_version(source, payload)
-                os.replace(payload, active_template)
+                try:
+                    os.replace(payload, active_template)
+                except OSError as error:
+                    if (
+                        error.errno not in {errno.EEXIST, errno.ENOTEMPTY}
+                        or not active_template.is_dir()
+                    ):
+                        raise
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
         migrated_state_db = bool(previous_manifest.get("legacy_state_db_migrated"))
@@ -196,11 +204,18 @@ def ensure_tenant_sandbox(
             "legacy_state_db_migrated": migrated_state_db,
             "legacy_tenant_skills_quarantined": legacy_tenant_skills.is_dir(),
         }
-        temporary = manifest_path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(manifest, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".profile-", suffix=".tmp", dir=manifest_path.parent
         )
-        os.replace(temporary, manifest_path)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, manifest_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     return TenantHermesSandbox(
         tenant_namespace=tenant_ns,

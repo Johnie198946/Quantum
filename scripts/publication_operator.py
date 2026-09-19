@@ -8,6 +8,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from backend.services.knowledge_publication_store import PublicationError, PublicationStore, receipt_set_hash
 from backend.services.follow_builders_publication import load_candidate

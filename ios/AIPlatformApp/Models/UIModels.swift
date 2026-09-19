@@ -473,14 +473,79 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
     public let input: CapabilityProposalInput
     public let summary: String
     public let risk: String
+    /// One-time server token. Decoded from the live event and never persisted.
+    public var confirmationToken: String?
+    public let expiresAt: String?
     public var state: CapabilityProposalState = .awaitingConfirmation
     public var errorMessage: String?
 
+    public init(
+        id: String,
+        capabilityId: String,
+        input: CapabilityProposalInput,
+        summary: String,
+        risk: String,
+        confirmationToken: String? = nil,
+        expiresAt: String? = nil,
+        state: CapabilityProposalState = .awaitingConfirmation,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.capabilityId = capabilityId
+        self.input = input
+        self.summary = summary
+        self.risk = risk
+        self.confirmationToken = confirmationToken
+        self.expiresAt = expiresAt
+        self.state = state
+        self.errorMessage = errorMessage
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id = "proposal_id"
-        case capabilityId = "capability_id"
+        case id
+        case proposalId
+        case proposalIDSnake = "proposal_id"
+        case capabilityId
+        case capabilityIDSnake = "capability_id"
         case input, summary, risk, state
-        case errorMessage = "error_message"
+        case confirmationToken
+        case confirmationTokenSnake = "confirmation_token"
+        case expiresAt
+        case expiresAtSnake = "expires_at"
+        case errorMessage
+        case errorMessageSnake = "error_message"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(String.self, forKey: .id)
+            ?? values.decodeIfPresent(String.self, forKey: .proposalId)
+            ?? values.decode(String.self, forKey: .proposalIDSnake)
+        capabilityId = try values.decodeIfPresent(String.self, forKey: .capabilityId)
+            ?? values.decode(String.self, forKey: .capabilityIDSnake)
+        input = try values.decode(CapabilityProposalInput.self, forKey: .input)
+        summary = try values.decode(String.self, forKey: .summary)
+        risk = try values.decode(String.self, forKey: .risk)
+        confirmationToken = try values.decodeIfPresent(String.self, forKey: .confirmationToken)
+            ?? values.decodeIfPresent(String.self, forKey: .confirmationTokenSnake)
+        expiresAt = try values.decodeIfPresent(String.self, forKey: .expiresAt)
+            ?? values.decodeIfPresent(String.self, forKey: .expiresAtSnake)
+        state = try values.decodeIfPresent(CapabilityProposalState.self, forKey: .state) ?? .awaitingConfirmation
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+            ?? values.decodeIfPresent(String.self, forKey: .errorMessageSnake)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .proposalIDSnake)
+        try values.encode(capabilityId, forKey: .capabilityIDSnake)
+        try values.encode(input, forKey: .input)
+        try values.encode(summary, forKey: .summary)
+        try values.encode(risk, forKey: .risk)
+        try values.encodeIfPresent(expiresAt, forKey: .expiresAtSnake)
+        try values.encode(state, forKey: .state)
+        try values.encodeIfPresent(errorMessage, forKey: .errorMessageSnake)
+        // confirmationToken is intentionally excluded from durable chat history.
     }
 
     public var idempotencyKey: String { id }
@@ -488,8 +553,8 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
     public var restoredForRetry: Self {
         guard state == .applying else { return self }
         var restored = self
-        restored.state = .awaitingConfirmation
-        restored.errorMessage = nil
+        restored.state = confirmationToken == nil ? .failed : .awaitingConfirmation
+        restored.errorMessage = confirmationToken == nil ? "确认凭证已失效，请重新发起操作" : nil
         return restored
     }
 }
@@ -974,8 +1039,12 @@ public struct PersistedMessage: Codable, Sendable {
 public extension ChatMessage {
     @discardableResult
     mutating func appendCapabilityBlock(from event: QCPStreamEvent) -> MessageBlock? {
+        guard event.version == 1,
+              event.rendererVersion == 1,
+              RendererRegistry.accepts(eventType: event.type, renderer: event.renderer)
+        else { return nil }
         let block: MessageBlock
-        switch RendererRegistry.route(for: event.type, version: event.version) {
+        switch RendererRegistry.route(for: event) {
         case .confirmation:
             guard let proposal = try? JSONDecoder().decode(
                 CapabilityProposalBlock.self, from: event.payload
@@ -1137,6 +1206,7 @@ public final class SessionManager: ObservableObject {
     private var persistedFingerprints: [String: [String: Int]] = [:]
     private struct PersistenceWriteKey: Hashable, Sendable {
         let sessionId: String
+        let accountFingerprint: String
         let accountEpoch: Int
         let sessionEpoch: Int
     }
@@ -1153,6 +1223,14 @@ public final class SessionManager: ObservableObject {
 
         var messages: [ChatMessage] { order.compactMap { messagesById[$0] } }
     }
+    private struct ExhaustedPersistenceWrite: Sendable {
+        var batch: PendingPersistenceWrite
+        let store: ChatHistoryStore
+    }
+    private struct FailedPersistenceMutationKey: Hashable, Sendable {
+        let sessionId: String
+        let accountFingerprint: String
+    }
     private enum PersistenceDrainAction: Sendable { case stop, continueBeforeBarrier }
     /// A stream may update the same assistant message hundreds of times. Keep only
     /// the latest not-yet-written snapshot for each account/session epoch instead
@@ -1164,6 +1242,9 @@ public final class SessionManager: ObservableObject {
     /// never cancel or replace this tail: each task captures its own account store.
     private var persistenceTail: Task<Void, Never>? = nil
     private var persistenceTaskGeneration: UInt64 = 0
+    private var exhaustedPersistenceMessageIDs: [PersistenceWriteKey: Set<String>] = [:]
+    private var exhaustedPersistenceWrites: [PersistenceWriteKey: ExhaustedPersistenceWrite] = [:]
+    private var failedPersistenceMutations: Set<FailedPersistenceMutationKey> = []
     private var accountEpoch: Int = 0
     /// Invalidates stale completion projections after a destructive session mutation.
     private var sessionPersistenceEpoch: [String: Int] = [:]
@@ -1634,10 +1715,15 @@ public final class SessionManager: ObservableObject {
         guard sessionTitles[id] != nil else { return }
         let key = PersistenceWriteKey(
             sessionId: id,
+            accountFingerprint: accountFingerprint,
             accountEpoch: accountEpoch,
             sessionEpoch: sessionPersistenceEpoch[id, default: 0]
         )
         var pending = pendingPersistenceWrites[key] ?? PendingPersistenceWrite()
+        if let exhausted = exhaustedPersistenceWrites.removeValue(forKey: key) {
+            pending.merge(exhausted.batch.messages)
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+        }
         pending.merge(dirty)
         pendingPersistenceWrites[key] = pending
         guard scheduledPersistenceWrites.insert(key).inserted else { return }
@@ -1697,6 +1783,10 @@ public final class SessionManager: ObservableObject {
         retryFailedBatch: Bool
     ) -> PersistenceDrainAction {
         if let messageCount {
+            exhaustedPersistenceMessageIDs[key]?.subtract(fingerprints.keys)
+            if exhaustedPersistenceMessageIDs[key]?.isEmpty == true {
+                exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            }
             finishPersistence(
                 sessionId: key.sessionId,
                 fingerprints: fingerprints,
@@ -1714,6 +1804,18 @@ public final class SessionManager: ObservableObject {
                 retry.merge(newer.messages)
             }
             pendingPersistenceWrites[key] = retry
+        } else {
+            var exhausted = exhaustedPersistenceWrites.removeValue(forKey: key)?.batch
+                ?? PendingPersistenceWrite()
+            exhausted.merge(batch.messages)
+            if let newer = pendingPersistenceWrites.removeValue(forKey: key) {
+                exhausted.merge(newer.messages)
+            }
+            exhaustedPersistenceWrites[key] = ExhaustedPersistenceWrite(
+                batch: exhausted,
+                store: store
+            )
+            exhaustedPersistenceMessageIDs[key, default: []].formUnion(exhausted.messages.map(\.id))
         }
         guard pendingPersistenceWrites[key] != nil else {
             scheduledPersistenceWrites.remove(key)
@@ -1756,6 +1858,7 @@ public final class SessionManager: ObservableObject {
     ) {
         let previous = persistenceTail
         let store = self.store
+        let expectedAccountFingerprint = accountFingerprint
         let expectedAccountEpoch = accountEpoch
         let expectedSessionEpoch = sessionPersistenceEpoch[sessionId, default: 0]
         let expectedMetadataEpoch = sessionMetadataEpoch[sessionId, default: 0]
@@ -1772,6 +1875,7 @@ public final class SessionManager: ObservableObject {
                     sessionId: sessionId,
                     promotedTopic: promotedTopic,
                     queuedTopicBeforePromotion: queuedTopicBeforePromotion,
+                    expectedAccountFingerprint: expectedAccountFingerprint,
                     expectedAccountEpoch: expectedAccountEpoch,
                     expectedSessionEpoch: expectedSessionEpoch,
                     expectedMetadataEpoch: expectedMetadataEpoch
@@ -1779,6 +1883,10 @@ public final class SessionManager: ObservableObject {
             } catch {
                 let summary = try? store.summary(sessionId: sessionId)
                 let page = try? store.latest(sessionId: sessionId)
+                await self?.recordFailedPersistenceMutation(
+                    sessionId: sessionId,
+                    accountFingerprint: expectedAccountFingerprint
+                )
                 await self?.restoreFailedDestructiveMutation(
                     mutation,
                     sessionId: sessionId,
@@ -1799,10 +1907,20 @@ public final class SessionManager: ObservableObject {
         sessionId: String,
         promotedTopic: TopicSessionMetadata?,
         queuedTopicBeforePromotion: TopicSessionMetadata?,
+        expectedAccountFingerprint: String,
         expectedAccountEpoch: Int,
         expectedSessionEpoch: Int,
         expectedMetadataEpoch: Int
     ) {
+        resolveFailedPersistenceMutation(
+            sessionId: sessionId,
+            accountFingerprint: expectedAccountFingerprint
+        )
+        discardRetainedPersistence(
+            sessionId: sessionId,
+            accountFingerprint: expectedAccountFingerprint,
+            beforeSessionEpoch: expectedSessionEpoch
+        )
         guard mutation == .delete, accountEpoch == expectedAccountEpoch else { return }
         if let promotedTopic {
             pendingTopicPromotionSessionIDs.remove(promotedTopic.sessionId)
@@ -1876,7 +1994,10 @@ public final class SessionManager: ObservableObject {
             // A newer snapshot may already be queued with only post-clear
             // messages. Reconcile after it so SQLite converges on the same
             // durable+new projection that the UI now presents.
-            enqueuePersistence(restoredMessages, for: sessionId)
+            let dirty = restoredMessages.filter {
+                persistedFingerprints[sessionId]?[$0.id] != fingerprint($0)
+            }
+            if !dirty.isEmpty { enqueuePersistence(dirty, for: sessionId) }
         }
     }
 
@@ -2035,6 +2156,51 @@ public final class SessionManager: ObservableObject {
         }
     }
 
+    /// Replays retained payloads after a transient SQLite failure. Exhausted
+    /// writes remain in memory across account switches until this succeeds.
+    public func retryFailedPersistence() async throws {
+        await flushPendingPersistence()
+        let exhausted = exhaustedPersistenceWrites
+        exhaustedPersistenceWrites.removeAll()
+        for (key, record) in exhausted {
+            var pending = pendingPersistenceWrites[key] ?? PendingPersistenceWrite()
+            pending.merge(record.batch.messages)
+            pendingPersistenceWrites[key] = pending
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            if scheduledPersistenceWrites.insert(key).inserted {
+                schedulePersistenceDrain(for: key, store: record.store)
+            }
+        }
+        await flushPendingPersistence()
+        guard exhaustedPersistenceWrites.isEmpty else {
+            throw ShutdownError.persistenceBatchExhausted
+        }
+    }
+
+    /// Drains writes, retries, destructive mutations, and account reconciliation.
+    /// Injected stores remain caller-owned unless closure is explicitly requested.
+    public func shutdown(closeStore: Bool = false) async throws {
+        await flushPendingPersistence()
+        if !exhaustedPersistenceWrites.isEmpty {
+            try await retryFailedPersistence()
+        }
+        guard failedPersistenceMutations.isEmpty else {
+            throw ShutdownError.persistenceMutationFailed
+        }
+        if closeStore { try store.close() }
+    }
+
+    public enum ShutdownError: Error, Equatable {
+        case persistenceBatchExhausted
+        case persistenceMutationFailed
+    }
+
+    /// Clears only the reported failure marker after the user explicitly accepts
+    /// that the destructive operation did not happen. It never mutates SQLite.
+    public func acknowledgeFailedPersistenceMutations() {
+        failedPersistenceMutations.removeAll()
+    }
+
     var pendingPersistenceSnapshotCountForTesting: Int {
         pendingPersistenceWrites.count
     }
@@ -2061,14 +2227,28 @@ public final class SessionManager: ObservableObject {
         persistedFingerprints[sessionId]?.removeAll()
         let previous = persistenceTail
         let store = self.store
+        let expectedAccountFingerprint = accountFingerprint
         let expectedAccountEpoch = accountEpoch
         let expectedSessionEpoch = sessionPersistenceEpoch[sessionId, default: 0]
         persistenceTail = Task.detached(priority: .utility) { [weak self] in
             await previous?.value
             guard !Task.isCancelled else { return }
             guard (try? store.truncate(sessionId: sessionId, from: messageId)) != nil else {
+                await self?.recordFailedPersistenceMutation(
+                    sessionId: sessionId,
+                    accountFingerprint: expectedAccountFingerprint
+                )
                 return
             }
+            await self?.resolveFailedPersistenceMutation(
+                sessionId: sessionId,
+                accountFingerprint: expectedAccountFingerprint
+            )
+            await self?.discardRetainedPersistence(
+                sessionId: sessionId,
+                accountFingerprint: expectedAccountFingerprint,
+                beforeSessionEpoch: expectedSessionEpoch
+            )
             let count = (try? store.count(sessionId)) ?? 0
             let summary = try? store.summary(sessionId: sessionId)
             await self?.finishPersistence(
@@ -2081,6 +2261,37 @@ public final class SessionManager: ObservableObject {
             )
         }
         persistenceTaskGeneration &+= 1
+    }
+
+    private func recordFailedPersistenceMutation(sessionId: String, accountFingerprint: String) {
+        failedPersistenceMutations.insert(.init(
+            sessionId: sessionId,
+            accountFingerprint: accountFingerprint
+        ))
+    }
+
+    private func resolveFailedPersistenceMutation(sessionId: String, accountFingerprint: String) {
+        failedPersistenceMutations.remove(.init(
+            sessionId: sessionId,
+            accountFingerprint: accountFingerprint
+        ))
+    }
+
+    private func discardRetainedPersistence(
+        sessionId: String,
+        accountFingerprint: String,
+        beforeSessionEpoch _: Int
+    ) {
+        let staleKeys = exhaustedPersistenceWrites.keys.filter {
+            $0.sessionId == sessionId
+                && $0.accountFingerprint == accountFingerprint
+        }
+        for key in staleKeys {
+            exhaustedPersistenceWrites.removeValue(forKey: key)
+            exhaustedPersistenceMessageIDs.removeValue(forKey: key)
+            pendingPersistenceWrites.removeValue(forKey: key)
+            scheduledPersistenceWrites.remove(key)
+        }
     }
 
     public func clearSession(_ id: String) {
@@ -2191,7 +2402,21 @@ public final class SessionManager: ObservableObject {
         var projected = messages(for: sessionId)
         guard let index = projected.firstIndex(where: { $0.id == messageId }) else { return false }
         for event in events {
-            if RendererRegistry.route(for: event.type, version: event.version) == .artifactConsumption,
+            guard RendererRegistry.accepts(eventType: event.type, renderer: event.renderer) else {
+                return false
+            }
+            if event.type == "workflow.cancelled" {
+                guard RendererRegistry.route(for: event) == .workflow else { return false }
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                guard let cancellation = try? decoder.decode(
+                    WorkflowCancellationDTO.self, from: event.payload
+                ), cancellation.status == "cancelled" else {
+                    return false
+                }
+                continue
+            }
+            if RendererRegistry.route(for: event) == .artifactConsumption,
                ArtifactConsumptionBlock(event: event) == nil {
                 return false
             }
@@ -2558,6 +2783,7 @@ public final class AppState: ObservableObject {
     @Published public var pendingChatContextScope: ChatContextScopeDTO? = nil
     @Published public var pendingChatSessionContext: ClientSessionContextDTO? = nil
     @Published public var pendingWorkflowId: String? = nil
+    @Published public var pendingWorkflowScopeError: String? = nil
     @Published public var pendingKnowledgeNavigation: KnowledgeNavigationTarget? = nil
     @Published public var pendingTopicSessionId: String? = nil
     /// 内存会话级 session_id（不持久化磁盘；404/401 清重发；账号切换清空）
@@ -2581,6 +2807,7 @@ public final class AppState: ObservableObject {
 
     private func activateLocalAccount(notify: Bool = true) {
         pendingWorkflowId = nil
+        pendingWorkflowScopeError = nil
         pendingKnowledgeNavigation = nil
         KnowledgeNoteStore.shared.activate(
             tenantKey: currentTenantKey, userId: currentUserId
@@ -2620,6 +2847,7 @@ public final class AppState: ObservableObject {
         self.pendingChatSessionContext = nil
         self.pendingKnowledgeNavigation = nil
         self.pendingWorkflowId = nil
+        self.pendingWorkflowScopeError = nil
         self.isDevMode = false
         WorkflowActivityCoordinator.shared.deactivate()
         KnowledgeNoteStore.shared.deactivate()
@@ -2649,18 +2877,42 @@ public final class AppState: ObservableObject {
 
     /// Routes every Hermes/QCP workflow event through one atomic UI action.
     public func openWorkflow(_ workflowId: String) {
+        pendingWorkflowScopeError = nil
         pendingWorkflowId = workflowId
         activeTab = 1
+    }
+
+    /// Opens a workflow created by the active chat while preserving the
+    /// authoritative owner/session scope across the tab transition.
+    public func openWorkflow(_ workflow: WorkflowDTO) {
+        let activities = WorkflowActivityCoordinator.shared
+        if !currentTenantKey.isEmpty, !currentUserId.isEmpty {
+            activities.activate(tenantKey: currentTenantKey, userId: currentUserId)
+        }
+        activities.selectClientSession(workflow.sourceClientSessionId)
+        activities.track(workflow)
+        openWorkflow(workflow.id)
     }
 
     public func resolvePendingWorkflow(
         using fetch: (String) async throws -> WorkflowDTO
     ) async -> WorkflowDTO? {
         guard let workflowId = pendingWorkflowId else { return nil }
+        guard let scope = WorkflowActivityCoordinator.shared.currentScope else {
+            pendingWorkflowScopeError = "当前对话会话不可用，无法打开此工作流。"
+            return nil
+        }
         do {
             let workflow = try await fetch(workflowId)
-            guard pendingWorkflowId == workflowId else { return nil }
+            guard pendingWorkflowId == workflowId,
+                  WorkflowActivityCoordinator.shared.isCurrent(scope) else { return nil }
+            guard WorkflowActivityCoordinator.shared.accepts(workflow, in: scope) else {
+                pendingWorkflowId = nil
+                pendingWorkflowScopeError = "此工作流不属于当前对话会话，已阻止打开。"
+                return nil
+            }
             pendingWorkflowId = nil
+            pendingWorkflowScopeError = nil
             return workflow
         } catch {
             return nil

@@ -1,0 +1,23 @@
+{
+  "capability_id": "report.research.create_from_text",
+  "production_sha": "6b461bb49f8ed05e7ba34fc99f44503ebca1cc57",
+  "workflow_id": "wf_36908936b671ff84067acf92de4f9773",
+  "execution_id": "wfr_f55277dde0c44d1bbd423b9463d27297",
+  "execution_status": "completed",
+  "artifact_id": "wfa_2ab4a7808c7849b4bc7ff69f0a310f78",
+  "artifact_version": 2,
+  "content_sha256": "62af3a04469ad3a8033649349b5cd14db66e6e91d063e592d2f97f179ff8ed68",
+  "download_bytes": 6062,
+  "download_sha256": "62af3a04469ad3a8033649349b5cd14db66e6e91d063e592d2f97f179ff8ed68",
+  "download_repeat_equal": true,
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "extension": "docx",
+  "owner_id": "gate06-prod-owner-ea8cd65c63e4",
+  "source_client_session_id": "gate06-prod-session-ea8cd65c63e4",
+  "generation": 2,
+  "model_used": "gpt-5.6-sol",
+  "provider_used": "openai-codex",
+  "token_used": 42074,
+  "production_release_switched_at": "2026-09-19T03:13:16+08:00",
+  "receipt_corrected_reason": "Artifact workflows executed after the verified 6b461bb production release switch; the earlier target SHA label was stale metadata."
+}

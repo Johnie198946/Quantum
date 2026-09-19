@@ -89,6 +89,13 @@ def test_legacy_policy_scoped_mapping_migrates_to_stable_key(monkeypatch):
     monkeypatch.setattr(bridge, "_user_session_map", {legacy: "hermes-session"})
     monkeypatch.setattr(bridge, "_user_state_db_map", {legacy: "/tmp/tenant.db"})
     monkeypatch.setattr(bridge, "_session_exists", lambda *_args: True)
+
+    def sync(**kwargs):
+        if kwargs.get("user_id") and kwargs.get("hermes_sid"):
+            bridge._user_session_map[kwargs["user_id"]] = kwargs["hermes_sid"]
+            bridge._user_state_db_map[kwargs["user_id"]] = str(kwargs.get("state_db") or "")
+
+    monkeypatch.setattr(bridge, "_sync_session_mappings", sync)
     monkeypatch.setattr(bridge, "_save_mapping", lambda: None)
     monkeypatch.setattr(bridge, "_save_state_db_mapping", lambda: None)
 
@@ -110,6 +117,7 @@ def test_conflicting_legacy_policy_aliases_fail_closed(monkeypatch):
         "t123456789abc-u123456789abc-ppolicyv2-main_agent-session": "/tmp/tenant.db",
     })
     monkeypatch.setattr(bridge, "_session_exists", lambda *_args: True)
+    monkeypatch.setattr(bridge, "_sync_session_mappings", lambda **_kwargs: None)
 
     with pytest.raises(RuntimeError, match="ambiguous_legacy_session_mapping"):
         bridge._resolve_hermes_session(stable)
