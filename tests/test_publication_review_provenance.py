@@ -123,6 +123,22 @@ def test_observed_native_surface_terminal_pairs(native, source, end_reason):
     assert verify_review_proof(proof, public, **expected) == []
 
 
+def test_local_owner_can_review_a_feishu_authored_draft(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE sessions SET source='feishu',user_id='ou_local_owner' WHERE id='writer'")
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+def test_local_owner_bridge_does_not_accept_untrusted_writer_surface(native):
+    db, review, key, _, _ = native
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE sessions SET source='cloud',user_id='other' WHERE id='writer'")
+    with pytest.raises(ValueError, match="owner/profile"):
+        attest_native_review(db, review, key)
+
+
 def test_request_and_final_must_bind_same_nonce(native):
     db, review, key, _, _ = native
     with sqlite3.connect(db) as conn:

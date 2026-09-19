@@ -108,8 +108,11 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         for writer in writers:
             if not isinstance(writer, str) or not writer.startswith("hermes:"):
                 raise ValueError("invalid native writer session")
-            author = db.execute("SELECT profile_name,user_id FROM sessions WHERE id=?", (writer[7:],)).fetchone()
-            if author is None or author["profile_name"] != profile or author["user_id"] != user_id:
+            author = db.execute("SELECT profile_name,user_id,source FROM sessions WHERE id=?", (writer[7:],)).fetchone()
+            local_owner_bridge = (user_id is None and profile == "default"
+                                  and author is not None and author["source"] in {"feishu", "lark"})
+            if (author is None or author["profile_name"] != profile
+                    or (author["user_id"] != user_id and not local_owner_bridge)):
                 raise ValueError("native writer owner/profile mismatch")
         payload = {
             "proof_version": "native-editorial-review-v1",
