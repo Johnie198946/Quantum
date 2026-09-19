@@ -184,6 +184,13 @@ public final class TenantSessionCoordinator: ObservableObject {
             onCapabilityProposal: { [weak self] proposalId, verb in
                 self?.handleCapabilityProposal(messageId: message?.id, proposalId: proposalId, verb: verb)
             },
+            onWorkflowOpen: { [weak self] workflowId in
+                self?.appState?.openWorkflow(workflowId)
+            },
+            onKnowledgeNavigation: { [weak self] target in
+                self?.appState?.pendingKnowledgeNavigation = target
+                self?.appState?.activeTab = 2
+            },
             onLoadAnswerBlocks: { [weak self] messageId in
                 self?.loadNextAnswerBlocks(messageId: messageId)
             },
@@ -512,15 +519,23 @@ public final class TenantSessionCoordinator: ObservableObject {
         } else if path == .workflow || path == .presentationReview {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let workflow: WorkflowDTO?
             if let created = try? decoder.decode(
                 WorkflowCreateResponseDTO.self, from: event.payload
             ) {
-                WorkflowActivityCoordinator.shared.track(created.workflow)
-                appState?.openWorkflow(created.workflow.id)
-            } else if let workflow = try? decoder.decode(
+                workflow = created.workflow
+            } else {
+                workflow = try? decoder.decode(
                 WorkflowDTO.self, from: event.payload
-            ) {
+                )
+            }
+            if let workflow {
                 WorkflowActivityCoordinator.shared.track(workflow)
+                if let index = messages.firstIndex(where: { $0.id == outputMessageId }),
+                   !messages[index].blocks.contains(where: { $0.id == "workflow_\(workflow.id)" }) {
+                    messages[index].blocks.append(.workflow(workflow))
+                    commitSession()
+                }
                 appState?.openWorkflow(workflow.id)
             }
         } else if path == .artifact {
@@ -1720,6 +1735,15 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
 
                 case .knowledgeNavigation(let target):
+                    if let idx = messages.firstIndex(where: { $0.id == outputId }),
+                       !messages[idx].blocks.contains(where: {
+                           if case .knowledgeNavigation(let existing) = $0 { return existing == target }
+                           return false
+                       }) {
+                        messages[idx].blocks.append(.knowledgeNavigation(target))
+                        messages[idx].pending = false
+                        commitSession()
+                    }
                     appState?.pendingKnowledgeNavigation = target
                     appState?.activeTab = 2
 
@@ -3518,6 +3542,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 guard let self, self.tenantEpoch == expectedEpoch else { return }
                 if let completedWorkflow {
                     WorkflowActivityCoordinator.shared.track(completedWorkflow)
+                    if let messageIndex = self.messages.firstIndex(where: { $0.id == messageId }),
+                       !self.messages[messageIndex].blocks.contains(where: { $0.id == "workflow_\(completedWorkflow.id)" }) {
+                        self.messages[messageIndex].blocks.append(.workflow(completedWorkflow))
+                    }
                 }
                 if let pendingWorkflowId {
                     self.appState?.openWorkflow(pendingWorkflowId)

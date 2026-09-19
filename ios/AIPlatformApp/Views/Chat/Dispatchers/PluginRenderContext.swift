@@ -17,6 +17,8 @@ public struct PluginRenderContext {
     public var onNoteDraftAction: ((String, String) -> Void)? = nil
     public var onKnowledgeAction: ((String, String) -> Void)? = nil
     public var onCapabilityProposal: ((String, String) -> Void)? = nil
+    public var onWorkflowOpen: ((String) -> Void)? = nil
+    public var onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil
     public var onLoadAnswerBlocks: ((String) -> Void)? = nil
     public var onFetchFullAnswer: ((String) async throws -> String)? = nil
 
@@ -29,6 +31,8 @@ public struct PluginRenderContext {
         onNoteDraftAction: ((String, String) -> Void)? = nil,
         onKnowledgeAction: ((String, String) -> Void)? = nil,
         onCapabilityProposal: ((String, String) -> Void)? = nil,
+        onWorkflowOpen: ((String) -> Void)? = nil,
+        onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil,
         onLoadAnswerBlocks: ((String) -> Void)? = nil,
         onFetchFullAnswer: ((String) async throws -> String)? = nil
     ) {
@@ -40,6 +44,8 @@ public struct PluginRenderContext {
         self.onNoteDraftAction = onNoteDraftAction
         self.onKnowledgeAction = onKnowledgeAction
         self.onCapabilityProposal = onCapabilityProposal
+        self.onWorkflowOpen = onWorkflowOpen
+        self.onKnowledgeNavigation = onKnowledgeNavigation
         self.onLoadAnswerBlocks = onLoadAnswerBlocks
         self.onFetchFullAnswer = onFetchFullAnswer
     }

@@ -1291,7 +1291,7 @@ public struct TenantAgentCreateDTO: Encodable {
 
 // MARK: - 可执行工作流 V1
 
-public struct WorkflowDTO: Codable, Identifiable, Hashable {
+public struct WorkflowDTO: Codable, Identifiable, Hashable, @unchecked Sendable {
     public let id: String
     public let title: String
     public let description: String

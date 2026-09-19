@@ -66,6 +66,14 @@ public enum LocalAgentTemplateEngine {
                 baseAgentId: "supervision"
             )
         }
+        if p.contains("旅行") || p.contains("目的地") || p.contains("行程") {
+            return Template(
+                name: "旅行研究助手",
+                roleCategory: "目的地研究 · 旅行规划",
+                summary: "整理目的地资料、旅行攻略和实用信息，基于可靠来源给出行程建议，不代替用户预订或作主观推荐。",
+                baseAgentId: "knowledge"
+            )
+        }
         return Template(
             name: "通用协同 Agent",
             roleCategory: "通用 · 任务分诊",
@@ -77,105 +85,278 @@ public enum LocalAgentTemplateEngine {
 
 // MARK: - 创建智能体视图
 
+private enum AgentCreationStep {
+    case purpose
+    case tone
+    case boundary
+    case confirmation
+    case creating
+    case completed
+}
+
 public struct AgentCreatorView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
 
     @State private var purposeText: String = ""
+    @State private var draftText: String = ""
+    @State private var selectedTone = "专业可靠"
+    @State private var selectedBoundary = "只基于可靠来源，不提供预订服务"
+    @State private var step: AgentCreationStep = .purpose
     @State private var isCreating: Bool = false
     @State private var createdAgent: AgentNode? = nil
     @State private var creationFailed: Bool = false
     @State private var creationError: String? = nil
 
     private let presetPurposes = [
-        "检查制造产线异常",
-        "金融对账风控",
-        "竞品情报监测",
-        "审计合规审查",
+        "旅行研究",
+        "课程学习",
+        "论文写作",
     ]
 
-    public init() {}
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            header
-
-            // 一行输入
-            HStack(spacing: AppTheme.Spacing.sm) {
-                TextField("一句话描述用途…", text: $purposeText, axis: .vertical)
-                    .lineLimit(1...2)
-                    .font(.system(size: 14))
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.vertical, AppTheme.Spacing.sm)
-                    .background(AppTheme.Colors.secondaryBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
-
-                Button(action: createAgent) {
-                    HStack(spacing: 4) {
-                        if isCreating {
-                            ProgressView()
-                                .tint(AppTheme.Colors.onPrimary)
-                        }
-                        Text("创建")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .padding(.horizontal, AppTheme.Spacing.md)
-                    .padding(.vertical, 10)
-                    .foregroundColor(AppTheme.Colors.onPrimary)
-                    .background(AppTheme.Colors.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-                }
-                .buttonStyle(SoftButtonStyle())
-                .disabled(isCreating || purposeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            // 预设用途
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppTheme.Spacing.xs) {
-                    ForEach(presetPurposes, id: \.self) { preset in
-                        Button(action: {
-                            purposeText = preset
-                        }) {
-                            Text(preset)
-                                .font(.system(size: 11))
-                                .foregroundColor(AppTheme.Colors.textSecondary)
-                                .padding(.horizontal, AppTheme.Spacing.sm)
-                                .padding(.vertical, 5)
-                                .background(AppTheme.Colors.secondaryBackground)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(SoftButtonStyle())
-                    }
-                }
-            }
-
-            // 结果区
-            if isCreating {
-                skeletonCard
-            } else if let agent = createdAgent {
-                resultCard(agent)
-            }
+    public init(prototypePageID: String? = nil) {
+        guard let prototypePageID else { return }
+        let purpose = "主要是做目的地研究，帮我整理资料和攻略"
+        _purposeText = State(initialValue: purpose)
+        _selectedTone = State(initialValue: "专业可靠")
+        _selectedBoundary = State(initialValue: "只基于可靠来源，不提供预订服务")
+        if prototypePageID.hasSuffix("p03") {
+            _step = State(initialValue: .confirmation)
+        } else if prototypePageID.hasSuffix("p04") {
+            _step = State(initialValue: .completed)
+            _createdAgent = State(initialValue: AgentNode(
+                id: "travel-research-preview", name: "旅行研究助手", roleCategory: "目的地研究 · 旅行规划",
+                systemPromptSummary: "整理目的地资料、旅行攻略和实用信息，基于可靠来源给出行程建议。",
+                position: .zero
+            ))
+        } else {
+            _step = State(initialValue: .boundary)
         }
-        .padding(AppTheme.Spacing.md)
-        .background(AppTheme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
     }
 
-    private var header: some View {
-        HStack {
-            Image(systemName: "sparkles.rectangle.stack.fill")
-                .font(.system(size: 13))
-                    .foregroundColor(AppTheme.Icons.intelligence)
-            Text("创建智能体")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundColor(AppTheme.Colors.textPrimary)
-            Spacer()
-            Text("基线派生 · 云端切片")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(AppTheme.Colors.accent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(AppTheme.Colors.accent.opacity(0.12))
-                .clipShape(Capsule())
+    public var body: some View {
+        ZStack {
+            QuantumMistBackground()
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                        assistantBubble("首先，这个智能体主要用来做什么？\n例如：行程规划、目的地研究、课程复习或论文写作。")
+
+                        if !purposeText.isEmpty {
+                            userBubble(purposeText)
+                            assistantBubble("好的。你希望它以什么风格回答？")
+                            choiceRow(
+                                ["专业可靠", "轻松有趣", "简洁高效"],
+                                selected: selectedTone,
+                                enabled: step == .tone
+                            ) { value in
+                                selectedTone = value
+                                withAnimation(AppTheme.Motion.standard) { step = .boundary }
+                            }
+                        }
+
+                        if step == .boundary || step == .confirmation || step == .creating || step == .completed {
+                            userBubble(selectedTone)
+                            assistantBubble("最后，有没有需要特别注意的边界？")
+                            choiceRow(
+                                ["只基于可靠来源，不提供预订服务", "不访问私人资料", "关键结果由我确认"],
+                                selected: selectedBoundary,
+                                enabled: step == .boundary
+                            ) { value in
+                                selectedBoundary = value
+                                withAnimation(AppTheme.Motion.standard) { step = .confirmation }
+                            }
+                        }
+
+                        if step == .confirmation || step == .creating || step == .completed {
+                            userBubble(selectedBoundary)
+                            confirmationCard
+                        }
+
+                        if step == .creating {
+                            skeletonCard.id("creation-status")
+                        } else if let agent = createdAgent {
+                            resultCard(agent).id("creation-result")
+                        }
+
+                        if creationFailed, let creationError {
+                            Label(creationError, systemImage: "exclamationmark.triangle.fill")
+                                .font(AppTheme.Typography.supporting)
+                                .foregroundStyle(AppTheme.Colors.statusError)
+                                .padding(AppTheme.Spacing.md)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(AppTheme.Colors.dangerSurface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                        }
+
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .padding(.horizontal, AppTheme.Metrics.contentGutter)
+                    .padding(.top, AppTheme.Spacing.lg)
+                    .padding(.bottom, 110)
+                }
+                .onChange(of: step) { _, _ in
+                    withAnimation(AppTheme.Motion.standard) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+            }
+            if step == .confirmation {
+                ZStack {
+                    QuantumMistBackground()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                                QuantumAvatarView(size: 34)
+                                Text("根据我们的对话，这是为你生成的旅行研究智能体设置。你可以随时修改，确认后我将为你创建。")
+                                    .font(AppTheme.Typography.supporting)
+                                    .padding(AppTheme.Spacing.md)
+                                    .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                            }
+                            confirmationCard
+                        }
+                        .padding(AppTheme.Metrics.contentGutter)
+                    }
+                }
+            } else if step == .completed, let agent = createdAgent {
+                ZStack {
+                    QuantumMistBackground()
+                    ScrollView {
+                        resultCard(agent)
+                            .padding(AppTheme.Metrics.contentGutter)
+                            .padding(.top, AppTheme.Spacing.md)
+                    }
+                }
+            }
+        }
+        .navigationTitle("创建智能体")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if step == .purpose {
+                composer
+            }
+        }
+    }
+
+    private var composer: some View {
+        VStack(spacing: AppTheme.Spacing.sm) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    ForEach(presetPurposes, id: \.self) { preset in
+                        Button(preset) { draftText = "帮我创建一个\(preset)智能体" }
+                            .font(AppTheme.Typography.micro)
+                            .buttonStyle(.bordered)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal, AppTheme.Metrics.contentGutter)
+            }
+            HStack(spacing: AppTheme.Spacing.sm) {
+                TextField("发送消息…", text: $draftText, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .frame(minHeight: 48)
+                    .background(AppTheme.Colors.cardBackground, in: Capsule())
+                    .overlay { Capsule().stroke(AppTheme.Colors.border, lineWidth: 0.75) }
+                    .submitLabel(.send)
+                    .onSubmit(submitPurpose)
+                Button(action: submitPurpose) {
+                    Image(systemName: "arrow.up")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 44, height: 44)
+                        .background(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? AppTheme.Colors.textTertiary : AppTheme.Colors.interactiveBlue, in: Circle())
+                }
+                .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("发送")
+            }
+            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+            .padding(.bottom, AppTheme.Spacing.sm)
+        }
+        .padding(.top, AppTheme.Spacing.sm)
+        .background(.ultraThinMaterial)
+    }
+
+    private func assistantBubble(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            Image("quantum_logo_icon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 30, height: 30)
+            Text(text)
+                .font(AppTheme.Typography.body)
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+                .padding(AppTheme.Spacing.md)
+                .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func userBubble(_ text: String) -> some View {
+        Text(text)
+            .font(AppTheme.Typography.body)
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .background(AppTheme.Colors.selectionTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 70)
+    }
+
+    private func choiceRow(
+        _ values: [String],
+        selected: String,
+        enabled: Bool,
+        action: @escaping (String) -> Void
+    ) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: AppTheme.Spacing.sm)], alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            ForEach(values, id: \.self) { value in
+                Button(value) { action(value) }
+                    .font(AppTheme.Typography.supporting.weight(.medium))
+                    .buttonStyle(.bordered)
+                    .tint(value == selected ? AppTheme.Colors.interactiveBlue : AppTheme.Colors.textSecondary)
+                    .disabled(!enabled)
+            }
+        }
+        .padding(.leading, 38)
+    }
+
+    private var confirmationCard: some View {
+        let template = LocalAgentTemplateEngine.match(purposeText)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "mountain.2.fill")
+                    .font(.title2)
+                    .foregroundStyle(AppTheme.Colors.statusCompleted)
+                    .frame(width: 54, height: 54)
+                    .background(AppTheme.Colors.mistMint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(template.name)
+                        .font(AppTheme.Typography.sectionTitle)
+                    Text(template.roleCategory)
+                        .font(AppTheme.Typography.supporting)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+            }
+            summaryRow("主要任务", value: purposeText, icon: "scope")
+            summaryRow("表达风格", value: selectedTone, icon: "text.bubble")
+            summaryRow("边界与安全", value: selectedBoundary, icon: "checkmark.shield")
+
+            Button(step == .creating ? "正在创建…" : "确认生成") { createAgent() }
+                .buttonStyle(QuantumPrimaryButtonStyle())
+                .disabled(step == .creating || step == .completed)
+        }
+        .padding(AppTheme.Spacing.lg)
+        .quantumCard()
+    }
+
+    private func summaryRow(_ title: String, value: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+            Image(systemName: icon)
+                .foregroundStyle(AppTheme.Colors.interactiveBlue)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                Text(value).font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textPrimary)
+            }
         }
     }
 
@@ -210,54 +391,45 @@ public struct AgentCreatorView: View {
     }
 
     private func resultCard(_ agent: AgentNode) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Divider().padding(.vertical, 2)
-
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack(spacing: AppTheme.Spacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.Colors.primary)
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "cpu.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(AppTheme.Icons.onAccent)
-                }
+                ProgressView(value: 1).tint(AppTheme.Colors.quantumBlue).frame(width: 44)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(agent.name)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(AppTheme.Colors.textPrimary)
-                    Text(agent.roleCategory)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(AppTheme.Colors.accent)
+                    Text("正在创建你的智能体…").font(.subheadline.weight(.semibold))
+                    Text("配置知识、工具和提示词").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
                 }
-                Spacer()
+                Spacer(); Image(systemName: "checkmark").foregroundStyle(AppTheme.Colors.statusCompleted)
             }
-
-            Text(agent.systemPromptSummary)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.Colors.textSecondary)
-                .lineSpacing(2)
-
-            Button(action: goToChat) {
-                HStack(spacing: 4) {
-                    Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 11))
-                    Text("去对话")
-                        .font(.system(size: 13, weight: .bold))
+            Divider()
+            VStack(spacing: AppTheme.Spacing.sm) {
+                ZStack(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                        .fill(AppTheme.Colors.mistMint).frame(width: 94, height: 94)
+                    Image(systemName: "mountain.2.fill").font(.system(size: 46)).foregroundStyle(AppTheme.Colors.statusCompleted)
+                        .frame(width: 94, height: 94)
+                    Image(systemName: "checkmark.circle.fill").font(.title2).foregroundStyle(AppTheme.Colors.statusCompleted).background(.white, in: Circle())
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .foregroundColor(AppTheme.Colors.primary)
-                .background(AppTheme.Colors.primary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+                Text(agent.name).font(AppTheme.Typography.screenTitle)
+                Text("已创建完成").font(.caption.weight(.semibold)).foregroundStyle(AppTheme.Colors.statusCompleted)
+                Text("用可靠的知识，发现更大的世界")
+                    .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
             }
-            .buttonStyle(SoftButtonStyle())
-
-            Text(creationFailed ? (creationError ?? "创建失败，请稍后重试") : "已写入云端 · 真实数据")
-                .font(.system(size: 10))
-                .foregroundColor(creationFailed ? AppTheme.Colors.securityRed : AppTheme.Colors.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("它可以这样帮助你：").font(.caption.weight(.semibold))
+                Label("整理日本京都的四季旅行攻略，包括必去景点、当地文化、美食推荐和实用贴士。", systemImage: "bubble.left")
+                    .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            .padding(AppTheme.Spacing.md).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            Button("开始对话", systemImage: "bubble.left.and.bubble.right.fill", action: goToChat)
+                .buttonStyle(QuantumPrimaryButtonStyle())
+            Button("加入工作流", systemImage: "folder") { dismiss() }
+                .buttonStyle(.bordered).frame(maxWidth: .infinity)
+            Button("管理知识与工具", systemImage: "gearshape") { dismiss() }
+                .buttonStyle(.bordered).frame(maxWidth: .infinity)
         }
+        .padding(AppTheme.Spacing.lg)
+        .quantumCard()
     }
 
     // MARK: - Actions
@@ -269,6 +441,7 @@ public struct AgentCreatorView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
         isCreating = true
+        step = .creating
         createdAgent = nil
         creationFailed = false
         creationError = nil
@@ -293,12 +466,15 @@ public struct AgentCreatorView: View {
                     status: .idle,
                     position: CGPoint(x: 0, y: 0)
                 )
+                step = .completed
+                NotificationCenter.default.post(name: .tenantAgentsDidUpdate, object: nil)
                 #if os(iOS)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 #endif
             } catch {
                 // 云端失败：诚实报错，绝不落本地演示数据
                 isCreating = false
+                step = .confirmation
                 creationFailed = true
                 creationError = "创建失败：\(error.localizedDescription)"
                 #if os(iOS)
@@ -306,6 +482,14 @@ public struct AgentCreatorView: View {
                 #endif
             }
         }
+    }
+
+    private func submitPurpose() {
+        let value = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        purposeText = value
+        draftText = ""
+        withAnimation(AppTheme.Motion.standard) { step = .tone }
     }
 
     private func goToChat() {
@@ -318,6 +502,69 @@ public struct AgentCreatorView: View {
         )
     }
 }
+
+#if DEBUG
+struct V4AgentCreationPrototypeHost: View {
+    let pageID: String
+
+    var body: some View {
+        NavigationStack {
+            if pageID.hasSuffix("p01") {
+                AgentCreationStartPreview()
+            } else {
+                AgentCreatorView(prototypePageID: pageID)
+            }
+        }
+    }
+}
+
+private struct AgentCreationStartPreview: View {
+    @State private var draft = ""
+    @State private var quote: QuotedContext?
+    @State private var isVoicePressing = false
+    @StateObject private var speechService = SpeechRecognizerService()
+
+    var body: some View {
+        ZStack {
+            QuantumMistBackground()
+            VStack(spacing: 0) {
+                ChatTopBarView(isGenerating: false, title: "Quantum", onTitleTap: {}, onNewSession: {}, onHistoryTap: {}, onClearTap: {})
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        Text("你好，\n有什么我可以帮助你吗？")
+                            .font(.system(.largeTitle, design: .serif, weight: .semibold))
+                        previewAction("解答一个学习问题", "magnifyingglass", AppTheme.Colors.quantumBlue)
+                        previewAction("总结一篇论文", "doc.text.fill", AppTheme.Colors.statusCompleted)
+                        previewAction("帮我创建一个智能体", "cpu.fill", AppTheme.Colors.quantumViolet)
+                        Text("帮我创建一个旅行研究智能体")
+                            .font(AppTheme.Typography.body)
+                            .padding(AppTheme.Spacing.md).background(AppTheme.Colors.selectionTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                            QuantumAvatarView(size: 32)
+                            Text("好的！我来帮你创建一个旅行研究智能体。为了更好地满足你的需求，想先了解几个问题。")
+                                .font(AppTheme.Typography.body).padding(AppTheme.Spacing.md)
+                                .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                        }
+                    }
+                    .padding(AppTheme.Metrics.contentGutter)
+                }
+                ChatInputBar(inputText: $draft, quotedContext: $quote, isVoicePressing: $isVoicePressing,
+                             speechService: speechService, isGenerating: false, dismissKeyboardToken: 0,
+                             onSend: {}, onVoicePressChanged: { _ in }, onPlusTap: {})
+            }
+        }
+    }
+
+    private func previewAction(_ title: String, _ icon: String, _ color: Color) -> some View {
+        Label(title, systemImage: icon).font(AppTheme.Typography.body)
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .padding(AppTheme.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3).padding(.vertical, 10) }
+    }
+}
+#endif
 
 // MARK: - Xcode #Preview
 

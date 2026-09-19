@@ -32,7 +32,7 @@ public struct TokenSummaryCard: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Label("Token 监控", systemImage: "chart.bar.fill")
+                    Label("本月使用", systemImage: "chart.bar.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(AppTheme.Colors.textSecondary)
 
@@ -77,13 +77,13 @@ public struct TokenSummaryCard: View {
             if isLoading && summary == nil {
                 HStack {
                     Spacer()
-                    ProgressView("正在加载用量账本…")
+                    ProgressView("正在加载使用记录…")
                     Spacer()
                 }
                 .frame(minHeight: 180)
             } else if let loadError {
                 ContentUnavailableView {
-                    Label("用量读取失败", systemImage: "exclamationmark.triangle")
+                    Label("使用记录加载失败", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(loadError)
                 } actions: {
@@ -95,13 +95,7 @@ public struct TokenSummaryCard: View {
             }
         }
         .padding(AppTheme.Spacing.xl)
-        .background(AppTheme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Metrics.panelRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Metrics.panelRadius, style: .continuous)
-                .stroke(AppTheme.Colors.border.opacity(0.7), lineWidth: 0.5)
-        }
-        .shadow(color: Color.black.opacity(0.05), radius: 18, y: 8)
+        .quantumCard()
         .task(id: selectedDays) {
             guard loadsRemotely else { return }
             await loadUsage()
@@ -273,14 +267,16 @@ public struct TokenSummaryCard: View {
     @MainActor
     private func loadUsage() async {
         isLoading = true
+        defer { isLoading = false }
         loadError = nil
         do {
             summary = try await APIClient.shared.fetchUsageSummary(days: selectedDays)
+        } catch is CancellationError {
+            return
         } catch {
             summary = nil
             loadError = error.localizedDescription
         }
-        isLoading = false
     }
 
     private func compact(_ n: Int) -> String {

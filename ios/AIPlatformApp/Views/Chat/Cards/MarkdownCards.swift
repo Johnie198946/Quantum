@@ -13,7 +13,75 @@ public struct MarkdownText: View {
         self.text = text; self.font = font; self.color = color
     }
     public var body: some View {
-        Text(LocalizedStringKey(text)).font(font).foregroundColor(color)
+        InlineMathPresentation.segments(in: text)
+            .reduce(Text("")) { result, segment in
+                result + (segment.isMath
+                    ? Text(verbatim: MathFormulaPresentation.displayText(segment.text)).italic()
+                    : Text(LocalizedStringKey(segment.text)))
+            }
+            .font(font)
+            .foregroundColor(color)
+    }
+}
+
+enum InlineMathPresentation {
+    struct Segment: Equatable {
+        let text: String
+        let isMath: Bool
+    }
+
+    static func segments(in source: String) -> [Segment] {
+        let characters = Array(source)
+        var result: [Segment] = []
+        var plain = ""
+        var index = 0
+
+        func flushPlain() {
+            guard !plain.isEmpty else { return }
+            result.append(.init(text: plain, isMath: false))
+            plain = ""
+        }
+
+        while index < characters.count {
+            let opener: [Character]
+            let closer: [Character]
+            if characters[index] == "$", index == 0 || characters[index - 1] != "\\" {
+                opener = ["$"]; closer = ["$"]
+            } else if characters[index] == "\\", index + 1 < characters.count,
+                      characters[index + 1] == "(" || characters[index + 1] == "[" {
+                opener = ["\\", characters[index + 1]]
+                closer = ["\\", characters[index + 1] == "(" ? ")" : "]"]
+            } else {
+                plain.append(characters[index]); index += 1; continue
+            }
+
+            let contentStart = index + opener.count
+            guard let contentEnd = closingIndex(of: closer, in: characters, after: contentStart) else {
+                plain.append(contentsOf: opener); index = contentStart; continue
+            }
+            let math = String(characters[contentStart..<contentEnd])
+            guard !math.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                plain.append(contentsOf: opener); index = contentStart; continue
+            }
+            flushPlain()
+            result.append(.init(text: math, isMath: true))
+            index = contentEnd + closer.count
+        }
+        flushPlain()
+        return result
+    }
+
+    private static func closingIndex(
+        of token: [Character], in characters: [Character], after start: Int
+    ) -> Int? {
+        guard !token.isEmpty, start < characters.count else { return nil }
+        for index in start..<characters.count where index + token.count <= characters.count {
+            if Array(characters[index..<(index + token.count)]) == token,
+               index == 0 || characters[index - 1] != "\\" || token.count > 1 {
+                return index
+            }
+        }
+        return nil
     }
 }
 
@@ -24,29 +92,31 @@ public struct MarkdownBlockCard: View {
     public var body: some View {
         switch block {
         case .heading(let level, let text):
-            HStack(alignment: .center, spacing: 8) {
-                if level == 1 {
-                    RoundedRectangle(cornerRadius: 2).fill(AppTheme.Colors.quantumGradient).frame(width: 4, height: 18)
-                } else {
-                    RoundedRectangle(cornerRadius: 2).fill(AppTheme.Colors.quantumBlue).frame(width: 3.5, height: 16)
-                }
-                MarkdownText(text, font: .system(size: level == 1 ? 19 : (level == 2 ? 17 : 15.5), weight: .bold))
-            }
-            .padding(.top, level <= 2 ? AppTheme.Spacing.xs : 2)
+            MarkdownText(
+                text,
+                font: .system(
+                    size: level == 1 ? 24 : (level == 2 ? 19 : 16),
+                    weight: level <= 2 ? .bold : .semibold,
+                    design: level == 1 ? .rounded : .default
+                )
+            )
+            .padding(.top, level <= 2 ? AppTheme.Spacing.md : AppTheme.Spacing.xs)
         case .callout(let label, let text):
             HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundColor(AppTheme.Icons.intelligence).padding(.top, 2)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AppTheme.Colors.quantumBlue)
+                    .frame(width: 3)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(label).font(.system(size: 11, weight: .bold)).foregroundColor(AppTheme.Colors.quantumBlue)
                     MarkdownText(text, font: .system(size: 14, weight: .medium)).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(AppTheme.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
-            .background(LinearGradient(colors: [AppTheme.Colors.quantumBlue.opacity(0.10), AppTheme.Colors.quantumViolet.opacity(0.04)], startPoint: .leading, endPoint: .trailing))
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous).stroke(AppTheme.Colors.quantumBlue.opacity(0.25), lineWidth: 0.5))
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.Colors.mistMint.opacity(0.42))
         case .paragraph(let text):
-            MarkdownText(text).fixedSize(horizontal: false, vertical: true).lineSpacing(3)
+            MarkdownText(text, font: .system(size: 15.5)).fixedSize(horizontal: false, vertical: true).lineSpacing(5)
         case .bulletList(let items):
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -68,13 +138,10 @@ public struct MarkdownBlockCard: View {
             }
         case .codeBlock(let lang, let code):
             CodeBlockCard(snippet: CodeSnippet(language: lang ?? "text", code: code))
+        case .formula(let formula):
+            FormulaCard(formula: formula)
         case .quote(let text):
-            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                Rectangle().fill(AppTheme.Colors.quantumViolet.opacity(0.4)).frame(width: 3)
-                MarkdownText(text, font: .system(size: 14), color: AppTheme.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(AppTheme.Spacing.sm).frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.Colors.quantumViolet.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
+            HighlightCard(text: text)
         case .divider:
             Rectangle().fill(AppTheme.Colors.border.opacity(0.5)).frame(height: 0.5).padding(.vertical, AppTheme.Spacing.xs)
         case .table(let t):
@@ -83,6 +150,125 @@ public struct MarkdownBlockCard: View {
             ChartCard(block: c)
         case .sourceCitations(let items):
             SourceCitationsCard(items: items)
+        }
+    }
+}
+
+public struct HighlightCard: View {
+    public let text: String
+
+    public init(text: String) { self.text = text }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+            Image(systemName: "highlighter")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AppTheme.Colors.emberOrange)
+                .frame(width: 34, height: 34)
+                .background(Color.white.opacity(0.72), in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text("高亮片段")
+                    .font(AppTheme.Typography.micro.weight(.bold))
+                    .foregroundStyle(AppTheme.Colors.emberOrange)
+                MarkdownText(text, font: .system(.body, design: .serif), color: AppTheme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(4)
+            }
+        }
+        .padding(AppTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppTheme.Colors.bentoAmber.opacity(0.92), AppTheme.Colors.mistRose.opacity(0.54)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            Text("“")
+                .font(.system(size: 46, weight: .bold, design: .serif))
+                .foregroundStyle(Color.white.opacity(0.62))
+                .padding(.trailing, AppTheme.Spacing.md)
+                .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("高亮片段，\(text)")
+    }
+}
+
+/// Groups a long answer by its authored structure without changing the server
+/// block contract. Unheaded prose stays continuous instead of being cut by an
+/// arbitrary block count.
+public struct ReadingCardDeck: View {
+    public let blocks: [MarkdownBlock]
+
+    public init(blocks: [MarkdownBlock]) { self.blocks = blocks }
+
+    public var body: some View {
+        LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            ForEach(Array(Self.pages(from: blocks).enumerated()), id: \.offset) { index, page in
+                readingPage(page, index: index)
+            }
+        }
+    }
+
+    static func pages(from blocks: [MarkdownBlock]) -> [[MarkdownBlock]] {
+        guard !blocks.isEmpty else { return [] }
+        var pages: [[MarkdownBlock]] = []
+        var current: [MarkdownBlock] = []
+
+        func flush() {
+            guard !current.isEmpty else { return }
+            pages.append(current)
+            current.removeAll(keepingCapacity: true)
+        }
+
+        for block in blocks {
+            if block.isStandaloneReadingCard {
+                flush()
+                pages.append([block])
+                continue
+            }
+            if case .heading = block, !current.isEmpty { flush() }
+            current.append(block)
+            if case .divider = block {
+                flush()
+            }
+        }
+        flush()
+        return pages
+    }
+
+    private func readingPage(_ page: [MarkdownBlock], index: Int) -> some View {
+        Group {
+            if page.count == 1, page[0].isStandaloneReadingCard {
+                MarkdownBlockCard(block: page[0])
+            } else {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    ForEach(Array(page.enumerated()), id: \.offset) { _, block in
+                        MarkdownBlockCard(block: block)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, index == 0 ? 0 : AppTheme.Spacing.sm)
+                .overlay(alignment: .top) {
+                    if index > 0 {
+                        Divider().opacity(0.5)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private extension MarkdownBlock {
+    var isStandaloneReadingCard: Bool {
+        switch self {
+        case .formula, .codeBlock, .table, .chart, .quote, .sourceCitations: true
+        default: false
         }
     }
 }

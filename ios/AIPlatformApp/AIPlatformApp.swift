@@ -19,6 +19,7 @@ public struct AIPlatformApp: App {
     private let showBookshelfPreview: Bool
     private let showKnowledgeHomePreview: Bool
     private let showTabBarPreview: Bool
+    private let prototypePreviewID: String?
     #endif
 
     public init() {
@@ -26,18 +27,27 @@ public struct AIPlatformApp: App {
         let hasPersistedSession = !(KeychainStore.load() ?? "").isEmpty
 #if DEBUG
         let hasE2EToken = !(ProcessInfo.processInfo.environment["AI_LAB_E2E_TOKEN"] ?? "").isEmpty
-        showBookshelfPreview = arguments.contains("-bookshelfPreview")
+        showBookshelfPreview = arguments.contains("-bookshelfPreview") || arguments.contains("-bookshelfTab")
         showKnowledgeHomePreview = arguments.contains("-knowledgeHomePreview")
         showTabBarPreview = arguments.contains("-tabBarPreview")
+        prototypePreviewID = arguments.firstIndex(of: "-prototypePreview")
+            .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
 #else
         let hasE2EToken = false
 #endif
+        let initialTab = arguments.contains("-workflowTab") ? 1
+            : arguments.contains("-knowledgeTab") ? 2
+            : arguments.contains("-settingsTab") ? 3
+            : 0
         let initialState = AppState(
             isLoggedIn: arguments.contains("-autoLogin") || hasPersistedSession || hasE2EToken,
-            activeTab: arguments.contains("-knowledgeTab") ? 2 : 0
+            activeTab: initialTab
         )
 #if DEBUG
         initialState.pendingChatPrompt = ProcessInfo.processInfo.environment["AI_LAB_E2E_PROMPT"]
+        if arguments.contains("-assetLibraryPreview") {
+            initialState.currentProfile.avatarUrl = "avatar_youth_01"
+        }
 #endif
         _appState = StateObject(wrappedValue: initialState)
     }
@@ -46,9 +56,11 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if showBookshelfPreview {
+                if let prototypePreviewID {
+                    PrototypeReviewNavigator(initialPageID: prototypePreviewID)
+                } else if showBookshelfPreview {
                     BookshelfPreviewHost()
-                } else if showKnowledgeHomePreview {
+                } else if showKnowledgeHomePreview && !showTabBarPreview {
                     KnowledgeView()
                 } else if showTabBarPreview {
                     MainTabView()
@@ -70,6 +82,81 @@ public struct AIPlatformApp: App {
 }
 
 #if DEBUG
+private struct PrototypeReviewNavigator: View {
+    private static let pageIDs: [String] = {
+        let v3 = [
+            "v3/01-auth", "v3/02-chat-core", "v3/03-compose-import-voice",
+            "v3/04-clarify-status-cards", "v3/05-rich-content", "v3/06-knowledge-home",
+            "v3/07-note-editor-reader", "v3/08-workflow-plan", "v3/09-workflow-execution",
+            "v3/10-topology-evaluation", "v3/11-settings-agent-memory",
+            "v3/12-subscription-governance", "v3/13-bookshelf-reader"
+        ].flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let v4 = [
+            "v4/01-auth-errors-v4", "v4/02-chat-reasoning-voice-v4",
+            "v4/03-clarify-merge-preview-v4", "v4/04-workflow-simple-plan-v4",
+            "v4/05-workflow-agent-usage-v4", "v4/06-travel-chat-to-workflow-v4",
+            "v4/07-travel-plan-output-v4", "v4/08-reader-question-annotation-v4",
+            "v4/09-agent-chat-creation-v4", "v4/10-agent-knowledge-tools-crud-v4",
+            "v4/11-workflow-canvas-comfy-v4", "v4/12-node-detail-eval-compare-v4",
+            "v4/13-smart-research-ppt-v4"
+        ].flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let v5 = ["v5/01-startup-clean-v5-p01"]
+            + ["v5/02-travel-note-layout-v5", "v5/03-photo-thought-auto-layout-v5"]
+                .flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let ids = v3 + v4 + v5
+        precondition(ids.count == 113 && Set(ids).count == ids.count)
+        return ids
+    }()
+
+    @State private var pageIndex: Int
+
+    init(initialPageID: String) {
+        _pageIndex = State(initialValue: Self.pageIDs.firstIndex(of: initialPageID) ?? 0)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            V5PrototypePreviewHost(pageID: Self.pageIDs[pageIndex])
+                .id(Self.pageIDs[pageIndex])
+
+            HStack(spacing: 12) {
+                Button {
+                    pageIndex -= 1
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(pageIndex == 0)
+
+                VStack(spacing: 1) {
+                    Text("\(pageIndex + 1) / \(Self.pageIDs.count)")
+                        .font(.caption.weight(.bold))
+                    Text(Self.pageIDs[pageIndex])
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+
+                Button {
+                    pageIndex += 1
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(pageIndex == Self.pageIDs.count - 1)
+            }
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(AppTheme.Colors.border.opacity(0.8)))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+    }
+}
+
 private struct BookshelfPreviewHost: View {
     @State private var showingBookshelf = true
     private let center = ProcessInfo.processInfo.arguments.contains("-bookshelfSourcePreview")

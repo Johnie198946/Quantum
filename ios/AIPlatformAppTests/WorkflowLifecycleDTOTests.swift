@@ -878,6 +878,32 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(shelf.books.first?.authorSource, "raw")
     }
 
+    func testComponentAssetLibraryUsesExistingBookAndNoteMetadata() {
+        XCTAssertEqual(
+            ContentAssetLibrary.bookCoverName(theme: "strategic-signal", title: "战略信号手册"),
+            "book_cover_history"
+        )
+        XCTAssertEqual(
+            ContentAssetLibrary.journalCoverName(tags: ["travel"], title: "京都路线"),
+            "journal_cover_travel"
+        )
+        XCTAssertEqual(ContentAssetLibrary.contentIconName(for: "整理这篇文章"), "content_icon_reading")
+        XCTAssertNotEqual(
+            ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 0),
+            ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 1)
+        )
+    }
+
+    func testTravelPlanDocumentDecodesSideRouteArtifactContent() throws {
+        let content = #"{"destination":"日本 · 京都","date_range":"4月12日 – 4月16日","budget":"约 ¥8,000/人","companions":2,"style":"人文 · 美食","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"清水寺","latitude":34.9949,"longitude":135.7850}]}"#
+
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+
+        XCTAssertEqual(plan.destination, "日本 · 京都")
+        XCTAssertEqual(plan.dateRange, "4月12日 – 4月16日")
+        XCTAssertEqual(plan.stops.map(\.name), ["京都站", "清水寺"])
+    }
+
     func testDailyPublicationDTOFieldsDecode() throws {
         let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
         let book = try decoder().decode(KnowledgeBookDTO.self, from: data)
@@ -1247,6 +1273,15 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
     func testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary() {
         XCTAssertEqual(ChatMessageStreamView.historyPositionAnchor, .top)
+        XCTAssertTrue(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: false, userHasTakenScrollControl: false
+        ))
+        XCTAssertFalse(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: false, userHasTakenScrollControl: true
+        ))
+        XCTAssertFalse(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: true, userHasTakenScrollControl: false
+        ))
         XCTAssertTrue(ChatMessageStreamView.shouldArmOlderHistoryPull(
             translationHeight: 13, isGenerating: false
         ))
@@ -3088,6 +3123,23 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testLoginInputPolicyKeepsOnlyBoundedDigits() {
         XCTAssertEqual(LoginInputPolicy.digits("138 0013-8000 extra", limit: 11), "13800138000")
         XCTAssertEqual(LoginInputPolicy.digits("24681099", limit: 6), "246810")
+    }
+
+    func testInboxImageDownsamplingBoundsDecodedPixels() throws {
+        #if canImport(UIKit)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 200)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+        }
+        let output = try XCTUnwrap(
+            InboxFileManager.shared.downsampleImage(
+                data: try XCTUnwrap(image.pngData()),
+                maxDimension: 100
+            )
+        )
+        let result = try XCTUnwrap(UIImage(data: output))
+        XCTAssertLessThanOrEqual(max(result.size.width, result.size.height), 100)
+        #endif
     }
 
     func testAuthentication401PreservesBackendReason() {
@@ -5036,5 +5088,177 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowB.id])
         coordinator.selectClientSession(nil)
         XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+    }
+
+    func testReadingDeckUsesHeadingsWithoutSplittingContinuousProse() {
+        let pages = ReadingCardDeck.pages(from: [
+            .paragraph("引言"),
+            .paragraph("背景"),
+            .heading(level: 2, text: "第一部分"),
+            .paragraph("要点一"),
+            .paragraph("要点二"),
+            .paragraph("要点三"),
+            .paragraph("要点四"),
+            .paragraph("要点五")
+        ])
+
+        XCTAssertEqual(pages.count, 2)
+        XCTAssertEqual(pages.first?.count, 2)
+        XCTAssertEqual(pages.dropFirst().first?.first, .heading(level: 2, text: "第一部分"))
+        XCTAssertEqual(pages.last?.count, 6)
+
+        let stableBlocks = LongAnswerSheet.coalescedBlocks(content: "", serverBlocks: [
+            .init(blockIndex: 0, kind: "markdown", content: "第一段"),
+            .init(blockIndex: 1, kind: "markdown", content: "第二段"),
+            .init(blockIndex: 2, kind: "code", content: "print(1)")
+        ])
+        XCTAssertEqual(stableBlocks.count, 2)
+        XCTAssertEqual(stableBlocks.first?.content, "第一段\n\n第二段")
+    }
+
+    func testMarkdownFormulaBecomesDedicatedReadingCard() {
+        let blocks = MarkdownBlockParser.shared.parse("""
+        先看这个结论。
+
+        $$
+        x_n \\to a
+        $$
+
+        ## 为什么成立
+        因为误差可以被控制。
+        """)
+
+        XCTAssertEqual(blocks, [
+            .paragraph("先看这个结论。"),
+            .formula("x_n \\to a"),
+            .heading(level: 2, text: "为什么成立"),
+            .paragraph("因为误差可以被控制。")
+        ])
+        XCTAssertEqual(ReadingCardDeck.pages(from: blocks).map(\.count), [1, 1, 2])
+        XCTAssertEqual(MarkdownBlockParser.shared.parse("```latex\nE = mc^2\n```"), [.formula("E = mc^2")])
+        XCTAssertEqual(
+            MathFormulaPresentation.displayText("E = \\sum_{i=1}^{n} P_i \\times h_i \\times \\alpha_i"),
+            "E = ∑ᵢ₌₁ⁿ Pᵢ × hᵢ × αᵢ"
+        )
+        XCTAssertEqual(
+            MathFormulaPresentation.displayText("P = \\eta \\cdot A \\cdot G"),
+            "P = η · A · G"
+        )
+        XCTAssertEqual(MathFormulaPresentation.displayText("\\frac{\\epsilon}{2}"), "ε⁄2")
+    }
+
+    func testMarkdownChartCanBeSharedByChatAndNotes() throws {
+        let block = try XCTUnwrap(MarkdownBlockParser.chart(
+            language: "chart",
+            code: #"{"title":"学习进度","type":"bar","points":[{"label":"周一","value":30}]}"#
+        ))
+        guard case .chart(let chart) = block else {
+            return XCTFail("Expected a chart block")
+        }
+        XCTAssertEqual(chart.title, "学习进度")
+        XCTAssertEqual(chart.chartType, .bar)
+        XCTAssertEqual(chart.series.first?.points.first?.value, 30)
+    }
+
+    func testInlineMathPresentationKeepsProseAndConvertsDelimitedMath() {
+        XCTAssertEqual(
+            InlineMathPresentation.segments(in: "功率 $P = \\eta \\cdot A$，且 \\(x_i^2\\) 收敛。"),
+            [
+                .init(text: "功率 ", isMath: false),
+                .init(text: "P = \\eta \\cdot A", isMath: true),
+                .init(text: "，且 ", isMath: false),
+                .init(text: "x_i^2", isMath: true),
+                .init(text: " 收敛。", isMath: false),
+            ]
+        )
+        XCTAssertEqual(MathFormulaPresentation.displayText("P = \\eta \\cdot A"), "P = η · A")
+    }
+
+    func testNoteInlineAnnotationKeepsOriginalTextAndHidesStoredMetadata() {
+        let extracted = NoteInlineAnnotation.extract(from: """
+        阅读让生活更丰富。
+
+        <!-- quantum-annotation:annotation-1 -->
+        > [!quote] 选文
+        > 阅读让生活更丰富。
+
+        > [!note] 我的批注
+        > 这句话提醒我把阅读和日常联系起来。
+        <!-- /quantum-annotation -->
+        """)
+
+        XCTAssertTrue(extracted.body.contains("阅读让生活更丰富。"))
+        XCTAssertFalse(extracted.body.contains("我的批注"))
+        XCTAssertEqual(extracted.annotations, [
+            .init(
+                id: "annotation-1",
+                quote: "阅读让生活更丰富。",
+                detail: "这句话提醒我把阅读和日常联系起来。"
+            )
+        ])
+    }
+
+    func testBookAnnotationParsesQuoteAndStudentNoteMetadata() throws {
+        let note = KnowledgeNote(
+            id: "annotation-1",
+            title: "示例批注",
+            body: """
+            > [!quote] 书籍摘录
+            > 阳光很好，树叶在风里沙沙地响。
+
+            > [!note] 我的批注
+            > 这里的听觉描写让画面更安静。
+
+            ---
+            书籍标题：我与地坛
+            章节标题：秋天的怀念
+            来源书籍 ID：`book-1`
+            来源章节 ID：`section-3`
+            """,
+            tags: ["阅读批注", "quantum-books"],
+            aliases: [],
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2),
+            isPinned: false,
+            fileURL: URL(fileURLWithPath: "/tmp/annotation-1.md"),
+            outgoingLinks: []
+        )
+
+        let entry = try XCTUnwrap(ReaderAnnotationEntry(note: note))
+        XCTAssertEqual(entry.bookID, "book-1")
+        XCTAssertEqual(entry.sectionID, "section-3")
+        XCTAssertEqual(entry.sectionTitle, "秋天的怀念")
+        XCTAssertEqual(entry.quote, "阳光很好，树叶在风里沙沙地响。")
+        XCTAssertEqual(entry.detail, "这里的听觉描写让画面更安静。")
+        XCTAssertEqual(entry.kind, "笔记")
+
+        var questionNote = note
+        questionNote.body = questionNote.body.replacingOccurrences(
+            of: "这里的听觉描写让画面更安静。",
+            with: "我的问题\n> 这句话表达了怎样的情感？\n> \n> AI 回答摘要\n> 以自然描写呈现宁静温暖的氛围。"
+        )
+        XCTAssertEqual(ReaderAnnotationEntry(note: questionNote)?.kind, "问答")
+    }
+
+    func testReadingLanguagePresentationSwitchesEnglishActions() {
+        XCTAssertTrue(ReadingLanguagePresentation.isEnglish("What does this theorem mean in practice?"))
+        XCTAssertFalse(ReadingLanguagePresentation.isEnglish("这个定理在实际中是什么意思？"))
+    }
+
+    func testInlineWorkflowAndKnowledgeCardsPersistAcrossHistory() throws {
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-card","title":"期末复习计划","description":"按章节整理重点","desiredOutput":"复习提纲","status":"planning","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let target = KnowledgeNavigationTarget(destination: "knowledge_home", noteId: nil, query: "相关书籍")
+        var message = ChatMessage(id: "inline-cards", sessionId: "session", role: .assistant, content: "")
+        message.blocks = [.workflow(workflow), .knowledgeNavigation(target)]
+
+        let restored = try JSONDecoder().decode(
+            PersistedMessage.self,
+            from: JSONEncoder().encode(PersistedMessage(message))
+        ).toChatMessage(sessionId: "session")
+
+        XCTAssertEqual(restored.blocks, message.blocks)
     }
 }

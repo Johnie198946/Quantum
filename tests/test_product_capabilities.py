@@ -295,18 +295,30 @@ def test_bridge_mutations_only_emit_identity_free_confirmation_proposals():
                 "title": "QCP deck", "description": "turn source into a deck",
             },
         }))
+        text_presentation = json.loads(bridge._app_capability_invoke_tool({
+            "capability_id": "presentation.create_from_text",
+            "input": {"title": "学习方法", "text_material": "整理成课堂演示"},
+        }))
     finally:
         bridge._client_context_tool_context.value = None
-    assert {created["status"], started["status"], presentation["status"]} == {
+    assert {created["status"], started["status"], presentation["status"], text_presentation["status"]} == {
         "awaiting_confirmation"
     }
-    assert all(item["receipt"] is None for item in (created, started, presentation))
-    assert [event["type"] for event in events] == ["capability.proposed"] * 3
+    assert all(item["receipt"] is None for item in (created, started, presentation, text_presentation))
+    assert [event["type"] for event in events] == ["capability.proposed"] * 4
     serialized = json.dumps(events)
     assert not {"tenant_key", "user_id", "confirmed", "idempotency_key"} & set(
         key for event in events for key in event["payload"]
     )
     assert "tenant_key" not in serialized and "user_id" not in serialized
+
+
+def test_presentation_request_directive_routes_to_native_confirmation_tool():
+    directive = bridge._presentation_capability_directive("帮我做一份学习方法 PPT", True)
+    assert "app_presentation_create_from_text" in directive
+    assert "one-time token" in directive
+    assert bridge._presentation_capability_directive("怎么写好一份演示文稿？", False) == ""
+    assert bridge._presentation_capability_directive("解释太阳能电池", True) == ""
 
 
 def test_bridge_knowledge_mutations_preserve_caller_cas_versions():

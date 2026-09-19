@@ -1822,6 +1822,10 @@ async def stream_chat(
         quote = req.quoted_context.strip()
         if quote:
             goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
+            if req.context_scope.selected_book_id or req.context_scope.local_notes:
+                # Trusted platform marker: selected text carried with an
+                # authorized reading scope, not an ungrounded Wiki question.
+                goal = "[SERVER_SELECTION_CONTEXT]\n" + goal
     if re.search(r"对比|比较|vs|区别|差异|哪个好|对比一下", req.question, re.IGNORECASE):
         goal += (
             "\n\n（输出要求：本问题涉及两个及以上主体对比，请使用 Markdown 表格呈现，"

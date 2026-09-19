@@ -188,9 +188,11 @@ public struct TableCard: View {
     }
 
     private func requirementValue(_ detail: String) -> some View {
-        Text(LocalizedStringKey(detail.isEmpty ? "—" : detail))
-            .font(AppTheme.Typography.body)
-            .foregroundColor(AppTheme.Colors.textPrimary)
+        MarkdownText(
+            detail.isEmpty ? "—" : detail,
+            font: AppTheme.Typography.body,
+            color: AppTheme.Colors.textPrimary
+        )
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -241,9 +243,11 @@ public struct TableCard: View {
             ForEach(widths.indices, id: \.self) { index in
                 Group {
                     if index < cells.count {
-                        Text(cells[index])
-                            .font(.system(size: 12, weight: isHeader ? .semibold : .regular))
-                            .foregroundColor(isHeader ? AppTheme.Colors.brandPrimary : AppTheme.Colors.textSecondary)
+                        MarkdownText(
+                            cells[index],
+                            font: .system(size: 12, weight: isHeader ? .semibold : .regular),
+                            color: isHeader ? AppTheme.Colors.brandPrimary : AppTheme.Colors.textSecondary
+                        )
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {

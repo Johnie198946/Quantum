@@ -37,6 +37,8 @@
 	<array>
 		<string>alipays</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>用于拍摄并保存旅行笔记中的照片。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于语音交互输入，将你的语音实时转写为文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
