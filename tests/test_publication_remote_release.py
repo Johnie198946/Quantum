@@ -149,6 +149,19 @@ def test_release_zero_with_blocked_or_missing_status_fails_attention(monkeypatch
     assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
 
 
+def test_historical_blocked_does_not_poison_complete_current_day(monkeypatch, tmp_path):
+    module = _module()
+    identity, known_hosts = _files(tmp_path)
+    historical = _item("blocked", "anthropic-originals", "2026-01-20", "blocked", ["review_missing"])
+    current = [
+        _item("history", "ai-history", DAY, "published"),
+        _item("practice", "ai-practice", DAY, "published"),
+    ]
+    _run(module, monkeypatch, [_status([]), _release(0), _status([historical, *current])])
+
+    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
+
+
 def test_status_only_never_calls_release_due(monkeypatch, tmp_path, capsys):
     module = _module()
     identity, known_hosts = _files(tmp_path)

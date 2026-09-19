@@ -286,8 +286,11 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
 
 
 def _attention(summary: dict) -> bool:
-    totals = summary["totals"]
-    return bool(totals["blocked"] or totals["missing"] or any(count != 1 for count in summary["today"]["by_series"].values()))
+    day = summary["today"]["date"]
+    current_blocked = [item for item in summary["issues"]["blocked"] if item.get("issue_date") == day]
+    return bool(current_blocked or summary["issues"]["missing"] or any(
+        count != 1 for count in summary["today"]["by_series"].values()
+    ))
 
 
 def main(argv: list[str] | None = None) -> int:
