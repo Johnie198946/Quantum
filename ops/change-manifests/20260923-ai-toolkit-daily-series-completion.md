@@ -21,11 +21,12 @@
 
 ## 交付状态
 
-- local_commit: 待提交
-- remote_sha: 待推送后回读
-- server_before: 待部署前回读
-- server_after: 待部署后回读
-- health_check: 待执行
-- functional_check: 待执行
-- rollback_point: 待建立
-- remaining_risks: 首期正文仍须经作者、独立审稿与确定性发行门禁，不能用配置成功代替出版成功。
+- status: `PUSHED`（未部署）
+- local_commit / remote_sha: `944249a35724edf1996b76bcf6aaa17f2c29f0b5`，GitHub `main` 已回读一致。
+- Cron: 作者与独立审稿任务已原位更新并回读；作者每日 `08:00/14:00/18:00`，审稿 `10:00/10:30/16:00/16:30/20:00/20:30`，均启用。
+- server_before/server_after: 均为 `/opt/releases/ai-lab-platform-6d7619918701.hRYPgT`，`.deployed-sha=6d761991870150f65a7c1468388ccbb142eeba0e`。
+- deployment: 标准 exact-SHA 部署在原子切换前 fail-closed：`backend image revision mismatch: api=6d761991... expected=944249a...`；未改动线上 release。
+- health_check: 旧生产 API 容器 `running/healthy`。
+- functional_check: 本地 `57 passed`；Cron 提示回读包含 `ai-toolkit` 与 `research_deposit`。
+- rollback_point: 无需回滚，部署未越过镜像验证与原子切换。
+- remaining_risks: 需先构建并验证目标 SHA 的离线后端镜像、更新 attestation，再重跑 exact-SHA 部署；其后首期正文还须经过作者、独立审稿与确定性发行门禁。配置、调度或生成启动均不能代替出版成功。
