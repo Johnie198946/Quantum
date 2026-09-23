@@ -32,6 +32,7 @@ public struct ChatView: View {
     @State private var showingSessionDrawer: Bool = false
     @State private var showingAgentPicker: Bool = false
     @State private var showingTopicDiscussion: Bool = false
+    @State private var homeJourney: ChatHomeAction?
     @State private var tenantAgents: [TenantAgentDTO] = []
     @State private var dismissKeyboardToken = 0
     // Keep the draft local so every keystroke does not publish through the
@@ -52,16 +53,19 @@ public struct ChatView: View {
                 }
 
                 VStack(spacing: 0) {
-                    ChatTopBarView(
-                        isGenerating: coordinator.isGenerating,
-                        title: coordinator.sessionManager.title(for: coordinator.sessionManager.activeSessionID()),
-                        onTitleTap: { showingSessionDrawer = true },
-                        onNewSession: { coordinator.newSession() },
-                        onHistoryTap: { showingSessionDrawer = true },
-                        onClearTap: { isShowingClearAlert = true }
-                    )
-                    if let topic = currentTopic {
-                        topicControlBar(topic)
+                    if !coordinator.messages.isEmpty {
+                        ChatTopBarView(
+                            isGenerating: coordinator.isGenerating,
+                            title: coordinator.sessionManager.title(for: coordinator.sessionManager.activeSessionID()),
+                            onWorkbenchTap: { coordinator.newSession() },
+                            onTitleTap: { showingSessionDrawer = true },
+                            onNewSession: { coordinator.newSession() },
+                            onHistoryTap: { showingSessionDrawer = true },
+                            onClearTap: { isShowingClearAlert = true }
+                        )
+                        if let topic = currentTopic {
+                            topicControlBar(topic)
+                        }
                     }
                     ChatMessageStreamView(
                         coordinator: coordinator,
@@ -70,7 +74,7 @@ public struct ChatView: View {
                             coordinator.startTargetedTopic(from: message)
                             showingTopicDiscussion = currentTopic != nil
                         },
-                        onWelcomePrompt: { coordinator.sendMessage(text: $0) }
+                        onWelcomeAction: { homeJourney = $0 }
                     )
                 }
 
@@ -95,6 +99,7 @@ public struct ChatView: View {
                         speechService: speechService,
                         isGenerating: coordinator.isGenerating,
                         dismissKeyboardToken: dismissKeyboardToken,
+                        placeholder: coordinator.messages.isEmpty ? "问问 Quantum…" : "发消息…",
                         onSend: {
                             guard let text = ChatDraftSubmission.consume(&draftText) else { return }
                             coordinator.sendMessage(text: text)
@@ -119,6 +124,18 @@ public struct ChatView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(item: $homeJourney) { action in
+                HomeJourneyView(
+                    action: action,
+                    onBack: { homeJourney = nil },
+                    onPrompt: { prompt in
+                        homeJourney = nil
+                        coordinator.sendMessage(text: prompt)
+                    }
+                )
+                .environmentObject(sessionManager)
+                .environmentObject(appState)
+            }
             .alert("清空当前对话？", isPresented: $isShowingClearAlert) {
                 Button("取消", role: .cancel) {}
                 Button("清空", role: .destructive) { coordinator.clearCurrentSession() }

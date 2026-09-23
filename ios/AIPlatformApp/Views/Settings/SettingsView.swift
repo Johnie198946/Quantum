@@ -754,6 +754,60 @@ private enum BookshelfScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private enum BookshelfTopic: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case literature = "文学"
+    case mathematics = "数学"
+    case ai = "AI"
+    case psychology = "心理"
+    case english = "英语"
+    case travel = "旅行"
+
+    var id: String { rawValue }
+}
+
+private enum BookshelfSortOrder: String, CaseIterable, Identifiable {
+    case recent = "最近阅读"
+    case added = "最近加入"
+    case title = "书名"
+    case progress = "阅读进度"
+
+    var id: String { rawValue }
+}
+
+private enum BookshelfContentKind: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case book = "图书"
+    case note = "笔记"
+    case article = "文章"
+
+    var id: String { rawValue }
+}
+
+private struct KnowledgeBookCover: View {
+    @EnvironmentObject private var api: APIClient
+    let title: String
+    let author: String
+    let seed: String
+    let theme: String?
+    let variant: Int?
+    let coverAvailable: Bool
+    let width: CGFloat
+    @State private var image: UIImage?
+
+    var body: some View {
+        IllustratedBookCover(
+            title: title, author: author, theme: theme, variant: variant,
+            seed: seed, width: width, image: image
+        )
+        .task(id: "\(seed):\(coverAvailable)") {
+            guard coverAvailable, image == nil,
+                  let data = try? await api.fetchKnowledgeBookCover(id: seed) else { return }
+            image = UIImage(data: data)
+        }
+    }
+}
+
 public struct SubscriptionCenterView: View {
     @EnvironmentObject private var api: APIClient
     @Environment(\.dismiss) private var dismiss
@@ -779,8 +833,13 @@ public struct SubscriptionCenterView: View {
     @State private var selectedPackIDs: Set<String> = []
     @State private var selectedShelfID: String?
     @State private var bookshelfQuery = ""
-    @State private var showsBookshelfSearch = false
     @State private var bookshelfScope: BookshelfScope = .reading
+    @State private var allBooksScope: BookshelfScope?
+    @State private var bookshelfTopic: BookshelfTopic = .all
+    @State private var bookshelfSortOrder: BookshelfSortOrder = .recent
+    @State private var bookshelfContentKind: BookshelfContentKind = .all
+    @State private var showsAllBooks = false
+    @State private var showsBookshelfFilters = false
     @State private var inspectedBook: KnowledgeBookDTO?
     @State private var subscribedBookIDs: Set<String> = []
     @State private var bookSubscriptions: [KnowledgeBookSubscriptionDTO] = []
@@ -792,6 +851,7 @@ public struct SubscriptionCenterView: View {
     @State private var publicationSecurity = "green"
     @State private var publicationEntitlement = ""
     @State private var publicationOwner = ""
+    @FocusState private var isBookshelfSearchFocused: Bool
     @Namespace private var bookshelfTransition
 
     public init(
@@ -823,6 +883,9 @@ public struct SubscriptionCenterView: View {
                       let shelf = bookshelves.first(where: { $0.id == selectedShelfID }) {
                 bookshelfDetail(shelf)
                     .transition(.opacity)
+            } else if showsAllBooks, !bookshelves.isEmpty {
+                allBooksPage(bookshelves)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if !bookshelves.isEmpty {
                 bookshelfCollections(bookshelves)
                     .transition(.opacity)
@@ -857,7 +920,19 @@ public struct SubscriptionCenterView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if selectedShelfID != nil {
+                if showsAllBooks {
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
+                            showsAllBooks = false
+                            bookshelfQuery = ""
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("返回书架")
+                } else if selectedShelfID != nil {
                     Button {
                         withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.86)) {
                             selectedShelfID = nil
@@ -881,7 +956,12 @@ public struct SubscriptionCenterView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if selectedShelfID != nil {
+                if showsAllBooks {
+                    Button("管理") { showsBookshelfFilters = true }
+                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.primary)
+                        .accessibilityIdentifier("publication-bookshelf-manage")
+                } else if selectedShelfID != nil {
                     Button { Task { await loadBookshelves() } } label: {
                         Image(systemName: "arrow.clockwise")
                             .frame(width: 44, height: 44)
@@ -908,6 +988,11 @@ public struct SubscriptionCenterView: View {
         .sheet(item: $inspectedCandidate) { candidate in
             publicationApprovalSheet(candidate)
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showsBookshelfFilters) {
+            bookshelfFilterSheet
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .task {
@@ -951,97 +1036,84 @@ public struct SubscriptionCenterView: View {
 
     private func bookshelfCollections(_ allShelves: [KnowledgeBookshelfDTO]) -> some View {
         let allBooks = uniqueBooks(in: allShelves)
-        let matchingBooks = allBooks.filter {
-            bookshelfQuery.isEmpty || $0.title.localizedStandardContains(bookshelfQuery)
-                || $0.author.localizedStandardContains(bookshelfQuery)
-        }
         let progressByBookID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
-        let ownedBooks = matchingBooks.filter { subscribedBookIDs.contains($0.id) }
-        let shelfBooks = ownedBooks.isEmpty && bookshelfScope == .reading ? Array(matchingBooks.prefix(2)) : ownedBooks
-        let scopedBooks = shelfBooks.filter { book in
-            let progress = progressByBookID[book.id] ?? 0
-            switch bookshelfScope {
-            case .reading: return progress < 0.98
-            case .saved: return true
-            case .finished: return progress >= 0.98
-            }
-        }
-        let visibleShelfIDs = Set(scopedBooks.map(\.id))
-        let recommendations = allBooks.filter {
-            !subscribedBookIDs.contains($0.id) && !visibleShelfIDs.contains($0.id)
-        }
-        return ScrollView {
-            LazyVStack(spacing: AppTheme.Spacing.lg) {
+        let matchingBooks = filterBooks(allBooks, progressByBookID: progressByBookID)
+        let scopedBooks = books(for: bookshelfScope, in: matchingBooks, progressByBookID: progressByBookID)
+        let recentBooks = recentBooks(from: allBooks)
+        return ZStack(alignment: .top) {
+            Image("home_attention_botanical")
+                .resizable()
+                .scaledToFill()
+                .frame(height: 210)
+                .clipped()
+                .overlay {
+                    LinearGradient(
+                        colors: [Color(hex: "FFFCF6").opacity(0.08), Color(hex: "FFFCF6")],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .accessibilityHidden(true)
+            ScrollView {
+                LazyVStack(spacing: AppTheme.Spacing.lg) {
                 HStack(alignment: .center) {
-                    Text("书架")
-                        .font(.system(size: 34, weight: .bold, design: .serif))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("书架")
+                            .font(.system(size: 38, weight: .bold, design: .serif))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                        Text("阅读，让更好的自己发生")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .italic()
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                            .rotationEffect(.degrees(-4))
+                            .padding(.leading, 104)
+                            .padding(.top, -8)
+                    }
                     Spacer()
                     Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            showsBookshelfSearch.toggle()
-                            if !showsBookshelfSearch { bookshelfQuery = "" }
-                        }
+                        isBookshelfSearchFocused = true
                     } label: {
-                        Image(systemName: showsBookshelfSearch ? "xmark" : "magnifyingglass")
+                        Image(systemName: "magnifyingglass")
                             .font(.headline)
                             .frame(width: 44, height: 44)
                             .background(Color.white.opacity(0.82), in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(showsBookshelfSearch ? "关闭搜索" : "搜索书籍")
-                    Button { Task { await loadBookshelves() } } label: {
-                        Image(systemName: "arrow.clockwise")
+                    .accessibilityLabel("搜索书籍")
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        Image(systemName: "plus")
                             .font(.headline)
                             .frame(width: 44, height: 44)
                             .background(Color.white.opacity(0.82), in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(isLoading)
-                    .accessibilityLabel("刷新知识书架")
-                    .accessibilityIdentifier("publication-bookshelf-refresh")
+                    .accessibilityLabel("添加书籍")
                 }
 
-                if showsBookshelfSearch || !bookshelfQuery.isEmpty {
-                    bookshelfSearch(placeholder: "搜索书名、作者或关键词")
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                HStack(spacing: AppTheme.Spacing.xl) {
-                    ForEach(BookshelfScope.allCases) { scope in
-                        Button {
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { bookshelfScope = scope }
-                        } label: {
-                            VStack(spacing: 7) {
-                                Text(scope.rawValue)
-                                    .font(.subheadline.weight(bookshelfScope == scope ? .bold : .regular))
-                                Capsule()
-                                    .fill(bookshelfScope == scope ? AppTheme.Colors.textPrimary : Color.clear)
-                                    .frame(width: 26, height: 3)
-                            }
-                            .foregroundStyle(bookshelfScope == scope ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer()
-                }
+                bookshelfSearch(placeholder: "搜索书名、作者或关键词")
+                bookshelfScopeTabs(allBooks, progressByBookID: progressByBookID)
 
                 if !bookshelfQuery.isEmpty {
                     bookSearchResults(matchingBooks)
                 } else {
-                    readingShelf(scopedBooks, progressByBookID: progressByBookID)
-                    if !recommendations.isEmpty {
-                        recommendationShelf(Array(recommendations.prefix(8)))
-                    }
+                    recentReadingSection(
+                        scopedBooks.isEmpty ? recentBooks : Array(scopedBooks.prefix(4)),
+                        progressByBookID: progressByBookID
+                    )
+                    bookshelfListSection(allShelves)
+                    topicDiscoverySection(allBooks, progressByBookID: progressByBookID)
                 }
                 if let errorMessage { inlineError(errorMessage) }
+                }
+                .padding(.horizontal, AppTheme.Metrics.contentGutter)
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.xxxl)
             }
-            .padding(.horizontal, AppTheme.Metrics.contentGutter)
-            .padding(.top, AppTheme.Spacing.sm)
-            .padding(.bottom, AppTheme.Spacing.xxxl)
+            .refreshable { await loadBookshelves() }
+            .accessibilityIdentifier("publication-bookshelf-container")
         }
-        .refreshable { await loadBookshelves() }
-        .accessibilityIdentifier("publication-bookshelf-container")
     }
 
     private func uniqueBooks(in shelves: [KnowledgeBookshelfDTO]) -> [KnowledgeBookDTO] {
@@ -1049,97 +1121,573 @@ public struct SubscriptionCenterView: View {
         return shelves.flatMap(\.books).filter { seen.insert($0.id).inserted }
     }
 
-    @ViewBuilder
-    private func readingShelf(_ books: [KnowledgeBookDTO], progressByBookID: [String: Double]) -> some View {
-        if books.isEmpty {
-            VStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: bookshelfScope == .finished ? "checkmark.circle" : "book.closed")
-                    .font(.system(size: 30, weight: .light))
-                    .foregroundStyle(AppTheme.Colors.primary.opacity(0.55))
-                Text(bookshelfScope == .finished ? "还没有读完的书" : "这里还没有书")
-                    .font(.headline)
-                Text(bookshelfScope == .reading ? "从下方推荐中选一本开始阅读。" : "切换其他分类看看。")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 138)
-            .background(AppTheme.Colors.cardBackground.opacity(0.78), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-        } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
-                    ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
-                        Button { inspectedBook = book } label: {
-                            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                                bookCover(
-                                    title: book.title, author: book.author, seed: book.id,
-                                    theme: book.coverTheme, variant: book.coverVariant, width: 146
-                                )
-                                ProgressView(value: min(max(progressByBookID[book.id] ?? 0, 0), 1))
-                                    .tint(index.isMultiple(of: 2) ? AppTheme.Colors.quantumBlue : AppTheme.Colors.statusCompleted)
-                                    .frame(width: 146)
-                                HStack {
-                                    Text(progressByBookID[book.id, default: 0] > 0
-                                         ? "已读 \(Int(progressByBookID[book.id, default: 0] * 100))%"
-                                         : "开始阅读")
-                                    Spacer()
-                                }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(AppTheme.Colors.textSecondary)
-                                .frame(width: 146)
-                                Text(progressByBookID[book.id, default: 0] > 0 ? "继续阅读" : "打开阅读")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 146, height: 36)
-                                    .background(AppTheme.Colors.textPrimary, in: Capsule())
-                            }
-                        }
-                        .buttonStyle(SoftButtonStyle())
-                        .accessibilityLabel("打开《\(book.title)》")
-                    }
-                }
-                .padding(.vertical, AppTheme.Spacing.sm)
+    private func recentBooks(from books: [KnowledgeBookDTO]) -> [KnowledgeBookDTO] {
+        let byID = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
+        let recent = bookSubscriptions.sorted { $0.lastReadAt > $1.lastReadAt }.compactMap { byID[$0.book.id] }
+        return recent.isEmpty ? Array(books.prefix(4)) : recent
+    }
+
+    private func books(
+        for scope: BookshelfScope,
+        in allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> [KnowledgeBookDTO] {
+        let owned = allBooks.filter { subscribedBookIDs.contains($0.id) }
+        let candidates = owned.isEmpty && scope == .reading ? Array(allBooks.prefix(4)) : owned
+        return candidates.filter { book in
+            let progress = progressByBookID[book.id] ?? 0
+            switch scope {
+            case .reading: return progress < 0.98
+            case .saved: return true
+            case .finished: return progress >= 0.98
             }
         }
     }
 
-    private func recommendationShelf(_ books: [KnowledgeBookDTO]) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                Text("为你推荐")
-                    .font(.system(.title3, design: .serif, weight: .bold))
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                Spacer()
-                Text("更多  ›")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
+    private func filterBooks(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> [KnowledgeBookDTO] {
+        let lastReadByID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.lastReadAt) })
+        let subscribedByID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.subscribedAt) })
+        return books.filter { book in
+            let matchesQuery = bookshelfQuery.isEmpty
+                || book.title.localizedStandardContains(bookshelfQuery)
+                || book.author.localizedStandardContains(bookshelfQuery)
+                || book.summary.localizedStandardContains(bookshelfQuery)
+            let matchesTopic = bookshelfTopic == .all || topic(for: book) == bookshelfTopic
+            let matchesKind: Bool
+            switch bookshelfContentKind {
+            case .all: matchesKind = true
+            case .book: matchesKind = book.publicationFormat == "book" || book.publicationFormat == "chapter"
+            case .note: matchesKind = book.publicationFormat == nil
+            case .article: matchesKind = book.publicationFormat == "article" || book.publicationFormat == "source"
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
-                    ForEach(books) { book in
-                        Button { inspectedBook = book } label: {
-                            VStack(alignment: .leading, spacing: 7) {
-                                bookCover(
-                                    title: book.title, author: book.author, seed: book.id,
-                                    theme: book.coverTheme, variant: book.coverVariant, width: 92
-                                )
-                                Text(book.title)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                                    .lineLimit(2)
-                                    .frame(width: 92, alignment: .leading)
-                                Text(book.author)
-                                    .font(.caption2)
-                                    .foregroundStyle(AppTheme.Colors.textTertiary)
-                                    .lineLimit(1)
-                                    .frame(width: 92, alignment: .leading)
-                            }
-                        }
-                        .buttonStyle(SoftButtonStyle())
-                    }
-                }
-                .padding(.vertical, AppTheme.Spacing.sm)
+            return matchesQuery && matchesTopic && matchesKind
+        }
+        .sorted { left, right in
+            switch bookshelfSortOrder {
+            case .recent: return lastReadByID[left.id, default: ""] > lastReadByID[right.id, default: ""]
+            case .added: return subscribedByID[left.id, default: ""] > subscribedByID[right.id, default: ""]
+            case .title: return left.title.localizedStandardCompare(right.title) == .orderedAscending
+            case .progress: return progressByBookID[left.id, default: 0] > progressByBookID[right.id, default: 0]
             }
         }
+    }
+
+    private func topic(for book: KnowledgeBookDTO) -> BookshelfTopic {
+        let value = "\(book.coverTheme ?? "") \(book.title) \(book.summary)".lowercased()
+        if ["math", "数学", "代数", "分析", "定理"].contains(where: value.contains) { return .mathematics }
+        if ["ai", "人工智能", "技术", "模型", "agent"].contains(where: value.contains) { return .ai }
+        if ["psychology", "心理", "成长", "习惯"].contains(where: value.contains) { return .psychology }
+        if ["english", "英语", "英文"].contains(where: value.contains) { return .english }
+        if ["travel", "旅行", "京都", "城市"].contains(where: value.contains) { return .travel }
+        return .literature
+    }
+
+    private func bookshelfScopeTabs(
+        _ allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            ForEach(BookshelfScope.allCases) { scope in
+                let count = books(for: scope, in: allBooks, progressByBookID: progressByBookID).count
+                Button {
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { bookshelfScope = scope }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(scope.rawValue)
+                        Text("\(count)").font(.caption2.weight(.bold))
+                    }
+                    .font(.subheadline.weight(bookshelfScope == scope ? .bold : .medium))
+                    .foregroundStyle(bookshelfScope == scope ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        bookshelfScope == scope ? AppTheme.Colors.mistMint.opacity(0.82) : Color.white.opacity(0.7),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("bookshelf-scope.\(scope.rawValue)")
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.54), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
+    @ViewBuilder
+    private func recentReadingSection(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        if !books.isEmpty {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                HStack {
+                    Text("最近阅读")
+                        .font(.system(.title3, design: .serif, weight: .bold))
+                    Spacer()
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        Text("查看全部 \(uniqueBooks(in: bookshelves).count)  ›")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.primary)
+                            .padding(.horizontal, AppTheme.Spacing.md)
+                            .frame(minHeight: 38)
+                            .background(Color.white.opacity(0.82), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("publication-bookshelf-view-all")
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: AppTheme.Spacing.md) {
+                        ForEach(books) { book in
+                            recentBookCard(book, progress: progressByBookID[book.id, default: 0])
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private func recentBookCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            HStack(spacing: AppTheme.Spacing.md) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 78
+                )
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Text(book.title)
+                        .font(AppTheme.Typography.cardTitle)
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .lineLimit(2)
+                    Text(book.author)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .lineLimit(1)
+                    ProgressView(value: min(max(progress, 0), 1))
+                        .tint(AppTheme.Colors.statusCompleted)
+                    Text(progress > 0 ? "继续阅读 · \(Int(progress * 100))%" : "开始阅读")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppTheme.Colors.onPrimary)
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .frame(minHeight: 34)
+                        .background(AppTheme.Colors.textPrimary, in: Capsule())
+                }
+                .frame(width: 122, alignment: .leading)
+            }
+            .padding(AppTheme.Spacing.md)
+            .frame(width: 232, height: 142)
+            .background(AppTheme.Colors.cardBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(Color.white.opacity(0.86), lineWidth: 1) }
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("继续阅读《\(book.title)》")
+    }
+
+    private func bookshelfListSection(_ shelves: [KnowledgeBookshelfDTO]) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                Text("我的书单")
+                    .font(.system(.title3, design: .serif, weight: .bold))
+                Spacer()
+                Button("查看更多  ›") {
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: AppTheme.Spacing.md) {
+                    ForEach(shelves.filter { !$0.isSourceShelf }.prefix(6)) { shelf in
+                        Button {
+                            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
+                                selectedShelfID = shelf.id
+                                bookshelfQuery = ""
+                            }
+                        } label: {
+                            ZStack(alignment: .bottomTrailing) {
+                                Image(shelfArtwork(shelf))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 92, height: 74)
+                                    .offset(x: 26, y: 16)
+                                    .opacity(0.72)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(shelf.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                                    Text("\(shelf.bookCount) 本").font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .padding(AppTheme.Spacing.md)
+                            .frame(width: 132, height: 126, alignment: .leading)
+                            .background(shelfTint(shelf), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                        }
+                        .buttonStyle(SoftButtonStyle())
+                        .accessibilityLabel("打开书单 \(shelf.title)，\(shelf.bookCount) 本")
+                    }
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus").font(.title2)
+                            Text("新建书单").font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .frame(width: 112, height: 126)
+                        .background(Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                                .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("打开全部书籍选择内容")
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func topicDiscoverySection(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        let visible = filterBooks(books, progressByBookID: progressByBookID)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Text("按主题找书")
+                .font(.system(.title3, design: .serif, weight: .bold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    ForEach(BookshelfTopic.allCases) { topic in
+                        Button {
+                            withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { bookshelfTopic = topic }
+                        } label: {
+                            Text(topic.rawValue)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(bookshelfTopic == topic ? .white : AppTheme.Colors.textSecondary)
+                                .padding(.horizontal, AppTheme.Spacing.md)
+                                .frame(minHeight: 36)
+                                .background(
+                                    bookshelfTopic == topic ? AppTheme.Colors.textPrimary : Color.white.opacity(0.76),
+                                    in: Capsule()
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppTheme.Spacing.lg) {
+                ForEach(visible.prefix(8)) { book in
+                    topicBookCard(book, progress: progressByBookID[book.id, default: 0])
+                }
+            }
+        }
+    }
+
+    private func topicBookCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            HStack(spacing: 9) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 62
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(book.title).font(.caption.weight(.bold)).lineLimit(2)
+                    Text(book.author).font(.caption2).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(1)
+                    if progress > 0 {
+                        ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
+                    } else {
+                        Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.statusCompleted)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(8)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("打开《\(book.title)》")
+    }
+
+    private func bookshelfGridCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 116
+                )
+                .frame(maxWidth: .infinity)
+                Text(book.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .lineLimit(2)
+                Text(book.author)
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                    .lineLimit(1)
+                if progress > 0 {
+                    ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
+                } else {
+                    Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.primary)
+                }
+            }
+            .padding(AppTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 228, alignment: .topLeading)
+            .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("打开《\(book.title)》")
+    }
+
+    private func shelfIcon(_ shelf: KnowledgeBookshelfDTO) -> String {
+        let value = "\(shelf.id) \(shelf.title)".lowercased()
+        if value.contains("math") || value.contains("数学") { return "function" }
+        if value.contains("ai") || value.contains("技术") { return "cpu" }
+        if value.contains("strategy") || value.contains("战略") { return "scope" }
+        if value.contains("method") || value.contains("方法") { return "list.clipboard" }
+        return "books.vertical.fill"
+    }
+
+    private func shelfTint(_ shelf: KnowledgeBookshelfDTO) -> Color {
+        let value = shelf.id.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % 4 }
+        switch value {
+        case 0: return AppTheme.Colors.mistMint.opacity(0.82)
+        case 1: return AppTheme.Colors.mistRose.opacity(0.78)
+        case 2: return AppTheme.Colors.mistLilac.opacity(0.82)
+        default: return AppTheme.Colors.mistSky.opacity(0.82)
+        }
+    }
+
+    private func shelfArtwork(_ shelf: KnowledgeBookshelfDTO) -> String {
+        let value = "\(shelf.id) \(shelf.title)".lowercased()
+        if value.contains("strategy") || value.contains("战略") { return "home_attention_botanical" }
+        if value.contains("method") || value.contains("方法") { return "home_continue_work_art" }
+        return "home_work_books"
+    }
+
+    private func allBooksPage(_ shelves: [KnowledgeBookshelfDTO]) -> some View {
+        let allBooks = uniqueBooks(in: shelves)
+        let progressByBookID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
+        let filtered = filterBooks(allBooks, progressByBookID: progressByBookID)
+        let visible = allBooksScope.map { books(for: $0, in: filtered, progressByBookID: progressByBookID) } ?? filtered
+        return ScrollView {
+            LazyVStack(spacing: AppTheme.Spacing.lg) {
+                Text("全部书籍")
+                    .font(.system(.title2, design: .serif, weight: .bold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .frame(maxWidth: .infinity)
+                bookshelfSearch(placeholder: "搜索书名、作者或关键词")
+                allBooksStatusTabs(allBooks, progressByBookID: progressByBookID)
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    filterMenuButton(bookshelfSortOrder.rawValue, icon: "arrow.up.arrow.down")
+                    filterMenuButton(bookshelfContentKind == .all ? "分类" : bookshelfContentKind.rawValue, icon: "square.grid.2x2")
+                    filterMenuButton(bookshelfTopic == .all ? "标签" : bookshelfTopic.rawValue, icon: "tag")
+                    Spacer(minLength: 0)
+                }
+
+                if visible.isEmpty {
+                    ContentUnavailableView("没有匹配的书", systemImage: "books.vertical", description: Text("调整筛选条件或搜索其他关键词。"))
+                        .frame(minHeight: 320)
+                } else {
+                    ForEach(BookshelfTopic.allCases.filter { $0 != .all }) { topic in
+                        let group = visible.filter { self.topic(for: $0) == topic }
+                        if !group.isEmpty {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                                HStack {
+                                    Text(topicSectionTitle(topic))
+                                        .font(.system(.title3, design: .serif, weight: .bold))
+                                    Text("\(group.count) 本")
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                                    Spacer()
+                                }
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppTheme.Spacing.lg) {
+                                    ForEach(group) { book in
+                                        bookshelfGridCard(book, progress: progressByBookID[book.id, default: 0])
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+            .padding(.top, AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.xxxl)
+        }
+        .refreshable { await loadBookshelves() }
+        .accessibilityIdentifier("publication-bookshelf-all-books")
+    }
+
+    private func allBooksStatusTabs(
+        _ allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        HStack(spacing: 3) {
+            allBooksStatusButton("全部", count: allBooks.count, scope: nil)
+            ForEach(BookshelfScope.allCases) { scope in
+                allBooksStatusButton(
+                    scope.rawValue,
+                    count: books(for: scope, in: allBooks, progressByBookID: progressByBookID).count,
+                    scope: scope
+                )
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
+    private func allBooksStatusButton(_ label: String, count: Int, scope: BookshelfScope?) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { allBooksScope = scope }
+        } label: {
+            Text("\(label) \(count)")
+                .font(.caption.weight(allBooksScope == scope ? .bold : .medium))
+                .foregroundStyle(allBooksScope == scope ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(
+                    allBooksScope == scope ? AppTheme.Colors.mistMint.opacity(0.9) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func filterMenuButton(_ title: String, icon: String) -> some View {
+        Button { showsBookshelfFilters = true } label: {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .frame(minHeight: 38)
+                .background(Color.white.opacity(0.78), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func topicSectionTitle(_ topic: BookshelfTopic) -> String {
+        switch topic {
+        case .literature: return "文学与随笔"
+        case .mathematics: return "数学与专业学习"
+        case .ai: return "AI 与技术"
+        case .psychology: return "心理与成长"
+        case .english: return "英语阅读"
+        case .travel: return "旅行与城市"
+        case .all: return "全部书籍"
+        }
+    }
+
+    private var bookshelfFilterSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+                    filterSectionTitle("阅读状态")
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        filterChip("全部", selected: allBooksScope == nil) { allBooksScope = nil }
+                        ForEach(BookshelfScope.allCases) { scope in
+                            filterChip(scope.rawValue, selected: allBooksScope == scope) { allBooksScope = scope }
+                        }
+                    }
+
+                    filterSectionTitle("内容类型")
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        ForEach(BookshelfContentKind.allCases) { kind in
+                            filterChip(kind.rawValue, selected: bookshelfContentKind == kind) { bookshelfContentKind = kind }
+                        }
+                    }
+
+                    filterSectionTitle("排序方式")
+                    VStack(spacing: 0) {
+                        ForEach(BookshelfSortOrder.allCases) { order in
+                            Button { bookshelfSortOrder = order } label: {
+                                HStack {
+                                    Image(systemName: bookshelfSortOrder == order ? "largecircle.fill.circle" : "circle")
+                                        .foregroundStyle(bookshelfSortOrder == order ? AppTheme.Colors.primary : AppTheme.Colors.textTertiary)
+                                    Text(order.rawValue)
+                                    Spacer()
+                                }
+                                .foregroundStyle(AppTheme.Colors.textPrimary)
+                                .frame(minHeight: 48)
+                            }
+                            .buttonStyle(.plain)
+                            if order != BookshelfSortOrder.allCases.last { Divider() }
+                        }
+                    }
+
+                    filterSectionTitle("标签")
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 76))], alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        ForEach(BookshelfTopic.allCases) { topic in
+                            filterChip(topic.rawValue, selected: bookshelfTopic == topic) { bookshelfTopic = topic }
+                        }
+                    }
+                }
+                .padding(AppTheme.Spacing.xl)
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Button("重置") {
+                        allBooksScope = nil
+                        bookshelfContentKind = .all
+                        bookshelfTopic = .all
+                        bookshelfSortOrder = .recent
+                    }
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(AppTheme.Colors.secondaryBackground, in: Capsule())
+                    Button("查看 \(filteredBookCount) 本书") { showsBookshelfFilters = false }
+                        .foregroundStyle(AppTheme.Colors.onPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(AppTheme.Colors.textPrimary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(AppTheme.Spacing.lg)
+                .background(.ultraThinMaterial)
+            }
+            .navigationTitle("筛选与排序")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showsBookshelfFilters = false } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("关闭筛选")
+                }
+            }
+        }
+    }
+
+    private var filteredBookCount: Int {
+        let progress = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
+        let filtered = filterBooks(uniqueBooks(in: bookshelves), progressByBookID: progress)
+        return allBooksScope.map { books(for: $0, in: filtered, progressByBookID: progress).count } ?? filtered.count
+    }
+
+    private func filterSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(AppTheme.Typography.cardTitle)
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+    }
+
+    private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(selected ? .bold : .medium))
+                .foregroundStyle(selected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(selected ? AppTheme.Colors.mistMint : AppTheme.Colors.secondaryBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -1154,7 +1702,7 @@ public struct SubscriptionCenterView: View {
                         HStack(spacing: AppTheme.Spacing.md) {
                             bookCover(
                                 title: book.title, author: book.author, seed: book.id,
-                                theme: book.coverTheme, variant: book.coverVariant, width: 58
+                                theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 58
                             )
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(book.title)
@@ -1188,6 +1736,7 @@ public struct SubscriptionCenterView: View {
             TextField(placeholder, text: $bookshelfQuery)
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
+                .focused($isBookshelfSearchFocused)
             if !bookshelfQuery.isEmpty {
                 Button { bookshelfQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -1196,10 +1745,6 @@ public struct SubscriptionCenterView: View {
                 }
                 .accessibilityLabel("清除搜索")
             }
-            Image(systemName: "slider.horizontal.3")
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-                .frame(width: 28)
-                .accessibilityHidden(true)
         }
         .font(AppTheme.Typography.supporting)
         .padding(.leading, AppTheme.Spacing.md)
@@ -1337,7 +1882,7 @@ public struct SubscriptionCenterView: View {
                 ZStack(alignment: .bottom) {
                     HStack(alignment: .bottom, spacing: -12) {
                         ForEach(Array(shelf.books.prefix(3).enumerated()), id: \.element.id) { index, book in
-                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, width: 82)
+                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 82)
                                 .rotationEffect(.degrees(Double(index - 1) * 5))
                                 .zIndex(Double(index == 1 ? 2 : index))
                                 .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
@@ -1389,7 +1934,7 @@ public struct SubscriptionCenterView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .center, spacing: AppTheme.Spacing.xl) {
                         ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
                             Button { inspectedBook = book } label: {
-                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, width: 140)
+                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 140)
                                     .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
                                     .opacity(booksRevealed ? 1 : 0)
                                     .offset(y: booksRevealed ? (index.isMultiple(of: 2) ? 0 : 36) : 54)
@@ -1431,12 +1976,14 @@ public struct SubscriptionCenterView: View {
     private func bookCover(
         title: String,
         author: String,
-        seed _: String,
+        seed: String,
         theme: String? = nil,
         variant: Int? = nil,
+        coverAvailable: Bool? = nil,
         width: CGFloat = 112
     ) -> some View {
-        IllustratedBookCover(title: title, author: author, theme: theme, variant: variant, width: width)
+        KnowledgeBookCover(title: title, author: author, seed: seed, theme: theme, variant: variant,
+                           coverAvailable: coverAvailable == true, width: width)
     }
 
     private var shelfPlank: some View {
@@ -2449,13 +2996,36 @@ struct KnowledgeBookReaderView: View {
     let isBusy: Bool
     let onToggleSubscription: () -> Void
     var onSaveExcerpt: (() -> Void)? = nil
+    var startsInReading = false
+    var initialSectionID: String? = nil
     let onDismiss: () -> Void
 
     @State private var appeared = false
-    @State private var showingReading = ProcessInfo.processInfo.arguments.contains("-bookReadingPreview")
+    @State private var showingReading: Bool
     @State private var selectedBookVersion: String?
     @State private var selectedBookSectionID: String?
     @State private var selectedBookSectionTitle: String?
+
+    init(
+        book: KnowledgeBookDTO,
+        isSubscribed: Bool,
+        isBusy: Bool,
+        onToggleSubscription: @escaping () -> Void,
+        onSaveExcerpt: (() -> Void)? = nil,
+        startsInReading: Bool = false,
+        initialSectionID: String? = nil,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.book = book
+        self.isSubscribed = isSubscribed
+        self.isBusy = isBusy
+        self.onToggleSubscription = onToggleSubscription
+        self.onSaveExcerpt = onSaveExcerpt
+        self.startsInReading = startsInReading
+        self.initialSectionID = initialSectionID
+        self.onDismiss = onDismiss
+        _showingReading = State(initialValue: startsInReading || ProcessInfo.processInfo.arguments.contains("-bookReadingPreview"))
+    }
 
     var body: some View {
         NavigationStack {
@@ -2657,6 +3227,7 @@ struct KnowledgeBookReaderView: View {
         .fullScreenCover(isPresented: $showingReading) {
             KnowledgeBookReadingView(
                 book: book,
+                initialSectionID: initialSectionID,
                 onScopeChange: { body, section in
                     selectedBookVersion = body.contentVersion
                     selectedBookSectionID = section.id
@@ -2748,6 +3319,7 @@ private struct KnowledgeBookReadingView: View {
     @State private var showingAnnotations = false
     @State private var inspectedAnnotation: ReaderAnnotationEntry?
     let book: KnowledgeBookDTO
+    let initialSectionID: String?
     let onScopeChange: (KnowledgeBookBodyDTO, KnowledgeBookSectionDTO) -> Void
     let onDismiss: () -> Void
 
@@ -2850,37 +3422,16 @@ private struct KnowledgeBookReadingView: View {
         bookBody: KnowledgeBookBodyDTO
     ) {
         let isEnglish = ReadingLanguagePresentation.isEnglish(excerpt)
-        let quoteTitle = isEnglish ? "Book excerpt" : "书籍摘录"
-        let annotationTitle = isEnglish ? "My annotation" : "我的批注"
-        let quotedExcerpt = excerpt.replacingOccurrences(of: "\n", with: "\n> ")
-        let noteBody = """
-        > [!quote] \(quoteTitle)
-        > \(quotedExcerpt)
-
-        \(detail.isEmpty ? "" : "> [!note] \(annotationTitle)\n> \(detail.replacingOccurrences(of: "\n", with: "\n> "))")
-
-        ---
-        书籍标题：\(bookBody.title)
-        章节标题：\(section.title)
-        来源书籍 ID：`\(bookBody.bookId)`
-        来源章节 ID：`\(section.id)`
-        引用：`\(bookBody.citation)`
-        """
-        guard let note = KnowledgeNoteStore.shared.createNote(
-            title: isEnglish ? "\(bookBody.title) | \(section.title) excerpt" : "\(bookBody.title)｜\(section.title)摘录",
-            body: noteBody,
-            tags: ["阅读批注", "quantum-books"]
-        ) else { return }
-        let account = KnowledgeNoteStore.shared.accountFingerprint
-        let markdown = KnowledgeNoteStore.shared.markdown(for: note)
-        let credentialGeneration = api.currentCredentialGeneration()
-        Task {
-            guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
-            _ = try? await api.syncKnowledgeNote(
-                id: note.id, markdown: markdown, updatedAt: note.updatedAt,
-                credentialGeneration: credentialGeneration
-            )
-        }
+        guard ReaderAnnotationEntry.save(
+            quote: excerpt,
+            detail: detail,
+            bookID: bookBody.bookId,
+            bookTitle: bookBody.title,
+            sectionID: section.id,
+            sectionTitle: section.title,
+            citation: bookBody.citation,
+            api: api
+        ) != nil else { return }
         saveMessage = isEnglish ? "Saved to your notes" : "已保存到当前账号的笔记"
         annotationDraft = ""
         isWritingAnnotation = false
@@ -3005,12 +3556,16 @@ private struct KnowledgeBookReadingView: View {
         bookBody: KnowledgeBookBodyDTO
     ) -> some View {
         let sectionAnnotations = annotations(for: section)
+        let content = ReadingSectionContent.parse(section.markdown)
         return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             ReadingSectionIllustration(
                 index: index,
                 title: section.title,
                 text: section.markdown
             )
+            if let objective = content.learningObjective {
+                ReadingStructuredInfoCard(series: content.series, learningObjective: objective)
+            }
             HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             if !sectionAnnotations.isEmpty {
                 RoundedRectangle(cornerRadius: 2)
@@ -3018,26 +3573,15 @@ private struct KnowledgeBookReadingView: View {
                     .frame(width: 3)
                     .frame(minHeight: 44, maxHeight: .infinity)
             }
-            SelectableReadingText(
-                markdown: section.markdown,
-                textColor: UIColor(Color(red: 0.23, green: 0.17, blue: 0.11)),
-                highlights: sectionAnnotations.map { .init(id: $0.id, quote: $0.quote) },
-                onAnnotationTap: { id in
-                    inspectedAnnotation = sectionAnnotations.first { $0.id == id }
-                },
-                onAskSelection: { excerpt in
-                    prepareSelection(excerpt, section: section, bookBody: bookBody)
-                    showingQuestion = true
-                },
-                onHighlightSelection: { excerpt in
-                    persistExcerpt(excerpt, detail: "", section: section, bookBody: bookBody)
-                },
-                onAnnotateSelection: { excerpt in
-                    prepareSelection(excerpt, section: section, bookBody: bookBody)
-                    isWritingAnnotation = true
+            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                ForEach(Array(content.blocks.enumerated()), id: \.offset) { _, block in
+                    readerBlock(
+                        block,
+                        section: section,
+                        bookBody: bookBody,
+                        annotations: sectionAnnotations
+                    )
                 }
-            ) { excerpt in
-                prepareSelection(excerpt, section: section, bookBody: bookBody)
             }
             if let first = sectionAnnotations.first {
                 Button { inspectedAnnotation = first } label: {
@@ -3069,6 +3613,41 @@ private struct KnowledgeBookReadingView: View {
         }
         .id(section.id)
         .onAppear { Task { await recordReading(sectionIndex: index) } }
+    }
+
+    @ViewBuilder
+    private func readerBlock(
+        _ block: MarkdownBlock,
+        section: KnowledgeBookSectionDTO,
+        bookBody: KnowledgeBookBodyDTO,
+        annotations: [ReaderAnnotationEntry]
+    ) -> some View {
+        switch block {
+        case .paragraph(let text):
+            SelectableReadingText(
+                markdown: text,
+                textColor: UIColor(Color(red: 0.23, green: 0.17, blue: 0.11)),
+                highlights: annotations.map { .init(id: $0.id, quote: $0.quote) },
+                onAnnotationTap: { id in
+                    inspectedAnnotation = annotations.first { $0.id == id }
+                },
+                onAskSelection: { excerpt in
+                    prepareSelection(excerpt, section: section, bookBody: bookBody)
+                    showingQuestion = true
+                },
+                onHighlightSelection: { excerpt in
+                    persistExcerpt(excerpt, detail: "", section: section, bookBody: bookBody)
+                },
+                onAnnotateSelection: { excerpt in
+                    prepareSelection(excerpt, section: section, bookBody: bookBody)
+                    isWritingAnnotation = true
+                }
+            ) { excerpt in
+                prepareSelection(excerpt, section: section, bookBody: bookBody)
+            }
+        default:
+            MarkdownBlockCard(block: block)
+        }
     }
 
     @ViewBuilder
@@ -3156,6 +3735,11 @@ private struct KnowledgeBookReadingView: View {
             }
             .sheet(item: $inspectedAnnotation) { ReaderAnnotationDetailSheet(entry: $0) }
             .task(id: book.id) { await loadBody() }
+            .task(id: bookBody?.contentVersion) {
+                guard let initialSectionID, bookBody != nil else { return }
+                await Task.yield()
+                proxy.scrollTo(initialSectionID, anchor: .top)
+            }
             }
         }
     }
@@ -3177,6 +3761,56 @@ private struct KnowledgeBookReadingView: View {
         isWritingAnnotation = false
         saveMessage = nil
         onScopeChange(bookBody, section)
+    }
+}
+
+private struct ReadingStructuredInfoCard: View {
+    let series: String?
+    let learningObjective: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            if let series {
+                Label(series, systemImage: "books.vertical.fill")
+                    .font(AppTheme.Typography.label)
+                    .foregroundStyle(AppTheme.Colors.primary)
+            }
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                Image(systemName: "target")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.emberOrange)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("学习目标")
+                        .font(.system(.headline, design: .serif, weight: .semibold))
+                    MarkdownText(
+                        learningObjective,
+                        font: .system(size: 16, weight: .regular, design: .serif),
+                        color: AppTheme.Colors.textPrimary
+                    )
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppTheme.Colors.mistMint.opacity(0.9), Color.white.opacity(0.58)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.84), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(series.map { "连载，\($0)。" } ?? "")学习目标，\(learningObjective)")
     }
 }
 
@@ -3551,6 +4185,8 @@ struct ReaderQuestionSheet: View {
     let sourceTitle: String
     let sourceSubtitle: String
     let onSaveAnswer: ((String, String) -> Void)?
+    let automaticallySaveAnswer: Bool
+    let submitsOnAppear: Bool
     let ask: (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
     @Environment(\.dismiss) private var dismiss
     @State private var question = ""
@@ -3560,6 +4196,8 @@ struct ReaderQuestionSheet: View {
     @State private var errorMessage: String?
     @State private var isAsking = false
     @State private var statusText = ""
+    @State private var autoSavedAnswer = ""
+    @FocusState private var isQuestionFocused: Bool
 
     private var isEnglish: Bool { ReadingLanguagePresentation.isEnglish(excerpt) }
     private var suggestions: [String] {
@@ -3572,14 +4210,20 @@ struct ReaderQuestionSheet: View {
         excerpt: String,
         sourceTitle: String = "当前阅读",
         sourceSubtitle: String = "已基于选中文字",
+        initialQuestion: String = "",
+        submitsOnAppear: Bool = false,
+        automaticallySaveAnswer: Bool = false,
         onSaveAnswer: ((String, String) -> Void)? = nil,
         ask: @escaping (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
     ) {
         self.excerpt = excerpt
         self.sourceTitle = sourceTitle
         self.sourceSubtitle = sourceSubtitle
+        self.submitsOnAppear = submitsOnAppear
+        self.automaticallySaveAnswer = automaticallySaveAnswer
         self.onSaveAnswer = onSaveAnswer
         self.ask = ask
+        _question = State(initialValue: initialQuestion)
     }
 
     var body: some View {
@@ -3641,16 +4285,25 @@ struct ReaderQuestionSheet: View {
             .padding(.horizontal, AppTheme.Metrics.contentGutter)
             .padding(.top, AppTheme.Spacing.sm)
             .padding(.bottom, AppTheme.Spacing.xl)
+            .contentShape(Rectangle())
+            .onTapGesture { isQuestionFocused = false }
         }
+        .accessibilityIdentifier("reader-question-sheet")
+        .scrollDismissesKeyboard(.interactively)
         .background(Color(hex: "FFFEFB").ignoresSafeArea())
         .presentationDetents([.fraction(0.72), .large])
         .presentationDragIndicator(.hidden)
+        .task {
+            if submitsOnAppear, lastQuestion.isEmpty { await submit() }
+        }
     }
 
     private var questionComposer: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             TextField(isEnglish ? "Ask a follow-up…" : "继续问这段内容…", text: $question, axis: .vertical)
                 .lineLimit(2...5)
+                .focused($isQuestionFocused)
+                .accessibilityIdentifier("reader-question-input")
                 .padding(.horizontal, AppTheme.Spacing.md)
                 .padding(.top, AppTheme.Spacing.md)
             HStack {
@@ -3668,6 +4321,7 @@ struct ReaderQuestionSheet: View {
                 .buttonStyle(SoftButtonStyle())
                 .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAsking || question.count > 200)
                 .accessibilityLabel(isEnglish ? "Send question" : "发送问题")
+                .accessibilityIdentifier("reader-question-send")
             }
             .padding(.horizontal, AppTheme.Spacing.sm)
             .padding(.bottom, AppTheme.Spacing.sm)
@@ -3707,7 +4361,7 @@ struct ReaderQuestionSheet: View {
             .padding(AppTheme.Spacing.sm)
             .background(AppTheme.Colors.surfaceTint.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
 
-            if !answer.isEmpty, let onSaveAnswer {
+            if !answer.isEmpty, let onSaveAnswer, !automaticallySaveAnswer {
                 Button {
                     onSaveAnswer(lastQuestion, answer)
                     dismiss()
@@ -3729,6 +4383,7 @@ struct ReaderQuestionSheet: View {
     private func submit() async {
         let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
+        isQuestionFocused = false
         lastQuestion = value
         isAsking = true
         answer = ""
@@ -3764,6 +4419,9 @@ struct ReaderQuestionSheet: View {
             }
             if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errorMessage = isEnglish ? "No answer was returned. Please try again." : "没有收到回答，请重试。"
+            } else if automaticallySaveAnswer, answer != autoSavedAnswer {
+                onSaveAnswer?(lastQuestion, answer)
+                autoSavedAnswer = answer
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -3844,6 +4502,54 @@ struct ReaderAnnotationEntry: Identifiable {
             if excludingMetadata && (value.hasPrefix("《") || value.hasPrefix("章节：")) { return nil }
             return value
         }.joined(separator: "\n")
+    }
+}
+
+extension ReaderAnnotationEntry {
+    @MainActor
+    @discardableResult
+    static func save(
+        quote: String,
+        detail: String,
+        bookID: String,
+        bookTitle: String,
+        sectionID: String,
+        sectionTitle: String,
+        citation: String,
+        api: APIClient
+    ) -> ReaderAnnotationEntry? {
+        let isEnglish = ReadingLanguagePresentation.isEnglish(quote)
+        let quoteTitle = isEnglish ? "Book excerpt" : "书籍摘录"
+        let annotationTitle = isEnglish ? "My annotation" : "我的批注"
+        let noteBody = """
+        > [!quote] \(quoteTitle)
+        > \(quote.replacingOccurrences(of: "\n", with: "\n> "))
+
+        \(detail.isEmpty ? "" : "> [!note] \(annotationTitle)\n> \(detail.replacingOccurrences(of: "\n", with: "\n> "))")
+
+        ---
+        书籍标题：\(bookTitle)
+        章节标题：\(sectionTitle)
+        来源书籍 ID：`\(bookID)`
+        来源章节 ID：`\(sectionID)`
+        引用：`\(citation)`
+        """
+        guard let note = KnowledgeNoteStore.shared.createNote(
+            title: isEnglish ? "\(bookTitle) | \(sectionTitle) excerpt" : "\(bookTitle)｜\(sectionTitle)摘录",
+            body: noteBody,
+            tags: ["阅读批注", "quantum-books"]
+        ) else { return nil }
+        let account = KnowledgeNoteStore.shared.accountFingerprint
+        let markdown = KnowledgeNoteStore.shared.markdown(for: note)
+        let credentialGeneration = api.currentCredentialGeneration()
+        Task {
+            guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
+            _ = try? await api.syncKnowledgeNote(
+                id: note.id, markdown: markdown, updatedAt: note.updatedAt,
+                credentialGeneration: credentialGeneration
+            )
+        }
+        return ReaderAnnotationEntry(note: note)
     }
 }
 

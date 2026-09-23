@@ -240,3 +240,51 @@ public final class MarkdownBlockParser {
         return pts.isEmpty ? nil : .chart(ChartBlock(title: title, chartType: isBar ? .bar : .line, series: [ChartSeries(name: "默认", points: pts)], summary: summary))
     }
 }
+
+public struct ReadingSectionContent: Equatable {
+    public let series: String?
+    public let learningObjective: String?
+    public let blocks: [MarkdownBlock]
+
+    public static func parse(_ markdown: String) -> Self {
+        let source = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seriesLabels = ["**连载：**", "**连载:**", "连载：", "连载:", "**Series:**", "Series:"]
+        let objectiveLabels = [
+            "**学习目标：**", "**学习目标:**", "学习目标：", "学习目标:",
+            "**Learning objectives:**", "**Learning objective:**", "Learning objectives:", "Learning objective:"
+        ]
+        guard let objectiveRange = objectiveLabels.compactMap({ source.range(of: $0) }).min(by: {
+            $0.lowerBound < $1.lowerBound
+        }) else {
+            return Self(series: nil, learningObjective: nil, blocks: MarkdownBlockParser.shared.parse(source))
+        }
+
+        var seriesText = String(source[..<objectiveRange.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        for label in seriesLabels where seriesText.hasPrefix(label) {
+            seriesText.removeFirst(label.count)
+            break
+        }
+        seriesText = seriesText.trimmingCharacters(in: CharacterSet(charactersIn: "* \n\t"))
+
+        let remainder = String(source[objectiveRange.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let objectiveEnd: String.Index
+        if let paragraphEnd = remainder.range(of: "\n\n")?.lowerBound {
+            objectiveEnd = paragraphEnd
+        } else if let sentenceEnd = remainder.firstIndex(of: "。") {
+            objectiveEnd = remainder.index(after: sentenceEnd)
+        } else if let sentenceEnd = remainder.firstIndex(of: ".") {
+            objectiveEnd = remainder.index(after: sentenceEnd)
+        } else {
+            objectiveEnd = remainder.endIndex
+        }
+        let objective = String(remainder[..<objectiveEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = String(remainder[objectiveEnd...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self(
+            series: seriesText.isEmpty ? nil : seriesText,
+            learningObjective: objective.isEmpty ? nil : objective,
+            blocks: MarkdownBlockParser.shared.parse(body)
+        )
+    }
+}

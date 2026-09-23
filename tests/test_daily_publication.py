@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from backend.api import chat, knowledge, knowledge_publication, subscriptions
 from backend.services.knowledge_policy import KnowledgePolicy
+from backend.services.knowledge_catalog import publication_book
 from backend.services.knowledge_publication_store import (
     PUBLICATION_CATEGORY, PublicationError, PublicationStore, reader_sections, receipt_set_hash,
 )
@@ -92,6 +93,18 @@ def test_before_noon_invisible_and_exact_noon_releases(monkeypatch, tmp_path):
     assert knowledge.search(q="合成测试", limit=5)["docs"] == []
     assert store.release_due(now=at(4))["released"] == [staged["edition_id"]]
     assert store.published(now=at(4))[0]["actual_release_at"] == at(4).isoformat()
+
+
+def test_published_cover_is_verified_and_projected(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = ready(store, bundle())
+    cover = tmp_path / "cover.jpg"
+    cover.write_bytes(b"\xff\xd8\xff\xe0synthetic-cover")
+    value["cover_receipt"] = store.ingest_file(cover, "publication_cover")
+    staged = store.stage(value, now=at(3))
+    store.release_due(now=at(4))
+    assert publication_book(store.get_published(staged["publication_id"], now=at(4)))["cover_available"] is True
+    assert store.get_published_cover(staged["publication_id"], now=at(4)) == (cover.read_bytes(), "image/jpeg")
 
 
 def test_targeted_publication_reads_one_verified_record(monkeypatch, tmp_path):

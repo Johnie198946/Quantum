@@ -15,6 +15,7 @@ public struct ChatInputBar: View {
     @ObservedObject public var speechService: SpeechRecognizerService
     public let isGenerating: Bool
     public let dismissKeyboardToken: Int
+    public let placeholder: String
     public let onSend: () -> Void
     public let onVoicePressChanged: (Bool) -> Void
     public let onPlusTap: () -> Void
@@ -29,6 +30,7 @@ public struct ChatInputBar: View {
         speechService: SpeechRecognizerService,
         isGenerating: Bool,
         dismissKeyboardToken: Int,
+        placeholder: String = "发消息…",
         onSend: @escaping () -> Void,
         onVoicePressChanged: @escaping (Bool) -> Void,
         onPlusTap: @escaping () -> Void
@@ -39,6 +41,7 @@ public struct ChatInputBar: View {
         self.speechService = speechService
         self.isGenerating = isGenerating
         self.dismissKeyboardToken = dismissKeyboardToken
+        self.placeholder = placeholder
         self.onSend = onSend
         self.onVoicePressChanged = onVoicePressChanged
         self.onPlusTap = onPlusTap
@@ -114,7 +117,7 @@ public struct ChatInputBar: View {
             .buttonStyle(SoftButtonStyle())
             .accessibilityLabel("添加附件或引用知识")
 
-            TextField(isGenerating ? "任务执行中，可继续输入" : "发消息…", text: $inputText, axis: .vertical)
+            TextField(isGenerating ? "任务执行中，可继续输入" : placeholder, text: $inputText, axis: .vertical)
                 .focused($isTextInputFocused)
                 .lineLimit(1...5)
                 .font(AppTheme.Typography.body)

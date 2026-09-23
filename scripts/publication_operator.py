@@ -26,6 +26,13 @@ def _file(value: str) -> tuple[str, Path]:
     return kind, Path(path)
 
 
+def _cover(store: PublicationStore, path: Path) -> dict:
+    head = path.read_bytes()[:8]
+    if not (head.startswith(b"\x89PNG\r\n\x1a\n") or head.startswith(b"\xff\xd8\xff")):
+        raise PublicationError("cover must be a PNG or JPEG")
+    return store.ingest_file(path, "publication_cover")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Operate frozen Quantumn publication editions")
     parser.add_argument("--root", type=Path, help="publication runtime directory")
@@ -35,6 +42,7 @@ def main() -> int:
         command.add_argument("bundle", type=Path, nargs="?")
         command.add_argument("--bundle", type=Path, dest="bundle_option")
         command.add_argument("--body-file", type=Path)
+        command.add_argument("--cover-file", type=Path)
         command.add_argument("--source-file", action="append", type=_file, default=[])
         command.add_argument("--rights-file", action="append", type=_file, default=[])
         command.add_argument("--execution-file", action="append", type=_file, default=[])
@@ -44,6 +52,7 @@ def main() -> int:
     stage = commands.add_parser("stage")
     stage.add_argument("bundle", type=Path)
     stage.add_argument("--body-file", type=Path, help="reviewed body bytes; never stored in the bundle path")
+    stage.add_argument("--cover-file", type=Path, required=True, help="content-specific PNG or JPEG cover")
     stage.add_argument("--source-file", action="append", type=_file, default=[])
     stage.add_argument("--rights-file", action="append", type=_file, default=[])
     stage.add_argument("--review-file", type=Path)
@@ -71,6 +80,8 @@ def main() -> int:
                     raise PublicationError("body_hash mismatch")
                 bundle["body"] = body.decode("utf-8")
                 bundle["body_receipt"] = store.ingest_file(args.body_file, "publication_body", bundle["body_hash"])
+            if args.cover_file:
+                bundle["cover_receipt"] = _cover(store, args.cover_file)
             if args.source_file:
                 bundle["source_receipts"] = [store.ingest_file(path, kind) for kind, path in args.source_file]
                 bundle["source_snapshot_hash"] = receipt_set_hash(bundle["source_receipts"])
@@ -101,6 +112,7 @@ def main() -> int:
                 bundle["body"] = args.body_file.read_text(encoding="utf-8")
                 bundle["body_receipt"] = store.ingest_file(args.body_file, "publication_body")
                 bundle["body_hash"] = bundle["body_receipt"]["sha256"]
+            bundle["cover_receipt"] = _cover(store, args.cover_file)
             if args.source_file:
                 bundle["source_receipts"] = [store.ingest_file(path, kind) for kind, path in args.source_file]
                 bundle["source_snapshot_hash"] = receipt_set_hash(bundle["source_receipts"])

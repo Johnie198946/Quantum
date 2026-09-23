@@ -1149,6 +1149,30 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 0),
             ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 1)
         )
+
+        let first = ContentAssetLibrary.bookCoverIdentity(
+            theme: "technology", title: "AI 实践", seed: "book-a", variant: nil
+        )
+        XCTAssertEqual(
+            first,
+            ContentAssetLibrary.bookCoverIdentity(
+                theme: "technology", title: "AI 实践", seed: "book-a", variant: nil
+            )
+        )
+        XCTAssertNotEqual(
+            first,
+            ContentAssetLibrary.bookCoverIdentity(
+                theme: "technology", title: "AI 实践", seed: "book-b", variant: nil
+            )
+        )
+        XCTAssertEqual(
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-9e5e04c6c07dc21ce840680202c9e15a"),
+            "book_publication_receipt"
+        )
+        XCTAssertNotEqual(
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-e7cb8f3397988e37367ecbeeaf754e20"),
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-e1e02beb258aa637301e7f757a954674")
+        )
     }
 
     func testTravelPlanDocumentDecodesSideRouteArtifactContent() throws {
@@ -1162,7 +1186,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     func testDailyPublicationDTOFieldsDecode() throws {
-        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
+        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","cover_available":true,"security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
         let book = try decoder().decode(KnowledgeBookDTO.self, from: data)
         XCTAssertEqual(book.seriesId, "ai-history")
         XCTAssertEqual(book.issueDate, "2026-09-08")
@@ -1170,6 +1194,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(book.sourceUrls, ["https://example.com/source"])
         XCTAssertEqual(book.publicationFormat, "chapter")
         XCTAssertEqual(book.editorialGenre, "popular_science")
+        XCTAssertEqual(book.coverAvailable, true)
         XCTAssertEqual(book.publicationTypeLabel, "科普 · 连载章节")
     }
 
@@ -5873,6 +5898,45 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
             "P = η · A · G"
         )
         XCTAssertEqual(MathFormulaPresentation.displayText("\\frac{\\epsilon}{2}"), "ε⁄2")
+    }
+
+    func testBookReaderSeparatesStructuredIntroAndRichBlocks() {
+        let content = ReadingSectionContent.parse("""
+        连载：趣味AI落地经历**学习目标：**读完本文，读者应能把整理文件改写成可复现任务。
+
+        | 目录 | 用途 |
+        | --- | --- |
+        | inbox/ | 原始输入 |
+
+        $$
+        H(x) = \\sum_{i=1}^{n} x_i
+        $$
+
+        ```python
+        from pathlib import Path
+        ```
+        """)
+
+        XCTAssertEqual(content.series, "趣味AI落地经历")
+        XCTAssertEqual(content.learningObjective, "读完本文，读者应能把整理文件改写成可复现任务。")
+        XCTAssertEqual(content.blocks.count, 3)
+        if case .table = content.blocks[0] {} else { XCTFail("Expected a table") }
+        XCTAssertEqual(content.blocks[1], .formula("H(x) = \\sum_{i=1}^{n} x_i"))
+        XCTAssertEqual(content.blocks[2], .codeBlock(language: "python", code: "from pathlib import Path"))
+    }
+
+    func testLearningPlanParserRequiresThreeRowsAndTwentyFiveMinutes() throws {
+        let plan = try XCTUnwrap(LearningPlanResponse.parse("""
+        2|回顾柯西列|用自己的话复述定义
+        15|继续阅读|回到定理证明的断点
+        8|做一道理解题|检验完备性条件
+        KEY|每个柯西列都收敛
+        """))
+
+        XCTAssertEqual(plan.items.map(\.minutes), [2, 15, 8])
+        XCTAssertEqual(plan.items.map(\.title), ["回顾柯西列", "继续阅读", "做一道理解题"])
+        XCTAssertEqual(plan.keyExcerpt, "每个柯西列都收敛")
+        XCTAssertNil(LearningPlanResponse.parse("10|阅读|继续\n10|练习|答题\n4|复盘|总结"))
     }
 
     func testMarkdownChartCanBeSharedByChatAndNotes() throws {

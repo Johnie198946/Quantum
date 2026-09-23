@@ -106,6 +106,7 @@ def flow(tmp_path, monkeypatch):
     body = fixture_bundle()
     raw = body.pop("body").encode()
     (local / "body.md").write_bytes(raw)
+    (local / "cover.jpg").write_bytes(b"\xff\xd8\xff\xe0synthetic-cover")
     (local / "source.json").write_text('{"synthetic":true}')
     (local / "rights.json").write_text(
         json.dumps(
@@ -135,6 +136,8 @@ def flow(tmp_path, monkeypatch):
         "bundle_file": "bundle.json",
         "body_file": "body.md",
         "body_sha256": relay.sha(raw),
+        "cover_file": "cover.jpg",
+        "cover_sha256": relay.sha((local / "cover.jpg").read_bytes()),
         "source_files": [
             {
                 "kind": "source_snapshot",
@@ -497,7 +500,7 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     old = json.loads(manifest.read_text())["items"][0]
     next_dir = local / "next"
     next_dir.mkdir()
-    for name in ("bundle.json", "body.md", "source.json", "rights.json"):
+    for name in ("bundle.json", "body.md", "cover.jpg", "source.json", "rights.json"):
         shutil.copyfile(local / name, next_dir / name)
     item = {
         k: v

@@ -27,9 +27,10 @@
 5. 为当前章节列出研究问题：为什么重要、概念与前置条件、因果原理、完整例子/操作、失败反例、限制、读者可能追问。逐项写 `research_gaps`，不以“内容需完善”代替具体问题。
 6. Wiki-first 收集获授权知识；不足则核验公开一手来源，必要时用自有隔离样本实测。对数字、时间、原理、版本/操作和因果说法留原始位置。无法补证就删除或明确未知，不能以“据说”扩写。
 7. 实际写章。用 `## 第N章 标题` 及 H3 小节组织，每章有连续讲解，不只有列表。具体告诉读者为什么、如何、做完观察什么、出错怎么办。正文自然但必须能区分已核实事实、来源观点、Quantumn 推论、最强反例、不确定性和行动含义；不得把模型推论冒充来源事实。教学人物/资料必须标示为例子，不能伪装客户案例。未测 UI 不称 UI 已通过。结尾附“来源与延伸阅读”，只放必要短引、来源说明和原文链接，未经许可不复制第三方全文。
-8. 每次返工写新 revision 目录，保留旧正文、旧证据和旧拒稿。清空新 revision 的批准字段；真实计算正文/章节/来源 hash，记录 `previous_body_hash`，逐缺口说明修改位置与新证据。正文无实质变化不得递增版本冒充修复。
-9. 用质量验证器生成 `editorial-v2` 合同/metrics，并逐项处理机械门禁。`editorial_brief` 和来源 receipt 一起进入联合目标 hash；不得降低阈值、不自造 approved。作者 session 标识来自本次真实 Hermes 会话；未知则 blocked，不能编造 `hermes:` 字符串。
-10. 原子更新只含本期明确文件列表及 hash 的 `draft-manifest.json`，状态 `prepared` 或 `blocked`。草稿中 `review.decision=pending`。通过确定性 `publication_editorial_remote.py prepare` 仅上传明列稿件到私有 intake、取得服务端 revision/attempt/target 并写回合同，进入待独立审核；禁止 stage、release 或对外发布。
+8. 根据本期标题、摘要、学习目标、核心意象和正文边界调用已批准的 imagegen 能力生成一张竖版封面：不得复用无关旧图，不在图片内生成书名文字，不使用商标或可识别真人。人工检查封面与本期内容一致后，把 `cover_file` 与真实 `cover_sha256` 写进同一 manifest；imagegen 不可用或封面不匹配时本期必须 blocked。
+9. 每次返工写新 revision 目录，保留旧正文、旧证据和旧拒稿。清空新 revision 的批准字段；真实计算正文/章节/来源 hash，记录 `previous_body_hash`，逐缺口说明修改位置与新证据。正文无实质变化不得递增版本冒充修复。
+10. 用质量验证器生成 `editorial-v2` 合同/metrics，并逐项处理机械门禁。`editorial_brief` 和来源 receipt 一起进入联合目标 hash；不得降低阈值、不自造 approved。作者 session 标识来自本次真实 Hermes 会话；未知则 blocked，不能编造 `hermes:` 字符串。
+11. 原子更新只含本期明确文件列表及 hash 的 `draft-manifest.json`，状态 `prepared` 或 `blocked`。草稿中 `review.decision=pending`。通过确定性 `publication_editorial_remote.py prepare` 仅上传明列稿件到私有 intake、取得服务端 revision/attempt/target 并写回合同，进入待独立审核；禁止 stage、release 或对外发布。
 
 ### 既有稿件治理
 

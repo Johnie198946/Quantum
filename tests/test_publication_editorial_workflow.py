@@ -187,6 +187,8 @@ def test_cli_signed_approval_ingests_proof_and_releases(tmp_path):
     review_path = store.root / "fixture-inputs" / (value["quality_contract"]["attempt_id"] + ".json")
     path = tmp_path / "bundle-cli.json"
     path.write_text(json.dumps(value))
+    cover_path = tmp_path / "cover.jpg"
+    cover_path.write_bytes(b"\xff\xd8\xff\xe0synthetic-cover")
     command = [sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path)]
     run = subprocess.run([*command, "record-editorial-review", str(path), "--review-file", str(review_path),
                           "--proof-file", value["editorial_proof_file"]], capture_output=True, text=True)
@@ -197,7 +199,7 @@ def test_cli_signed_approval_ingests_proof_and_releases(tmp_path):
     value["review"] = result["review"]
     value["editorial_proof_file"] = result["editorial_proof_file"]
     path.write_text(json.dumps(value))
-    run = subprocess.run([*command, "stage", str(path), "--review-file", str(review_path)], capture_output=True, text=True)
+    run = subprocess.run([*command, "stage", str(path), "--cover-file", str(cover_path), "--review-file", str(review_path)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout)["result"]["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"]

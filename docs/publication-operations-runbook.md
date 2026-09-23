@@ -21,6 +21,7 @@ The operator reads each named local file, computes its SHA-256, copies the bytes
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/ai-history.json" \
   --body-file "$PRIVATE_INTAKE/ai-history.md" \
+  --cover-file "$PRIVATE_INTAKE/ai-history-cover.jpg" \
   --source-file source_snapshot="$PRIVATE_INTAKE/ai-history-sources.json" \
   --rights-file owner_attestation="$PRIVATE_INTAKE/owner-publication-attestation.json" \
   --review-file "$PRIVATE_INTAKE/ai-history-content-review.json"
@@ -28,6 +29,7 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/ai-practice.json" \
   --body-file "$PRIVATE_INTAKE/ai-practice.md" \
+  --cover-file "$PRIVATE_INTAKE/ai-practice-cover.jpg" \
   --source-file source_snapshot="$PRIVATE_INTAKE/ai-practice-sources.json" \
   --rights-file owner_attestation="$PRIVATE_INTAKE/owner-publication-attestation.json" \
   --review-file "$PRIVATE_INTAKE/ai-practice-content-review.json" \
@@ -36,6 +38,7 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/original.json" \
   --body-file "$PRIVATE_INTAKE/original.md" \
+  --cover-file "$PRIVATE_INTAKE/original-cover.jpg" \
   --source-file pinned_original="$PRIVATE_INTAKE/original.md" \
   --source-file download_manifest="$PRIVATE_INTAKE/original-download-manifest.json" \
   --rights-file redistribution_license="$PRIVATE_INTAKE/original-license.txt" \

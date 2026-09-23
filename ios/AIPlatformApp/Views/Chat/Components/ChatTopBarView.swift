@@ -11,6 +11,7 @@ import SwiftUI
 public struct ChatTopBarView: View {
     public let isGenerating: Bool
     public let title: String
+    public let onWorkbenchTap: (() -> Void)?
     public let onTitleTap: () -> Void
     public let onNewSession: () -> Void
     public let onHistoryTap: () -> Void
@@ -19,6 +20,7 @@ public struct ChatTopBarView: View {
     public init(
         isGenerating: Bool,
         title: String,
+        onWorkbenchTap: (() -> Void)? = nil,
         onTitleTap: @escaping () -> Void,
         onNewSession: @escaping () -> Void,
         onHistoryTap: @escaping () -> Void,
@@ -26,6 +28,7 @@ public struct ChatTopBarView: View {
     ) {
         self.isGenerating = isGenerating
         self.title = title
+        self.onWorkbenchTap = onWorkbenchTap
         self.onTitleTap = onTitleTap
         self.onNewSession = onNewSession
         self.onHistoryTap = onHistoryTap
@@ -34,6 +37,20 @@ public struct ChatTopBarView: View {
 
     public var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
+            if let onWorkbenchTap {
+                Button(action: onWorkbenchTap) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .minimumTouchTarget()
+                }
+                .buttonStyle(SoftButtonStyle())
+                .accessibilityLabel("返回学习工作台")
+                .accessibilityIdentifier("chat-back-to-workbench")
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
+
             Button(action: onTitleTap) {
                 Text(title.isEmpty ? "新对话" : title)
                     .font(AppTheme.Typography.cardTitle)

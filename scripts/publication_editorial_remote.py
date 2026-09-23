@@ -33,7 +33,7 @@ VERSION = "editorial-workflow-v2"
 LIMIT = 2 * 1024 * 1024
 CHUNK = 24 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
-FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_files",
+FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "cover_file", "cover_sha256", "source_files",
           "rights_files", "execution_files", "review_file", "proof_file", "status",
           "batch", "quality_contract", "receipt", "error"}
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
@@ -113,7 +113,8 @@ def load_manifest(path):
         if not isinstance(item, dict) or set(item) - FIELDS or item.get("status") not in STATES:
             raise ValueError("unknown manifest fields or invalid status")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
-                  (item.get("body_file"), item.get("body_sha256"))]
+                  (item.get("body_file"), item.get("body_sha256")),
+                  (item.get("cover_file"), item.get("cover_sha256"))]
         for group in GROUPS:
             entries = item.get(group)
             if not isinstance(entries, list) or len(entries) > 64:
@@ -238,7 +239,8 @@ class Remote:
 def arguments(remote, base, item, bundle, review=None, proof=None):
     batch = item["batch"]
     args = [remote.upload(batch, encoded(bundle), ".json"), "--body-file",
-            remote.upload(batch, read(local_path(base, item["body_file"])), ".md")]
+            remote.upload(batch, read(local_path(base, item["body_file"])), ".md"), "--cover-file",
+            remote.upload(batch, read(local_path(base, item["cover_file"])), ".bin")]
     for group, flag in GROUPS.items():
         for entry in item[group]:
             args += [flag, entry["kind"] + "=" + remote.upload(batch, read(local_path(base, entry["path"])), ".bin")]

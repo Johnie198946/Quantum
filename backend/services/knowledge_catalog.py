@@ -1002,6 +1002,7 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
         "author_source": bundle["authored_by"], "summary": item["summary"],
         "cover_theme": SERIES[item["series_id"]]["cover_theme"],
         "cover_variant": int(item["content_hash"][:4], 16) % 6, "cover_version": 1,
+        "cover_available": bool(bundle.get("cover_receipt")),
         "security_level": "green", "knowledge_level": "editorial",
         "freshness": "daily", "source_count": len(bundle["references"]),
         "series_id": item["series_id"], "series_title": SERIES[item["series_id"]]["title"],

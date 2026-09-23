@@ -268,6 +268,7 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public let coverTheme: String?
     public let coverVariant: Int?
     public let coverVersion: Int?
+    public var coverAvailable: Bool? = nil
     public let securityLevel: String
     public let knowledgeLevel: String
     public let freshness: String
@@ -3580,6 +3581,12 @@ public final class APIClient: ObservableObject {
         let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard actual == expectedHash.lowercased() else { throw APIError.network("文件完整性校验失败") }
         return data
+    }
+
+    public func fetchKnowledgeBookCover(id: String) async throws -> Data {
+        let url = baseURL.appendingPathComponent("api/v1/knowledge-books/\(encodedPath(id))/cover")
+        var request = URLRequest(url: url); request.httpMethod = "GET"; request.setValue("image/*", forHTTPHeaderField: "Accept"); applyClientContract(to: &request)
+        return try await perform(request, session: session, canRetry: true)
     }
 
     public func fetchAuthenticatedText(path: String) async throws -> String {

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -325,6 +325,7 @@ async def _available_books(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
 _PUBLIC_BOOK_FIELDS = (
     "id", "title", "author", "author_source", "summary", "cover_theme",
     "cover_variant", "cover_version", "security_level", "knowledge_level",
+    "cover_available",
     "freshness", "source_count", "series_id", "series_title", "issue_id",
     "issue_date", "test_serial", "release_at", "actual_release_at", "edition_id",
     "edition", "source_urls",
@@ -450,6 +451,21 @@ async def knowledge_book_body(book_id: str, payload=Depends(require_auth)):
         ))
     edition = 1 if row is None else row.edition + int(row.content_version != body["content_version"])
     return {**body, "edition": edition}
+
+
+@router.get("/knowledge-books/{book_id}/cover")
+async def knowledge_book_cover(book_id: str, payload=Depends(require_auth)):
+    if (not book_id.startswith("publication-")
+            or (payload.get("visible_categories") is not None
+                and PUBLICATION_CATEGORY not in payload["visible_categories"])):
+        raise _error(404, code="book_cover_not_found", message="这本书没有可用封面",
+                     action="refresh_catalog", retryable=False)
+    cover = PublicationStore().get_published_cover(book_id, vault=knowledge._vault())
+    if cover is None:
+        raise _error(404, code="book_cover_not_found", message="这本书没有可用封面",
+                     action="refresh_catalog", retryable=False)
+    data, media_type = cover
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/me/book-subscriptions")

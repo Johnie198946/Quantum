@@ -291,6 +291,7 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         "institution", "authored_by", "content_kind", "rights_scope", "rights_reference",
         "rights_valid_until", "rights_perpetual", "rights_evidence", "rights_evidence_status", "owner_policy_id", "release_at",
         "state", "is_test", "source_snapshot_hash", "source_receipts", "body_hash", "body_receipt",
+        "cover_receipt",
         "references", "wiki_references", "assets", "completeness", "review", "execution_claim",
         "execution_evidence", "warnings",
         "source_index",
@@ -332,6 +333,8 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
     if bundle.get("body_hash") != body_hash:
         raise PublicationError("body_hash mismatch")
     body_receipt = _receipts([bundle.get("body_receipt")], "body", 1)[0]
+    cover_receipt = (_receipts([bundle["cover_receipt"]], "cover", 1)[0]
+                     if bundle.get("cover_receipt") else None)
     source_receipts = _receipts(bundle.get("source_receipts"), "source")
     if not source_receipts or bundle.get("source_snapshot_hash") != receipt_set_hash(source_receipts):
         raise PublicationError("source_snapshot_hash mismatch")
@@ -452,6 +455,7 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         blocked.append("public_source_index_cannot_be_test_serial")
     normalized = {**bundle, "series_id": series_id, "issue_key": issue_key, "issue_date": issue_date.isoformat(),
                   "release_at": _iso(release_at), "body_hash": body_hash, "body_receipt": body_receipt,
+                  "cover_receipt": cover_receipt,
                   "source_receipts": source_receipts, "references": normalized_refs, "assets": normalized_assets,
                   "wiki_references": wiki_refs, "rights_evidence": rights, "review": review,
                   "execution_evidence": execution, "warnings": [str(x)[:500] for x in bundle.get("warnings", [])][:20]}
@@ -555,6 +559,8 @@ class PublicationStore:
             receipts = [bundle["body_receipt"], *bundle["source_receipts"], *bundle["rights_evidence"],
                         *bundle["execution_evidence"], *(x["receipt"] for x in bundle["assets"]),
                         *(x["sanitized_receipt"] for x in bundle["wiki_references"])]
+            if bundle.get("cover_receipt"):
+                receipts.append(bundle["cover_receipt"])
             if bundle["review"].get("receipt"):
                 receipts.append(bundle["review"]["receipt"])
         except (KeyError, TypeError):
@@ -1023,6 +1029,25 @@ class PublicationStore:
             if row is None or self._access_reasons(db, row, actual, kwargs.get("vault")):
                 return None
             return self._record(row, body=True)
+        finally:
+            db.close()
+
+    def get_published_cover(self, publication_id: str, **kwargs: Any) -> tuple[bytes, str] | None:
+        item = self.get_published(publication_id, **kwargs)
+        receipt = item and item["bundle"].get("cover_receipt")
+        if not receipt:
+            return None
+        db = self._connect()
+        try:
+            if not self._receipt_valid(db, receipt):
+                return None
+            row = db.execute("SELECT private_ref FROM evidence WHERE artifact_id=?", (receipt["artifact_id"],)).fetchone()
+            data = self._path(row["private_ref"]).read_bytes()
+            if data.startswith(b"\x89PNG\r\n\x1a\n"):
+                return data, "image/png"
+            if data.startswith(b"\xff\xd8\xff"):
+                return data, "image/jpeg"
+            return None
         finally:
             db.close()
 
