@@ -22,7 +22,7 @@
 ## 交付状态
 
 - status: `RELEASED`（生产端已回读）
-- repository: GitHub `main` 回读为 `c3297c04d9a67c04747fc2bc2f936798a8c10fb1`；该提交包含第四次独立修订许可与相应测试。
+- repository: 实现基线 `c3297c04d9a67c04747fc2bc2f936798a8c10fb1` 包含第四次独立修订许可与相应测试；本完成回执已提交到 GitHub `main` 的 `25807283092ddefa71bf9381094e8daece5245c9`。
 - production_runtime: API 容器 `running/healthy`；发布回读时镜像 revision 为 `d6a0f9a48e59bc95ab7f5b8c2fc123a322fe414c`。
 - publication_id: `publication-9b5b298fb96bd44dfccb04c36fad8134`
 - edition_id: `edition-ae6c48dcf93ebbd99b8ad3482627154d`
