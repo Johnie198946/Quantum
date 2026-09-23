@@ -6,6 +6,8 @@ SHA256="d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"
 URL="https://github.com/MetaCubeX/mihomo/releases/download/v${VERSION}/mihomo-linux-amd64-v${VERSION}.gz"
 CONFIG="${1:-/etc/mihomo/config.yaml}"
 ARCHIVE="${MIHOMO_ARCHIVE:-}"
+GEOIP_DATABASE="${MIHOMO_GEOIP_DATABASE:-}"
+GEOIP_SHA256="${MIHOMO_GEOIP_SHA256:-}"
 UNIT_SOURCE="$(cd "$(dirname "$0")/../systemd" && pwd)/mihomo.service"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -29,6 +31,14 @@ getent group mihomo >/dev/null || groupadd --system mihomo
 id -u mihomo >/dev/null 2>&1 || useradd --system --gid mihomo --home-dir /var/lib/mihomo --shell /usr/sbin/nologin mihomo
 install -d -o root -g mihomo -m 0750 /etc/mihomo
 install -d -o mihomo -g mihomo -m 0750 /var/lib/mihomo
+if [ -n "$GEOIP_DATABASE" ]; then
+  [ -f "$GEOIP_DATABASE" ] && [ ! -L "$GEOIP_DATABASE" ] \
+    || { echo "ERROR: invalid MIHOMO_GEOIP_DATABASE" >&2; exit 1; }
+  [[ "$GEOIP_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+    || { echo "ERROR: MIHOMO_GEOIP_SHA256 is required" >&2; exit 1; }
+  printf '%s  %s\n' "$GEOIP_SHA256" "$GEOIP_DATABASE" | sha256sum --check --status
+  install -o mihomo -g mihomo -m 0644 "$GEOIP_DATABASE" /var/lib/mihomo/geoip.metadb
+fi
 chown root:mihomo "$CONFIG"
 chmod 0640 "$CONFIG"
 install -o root -g root -m 0755 "$TMP/mihomo" /usr/local/bin/mihomo
@@ -38,4 +48,9 @@ install -o root -g root -m 0644 "$UNIT_SOURCE" /etc/systemd/system/mihomo.servic
 systemctl daemon-reload
 systemctl enable --now mihomo.service
 systemctl is-active --quiet mihomo.service
-ss -lntp | grep -F '127.0.0.1:7890' >/dev/null
+for _ in {1..20}; do
+  ss -lntp | grep -F '127.0.0.1:7890' >/dev/null && exit 0
+  sleep 0.25
+done
+echo "ERROR: mihomo did not open 127.0.0.1:7890" >&2
+exit 1

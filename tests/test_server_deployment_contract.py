@@ -194,6 +194,8 @@ def test_mihomo_is_loopback_only_and_hardened() -> None:
     assert 'SHA256="d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"' in installer
     assert "127.0.0.1:7890" in installer
     assert 'ARCHIVE="${MIHOMO_ARCHIVE:-}"' in installer
+    assert 'GEOIP_DATABASE="${MIHOMO_GEOIP_DATABASE:-}"' in installer
+    assert 'GEOIP_SHA256="${MIHOMO_GEOIP_SHA256:-}"' in installer
     assert "sha256sum --check --status" in installer
     assert "config.yaml" not in {
         path.name
