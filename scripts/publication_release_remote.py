@@ -26,6 +26,7 @@ DAILY_SERIES_START = {
     "ai-history": date.min,
     "ai-practice": date.min,
     "concept-fables": date(2026, 9, 19),
+    "ai-toolkit": date(2026, 9, 24),
 }
 STATES = ("draft", "staged", "scheduled", "blocked", "published", "withdrawn")
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")

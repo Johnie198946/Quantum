@@ -20,13 +20,13 @@
 
 ### 每次执行
 
-1. 先读三个每日系列既有规划与最近已发正文/目录、Follow Builders 新增来源，以及尚未关闭的 `review-report.json`。优先修复待审稿，不为了当天日期重复首期主题。
+1. 先读四个每日系列既有规划与最近已发正文/目录、Follow Builders 新增来源，以及尚未关闭的 `review-report.json`。优先修复待审稿，不为了当天日期重复首期主题。
 2. 先履行主编职责：结合新增来源、已授权 Wiki、历史目录和未关闭缺口提出候选选题，去除复述原文、已有内容改标题和证据不足的候选。没有能给读者带来明确新价值的选题时，输出 `NO_WORTHY_TOPIC`，不得创建稿件或凑刊。
-3. 把候选及取舍写入本期 `editorial-pitches.json`，全局至多选择三个、每系列至多一个。推进历史因果线的稿件进入 `ai-history`，可复现实操进入 `ai-practice`，研究生水平概念的延迟揭示寓言进入 `concept-fables`；独立研究/科普/观点作品进入既有 `quantumn-originals` 并使用稳定的 `source_publication_id`，不新建其他平行书架。选题必须选择 `tutorial / research_report / popular_science / feature / critical_essay` 之一，并形成 `editorial_brief`：`genre / question / thesis / reader_value / novelty / counterargument / uncertainties / evidence_urls / selection_reason`。`thesis` 必须是可反驳的 Quantumn 编研判断，不是来源摘要或情绪化立场。
+3. 把候选及取舍写入本期 `editorial-pitches.json`，全局至多选择四个、每系列至多一个。推进历史因果线的稿件进入 `ai-history`，一般可复现实操进入 `ai-practice`，研究生水平概念的延迟揭示寓言进入 `concept-fables`；面向入门者、以完成真实工作或开发小工具为目标的逐步工具教程进入 `ai-toolkit`。`ai-toolkit` 必须从模糊需求澄清开始，解释所用工具的核心功能、Skill/插件选择、逐步操作、预期结果、验证、常见失败与恢复；优先读本地获授权知识，不足再查官方文档或一手公开来源，新增研究必须经受控 `research_deposit` 登记并由 Wiki Writer 编译，作者不得直写 canonical Wiki。Quantum 只能结合已真实实现并核验的能力自然示范（任务闭环、知识优先、证据/回执、跨端工作流等），不得伪造产品能力或写成硬广。独立研究/科普/观点作品进入既有 `quantumn-originals` 并使用稳定的 `source_publication_id`，不新建其他平行书架。选题必须选择 `tutorial / research_report / popular_science / feature / critical_essay` 之一，并形成 `editorial_brief`：`genre / question / thesis / reader_value / novelty / counterargument / uncertainties / evidence_urls / selection_reason`。`thesis` 必须是可反驳的 Quantumn 编研判断，不是来源摘要或情绪化立场。
 4. 在每系列长期 `book-plan.json` 维护目标读者、学习目标、有序章次、前置知识、已讲内容、下一章增量、已用案例。它是出版业务资料，不保存第二份 Agent 会话或执行上下文。
 5. 为当前章节列出研究问题：为什么重要、概念与前置条件、因果原理、完整例子/操作、失败反例、限制、读者可能追问。逐项写 `research_gaps`，不以“内容需完善”代替具体问题。
 6. Wiki-first 收集获授权知识；不足则核验公开一手来源，必要时用自有隔离样本实测。对数字、时间、原理、版本/操作和因果说法留原始位置。无法补证就删除或明确未知，不能以“据说”扩写。
-7. 实际写章。每日单篇的用户可见标题使用 `## 标题`，正文使用“本文”，不得出现无连续计划支撑的“第N章/第N节/本章”；协议内部 `chapter-001` 只是校验标识，不是用户可见章号。只有同一交付物已声明且实际包含连续多章时，才可显示连续章号。用 H3 小节组织，每篇有连续讲解，不只有列表。具体告诉读者为什么、如何、做完观察什么、出错怎么办。正文自然但必须能区分已核实事实、来源观点、Quantumn 推论、最强反例、不确定性和行动含义；不得把模型推论冒充来源事实。教学人物/资料必须标示为例子，不能伪装客户案例。未测 UI 不称 UI 已通过。结尾附“来源与延伸阅读”，只放必要短引、来源说明和原文链接，未经许可不复制第三方全文。`concept-fables` 必须先讲寓言，直到故事接近结束才揭示概念；故事后单列“概念解释”和“隐喻对应表”，覆盖关键角色、场景、规则与转折，并明确来源事实、编辑部推演和未验证边界。
+7. 实际写章。每日单篇的用户可见标题使用 `## 标题`，正文使用“本文”，不得出现无连续计划支撑的“第N章/第N节/本章”；协议内部 `chapter-001` 只是校验标识，不是用户可见章号。只有同一交付物已声明且实际包含连续多章时，才可显示连续章号。用 H3 小节组织，每篇有连续讲解，不只有列表。具体告诉读者为什么、如何、做完观察什么、出错怎么办。正文自然但必须能区分已核实事实、来源观点、Quantumn 推论、最强反例、不确定性和行动含义；不得把模型推论冒充来源事实。教学人物/资料必须标示为例子，不能伪装客户案例。未测 UI 不称 UI 已通过。结尾附“来源与延伸阅读”，只放必要短引、来源说明和原文链接，未经许可不复制第三方全文。`ai-toolkit` 的命令、界面步骤或样例必须在隔离环境实测，记录成功或失败的真实输出；不能仅凭文档宣称可用。`concept-fables` 必须先讲寓言，直到故事接近结束才揭示概念；故事后单列“概念解释”和“隐喻对应表”，覆盖关键角色、场景、规则与转折，并明确来源事实、编辑部推演和未验证边界。
 8. 每次返工写新 revision 目录，保留旧正文、旧证据和旧拒稿。清空新 revision 的批准字段；真实计算正文/章节/来源 hash，记录 `previous_body_hash`，逐缺口说明修改位置与新证据。正文无实质变化不得递增版本冒充修复。
 9. 用质量验证器生成 `editorial-v2` 合同/metrics，并逐项处理机械门禁。`editorial_brief` 和来源 receipt 一起进入联合目标 hash；不得降低阈值、不自造 approved。作者 session 标识来自本次真实 Hermes 会话；未知则 blocked，不能编造 `hermes:` 字符串。
 10. 原子更新只含本期明确文件列表及 hash 的 `draft-manifest.json`，状态 `prepared` 或 `blocked`。草稿中 `review.decision=pending`。通过确定性 `publication_editorial_remote.py prepare` 仅上传明列稿件到私有 intake、取得服务端 revision/attempt/target 并写回合同，进入待独立审核；禁止 stage、release 或对外发布。

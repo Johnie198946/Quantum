@@ -341,6 +341,14 @@ def test_daily_series_requires_exactly_one_each_not_aggregate_two(monkeypatch, t
     assert module.main(["--status-only", "--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
 
 
+def test_ai_toolkit_is_required_from_launch_date():
+    module = _module()
+    assert module._daily_series("2026-09-23") == ("ai-history", "ai-practice", "concept-fables")
+    assert module._daily_series("2026-09-24") == (
+        "ai-history", "ai-practice", "concept-fables", "ai-toolkit",
+    )
+
+
 @pytest.mark.parametrize("contradiction", [
     {"blocked": [{"edition_id": "edition-blocked", "reasons": ["review_missing"]}]},
     {"missing": [{"series_id": "ai-practice", "series_title": "Practice", "issue_date": DAY, "status": "overdue_missing"}]},

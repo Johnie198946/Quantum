@@ -146,6 +146,15 @@ def test_concept_fables_becomes_required_on_launch_date(tmp_path):
     }
 
 
+def test_ai_toolkit_becomes_required_on_launch_date(tmp_path):
+    store = PublicationStore(tmp_path)
+    launch = at(3, day=24)
+    missing = store.status_report(now=launch)["missing"]
+    assert {item["series_id"] for item in missing} == {
+        "ai-history", "ai-practice", "concept-fables", "ai-toolkit",
+    }
+
+
 def test_overdue_unpublished_series_report_actual_state(tmp_path):
     store = PublicationStore(tmp_path)
     blocked = ready(store, bundle())
