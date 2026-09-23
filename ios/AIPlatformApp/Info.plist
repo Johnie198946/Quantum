@@ -43,7 +43,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>用于拍摄并附加到笔记，或完成你明确确认的设备操作。</string>
+	<string>用于在你明确确认设备操作后拍摄并附加照片。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于连接本机开发服务完成真机端到端验收。</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -34,16 +34,6 @@ public struct ChatTopBarView: View {
 
     public var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            Button(action: onHistoryTap) {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.semibold))
-                    .foregroundColor(AppTheme.Icons.primary)
-                    .minimumTouchTarget()
-            }
-            .buttonStyle(SoftButtonStyle())
-            .accessibilityLabel("会话列表")
-            .accessibilityIdentifier("chat-history")
-
             Button(action: onTitleTap) {
                 Text(title.isEmpty ? "新对话" : title)
                     .font(AppTheme.Typography.cardTitle)

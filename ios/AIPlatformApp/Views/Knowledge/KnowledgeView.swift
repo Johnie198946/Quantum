@@ -1056,6 +1056,7 @@ private struct KnowledgeNoteRow: View {
 
 private struct KnowledgeNoteEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var api: APIClient
     @ObservedObject private var store = KnowledgeNoteStore.shared
     @StateObject private var speechService = SpeechRecognizerService()
@@ -1084,6 +1085,7 @@ private struct KnowledgeNoteEditor: View {
     @State private var showingRelations = false
     @State private var isSourceEditing = false
     @State private var lastVoiceTranscript = ""
+    @State private var bodyEditorFocused = false
     @FocusState private var titleFocused: Bool
     @FocusState private var tagsFocused: Bool
 
@@ -1145,6 +1147,12 @@ private struct KnowledgeNoteEditor: View {
                     if let note { relationSection(note: note).padding(AppTheme.Metrics.contentGutter) }
                 }
                 .background(Color(hex: "FFFCF6"))
+                .scrollDismissesKeyboard(.interactively)
+                .background {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissEditorKeyboard() }
+                }
                 .navigationTitle("关联内容")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingRelations = false } } }
@@ -1430,7 +1438,11 @@ private struct KnowledgeNoteEditor: View {
     private var editorBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             if isSourceEditing || noteContent.isEmpty {
-                MarkdownTextEditor(text: $noteContent, selectedRange: $selectedRange)
+                MarkdownTextEditor(
+                    text: $noteContent,
+                    selectedRange: $selectedRange,
+                    isFocused: $bodyEditorFocused
+                )
                     .frame(minHeight: noteContent.isEmpty ? 280 : 360, alignment: .topLeading)
                     .padding(AppTheme.Spacing.sm)
                     .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
@@ -1538,7 +1550,7 @@ private struct KnowledgeNoteEditor: View {
                     Button {
                         saveNow()
                         isSourceEditing = false
-                        mode = .preview
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { mode = .preview }
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.headline.weight(.bold))
@@ -1557,8 +1569,8 @@ private struct KnowledgeNoteEditor: View {
             HStack {
                 Spacer()
                 Button {
-                    mode = .edit
-                    titleFocused = false
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { mode = .edit }
+                    bodyEditorFocused = true
                 } label: {
                     Image(systemName: "pencil")
                         .font(.headline)
@@ -1590,7 +1602,14 @@ private struct KnowledgeNoteEditor: View {
 
     private func beginInsert(_ template: String, selecting placeholder: String) {
         isSourceEditing = true
+        bodyEditorFocused = true
         insertMarkdown(template, selecting: placeholder)
+    }
+
+    private func dismissEditorKeyboard() {
+        titleFocused = false
+        tagsFocused = false
+        bodyEditorFocused = false
     }
 
     private func insertChartTemplate() {
@@ -2258,6 +2277,7 @@ private struct LabelField: View {
 private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var selectedRange: NSRange
+    @Binding var isFocused: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -2273,15 +2293,24 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         textView.keyboardDismissMode = .interactive
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
         textView.accessibilityLabel = "Markdown 正文"
+        MarkdownVisualStyle.apply(to: textView)
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
-        if textView.text != text { textView.text = text }
+        if textView.text != text {
+            textView.text = text
+            MarkdownVisualStyle.apply(to: textView)
+        }
         let safeLocation = min(max(selectedRange.location, 0), textView.text.utf16.count)
         let safeLength = min(max(selectedRange.length, 0), textView.text.utf16.count - safeLocation)
         let safeRange = NSRange(location: safeLocation, length: safeLength)
         if textView.selectedRange != safeRange { textView.selectedRange = safeRange }
+        if isFocused, !textView.isFirstResponder {
+            DispatchQueue.main.async { textView.becomeFirstResponder() }
+        } else if !isFocused, textView.isFirstResponder {
+            DispatchQueue.main.async { textView.resignFirstResponder() }
+        }
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -2292,11 +2321,72 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             parent.selectedRange = textView.selectedRange
+            MarkdownVisualStyle.apply(to: textView)
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.selectedRange = textView.selectedRange
         }
+
+        func textViewDidBeginEditing(_ textView: UITextView) { parent.isFocused = true }
+        func textViewDidEndEditing(_ textView: UITextView) { parent.isFocused = false }
+    }
+}
+
+enum MarkdownVisualStyle {
+    enum Kind: Equatable { case heading(Int), strong, quote, code, link }
+    struct Span: Equatable { let range: NSRange; let kind: Kind }
+
+    static func spans(in text: String) -> [Span] {
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        let patterns: [(String, (NSTextCheckingResult) -> Span?)] = [
+            (#"(?m)^(#{1,3})\s+(.+)$"#, { $0.numberOfRanges > 2 ? Span(range: $0.range(at: 2), kind: .heading($0.range(at: 1).length)) : nil }),
+            (#"\*\*(.+?)\*\*"#, { $0.numberOfRanges > 1 ? Span(range: $0.range(at: 1), kind: .strong) : nil }),
+            (#"(?m)^>\s?.+$"#, { Span(range: $0.range, kind: .quote) }),
+            (#"(?s)```.*?```"#, { Span(range: $0.range, kind: .code) }),
+            (#"\[\[[^\]]+\]\]"#, { Span(range: $0.range, kind: .link) }),
+        ]
+        return patterns.flatMap { pattern, builder in
+            (try? NSRegularExpression(pattern: pattern))?.matches(in: text, range: fullRange).compactMap(builder) ?? []
+        }
+    }
+
+    static func apply(to textView: UITextView) {
+        let selection = textView.selectedRange
+        let fullRange = NSRange(location: 0, length: textView.textStorage.length)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 5
+        paragraph.paragraphSpacing = 5
+        let base: [NSAttributedString.Key: Any] = [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: paragraph,
+        ]
+        textView.textStorage.setAttributes(base, range: fullRange)
+        for span in spans(in: textView.text) where NSMaxRange(span.range) <= fullRange.length {
+            switch span.kind {
+            case .heading(let level):
+                let style: UIFont.TextStyle = level == 1 ? .title1 : (level == 2 ? .title2 : .title3)
+                textView.textStorage.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: style).boldVariant(), range: span.range)
+            case .strong:
+                textView.textStorage.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body).boldVariant(), range: span.range)
+            case .quote:
+                textView.textStorage.addAttributes([.foregroundColor: UIColor.secondaryLabel, .backgroundColor: UIColor.systemMint.withAlphaComponent(0.12)], range: span.range)
+            case .code:
+                textView.textStorage.addAttributes([.font: UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize * 0.92, weight: .regular), .backgroundColor: UIColor.secondarySystemBackground], range: span.range)
+            case .link:
+                textView.textStorage.addAttributes([.foregroundColor: UIColor.systemBlue, .underlineStyle: NSUnderlineStyle.single.rawValue], range: span.range)
+            }
+        }
+        textView.selectedRange = selection
+        textView.typingAttributes = base
+    }
+}
+
+private extension UIFont {
+    func boldVariant() -> UIFont {
+        guard let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) else { return self }
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
 

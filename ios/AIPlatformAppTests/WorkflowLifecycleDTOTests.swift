@@ -6048,4 +6048,22 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(action.payload.allowsMultiple, true)
         XCTAssertEqual(action.payload.sourceId, "src-12345678")
     }
+
+    func testHomeActionsExposeTheThreeBackendFacingIntents() {
+        XCTAssertEqual(ChatHomeAction.all.map(\.title), ["继续学", "继续做", "帮我清理"])
+        XCTAssertTrue(ChatHomeAction.all[0].prompt.contains("上次停下的位置"))
+        XCTAssertTrue(ChatHomeAction.all[1].prompt.contains("尚未完成"))
+        XCTAssertTrue(ChatHomeAction.all[2].prompt.contains("必须先让我确认"))
+    }
+
+    func testMarkdownVisualStyleFindsRichEditingSpans() {
+        let spans = MarkdownVisualStyle.spans(
+            in: "## 学习计划\n这是 **重点**。\n> 一段批注\n[[相关笔记]]\n```\nlet value = 1\n```"
+        )
+        XCTAssertTrue(spans.contains { $0.kind == .heading(2) })
+        XCTAssertTrue(spans.contains { $0.kind == .strong })
+        XCTAssertTrue(spans.contains { $0.kind == .quote })
+        XCTAssertTrue(spans.contains { $0.kind == .link })
+        XCTAssertTrue(spans.contains { $0.kind == .code })
+    }
 }

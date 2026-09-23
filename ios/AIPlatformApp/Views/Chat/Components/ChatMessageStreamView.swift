@@ -375,6 +375,34 @@ private extension View {
     }
 }
 
+struct ChatHomeAction: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let prompt: String
+
+    static let all = [
+        ChatHomeAction(
+            id: "continue-learning",
+            title: "继续学",
+            subtitle: "接着最近的阅读和问题，快速找回思路",
+            prompt: "请结合我最近的学习、阅读和提问记录，帮我从上次停下的位置继续学。先用一句话说明我们学到哪里，再给出最合适的下一步。"
+        ),
+        ChatHomeAction(
+            id: "continue-doing",
+            title: "继续做",
+            subtitle: "回到未完成的任务",
+            prompt: "请找到我最近尚未完成的任务或工作流，概括当前进度，并从下一步继续。"
+        ),
+        ChatHomeAction(
+            id: "help-me-clean",
+            title: "帮我清理",
+            subtitle: "整理对话、笔记和待办",
+            prompt: "请帮我清理最近积累的对话、笔记和待办。先列出建议整理的内容，涉及删除、归档或覆盖时必须先让我确认。"
+        ),
+    ]
+}
+
 private struct ChatWelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
@@ -382,10 +410,10 @@ private struct ChatWelcomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            Text("今天，想把什么变简单？")
+            Text("今天从哪里继续？")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.Colors.textPrimary)
-            Text("一起读、想、做点新东西。")
+            Text("不用重新开始，Quantum 会接住你的进度。")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(AppTheme.Colors.textSecondary)
                 .padding(.top, -AppTheme.Spacing.md)
@@ -393,9 +421,9 @@ private struct ChatWelcomeView: View {
             knowledgeScene
 
             VStack(spacing: AppTheme.Spacing.sm) {
-                suggestion("帮我理解一个概念", subtitle: "用简单的例子说明", symbol: "leaf.fill", prompt: "帮我用简单的例子理解一个概念。")
-                suggestion("帮我整理这篇文章", subtitle: "提炼重点", symbol: "doc.text.fill", prompt: "帮我整理一篇文章并提炼重点。")
-                suggestion("给我一些学习建议", subtitle: "提升专注力的方法", symbol: "lightbulb.fill", prompt: "给我一些能提升专注力的学习建议。")
+                ForEach(ChatHomeAction.all) { action in
+                    suggestion(action.title, subtitle: action.subtitle, prompt: action.prompt)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -407,7 +435,7 @@ private struct ChatWelcomeView: View {
         .onAppear {
             withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { appeared = true }
         }
-        .accessibilityLabel("今天，想把什么变简单？")
+        .accessibilityLabel("今天从哪里继续？")
     }
 
     private var knowledgeScene: some View {
@@ -445,7 +473,7 @@ private struct ChatWelcomeView: View {
         .accessibilityHidden(true)
     }
 
-    private func suggestion(_ title: String, subtitle: String, symbol _: String, prompt: String) -> some View {
+    private func suggestion(_ title: String, subtitle: String, prompt: String) -> some View {
         Button { onPrompt?(prompt) } label: {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(ContentAssetLibrary.contentIconName(for: "\(title) \(subtitle)"))
