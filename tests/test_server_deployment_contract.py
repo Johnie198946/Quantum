@@ -193,6 +193,8 @@ def test_mihomo_is_loopback_only_and_hardened() -> None:
     assert 'VERSION="1.19.31"' in installer
     assert 'SHA256="d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"' in installer
     assert "127.0.0.1:7890" in installer
+    assert 'ARCHIVE="${MIHOMO_ARCHIVE:-}"' in installer
+    assert "sha256sum --check --status" in installer
     assert "config.yaml" not in {
         path.name
         for path in UPDATE_SCRIPT.parents[1].rglob("*")
