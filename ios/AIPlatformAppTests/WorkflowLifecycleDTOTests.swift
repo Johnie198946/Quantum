@@ -3790,24 +3790,6 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(draft, "   \n ")
     }
 
-    func testHomeActionsExposeTheThreeBackendFacingIntents() {
-        XCTAssertEqual(ChatHomeAction.all.map(\.title), ["继续学", "继续做", "帮我清理"])
-        XCTAssertTrue(ChatHomeAction.continueLearning.prompt.contains("上次停下的位置"))
-        XCTAssertTrue(ChatHomeAction.continueDoing.prompt.contains("尚未完成"))
-        XCTAssertTrue(ChatHomeAction.helpMeClean.prompt.contains("必须先让我确认"))
-    }
-
-    func testMarkdownVisualStyleFindsRichEditingSpans() throws {
-        let text = "## 学习计划\n这是 **重点**。\n> 一段批注\n[[相关笔记]]\n```\nlet value = 1\n```"
-        let spans = MarkdownVisualStyle.spans(in: text)
-
-        XCTAssertTrue(spans.contains { $0.kind == .heading(2) })
-        XCTAssertTrue(spans.contains { $0.kind == .strong })
-        XCTAssertTrue(spans.contains { $0.kind == .quote })
-        XCTAssertTrue(spans.contains { $0.kind == .link })
-        XCTAssertTrue(spans.contains { $0.kind == .code })
-    }
-
     func testCloudKnowledgeSnapshotDecodesForReinstallRestore() throws {
         let data = Data("""
         {

@@ -68,8 +68,7 @@ public struct ChatView: View {
                         onStartTopic: { message in
                             coordinator.startTargetedTopic(from: message)
                             showingTopicDiscussion = currentTopic != nil
-                        },
-                        onWelcomePrompt: { prompt in coordinator.sendMessage(text: prompt) }
+                        }
                     )
                 }
             }
