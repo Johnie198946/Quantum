@@ -1,0 +1,29 @@
+feature_scope: server-local-mihomo-egress
+base_commit: 34161e9abf6a6c642b035cf95438db1ffa67e170
+target_branch: main
+architecture:
+  runtime: Hermes remains the only AI runtime
+  egress_primary: http://127.0.0.1:7890
+  egress_fallback: http://127.0.0.1:17897
+  secret_storage: /etc/mihomo/config.yaml
+files:
+  - README.md
+  - ops/runbooks/clash-verge-egress.md
+  - ops/scripts/install-server-mihomo.sh
+  - ops/systemd/mihomo.service
+  - scripts/update.sh
+  - tests/test_server_deployment_contract.py
+tests:
+  - bash -n ops/scripts/install-server-mihomo.sh scripts/update.sh
+  - python3 -m pytest -q tests/test_server_deployment_contract.py
+production_acceptance:
+  - mihomo.service is active and enabled
+  - only loopback 127.0.0.1:7890 is listening for the primary proxy
+  - server proxy reaches the model provider
+  - durable queue is empty before Bridge and Worker restart
+  - Worker process environment uses 127.0.0.1:7890
+  - API to Bridge to Worker to Provider synthetic run completes
+  - public health endpoint returns HTTP 200
+rollback:
+  - restore the previous hermes-egress.env and restart Bridge and Worker
+  - Mac reverse SSH port 17897 may be used only as a verified manual fallback

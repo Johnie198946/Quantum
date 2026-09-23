@@ -130,7 +130,7 @@ verify_hermes_egress_env() {
     return 1
   fi
   if ! awk -v bridge="$bridge_address" '
-    BEGIN { expected["HTTPS_PROXY"] = "http://127.0.0.1:17897"; expected["HTTP_PROXY"] = "http://127.0.0.1:17897" }
+    BEGIN { expected["HTTPS_PROXY"] = "http://127.0.0.1:7890"; expected["HTTP_PROXY"] = "http://127.0.0.1:7890" }
     /\r/ || !match($0, /^[A-Z_]+=[^=]*$/) { bad = 1; next }
     {
       key = substr($0, 1, index($0, "=") - 1)

@@ -181,6 +181,25 @@ def test_optional_hermes_egress_is_file_only_and_not_inlined() -> None:
             assert f"Environment={key}=" not in unit
 
 
+def test_mihomo_is_loopback_only_and_hardened() -> None:
+    unit = (SYSTEMD_DIR / "mihomo.service").read_text(encoding="utf-8")
+    installer = (
+        UPDATE_SCRIPT.parents[1] / "ops" / "scripts" / "install-server-mihomo.sh"
+    ).read_text(encoding="utf-8")
+    assert "User=mihomo" in unit
+    assert "NoNewPrivileges=true" in unit
+    assert "ProtectSystem=strict" in unit
+    assert "ReadWritePaths=/var/lib/mihomo" in unit
+    assert 'VERSION="1.19.31"' in installer
+    assert 'SHA256="d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"' in installer
+    assert "127.0.0.1:7890" in installer
+    assert "config.yaml" not in {
+        path.name
+        for path in UPDATE_SCRIPT.parents[1].rglob("*")
+        if path.is_file() and ".git" not in path.parts
+    }
+
+
 def test_worker_database_env_is_derived_without_compose_json_or_secret_arguments(
     tmp_path: Path,
 ) -> None:
@@ -259,8 +278,8 @@ def test_hermes_egress_env_accepts_only_exact_metadata_and_loopback_contract(
     tmp_path: Path,
 ) -> None:
     valid = (
-        "HTTPS_PROXY=http://127.0.0.1:17897\n"
-        "HTTP_PROXY=http://127.0.0.1:17897\n"
+        "HTTPS_PROXY=http://127.0.0.1:7890\n"
+        "HTTP_PROXY=http://127.0.0.1:7890\n"
         "NO_PROXY=localhost,127.0.0.1,172.18.0.1,::1\n"
     )
     result = _verify_egress_env(tmp_path, valid)
@@ -288,14 +307,14 @@ verify_hermes_egress_env 172.18.0.1
 @pytest.mark.parametrize(
     "content",
     (
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\nALL_PROXY=http://127.0.0.1:17897\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nhttp_proxy=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://user:pass@127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://192.0.2.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:7897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTPS_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nUNKNOWN=value\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,$(id)\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\nALL_PROXY=http://127.0.0.1:7890\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nhttp_proxy=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://user:pass@127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://192.0.2.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7897\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTPS_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nUNKNOWN=value\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,$(id)\n",
     ),
 )
 def test_hermes_egress_env_rejects_unsafe_keys_values_and_expansion(
@@ -402,7 +421,7 @@ def test_runtime_scripts_use_the_official_dedicated_user_install() -> None:
         assert contract in update
     assert "/opt/hermes" not in update
     assert '"$HERMES_PYTHON" -m pip install' not in update
-    assert "127.0.0.1:7890" not in update
+    assert "127.0.0.1:17897" not in update
     bridge_config = update[update.index("configure_hermes_bridge_network() {"):update.index(
         "verify_hermes_bridge_unit() {"
     )]

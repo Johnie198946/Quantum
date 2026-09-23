@@ -93,11 +93,11 @@ bash scripts/update.sh   # 拉取最新代码 + 重建 + 健康检查
 本地有更新时推送 GitHub 即可，服务器无需配 git/deploy key。
 
 ### 服务器代理（mihomo / Clash）
-- 服务: mihomo v1.19.29（systemd: `mihomo.service`），配置 `/etc/mihomo/config.yaml`
+- 服务: mihomo v1.19.31（systemd: `mihomo.service`），配置 `/etc/mihomo/config.yaml`
 - 端口: `mixed-port: 7890`（仅本机 127.0.0.1），规则模式（国内直连 + 国外走代理）
-- 节点: 蓝海机场订阅（anytls，62 节点），来自 Mac Clash Verge 已授权配置
-- 用途: 服务器 Hermes agent 联网研究（HTTP_PROXY/HTTPS_PROXY 已注入 /root/.hermes/.env）
-- 更新订阅: Mac 上 Clash Verge 更新后，运行 `bash ~/.hermes/profiles/doc-maker/scripts/sync_clash.sh`（每日 2:30 自动执行）
+- 节点配置为服务器私有运行资产，不进入 GitHub；从经授权来源单向同步
+- 用途: Hermes Bridge/Worker 的生产模型出口；`/etc/ai-lab-platform/hermes-egress.env` 固定指向 `127.0.0.1:7890`
+- Mac 反向 SSH 出口仅作人工应急回退，不是生产依赖，也不得覆盖服务器本地端口
 
 ### LLM 架构阶段（当前: 无多租户）
 - 服务器 **不启用 LLM agent 操作**（研究/编译链在 Mac 上执行），服务器职责 = 数据镜像 + 知识 API + 备份
