@@ -130,13 +130,18 @@ verify_hermes_egress_env() {
     return 1
   fi
   if ! awk -v bridge="$bridge_address" '
-    BEGIN { expected["HTTPS_PROXY"] = "http://127.0.0.1:7890"; expected["HTTP_PROXY"] = "http://127.0.0.1:7890" }
     /\r/ || !match($0, /^[A-Z_]+=[^=]*$/) { bad = 1; next }
     {
       key = substr($0, 1, index($0, "=") - 1)
       value = substr($0, index($0, "=") + 1)
       if (++seen[key] != 1 || (key != "HTTPS_PROXY" && key != "HTTP_PROXY" && key != "NO_PROXY")) bad = 1
-      if (key in expected && value != expected[key]) bad = 1
+      if (key == "HTTPS_PROXY" || key == "HTTP_PROXY") {
+        if (value !~ /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/) bad = 1
+        port = value
+        sub(/^http:\/\/127\.0\.0\.1:/, "", port)
+        if ((port + 0) > 65535) bad = 1
+        proxy[key] = value
+      }
       if (key == "NO_PROXY") {
         count = split(value, item, ",")
         if (count < 3 || count > 4) bad = 1
@@ -147,7 +152,10 @@ verify_hermes_egress_env() {
         if (!bypass["localhost"] || !bypass["127.0.0.1"] || !bypass[bridge]) bad = 1
       }
     }
-    END { exit bad || NR != 3 || !seen["HTTPS_PROXY"] || !seen["HTTP_PROXY"] || !seen["NO_PROXY"] }
+    END {
+      exit bad || NR != 3 || !seen["HTTPS_PROXY"] || !seen["HTTP_PROXY"] || !seen["NO_PROXY"] \
+        || proxy["HTTPS_PROXY"] != proxy["HTTP_PROXY"]
+    }
   ' "$env_file"; then
     echo "ERROR: Hermes egress environment violates the loopback-only proxy contract" >&2
     return 1

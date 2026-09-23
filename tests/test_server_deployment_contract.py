@@ -288,6 +288,9 @@ def test_hermes_egress_env_accepts_only_exact_metadata_and_loopback_contract(
     )
     result = _verify_egress_env(tmp_path, valid)
     assert result.returncode == 0, result.stderr
+    tunneled = valid.replace("127.0.0.1:7890", "127.0.0.1:17897")
+    result = _verify_egress_env(tmp_path, tunneled)
+    assert result.returncode == 0, result.stderr
     for metadata in (
         "1:0:600:160", "0:1:600:160", "0:0:640:160", "0:0:600:0", "0:0:600:1025",
     ):
