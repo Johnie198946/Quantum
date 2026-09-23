@@ -14,6 +14,7 @@ public enum MarkdownBlock: Identifiable, Hashable {
     case bulletList([String])
     case numberedList([String])
     case codeBlock(language: String?, code: String)
+    case formula(String)
     case quote(String)
     case divider
     case table(TableBlock)
@@ -28,6 +29,7 @@ public enum MarkdownBlock: Identifiable, Hashable {
         case .bulletList(let i): return "ul_\(i.hashValue)"
         case .numberedList(let i): return "ol_\(i.hashValue)"
         case .codeBlock(let l, let c): return "code_\(l ?? "")_\(c.hashValue)"
+        case .formula(let f): return "formula_\(f.hashValue)"
         case .quote(let t): return "q_\(t.hashValue)"
         case .divider: return "divider"
         case .table(let t): return "tbl_\(t.id)"
@@ -65,6 +67,7 @@ public final class MarkdownBlockParser {
         var blocks: [MarkdownBlock] = []
         var index = 0
         var inCode = false, codeLang: String?, codeLines: [String] = []
+        var formulaEnd: String?, formulaLines: [String] = []
         var pBuf: [String] = [], bBuf: [String] = [], nBuf: [String] = []
 
         func flushP() { if !pBuf.isEmpty { blocks.append(.paragraph(pBuf.joined(separator: "\n"))); pBuf.removeAll() } }
@@ -74,13 +77,31 @@ public final class MarkdownBlockParser {
 
         while index < lines.count {
             let line = lines[index], trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let end = formulaEnd {
+                if trimmed == end {
+                    blocks.append(.formula(formulaLines.joined(separator: "\n")))
+                    formulaEnd = nil; formulaLines.removeAll()
+                } else { formulaLines.append(line) }
+                index += 1; continue
+            }
             if inCode {
                 if trimmed.hasPrefix("```") {
                     let code = codeLines.joined(separator: "\n")
-                    blocks.append(Self.tryChart(codeLang, code) ?? .codeBlock(language: codeLang, code: code))
+                    if ["math", "latex", "tex"].contains(codeLang?.lowercased() ?? "") {
+                        blocks.append(.formula(code))
+                    } else {
+                        blocks.append(Self.chart(language: codeLang, code: code) ?? .codeBlock(language: codeLang, code: code))
+                    }
                     codeLines.removeAll(); codeLang = nil; inCode = false
                 } else { codeLines.append(line) }
                 index += 1; continue
+            }
+            if let formula = Self.singleLineFormula(trimmed) {
+                flushAll(); blocks.append(.formula(formula)); index += 1; continue
+            }
+            if trimmed == "$$" || trimmed == #"\["# {
+                flushAll(); formulaEnd = trimmed == "$$" ? "$$" : #"\]"#
+                formulaLines.removeAll(); index += 1; continue
             }
             if trimmed.hasPrefix("```") {
                 flushAll(); codeLang = trimmed.drop(while: { $0 == "`" }).trimmingCharacters(in: .whitespaces)
@@ -122,7 +143,11 @@ public final class MarkdownBlockParser {
             if trimmed.isEmpty { flushAll(); index += 1; continue }
             flushB(); flushN(); pBuf.append(line); index += 1
         }
-        if inCode { blocks.append(.codeBlock(language: codeLang, code: codeLines.joined(separator: "\n"))) }
+        if inCode {
+            let code = codeLines.joined(separator: "\n")
+            blocks.append(["math", "latex", "tex"].contains(codeLang?.lowercased() ?? "") ? .formula(code) : .codeBlock(language: codeLang, code: code))
+        }
+        if formulaEnd != nil, !formulaLines.isEmpty { blocks.append(.formula(formulaLines.joined(separator: "\n"))) }
         flushAll()
         if !messageId.isEmpty {
             cache.setObject(
@@ -149,6 +174,14 @@ public final class MarkdownBlockParser {
     private static func parseCallout(_ s: String) -> MarkdownBlock? {
         guard s.hasPrefix("【"), let close = s.firstIndex(of: "】") else { return nil }
         return .callout(label: String(s[s.index(after: s.startIndex)..<close]), text: String(s[s.index(after: close)...]).trimmingCharacters(in: .whitespaces))
+    }
+    private static func singleLineFormula(_ s: String) -> String? {
+        let pairs = [("$$", "$$"), (#"\["#, #"\]"#), (#"\("#, #"\)"#)]
+        for (start, end) in pairs where s.hasPrefix(start) && s.hasSuffix(end) && s.count > start.count + end.count {
+            return String(s.dropFirst(start.count).dropLast(end.count)).trimmingCharacters(in: .whitespaces)
+        }
+        guard s.hasPrefix("$"), s.hasSuffix("$"), s.count > 2, !s.hasPrefix("$$") else { return nil }
+        return String(s.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
     }
     private static func parseBullet(_ s: String) -> String? {
         (s.hasPrefix("- ") || s.hasPrefix("* ") || s.hasPrefix("+ ")) ? String(s.dropFirst(2)).trimmingCharacters(in: .whitespaces) : nil
@@ -196,7 +229,7 @@ public final class MarkdownBlockParser {
         }
         return cells.map { $0.trimmingCharacters(in: .whitespaces) }
     }
-    private static func tryChart(_ lang: String?, _ code: String) -> MarkdownBlock? {
+    public static func chart(language lang: String?, code: String) -> MarkdownBlock? {
         guard let l = lang?.lowercased(), l.contains("chart"), let d = code.data(using: .utf8),
               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
         let title = j["title"] as? String ?? "数据趋势图", summary = j["summary"] as? String ?? "", isBar = (j["type"] as? String ?? "") == "bar"

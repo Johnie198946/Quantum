@@ -17,20 +17,20 @@ public enum AppTheme {
     // MARK: - Color Palette
     public enum Colors {
         // Logo 原色只用于品牌标记和数据序列；界面交互使用下方 Aurora 语义色。
-        public static let quantumCyan = Color(hex: "56C8EB")
-        public static let quantumBlue = Color(hex: "5B7CEE")
-        public static let quantumViolet = Color(hex: "9E6EE8")
-        public static let auroraViolet = Color(hex: "7468EE")
-        public static let auroraBlue = Color(hex: "526CFF")
-        public static let auroraCyan = Color(hex: "4CCFE0")
-        public static let auroraPink = Color(hex: "FF9BC3")
+        public static let quantumCyan = Color(hex: "78AEB0")
+        public static let quantumBlue = Color(hex: "58758E")
+        public static let quantumViolet = Color(hex: "7A80AE")
+        public static let auroraViolet = Color(hex: "7A80AE")
+        public static let auroraBlue = Color(hex: "58758E")
+        public static let auroraCyan = Color(hex: "78AEB0")
+        public static let auroraPink = Color(hex: "D9A8A0")
         public static let emberOrange = Color(hex: "E97942")
         public static let emberAmber = Color(hex: "F2A15F")
         public static let emberCream = Color(hex: "FFF7EC")
         public static let emberInk = Color(hex: "2B1811")
         /// 历史命名兼容：交互入口沿用当前蓝紫语义色。
-        public static let interactiveBlue = Color(hex: "8057E8")
-        public static let interactiveViolet = Color(hex: "6845D6")
+        public static let interactiveBlue = Color(hex: "3F7278")
+        public static let interactiveViolet = Color(hex: "6673A6")
 
         // 语义别名（收敛到 Quantum 真值，杜绝双源漂移）
         public static let brandPrimary = quantumBlue
@@ -39,17 +39,17 @@ public enum AppTheme {
 
         // Quantum 光谱只用于品牌标识；结构性操作使用暖色 Ember 渐变。
         public static let quantumGradient = LinearGradient(
-            colors: [auroraViolet, auroraBlue, auroraCyan, auroraPink],
+            colors: [Color(hex: "6673A6"), Color(hex: "58758E"), Color(hex: "78A596")],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
         public static let actionGradient = LinearGradient(
-            colors: [Color(hex: "328CE4"), Color(hex: "8057E8")],
+            colors: [Color(hex: "3F7278"), Color(hex: "557B92"), Color(hex: "6673A6")],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
         public static let userBubbleGradient = LinearGradient(
-            colors: [Color(hex: "8057E8"), Color(hex: "6845D6")],
+            colors: [Color(hex: "557B92"), Color(hex: "6673A6")],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -63,8 +63,8 @@ public enum AppTheme {
         public static let onSemantic = Color(hex: "1F1F1F")
 
         // 对话气泡系统：用户气泡三色流光渐变（白字），助手卡片冷岩/深曜石底 + 量子青/蓝微光细边框
-        public static let userBubbleBackground = Color(hex: "5B7CEE")
-        public static let assistantBubbleBorder = adaptive("5B7CEE", "56C8EB")
+        public static let userBubbleBackground = Color(hex: "557B92")
+        public static let assistantBubbleBorder = adaptive("8FB4AE", "78AEB0")
         
         // Security Classification Three-Color Tokens (红黄绿三色安全徽章) → System Semantic Colors
         public static var securityRed: Color {
@@ -106,15 +106,22 @@ public enum AppTheme {
         public static let codeWindowGreen = Color(hex: "27C93F")
         public static let codeSyntaxForeground = Color(hex: "E6EDF3")
         
-        // 当前产品浅紫白画布。
-        public static var background: Color { adaptive("F8F7FC", "17141F") }
-        public static var secondaryBackground: Color { adaptive("F1EEFA", "211D2B") }
-        public static var tertiaryBackground: Color { adaptive("E8E3F3", "2B2637") }
+        // V3–V5 原型的暖象牙纸面与清新知识色。
+        public static var background: Color { adaptive("F7F5EF", "17141F") }
+        public static var secondaryBackground: Color { adaptive("F2F3EF", "211D2B") }
+        public static var tertiaryBackground: Color { adaptive("E9EFEE", "2B2637") }
         public static var cardBackground: Color { adaptive("FFFFFF", "24202E") }
         public static var surfaceElevated: Color { adaptive("FFFFFF", "302A3B") }
         public static var groupedBackground: Color { background }
-        public static var surfaceTint: Color { adaptive("F4F0FC", "352E42") }
-        public static var selectionTint: Color { adaptive("ECE5FB", "403652") }
+        public static var surfaceTint: Color { adaptive("EEF3F0", "352E42") }
+        public static var selectionTint: Color { adaptive("E3EEEB", "403652") }
+        public static let paper = Color(hex: "F7F5EF")
+        public static let mistSky = Color(hex: "DFEBED")
+        public static let mistMint = Color(hex: "DDECE2")
+        public static let mistLilac = Color(hex: "E7E6F1")
+        public static let mistRose = Color(hex: "F3E2DE")
+        public static let dawnPeach = Color(hex: "F3CDAE")
+        public static let leaf = Color(hex: "78947E")
         public static var successSurface: Color { adaptive("E7F8F2", "17342D") }
         public static var warningSurface: Color { adaptive("FFF4DF", "462B1B") }
         public static var dangerSurface: Color { adaptive("FDECEF", "3D1D22") }
@@ -133,12 +140,12 @@ public enum AppTheme {
         public static let codeSyntaxType = Color(hex: "6BDFFF")
         
         // Dynamic Label Colors — Quantum 同源文字（亮 #333333 · 暗 #F5F5F7）
-        public static var textPrimary: Color { adaptive("191521", "F8F4FF") }
-        public static var textSecondary: Color { adaptive("746E7F", "D1C9DC") }
-        public static var textTertiary: Color { adaptive("9690A2", "A69BB2") }
+        public static var textPrimary: Color { adaptive("1F2D2E", "F8F4FF") }
+        public static var textSecondary: Color { adaptive("667373", "D1C9DC") }
+        public static var textTertiary: Color { adaptive("8A9693", "A69BB2") }
         
         // Border & Divider — Quantum 冷调发丝线
-        public static var border: Color { adaptive("EAE6F2", "51475E") }
+        public static var border: Color { adaptive("D8E0DD", "51475E") }
 
         // Soft Intelligence Bento accent fills（彩色卡片始终搭配指定前景色）
         public static let bentoLavender = Color(hex: "E9E0FB")
@@ -200,22 +207,22 @@ public enum AppTheme {
         public static let contentGutter: CGFloat = 20
         public static let readableContentWidth: CGFloat = 720
         public static let floatingTabBarHeight: CGFloat = 64
-        public static let panelRadius: CGFloat = 22
+        public static let panelRadius: CGFloat = 20
     }
 
     public enum Motion {
         public static let quick = Animation.easeOut(duration: 0.18)
         public static let standard = Animation.easeOut(duration: 0.24)
-        public static let spring = Animation.spring(response: 0.32, dampingFraction: 0.86)
+        public static let spring = Animation.spring(response: 0.36, dampingFraction: 0.90)
     }
     
     // MARK: - Corner Radius Tokens
     public enum Radius {
-        public static let xs: CGFloat = 10
-        public static let sm: CGFloat = 14
-        public static let md: CGFloat = 18
-        public static let lg: CGFloat = 24
-        public static let xl: CGFloat = 30
+        public static let xs: CGFloat = 8
+        public static let sm: CGFloat = 12
+        public static let md: CGFloat = 16
+        public static let lg: CGFloat = 20
+        public static let xl: CGFloat = 24
         public static let full: CGFloat = 999
     }
     
@@ -224,6 +231,148 @@ public enum AppTheme {
         public static func card(colorScheme: ColorScheme) -> some ViewModifier {
             CardShadowModifier(colorScheme: colorScheme)
         }
+    }
+}
+
+// MARK: - Component Content Assets
+
+/// Generated content artwork used by cards and covers. Interactive controls stay on SF Symbols.
+public enum ContentAssetLibrary {
+    public static let avatarNames = [
+        "avatar_youth_01", "avatar_youth_02", "avatar_youth_03", "avatar_youth_04",
+    ]
+
+    public static func avatarAssetName(for value: String?) -> String? {
+        guard let value, avatarNames.contains(value) else { return nil }
+        return value
+    }
+
+    public static func bookCoverName(theme: String?, title: String, variant: Int? = nil) -> String {
+        let normalizedTitle = title.lowercased()
+        if containsAny(normalizedTitle, ["travel", "trip", "旅行", "京都"]) { return "book_cover_travel" }
+        if containsAny(normalizedTitle, ["science", "research", "technology", "ai ", "科学", "研究", "技术", "能源"]) { return "book_cover_science" }
+        if containsAny(normalizedTitle, ["history", "strategy", "历史", "战略", "竞品"]) { return "book_cover_history" }
+        if let variant {
+            let variants = ["book_cover_growth", "book_cover_literature", "book_cover_science", "book_cover_history"]
+            let index = (variant % variants.count + variants.count) % variants.count
+            return variants[index]
+        }
+        let normalizedTheme = theme?.lowercased() ?? ""
+        if containsAny(normalizedTheme, ["history", "strategy", "competitor"]) { return "book_cover_history" }
+        if containsAny(normalizedTheme, ["science", "research", "technology"]) { return "book_cover_science" }
+        if containsAny(normalizedTheme, ["product", "methodology", "customer", "growth"]) { return "book_cover_growth" }
+        return "book_cover_literature"
+    }
+
+    public static func journalCoverName(tags: [String], title: String) -> String {
+        let haystack = (tags + [title]).joined(separator: " ").lowercased()
+        if containsAny(haystack, ["travel", "trip", "旅行", "京都"]) { return "journal_cover_travel" }
+        if containsAny(haystack, ["idea", "inspiration", "design", "想法", "灵感", "设计"]) { return "journal_cover_ideas" }
+        return "journal_cover_reading"
+    }
+
+    public static func contentIconName(for intent: String) -> String {
+        let value = intent.lowercased()
+        if containsAny(value, ["travel", "trip", "旅行"]) { return "content_icon_travel" }
+        if containsAny(value, ["research", "science", "研究", "科学"]) { return "content_icon_research" }
+        if containsAny(value, ["idea", "inspiration", "建议", "灵感"]) { return "content_icon_inspiration" }
+        if containsAny(value, ["read", "article", "阅读", "文章", "整理"]) { return "content_icon_reading" }
+        if containsAny(value, ["life", "daily", "生活", "日记"]) { return "content_icon_life" }
+        return "content_icon_learning"
+    }
+
+    private static func containsAny(_ value: String, _ candidates: [String]) -> Bool {
+        candidates.contains(where: value.contains)
+    }
+}
+
+public struct UserAvatarView: View {
+    private let value: String?
+    private let size: CGFloat
+
+    public init(value: String?, size: CGFloat) {
+        self.value = value
+        self.size = size
+    }
+
+    public var body: some View {
+        Group {
+            if let asset = ContentAssetLibrary.avatarAssetName(for: value) {
+                Image(asset).resizable().scaledToFill()
+            } else if let value, let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    avatarFallback
+                }
+            } else {
+                Image(systemName: value ?? "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.18)
+                    .foregroundStyle(AppTheme.Icons.interactive)
+                    .background(AppTheme.Colors.surfaceTint)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay { Circle().stroke(Color.white.opacity(0.84), lineWidth: 1) }
+        .accessibilityLabel("用户头像")
+    }
+
+    private var avatarFallback: some View {
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .padding(size * 0.18)
+            .foregroundStyle(AppTheme.Icons.interactive)
+            .background(AppTheme.Colors.surfaceTint)
+    }
+}
+
+public struct IllustratedBookCover: View {
+    private let title: String
+    private let author: String
+    private let theme: String?
+    private let variant: Int?
+    private let width: CGFloat
+
+    public init(title: String, author: String, theme: String?, variant: Int? = nil, width: CGFloat) {
+        self.title = title
+        self.author = author
+        self.theme = theme
+        self.variant = variant
+        self.width = width
+    }
+
+    public var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Image(ContentAssetLibrary.bookCoverName(theme: theme, title: title, variant: variant))
+                .resizable()
+                .scaledToFill()
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(0.72)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: width < 100 ? 10 : 14, weight: .bold, design: .rounded))
+                    .lineLimit(width < 80 ? 2 : 3)
+                Text(author)
+                    .font(.system(size: width < 100 ? 7 : 9, weight: .medium))
+                    .lineLimit(1)
+                    .opacity(0.86)
+            }
+            .foregroundStyle(.white)
+            .padding(width < 80 ? 7 : 10)
+        }
+        .frame(width: width, height: width * 1.42)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.74), lineWidth: 0.7) }
+        .shadow(color: AppTheme.Colors.primary.opacity(0.12), radius: 12, x: 3, y: 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("《\(title)》，\(author)")
     }
 }
 
@@ -285,10 +434,10 @@ private struct CardShadowModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .shadow(
-                color: Color(hex: "6B5A8A").opacity(0.10),
-                radius: 20,
+                color: Color(hex: "49637A").opacity(0.08),
+                radius: 14,
                 x: 0,
-                y: 4
+                y: 6
             )
     }
 }
@@ -318,18 +467,19 @@ public struct QuantumCardModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
-            .background(AppTheme.Colors.cardBackground)
+            .background(.ultraThinMaterial)
+            .background(AppTheme.Colors.cardBackground.opacity(reduceTransparency ? 1 : 0.72))
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                    .stroke(AppTheme.Colors.border.opacity(0.92), lineWidth: 0.75)
+                    .stroke(Color.white.opacity(0.76), lineWidth: 0.8)
             }
             .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .shadow(
-                color: Color(hex: "6B5A8A").opacity(0.10),
-                radius: 20,
+                color: Color(hex: "385A58").opacity(0.10),
+                radius: 18,
                 x: 0,
-                y: 4
+                y: 6
             )
     }
 }
@@ -364,41 +514,44 @@ public struct QuantumPrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.inputHeight)
             .padding(.horizontal, AppTheme.Spacing.xl)
             .background(AppTheme.Colors.actionGradient.opacity(isEnabled ? 1 : 0.46))
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+            .clipShape(Capsule())
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
             .animation(reduceMotion ? nil : AppTheme.Motion.quick, value: configuration.isPressed)
     }
 }
 
-/// 冷白珠光环境底景。光晕保持静态，避免持续动画和额外解码成本。
+/// 晨光自然底景：复用现有学习场景图，并用渐变遮罩控制信息可读性。
 public struct QuantumMistBackground: View {
 
     public init() {}
 
     public var body: some View {
         ZStack {
-            AppTheme.Colors.background
             LinearGradient(
-                colors: [Color(hex: "EEF8FF"), Color(hex: "F8F7FC"), Color(hex: "F5EEFF")],
+                colors: [Color(hex: "EDF3F0"), Color(hex: "F7F5EF"), Color(hex: "F4E9E1")],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            Circle()
-                .fill(AppTheme.Colors.quantumViolet.opacity(0.15))
-                .frame(width: 360, height: 360)
-                .blur(radius: 100)
-                .offset(x: 190, y: -260)
-            Circle()
-                .fill(AppTheme.Colors.quantumCyan.opacity(0.12))
-                .frame(width: 340, height: 340)
-                .blur(radius: 96)
-                .offset(x: -210, y: -40)
-            Circle()
-                .fill(AppTheme.Colors.auroraPink.opacity(0.12))
-                .frame(width: 300, height: 500)
-                .blur(radius: 105)
-                .offset(x: 230, y: 390)
+            GeometryReader { proxy in
+                Image("knowledge_home_hero")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: min(420, proxy.size.height * 0.48))
+                    .clipped()
+                    .opacity(0.20)
+                    .mask {
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                    }
+                Circle()
+                    .fill(AppTheme.Colors.mistLilac.opacity(0.54))
+                    .frame(width: 250, height: 250)
+                    .offset(x: proxy.size.width - 120, y: -80)
+                Ellipse()
+                    .fill(AppTheme.Colors.dawnPeach.opacity(0.28))
+                    .frame(width: 300, height: 360)
+                    .offset(x: -150, y: proxy.size.height * 0.58)
+            }
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)

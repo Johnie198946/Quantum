@@ -479,6 +479,28 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
     public var state: CapabilityProposalState = .awaitingConfirmation
     public var errorMessage: String?
 
+    public init(
+        id: String,
+        capabilityId: String,
+        input: CapabilityProposalInput,
+        summary: String,
+        risk: String,
+        confirmationToken: String? = nil,
+        expiresAt: String? = nil,
+        state: CapabilityProposalState = .awaitingConfirmation,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.capabilityId = capabilityId
+        self.input = input
+        self.summary = summary
+        self.risk = risk
+        self.confirmationToken = confirmationToken
+        self.expiresAt = expiresAt
+        self.state = state
+        self.errorMessage = errorMessage
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case proposalId
@@ -708,6 +730,8 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
     case knowledgeAction(KnowledgeActionBlock)
     case capabilityProposal(CapabilityProposalBlock)
     case artifactConsumption(ArtifactConsumptionBlock)
+    case workflow(WorkflowDTO)
+    case knowledgeNavigation(KnowledgeNavigationTarget)
 
     public var id: String {
         switch self {
@@ -723,6 +747,9 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
         case .knowledgeAction(let action): return "knowledge_action_\(action.id)"
         case .capabilityProposal(let proposal): return "capability_proposal_\(proposal.id)"
         case .artifactConsumption(let receipt): return "artifact_consumption_\(receipt.id)"
+        case .workflow(let workflow): return "workflow_\(workflow.id)"
+        case .knowledgeNavigation(let target):
+            return "knowledge_navigation_\(target.destination)_\(target.noteId ?? target.query ?? "home")"
         }
     }
 }
@@ -788,6 +815,8 @@ public extension ChatMessage {
             case .knowledgeAction(let action): return "[知识操作·\(action.summary)]"
             case .capabilityProposal(let proposal): return "[待确认操作·\(proposal.summary)]"
             case .artifactConsumption: return "[工件消费回执]"
+            case .workflow(let workflow): return "[工作流·\(workflow.title)]"
+            case .knowledgeNavigation: return "[知识库入口]"
             }
         }
         let blockSummary = summaries.isEmpty ? nil : summaries.joined(separator: " ")
@@ -902,6 +931,8 @@ public struct PersistedMessage: Codable, Sendable {
     public let capabilityProposal: CapabilityProposalBlock?
     public let artifactConsumptions: [ArtifactConsumptionBlock]?
     public let attachments: [AttachmentBlock]?
+    public let workflows: [WorkflowDTO]?
+    public let knowledgeNavigations: [KnowledgeNavigationTarget]?
 
     public init(_ m: ChatMessage) {
         self.id = m.id
@@ -947,6 +978,10 @@ public struct PersistedMessage: Codable, Sendable {
         }
         self.artifactConsumptions = consumptions.isEmpty ? nil : consumptions
         self.attachments = m.blocks.compactMap { if case .attachment(let item) = $0 { return item }; return nil }
+        let workflows = m.blocks.compactMap { if case .workflow(let item) = $0 { return item }; return nil }
+        self.workflows = workflows.isEmpty ? nil : workflows
+        let navigations = m.blocks.compactMap { if case .knowledgeNavigation(let item) = $0 { return item }; return nil }
+        self.knowledgeNavigations = navigations.isEmpty ? nil : navigations
     }
 
     public func toChatMessage(sessionId: String) -> ChatMessage {
@@ -995,6 +1030,8 @@ public struct PersistedMessage: Codable, Sendable {
             message.blocks.append(.artifactConsumption(receipt))
         }
         for attachment in attachments ?? [] { message.blocks.append(.attachment(attachment)) }
+        for workflow in workflows ?? [] { message.blocks.append(.workflow(workflow)) }
+        for target in knowledgeNavigations ?? [] { message.blocks.append(.knowledgeNavigation(target)) }
         return message
     }
 }

@@ -106,6 +106,8 @@ public struct MessageBubbleView: View {
     public var onQuoteFollowUp: ((QuotedContext) -> Void)? = nil
     public var onRegenerate: ((String) -> Void)? = nil
     public var onStartTopic: ((ChatMessage) -> Void)? = nil
+    public var reasoningInitiallyExpanded: Bool = false
+    public var reasoningSummary: String? = nil
 
     @State private var isCopied: Bool = false
     @State private var quoteFragmentDraft = ""
@@ -118,24 +120,43 @@ public struct MessageBubbleView: View {
         context: PluginRenderContext? = nil,
         onQuoteFollowUp: ((QuotedContext) -> Void)? = nil,
         onRegenerate: ((String) -> Void)? = nil,
-        onStartTopic: ((ChatMessage) -> Void)? = nil
+        onStartTopic: ((ChatMessage) -> Void)? = nil,
+        reasoningInitiallyExpanded: Bool = false,
+        reasoningSummary: String? = nil
     ) {
         self.message = message
         self.context = context
         self.onQuoteFollowUp = onQuoteFollowUp
         self.onRegenerate = onRegenerate
         self.onStartTopic = onStartTopic
+        self.reasoningInitiallyExpanded = reasoningInitiallyExpanded
+        self.reasoningSummary = reasoningSummary
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+        Group {
             if message.role == .user {
-                Spacer(minLength: 44)
-                userBubbleContent
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    Spacer(minLength: 44)
+                    userBubbleContent
+                }
+            } else if usesReportPresentation {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        assistantAvatarView
+                        Text("Quantum")
+                            .font(AppTheme.Typography.label.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                    }
+                    assistantBubbleContent
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                assistantAvatarView
-                assistantBubbleContent
-                Spacer(minLength: 44)
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    assistantAvatarView
+                    assistantBubbleContent
+                    Spacer(minLength: 44)
+                }
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -282,8 +303,12 @@ public struct MessageBubbleView: View {
                     } else if !completedMarkdownBlocks.isEmpty {
                         // MarkdownBlock.id is content-derived; use parse order as
                         // local identity so repeated paragraphs stay distinct.
-                        ForEach(Array(completedMarkdownBlocks.enumerated()), id: \.offset) { _, block in
-                            MarkdownBlockCard(block: block)
+                        if isLongCompletedAnswer || completedMarkdownBlocks.prefersSectionCards {
+                            ReadingCardDeck(blocks: completedMarkdownBlocks)
+                        } else {
+                            ForEach(Array(completedMarkdownBlocks.enumerated()), id: \.offset) { _, block in
+                                MarkdownBlockCard(block: block)
+                            }
                         }
                     } else if !trimmed.isEmpty {
                         Text(completedDisplayContent)
@@ -312,15 +337,16 @@ public struct MessageBubbleView: View {
                         streamingCursorView
                     }
                 }
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .padding(.vertical, AppTheme.Spacing.md)
-                .background(AppTheme.Colors.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                        .stroke(AppTheme.Colors.assistantBubbleBorder.opacity(0.18), lineWidth: 0.5)
-                )
-                .pressBorderGlow(cornerRadius: AppTheme.Radius.lg)
+                .padding(.horizontal, usesReportPresentation ? 0 : AppTheme.Spacing.md)
+                .padding(.vertical, usesReportPresentation ? AppTheme.Spacing.sm : AppTheme.Spacing.md)
+                .background(usesReportPresentation ? Color.clear : AppTheme.Colors.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: usesReportPresentation ? 0 : AppTheme.Radius.lg, style: .continuous))
+                .overlay {
+                    if !usesReportPresentation {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                            .stroke(AppTheme.Colors.assistantBubbleBorder.opacity(0.18), lineWidth: 0.5)
+                    }
+                }
             }
 
             // 3. 其他富媒体块（非 reasoning，如表格、图表、代码、澄清卡等）
@@ -388,6 +414,10 @@ public struct MessageBubbleView: View {
         !message.isStreaming && LongMessagePresentation.isLong(message.content)
     }
 
+    private var usesReportPresentation: Bool {
+        !message.isStreaming && (isLongCompletedAnswer || completedMarkdownBlocks.prefersSectionCards)
+    }
+
     private var completedDisplayContent: String {
         isLongCompletedAnswer
             ? LongMessagePresentation.collapsedPreview(message.content)
@@ -434,6 +464,9 @@ public struct MessageBubbleView: View {
         BlockCardDispatcher(
             block: block,
             isStreaming: message.isStreaming,
+            reasoningDuration: message.reasoningDuration,
+            reasoningInitiallyExpanded: reasoningInitiallyExpanded,
+            reasoningSummary: reasoningSummary,
             onClarifySubmit: { selection in
                 context?.onClarifySubmit?(selection)
             },
@@ -445,6 +478,12 @@ public struct MessageBubbleView: View {
             },
             onCapabilityProposal: { proposalId, action in
                 context?.onCapabilityProposal?(proposalId, action)
+            },
+            onWorkflowOpen: { workflowId in
+                context?.onWorkflowOpen?(workflowId)
+            },
+            onKnowledgeNavigation: { target in
+                context?.onKnowledgeNavigation?(target)
             }
         )
     }
@@ -592,6 +631,13 @@ struct LongAnswerSheet: View {
                     kind: "table",
                     content: previous.content + block.content
                 )
+            } else if let previous = result.last,
+                      previous.kind.hasPrefix("markdown"), block.kind.hasPrefix("markdown") {
+                result[result.count - 1] = .init(
+                    blockIndex: previous.blockIndex,
+                    kind: "markdown",
+                    content: previous.content + "\n\n" + block.content
+                )
             } else {
                 result.append(block)
             }
@@ -625,8 +671,8 @@ struct LongAnswerSheet: View {
                 .padding(AppTheme.Spacing.md)
             }
             .scrollPosition(id: $readingBlockIndex, anchor: .top)
-            .background(AppTheme.Colors.background)
-            .navigationTitle("回答原文")
+            .background(Color(hex: "FCFBF7").ignoresSafeArea())
+            .navigationTitle("回答详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -828,11 +874,9 @@ struct StableAnswerBlockView: View {
         } else if block.kind.hasPrefix("code") {
             StructuredAnswerBlockView(kind: block.kind, content: block.content)
         } else {
-            ForEach(MarkdownBlockParser.shared.parse(
+            ReadingCardDeck(blocks: MarkdownBlockParser.shared.parse(
                 block.content, messageId: "\(messageId)_block_\(block.blockIndex)"
-            )) { parsed in
-                MarkdownBlockCard(block: parsed)
-            }
+            ))
         }
     }
 }
@@ -921,17 +965,19 @@ public struct CodeBlockCard: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header Bar
-            HStack {
-                HStack(spacing: 6) {
-                    Circle().fill(AppTheme.Colors.codeWindowRed).frame(width: 10, height: 10)
-                    Circle().fill(AppTheme.Colors.codeWindowYellow).frame(width: 10, height: 10)
-                    Circle().fill(AppTheme.Colors.codeWindowGreen).frame(width: 10, height: 10)
-
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppTheme.Colors.quantumViolet)
+                    .frame(width: 32, height: 32)
+                    .background(AppTheme.Colors.mistLilac, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("代码片段")
+                        .font(AppTheme.Typography.label)
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
                     Text(snippet.language.uppercased())
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.8))
-                        .padding(.leading, 6)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.Colors.textTertiary)
                 }
 
                 Spacer()
@@ -943,21 +989,18 @@ public struct CodeBlockCard: View {
                         Text(isCopied ? "已复制" : "复制")
                             .font(.system(size: 11, weight: .medium))
                     }
-            .foregroundColor(isCopied ? AppTheme.Icons.success : Color.white.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs))
+                    .foregroundStyle(isCopied ? AppTheme.Icons.success : AppTheme.Colors.textSecondary)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 32)
+                    .background(AppTheme.Colors.secondaryBackground, in: Capsule())
                 }
+                .buttonStyle(SoftButtonStyle())
+                .accessibilityHint("复制完整代码")
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.sm)
-            .background(AppTheme.Colors.codeBlockHeader)
+            .background(AppTheme.Colors.cardBackground)
 
-            Divider()
-                .background(Color.white.opacity(0.1))
-
-            // Code Lines Content
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                     let lines = snippet.code.components(separatedBy: "\n")
@@ -965,7 +1008,7 @@ public struct CodeBlockCard: View {
                         ForEach(0..<lines.count, id: \.self) { idx in
                             Text("\(idx + 1)")
                                 .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(Color.gray.opacity(0.6))
+                                .foregroundColor(Color.white.opacity(0.36))
                         }
                     }
 
@@ -979,10 +1022,14 @@ public struct CodeBlockCard: View {
                 }
                 .padding(AppTheme.Spacing.md)
             }
-            .background(AppTheme.Colors.codeBlockBackground)
+            .background(Color(hex: "223237"))
         }
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-        .pressBorderGlow(cornerRadius: AppTheme.Radius.md)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                .stroke(Color.white.opacity(0.8), lineWidth: 0.75)
+        }
+        .shadow(color: AppTheme.Colors.primary.opacity(0.09), radius: 14, y: 6)
     }
 
     private func copyCode() {
@@ -998,33 +1045,192 @@ public struct CodeBlockCard: View {
 }
 
 // MARK: - Mathematical Formula Card
+enum MathFormulaPresentation {
+    private static let commands: [(String, String)] = [
+        ("\\varepsilon", "ϵ"), ("\\rightarrow", "→"), ("\\leftarrow", "←"),
+        ("\\operatorname", ""), ("\\mathrm", ""), ("\\mathbf", ""),
+        ("\\alpha", "α"), ("\\beta", "β"), ("\\gamma", "γ"),
+        ("\\delta", "δ"), ("\\epsilon", "ε"), ("\\eta", "η"),
+        ("\\theta", "θ"), ("\\lambda", "λ"), ("\\mu", "μ"),
+        ("\\rho", "ρ"), ("\\sigma", "σ"), ("\\tau", "τ"),
+        ("\\phi", "φ"), ("\\omega", "ω"), ("\\pi", "π"),
+        ("\\infty", "∞"), ("\\approx", "≈"), ("\\notin", "∉"),
+        ("\\times", "×"), ("\\cdot", "·"), ("\\sum", "∑"),
+        ("\\prod", "∏"), ("\\int", "∫"), ("\\neq", "≠"),
+        ("\\leq", "≤"), ("\\geq", "≥"), ("\\le", "≤"),
+        ("\\ge", "≥"), ("\\pm", "±"), ("\\to", "→"),
+        ("\\in", "∈"), ("\\left", ""), ("\\right", ""),
+        ("\\text", ""), ("\\,", " "), ("\\;", " "), ("\\!", "")
+    ]
+
+    private static let subscriptCharacters: [Character: Character] = [
+        "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+        "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+        "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
+        "a": "ₐ", "e": "ₑ", "h": "ₕ", "i": "ᵢ", "j": "ⱼ",
+        "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "o": "ₒ",
+        "p": "ₚ", "r": "ᵣ", "s": "ₛ", "t": "ₜ", "u": "ᵤ",
+        "v": "ᵥ", "x": "ₓ", "β": "ᵦ", "γ": "ᵧ", "ρ": "ᵨ",
+        "φ": "ᵩ", "χ": "ᵪ"
+    ]
+
+    private static let superscriptCharacters: [Character: Character] = [
+        "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+        "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+        "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+        "a": "ᵃ", "b": "ᵇ", "c": "ᶜ", "d": "ᵈ", "e": "ᵉ",
+        "f": "ᶠ", "g": "ᵍ", "h": "ʰ", "i": "ⁱ", "j": "ʲ",
+        "k": "ᵏ", "l": "ˡ", "m": "ᵐ", "n": "ⁿ", "o": "ᵒ",
+        "p": "ᵖ", "r": "ʳ", "s": "ˢ", "t": "ᵗ", "u": "ᵘ",
+        "v": "ᵛ", "w": "ʷ", "x": "ˣ", "y": "ʸ", "z": "ᶻ"
+    ]
+
+    static func displayText(_ source: String) -> String {
+        var value = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        value = value
+            .replacingOccurrences(of: "\\begin{aligned}", with: "")
+            .replacingOccurrences(of: "\\end{aligned}", with: "")
+            .replacingOccurrences(of: "\\begin{equation}", with: "")
+            .replacingOccurrences(of: "\\end{equation}", with: "")
+            .replacingOccurrences(of: "\\\\", with: "\n")
+            .replacingOccurrences(of: "&", with: "")
+        value = replacingPattern(#"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}"#, in: value) { captures in
+            "\(captures[0])⁄\(captures[1])"
+        }
+        value = replacingPattern(#"\\sqrt\s*\{([^{}]+)\}"#, in: value) { captures in
+            "√(\(captures[0]))"
+        }
+        for (command, glyph) in commands {
+            value = value.replacingOccurrences(of: command, with: glyph)
+        }
+        value = replacingScripts(in: value)
+        // ponytail: this native formatter covers common school/report maths;
+        // add a real TeX engine only when matrix/layout notation is required.
+        value = value.replacingOccurrences(
+            of: #"\\[A-Za-z]+"#, with: "", options: .regularExpression
+        )
+        value = value
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "$", with: "")
+        return value.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                String(line).replacingOccurrences(
+                    of: #"[ \t]+"#, with: " ", options: .regularExpression
+                ).trimmingCharacters(in: .whitespaces)
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func replacingPattern(
+        _ pattern: String,
+        in source: String,
+        transform: ([String]) -> String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return source }
+        var value = source
+        while true {
+            let nsValue = value as NSString
+            guard let match = regex.firstMatch(
+                in: value, range: NSRange(location: 0, length: nsValue.length)
+            ) else { break }
+            let captures = (1..<match.numberOfRanges).map { nsValue.substring(with: match.range(at: $0)) }
+            value = nsValue.replacingCharacters(in: match.range, with: transform(captures))
+        }
+        return value
+    }
+
+    private static func replacingScripts(in source: String) -> String {
+        let characters = Array(source)
+        var output = ""
+        var index = 0
+        while index < characters.count {
+            let marker = characters[index]
+            guard (marker == "_" || marker == "^"), index + 1 < characters.count else {
+                output.append(marker)
+                index += 1
+                continue
+            }
+            let start = index + 1
+            let content: [Character]
+            if characters[start] == "{",
+               let end = characters[(start + 1)...].firstIndex(of: "}") {
+                content = Array(characters[(start + 1)..<end])
+                index = end + 1
+            } else {
+                content = [characters[start]]
+                index = start + 1
+            }
+            let table = marker == "_" ? subscriptCharacters : superscriptCharacters
+            if content.allSatisfy({ table[$0] != nil }) {
+                output += String(content.compactMap { table[$0] })
+            } else {
+                output += marker == "_" ? "₍\(String(content))₎" : "⁽\(String(content))⁾"
+            }
+        }
+        return output
+    }
+}
+
 public struct FormulaCard: View {
     public let formula: String
+    @State private var isCopied = false
 
     public init(formula: String) {
         self.formula = formula
     }
 
     public var body: some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            Image(systemName: "function")
-                .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppTheme.Icons.intelligence)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                Label("数学公式", systemImage: "function")
+                    .font(AppTheme.Typography.label)
+                    .foregroundStyle(AppTheme.Colors.quantumViolet)
+                Spacer()
+                Button {
+                    #if os(iOS)
+                    UIPasteboard.general.string = formula
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                    isCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { isCopied = false }
+                } label: {
+                    Label(isCopied ? "已复制" : "复制", systemImage: isCopied ? "checkmark" : "doc.on.doc")
+                        .font(AppTheme.Typography.micro.weight(.semibold))
+                }
+                .buttonStyle(SoftButtonStyle())
+            }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(formula)
-                    .font(.system(size: 13, weight: .medium, design: .serif))
-                    .italic()
-                    .foregroundColor(AppTheme.Colors.textPrimary)
+                Text(MathFormulaPresentation.displayText(formula))
+                    .font(.system(size: 28, weight: .regular, design: .serif))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .textSelection(.enabled)
+                    .padding(.vertical, AppTheme.Spacing.md)
             }
         }
-        .padding(AppTheme.Spacing.md)
-        .background(AppTheme.Colors.accent.opacity(0.08))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                .stroke(AppTheme.Colors.accent.opacity(0.2), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-        .pressBorderGlow(cornerRadius: AppTheme.Radius.md)
+        .padding(AppTheme.Spacing.lg)
+        .background(AppTheme.Colors.mistMint.opacity(0.34))
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(AppTheme.Colors.quantumBlue)
+                .frame(width: 3)
+                .padding(.vertical, AppTheme.Spacing.sm)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("数学公式，\(MathFormulaPresentation.displayText(formula))")
+    }
+}
+
+private extension Array where Element == MarkdownBlock {
+    var prefersSectionCards: Bool {
+        (contains { if case .heading = $0 { true } else { false } } && count > 1)
+            || contains { block in
+                switch block {
+                case .formula, .codeBlock, .table, .chart, .callout: true
+                default: false
+                }
+            }
     }
 }

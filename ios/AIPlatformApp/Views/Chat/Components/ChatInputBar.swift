@@ -58,7 +58,7 @@ public struct ChatInputBar: View {
             inputRow
         }
         .padding(.top, AppTheme.Spacing.sm)
-        .background(AppTheme.Colors.background.opacity(0.96))
+        .background(.clear)
         .animation(AppTheme.Motion.standard, value: inputText.isEmpty)
         .animation(AppTheme.Motion.standard, value: speechService.state)
         .onChange(of: dismissKeyboardToken) { _, _ in
@@ -114,7 +114,7 @@ public struct ChatInputBar: View {
             .buttonStyle(SoftButtonStyle())
             .accessibilityLabel("添加附件或引用知识")
 
-            TextField(isGenerating ? "任务执行中，可继续输入" : "描述目标，或继续当前任务…", text: $inputText, axis: .vertical)
+            TextField(isGenerating ? "任务执行中，可继续输入" : "发消息…", text: $inputText, axis: .vertical)
                 .focused($isTextInputFocused)
                 .lineLimit(1...5)
                 .font(AppTheme.Typography.body)
@@ -149,13 +149,14 @@ public struct ChatInputBar: View {
         }
         .padding(.horizontal, AppTheme.Metrics.contentGutter)
         .padding(.vertical, 6)
-        .background(AppTheme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.54))
+        .clipShape(Capsule())
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
-                .stroke(AppTheme.Colors.border, lineWidth: 0.75)
+            Capsule()
+                .stroke(Color.white.opacity(0.86), lineWidth: 0.8)
         }
-        .shadow(color: Color(hex: "6B5A8A").opacity(0.15), radius: 20, y: 8)
+        .shadow(color: Color(hex: "385A58").opacity(0.13), radius: 18, y: 7)
         .padding(.horizontal, AppTheme.Spacing.md)
         .padding(.bottom, AppTheme.Spacing.sm)
     }
@@ -218,7 +219,7 @@ public struct ChatInputBar: View {
         switch speechService.state {
         case .recording: return "mic.fill"
         case .processing: return "ellipsis"
-        case .idle: return "waveform"
+        case .idle: return "mic.fill"
         }
     }
 

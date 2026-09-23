@@ -331,7 +331,11 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
                     "title": "QCP deck", "description": "turn source into a deck",
                 },
             }))
-            return created, started, presentation
+            text_presentation = json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "presentation.create_from_text",
+                "input": {"title": "学习方法", "text_material": "整理成课堂演示"},
+            }))
+            return created, started, presentation, text_presentation
         finally:
             bridge._client_context_tool_context.value = None
 
@@ -340,14 +344,19 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
             "backend.services.capability_gateway._workflow_resource_version",
             new=AsyncMock(return_value="plan-1"),
         ):
-            created, started, presentation = await asyncio.to_thread(invoke_all)
+            created, started, presentation, text_presentation = await asyncio.to_thread(invoke_all)
     finally:
         bridge._bridge_async_loop = previous_loop
-    assert {created["status"], started["status"], presentation["status"]} == {
+    assert {
+        created["status"], started["status"], presentation["status"],
+        text_presentation["status"],
+    } == {
         "awaiting_confirmation"
     }
-    assert all(item["receipt"] is None for item in (created, started, presentation))
-    assert [event["type"] for event in events] == ["capability.proposed"] * 3
+    assert all(item["receipt"] is None for item in (
+        created, started, presentation, text_presentation,
+    ))
+    assert [event["type"] for event in events] == ["capability.proposed"] * 4
     assert all(event["renderer"] == "confirmation" for event in events)
     assert all(event["renderer_version"] == 1 for event in events)
     assert all(event["payload"].get("confirmation_token") for event in events)
@@ -356,6 +365,14 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
         key for event in events for key in event["payload"]
     )
     assert "tenant_key" not in serialized and "user_id" not in serialized
+
+
+def test_presentation_request_directive_routes_to_native_confirmation_tool():
+    directive = bridge._presentation_capability_directive("帮我做一份学习方法 PPT", True)
+    assert "app_presentation_create_from_text" in directive
+    assert "one-time token" in directive
+    assert bridge._presentation_capability_directive("怎么写好一份演示文稿？", False) == ""
+    assert bridge._presentation_capability_directive("解释太阳能电池", True) == ""
 
 
 def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():

@@ -618,12 +618,15 @@ private struct AgentEvaluationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var run: AgentEvaluationRunDTO?
     @State private var errorMessage: String?
+    @State private var hasStarted = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                    if let run {
+                    if !hasStarted {
+                        evaluationSetup
+                    } else if let run {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("综合得分").font(AppTheme.Typography.supporting)
@@ -652,9 +655,24 @@ private struct AgentEvaluationView: View {
                             HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                                 Image(systemName: result.status == "passed" ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                                     .foregroundStyle(result.status == "passed" ? AppTheme.Colors.statusCompleted : AppTheme.Colors.statusWarning)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack { Text(result.name).font(AppTheme.Typography.cardTitle); Spacer(); Text("\(Int(result.score))") }
+                                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                                    HStack {
+                                        Text(result.name).font(AppTheme.Typography.cardTitle)
+                                        Spacer()
+                                        Text("\(Int(result.score))").font(.title3.monospacedDigit().weight(.semibold))
+                                    }
                                     Text(result.detail).font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
+                                    HStack(spacing: AppTheme.Spacing.md) {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("目标 80").font(AppTheme.Typography.micro)
+                                            ProgressView(value: 80, total: 100).tint(AppTheme.Colors.textTertiary)
+                                        }
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("实测 \(Int(result.score))").font(AppTheme.Typography.micro)
+                                            ProgressView(value: min(max(result.score, 0), 100), total: 100)
+                                                .tint(result.status == "passed" ? AppTheme.Colors.statusCompleted : AppTheme.Colors.statusWarning)
+                                        }
+                                    }
                                 }
                             }
                             .padding(AppTheme.Spacing.md)
@@ -689,8 +707,40 @@ private struct AgentEvaluationView: View {
             .navigationTitle("评估 · \(agentName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-            .task { await startAndMonitor() }
+            .task { await restoreActiveEvaluation() }
         }
+    }
+
+    private var evaluationSetup: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            Text("评估设置").font(AppTheme.Typography.screenTitle)
+            Text("使用后端标准评估集，检查任务完成度、边界遵循与输出质量。")
+                .font(AppTheme.Typography.supporting)
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+            setupRow("被测智能体", agentName, "cpu")
+            setupRow("测试集", "综合能力 · 服务端标准集", "checklist")
+            setupRow("执行方式", "可恢复评估 · 精确 Token 计量", "arrow.clockwise")
+            setupRow("对比基准", "目标 80 分", "chart.bar.xaxis")
+            Button("开始评估", systemImage: "play.fill") { Task { await startAndMonitor() } }
+                .buttonStyle(QuantumPrimaryButtonStyle())
+                .controlSize(.large)
+        }
+        .padding(AppTheme.Spacing.lg)
+        .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(AppTheme.Colors.border) }
+    }
+
+    private func setupRow(_ title: String, _ value: String, _ icon: String) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Image(systemName: icon).foregroundStyle(AppTheme.Colors.quantumBlue).frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                Text(value).font(AppTheme.Typography.supporting.weight(.medium))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.Spacing.md)
+        .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
     }
 
     private func reasoningSteps(_ events: [AgentEvaluationEventDTO]) -> [ReasoningStep] {
@@ -717,6 +767,7 @@ private struct AgentEvaluationView: View {
 
     @MainActor
     private func startAndMonitor() async {
+        hasStarted = true
         errorMessage = nil
         do {
             let storageKey = "agent.evaluation.active.\(agentId)"
@@ -745,6 +796,19 @@ private struct AgentEvaluationView: View {
         } catch is CancellationError {
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func restoreActiveEvaluation() async {
+        let storageKey = "agent.evaluation.active.\(agentId)"
+        guard let saved = UserDefaults.standard.string(forKey: storageKey), !saved.isEmpty else { return }
+        do {
+            run = try await APIClient.shared.fetchAgentEvaluation(id: saved)
+            hasStarted = true
+            if let run, ["queued", "running"].contains(run.status) { await startAndMonitor() }
+        } catch {
+            UserDefaults.standard.removeObject(forKey: storageKey)
         }
     }
 }

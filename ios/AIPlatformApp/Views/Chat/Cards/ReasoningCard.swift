@@ -13,6 +13,7 @@ public struct ReasoningCard: View {
     public let steps: [ReasoningStep]
     public var durationSeconds: Int? = nil
     public var isStreaming: Bool = false
+    public var summaryTitle: String? = nil
     public var onCancel: (() -> Void)? = nil
 
     @State private var isExpanded: Bool = false
@@ -23,11 +24,13 @@ public struct ReasoningCard: View {
         durationSeconds: Int? = nil,
         isStreaming: Bool = false,
         initiallyExpanded: Bool = false,
+        summaryTitle: String? = nil,
         onCancel: (() -> Void)? = nil
     ) {
         self.steps = steps
         self.durationSeconds = durationSeconds
         self.isStreaming = isStreaming
+        self.summaryTitle = summaryTitle
         self.onCancel = onCancel
         _isExpanded = State(initialValue: initiallyExpanded)
     }
@@ -82,6 +85,7 @@ public struct ReasoningCard: View {
 
     /// 胶囊单行文本：流式期间动态呈现当前正在执行的动作（胶囊内单行流式），完成后显示思考耗时
     private var capsuleText: String {
+        if let summaryTitle, !summaryTitle.isEmpty { return summaryTitle }
         if isStreaming {
             // 优先展示当前正在 running 的工具/步骤（如 "调用工具: search_files"）
             if let running = steps.last(where: { $0.status == "running" && $0.type != .thought }), !running.title.isEmpty {
@@ -148,10 +152,10 @@ struct ReasoningStatusStrip: View {
                 .accessibilityLabel("取消当前任务")
             }
         }
-        .background(AppTheme.Colors.cardBackground.opacity(0.70))
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs, style: .continuous))
+        .background(AppTheme.Colors.surfaceTint.opacity(0.78))
+        .clipShape(Capsule())
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xs, style: .continuous)
+            Capsule()
                 .stroke(AppTheme.Colors.border.opacity(0.50), lineWidth: 0.5)
         }
         .pressBorderGlow(cornerRadius: AppTheme.Radius.xs)

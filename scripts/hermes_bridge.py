@@ -1715,11 +1715,29 @@ _REVISION_REQUEST_RE = re.compile(
 _SKILL_CREATE_REQUEST_RE = re.compile(
     r"(?:创建|新建|生成|做|建).{0,12}(?:技能|skill)", re.IGNORECASE
 )
+_PRESENTATION_CREATE_REQUEST_RE = re.compile(
+    r"(?:(?:创建|生成|制作|做|写|导出).{0,20}(?:pptx?|演示文稿|幻灯片)|"
+    r"(?:create|make|build|generate|export).{0,24}(?:pptx?|presentation|slides?))",
+    re.IGNORECASE,
+)
 
 
 def _is_note_draft_request(goal: str) -> bool:
     value = str(goal or "").strip().lower()
     return value in {"保存", "save"} or bool(_NOTE_DRAFT_REQUEST_RE.search(value))
+
+
+def _presentation_capability_directive(goal: str, qcp_enabled: bool) -> str:
+    if not qcp_enabled or not _PRESENTATION_CREATE_REQUEST_RE.search(str(goal or "")):
+        return ""
+    return (
+        "\n当前请求明确要求创建演示文稿。必须直接调用原生 "
+        "app_presentation_create_from_text 工具生成待确认提案：title 使用用户主题，"
+        "text_material 使用当前请求及会话中与该主题直接相关的材料；不要向用户输出"
+        "‘create a durable proposal’、‘one-time token’或要求用户手工构造提案/令牌。"
+        "工具返回 awaiting_confirmation 后，简短提示用户在 iOS 确认卡中确认，"
+        "不得声称文件已经生成。若缺少主题或实质材料，先只询问缺失信息。"
+    )
 
 
 def _requires_browser_fallback(goal: str) -> bool:
@@ -1986,6 +2004,11 @@ def _knowledge_gate_requirement(
     claims: dict[str, Any] | None,
 ) -> str | None:
     """Choose execution without allowing availability to downgrade a requirement."""
+    if (
+        "[SERVER_SELECTION_CONTEXT]" in goal
+        and bool((claims or {}).get("book_scope"))
+    ):
+        return None
     requirement = _internal_knowledge_requirement(goal, agent_config)
     if requirement != "optional":
         return requirement
@@ -8140,6 +8163,7 @@ def _build_in_process_agent(
                 if knowledge_action_enabled else ""
             )
             + (_KNOWLEDGE_MERGE_DIRECTIVE if knowledge_action_enabled else "")
+            + _presentation_capability_directive(goal, qcp_enabled)
             + _triage_system_directive(
                 triage,
                 note_draft_request=note_draft_request and not knowledge_action_enabled,

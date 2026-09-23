@@ -4,7 +4,7 @@
 //
 //  Authentication Entry Point
 //  Quantum 渐进式登录：Magic Rings 品牌图案 + 点击后登录卡片刹停入场
-//  （2026-08-16 拍板：移除 Apple 登录与手写品牌文字，仅保留官方集成 Logo）
+//  启动页按 V5 原型保留 Apple 与手机号两个入口；认证仍复用既有 OAuth/手机号链路。
 //
 
 import SwiftUI
@@ -114,66 +114,111 @@ public struct LoginView: View {
     @State private var agreementError: String?
     @State private var showingAgreement = false
     @State private var pendingAuthAction: PendingAuthAction?
+    @State private var loginStep: LoginStep = .phone
     @StateObject private var oauthCoordinator = OAuthSessionCoordinator()
     @FocusState private var focusedField: LoginField?
+    #if DEBUG
+    private let prototypePageID: String?
+    #endif
 
     private enum LoginField: Hashable {
         case phone
         case code
     }
+
+    private enum LoginStep { case phone, code }
     
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
-    public init() {}
+    public init(prototypePageID overridePrototypePageID: String? = nil) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        prototypePageID = overridePrototypePageID ?? arguments.firstIndex(of: "-prototypePreview")
+            .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        if let prototypePageID,
+           prototypePageID.hasPrefix("v4/01-auth-errors-v4-") || prototypePageID.hasPrefix("v3/01-auth-") {
+            _isCapabilityLoading = State(initialValue: false)
+            _channels = State(initialValue: LoginChannelAvailability(phone: true))
+            switch prototypePageID {
+            case "v4/01-auth-errors-v4-p02":
+                _isLoginCardVisible = State(initialValue: true)
+                _phoneNumber = State(initialValue: "13800000000")
+            case "v4/01-auth-errors-v4-p03":
+                _isLoginCardVisible = State(initialValue: true)
+                _phoneNumber = State(initialValue: "138123")
+            case "v4/01-auth-errors-v4-p04":
+                _isLoginCardVisible = State(initialValue: true)
+                _loginStep = State(initialValue: .code)
+                _phoneNumber = State(initialValue: "13800000000")
+                _smsCode = State(initialValue: "123956")
+                _errorMessage = State(initialValue: "验证码不正确，请重试")
+                _isCountdownActive = State(initialValue: true)
+                _countdownSeconds = State(initialValue: 50)
+            case "v3/01-auth-p02":
+                _isLoginCardVisible = State(initialValue: true)
+                _phoneNumber = State(initialValue: "13800000000")
+            case "v3/01-auth-p03":
+                _isLoginCardVisible = State(initialValue: true)
+                _loginStep = State(initialValue: .code)
+                _phoneNumber = State(initialValue: "13800000000")
+                _smsCode = State(initialValue: "123456")
+                _isCountdownActive = State(initialValue: true)
+                _countdownSeconds = State(initialValue: 53)
+            case "v3/01-auth-p04":
+                _isLoginCardVisible = State(initialValue: true)
+                _showingAgreement = State(initialValue: true)
+                _agreement = State(initialValue: AgreementDTO(
+                    version: "2026.09",
+                    title: "服务协议与隐私政策",
+                    updatedAt: "2026-09-17T00:00:00Z",
+                    sections: [
+                        AgreementSectionDTO(id: "security", title: "服务与安全", clauses: ["用于登录验证与账号安全。"]),
+                        AgreementSectionDTO(id: "experience", title: "内容与体验", clauses: ["用于个性化推荐与学习体验。"]),
+                        AgreementSectionDTO(id: "privacy", title: "数据安全", clauses: ["我们采取行业标准的安全措施。"])
+                    ]
+                ))
+            default:
+                break
+            }
+        }
+        #else
+        _ = overridePrototypePageID
+        #endif
+    }
     
     public var body: some View {
         NavigationStack {
             ZStack {
                 QuantumMistBackground()
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: dismissLoginCard)
 
                 GeometryReader { geometry in
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: isLoginCardVisible ? 10 : 0) {
-                            Spacer(minLength: isLoginCardVisible ? 6 : 0)
+                    if isLoginCardVisible {
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: AppTheme.Spacing.lg) {
+                                HStack {
+                                    Button(action: dismissLoginCard) {
+                                        Image(systemName: "chevron.left")
+                                            .font(.headline.weight(.semibold))
+                                            .frame(width: 44, height: 44)
+                                            .background(.ultraThinMaterial, in: Circle())
+                                    }
+                                    .buttonStyle(SoftButtonStyle())
+                                    .accessibilityLabel("返回启动页")
+                                    Spacer()
+                                }
 
-                            Button(action: revealLoginCard) {
-                                QuantumMagicRingsHero(
-                                    isCompact: isLoginCardVisible,
-                                    reduceMotion: reduceMotion || isLoginCardVisible
-                                )
-                                .frame(
-                                    height: isLoginCardVisible
-                                        ? min(132, geometry.size.height * 0.18)
-                                        : min(390, geometry.size.height * 0.52)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isLoginCardVisible)
-                            .accessibilityLabel("打开登录")
-                            .accessibilityHint("显示手机号登录卡片")
-
-                            if isLoginCardVisible {
                                 loginCard
-                                    .transition(
-                                        .asymmetric(
-                                            insertion: .offset(y: geometry.size.height * 0.78)
-                                                .combined(with: .opacity),
-                                            removal: .offset(y: geometry.size.height * 0.24)
-                                                .combined(with: .opacity)
-                                        )
-                                    )
+                                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                             }
-
-                            Spacer(minLength: isLoginCardVisible ? 6 : 0)
+                            .padding(.horizontal, max(20, AppTheme.Metrics.contentGutter))
+                            .padding(.top, max(8, geometry.safeAreaInsets.top))
+                            .padding(.bottom, max(20, geometry.safeAreaInsets.bottom))
+                            .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .top)
                         }
-                        .padding(.horizontal, max(20, AppTheme.Metrics.contentGutter))
-                        .padding(.top, max(8, geometry.safeAreaInsets.top))
-                        .padding(.bottom, max(8, geometry.safeAreaInsets.bottom))
-                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                        .scrollDismissesKeyboard(.interactively)
+                    } else {
+                        startupLanding(in: geometry)
                     }
-                    .scrollDismissesKeyboard(.interactively)
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -197,6 +242,9 @@ public struct LoginView: View {
             }
         }
         .task {
+            #if DEBUG
+            if prototypePageID?.hasPrefix("v4/01-auth-errors-v4-") == true || prototypePageID?.hasPrefix("v3/01-auth-") == true { return }
+            #endif
             await loadAuthCapabilities()
             await loadAgreement(forcePresentation: false)
         }
@@ -220,14 +268,94 @@ public struct LoginView: View {
     }
     
     // MARK: - Subviews
-    
+
+    private func startupLanding(in geometry: GeometryProxy) -> some View {
+        ZStack {
+            Image("knowledge_home_hero")
+                .resizable()
+                .scaledToFill()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+            LinearGradient(
+                colors: [Color(hex: "203537").opacity(0.30), Color(hex: "182C2D").opacity(0.74)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    QuantumAvatarView(size: 28)
+                    Image("quantum_wordmark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 108, height: 28)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.top, max(28, geometry.safeAreaInsets.top + 18))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Quantum")
+
+                Spacer()
+
+                VStack(spacing: AppTheme.Spacing.md) {
+                    Text("把世界装进\n好奇心里")
+                        .font(.system(size: 39, weight: .bold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                    Text("阅读、思考、创作，找到自己的节奏。")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.78))
+                }
+                .accessibilityElement(children: .combine)
+
+                Spacer()
+
+                VStack(spacing: AppTheme.Spacing.md) {
+                    Button {
+                        handleThirdPartyAuth(provider: "apple")
+                    } label: {
+                        Label("通过 Apple 登录", systemImage: "apple.logo")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(Color.white.opacity(0.94))
+                            .clipShape(Capsule())
+                            .overlay { Capsule().stroke(Color.white.opacity(0.82), lineWidth: 1) }
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .disabled(isLoading)
+
+                    Button(action: revealLoginCard) {
+                        Label("手机号登录", systemImage: "iphone")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(Color.white)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .overlay { Capsule().stroke(Color.white.opacity(0.72), lineWidth: 1) }
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .accessibilityHint("进入手机号和验证码登录")
+                }
+                .padding(.horizontal, 34)
+                .padding(.bottom, max(22, geometry.safeAreaInsets.bottom + 12))
+            }
+        }
+        .frame(width: geometry.size.width, height: geometry.size.height)
+    }
+
     private var loginCard: some View {
         VStack(spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("欢迎回来")
-                    .font(AppTheme.Typography.sectionTitle)
+                Text(loginStep == .phone ? "你好，\n欢迎来到 Quantum" : "请输入验证码")
+                    .font(AppTheme.Typography.screenTitle)
                     .foregroundColor(AppTheme.Colors.textPrimary)
-                Text("使用手机号进入你的 Quantum 工作空间")
+                Text(loginStep == .phone ? "知识，让世界更大" : "我们已将 6 位验证码发送至\n+86 \(formattedPhoneNumber)")
                     .font(AppTheme.Typography.supporting)
                     .foregroundColor(AppTheme.Colors.textSecondary)
             }
@@ -245,23 +373,28 @@ public struct LoginView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            phoneLoginSection
-            thirdPartyChannelsSection
+            if loginStep == .phone {
+                phoneEntrySection
+                thirdPartyChannelsSection
+            } else {
+                codeEntrySection
+            }
             footerTermsSection
         }
         .padding(AppTheme.Spacing.xl)
-        .background(AppTheme.Colors.cardBackground)
+        .background(.ultraThinMaterial)
+        .background(Color.white.opacity(0.58))
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
-                .stroke(AppTheme.Colors.border, lineWidth: 0.75)
+                .stroke(Color.white.opacity(0.82), lineWidth: 0.8)
         }
-        .shadow(color: Color(hex: "6B5A8A").opacity(0.16), radius: 28, y: 12)
+        .shadow(color: Color(hex: "385A58").opacity(0.12), radius: 20, y: 10)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
     }
     
-    private var phoneLoginSection: some View {
+    private var phoneEntrySection: some View {
         VStack(spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text("手机号码")
@@ -291,90 +424,95 @@ public struct LoginView: View {
                 }
                 .frame(minHeight: AppTheme.Metrics.inputHeight)
                 .padding(.horizontal, AppTheme.Spacing.md)
-                .background(AppTheme.Colors.secondaryBackground)
+                .background(phoneInputIsInvalid ? AppTheme.Colors.dangerSurface : AppTheme.Colors.secondaryBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                        .stroke(AppTheme.Colors.border, lineWidth: 0.75)
+                        .stroke(phoneInputIsInvalid ? AppTheme.Colors.statusError.opacity(0.58) : AppTheme.Colors.border, lineWidth: 0.75)
+                }
+                if phoneInputIsInvalid {
+                    Label("请输入 11 位手机号", systemImage: "exclamationmark.circle.fill")
+                        .font(AppTheme.Typography.micro)
+                        .foregroundStyle(AppTheme.Colors.statusError)
+                        .transition(.opacity)
                 }
             }
             
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("短信验证码")
-                    .font(AppTheme.Typography.label)
-                    .foregroundColor(AppTheme.Colors.textSecondary)
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Image(systemName: "lock.shield")
-                        .foregroundColor(AppTheme.Icons.secondary)
-                        .frame(width: 24)
-
-                    TextField("输入 6 位验证码", text: $smsCode)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .font(AppTheme.Typography.body)
-                        .focused($focusedField, equals: .code)
-                        .onChange(of: smsCode) { _, value in
-                            let normalized = LoginInputPolicy.digits(value, limit: 6)
-                            if normalized != value { smsCode = normalized }
-                        }
-
-                    Button(action: sendSmsCode) {
-                        if isCountdownActive {
-                            Text("\(countdownSeconds)s 后重发")
-                                .font(AppTheme.Typography.label)
-                                .foregroundColor(AppTheme.Colors.textTertiary)
-                        } else if isCapabilityLoading {
-                            Text("检测中")
-                                .font(AppTheme.Typography.label)
-                                .foregroundColor(AppTheme.Colors.textTertiary)
-                        } else if !channels.phone {
-                            Text("短信暂未开放")
-                                .font(AppTheme.Typography.label)
-                                .foregroundColor(AppTheme.Colors.textTertiary)
-                        } else {
-                            Text("获取验证码")
-                                .font(AppTheme.Typography.label)
-                                .foregroundColor(AppTheme.Colors.primary)
-                        }
-                    }
-                    .minimumTouchTarget()
-                    .disabled(
-                        !channels.phone || isLoading || isCountdownActive
-                            || phoneNumber.count < 11
-                    )
-                }
-                .frame(minHeight: AppTheme.Metrics.inputHeight)
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .background(AppTheme.Colors.secondaryBackground)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                        .stroke(AppTheme.Colors.border, lineWidth: 0.75)
-                }
-            }
-            
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(AppTheme.Colors.securityRed)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            
-            // Login Action Button
-            Button(action: performPhoneLogin) {
+            Button(action: sendSmsCode) {
                 HStack {
                     if isLoading {
                         ProgressView()
                             .tint(AppTheme.Colors.onPrimary)
                             .padding(.trailing, AppTheme.Spacing.xs)
                     }
-                    Text(isRetryingAgreementAcceptance ? "重试协议确认" : "登录 / 注册")
+                    Text("获取验证码")
+                        .font(.headline.weight(.semibold))
+                }
+            }
+            .buttonStyle(QuantumPrimaryButtonStyle())
+            .disabled(!canRequestCode)
+            .opacity(canRequestCode ? 1.0 : 0.6)
+        }
+    }
+
+    private var codeEntrySection: some View {
+        VStack(spacing: AppTheme.Spacing.lg) {
+            ZStack {
+                HStack(spacing: 8) {
+                    ForEach(0..<6, id: \.self) { index in
+                        Text(codeDigit(at: index))
+                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                            .background(AppTheme.Colors.cardBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                                    .stroke(errorMessage == nil ? AppTheme.Colors.border : AppTheme.Colors.statusError, lineWidth: index == min(smsCode.count, 5) ? 1.5 : 0.75)
+                            }
+                    }
+                }
+                TextField("验证码", text: $smsCode)
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+                    .focused($focusedField, equals: .code)
+                    .frame(width: 1, height: 1)
+                    .opacity(0)
+                    .onChange(of: smsCode) { _, value in
+                        let normalized = LoginInputPolicy.digits(value, limit: 6)
+                        if normalized != value { smsCode = normalized }
+                        if errorMessage != nil { errorMessage = nil }
+                    }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { focusedField = .code }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+                    .font(AppTheme.Typography.supporting)
+                    .foregroundStyle(AppTheme.Colors.statusError)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Text(isCountdownActive ? "\(countdownSeconds) 秒后可重新发送" : "没有收到验证码？")
+                    .font(AppTheme.Typography.micro)
+                    .foregroundStyle(AppTheme.Colors.textTertiary)
+                Spacer()
+                Button("重新发送", action: sendSmsCode)
+                    .font(AppTheme.Typography.label)
+                    .disabled(isCountdownActive || isLoading)
+            }
+
+            Button(action: performPhoneLogin) {
+                HStack {
+                    if isLoading { ProgressView().tint(AppTheme.Colors.onPrimary) }
+                    Text(isRetryingAgreementAcceptance ? "重试协议确认" : "登录")
                         .font(.headline.weight(.semibold))
                 }
             }
             .buttonStyle(QuantumPrimaryButtonStyle())
             .disabled(!canPerformPrimaryAuth)
-            .opacity(canPerformPrimaryAuth ? 1.0 : 0.6)
+            .opacity(canPerformPrimaryAuth ? 1 : 0.6)
         }
     }
     
@@ -482,6 +620,25 @@ public struct LoginView: View {
         return false
     }
 
+    private var canRequestCode: Bool {
+        !isLoading && phoneNumber.count == 11 && (channels.phone || phoneNumber == LoginInputPolicy.developerPhone)
+    }
+
+    private var formattedPhoneNumber: String {
+        let digits = LoginInputPolicy.digits(phoneNumber, limit: 11)
+        guard digits.count == 11 else { return digits }
+        let first = digits.prefix(3)
+        let middle = digits.dropFirst(3).prefix(4)
+        let last = digits.suffix(4)
+        return "\(first) \(middle) \(last)"
+    }
+
+    private func codeDigit(at index: Int) -> String {
+        guard index < smsCode.count else { return "" }
+        let position = smsCode.index(smsCode.startIndex, offsetBy: index)
+        return String(smsCode[position])
+    }
+
     private var canPerformPrimaryAuth: Bool {
         guard !isLoading else { return false }
         return isRetryingAgreementAcceptance || LoginInputPolicy.canSubmit(
@@ -490,6 +647,17 @@ public struct LoginView: View {
             phoneChannelEnabled: channels.phone,
             isLoading: false
         )
+    }
+
+    private var phoneInputIsInvalid: Bool {
+        #if DEBUG
+        if prototypePageID == "v3/01-auth-p02" { return true }
+        #endif
+        return !phoneNumber.isEmpty && phoneNumber.count < 11 && focusedField != .phone
+    }
+
+    private var codeInputIsInvalid: Bool {
+        !smsCode.isEmpty && smsCode.count < 6 && focusedField != .code
     }
     
     // MARK: - Actions
@@ -521,6 +689,12 @@ public struct LoginView: View {
     private func dismissLoginCard() {
         guard isLoginCardVisible else { return }
         focusedField = nil
+        if loginStep == .code {
+            withAnimation(AppTheme.Motion.standard) { loginStep = .phone }
+            errorMessage = nil
+            smsCode = ""
+            return
+        }
         let animation: Animation = reduceMotion
             ? .easeOut(duration: 0.16)
             : .interpolatingSpring(mass: 0.9, stiffness: 220, damping: 27)
@@ -531,7 +705,15 @@ public struct LoginView: View {
     
     private func sendSmsCode() {
         let normalizedPhone = LoginInputPolicy.digits(phoneNumber, limit: 11)
-        guard normalizedPhone.count == 11, channels.phone, !isLoading else { return }
+        guard normalizedPhone.count == 11, !isLoading,
+              channels.phone || normalizedPhone == LoginInputPolicy.developerPhone else { return }
+        if normalizedPhone == LoginInputPolicy.developerPhone, !channels.phone {
+            loginStep = .code
+            isCountdownActive = true
+            countdownSeconds = 60
+            focusedField = .code
+            return
+        }
         isLoading = true
         errorMessage = nil
         Task { @MainActor in
@@ -539,6 +721,8 @@ public struct LoginView: View {
                 try await APIClient.shared.sendPhoneCode(phone: normalizedPhone)
                 isCountdownActive = true
                 countdownSeconds = 60
+                loginStep = .code
+                focusedField = .code
                 #if os(iOS)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 #endif
@@ -904,20 +1088,56 @@ private struct QuantumMagicRingsHero: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            let artworkSide = side * (isCompact ? 0.72 : 0.78)
-
             ZStack {
-                MagicRingsView(reduceMotion: reduceMotion)
-                    .frame(width: side, height: side)
+                knowledgeBubble(symbol: "book.pages.fill", color: AppTheme.Colors.quantumCyan)
+                    .frame(width: isCompact ? 48 : 68, height: isCompact ? 48 : 68)
+                    .offset(x: -proxy.size.width * 0.36, y: -proxy.size.height * 0.15)
+                knowledgeBubble(symbol: "graduationcap.fill", color: AppTheme.Colors.quantumBlue)
+                    .frame(width: isCompact ? 54 : 78, height: isCompact ? 54 : 78)
+                    .offset(x: proxy.size.width * 0.34, y: -proxy.size.height * 0.12)
+                knowledgeBubble(symbol: "leaf.fill", color: Color(hex: "63C7A5"))
+                    .frame(width: isCompact ? 42 : 60, height: isCompact ? 42 : 60)
+                    .offset(x: -proxy.size.width * 0.33, y: proxy.size.height * 0.31)
+                knowledgeBubble(symbol: "camera.fill", color: AppTheme.Colors.auroraPink)
+                    .frame(width: isCompact ? 46 : 64, height: isCompact ? 46 : 64)
+                    .offset(x: proxy.size.width * 0.35, y: proxy.size.height * 0.30)
 
-                PearlLoginArtwork()
-                    .frame(width: artworkSide, height: artworkSide * 0.72)
+                VStack(spacing: isCompact ? 10 : 18) {
+                    Image("quantum_logo_full")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: isCompact ? 132 : 168, height: isCompact ? 62 : 80)
+                    VStack(spacing: 2) {
+                        Text("知识")
+                            .font(.system(size: isCompact ? 38 : 56, weight: .black, design: .serif))
+                        Text("让世界更大")
+                            .font(.system(size: isCompact ? 20 : 28, weight: .semibold, design: .serif))
+                    }
+                    .foregroundStyle(AppTheme.Colors.quantumGradient)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Circle())
+            .contentShape(Rectangle())
         }
         .accessibilityHidden(true)
+    }
+
+    private func knowledgeBubble(symbol: String, color: Color) -> some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.96), color.opacity(0.16)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay {
+                Image(systemName: symbol)
+                    .font(.system(size: isCompact ? 16 : 22, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            .overlay { Circle().stroke(Color.white.opacity(0.92), lineWidth: 1) }
+            .shadow(color: color.opacity(0.12), radius: 10, y: 6)
     }
 }
 

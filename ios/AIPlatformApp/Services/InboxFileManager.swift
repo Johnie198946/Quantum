@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import ImageIO
 import QuickLookThumbnailing
 import UIKit
 
@@ -128,25 +129,16 @@ public final class InboxFileManager {
         maxDimension: CGFloat = 2048,
         compressionQuality: CGFloat = 0.85
     ) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-
-        let originalSize = image.size
-        let longest = max(originalSize.width, originalSize.height)
-
-        guard longest > maxDimension else {
-            return image.jpegData(compressionQuality: compressionQuality)
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
         }
-
-        let scale = maxDimension / longest
-        let newSize = CGSize(
-            width: max(1, originalSize.width * scale),
-            height: max(1, originalSize.height * scale)
-        )
-
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-        return resized.jpegData(compressionQuality: compressionQuality)
+        return UIImage(cgImage: thumbnail).jpegData(compressionQuality: compressionQuality)
     }
 }

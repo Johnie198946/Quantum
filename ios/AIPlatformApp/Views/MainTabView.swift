@@ -17,10 +17,6 @@ public struct MainTabView: View {
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @EnvironmentObject private var sessionManager: SessionManager
     @StateObject private var keyboardObserver = KeyboardObserver()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
-    @State private var tabBarCollapsed = ProcessInfo.processInfo.arguments.contains("-collapsedTabBarPreview")
-    @State private var tabBarAutoCollapseTask: Task<Void, Never>?
 
     public init() {}
 
@@ -28,35 +24,35 @@ public struct MainTabView: View {
         VStack(spacing: 0) {
             TabView(selection: $appState.activeTab) {
 
-                // Tab 1: Chat Stream & Multiturn Dialogues
+                // 首页：Chat Stream & Multiturn Dialogues
                 ChatView()
                     .toolbar(.hidden, for: .tabBar)
                     .tabItem {
-                        Label("对话", systemImage: "bubble.left.and.bubble.right.fill")
+                        Label("首页", systemImage: "house.fill")
                     }
                     .tag(0)
 
-                // Tab 2: 可执行工作流（拓扑从任务页按需打开）
-                WorkflowDashboardView()
-                    .toolbar(.hidden, for: .tabBar)
-                    .tabItem {
-                        Label("任务", systemImage: "square.grid.2x2.fill")
-                    }
-                    .tag(1)
-
-                // Tab 3: local-first Markdown notes workspace
+                // 阅读：笔记、搜索、书架与阅读器共用现有知识链路。
                 KnowledgeView()
                     .toolbar(.hidden, for: .tabBar)
                     .tabItem {
-                        Label("知识", systemImage: "books.vertical.fill")
+                        Label("阅读", systemImage: "book.fill")
                     }
                     .tag(2)
 
-                // Tab 4: Tenant Profile & Prompt Studio Settings
+                // 工作流：可执行计划、运行、成果与拓扑。
+                WorkflowDashboardView()
+                    .toolbar(.hidden, for: .tabBar)
+                    .tabItem {
+                        Label("工作流", systemImage: "square.stack.3d.up.fill")
+                    }
+                    .tag(1)
+
+                // 我的：Tenant Profile & Prompt Studio Settings
                 SettingsView()
                     .toolbar(.hidden, for: .tabBar)
                     .tabItem {
-                        Label("设置", systemImage: "gearshape.fill")
+                        Label("我的", systemImage: "person.fill")
                     }
                     .tag(3)
             }
@@ -65,7 +61,7 @@ public struct MainTabView: View {
             if !keyboardObserver.isKeyboardVisible {
                 bottomChrome
                     .padding(.top, AppTheme.Spacing.xs)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 10)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -75,16 +71,6 @@ public struct MainTabView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.isDevMode)
-        .simultaneousGesture(swipeToRevealNavigation)
-        .onChange(of: voiceOverEnabled) { _, enabled in
-            if enabled {
-                tabBarAutoCollapseTask?.cancel()
-                tabBarCollapsed = false
-            } else {
-                scheduleTabBarAutoCollapse()
-            }
-        }
-        .onAppear { scheduleTabBarAutoCollapse() }
         .task(id: workflowScopeTaskID) {
             // Login/profile hydration and chat-session restoration complete on
             // different async paths. Bind the owner before selecting the
@@ -99,7 +85,6 @@ public struct MainTabView: View {
             workflowActivities.selectClientSession(sessionManager.activeSessionId)
             await workflowActivities.bootstrap()
         }
-        .onDisappear { tabBarAutoCollapseTask?.cancel() }
     }
 
     @ViewBuilder
@@ -128,50 +113,7 @@ public struct MainTabView: View {
                 )
                 .padding(.horizontal, AppTheme.Spacing.lg)
             }
-            if !tabBarCollapsed || voiceOverEnabled {
-                QuantumFloatingTabBar(selection: $appState.activeTab) {
-                    scheduleTabBarAutoCollapse()
-                }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 16)
-                        .onEnded { value in
-                            if value.translation.height > 24 {
-                                setTabBarCollapsed(true)
-                            }
-                        }
-                )
-                .transition(tabBarTransition)
-            } else {
-                Button("显示导航", systemImage: "chevron.up") {
-                    setTabBarCollapsed(false)
-                }
-                .buttonStyle(.bordered)
-                .frame(minWidth: 120, minHeight: AppTheme.Metrics.minimumTouchTarget)
-                .accessibilityIdentifier("main-tab-reveal")
-                .accessibilityHint("显示对话、任务、知识和设置标签")
-                .keyboardShortcut("t", modifiers: [.command, .shift])
-            }
-        }
-    }
-
-    private func setTabBarCollapsed(_ collapsed: Bool, feedback: Bool = true) {
-        tabBarAutoCollapseTask?.cancel()
-        #if os(iOS)
-        if feedback { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
-        #endif
-        withAnimation(reduceMotion ? nil : .spring(response: collapsed ? 0.24 : 0.38, dampingFraction: 0.84)) {
-            tabBarCollapsed = collapsed
-        }
-        if !collapsed { scheduleTabBarAutoCollapse() }
-    }
-
-    private func scheduleTabBarAutoCollapse() {
-        tabBarAutoCollapseTask?.cancel()
-        guard !tabBarCollapsed, !voiceOverEnabled else { return }
-        tabBarAutoCollapseTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            setTabBarCollapsed(true, feedback: false)
+            QuantumFloatingTabBar(selection: $appState.activeTab)
         }
     }
 
@@ -181,31 +123,6 @@ public struct MainTabView: View {
             appState.currentUserId,
             sessionManager.activeSessionId ?? ""
         ].joined(separator: "\u{0}")
-    }
-
-    private var swipeToRevealNavigation: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onEnded { value in
-                let horizontal = value.translation.width
-                guard tabBarCollapsed,
-                      !keyboardObserver.isKeyboardVisible,
-                      !voiceOverEnabled,
-                      value.startLocation.x <= 44,
-                      horizontal >= 64,
-                      horizontal > abs(value.translation.height) * 1.4 else { return }
-                setTabBarCollapsed(false)
-            }
-    }
-
-    private var tabBarTransition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        return .asymmetric(
-            insertion: .move(edge: .bottom)
-                .combined(with: .scale(scale: 0.9, anchor: .bottom))
-                .combined(with: .opacity),
-            removal: .scale(scale: 0.74, anchor: .bottom)
-                .combined(with: .opacity)
-        )
     }
 }
 
@@ -376,73 +293,55 @@ private struct WorkflowActivityMiniBar: View {
 
 private struct QuantumFloatingTabBar: View {
     @Binding var selection: Int
-    let onInteraction: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let items: [(title: String, symbol: String, selectedSymbol: String)] = [
-        ("对话", "bubble.left.and.bubble.right", "bubble.left.and.bubble.right.fill"),
-        ("任务", "square.grid.2x2", "square.grid.2x2.fill"),
-        ("知识", "books.vertical", "books.vertical.fill"),
-        ("设置", "gearshape", "gearshape.fill")
+    private let items: [(tag: Int, title: String, symbol: String, selectedSymbol: String)] = [
+        (0, "首页", "house", "house.fill"),
+        (2, "阅读", "book", "book.fill"),
+        (1, "工作流", "square.stack.3d.up", "square.stack.3d.up.fill"),
+        (3, "我的", "person", "person.fill")
     ]
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+            ForEach(items, id: \.tag) { item in
                 Button {
-                    onInteraction()
-                    guard selection != index else { return }
+                    guard selection != item.tag else { return }
                     #if os(iOS)
                     UISelectionFeedbackGenerator().selectionChanged()
                     #endif
                     if reduceMotion {
-                        selection = index
+                        selection = item.tag
                     } else {
-                        withAnimation(AppTheme.Motion.spring) { selection = index }
+                        withAnimation(AppTheme.Motion.spring) { selection = item.tag }
                     }
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: selection == index ? item.selectedSymbol : item.symbol)
+                        Image(systemName: selection == item.tag ? item.selectedSymbol : item.symbol)
                             .font(.system(size: 18, weight: .semibold))
                             .frame(height: 22)
                         Text(item.title)
-                            .font(.caption2.weight(selection == index ? .bold : .medium))
+                            .font(.caption2.weight(selection == item.tag ? .bold : .medium))
                     }
-                    .foregroundStyle(selection == index ? AppTheme.Colors.primary : AppTheme.Icons.navigationInactive)
+                    .foregroundStyle(selection == item.tag ? AppTheme.Colors.primary : AppTheme.Icons.navigationInactive)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background {
-                        if selection == index {
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                                .fill(AppTheme.Colors.selectionTint)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                                        .stroke(AppTheme.Colors.border.opacity(0.8), lineWidth: 0.75)
-                                }
-                        }
-                    }
-                    .contentShape(Rectangle())
+                    .background(selection == item.tag ? Color.white.opacity(0.70) : Color.clear, in: Capsule())
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(SoftButtonStyle())
-                .accessibilityIdentifier("main-tab-\(index)")
+                .accessibilityIdentifier("main-tab-\(item.tag)")
                 .accessibilityLabel(item.title)
-                .accessibilityAddTraits(selection == index ? .isSelected : [])
+                .accessibilityAddTraits(selection == item.tag ? .isSelected : [])
             }
         }
         .padding(6)
-        .frame(height: AppTheme.Metrics.floatingTabBarHeight)
+        .frame(height: 68)
         .background(.ultraThinMaterial)
-        .background(AppTheme.Colors.surfaceElevated.opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(AppTheme.Colors.border.opacity(0.9), lineWidth: 0.75)
-        }
-        .shadow(color: Color(hex: "6B5A8A").opacity(0.14), radius: 24, y: 10)
+        .background(Color.white.opacity(0.42))
+        .clipShape(Capsule())
+        .overlay { Capsule().stroke(Color.white.opacity(0.82), lineWidth: 0.8) }
+        .shadow(color: Color(hex: "385A58").opacity(0.13), radius: 18, y: 7)
         .padding(.horizontal, AppTheme.Spacing.lg)
-        .padding(.top, AppTheme.Spacing.sm)
-        .padding(.bottom, AppTheme.Spacing.xs)
-        .background(AppTheme.Colors.background.opacity(0.96))
-        .offset(y: 14)
     }
 }
 

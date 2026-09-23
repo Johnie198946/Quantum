@@ -329,6 +329,185 @@ public struct ClarifyCard: View {
     }
 }
 
+public struct NoteOrganizationClarifyView: View {
+    public let block: ClarifyBlock
+    public var onSubmit: ((String) -> Void)? = nil
+    @State private var selectedID: String?
+    @State private var detail = ""
+
+    public init(block: ClarifyBlock, onSubmit: ((String) -> Void)? = nil) {
+        self.block = block
+        self.onSubmit = onSubmit
+        _selectedID = State(initialValue: block.draftSelectionIDs.first ?? block.choices.first?.id)
+        _detail = State(initialValue: block.draftCustomText)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                QuantumAvatarView(size: 26)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("为了更好地帮你，")
+                    Text("可以先确认几个问题吗？")
+                }
+                .font(.system(.title3, design: .serif, weight: .bold))
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+            }
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                Text("1 / 3 · \(block.question)")
+                    .font(AppTheme.Typography.label)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: AppTheme.Spacing.sm)], spacing: AppTheme.Spacing.sm) {
+                    ForEach(block.choices) { option in
+                        Button {
+                            selectedID = option.id
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(option.label).lineLimit(1)
+                                if selectedID == option.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption2)
+                                }
+                            }
+                            .font(AppTheme.Typography.supporting.weight(.medium))
+                            .foregroundStyle(selectedID == option.id ? AppTheme.Icons.interactive : AppTheme.Colors.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(
+                                selectedID == option.id ? AppTheme.Colors.mistSky.opacity(0.72) : Color.white.opacity(0.78),
+                                in: Capsule()
+                            )
+                            .overlay {
+                                Capsule()
+                                    .stroke(selectedID == option.id ? AppTheme.Icons.interactive : AppTheme.Colors.border, lineWidth: selectedID == option.id ? 1.25 : 0.75)
+                            }
+                        }
+                        .buttonStyle(SoftButtonStyle())
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("或者告诉我你的具体想法")
+                    .font(AppTheme.Typography.supporting)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                TextField("例如：侧重大学生视角…", text: $detail, axis: .vertical)
+                    .lineLimit(3...4)
+                    .padding(AppTheme.Spacing.md)
+                    .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+                    .overlay(alignment: .bottomTrailing) {
+                        Text("\(detail.count)/200")
+                            .font(AppTheme.Typography.micro)
+                            .foregroundStyle(AppTheme.Colors.textTertiary)
+                            .padding(AppTheme.Spacing.sm)
+                    }
+            }
+
+            Button {
+                let choice = block.choices.first(where: { $0.id == selectedID })?.label ?? ""
+                onSubmit?([choice, detail].filter { !$0.isEmpty }.joined(separator: "："))
+            } label: {
+                Text("下一步").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(QuantumPrimaryButtonStyle())
+            .disabled(selectedID == nil && detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(AppTheme.Spacing.lg)
+        .background(Color(hex: "FFFCF6"), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.72)) }
+    }
+}
+
+public struct NoteOrganizationConfirmationView: View {
+    public let title: String
+    public let goal: String
+    public let scope: String
+    public let output: String
+    public let onConfirm: () -> Void
+
+    public init(
+        title: String = "请确认以下内容",
+        goal: String,
+        scope: String,
+        output: String,
+        onConfirm: @escaping () -> Void = {}
+    ) {
+        self.title = title
+        self.goal = goal
+        self.scope = scope
+        self.output = output
+        self.onConfirm = onConfirm
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                QuantumAvatarView(size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(.title3, design: .serif, weight: .bold))
+                    Text("我将基于这些信息开始整理。")
+                        .font(AppTheme.Typography.supporting)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+            }
+
+            confirmationRow("目标", icon: "scope", value: goal, tinted: false)
+            confirmationRow("参考来源", icon: "doc.text", value: scope, tinted: true)
+            confirmationRow("输出形式", icon: "doc.badge.gearshape", value: output, tinted: true)
+
+            Button {
+                onConfirm()
+            } label: {
+                Text("确认并开始").frame(maxWidth: .infinity)
+            }
+                .buttonStyle(QuantumPrimaryButtonStyle())
+        }
+        .padding(AppTheme.Spacing.lg)
+        .background(Color(hex: "FFFCF6"), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.72)) }
+    }
+
+    private func confirmationRow(_ title: String, icon: String, value: String, tinted: Bool) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack {
+                Label(title, systemImage: icon).font(AppTheme.Typography.label)
+                Spacer()
+                Text("编辑")
+                    .font(AppTheme.Typography.micro.weight(.semibold))
+                    .foregroundStyle(AppTheme.Icons.interactive)
+            }
+            if tinted {
+                FlexibleChips(value: value)
+            } else {
+                Text(value)
+                    .font(AppTheme.Typography.supporting)
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .padding(AppTheme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+            }
+        }
+    }
+
+    private struct FlexibleChips: View {
+        let value: String
+        var body: some View {
+            let pieces = value.split(whereSeparator: { ",，、/".contains($0) }).map(String.init)
+            HStack(spacing: AppTheme.Spacing.xs) {
+                ForEach((pieces.isEmpty ? [value] : pieces).prefix(4), id: \.self) { item in
+                    Text(item.trimmingCharacters(in: .whitespaces))
+                        .font(AppTheme.Typography.micro)
+                        .padding(.horizontal, AppTheme.Spacing.sm)
+                        .padding(.vertical, 7)
+                        .background(AppTheme.Colors.mistSky.opacity(0.5), in: Capsule())
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Workflow Requirement Confirmation
 
 /// Final requirement checkpoint used by workflow clarification.
@@ -353,7 +532,25 @@ public struct RequirementConfirmationCard: View {
             decisionSection
         }
         .padding(AppTheme.Spacing.xl)
-        .quantumCard()
+        .background {
+            ZStack(alignment: .topTrailing) {
+                AppTheme.Colors.cardBackground
+                Circle()
+                    .fill(AppTheme.Colors.mistMint.opacity(0.72))
+                    .frame(width: 150, height: 150)
+                    .offset(x: 48, y: -58)
+                Circle()
+                    .fill(AppTheme.Colors.mistRose.opacity(0.48))
+                    .frame(width: 92, height: 92)
+                    .offset(x: -210, y: 210)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.88), lineWidth: 0.9)
+        }
+        .shadow(color: AppTheme.Colors.primary.opacity(0.10), radius: 18, y: 8)
         .accessibilityElement(children: .contain)
     }
 
@@ -412,7 +609,13 @@ public struct RequirementConfirmationCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(AppTheme.Spacing.lg)
-                .background(AppTheme.Colors.surfaceTint)
+                .background(
+                    LinearGradient(
+                        colors: [AppTheme.Colors.mistSky.opacity(0.72), AppTheme.Colors.mistMint.opacity(0.58)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
             }
 

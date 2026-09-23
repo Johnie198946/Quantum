@@ -49,6 +49,24 @@ def test_gate_selection_preserves_translation_and_url_boundaries():
     assert bridge._knowledge_gate_requirement("结合内部政策判断", internal, None, None) == "required"
 
 
+def test_selected_book_quote_bypasses_only_the_generic_wiki_gate():
+    book_claims = {
+        **CLAIMS,
+        "book_scope": {"book_id": "book-1", "content_version": "v3"},
+    }
+    selected = "[SERVER_SELECTION_CONTEXT]\n（你正在回复用户引用的历史消息：P = η · A · G）\n这个公式是什么意思？"
+    assert not bridge._knowledge_gate_required(
+        selected, config("internal_knowledge_question"), "cap", book_claims
+    )
+    assert bridge._knowledge_gate_required(
+        "这本书的核心观点是什么？",
+        config("internal_knowledge_question"), "cap", book_claims,
+    )
+    assert bridge._knowledge_gate_required(
+        selected, config("internal_knowledge_question"), "cap", CLAIMS
+    )
+
+
 def test_preread_top3_budget_and_delta_barrier(monkeypatch):
     docs = [{
         "path": f"wiki/{i}.md", "version": "v1", "citation": f"knowledge:wiki/{i}.md",
