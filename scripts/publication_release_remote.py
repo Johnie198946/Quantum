@@ -40,6 +40,7 @@ def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--known-hosts-file")
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--editorial-root", help="opt-in v2 manifest relay before release (or AI_LAB_PUBLICATION_EDITORIAL_ROOT)")
+    parser.add_argument("--target-publication-id", help="require this exact publication to read back as published")
     return parser.parse_args(argv)
 
 
@@ -294,12 +295,32 @@ def _attention(summary: dict) -> bool:
     ))
 
 
+def _target(status: dict, publication_id: str) -> dict:
+    rows = [item for item in status["items"] if item["publication_id"] == publication_id]
+    if not rows:
+        return {"publication_id": publication_id, "state": "missing"}
+    published = [item for item in rows if item["state"] == "published"]
+    row = published[0] if published else max(rows, key=lambda item: item["edition"])
+    return {
+        "publication_id": publication_id,
+        "edition_id": row["edition_id"],
+        "series_id": row["series_id"],
+        "issue_date": row["issue_date"],
+        "state": row["state"],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     summary = _summary()
     exit_code = 1
     errors: list[Exception] = []
+    target_id: str | None = None
+    target_status: dict | None = None
     try:
         args = _args(argv)
+        target_id = args.target_publication_id
+        if target_id is not None and not _valid_id(target_id):
+            raise ValueError("target publication ID is invalid")
         identity, known_hosts = _trust(args)
         if args.status_only:
             post_status = _ssh(identity, known_hosts, _command("status"))
@@ -307,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             status = _status(post_status.stdout, post_status.returncode)
             summary = _summary(status)
             summary["released_edition_ids"] = []
+            target_status = status
         else:
             editorial_root = args.editorial_root or os.environ.get("AI_LAB_PUBLICATION_EDITORIAL_ROOT")
             if editorial_root:
@@ -330,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
                     exit_code = post_status.returncode
                 status = _status(post_status.stdout, post_status.returncode)
                 summary = _summary(status, before)
+                target_status = status
             except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
                 errors.append(exc)
             if release is not None:
@@ -340,8 +363,17 @@ def main(argv: list[str] | None = None) -> int:
                     errors.append(exc)
             if errors and not exit_code:
                 exit_code = 1
-        if summary["totals"]["published"] != UNKNOWN and _attention(summary):
-            exit_code = exit_code or 3
+        if summary["totals"]["published"] != UNKNOWN:
+            attention = _attention(summary)
+            summary["global_attention"] = attention
+            if target_id is not None and target_status is not None:
+                summary["target"] = _target(target_status, target_id)
+                if not errors and summary["target"]["state"] == "published":
+                    exit_code = 0
+                elif not errors:
+                    exit_code = exit_code or 3
+            elif attention:
+                exit_code = exit_code or 3
     except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
         errors.append(exc)
         exit_code = exit_code or 1

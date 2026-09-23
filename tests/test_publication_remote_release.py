@@ -139,6 +139,62 @@ def test_partial_attention_exit3_accepts_result_only_release_and_preserves_raw_i
     assert summary["issues"]["missing"] == missing
 
 
+def test_target_release_succeeds_without_hiding_global_daily_attention(monkeypatch, tmp_path, capsys):
+    module = _module()
+    identity, known_hosts = _files(tmp_path)
+    target = _item("target-publication", "ai-toolkit", "2026-09-09", "published")
+    missing = [{"series_id": "ai-practice", "issue_date": DAY, "status": "overdue_missing"}]
+    _run(module, monkeypatch, [
+        _status([]),
+        _release(3),
+        _status([target], missing),
+    ])
+
+    assert module.main([
+        "--target-publication-id", target["publication_id"],
+        "--identity-file", str(identity),
+        "--known-hosts-file", str(known_hosts),
+    ]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["global_attention"] is True
+    assert summary["issues"]["missing"] == missing
+    assert summary["target"] == {
+        "publication_id": target["publication_id"],
+        "edition_id": target["edition_id"],
+        "series_id": "ai-toolkit",
+        "issue_date": "2026-09-09",
+        "state": "published",
+    }
+
+
+def test_target_release_still_fails_when_exact_target_is_not_published(monkeypatch, tmp_path, capsys):
+    module = _module()
+    identity, known_hosts = _files(tmp_path)
+    target = _item("target-publication", "ai-toolkit", "2026-09-09", "blocked", ["review_missing"])
+    _run(module, monkeypatch, [_status([]), _release(0), _status([target])])
+
+    assert module.main([
+        "--target-publication-id", target["publication_id"],
+        "--identity-file", str(identity),
+        "--known-hosts-file", str(known_hosts),
+    ]) == 3
+    assert json.loads(capsys.readouterr().out)["target"]["state"] == "blocked"
+
+
+def test_invalid_target_publication_id_fails_before_ssh(monkeypatch, tmp_path, capsys):
+    module = _module()
+    identity, known_hosts = _files(tmp_path)
+    calls = _run(module, monkeypatch, [])
+
+    assert module.main([
+        "--target-publication-id", "NOT VALID",
+        "--identity-file", str(identity),
+        "--known-hosts-file", str(known_hosts),
+    ]) == 1
+    assert calls == []
+    assert "target publication ID is invalid" in capsys.readouterr().err
+
+
 def test_release_zero_with_blocked_or_missing_status_fails_attention(monkeypatch, tmp_path):
     module = _module()
     identity, known_hosts = _files(tmp_path)
