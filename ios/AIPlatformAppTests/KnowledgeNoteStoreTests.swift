@@ -482,6 +482,10 @@ final class KnowledgeNoteStoreTests: XCTestCase {
             TenantSessionCoordinator.explicitOutputKind("请写一份项目复盘 Word 文档"),
             "document"
         )
+        XCTAssertEqual(
+            TenantSessionCoordinator.explicitOutputKind("帮我生成一个可以记录习惯的 HTML 网页工具"),
+            "html"
+        )
         XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("如何生成 PPT？"))
         XCTAssertNil(TenantSessionCoordinator.explicitOutputKind("帮我总结这份文档"))
     }

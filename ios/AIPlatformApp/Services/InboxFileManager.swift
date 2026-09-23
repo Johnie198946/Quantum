@@ -43,7 +43,7 @@ public final class InboxFileManager {
 
     public func storePrivateFile(_ data: Data, sourceId: String, revision: Int, filename: String) throws -> URL {
         let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
-        let safeExt = ["pdf", "docx", "pptx"].contains(ext) ? ext : "bin"
+        let safeExt = ["pdf", "docx", "pptx", "html"].contains(ext) ? ext : "bin"
         let url = privateCacheDirectory.appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
         try FileManager.default.createDirectory(at: privateCacheDirectory, withIntermediateDirectories: true)
         try data.write(to: url, options: [.atomic, .completeFileProtection])

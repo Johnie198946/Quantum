@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import PDFKit
+import WebKit
 
 // MARK: - 工作流主页
 
@@ -317,6 +318,7 @@ private struct WorkflowCreateSheet: View {
                         Text("通用").tag("general")
                         Text("演示文稿 PPTX").tag("presentation")
                         Text("Word 文档 DOCX").tag("document")
+                        Text("交互式 HTML 工具").tag("html")
                     }
                     TextField("例如：带引用的 Markdown 研究报告", text: $output)
                 }
@@ -352,7 +354,9 @@ private struct WorkflowCreateSheet: View {
             do {
                 let deliverable = outputKind == "presentation"
                     ? "可编辑 PPTX 与渲染预览"
-                    : outputKind == "document" ? "可编辑 Word 文档 DOCX" : output
+                    : outputKind == "document"
+                        ? "可编辑 Word 文档 DOCX"
+                        : outputKind == "html" ? "自包含交互式 HTML 工具" : output
                 let created = try await APIClient.shared.createWorkflow(
                     title: title, description: description, desiredOutput: deliverable,
                     outputKind: outputKind
@@ -1551,7 +1555,10 @@ private struct WorkflowExecutionView: View {
         let output = workflow.desiredOutput.lowercased()
         return output.contains("docx") || output.contains("word")
     }
-    private var isStagedOutput: Bool { isPresentation || isDocument }
+    private var isHTMLTool: Bool {
+        workflow.desiredOutput.lowercased().contains("html")
+    }
+    private var isStagedOutput: Bool { isPresentation || isDocument || isHTMLTool }
 
     init(workflow: WorkflowDTO, initialExecution: WorkflowExecutionDTO) {
         self.workflow = workflow
@@ -1607,12 +1614,13 @@ private struct WorkflowExecutionView: View {
     }
 
     private var visibleArtifacts: [WorkflowArtifactDTO] {
-        if isDocument {
+        if isDocument || isHTMLTool {
             if execution.status == "awaiting_approval" {
                 return artifacts.filter { $0.metadata.approvalGate == activePresentationGate }
             }
             if execution.status == "awaiting_review" || execution.status == "completed" {
-                return artifacts.filter { $0.extension == "docx" && $0.metadata.approvalGate == nil }
+                let finalExtension = isHTMLTool ? "html" : "docx"
+                return artifacts.filter { $0.extension == finalExtension && $0.metadata.approvalGate == nil }
             }
             return artifacts
         }
@@ -1740,11 +1748,17 @@ private struct WorkflowExecutionView: View {
 
     private var stagedReviewTitle: String {
         if isPresentation { return presentationReviewTitle }
+        if isHTMLTool { return execution.status == "awaiting_approval" ? "确认 HTML 工具设计" : "验收 HTML 工具" }
         return activePresentationGate == "outline" ? "确认 Word 文档大纲" : "确认 Word 文档全文"
     }
 
     private var stagedReviewHelp: String {
         if isPresentation { return presentationReviewHelp }
+        if isHTMLTool {
+            if execution.status == "completed" { return "工具已确认，可在安全预览中使用、下载或系统分享。" }
+            if execution.status == "awaiting_review" { return "在 iPhone 尺寸预览中检查交互、深浅色、空/错/成功状态；确认后开放下载。" }
+            return "先确认信息架构、视觉 token、组件状态与无障碍规则，再生成完整 HTML。"
+        }
         if execution.status == "completed" { return "文档已确认，可预览、下载 DOCX 或用系统分享。" }
         if execution.status == "awaiting_review" { return "检查完整正文；可退回修改，确认后开放 DOCX 下载与系统分享。" }
         return activePresentationGate == "outline"
@@ -1754,6 +1768,7 @@ private struct WorkflowExecutionView: View {
 
     private var stagedFeedbackPrompt: String {
         if isPresentation { return presentationFeedbackPrompt }
+        if isHTMLTool { return execution.status == "awaiting_approval" ? "说明设计或交互要如何调整（退回时必填）" : "说明 HTML 工具要如何修改（退回时必填）" }
         return activePresentationGate == "outline" ? "说明大纲要如何修改（退回时必填）" : "说明正文要如何修改（退回时必填）"
     }
 
@@ -1792,10 +1807,10 @@ private struct WorkflowExecutionView: View {
             } else if execution.status == "awaiting_review" && isPresentation {
                 Button("修改第 \(slideNumber) 页") { reviewPresentation(decision: "revise", perSlide: true) }.buttonStyle(.bordered)
                 Button("确认并下载") { reviewPresentation(decision: "approve") }.buttonStyle(.borderedProminent)
-            } else if execution.status == "awaiting_approval" && isDocument {
+            } else if execution.status == "awaiting_approval" && (isDocument || isHTMLTool) {
                 Button("修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
-                Button(activePresentationGate == "outline" ? "确认大纲" : "确认全文") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
-            } else if execution.status == "awaiting_review" && isDocument {
+                Button(isHTMLTool ? "确认并生成工具" : activePresentationGate == "outline" ? "确认大纲" : "确认全文") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_review" && (isDocument || isHTMLTool) {
                 Button("退回修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
                 Button("确认并下载") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_review" {
@@ -1891,7 +1906,7 @@ private struct WorkflowExecutionView: View {
             if execution.status == "awaiting_approval" {
                 return item.metadata.approvalGate == activePresentationGate
             }
-            return item.extension == "docx"
+            return item.extension == (isHTMLTool ? "html" : "docx")
         }) else { errorMessage = "待确认成果尚未同步"; return }
         if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             errorMessage = "请填写修改意见"
@@ -1953,6 +1968,10 @@ private struct WorkflowArtifactPreview: View {
                     Text("第 \(currentPage) / \(pdfDocument.pageCount) 页").font(AppTheme.Typography.supporting)
                     PDFDeckView(document: pdfDocument, currentPage: $currentPage).frame(minHeight: 620)
                 } else if let content {
+                    if artifact.extension == "html" {
+                        HTMLToolPreview(html: content)
+                            .frame(minHeight: 640)
+                    } else
                     if artifact.metadata.renderType == "presentation_outline",
                        let outline = PresentationOutlinePreview.decode(content) {
                         PresentationOutlinePreview(outline: outline)
@@ -1996,7 +2015,7 @@ private struct WorkflowArtifactPreview: View {
                         let pdf = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
                         guard let document = PDFDocument(data: pdf) else { throw APIError.decoding("预览不是有效 PDF") }; pdfDocument = document
                     } else {
-                        if artifact.extension == "docx" {
+                        if artifact.extension == "docx" || artifact.extension == "html" {
                             let document = try await APIClient.shared.downloadAuthenticated(
                                 path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download",
                                 expectedHash: artifact.contentHash
@@ -2005,7 +2024,7 @@ private struct WorkflowArtifactPreview: View {
                                 document,
                                 sourceId: artifact.id,
                                 revision: artifact.metadata.artifactVersion ?? 1,
-                                filename: "\(artifact.title).docx"
+                                filename: "\(artifact.title).\(artifact.extension)"
                             )
                         }
                         content = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: artifact.id).content
@@ -2013,7 +2032,46 @@ private struct WorkflowArtifactPreview: View {
                 } catch { errorMessage = error.localizedDescription }
             }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(artifact.extension == "html" ? nil : .light)
+    }
+}
+
+private struct HTMLToolPreview: UIViewRepresentable {
+    let html: String
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.isInspectable = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        context.coordinator.loadedHTML = html
+        webView.loadHTMLString(html, baseURL: nil)
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedHTML != html else { return }
+        context.coordinator.loadedHTML = html
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var loadedHTML = ""
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            let allowed = navigationAction.navigationType == .other
+                && (navigationAction.request.url?.scheme == "about" || navigationAction.request.url?.scheme == nil)
+            decisionHandler(allowed ? .allow : .cancel)
+        }
     }
 }
 

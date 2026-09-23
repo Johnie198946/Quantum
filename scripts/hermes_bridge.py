@@ -3582,8 +3582,10 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_outline": "presentation_outline",
         "presentation_design": "presentation_design",
         "presentation": "presentation",
+        "html_design": "html_design",
+        "html": "html", "htm": "html", "网页": "html", "网页工具": "html",
     }
-    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation"} else "markdown")
+    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "html"} else "markdown")
     extension, mime_type = {
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
@@ -3594,6 +3596,8 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_outline": ("json", "application/json"),
         "presentation_design": ("json", "application/json"),
         "presentation": ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "html_design": ("json", "application/json"),
+        "html": ("html", "text/html; charset=utf-8"),
     }[render_type]
     if render_type == "data" and raw_type == "csv":
         extension, mime_type = "csv", "text/csv"
@@ -3610,6 +3614,10 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
         return "只输出 CSV 表头与数据行，不要添加 Markdown 围栏。" if contract["extension"] == "csv" else "只输出合法 JSON 对象或数组；不要添加 Markdown 围栏或解释文字。"
     if render_type == "word":
         return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
+    if render_type == "html_design":
+        return '只输出合法 JSON：{"surface":"configure|operate|explore","user_flow":["步骤"],"tokens":{"background":"#F5F5F7","surface":"#FFFFFF","text":"#1D1D1F","muted":"#6E6E73","accent":"#0071E3","radius":"12px"},"components":[{"name":"组件","states":["default","focus","error","success"]}],"responsive":"iPhone 375px first","accessibility":["WCAG 2.1 AA"]}。必须使用单一强调色、SF 系统字体、44px 触控目标、清晰焦点、深浅色和 reduced-motion；避免通用卡片阵列、无意义渐变、默认玻璃拟态与装饰性数据。'
+    if render_type == "html":
+        return "只输出完整 HTML（从 <!doctype html> 到 </html>），不要 Markdown 围栏或解释。单文件内联 CSS/JS、不得引用 CDN/外链/网络请求。采用 iOS 优先的 Configure/Operate 组合界面：SF 系统字体、单一品牌强调色、语义化结构、44px 触控目标、WCAG AA 对比度、键盘焦点、深色/浅色/system 主题、响应式布局、prefers-reduced-motion。实现用户要求的真实交互以及默认、空、错误、成功状态；禁止通用三卡片模板、无意义渐变、默认玻璃拟态、emoji 和虚构指标。"
     if render_type == "presentation_outline":
         return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据，数据不足时明确写出缺口。'
     if render_type == "presentation_design":
@@ -3738,6 +3746,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     output_format = str(params.get("output_format") or "").lower()
     presentation_output = output_format.startswith("presentation")
     document_output = output_format in {"word", "docx", "word 文档", "word文档"}
+    html_output = output_format in {"html", "html_design", "htm", "网页", "网页工具"}
     completed = []
     current_id = str(node.get("id") or "")
     revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
@@ -3752,9 +3761,9 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 5000 if presentation_output else 8000 if document_output else 1800
+            upstream_limit = 5000 if presentation_output else 16000 if html_output else 8000 if document_output else 1800
             output = str(state["output"])
-            if presentation_output or document_output:
+            if presentation_output or document_output or html_output:
                 if len(output) > upstream_limit:
                     raise RuntimeError(f"上游成果 {node_id} 超过 {upstream_limit} 字符；禁止静默截断")
             completed.append(f"- {candidate.get('name') or node_id}: {output[:upstream_limit]}")
@@ -3762,7 +3771,13 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     node_budget = max(
         256, int((node.get("parameters") or {}).get("max_tokens") or 2048)
     )
-    output_char_limit = max(600, min(8000 if presentation_output or document_output else 2200, node_budget // 2))
+    output_char_limit = max(
+        600,
+        min(
+            48000 if html_output else 8000 if presentation_output or document_output else 2200,
+            node_budget * 2 if html_output else node_budget // 2,
+        ),
+    )
     tool_rule = (
         "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
         "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
@@ -3778,6 +3793,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     source_node_id = (
         "presentation_analysis" if "presentation_analysis" in plan_node_ids
         else "document_analysis" if "document_analysis" in plan_node_ids
+        else "html_tool_analysis" if "html_tool_analysis" in plan_node_ids
         else "presentation_outline"
     )
     if source_text and current_id == source_node_id:
@@ -3808,6 +3824,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         f"最终交付：{run.get('deliverable', '')}\n"
         f"当前节点：{node.get('name') or node.get('id')} ({node.get('node_type')})\n"
         f"指定 Agent：{requested_agent}\n"
+        f"设计技能：{json.dumps(params.get('design_skills') or [], ensure_ascii=False)}\n"
         f"节点要求：{params.get('instruction') or params.get('query') or ''}\n"
         f"本轮用户修改意见：{revision_comment or '无'}\n"
         f"输出格式：{artifact_contract['render_type']} / {artifact_contract['extension']}\n"
@@ -3821,7 +3838,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         f"上游上下文：\n{upstream}"
     )
     input_limit = MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else MAX_INPUT
-    if (presentation_output or document_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
+    if (presentation_output or document_output or html_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]
 

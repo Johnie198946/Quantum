@@ -1205,6 +1205,9 @@ public final class TenantSessionCoordinator: ObservableObject {
         if ["word", "docx", "word文档", "word 文档"].contains(where: value.contains) {
             return "document"
         }
+        if ["html", "网页工具", "web 工具", "web tool", "互动网页"].contains(where: value.contains) {
+            return "html"
+        }
         return nil
     }
 
@@ -1228,7 +1231,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         sourceDocumentId: String?
     ) {
         isGenerating = true
-        let outputName = outputKind == "presentation" ? "PPTX" : "Word 文档"
+        let outputName = outputKind == "presentation" ? "PPTX" : outputKind == "html" ? "HTML 工具" : "Word 文档"
         let pending = ChatMessage(
             role: .assistant,
             content: "正在创建 \(outputName) 任务…",
@@ -1245,7 +1248,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                     description: text,
                     desiredOutput: outputKind == "presentation"
                         ? "可编辑 PPTX 与渲染预览"
-                        : "可编辑 Word 文档 DOCX",
+                        : outputKind == "html" ? "自包含交互式 HTML 工具" : "可编辑 Word 文档 DOCX",
                     sourceDocumentId: sourceDocumentId,
                     outputKind: outputKind
                 )

@@ -493,13 +493,15 @@ def artifact_storage_contract(
         "presentation_outline": ("json", "application/json"),
         "presentation_design": ("json", "application/json"),
         "presentation": ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "html_design": ("json", "application/json"),
+        "html": ("html", "text/html; charset=utf-8"),
     }
-    aliases = {"md": "markdown", "docx": "word", "flow": "flowchart", "process": "flowchart"}
+    aliases = {"md": "markdown", "docx": "word", "flow": "flowchart", "process": "flowchart", "htm": "html"}
     declared = str(artifact.get("render_type") or artifact.get("artifact_type") or "").strip().lower()
     render_type = aliases.get(declared, declared)
     extension_hint = str(artifact.get("extension") or "").strip().lower().lstrip(".")
     if render_type not in contracts:
-        render_type = {"md": "markdown", "docx": "word", "csv": "data", "json": "data"}.get(extension_hint, "markdown")
+        render_type = {"md": "markdown", "docx": "word", "csv": "data", "json": "data", "htm": "html", "html": "html"}.get(extension_hint, "markdown")
     extension, mime_type = contracts[render_type]
     if render_type == "data" and extension_hint == "csv":
         extension, mime_type = "csv", "text/csv"
@@ -565,12 +567,16 @@ async def project_event(
                 await _assert_approved_presentation_projection(
                     db, execution, artifact, artifact_metadata["render_type"]
                 )
+                artifact_content = str(artifact["content"])
+                if artifact_metadata["render_type"] == "html":
+                    from backend.services.html_tool_renderer import secure_html_tool
+                    artifact_content = secure_html_tool(artifact_content)
                 stored = store_artifact(
                     execution,
                     node_run_id=node.id,
                     kind=str(artifact.get("kind") or "draft"),
                     title=str(artifact.get("title") or node.name),
-                    content=str(artifact["content"]),
+                    content=artifact_content,
                     source_kind=str(artifact.get("source_kind") or "hermes_output"),
                     metadata=artifact_metadata,
                     extension=extension,

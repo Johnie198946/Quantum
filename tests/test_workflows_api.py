@@ -161,6 +161,22 @@ class TestWorkflowsAPI(unittest.TestCase):
         snapshot = document.json()["workflow"]["requirements_snapshot"]
         self.assertEqual(snapshot["scenario_id"], "document-generation")
 
+        html_tool = self.request(
+            "POST",
+            "/api/v1/workflows",
+            json={
+                "title": "习惯追踪器",
+                "description": "生成一个适合 iPhone 使用的习惯追踪 HTML 工具",
+                "desired_output": "自包含交互式 HTML 工具",
+                "output_kind": "html",
+            },
+        )
+        self.assertEqual(html_tool.status_code, 201, html_tool.text)
+        snapshot = html_tool.json()["workflow"]["requirements_snapshot"]
+        self.assertEqual(snapshot["output_kind"], "html")
+        self.assertEqual(snapshot["scenario_id"], "html-tool-generation")
+        self.assertNotIn("source_document", snapshot)
+
     def seed_project_result(self, *, history=False, add_member=False):
         from backend.db import SessionLocal, canonical_plan_hash
         from backend.models.workflow import (

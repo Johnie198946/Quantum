@@ -1,4 +1,4 @@
-"""Existing Workflow contracts for explicitly requested PPTX and DOCX outputs."""
+"""Governed Workflow contracts for PPTX, DOCX and self-contained HTML outputs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 SCENARIO_ID = "presentation-generation"
 LEGACY_SCENARIO_ID = "document-to-presentation"
 DOCUMENT_SCENARIO_ID = "document-generation"
+HTML_TOOL_SCENARIO_ID = "html-tool-generation"
 SCENARIO_VERSION = "2.0.0"
 DEFAULT_THEME = {
     "colors": {
@@ -58,6 +59,10 @@ def is_presentation_workflow(workflow) -> bool:
 
 def is_document_workflow(workflow) -> bool:
     return (workflow.requirements_snapshot or {}).get("scenario_id") == DOCUMENT_SCENARIO_ID
+
+
+def is_html_tool_workflow(workflow) -> bool:
+    return (workflow.requirements_snapshot or {}).get("scenario_id") == HTML_TOOL_SCENARIO_ID
 
 
 def build_presentation_plan(
@@ -247,4 +252,70 @@ def build_document_plan(
         "source_document": source,
         "nodes": nodes,
         "edges": edges,
+    }
+
+
+def build_html_tool_plan(
+    workflow, *, plan_id: str, knowledge_scope: list[str]
+) -> dict[str, Any] | None:
+    """Reuse the reviewed PPT pipeline for one sandboxed, single-file web tool."""
+    if not is_html_tool_workflow(workflow):
+        return None
+    source = (workflow.requirements_snapshot or {}).get("source_document") or {}
+    common = {
+        "scenario_id": HTML_TOOL_SCENARIO_ID,
+        "scenario_version": SCENARIO_VERSION,
+        "knowledge_scope": knowledge_scope,
+        "allow_network": False,
+    }
+    nodes = [
+        {
+            "id": "html_tool_analysis", "node_type": "LLM_INFERENCE",
+            "name": "分析工具目标与交互边界",
+            "parameters": {
+                **common, "agent_id": "main_agent", "output_format": "markdown",
+                "instruction": "明确用户、核心任务、输入输出、关键状态、内容依据、隐私边界与验收标准；禁止虚构数据。",
+                "max_tokens": 5000,
+            },
+        },
+        {
+            "id": "html_tool_design", "node_type": "LLM_INFERENCE",
+            "name": "生成 UI/UX 设计方案",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "html_design",
+                "approval_gate": "design",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs/apple", "design-md",
+                ],
+                "instruction": "先明确唯一主界面类型（Configure 或 Operate），再按 iOS 优先给出可审阅设计规范：信息架构、任务流、组件状态、色彩与排版 token、深浅色、无障碍、响应式及动效原则；最后执行 AI 设计俗套自检。",
+                "max_tokens": 7000,
+            },
+        },
+        {
+            "id": "html_tool_file", "node_type": "OUTPUT_FORMAT",
+            "name": "生成自包含 HTML 工具",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "html",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs/apple", "design-md",
+                ],
+                "instruction": "严格沿用已批准设计方案，生成一个完整、自包含、可离线运行的 HTML 工具；实现真实交互和默认、空、错误、成功状态。",
+                "max_tokens": 24000,
+            },
+        },
+    ]
+    return {
+        "plan_id": plan_id,
+        "name": workflow.title,
+        "version": SCENARIO_VERSION,
+        "scenario_id": HTML_TOOL_SCENARIO_ID,
+        "source_document": source,
+        "nodes": nodes,
+        "edges": [
+            {"source": "html_tool_analysis", "target": "html_tool_design"},
+            {"source": "html_tool_analysis", "target": "html_tool_file"},
+            {"source": "html_tool_design", "target": "html_tool_file"},
+        ],
     }

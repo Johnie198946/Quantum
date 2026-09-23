@@ -151,7 +151,7 @@ class WorkflowCreate(BaseModel):
     showroom_session_id: str | None = Field(None, min_length=1, max_length=120)
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
-    output_kind: Literal["general", "presentation", "document"] = "general"
+    output_kind: Literal["general", "presentation", "document", "html"] = "general"
 
 
 class ClarificationResponse(BaseModel):
@@ -715,6 +715,8 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
             requirements_snapshot["scenario_id"] = "presentation-generation"
         elif body.output_kind == "document":
             requirements_snapshot["scenario_id"] = "document-generation"
+        elif body.output_kind == "html":
+            requirements_snapshot["scenario_id"] = "html-tool-generation"
         if body.source_document_id:
             try:
                 source = read_document_receipt(tenant(), current_user(payload), body.source_document_id)
@@ -2021,7 +2023,7 @@ def compose_task_agent(workflow: WorkflowDefinition, plan: WorkflowPlanVersion) 
     capabilities = ["main_agent"]
     if "KNOWLEDGE_RETRIEVAL" in node_types:
         capabilities.append("knowledge")
-    if any(word in goal for word in ("代码", "开发", "编程", "测试", "app", "ios", "网站")):
+    if any(word in goal for word in ("代码", "开发", "编程", "测试", "app", "ios", "网站", "html", "网页工具")):
         capabilities.append("coder")
     if "FILTER_PASS" in node_types or any(
         word in goal for word in ("审核", "风控", "安全", "合规")
