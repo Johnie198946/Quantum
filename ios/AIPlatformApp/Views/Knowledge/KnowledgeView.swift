@@ -907,6 +907,7 @@ private struct KnowledgeNoteRow: View {
 
 private struct KnowledgeNoteEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var store = KnowledgeNoteStore.shared
 
     let noteID: String
@@ -921,6 +922,7 @@ private struct KnowledgeNoteEditor: View {
     @State private var saveStatus = "已保存到本地"
     @State private var saveTask: Task<Void, Never>?
     @State private var showingTrashConfirmation = false
+    @State private var bodyEditorFocused = false
     @FocusState private var titleFocused: Bool
 
     private var note: KnowledgeNote? { store.note(id: noteID) }
@@ -932,13 +934,13 @@ private struct KnowledgeNoteEditor: View {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                         editorHeader(note: note)
                         Divider()
-                        modePicker
 
                         if mode == .edit {
-                            formattingToolbar
                             editorBody
+                                .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .bottomTrailing)))
                         } else {
                             NoteReadingView(content: noteContent)
+                                .transition(.opacity)
                         }
 
                         relationSection(note: note)
@@ -950,6 +952,13 @@ private struct KnowledgeNoteEditor: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .background(AppTheme.Colors.cardBackground)
+                .scrollDismissesKeyboard(.interactively)
+                .background {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissEditorKeyboard() }
+                }
+                .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.03), value: mode)
             } else {
                 ContentUnavailableView(
                     "笔记不存在",
@@ -962,6 +971,14 @@ private struct KnowledgeNoteEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if mode == .edit {
+                    Button("完成") {
+                        saveNow()
+                        dismissEditorKeyboard()
+                        mode = .preview
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
                 if let note {
                     ShareLink(item: note.fileURL) {
                         Image(systemName: "square.and.arrow.up")
@@ -999,6 +1016,7 @@ private struct KnowledgeNoteEditor: View {
             saveTask?.cancel()
             saveNow()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { editorDock }
         .confirmationDialog(
             "将这篇笔记移到废纸篓？",
             isPresented: $showingTrashConfirmation,
@@ -1029,6 +1047,7 @@ private struct KnowledgeNoteEditor: View {
                 .foregroundStyle(AppTheme.Colors.textPrimary)
                 .textFieldStyle(.plain)
                 .focused($titleFocused)
+                .disabled(mode == .preview)
                 .accessibilityLabel("笔记标题")
 
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -1054,29 +1073,6 @@ private struct KnowledgeNoteEditor: View {
         }
     }
 
-    private var modePicker: some View {
-        Picker("显示模式", selection: $mode) {
-            ForEach(NoteEditorMode.allCases) { item in
-                Text(item.rawValue).tag(item)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
-
-    private var formattingToolbar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                formatButton("标题", systemImage: "textformat.size") { insertMarkdown("## 标题", selecting: "标题") }
-                formatButton("待办", systemImage: "checklist") { insertMarkdown("- [ ] 待办事项", selecting: "待办事项") }
-                formatButton("双链", systemImage: "link") { insertMarkdown("[[页面名称]]", selecting: "页面名称") }
-                formatButton("标签", systemImage: "number") { insertMarkdown("#标签", selecting: "标签") }
-                formatButton("提示", systemImage: "lightbulb") { insertMarkdown("> [!tip] 提示\n> 内容", selecting: "内容") }
-                formatButton("代码", systemImage: "chevron.left.forwardslash.chevron.right") { insertMarkdown("```\n代码\n```", selecting: "代码") }
-            }
-        }
-        .accessibilityLabel("Markdown 格式工具栏")
-    }
-
     private func formatButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
@@ -1091,9 +1087,18 @@ private struct KnowledgeNoteEditor: View {
     }
 
     private var editorBody: some View {
-        MarkdownTextEditor(text: $noteContent, selectedRange: $selectedRange)
+        MarkdownTextEditor(
+            text: $noteContent,
+            selectedRange: $selectedRange,
+            isFocused: $bodyEditorFocused
+        )
             .frame(minHeight: 420, alignment: .topLeading)
-            .accessibilityLabel("Markdown 正文")
+            .padding(AppTheme.Spacing.sm)
+            .background(
+                AppTheme.Colors.surfaceTint.opacity(0.52),
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+            )
+            .accessibilityLabel("富文本笔记正文")
             .overlay(alignment: .topLeading) {
                 if noteContent.isEmpty {
                     Text("开始记录。输入 [[笔记名称]] 创建双向链接…")
@@ -1215,9 +1220,120 @@ private struct KnowledgeNoteEditor: View {
         isPinned = note.isPinned
         saveStatus = "已保存到本地"
         isLoaded = true
+        mode = note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .edit : .preview
         if note.title == "无标题" {
-            Task { @MainActor in titleFocused = true }
+            Task { @MainActor in
+                titleFocused = true
+                bodyEditorFocused = true
+            }
         }
+    }
+
+    @ViewBuilder
+    private var editorDock: some View {
+        if mode == .edit {
+            VStack(spacing: 6) {
+                if selectedRange.length > 0 {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Label("已选 \(selectedRange.length) 字", systemImage: "selection.pin.in.out")
+                            .font(AppTheme.Typography.micro.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                        Spacer(minLength: 0)
+                        dockButton("粗体", icon: "bold") { wrapSelection(prefix: "**", suffix: "**") }
+                        dockButton("引用", icon: "quote.opening") { prefixSelectedLines(with: "> ") }
+                        dockButton("链接", icon: "link") { wrapSelection(prefix: "[[", suffix: "]]" ) }
+                    }
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        formatButton("标题", systemImage: "textformat.size") { insertMarkdown("## 标题", selecting: "标题") }
+                        formatButton("待办", systemImage: "checklist") { insertMarkdown("- [ ] 待办事项", selecting: "待办事项") }
+                        formatButton("双链", systemImage: "link") { insertMarkdown("[[页面名称]]", selecting: "页面名称") }
+                        formatButton("标签", systemImage: "number") { insertMarkdown("#标签", selecting: "标签") }
+                        formatButton("提示", systemImage: "lightbulb") { insertMarkdown("> [!tip] 提示\n> 内容", selecting: "内容") }
+                        formatButton("代码", systemImage: "chevron.left.forwardslash.chevron.right") { insertMarkdown("```\n代码\n```", selecting: "代码") }
+                        Button("收起键盘", systemImage: "keyboard.chevron.compact.down") { dismissEditorKeyboard() }
+                            .labelStyle(.iconOnly)
+                            .frame(minWidth: AppTheme.Metrics.minimumTouchTarget, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                            .accessibilityLabel("收起键盘")
+                    }
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                }
+            }
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .background(.ultraThinMaterial)
+            .overlay(alignment: .top) { Divider().opacity(0.55) }
+        } else if note != nil {
+            HStack {
+                Spacer()
+                Button {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.03)) {
+                        mode = .edit
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(160))
+                        bodyEditorFocused = true
+                    }
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 54, height: 54)
+                        .background(AppTheme.Colors.textPrimary, in: Circle())
+                        .shadow(color: AppTheme.Colors.textPrimary.opacity(0.16), radius: 14, y: 6)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("编辑笔记")
+            }
+            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+            .padding(.vertical, AppTheme.Spacing.sm)
+        }
+    }
+
+    private func dockButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(AppTheme.Typography.micro.weight(.semibold))
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .frame(minHeight: 36)
+                .background(AppTheme.Colors.selectionTint, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppTheme.Icons.interactive)
+    }
+
+    private func dismissEditorKeyboard() {
+        titleFocused = false
+        bodyEditorFocused = false
+    }
+
+    private func wrapSelection(prefix: String, suffix: String) {
+        let source = noteContent as NSString
+        let location = min(max(selectedRange.location, 0), source.length)
+        let length = min(max(selectedRange.length, 0), source.length - location)
+        guard length > 0 else { return }
+        let range = NSRange(location: location, length: length)
+        let selected = source.substring(with: range)
+        noteContent = source.replacingCharacters(in: range, with: prefix + selected + suffix)
+        selectedRange = NSRange(location: location + (prefix as NSString).length, length: length)
+        bodyEditorFocused = true
+    }
+
+    private func prefixSelectedLines(with prefix: String) {
+        let source = noteContent as NSString
+        let location = min(max(selectedRange.location, 0), source.length)
+        let length = min(max(selectedRange.length, 0), source.length - location)
+        guard length > 0 else { return }
+        let range = NSRange(location: location, length: length)
+        let selected = source.substring(with: range)
+        let replacement = selected.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { prefix + $0 }
+            .joined(separator: "\n")
+        noteContent = source.replacingCharacters(in: range, with: replacement)
+        selectedRange = NSRange(location: location, length: (replacement as NSString).length)
+        bodyEditorFocused = true
     }
 
     private func scheduleSave() {
@@ -1320,6 +1436,7 @@ private struct KnowledgeNoteEditor: View {
 private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var selectedRange: NSRange
+    @Binding var isFocused: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1334,16 +1451,25 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         textView.alwaysBounceVertical = false
         textView.keyboardDismissMode = .interactive
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
-        textView.accessibilityLabel = "Markdown 正文"
+        textView.accessibilityLabel = "富文本笔记正文"
+        MarkdownVisualStyle.apply(to: textView)
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
-        if textView.text != text { textView.text = text }
+        if textView.text != text {
+            textView.text = text
+            MarkdownVisualStyle.apply(to: textView)
+        }
         let safeLocation = min(max(selectedRange.location, 0), textView.text.utf16.count)
         let safeLength = min(max(selectedRange.length, 0), textView.text.utf16.count - safeLocation)
         let safeRange = NSRange(location: safeLocation, length: safeLength)
         if textView.selectedRange != safeRange { textView.selectedRange = safeRange }
+        if isFocused, !textView.isFirstResponder {
+            DispatchQueue.main.async { textView.becomeFirstResponder() }
+        } else if !isFocused, textView.isFirstResponder {
+            DispatchQueue.main.async { textView.resignFirstResponder() }
+        }
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -1354,11 +1480,121 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             parent.selectedRange = textView.selectedRange
+            MarkdownVisualStyle.apply(to: textView)
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.selectedRange = textView.selectedRange
         }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            parent.isFocused = true
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            parent.isFocused = false
+        }
+    }
+}
+
+enum MarkdownVisualStyle {
+    enum Kind: Equatable {
+        case heading(Int)
+        case strong
+        case quote
+        case code
+        case link
+    }
+
+    struct Span: Equatable {
+        let range: NSRange
+        let kind: Kind
+    }
+
+    static func spans(in text: String) -> [Span] {
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        var result: [Span] = []
+        let patterns: [(String, (NSTextCheckingResult) -> Span?)] = [
+            (#"(?m)^(#{1,3})\s+(.+)$"#, { match in
+                guard match.numberOfRanges > 2 else { return nil }
+                return Span(range: match.range(at: 2), kind: .heading(match.range(at: 1).length))
+            }),
+            (#"\*\*(.+?)\*\*"#, { match in
+                guard match.numberOfRanges > 1 else { return nil }
+                return Span(range: match.range(at: 1), kind: .strong)
+            }),
+            (#"(?m)^>\s?.+$"#, { Span(range: $0.range, kind: .quote) }),
+            (#"(?s)```.*?```"#, { Span(range: $0.range, kind: .code) }),
+            (#"\[\[[^\]]+\]\]"#, { Span(range: $0.range, kind: .link) })
+        ]
+        for (pattern, builder) in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            for match in regex.matches(in: text, range: fullRange) {
+                if let span = builder(match) { result.append(span) }
+            }
+        }
+        return result
+    }
+
+    static func apply(to textView: UITextView) {
+        let selectedRange = textView.selectedRange
+        let fullRange = NSRange(location: 0, length: textView.textStorage.length)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 5
+        paragraph.paragraphSpacing = 5
+        textView.textStorage.setAttributes([
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: paragraph
+        ], range: fullRange)
+        for span in spans(in: textView.text) where NSMaxRange(span.range) <= fullRange.length {
+            switch span.kind {
+            case .heading(let level):
+                let style: UIFont.TextStyle = level == 1 ? .title1 : (level == 2 ? .title2 : .title3)
+                textView.textStorage.addAttribute(
+                    .font,
+                    value: UIFont.preferredFont(forTextStyle: style).boldVariant(),
+                    range: span.range
+                )
+            case .strong:
+                textView.textStorage.addAttribute(
+                    .font,
+                    value: UIFont.preferredFont(forTextStyle: .body).boldVariant(),
+                    range: span.range
+                )
+            case .quote:
+                textView.textStorage.addAttributes([
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .backgroundColor: UIColor.systemMint.withAlphaComponent(0.12)
+                ], range: span.range)
+            case .code:
+                textView.textStorage.addAttributes([
+                    .font: UIFont.monospacedSystemFont(
+                        ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize * 0.92,
+                        weight: .regular
+                    ),
+                    .backgroundColor: UIColor.secondarySystemBackground
+                ], range: span.range)
+            case .link:
+                textView.textStorage.addAttributes([
+                    .foregroundColor: UIColor.systemBlue,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ], range: span.range)
+            }
+        }
+        textView.selectedRange = selectedRange
+        textView.typingAttributes = [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: paragraph
+        ]
+    }
+}
+
+private extension UIFont {
+    func boldVariant() -> UIFont {
+        guard let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) else { return self }
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
 

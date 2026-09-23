@@ -15,6 +15,7 @@ public struct ChatMessageStreamView: View {
     @ObservedObject public var coordinator: TenantSessionCoordinator
     public let onBackgroundTap: () -> Void
     public let onStartTopic: ((ChatMessage) -> Void)?
+    public let onWelcomePrompt: ((String) -> Void)?
     @State private var visibleMessageID: String?
     @State private var autoLoadOlderArmed = false
     @State private var isAtHistoryBoundary = false
@@ -24,11 +25,13 @@ public struct ChatMessageStreamView: View {
     public init(
         coordinator: TenantSessionCoordinator,
         onBackgroundTap: @escaping () -> Void = {},
-        onStartTopic: ((ChatMessage) -> Void)? = nil
+        onStartTopic: ((ChatMessage) -> Void)? = nil,
+        onWelcomePrompt: ((String) -> Void)? = nil
     ) {
         self.coordinator = coordinator
         self.onBackgroundTap = onBackgroundTap
         self.onStartTopic = onStartTopic
+        self.onWelcomePrompt = onWelcomePrompt
     }
 
     public var body: some View {
@@ -44,8 +47,8 @@ public struct ChatMessageStreamView: View {
                 }
 
                 if coordinator.messages.isEmpty && coordinator.pendingQueue.isEmpty {
-                    ChatWelcomeView()
-                        .frame(minHeight: 420)
+                    ChatWelcomeView(onPrompt: onWelcomePrompt)
+                        .frame(minHeight: 540)
                         .transition(.opacity)
                 }
 
@@ -359,171 +362,110 @@ private extension View {
     }
 }
 
+struct ChatHomeAction: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let symbol: String
+    let prompt: String
+
+    static let continueLearning = ChatHomeAction(
+        id: "continue-learning",
+        title: "继续学",
+        subtitle: "接着最近的阅读和问题，快速找回思路",
+        symbol: "books.vertical.fill",
+        prompt: "请结合我最近的学习、阅读和提问记录，帮我从上次停下的位置继续学。先用一句话说明我们学到哪里，再给出最合适的下一步。"
+    )
+    static let continueDoing = ChatHomeAction(
+        id: "continue-doing",
+        title: "继续做",
+        subtitle: "回到未完成的任务",
+        symbol: "checklist.checked",
+        prompt: "请找到我最近尚未完成的任务或工作流，概括当前进度，并从下一步继续。"
+    )
+    static let helpMeClean = ChatHomeAction(
+        id: "help-me-clean",
+        title: "帮我清理",
+        subtitle: "整理对话、笔记和待办",
+        symbol: "sparkles.rectangle.stack.fill",
+        prompt: "请帮我清理最近积累的对话、笔记和待办。先列出建议整理的内容，涉及删除、归档或覆盖时必须先让我确认。"
+    )
+
+    static let all = [continueLearning, continueDoing, helpMeClean]
+}
+
 private struct ChatWelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
-    @State private var interactionPoint = CGPoint(x: 0.5, y: 0.5)
-    @State private var isInteracting = false
-
-    private let cardCornerRadius: CGFloat = 30
+    let onPrompt: ((String) -> Void)?
 
     var body: some View {
-        GeometryReader { proxy in
-            let normalizedX = (interactionPoint.x - 0.5) * 2
-            let normalizedY = (interactionPoint.y - 0.5) * 2
-            let tiltAmount = reduceMotion ? 0 : sqrt(normalizedX * normalizedX + normalizedY * normalizedY) * 6
-
-            ZStack {
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AppTheme.Colors.quantumBlue.opacity(0.18),
-                                AppTheme.Colors.cardBackground.opacity(0.98),
-                                AppTheme.Colors.quantumViolet.opacity(0.22)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                profileAtmosphere
-
-                VStack(spacing: 18) {
-                    Spacer(minLength: 18)
-
-                    Text("QUANTUM · AI WORKSPACE")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .tracking(1.5)
-                        .foregroundStyle(AppTheme.Colors.quantumViolet)
-
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.62))
-                            .frame(width: 176, height: 176)
-                            .blur(radius: 1)
-                            .shadow(color: AppTheme.Colors.quantumBlue.opacity(0.20), radius: 28)
-
-                        QuantumAvatarView(size: 148)
-                    }
-                    .accessibilityHidden(true)
-
-                    VStack(spacing: 7) {
-                        Text("Quantum")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppTheme.Colors.textPrimary)
-
-                        Text("你的智能工作空间")
-                            .font(AppTheme.Typography.supporting)
-                            .foregroundStyle(AppTheme.Colors.textSecondary)
-                    }
-
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(AppTheme.Colors.statusCompleted)
-                            .frame(width: 7, height: 7)
-                        Text("描述目标，开始协作")
-                            .font(AppTheme.Typography.micro.weight(.medium))
-                    }
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("今天从哪里继续？")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                Text("不用重新开始，Quantum 会接住你的进度。")
+                    .font(AppTheme.Typography.supporting)
                     .foregroundStyle(AppTheme.Colors.textSecondary)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 36)
-                    .background(.ultraThinMaterial, in: Capsule())
-
-                    Spacer(minLength: 18)
-                }
-                .padding(.horizontal, 24)
-
-                if !reduceMotion {
-                    RadialGradient(
-                        colors: [Color.white.opacity(isInteracting ? 0.42 : 0.16), .clear],
-                        center: UnitPoint(x: interactionPoint.x, y: interactionPoint.y),
-                        startRadius: 0,
-                        endRadius: 190
-                    )
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-                }
             }
-            .frame(width: min(proxy.size.width, 318), height: 382)
-            .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .stroke(AppTheme.Colors.quantumGradient, lineWidth: isInteracting ? 2 : 1)
-                    .opacity(isInteracting ? 0.88 : 0.34)
-                    .allowsHitTesting(false)
+
+            actionButton(ChatHomeAction.continueLearning, featured: true)
+
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                actionButton(ChatHomeAction.continueDoing, featured: false)
+                actionButton(ChatHomeAction.helpMeClean, featured: false)
             }
-            .shadow(
-                color: AppTheme.Colors.quantumViolet.opacity(isInteracting ? 0.22 : 0.12),
-                radius: isInteracting ? 26 : 18,
-                y: isInteracting ? 14 : 9
-            )
-            .rotation3DEffect(
-                .degrees(tiltAmount),
-                axis: (x: -normalizedY, y: normalizedX, z: 0),
-                perspective: 0.72
-            )
-            .scaleEffect(isInteracting && !reduceMotion ? 0.985 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: isInteracting)
-            .animation(.spring(response: 0.34, dampingFraction: 0.82), value: interactionPoint)
-            .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
-            .simultaneousGesture(profileGesture(in: CGSize(width: min(proxy.size.width, 318), height: 382)))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: 420, alignment: .center)
-        .padding(.horizontal, max(AppTheme.Metrics.contentGutter, 22))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AppTheme.Metrics.contentGutter)
+        .padding(.top, AppTheme.Spacing.xl)
+        .padding(.bottom, AppTheme.Spacing.xxl)
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : (reduceMotion ? 0 : 12))
         .onAppear {
-            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
-                appeared = true
-            }
+            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { appeared = true }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Quantum，你的智能工作空间")
-        .accessibilityHint("在下方输入框描述你想完成的任务")
     }
 
-    private var profileAtmosphere: some View {
-        ZStack {
-            Circle()
-                .fill(AppTheme.Colors.quantumCyan.opacity(0.18))
-                .frame(width: 190, height: 190)
-                .blur(radius: 42)
-                .offset(x: -112, y: -146)
-
-            Circle()
-                .fill(AppTheme.Colors.quantumViolet.opacity(0.20))
-                .frame(width: 210, height: 210)
-                .blur(radius: 50)
-                .offset(x: 118, y: 136)
-
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.18), .clear, Color.white.opacity(0.10)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+    private func actionButton(_ action: ChatHomeAction, featured: Bool) -> some View {
+        Button { onPrompt?(action.prompt) } label: {
+            VStack(alignment: .leading, spacing: featured ? AppTheme.Spacing.lg : AppTheme.Spacing.md) {
+                HStack {
+                    Image(systemName: action.symbol)
+                        .font(featured ? .title2.weight(.semibold) : .headline.weight(.semibold))
+                        .foregroundStyle(AppTheme.Icons.interactive)
+                        .frame(width: featured ? 52 : 42, height: featured ? 52 : 42)
+                        .background(Color.white.opacity(0.72), in: Circle())
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppTheme.Colors.textTertiary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(action.title)
+                        .font(featured ? .title2.weight(.bold) : AppTheme.Typography.cardTitle)
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                    Text(action.subtitle)
+                        .font(AppTheme.Typography.micro)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .lineLimit(featured ? 2 : 3)
+                }
+            }
+            .padding(featured ? AppTheme.Spacing.xl : AppTheme.Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: featured ? 174 : 146, alignment: .topLeading)
+            .background(
+                featured ? AppTheme.Colors.successSurface.opacity(0.92) : AppTheme.Colors.cardBackground.opacity(0.92),
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                    .stroke(Color.white.opacity(0.88), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         }
-        .allowsHitTesting(false)
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("\(action.title)，\(action.subtitle)")
+        .accessibilityHint("发送到 Quantum 并继续")
     }
-
-    private func profileGesture(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .local)
-            .onChanged { value in
-                guard !reduceMotion else { return }
-                isInteracting = true
-                interactionPoint = CGPoint(
-                    x: min(max(value.location.x / max(size.width, 1), 0), 1),
-                    y: min(max(value.location.y / max(size.height, 1), 0), 1)
-                )
-            }
-            .onEnded { _ in
-                guard !reduceMotion else { return }
-                isInteracting = false
-                interactionPoint = CGPoint(x: 0.5, y: 0.5)
-            }
-        }
 }
