@@ -54,6 +54,15 @@ def _docx(text: str) -> bytes:
     return output.getvalue()
 
 
+def _pptx(text: str) -> bytes:
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.title.text = text
+    output = BytesIO()
+    presentation.save(output)
+    return output.getvalue()
+
+
 def _request(app: FastAPI, method: str, path: str, **kwargs):
     async def run():
         async with httpx.AsyncClient(
@@ -187,6 +196,32 @@ def test_document_rejects_legacy_and_oversize(tmp_path, monkeypatch):
             data=b"x" * (document_sources.MAX_DOCUMENT_BYTES + 1),
         )
     assert oversized.value.code == "document_too_large"
+
+
+def test_pptx_upload_uses_existing_extractor_and_materializes_private_note(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        document_sources,
+        "note_directory",
+        lambda tenant, user: tmp_path / tenant / user,
+    )
+    data = _pptx("PPTX 附件执行链验收")
+    receipt = document_sources.save_document_source(
+        tenant_key="tenant-a",
+        user_id="user-a",
+        filename="briefing.pptx",
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        data=data,
+        expected_hash=hashlib.sha256(data).hexdigest(),
+    )
+    assert receipt["status"] == "ready"
+    assert receipt["content_type"] == document_sources.SUPPORTED_DOCUMENTS[".pptx"]
+    assert receipt["note_id"] == receipt["source_id"]
+    text, _ = document_sources.document_text(
+        "tenant-a", "user-a", receipt["source_id"]
+    )
+    assert "PPTX 附件执行链验收" in text
 
 
 def test_authenticated_upload_receipt_download_hash_and_user_boundary(

@@ -924,6 +924,67 @@ def test_user_note_search_uses_only_signed_user_note_source():
         bridge._knowledge_tool_context.value = None
 
 
+def test_user_note_search_deterministically_returns_active_uploaded_document():
+    import scripts.hermes_bridge as bridge
+
+    bridge._knowledge_tool_context.value = {
+        "capability": "signed", "sources": ["user_notes"],
+    }
+    bridge._client_context_tool_context.value = {
+        "active_document_note_id": "uploaded-pptx",
+        "inline_notes": [{
+            "id": "uploaded-pptx",
+            "title": "季度复盘.pptx",
+            "markdown": "# 第三季度复盘\n\n营收同比增长 31%。",
+        }],
+    }
+    try:
+        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]):
+            payload = json.loads(bridge._user_note_search_tool({
+                "query": "请解释这一部分",
+            }))
+        assert payload["success"] is True
+        assert [item["id"] for item in payload["docs"]] == ["uploaded-pptx"]
+        assert "营收同比增长 31%" in payload["docs"][0]["markdown"]
+    finally:
+        bridge._knowledge_tool_context.value = None
+        bridge._client_context_tool_context.value = None
+
+
+def test_user_note_search_prefers_exact_gateway_document_over_truncated_inline_copy():
+    import scripts.hermes_bridge as bridge
+
+    bridge._knowledge_tool_context.value = {
+        "capability": "signed", "sources": ["user_notes"],
+    }
+    bridge._client_context_tool_context.value = {
+        "active_document_note_id": "uploaded-pptx",
+        "inline_notes": [{
+            "id": "uploaded-pptx",
+            "title": "季度复盘.pptx",
+            "markdown": "INLINE-TRUNCATED",
+        }],
+    }
+    full_markdown = "GATEWAY-FULL\n" + ("正文" * 5_000) + "\nTAIL-SENTINEL"
+    try:
+        with patch.object(bridge, "_knowledge_gateway_search", return_value=[{
+            "id": "uploaded-pptx",
+            "title": "季度复盘.pptx",
+            "markdown": full_markdown,
+            "content_status": "complete",
+        }]) as search:
+            payload = json.loads(bridge._user_note_search_tool({
+                "query": "请解释最后一页",
+            }))
+        assert payload["docs"][0]["markdown"].endswith("TAIL-SENTINEL")
+        assert "INLINE-TRUNCATED" not in payload["docs"][0]["markdown"]
+        assert search.call_args.kwargs["note_ids"] == ["uploaded-pptx"]
+        assert search.call_args.kwargs["include_content"] is True
+    finally:
+        bridge._knowledge_tool_context.value = None
+        bridge._client_context_tool_context.value = None
+
+
 def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
     import scripts.hermes_bridge as bridge
 

@@ -1021,7 +1021,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                 messages: [ClientSessionMessageDTO(
                     id: "m1", role: "user", content: "超聚变是一家公司"
                 )],
-                truncated: false
+                truncated: false,
+                localNotes: [ChatLocalNoteDTO(
+                    id: "uploaded-pptx",
+                    title: "季度复盘.pptx",
+                    markdown: "# 第三季度复盘"
+                )],
+                activeDocumentNoteId: "uploaded-pptx"
             )
         )
         let object = try XCTUnwrap(
@@ -1029,6 +1035,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
         let context = try XCTUnwrap(object["client_session_context"] as? [String: Any])
         XCTAssertEqual(context["session_id"] as? String, "session-1")
+        XCTAssertEqual(context["active_document_note_id"] as? String, "uploaded-pptx")
         XCTAssertNil(object["tenant_key"])
         XCTAssertNil(object["user_id"])
     }

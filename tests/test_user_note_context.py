@@ -6,7 +6,8 @@ from backend.api.chat import ChatContextScope, LocalNoteContext, _resolve_source
 from backend.services.knowledge_policy import KnowledgePolicy
 from backend.services.knowledge_policy import verify_capability
 from backend.services.user_note_context import (
-    note_paths, search_user_notes, persist_generated_private_note,
+    note_paths, read_user_notes_by_ids, search_user_notes,
+    persist_generated_private_note,
 )
 from backend.services.user_note_context import (
     LOCAL_NOTE_CONTEXT_MAX_CHARS,
@@ -43,6 +44,29 @@ def test_search_user_notes_isolates_tenant_and_user(tmp_path: Path):
     )
     assert [item["title"] for item in results] == ["我的会议"]
     assert "他人机密" not in str(results)
+
+
+def test_read_user_notes_by_ids_returns_exact_full_note_only(tmp_path: Path):
+    own, own_meta = note_paths("tenant-a", "user-a", "active-doc", tmp_path)
+    own.parent.mkdir(parents=True)
+    body = "---\ntitle: 长文档\n---\n\n" + ("正文" * 12_000) + "\nTAIL-SENTINEL"
+    own.write_text(body, encoding="utf-8")
+    own_meta.write_text('{"client_updated_at":"2026-09-23T01:00:00Z"}', encoding="utf-8")
+    other, _ = note_paths("tenant-a", "user-b", "active-doc", tmp_path)
+    other.parent.mkdir(parents=True)
+    other.write_text("PRIVATE-OTHER-USER", encoding="utf-8")
+
+    results = read_user_notes_by_ids(
+        tenant_key="tenant-a",
+        user_id="user-a",
+        note_ids=["active-doc", "../escape"],
+        root=tmp_path,
+    )
+
+    assert [item["id"] for item in results] == ["active-doc"]
+    assert results[0]["markdown"].endswith("TAIL-SENTINEL")
+    assert "PRIVATE-OTHER-USER" not in results[0]["markdown"]
+    assert len(results[0]["content_hash"]) == 64
 
 
 def test_render_local_context_compacts_long_note_and_preserves_tasks():

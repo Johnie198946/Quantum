@@ -1463,6 +1463,7 @@ def _knowledge_gateway_search(
     include_content: bool = False,
     book_request: dict[str, Any] | None = None,
     wiki_request: dict[str, Any] | None = None,
+    note_ids: list[str] | None = None,
     with_status: bool = False,
     timeout_seconds: float = 20.0,
 ) -> list[dict[str, Any]] | dict[str, Any]:
@@ -1475,6 +1476,8 @@ def _knowledge_gateway_search(
     if wiki_request:
         request_body.update({key: value for key, value in wiki_request.items()
                              if key in {"entities", "topics", "paths"}})
+    if note_ids:
+        request_body["note_ids"] = [str(item)[:128] for item in note_ids[:10]]
     if book_request is not None:
         request_body.update({key: value for key, value in book_request.items()
                              if key in {"book_id", "content_version", "operation", "section", "page"}})
@@ -2012,13 +2015,39 @@ def _finalize_knowledge_gate(answer: str, token: str, state: dict[str, Any]) -> 
     return answer.rstrip() + "\n\n" + visible_receipt, receipt
 
 
-def _inline_user_note_matches(query: str, notes: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+def _inline_user_note_matches(
+    query: str,
+    notes: list[dict[str, Any]],
+    limit: int,
+    *,
+    active_document_note_id: str | None = None,
+) -> list[dict[str, Any]]:
     """Find same-account notes supplied in the signed iOS context.
 
     This is a deterministic recall fallback for local-first notes that have
     not reached the Gateway yet. Hermes still decides the semantic query and
-    whether the returned notes are genuinely mergeable.
+    whether the returned notes are genuinely mergeable. An authenticated
+    active-document id deterministically selects the current upload before
+    lexical ranking, so referential questions do not lose their attachment.
     """
+    if active_document_note_id:
+        for raw in notes:
+            if not isinstance(raw, dict):
+                continue
+            note_id = str(raw.get("id") or "").strip()[:128]
+            if note_id != active_document_note_id:
+                continue
+            markdown = str(raw.get("markdown") or "")[:20_000]
+            return [{
+                "id": note_id,
+                "title": str(raw.get("title") or "无标题").strip()[:200],
+                "snippet": markdown[:1_000],
+                "markdown": markdown,
+                "updated_at": raw.get("updated_at"),
+                "content_hash": raw.get("content_hash"),
+                "category": "user_notes",
+                "source": "user_notes",
+            }]
     stop = {"笔记", "总结", "整理", "保存", "入库", "相关", "内容", "一下", "会话"}
     terms = [term for term in re.findall(r"[a-z0-9][a-z0-9_.-]{1,}|[\u4e00-\u9fff]{2,}", query.casefold()) if term not in stop]
     if not terms:
@@ -2068,7 +2097,17 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
     inline_notes = []
     if isinstance(client_context, dict):
         inline_notes = client_context.get("inline_notes") or []
-    inline_docs = _inline_user_note_matches(query, inline_notes, max(1, min(10, int((args or {}).get("limit") or 5))))
+    active_document_note_id = (
+        str(client_context.get("active_document_note_id") or "").strip()[:128]
+        if isinstance(client_context, dict)
+        else ""
+    )
+    inline_docs = _inline_user_note_matches(
+        query,
+        inline_notes,
+        max(1, min(10, int((args or {}).get("limit") or 5))),
+        active_document_note_id=active_document_note_id or None,
+    )
     try:
         docs = _knowledge_gateway_search(
             str(context["capability"]),
@@ -2076,6 +2115,10 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
             category_scope=[],
             sources=["user_notes"],
             limit=max(1, min(10, int((args or {}).get("limit") or 5))),
+            **({
+                "include_content": True,
+                "note_ids": [active_document_note_id],
+            } if active_document_note_id else {}),
         )
     except PermissionError:
         return json.dumps(
@@ -2095,7 +2138,9 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
         docs = []
     merged_docs = []
     seen_ids: set[str] = set()
-    for item in inline_docs + (docs if isinstance(docs, list) else []):
+    # The authenticated Gateway owns the complete durable source. Inline data
+    # is a bounded offline fallback and must never shadow a fuller same-id row.
+    for item in (docs if isinstance(docs, list) else []) + inline_docs:
         note_id = str(item.get("id") or "")
         if note_id and note_id not in seen_ids:
             seen_ids.add(note_id)
@@ -6931,6 +6976,7 @@ def _run_agent_sync(
                 ),
                 "client_session_id": transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],
+                "active_document_note_id": transcript.get("active_document_note_id"),
                 "account_scope": (
                     hashlib.sha256(str(note_context_claims.get("tenant_key") or "").encode()).hexdigest()[:20]
                     + ":"

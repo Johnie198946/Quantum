@@ -836,13 +836,17 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
     /// Local-first notes are signed into the request context so Hermes can
     /// compare notes that have not completed background sync yet.
     public let localNotes: [ChatLocalNoteDTO]
+    /// Exact current upload used by attachment follow-ups; this is a note id
+    /// inside `localNotes`, never an arbitrary server path.
+    public let activeDocumentNoteId: String?
 
-    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = []) {
+    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], activeDocumentNoteId: String? = nil) {
         self.sessionId = sessionId
         self.messages = messages
         self.truncated = truncated
         self.sourceSessions = sourceSessions
         self.localNotes = localNotes
+        self.activeDocumentNoteId = activeDocumentNoteId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -850,6 +854,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         case messages, truncated
         case sourceSessions = "source_sessions"
         case localNotes = "local_notes"
+        case activeDocumentNoteId = "active_document_note_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -859,6 +864,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
         sourceSessions = try container.decodeIfPresent([ClientSourceSessionDTO].self, forKey: .sourceSessions) ?? []
         localNotes = try container.decodeIfPresent([ChatLocalNoteDTO].self, forKey: .localNotes) ?? []
+        activeDocumentNoteId = try container.decodeIfPresent(String.self, forKey: .activeDocumentNoteId)
     }
 }
 

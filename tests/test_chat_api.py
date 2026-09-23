@@ -214,6 +214,47 @@ class TestChatAPIEndpoint(unittest.TestCase):
         self.assertEqual(captured_goal["goal"], "请审查代码")
         self.assertEqual(captured_goal.get("knowledge_query"), "请审查代码")
 
+    def test_non_stream_chat_forwards_quote_and_signed_active_document_context(self):
+        captured = {}
+
+        async def fake_hermes(goal, session_id=None, **kwargs):
+            captured["goal"] = goal
+            captured["session_id"] = session_id
+            captured.update(kwargs)
+            return "已根据附件回答", []
+
+        with patch("backend.api.chat.match_identity_rule", return_value=None), \
+             patch("backend.api.chat._check_cached_answer", return_value=None), \
+             patch("backend.api.chat._call_hermes", side_effect=fake_hermes):
+            response = self.request(
+                "POST", "/api/chat",
+                json={
+                    "question": "请解释这一部分",
+                    "request_id": "request-active-doc-1",
+                    "session_id": "session-active-doc-1",
+                    "quoted_context": "营收同比增长 31%",
+                    "client_session_context": {
+                        "session_id": "session-active-doc-1",
+                        "messages": [],
+                        "local_notes": [{
+                            "id": "uploaded-pptx",
+                            "title": "季度复盘.pptx",
+                            "markdown": "# 第三季度复盘\n\n营收同比增长 31%。",
+                        }],
+                        "active_document_note_id": "uploaded-pptx",
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("营收同比增长 31%", captured["goal"])
+        self.assertEqual(
+            captured["client_session_context"]["active_document_note_id"],
+            "uploaded-pptx",
+        )
+        self.assertTrue(captured["client_context_capability"])
+        self.assertEqual(captured["request_id"], "request-active-doc-1")
+
     def test_custom_agent_configuration_is_resolved_and_forwarded(self):
         created = self.request(
             "POST", "/api/v1/tenant-agents",

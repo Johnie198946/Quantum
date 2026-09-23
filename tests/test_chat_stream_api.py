@@ -162,6 +162,29 @@ def test_trusted_task_surface_keeps_skills_eligible_without_affecting_casual_cha
     assert casual_turn.route_class == "CASUAL"
 
 
+def test_stream_triage_uses_attached_local_note_context():
+    request = StreamRequest(
+        question="请解释这一部分",
+        client_session_context={
+            "session_id": "session-attachment",
+            "local_notes": [
+                {
+                    "id": "doc_123",
+                    "title": "briefing",
+                    "markdown": "# briefing\n\n附件中的专有内容",
+                }
+            ],
+        },
+    )
+    decision = _classify_stream_request(
+        request,
+        delegated=False,
+        skill_id=None,
+        trusted_professional_surface=False,
+    )
+    assert "user_note_search" in decision.evidence_requirements
+
+
 @pytest.mark.asyncio
 async def test_trusted_professional_surface_bypasses_identity_shortcut(monkeypatch):
     import backend.api.chat as chat_mod

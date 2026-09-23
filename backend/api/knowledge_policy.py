@@ -29,7 +29,7 @@ from backend.services.knowledge_policy import (
     resolve_policy,
     verify_capability,
 )
-from backend.services.user_note_context import search_user_notes
+from backend.services.user_note_context import read_user_notes_by_ids, search_user_notes
 
 router = APIRouter(tags=["knowledge-policy"])
 AUTHEN_WEBHOOK_SECRET = os.environ.get("AUTHEN_ENTITLEMENT_WEBHOOK_SECRET", "")
@@ -141,6 +141,9 @@ class GatewaySearchRequest(BaseModel):
     entities: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
     topics: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
     paths: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(default_factory=list, max_length=10)
+    note_ids: list[
+        Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
+    ] = Field(default_factory=list, max_length=10)
     book_id: str | None = Field(None, min_length=1, max_length=384)
     content_version: str | None = Field(None, min_length=1, max_length=256)
     operation: str = Field(default="read", pattern="^(toc|read)$")
@@ -376,6 +379,8 @@ async def capability_search(
         raise HTTPException(status_code=422, detail="Wiki selectors cannot be combined with book_id")
     if (body.entities or body.topics or body.paths) and requested_sources != {"tenant_knowledge"}:
         raise HTTPException(status_code=422, detail="Wiki selectors require tenant_knowledge only")
+    if body.note_ids and requested_sources != {"user_notes"}:
+        raise HTTPException(status_code=422, detail="note_ids require user_notes only")
     if body.book_id:
         if "tenant_knowledge" not in requested_sources:
             raise HTTPException(status_code=403, detail={"code": "book_scope_denied"})
@@ -484,18 +489,28 @@ async def capability_search(
         user_id = str(claims.get("user_id") or "")
         if not user_id:
             raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
-        notes = await run_knowledge_read(search_user_notes,
-            tenant_key=tenant_key,
-            user_id=user_id,
-            query=body.query,
-            limit=body.limit,
-        )
+        if body.note_ids:
+            notes = await run_knowledge_read(
+                read_user_notes_by_ids,
+                tenant_key=tenant_key,
+                user_id=user_id,
+                note_ids=body.note_ids,
+            )
+        else:
+            notes = await run_knowledge_read(search_user_notes,
+                tenant_key=tenant_key,
+                user_id=user_id,
+                query=body.query,
+                limit=body.limit,
+            )
         remaining_note_chars = 60_000
         for item in notes:
             if item.get("content_status") == "disclosure_limited":
                 disclosure_limited = True
                 continue
-            markdown = str(item.get("markdown") or "")[: min(20_000, remaining_note_chars)]
+            full_markdown = str(item.get("markdown") or "")
+            per_note_limit = 60_000 if body.note_ids else 20_000
+            markdown = full_markdown[: min(per_note_limit, remaining_note_chars)]
             remaining_note_chars -= len(markdown)
             docs.append({
                 "id": item["id"],
@@ -503,6 +518,8 @@ async def capability_search(
                 "title": item["title"],
                 "snippet": markdown[:1000],
                 "markdown": markdown,
+                "content_hash": item.get("content_hash"),
+                "content_status": "complete" if len(markdown) == len(full_markdown) else "truncated",
                 "category": "user_notes",
                 "freshness": item.get("updated_at") or "unknown",
                 "source": "user_notes",

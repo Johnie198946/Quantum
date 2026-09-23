@@ -915,9 +915,35 @@ public final class TenantSessionCoordinator: ObservableObject {
         var localNoteSnapshot: [ChatLocalNoteDTO] = []
         var localNoteCharacters = 0
         // Ordinary web/general questions must not upload every local note. Only
-        // explicit local/combined knowledge requests receive a bounded snapshot.
-        if contextScope.mode == .localOnly || contextScope.mode == .combined {
-            for note in (KnowledgeNoteStore.shared.notes + KnowledgeNoteStore.shared.archivedNotes).prefix(12) {
+        // explicit local/combined knowledge requests or sessions with uploaded
+        // attachments receive a bounded snapshot.
+        let sessionAttachmentNoteIds: Set<String>
+        if let activeAttachmentId = latestReadyDocumentSourceId() {
+            // The most recently ready upload is the active document for this
+            // chat. Bind auto-mode context to that exact private note/source.
+            sessionAttachmentNoteIds = [activeAttachmentId]
+        } else {
+            sessionAttachmentNoteIds = []
+        }
+        if contextScope.mode == .localOnly || contextScope.mode == .combined || !sessionAttachmentNoteIds.isEmpty {
+            let allNotes = KnowledgeNoteStore.shared.notes + KnowledgeNoteStore.shared.archivedNotes
+            let candidateNotes: [KnowledgeNote]
+            if contextScope.mode == .localOnly || contextScope.mode == .combined {
+                candidateNotes = allNotes.sorted { a, b in
+                    let aIsAttachment = sessionAttachmentNoteIds.contains(a.id)
+                    let bIsAttachment = sessionAttachmentNoteIds.contains(b.id)
+                    if aIsAttachment && !bIsAttachment { return true }
+                    if !aIsAttachment && bIsAttachment { return false }
+                    return a.updatedAt > b.updatedAt
+                }
+            } else {
+                // Auto mode must not leak unrelated local notes: attach only the
+                // documents already visible in this chat session.
+                candidateNotes = allNotes
+                    .filter { sessionAttachmentNoteIds.contains($0.id) }
+                    .sorted { $0.updatedAt > $1.updatedAt }
+            }
+            for note in candidateNotes.prefix(12) {
                 let markdown = String(KnowledgeNoteStore.shared.markdown(for: note).prefix(8_000))
                 guard localNoteCharacters + markdown.count <= 40_000 else { break }
                 localNoteSnapshot.append(ChatLocalNoteDTO(
@@ -943,7 +969,8 @@ public final class TenantSessionCoordinator: ObservableObject {
             messages: recoveryContext?.messages ?? [],
             truncated: recoveryContext?.truncated ?? false,
             sourceSessions: recoveryContext?.sourceSessions ?? [],
-            localNotes: localNoteSnapshot
+            localNotes: localNoteSnapshot,
+            activeDocumentNoteId: sessionAttachmentNoteIds.first
         ) : nil
         let userMessage = ChatMessage(
             sessionId: sid, role: .user, content: text, quotedContext: quote
@@ -1185,8 +1212,10 @@ public final class TenantSessionCoordinator: ObservableObject {
         for message in messages.reversed() {
             for block in message.blocks.reversed() {
                 if case .attachment(let attachment) = block,
-                   let sourceId = attachment.sourceId {
-                    return sourceId
+                   attachment.state == .ready,
+                   let noteId = attachment.noteId,
+                   !noteId.isEmpty {
+                    return noteId
                 }
             }
         }
@@ -3319,12 +3348,22 @@ public final class TenantSessionCoordinator: ObservableObject {
             do {
                 guard sizeBytes <= InboxFileManager.maxFileSizeBytes else { throw APIError.network("文档超过 25 MB 上限") }
                 let ext = url.pathExtension.lowercased()
-                guard ["pdf", "docx"].contains(ext) else { throw APIError.network("仅支持 PDF 或 DOCX；旧版 .doc 暂不支持") }
+                guard ["pdf", "docx", "pptx"].contains(ext) else { throw APIError.network("仅支持 PDF、DOCX 或 PPTX 文档") }
                 if let preview = await InboxFileManager.shared.thumbnailData(at: url) {
                     updateAttachmentPreview(messageId: msg.id, attachmentId: attachment.id, data: preview)
                 }
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                let mime = ext == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                let mime: String
+                switch ext {
+                case "pdf":
+                    mime = "application/pdf"
+                case "docx":
+                    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                case "pptx":
+                    mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                default:
+                    mime = "application/octet-stream"
+                }
                 let receipt = try await APIClient.shared.uploadDocument(data: data, filename: name, contentType: mime)
                 updateAttachment(messageId: msg.id, attachmentId: attachment.id, receipt: receipt)
                 guard receipt.status == "ready" else { return }

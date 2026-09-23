@@ -307,6 +307,7 @@ class ClientSessionContext(BaseModel):
     # It is covered by the signed client-context capability and never becomes
     # a tenant Wiki source.
     local_notes: List[LocalNoteContext] = Field(default_factory=list, max_length=50)
+    active_document_note_id: Optional[str] = Field(None, min_length=1, max_length=128)
 
 
 class QWSBusinessContext(BaseModel):
@@ -466,6 +467,10 @@ async def _call_hermes(
     knowledge_capability: Optional[str] = None, policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
+    request_id: Optional[str] = None,
+    client_session_context: Optional[Dict[str, Any]] = None,
+    client_context_capability: Optional[str] = None,
+    client_capabilities: Optional[List[str]] = None,
 ) -> tuple[str, List[ReasoningStep]]:
     """透传 Hermes bridge，返回 (reply, reasoning)。"""
     _last_hermes_usage.set({})
@@ -483,6 +488,14 @@ async def _call_hermes(
         payload["knowledge_query"] = knowledge_query
     if agent_config:
         payload["agent_config"] = agent_config
+    if request_id:
+        payload["request_id"] = request_id
+    if client_session_context is not None:
+        payload["client_session_context"] = client_session_context
+    if client_context_capability:
+        payload["client_context_capability"] = client_context_capability
+    if client_capabilities:
+        payload["client_capabilities"] = client_capabilities
     async with httpx.AsyncClient(timeout=HERMES_TIMEOUT) as client:
         r = await client.post(
             _bridge_url_for_placement(
@@ -516,6 +529,10 @@ async def _call_hermes_recorded(
     policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
+    request_id: Optional[str] = None,
+    client_session_context: Optional[Dict[str, Any]] = None,
+    client_context_capability: Optional[str] = None,
+    client_capabilities: Optional[List[str]] = None,
 ) -> tuple[str, List[ReasoningStep]]:
     started = time.perf_counter()
     quota_owned = bool((agent_config or {}).get("inference_policy"))
@@ -529,6 +546,10 @@ async def _call_hermes_recorded(
             policy_version=policy_version,
             knowledge_query=knowledge_query,
             agent_config=agent_config,
+            request_id=request_id,
+            client_session_context=client_session_context,
+            client_context_capability=client_context_capability,
+            client_capabilities=client_capabilities,
         )
         success = bool(reply) and not reply.lstrip().startswith("⚠️")
         if not quota_owned:
@@ -955,6 +976,10 @@ def _classify_stream_request(
     """
     decision = classify_request(
         question or req.question,
+        quoted_context=req.quoted_context,
+        has_local_notes=bool(
+            req.client_session_context and req.client_session_context.local_notes
+        ),
         explicit_agent=(
             delegated
             or bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
@@ -1030,6 +1055,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
 
     skill_id = validate_chat_skill(req.skill_id)
     goal = req.question
+    if req.quoted_context:
+        quote = req.quoted_context.strip()
+        if quote:
+            goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
     policy = await _resolve_chat_policy(payload)
     agent, invocation = await _resolve_agent_route(
         question=req.question, requested_agent_id=req.agent_id, payload=payload
@@ -1079,6 +1108,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     delegated_target = invocation.agent if invocation.status == "matched" else None
     triage = classify_request(
         req.question,
+        quoted_context=req.quoted_context,
+        has_local_notes=bool(
+            req.client_session_context and req.client_session_context.local_notes
+        ),
         explicit_agent=(
             delegated_target is not None
             or bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
@@ -1113,6 +1146,19 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     effective_request_id = req.request_id or hashlib.sha256(
         f"{isolated_session_id}\0{req.question}".encode()
     ).hexdigest()[:32]
+    client_context = _validated_client_session_context(
+        req.client_session_context, req.session_id
+    )
+    client_context_capability: str | None = None
+    if client_context is not None:
+        client_context_capability = mint_client_context_capability(
+            tenant_key=str(payload.get("tenant_key") or "public"),
+            user_id=str(payload.get("user_id") or payload.get("sub") or "anonymous"),
+            session_id=isolated_session_id,
+            request_id=effective_request_id,
+            policy_version=policy.policy_version,
+            context_hash=context_digest(client_context),
+        )
     try:
         await reserve_inference(payload, effective_request_id, inference)
     except InferenceQuotaExceeded as error:
@@ -1172,6 +1218,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
+                request_id=effective_request_id,
+                client_session_context=client_context,
+                client_context_capability=client_context_capability,
+                client_capabilities=req.client_capabilities,
             )
         else:
             model_attempted = True
@@ -1182,6 +1232,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
+                request_id=effective_request_id,
+                client_session_context=client_context,
+                client_context_capability=client_context_capability,
+                client_capabilities=req.client_capabilities,
             )
         answer = trim_boilerplate(reply)
         citations = extract_citations(answer)
