@@ -98,6 +98,21 @@ from backend.services.chat_triage import (  # noqa: E402
     PROFESSIONAL_TASK,
 )
 from backend.services.agent_capabilities import SAFE_GLOBAL_TOOLS  # noqa: E402
+from backend.services.html_illustration import (  # noqa: E402
+    embed_illustration,
+    illustration_prompt_instruction,
+    select_illustration_context,
+    validate_illustration_prompt,
+    validate_illustration_svg,
+)
+from backend.services.html_tool_renderer import secure_html_tool  # noqa: E402
+from backend.services.tenant_coder_tools import (  # noqa: E402
+    patch_text as tenant_coder_patch,
+    read_text as tenant_coder_read,
+    run_command as tenant_coder_run,
+    search_text as tenant_coder_search,
+    write_text as tenant_coder_write,
+)
 from backend.services.skill_router import (  # noqa: E402
     apply_routing_overrides,
     candidate_prompt,
@@ -1524,6 +1539,8 @@ _sandbox_tool_context = _PropagatedRequestContext("qws_sandbox_tool_context")
 _skill_route_context = _PropagatedRequestContext("qws_skill_route_context")
 _sandbox_tool_registration_lock = threading.Lock()
 _sandbox_tool_registered = False
+_tenant_coder_tool_registration_lock = threading.Lock()
+_tenant_coder_tools_registered = False
 _client_context_tool_context = _PropagatedRequestContext("qws_client_context_tool_context")
 _client_context_tool_registration_lock = threading.Lock()
 _client_context_tools_registered = False
@@ -2608,6 +2625,45 @@ def _ensure_tenant_skill_tool_registered() -> None:
         _sandbox_tool_registered = True
 
 
+def _tenant_coder_dispatch(operation: str, args: dict[str, Any]) -> str:
+    sandbox = getattr(_sandbox_tool_context, "value", None)
+    if not isinstance(sandbox, TenantHermesSandbox):
+        return json.dumps({"success": False, "error": "sandbox_unavailable"})
+    try:
+        if operation == "read":
+            result = tenant_coder_read(sandbox, str(args.get("path") or ""))
+        elif operation == "write":
+            result = tenant_coder_write(sandbox, str(args.get("path") or ""), str(args.get("content") or ""))
+        elif operation == "patch":
+            result = tenant_coder_patch(sandbox, str(args.get("path") or ""), str(args.get("old_string") or ""), str(args.get("new_string") or ""))
+        elif operation == "search":
+            result = tenant_coder_search(sandbox, str(args.get("pattern") or ""), file_glob=str(args.get("file_glob") or "*"))
+        elif operation == "terminal":
+            result = tenant_coder_run(sandbox, str(args.get("command") or ""), timeout=int(args.get("timeout") or 180))
+        else:
+            raise ValueError("unsupported_tenant_coder_operation")
+        return json.dumps({"success": True, **result}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"success": False, "error": str(exc)[:500]}, ensure_ascii=False)
+
+
+def _ensure_tenant_coder_tools_registered() -> None:
+    global _tenant_coder_tools_registered
+    if _tenant_coder_tools_registered:
+        return
+    with _tenant_coder_tool_registration_lock:
+        if _tenant_coder_tools_registered:
+            return
+        from tools.registry import registry
+
+        registry.register(name="tenant_read_file", toolset="tenant_coder", schema={"name": "tenant_read_file", "description": "Read a UTF-8 text file only from the authenticated tenant coding workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("read", args))
+        registry.register(name="tenant_write_file", toolset="tenant_coder", schema={"name": "tenant_write_file", "description": "Write a UTF-8 text file only inside the authenticated tenant coding workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("write", args))
+        registry.register(name="tenant_patch_file", toolset="tenant_coder", schema={"name": "tenant_patch_file", "description": "Replace one unique text occurrence in a tenant workspace file.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_string": {"type": "string"}, "new_string": {"type": "string"}}, "required": ["path", "old_string", "new_string"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("patch", args))
+        registry.register(name="tenant_search_files", toolset="tenant_coder", schema={"name": "tenant_search_files", "description": "Regex-search text files only inside the tenant coding workspace.", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "file_glob": {"type": "string"}}, "required": ["pattern"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("search", args))
+        registry.register(name="tenant_terminal", toolset="tenant_coder", schema={"name": "tenant_terminal", "description": "Run a shell command in a disposable networkless container with only the current tenant workspace mounted. Host, shared platform, deployment and other tenant paths are absent.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}}, "required": ["command"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("terminal", args))
+        _tenant_coder_tools_registered = True
+
+
 def _session_context_read_tool(args: dict[str, Any], **_kwargs) -> str:
     context = getattr(_client_context_tool_context, "value", None)
     if not isinstance(context, dict) or not isinstance(context.get("transcript"), dict):
@@ -3383,6 +3439,10 @@ def _workflow_toolsets(node: dict[str, Any]) -> list[str]:
     """按节点最小授权工具，避免把整套 CLI Schema 重复塞进每次推理。"""
     node_type = str(node.get("node_type") or "")
     params = node.get("parameters") or {}
+    if params.get("workspace_mode") == "tenant_coder":
+        # Never grant Hermes' host terminal/files. These names route only to
+        # the authenticated workspace and the root-owned networkless runner.
+        return ["tenant_coder", "tenant_skills"]
     if node_type == "KNOWLEDGE_RETRIEVAL":
         # Tenant knowledge is fetched by Bridge through Knowledge Gateway before
         # model execution. Hermes may only supplement an explicit evidence gap
@@ -3447,7 +3507,25 @@ def _run_workflow_node_in_process(
     if sandbox is None:
         raise RuntimeError("tenant_sandbox_unavailable")
     _ensure_tenant_skill_tool_registered()
+    if (node.get("parameters") or {}).get("workspace_mode") == "tenant_coder":
+        _ensure_tenant_coder_tools_registered()
     _sandbox_tool_context.value = sandbox
+    design_skill_context, design_skill_receipts = _load_workflow_design_skills(node, sandbox)
+    if design_skill_context:
+        goal = f"{goal}\n\n以下设计 Skill 已由可信运行时加载，必须逐项应用；不得仅复述名称：\n{design_skill_context}"
+        if len(goal) > MAX_INPUT:
+            raise RuntimeError("design_skill_context_exceeds_node_input_budget")
+        if event_callback:
+            for receipt in design_skill_receipts:
+                event_callback(
+                    "skill_load",
+                    tool="skill_view",
+                    tool_call_id=f"design-skill:{receipt['name']}",
+                    idempotency_key=f"design-skill:{receipt['name']}:{receipt['sha256']}",
+                    status="done",
+                    message=f"已加载设计 Skill：{receipt['name']}",
+                    receipt=receipt,
+                )
     session_db = _create_sandbox_session_db(sandbox)
     from agent.runtime_cwd import set_session_cwd
 
@@ -3583,9 +3661,11 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_design": "presentation_design",
         "presentation": "presentation",
         "html_design": "html_design",
+        "illustration_prompt": "illustration_prompt",
+        "illustration_svg": "illustration_svg",
         "html": "html", "htm": "html", "网页": "html", "网页工具": "html",
     }
-    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "html"} else "markdown")
+    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html"} else "markdown")
     extension, mime_type = {
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
@@ -3597,6 +3677,8 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_design": ("json", "application/json"),
         "presentation": ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
         "html_design": ("json", "application/json"),
+        "illustration_prompt": ("json", "application/json"),
+        "illustration_svg": ("svg", "image/svg+xml"),
         "html": ("html", "text/html; charset=utf-8"),
     }[render_type]
     if render_type == "data" and raw_type == "csv":
@@ -3616,6 +3698,10 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
         return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
     if render_type == "html_design":
         return '只输出合法 JSON：{"surface":"configure|operate|explore","user_flow":["步骤"],"tokens":{"background":"#F5F5F7","surface":"#FFFFFF","text":"#1D1D1F","muted":"#6E6E73","accent":"#0071E3","radius":"12px"},"components":[{"name":"组件","states":["default","focus","error","success"]}],"responsive":"iPhone 375px first","accessibility":["WCAG 2.1 AA"]}。必须使用单一强调色、SF 系统字体、44px 触控目标、清晰焦点、深浅色和 reduced-motion；避免通用卡片阵列、无意义渐变、默认玻璃拟态与装饰性数据。'
+    if render_type == "illustration_prompt":
+        return "只输出合法 JSON 插图 Prompt；平台将根据真实当前段落及相邻上下文进行确定性核验。"
+    if render_type == "illustration_svg":
+        return '只输出一个自包含 SVG 根元素，必须包含 viewBox、title、desc；禁止脚本、外链、href、foreignObject 和嵌入图片。优先形状、留白、层级和单一强调色，不依赖小字传达语义。'
     if render_type == "html":
         return "只输出完整 HTML（从 <!doctype html> 到 </html>），不要 Markdown 围栏或解释。单文件内联 CSS/JS、不得引用 CDN/外链/网络请求。采用 iOS 优先的 Configure/Operate 组合界面：SF 系统字体、单一品牌强调色、语义化结构、44px 触控目标、WCAG AA 对比度、键盘焦点、深色/浅色/system 主题、响应式布局、prefers-reduced-motion。实现用户要求的真实交互以及默认、空、错误、成功状态；禁止通用三卡片模板、无意义渐变、默认玻璃拟态、emoji 和虚构指标。"
     if render_type == "presentation_outline":
@@ -3740,6 +3826,43 @@ def _bind_approved_presentation_inputs(
     )
 
 
+def _workflow_illustration_context(run: dict[str, Any]) -> dict[str, Any]:
+    source_text = str((run.get("source_document") or {}).get("text") or "")
+    return select_illustration_context(source_text or str(run.get("goal") or ""), str(run.get("goal") or ""))
+
+
+def _load_workflow_design_skills(
+    node: dict[str, Any], sandbox: TenantHermesSandbox
+) -> tuple[str, list[dict[str, str]]]:
+    names = (node.get("parameters") or {}).get("design_skills") or []
+    if not names:
+        return "", []
+    blocks: list[str] = []
+    receipts: list[dict[str, str]] = []
+    attachments = {
+        "ui-ux-pro-max": ["references/quick-reference.md", "references/pro-rules.md"],
+        "popular-web-designs": ["templates/apple.md"],
+    }
+    for raw_name in names:
+        name = str(raw_name).strip()
+        loaded = read_sandbox_skill(sandbox=sandbox, name=name)
+        if not loaded:
+            raise RuntimeError(f"required_design_skill_unavailable:{name}")
+        pieces = [loaded]
+        skill_dir = sandbox.template_skills / name
+        for relative in attachments.get(name, []):
+            candidate = skill_dir / relative
+            if candidate.is_file() and not candidate.is_symlink():
+                pieces.append(candidate.read_text(encoding="utf-8"))
+        full = "\n\n".join(pieces)
+        digest = hashlib.sha256(full.encode("utf-8")).hexdigest()
+        budget = 16_000 if name == "claude-design" else 10_000
+        compact = full if len(full) <= budget else full[: budget - 3_000] + "\n...[skill excerpt]...\n" + full[-3_000:]
+        blocks.append(f"### 已加载设计 Skill：{name}\n{compact}")
+        receipts.append({"name": name, "sha256": digest, "status": "loaded"})
+    return "\n\n".join(blocks), receipts
+
+
 def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     params = node.get("parameters") or {}
     artifact_contract = _workflow_artifact_contract(node)
@@ -3747,6 +3870,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     presentation_output = output_format.startswith("presentation")
     document_output = output_format in {"word", "docx", "word 文档", "word文档"}
     html_output = output_format in {"html", "html_design", "htm", "网页", "网页工具"}
+    illustration_output = output_format in {"illustration_prompt", "illustration_svg"}
     completed = []
     current_id = str(node.get("id") or "")
     revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
@@ -3761,9 +3885,9 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 5000 if presentation_output else 16000 if html_output else 8000 if document_output else 1800
+            upstream_limit = 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
-            if presentation_output or document_output or html_output:
+            if presentation_output or document_output or html_output or illustration_output:
                 if len(output) > upstream_limit:
                     raise RuntimeError(f"上游成果 {node_id} 超过 {upstream_limit} 字符；禁止静默截断")
             completed.append(f"- {candidate.get('name') or node_id}: {output[:upstream_limit]}")
@@ -3774,16 +3898,23 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     output_char_limit = max(
         600,
         min(
-            48000 if html_output else 8000 if presentation_output or document_output else 2200,
-            node_budget * 2 if html_output else node_budget // 2,
+            48000 if html_output else 24000 if illustration_output else 8000 if presentation_output or document_output else 2200,
+            node_budget * 2 if html_output or illustration_output else node_budget // 2,
         ),
     )
-    tool_rule = (
-        "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
-        "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
-        if node_type == "KNOWLEDGE_RETRIEVAL"
-        else "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
-    )
+    if params.get("workspace_mode") == "tenant_coder":
+        tool_rule = (
+            "可使用 tenant_read_file/tenant_write_file/tenant_patch_file/tenant_search_files/tenant_terminal。"
+            "它们只操作经服务端认证的当前租户 workspace；路径必须相对，命令在无网络容器中执行。"
+            "不得尝试访问共享平台、Hermes 全局目录、部署目录或其他租户。完成必要编辑/验证后仍须返回格式契约要求的完整成果。"
+        )
+    elif node_type == "KNOWLEDGE_RETRIEVAL":
+        tool_rule = (
+            "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
+            "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
+        )
+    else:
+        tool_rule = "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
     upstream = chr(10).join(completed) if completed else "无直接依赖或上游暂无成果"
     source = run.get("source_document") or {}
     source_text = str(source.get("text") or "")
@@ -3800,6 +3931,8 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         if len(source_text) > 80_000:
             raise RuntimeError("私有源文档超过 80000 字符；文档生成工作流禁止静默截断")
         upstream += f"\n\n私有源文档（{source.get('filename', 'document')}，共 {len(source_text)} 字符）：\n{source_text}"
+    if output_format == "illustration_prompt":
+        upstream += "\n\n" + illustration_prompt_instruction(_workflow_illustration_context(run))
     agent_config = run.get("agent_config") or {}
     composition = agent_config.get("composition") or {}
     allowed_agents = set(composition.get("capability_agent_ids") or []) | set(
@@ -3838,7 +3971,7 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         f"上游上下文：\n{upstream}"
     )
     input_limit = MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else MAX_INPUT
-    if (presentation_output or document_output or html_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
+    if (presentation_output or document_output or html_output or illustration_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]
 
@@ -4022,6 +4155,50 @@ def _workflow_run_sync(execution_id: str) -> None:
             approved_design = None
             approved_outline = None
             render_type = str(contract["render_type"])
+            if render_type == "illustration_prompt":
+                context = _workflow_illustration_context(run)
+                try:
+                    reply = validate_illustration_prompt(reply, context)
+                except (ValueError, json.JSONDecodeError) as exc:
+                    with _workflow_runs_lock:
+                        _workflow_event(
+                            run,
+                            "node_repairing",
+                            node_id=node_id,
+                            usage=node_usage,
+                            message=f"插图 Prompt 未通过上下文核验，正在修复：{str(exc)[:240]}",
+                        )
+                    repair_prompt = (
+                        node_prompt
+                        + f"\n\n上一次输出未通过确定性核验：{str(exc)[:240]}。"
+                        "重新输出一个完整 JSON；必须逐字包含 subject、semantic_relationship、style、composition 的值于 prompt 字段。"
+                    )[:MAX_INPUT]
+                    reply, new_sid, raw_usage = _run_workflow_node_in_process(
+                        repair_prompt,
+                        node,
+                        str(hermes_sid) if hermes_sid else None,
+                        execution_id,
+                        event_callback=_node_event,
+                        sandbox=sandbox,
+                    )
+                    if new_sid:
+                        hermes_sid = new_sid
+                    node_usage = _merge_workflow_usage(
+                        node_usage, _accumulate_usage(run, raw_usage)
+                    )
+                    reply = validate_illustration_prompt(reply, context)
+            elif render_type == "illustration_svg":
+                prompt_state = (run.get("nodes") or {}).get("html_tool_illustration_prompt") or {}
+                prompt_json = str(prompt_state.get("output") or "")
+                if not prompt_json:
+                    raise RuntimeError("verified_illustration_prompt_missing")
+                reply = validate_illustration_svg(reply, prompt_json)
+            elif render_type == "html":
+                svg_state = (run.get("nodes") or {}).get("html_tool_illustration") or {}
+                prompt_state = (run.get("nodes") or {}).get("html_tool_illustration_prompt") or {}
+                prompt_json = str(prompt_state.get("output") or "")
+                svg = validate_illustration_svg(str(svg_state.get("output") or ""), prompt_json)
+                reply = secure_html_tool(embed_illustration(reply, svg))
             if render_type.startswith("presentation"):
                 try:
                     reply = _normalize_presentation_contract_reply(render_type, reply)

@@ -286,10 +286,37 @@ def build_html_tool_plan(
                 "approval_gate": "design",
                 "design_skills": [
                     "ui-ux-pro-max", "claude-design",
-                    "popular-web-designs/apple", "design-md",
+                    "popular-web-designs", "design-md",
                 ],
                 "instruction": "先明确唯一主界面类型（Configure 或 Operate），再按 iOS 优先给出可审阅设计规范：信息架构、任务流、组件状态、色彩与排版 token、深浅色、无障碍、响应式及动效原则；最后执行 AI 设计俗套自检。",
                 "max_tokens": 7000,
+            },
+        },
+        {
+            "id": "html_tool_illustration_prompt", "node_type": "LLM_INFERENCE",
+            "name": "设计并核验章节插图 Prompt",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "illustration_prompt",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "读取当前段落及相邻上下文，建立主体、语义关系、必含与禁止元素、风格、构图、可读性和无障碍说明；不得仅按章节标题套模板。",
+                "max_tokens": 6000,
+            },
+        },
+        {
+            "id": "html_tool_illustration", "node_type": "LLM_INFERENCE",
+            "name": "生成章节语义插图",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "illustration_svg",
+                "workspace_mode": "tenant_coder",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "严格按已核验 Prompt 生成自包含 SVG 插图；画面必须表达当前段落的核心语义关系，使用 title/desc 提供无障碍说明，不得包含脚本、外链、foreignObject 或依赖小字传达信息。",
+                "max_tokens": 10000,
             },
         },
         {
@@ -297,11 +324,12 @@ def build_html_tool_plan(
             "name": "生成自包含 HTML 工具",
             "parameters": {
                 **common, "agent_id": "coder", "output_format": "html",
+                "workspace_mode": "tenant_coder",
                 "design_skills": [
                     "ui-ux-pro-max", "claude-design",
-                    "popular-web-designs/apple", "design-md",
+                    "popular-web-designs", "design-md",
                 ],
-                "instruction": "严格沿用已批准设计方案，生成一个完整、自包含、可离线运行的 HTML 工具；实现真实交互和默认、空、错误、成功状态。",
+                "instruction": "严格沿用已批准设计方案，生成一个完整、自包含、可离线运行的 HTML 工具；实现真实交互和默认、空、错误、成功状态，并在内容语义对应位置保留 <!-- QUANTUM_ILLUSTRATION -->，平台会嵌入已核验插图。",
                 "max_tokens": 24000,
             },
         },
@@ -315,7 +343,12 @@ def build_html_tool_plan(
         "nodes": nodes,
         "edges": [
             {"source": "html_tool_analysis", "target": "html_tool_design"},
+            {"source": "html_tool_analysis", "target": "html_tool_illustration_prompt"},
+            {"source": "html_tool_design", "target": "html_tool_illustration_prompt"},
+            {"source": "html_tool_illustration_prompt", "target": "html_tool_illustration"},
+            {"source": "html_tool_design", "target": "html_tool_illustration"},
             {"source": "html_tool_analysis", "target": "html_tool_file"},
             {"source": "html_tool_design", "target": "html_tool_file"},
+            {"source": "html_tool_illustration", "target": "html_tool_file"},
         ],
     }

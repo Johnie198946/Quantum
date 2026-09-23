@@ -1,0 +1,37 @@
+[Unit]
+Description=Quantum tenant Coder sandbox runner
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=quantumn-hermes
+WorkingDirectory=/opt/ai-lab-platform
+Environment=PYTHONUNBUFFERED=1
+Environment=QUANTUM_CODER_IMAGE=ai-lab-platform-api:offline
+ExecStart=/usr/bin/python3 scripts/tenant_coder_runner.py
+Restart=always
+RestartSec=3
+RuntimeDirectory=quantum-tenant-coder
+RuntimeDirectoryMode=0750
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/quantum-tenant-coder
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

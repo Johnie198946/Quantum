@@ -151,6 +151,7 @@ def artifact_mime_type(artifact: WorkflowArtifact) -> str:
         "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "pdf": "application/pdf",
         "html": "text/html; charset=utf-8",
+        "svg": "image/svg+xml",
     }
     return known.get(extension) or mimetypes.guess_type(f"artifact.{extension}")[0] or "application/octet-stream"
 

@@ -24,14 +24,22 @@ def test_html_workflow_reuses_reviewed_design_gate_and_scoped_coder():
 
     assert plan is not None
     assert [node["id"] for node in plan["nodes"]] == [
-        "html_tool_analysis", "html_tool_design", "html_tool_file"
+        "html_tool_analysis",
+        "html_tool_design",
+        "html_tool_illustration_prompt",
+        "html_tool_illustration",
+        "html_tool_file",
     ]
-    design, final = plan["nodes"][1:]
+    design = plan["nodes"][1]
+    illustration = plan["nodes"][3]
+    final = plan["nodes"][4]
     assert design["parameters"]["approval_gate"] == "design"
     assert design["parameters"]["agent_id"] == "coder"
     assert design["parameters"]["design_skills"] == [
-        "ui-ux-pro-max", "claude-design", "popular-web-designs/apple", "design-md"
+        "ui-ux-pro-max", "claude-design", "popular-web-designs", "design-md"
     ]
+    assert illustration["parameters"]["workspace_mode"] == "tenant_coder"
+    assert final["parameters"]["workspace_mode"] == "tenant_coder"
     assert final["parameters"]["output_format"] == "html"
     assert final["parameters"]["allow_network"] is False
 

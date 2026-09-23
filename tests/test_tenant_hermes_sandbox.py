@@ -219,7 +219,7 @@ def test_legacy_user_state_db_moves_into_profile_home(tmp_path: Path):
     assert sandbox.state_db.read_bytes() == b"existing-session-db"
     assert not legacy.exists()
     manifest = json.loads((sandbox.hermes_home / "profile.json").read_text())
-    assert manifest["version"] == 3
+    assert manifest["version"] == 4
     assert manifest["legacy_state_db_migrated"] is True
 
 

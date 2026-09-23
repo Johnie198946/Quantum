@@ -1257,7 +1257,7 @@ def test_restart_hermes_runtime_absent_units_succeed_and_restart_failure_propaga
         env={**os.environ, "AI_LAB_UPDATE_LIBRARY_ONLY": "1"}, capture_output=True, text=True,
     )
     assert absent.returncode == 0, absent.stderr
-    assert absent.stdout.count("hermes_restart_status=skipped_absent") == 5
+    assert absent.stdout.count("hermes_restart_status=skipped_absent") == 6
 
     failed = subprocess.run(
         ["bash", "-c", f'''source "{UPDATE_SCRIPT}"
@@ -1279,7 +1279,7 @@ def test_server_deploy_enables_units_without_starting_them_during_quarantine() -
         "restart_hermes_runtime() {"
     )]
     enable = install_function.index(
-        "systemctl enable hermes-bridge.service hermes-chat-worker.service"
+        "systemctl enable quantum-tenant-coder.service hermes-bridge.service hermes-chat-worker.service"
     )
     enabled_check = install_function.index("verify_hermes_units_enabled", enable)
     assert enable < enabled_check
