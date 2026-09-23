@@ -21,12 +21,18 @@
 
 ## 交付状态
 
-- status: `PUSHED`（未部署）
-- local_commit / remote_sha: `944249a35724edf1996b76bcf6aaa17f2c29f0b5`，GitHub `main` 已回读一致。
+- status: `RELEASED`（生产端已回读）
+- repository: GitHub `main` 回读为 `c3297c04d9a67c04747fc2bc2f936798a8c10fb1`；该提交包含第四次独立修订许可与相应测试。
+- production_runtime: API 容器 `running/healthy`；发布回读时镜像 revision 为 `d6a0f9a48e59bc95ab7f5b8c2fc123a322fe414c`。
+- publication_id: `publication-9b5b298fb96bd44dfccb04c36fad8134`
+- edition_id: `edition-ae6c48dcf93ebbd99b8ad3482627154d`
+- series / issue_date / state: `ai-toolkit` / `2026-09-21` / `published`
+- title: `用 Codex 开发个人工作台：从模糊需求到可验证成品`
+- content_sha256: `64a6a511dbf15bd0aed9becec75eaaf4c89763d77584d283d03efdf621affcb9`（生产 artifact 回读一致，27,804 bytes）
+- release_at: `2026-09-23T20:13:17.002284+00:00`
+- editorial: revision `4`，attempt `attempt-8b250865350b4c18b792abc08a49a752`，独立 reviewer `hermes:20260924_035616_2e1aa3`，state `approved`。
+- review_sha256: `15fdd9241677d74c64f824dfabd6c531de5ee27b2f39696f8b7d1ca00487d51b`
+- research_deposit: source SHA-256 `492b613320162e2c3a79bdd42a2d2e75b4fdd7cb07de86c7d7fca1088bffae21`；原始报告、编译 Wiki 与两处 compile log 均已回读。
+- verification_scope: `verify.py` 静态验收及 `node --check app.js` 通过；没有保存浏览器点击或视觉验收证据，正文已明确标注该边界。
 - Cron: 作者与独立审稿任务已原位更新并回读；作者每日 `08:00/14:00/18:00`，审稿 `10:00/10:30/16:00/16:30/20:00/20:30`，均启用。
-- server_before/server_after: 均为 `/opt/releases/ai-lab-platform-6d7619918701.hRYPgT`，`.deployed-sha=6d761991870150f65a7c1468388ccbb142eeba0e`。
-- deployment: 标准 exact-SHA 部署在原子切换前 fail-closed：`backend image revision mismatch: api=6d761991... expected=944249a...`；未改动线上 release。
-- health_check: 旧生产 API 容器 `running/healthy`。
-- functional_check: 本地 `57 passed`；Cron 提示回读包含 `ai-toolkit` 与 `research_deposit`。
-- rollback_point: 无需回滚，部署未越过镜像验证与原子切换。
-- remaining_risks: 需先构建并验证目标 SHA 的离线后端镜像、更新 attestation，再重跑 exact-SHA 部署；其后首期正文还须经过作者、独立审稿与确定性发行门禁。配置、调度或生成启动均不能代替出版成功。
+- release_command: 目标 edition 已发布；发行命令因同日其他系列缺刊返回非零汇总状态，但其 `released_edition_ids` 与生产回读均确认本期发布成功。
