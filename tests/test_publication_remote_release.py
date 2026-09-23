@@ -120,14 +120,14 @@ def test_release_uses_secure_fixed_contract_and_reports_new_and_today_counts(mon
     assert "path-only fixture" not in " ".join(calls[0][0])
 
 
-def test_partial_attention_exit3_accepts_result_only_release_and_preserves_raw_issues(monkeypatch, tmp_path, capsys):
+def test_partial_attention_is_observable_without_failing_other_releases(monkeypatch, tmp_path, capsys):
     module = _module()
     identity, known_hosts = _files(tmp_path)
     blocked = _item("blocked", "ai-practice", DAY, "blocked", ["review_missing_or_hash_mismatch"])
     missing = [{"series_id": "ai-practice", "issue_date": DAY, "status": "overdue_blocked"}]
     calls = _run(module, monkeypatch, [_status([]), _release(3, wrapped=False), _status([_item("new", "ai-history", DAY, "published"), blocked], missing)])
 
-    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
+    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert len(calls) == 3
     assert summary["observed_published_publication_id_delta"] == ["new"]
@@ -195,14 +195,15 @@ def test_invalid_target_publication_id_fails_before_ssh(monkeypatch, tmp_path, c
     assert "target publication ID is invalid" in capsys.readouterr().err
 
 
-def test_release_zero_with_blocked_or_missing_status_fails_attention(monkeypatch, tmp_path):
+def test_release_zero_with_blocked_or_missing_status_remains_an_alert(monkeypatch, tmp_path, capsys):
     module = _module()
     identity, known_hosts = _files(tmp_path)
     blocked = _item("blocked", "anthropic-originals", "2026-01-20", "blocked", ["review_missing"])
     missing = [{"series_id": "ai-practice", "issue_date": DAY, "status": "overdue_missing"}]
     _run(module, monkeypatch, [_status([]), _release(0), _status([blocked], missing)])
 
-    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
+    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
+    assert json.loads(capsys.readouterr().out)["global_attention"] is True
 
 
 def test_historical_blocked_does_not_poison_complete_current_day(monkeypatch, tmp_path):
@@ -316,12 +317,12 @@ def test_release_transport_failure_still_reads_and_reports_post_status(monkeypat
     subprocess.TimeoutExpired("status", 120),
     OSError("readback unavailable"),
 ])
-def test_release_exit3_survives_failed_post_status_and_reports_unknown(monkeypatch, tmp_path, capsys, failure):
+def test_failed_post_status_is_an_execution_failure_and_reports_unknown(monkeypatch, tmp_path, capsys, failure):
     module = _module()
     identity, known_hosts = _files(tmp_path)
     calls = _run(module, monkeypatch, [_status([]), _release(3), failure])
 
-    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
+    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 1
     summary = json.loads(capsys.readouterr().out)
     assert len(calls) == 3
     assert set(summary["totals"].values()) == {"unknown"}
@@ -394,29 +395,32 @@ def test_daily_series_requires_exactly_one_each_not_aggregate_two(monkeypatch, t
         _item("history-two", "ai-history", DAY, "published"),
     ])])
 
-    assert module.main(["--status-only", "--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 3
+    assert module.main(["--status-only", "--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
 
 
-def test_ai_toolkit_is_required_from_launch_date():
+def test_series_observability_is_discovered_from_status_not_a_global_constant():
     module = _module()
-    assert module._daily_series("2026-09-23") == ("ai-history", "ai-practice", "concept-fables")
-    assert module._daily_series("2026-09-24") == (
-        "ai-history", "ai-practice", "concept-fables", "ai-toolkit",
-    )
+    summary = module._summary({"items": [], "missing": [
+        {"series_id": "future-series", "issue_date": DAY, "status": "missing"},
+    ]})
+    assert summary["today"] == {
+        "date": DAY, "expected": 1, "published": 0,
+        "by_series": {"future-series": 0},
+    }
 
 
-@pytest.mark.parametrize("contradiction", [
+@pytest.mark.parametrize("attention", [
     {"blocked": [{"edition_id": "edition-blocked", "reasons": ["review_missing"]}]},
     {"missing": [{"series_id": "ai-practice", "series_title": "Practice", "issue_date": DAY, "status": "overdue_missing"}]},
 ])
-def test_success_release_rejects_blocked_or_overdue_missing(monkeypatch, tmp_path, contradiction):
+def test_success_release_preserves_blocked_or_overdue_alerts(monkeypatch, tmp_path, attention):
     module = _module()
     identity, known_hosts = _files(tmp_path)
     history = _item("history", "ai-history", DAY, "published")
     practice = _item("practice", "ai-practice", DAY, "published")
-    _run(module, monkeypatch, [_status([]), _release(**contradiction), _status([history, practice])])
+    _run(module, monkeypatch, [_status([]), _release(**attention), _status([history, practice])])
 
-    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 1
+    assert module.main(["--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
 
 
 def test_success_release_allows_nonoverdue_missing(monkeypatch, tmp_path):

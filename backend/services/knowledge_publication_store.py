@@ -944,7 +944,7 @@ class PublicationStore:
             db.close()
         missing = self.missing(actual)
         attention = bool(blocked or any(item["status"].startswith("overdue_") for item in missing))
-        return {"status": "attention_required" if attention else "ok", "released": released, "blocked": blocked,
+        return {"status": "ok", "attention_required": attention, "released": released, "blocked": blocked,
                 "superseded": superseded, "missing": missing, "at": _iso(actual)}
 
     def withdraw(self, publication_id: str, *, now: datetime | None = None) -> dict[str, Any]:

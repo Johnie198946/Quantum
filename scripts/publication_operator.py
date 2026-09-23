@@ -126,9 +126,8 @@ def main() -> int:
     except (OSError, UnicodeError, json.JSONDecodeError, PublicationError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2
-    ok = args.command != "release-due" or result["status"] == "ok"
-    print(json.dumps({"ok": ok, "result": result}, ensure_ascii=False, sort_keys=True))
-    return 0 if ok else 3
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":

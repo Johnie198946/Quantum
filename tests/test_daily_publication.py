@@ -163,7 +163,8 @@ def test_overdue_unpublished_series_report_actual_state(tmp_path):
 
     result = store.release_due(now=at(4))
 
-    assert result["status"] == "attention_required"
+    assert result["status"] == "ok"
+    assert result["attention_required"] is True
     assert {item["status"] for item in result["missing"]} == {"overdue_blocked", "overdue_missing"}
 
 

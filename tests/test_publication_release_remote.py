@@ -33,7 +33,7 @@ def fake_transport(monkeypatch):
 def test_legacy_no_config_never_calls_editorial(monkeypatch, capsys):
     calls = fake_transport(monkeypatch)
     monkeypatch.setattr(editorial, "finalize", lambda *a: pytest.fail("legacy must not finalize"))
-    assert release.main([]) == 3  # No synthetic daily editions in this fixture.
+    assert release.main([]) == 0  # No staged work is a valid independent sweep.
     assert calls == ["status", "release-due", "status"]
     assert json.loads(capsys.readouterr().out)["released_edition_ids"] == []
 
@@ -41,7 +41,7 @@ def test_legacy_no_config_never_calls_editorial(monkeypatch, capsys):
 def test_opt_in_finalizes_before_any_release(monkeypatch):
     calls = fake_transport(monkeypatch)
     monkeypatch.setattr(editorial, "finalize", lambda *a: calls.append("finalize") or {"items": []})
-    assert release.main(["--editorial-root", "/TEST-ONLY"]) == 3
+    assert release.main(["--editorial-root", "/TEST-ONLY"]) == 0
     assert calls == ["finalize", "status", "release-due", "status"]
 
 
@@ -60,5 +60,5 @@ def test_opt_in_error_prevents_release_and_reports_unknown(monkeypatch, capsys):
 def test_status_only_never_finalizes_even_if_configured(monkeypatch):
     calls = fake_transport(monkeypatch)
     monkeypatch.setattr(editorial, "finalize", lambda *a: pytest.fail("status-only must not write"))
-    assert release.main(["--status-only", "--editorial-root", "/TEST-ONLY"]) == 3
+    assert release.main(["--status-only", "--editorial-root", "/TEST-ONLY"]) == 0
     assert calls == ["status"]
