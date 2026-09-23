@@ -718,7 +718,7 @@ class PublicationStore:
             if current and current["state"] == "await_review":
                 raise PublicationError("current await_review attempt must reach a terminal review before changing target")
             failures = db.execute("SELECT COUNT(*) FROM editorial_attempts WHERE issue_id=? AND state IN ('failed','rejected')", (issue_id,)).fetchone()[0]
-            if failures >= 3:
+            if failures >= 4:
                 raise PublicationError("editorial retry limit reached")
             contract = make_editorial_contract(normalized["body"], **options,
                 revision=current["revision"] + 1 if current else 1,

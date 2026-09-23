@@ -52,10 +52,10 @@ def test_prepare_idempotent_transactional_revision_and_revert(tmp_path):
     assert first["attempt_id"] != third["attempt_id"]
 
 
-def test_rejection_three_times_terminal_and_gaps_persist(tmp_path):
+def test_rejection_four_times_terminal_and_gaps_persist(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
-    for revision in range(1, 4):
+    for revision in range(1, 5):
         attempt = store.prepare_editorial(value)
         assert attempt["revision"] == revision
         result = reject(store, value, attempt)
@@ -64,7 +64,7 @@ def test_rejection_three_times_terminal_and_gaps_persist(tmp_path):
     with pytest.raises(PublicationError, match="retry limit"):
         store.prepare_editorial(value)
     report = store.status_report()
-    assert len(report["editorial_attempts"]) == 3
+    assert len(report["editorial_attempts"]) == 4
     assert "mechanism" in {g["id"] for g in report["open_gaps"]}
 
 
