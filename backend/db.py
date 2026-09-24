@@ -70,7 +70,6 @@ async def init_db() -> None:
     import backend.models.workspace  # noqa: F401  (注册 QuantumWorkspace 控制面模型)
     import backend.models.resource_catalog  # noqa: F401  (注册数据集、模型、拓扑与监控注册表)
     import backend.models.feedback  # noqa: F401  (注册用户抱怨与日报投递账本)
-    import backend.models.capability_gateway  # noqa: F401  (注册 QCP 确认与幂等状态)
     from backend.services.knowledge_contribution_schema import (
         migrate_knowledge_contribution_v4,
     )
@@ -92,32 +91,7 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_llm_usage_identity)
         await conn.run_sync(_migrate_workspace_delivery_contract)
         await conn.run_sync(_migrate_workspace_intent_columns)
-        await conn.run_sync(_migrate_notification_owner_columns)
     await _backfill_workspace_intent_drafts()
-
-
-def _migrate_notification_owner_columns(connection) -> None:
-    """Add principal ownership without guessing owners or read time for legacy rows."""
-    schema = inspect(connection)
-    if "notifications" not in set(schema.get_table_names()):
-        return
-    existing = {item["name"] for item in schema.get_columns("notifications")}
-    if "user_id" not in existing:
-        connection.exec_driver_sql(
-            "ALTER TABLE notifications ADD COLUMN user_id VARCHAR(128)"
-        )
-    if "read_at" not in existing:
-        timestamp_type = "TIMESTAMP WITH TIME ZONE" if connection.dialect.name == "postgresql" else "DATETIME"
-        connection.exec_driver_sql(
-            f"ALTER TABLE notifications ADD COLUMN read_at {timestamp_type}"
-        )
-    connection.exec_driver_sql(
-        "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id)"
-    )
-    connection.exec_driver_sql(
-        "CREATE INDEX IF NOT EXISTS ix_notification_owner_read "
-        "ON notifications (tenant_key, user_id, read)"
-    )
 
 
 def _migrate_llm_usage_identity(connection) -> None:
@@ -319,9 +293,6 @@ def _migrate_workflow_lifecycle_columns(connection) -> None:
             "clarification_session_id": "VARCHAR(48)",
             "requirements_snapshot": "JSON NOT NULL DEFAULT '{}'",
             "primary_agent_id": "VARCHAR(32)",
-            "cancel_request_id": "VARCHAR(160)",
-            "cancel_request_hash": "VARCHAR(64)",
-            "cancellation_receipt": "JSON",
         }
         for name, definition in columns.items():
             if name not in existing:
@@ -331,10 +302,6 @@ def _migrate_workflow_lifecycle_columns(connection) -> None:
         connection.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_workflows_clarification_session_id "
             "ON workflows (clarification_session_id)"
-        )
-        connection.exec_driver_sql(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflows_cancel_request_id "
-            "ON workflows (tenant_key, created_by, cancel_request_id)"
         )
     if (
         "workflow_clarification_sessions" in tables
@@ -376,25 +343,6 @@ def _migrate_workflow_contract_columns(connection) -> None:
     """Add and backfill immutable plan/approval binding columns."""
     schema = inspect(connection)
     tables = set(schema.get_table_names())
-    if "workflows" in tables:
-        existing = {item["name"] for item in schema.get_columns("workflows")}
-        columns = {
-            "source_client_session_binding_id": "VARCHAR(64)",
-            "source_client_session_id": "VARCHAR(100)",
-        }
-        for name, definition in columns.items():
-            if name not in existing:
-                connection.exec_driver_sql(
-                    f'ALTER TABLE workflows ADD COLUMN "{name}" {definition}'
-                )
-        connection.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS ix_workflows_source_client_session_binding_id "
-            "ON workflows (source_client_session_binding_id)"
-        )
-        connection.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS ix_workflows_source_client_session_id "
-            "ON workflows (source_client_session_id)"
-        )
     if "workflow_plan_versions" in tables:
         existing = {item["name"] for item in schema.get_columns("workflow_plan_versions")}
         columns = {

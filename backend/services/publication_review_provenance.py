@@ -8,6 +8,7 @@ Only hashes of native messages leave the local machine, never private transcript
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import json
 import sqlite3
@@ -94,6 +95,23 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         if not isinstance(writers, list) or not writers or reviewer in writers:
             raise ValueError("native reviewer is not independent")
         manuscript, contract = request.get("manuscript"), request.get("quality_contract")
+        chunks = request.get("manuscript_gzip_b64_chunks")
+        compressed = request.get("manuscript_gzip_b64")
+        if manuscript is None and chunks is not None:
+            if (not isinstance(chunks, list) or not chunks
+                    or any(not isinstance(chunk, str) or not chunk or len(chunk) > 12 for chunk in chunks)):
+                raise ValueError("native request lacks actual review material")
+            compressed = "".join(chunks)
+        if manuscript is None and isinstance(compressed, str):
+            try:
+                manuscript = gzip.decompress(base64.b64decode(compressed, validate=True)).decode()
+            except (ValueError, OSError, UnicodeDecodeError) as exc:
+                raise ValueError("native request lacks actual review material") from exc
+        elif manuscript is None and isinstance(request.get("manuscript_b64"), str):
+            try:
+                manuscript = base64.b64decode(request["manuscript_b64"], validate=True).decode()
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("native request lacks actual review material") from exc
         if not isinstance(manuscript, str) or not isinstance(contract, dict):
             raise ValueError("native request lacks actual review material")
         if (contract.get("writer_sessions") != writers
@@ -103,8 +121,11 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         for writer in writers:
             if not isinstance(writer, str) or not writer.startswith("hermes:"):
                 raise ValueError("invalid native writer session")
-            author = db.execute("SELECT profile_name,user_id FROM sessions WHERE id=?", (writer[7:],)).fetchone()
-            if author is None or author["profile_name"] != profile or author["user_id"] != user_id:
+            author = db.execute("SELECT profile_name,user_id,source FROM sessions WHERE id=?", (writer[7:],)).fetchone()
+            local_owner_bridge = (user_id is None and profile == "default"
+                                  and author is not None and author["source"] in {"feishu", "lark"})
+            if (author is None or author["profile_name"] != profile
+                    or (author["user_id"] != user_id and not local_owner_bridge)):
                 raise ValueError("native writer owner/profile mismatch")
         payload = {
             "proof_version": "native-editorial-review-v1",

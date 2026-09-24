@@ -7,7 +7,7 @@ from backend.services.knowledge_catalog import (
 )
 
 
-def test_bookshelf_only_exposes_public_and_owned_admitted_books(tmp_path):
+def test_bookshelf_exposes_all_admitted_books_without_tenant_or_entitlement_gates(tmp_path):
     (tmp_path / "wiki").mkdir()
     (tmp_path / "wiki" / "public.md").write_text(
         "---\ntitle: Public\nclassification_status: approved\nsecurity_level: green\n"
@@ -57,8 +57,8 @@ def test_bookshelf_only_exposes_public_and_owned_admitted_books(tmp_path):
     shelves = bookshelf_catalog("tenant-a", tmp_path)
 
     books = [book for shelf in shelves for book in shelf["books"]]
-    assert {book["knowledge_id"] for book in books} == {"green", "red"}
-    assert len({book["id"] for book in books}) == 2
+    assert {book["knowledge_id"] for book in books} == {"green", "red", "yellow"}
+    assert len({book["id"] for book in books}) == 3
     public = next(book for book in books if book["knowledge_id"] == "green")
     private = next(book for book in books if book["knowledge_id"] == "red")
     assert public["title"] == "Public Handbook"
@@ -74,7 +74,7 @@ def test_bookshelf_only_exposes_public_and_owned_admitted_books(tmp_path):
     assert {
         book["knowledge_id"] for shelf in bookshelf_catalog("tenant-b", tmp_path)
         for book in shelf["books"]
-    } == {"green"}
+    } == {"green", "red", "yellow"}
 
     # Removing live publication approval revokes stale manifest admission.
     public_path = tmp_path / "wiki" / "public.md"

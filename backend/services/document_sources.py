@@ -23,6 +23,7 @@ MAX_PRESENTATION_SOURCE_CHARACTERS = 80_000
 SUPPORTED_DOCUMENTS = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 
@@ -122,7 +123,7 @@ def save_document_source(
             "legacy_doc_unsupported", "暂不支持旧版 .doc，请另存为 .docx"
         )
     if suffix not in SUPPORTED_DOCUMENTS:
-        raise DocumentSourceError("unsupported_document_type", "仅支持 PDF 或 DOCX")
+        raise DocumentSourceError("unsupported_document_type", "仅支持 PDF、DOCX 或 PPTX")
     if not data:
         raise DocumentSourceError("empty_document", "文档为空")
     if len(data) > MAX_DOCUMENT_BYTES:

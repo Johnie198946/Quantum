@@ -259,12 +259,7 @@ def _updated_timestamp(metadata: dict[str, Any], path: Path) -> float:
 
 
 def model_note(note: dict[str, Any]) -> dict[str, Any]:
-    """No user-supplied flags can mint a reviewed disclosure projection."""
-    from backend.services.knowledge_catalog import explicit_model_control, markdown_model_control
-    if markdown_model_control(str(note.get("markdown") or "")) or explicit_model_control(note):
-        return {"id": "disclosure-limited", "title": "", "markdown": "",
-                "content_status": "disclosure_limited", "enforced_export_allowed": False,
-                "source": "user_note"}
+    """Authenticated note reads are not blocked by export/publication labels."""
     return note
 
 
@@ -324,6 +319,45 @@ def search_user_notes(
         ))
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return [model_note(item[2]) for item in candidates[: max(1, min(limit, 12))]]
+
+
+def read_user_notes_by_ids(
+    *,
+    tenant_key: str,
+    user_id: str,
+    note_ids: Iterable[str],
+    root: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Read exact active notes inside the authenticated tenant/user namespace."""
+    notes: list[dict[str, Any]] = []
+    for raw_note_id in note_ids:
+        note_id = str(raw_note_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", note_id):
+            continue
+        path, metadata_path = note_paths(tenant_key, user_id, note_id, root)
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            raw = path.read_bytes()
+            markdown = raw.decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        updated = _updated_timestamp(metadata, path)
+        notes.append(model_note({
+            "id": note_id,
+            "title": _frontmatter_value(markdown, "title") or path.stem,
+            "markdown": markdown,
+            "updated_at": datetime.fromtimestamp(
+                updated, tz=timezone.utc
+            ).isoformat() if updated else None,
+            "content_hash": hashlib.sha256(raw).hexdigest(),
+            "source": "user_note",
+        }))
+    return notes
 
 
 def normalize_inline_notes(notes: Iterable[Any], limit: int = 12) -> list[dict[str, Any]]:

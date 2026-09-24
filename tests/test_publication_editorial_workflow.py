@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from backend.services.knowledge_publication_store import PublicationError, PublicationStore
-from test_daily_publication import at, bundle, ready
+from test_daily_publication import add_covers, at, bundle, ready
 from test_publication_editorial import synthetic_brief
 
 
@@ -52,10 +52,10 @@ def test_prepare_idempotent_transactional_revision_and_revert(tmp_path):
     assert first["attempt_id"] != third["attempt_id"]
 
 
-def test_rejection_three_times_terminal_and_gaps_persist(tmp_path):
+def test_rejection_four_times_terminal_and_gaps_persist(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
-    for revision in range(1, 4):
+    for revision in range(1, 5):
         attempt = store.prepare_editorial(value)
         assert attempt["revision"] == revision
         result = reject(store, value, attempt)
@@ -64,8 +64,58 @@ def test_rejection_three_times_terminal_and_gaps_persist(tmp_path):
     with pytest.raises(PublicationError, match="retry limit"):
         store.prepare_editorial(value)
     report = store.status_report()
-    assert len(report["editorial_attempts"]) == 3
+    assert len(report["editorial_attempts"]) == 4
     assert "mechanism" in {g["id"] for g in report["open_gaps"]}
+
+
+def test_retry_limit_allows_one_same_body_gap_closure_attempt(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    last = None
+    for _ in range(4):
+        last = reject(store, value, store.prepare_editorial(value))
+
+    open_gaps = [gap for gap in last["gaps"] if gap["state"] == "open"]
+    assert open_gaps
+    closure = copy.deepcopy(value)
+    closure["quality_contract"]["research_gaps"] = [
+        {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "该合成回归明确关闭继承缺口并保留原问题文本，仅验证受控恢复契约。",
+            "source_urls": ["https://example.org/source"],
+        }
+        for gap in open_gaps
+    ]
+    recovered = store.prepare_editorial(closure)
+    assert recovered["revision"] == 5
+    assert not [gap for gap in recovered["quality_contract"]["research_gaps"] if gap["state"] == "open"]
+
+    reject(store, closure, recovered)
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(closure)
+
+
+def test_retry_limit_gap_closure_cannot_change_body(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    last = None
+    for _ in range(4):
+        last = reject(store, value, store.prepare_editorial(value))
+    changed = draft(store, "## 变更正文\n\n重试上限后的恢复不得借机替换正文。")
+    changed["quality_contract"]["research_gaps"] = [
+        {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "即使字段完整也不能在受控缺口恢复轮次中变更已经审核过的正文内容。",
+            "source_urls": ["https://example.org/source"],
+        }
+        for gap in last["gaps"] if gap["state"] == "open"
+    ]
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(changed)
 
 
 def test_gaps_cannot_be_dropped_or_reworded(tmp_path):
@@ -187,8 +237,6 @@ def test_cli_signed_approval_ingests_proof_and_releases(tmp_path):
     review_path = store.root / "fixture-inputs" / (value["quality_contract"]["attempt_id"] + ".json")
     path = tmp_path / "bundle-cli.json"
     path.write_text(json.dumps(value))
-    cover_path = tmp_path / "cover.jpg"
-    cover_path.write_bytes(b"\xff\xd8\xff\xe0synthetic-cover")
     command = [sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path)]
     run = subprocess.run([*command, "record-editorial-review", str(path), "--review-file", str(review_path),
                           "--proof-file", value["editorial_proof_file"]], capture_output=True, text=True)
@@ -199,13 +247,37 @@ def test_cli_signed_approval_ingests_proof_and_releases(tmp_path):
     value["review"] = result["review"]
     value["editorial_proof_file"] = result["editorial_proof_file"]
     path.write_text(json.dumps(value))
-    run = subprocess.run([*command, "stage", str(path), "--cover-file", str(cover_path), "--review-file", str(review_path)], capture_output=True, text=True)
+    run = subprocess.run([*command, "stage", str(path), "--review-file", str(review_path)], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout)["result"]["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"]
     assert store.published(now=at(4))[0]["publication_format"] == "chapter"
     store.prepare_editorial(draft(store, "## 新稿\n\n补研等待中。"))
     assert store.published(now=at(4))  # frozen approved attempt, not current draft
+
+
+def test_cli_stage_ingests_named_covers_without_exposing_paths(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    cover_paths = {asset["role"]: store.root / "fixture-inputs" / f"{asset['role']}.png"
+                   for asset in value["assets"]}
+    value["assets"] = []
+    bundle_path = tmp_path / "cover-bundle.json"
+    bundle_path.write_text(json.dumps(value), encoding="utf-8")
+
+    run = subprocess.run([
+        sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path), "stage", str(bundle_path),
+        "--shelf-cover-file", str(cover_paths["shelf_cover"]),
+        "--reader-cover-file", str(cover_paths["reader_cover"]),
+    ], capture_output=True, text=True)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    result = json.loads(run.stdout)["result"]
+    assert result["state"] == "scheduled"
+    assets = result["bundle"]["assets"]
+    assert {asset["role"] for asset in assets} == {"shelf_cover", "reader_cover"}
+    assert all(set(asset) == {"role", "receipt", "media_type", "width", "height"} for asset in assets)
+    assert "shelf_cover.png" not in run.stdout and "reader_cover.png" not in run.stdout
 
 
 def test_research_resolution_reaudit_then_publish(tmp_path):
@@ -222,6 +294,26 @@ def test_research_resolution_reaudit_then_publish(tmp_path):
     assert store.stage(revised, now=at(3))["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"]
     assert store.status_report()["editorial_attempts"][0]["state"] == "rejected"
+
+
+def test_resolved_prior_topic_gaps_do_not_pollute_replacement_contract(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    value["quality_contract"]["research_gaps"] = [{
+        "id": "old-topic", "question": "旧选题的证据边界应如何核验并避免迁移到新选题？",
+        "state": "resolved", "resolution": "旧选题已按当时来源完成核验，历史记录保留在不可变的上一版审稿合同中。",
+        "source_urls": ["https://example.com/old-topic"],
+    }]
+    rejected = reject(store, value, store.prepare_editorial(value))
+    next_value = draft(store, body="## 全新主题\n\n" + "新的独立教程内容。" * 400)
+    next_value["quality_contract"]["research_gaps"] = [{
+        **gap, "state": "resolved", "resolution": "新稿已按审稿意见补齐机制、证据和完整示例并重新提交独立复核。",
+        "source_urls": ["https://example.com/new-topic"],
+    } for gap in rejected["gaps"] if gap["state"] == "open"]
+    attempt = store.prepare_editorial(next_value)
+    ids = {gap["id"] for gap in attempt["quality_contract"]["research_gaps"]}
+    assert "old-topic" not in ids
+    assert "mechanism" in ids
 
 
 def test_new_published_cannot_acquire_legacy_exemption(tmp_path):

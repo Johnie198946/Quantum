@@ -185,18 +185,18 @@ class TestLogicalKnowledgePacks(unittest.TestCase):
         self.assertIn("knowledge/methodology/private/u-test", catalog)
         self.assertEqual(
             catalog["knowledge/methodology/entitlement/premium-methodology"]["access_state"],
-            "upgrade_required",
+            "included",
         )
         self.assertNotIn("raw", catalog)
         self.assertNotIn("wiki", catalog)
 
-    def test_search_excludes_raw_pending_and_unentitled_yellow(self):
+    def test_search_excludes_raw_pending_but_not_yellow_by_entitlement(self):
         public = self.request("GET", "/api/knowledge/search", params={"q": "DeepSeek"})
         paths = [item["path"] for item in public.json()["docs"]]
         self.assertEqual(paths, ["wiki/方法论/公共方法.md"])
         self.assertFalse(any(path.startswith("raw/") for path in paths))
         premium = self.request("GET", "/api/knowledge/search", params={"q": "高级套餐"})
-        self.assertEqual(premium.json()["docs"], [])
+        self.assertEqual(premium.json()["docs"][0]["security_level"], "yellow")
         pending = self.request("GET", "/api/knowledge/search", params={"q": "不得进入检索"})
         self.assertEqual(pending.json()["docs"], [])
 
@@ -251,10 +251,10 @@ class TestLogicalKnowledgePacks(unittest.TestCase):
         self.assertEqual(catalog["pending_review_count"], 1)
         self.assertNotIn("raw", {item["category"] for item in catalog["catalog"]})
 
-    def test_visibility_is_pack_membership_not_path_prefix(self):
+    def test_visibility_pack_membership_no_longer_gates_admitted_knowledge(self):
         visible = frozenset({"knowledge/methodology/public"})
         self.assertTrue(self.knowledge._rel_visible("wiki/方法论/公共方法.md", visible))
-        self.assertFalse(self.knowledge._rel_visible("wiki/方法论/专业方法.md", visible))
+        self.assertTrue(self.knowledge._rel_visible("wiki/方法论/专业方法.md", visible))
         self.assertFalse(self.knowledge._rel_visible("raw/原文.md", None))
         self.assertFalse(self.knowledge._rel_visible("wiki/方法论/待复核.md", None))
 

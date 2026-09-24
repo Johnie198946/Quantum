@@ -57,13 +57,13 @@ async def policy_rows():
 
 
 @pytest.mark.asyncio
-async def test_wallet_never_grants_yellow_and_private_is_owner_only(policy_rows):
+async def test_all_active_categories_are_readable_without_tenant_or_plan_gates(policy_rows):
     async with SessionLocal() as db:
         tenant_a, _ = await resolve_policy(db, tenant_key="tenant-a", org_id="org-a", catalog=CATALOG)
         tenant_b, _ = await resolve_policy(db, tenant_key="tenant-b", org_id="org-b", catalog=CATALOG)
     assert tenant_a.effective_categories == frozenset({"public", "premium", "private-a"})
     assert tenant_b.wallet == frozenset({"premium"})
-    assert tenant_b.effective_categories == frozenset({"public"})
+    assert tenant_b.effective_categories == frozenset({"public", "premium", "private-a"})
 
 
 @pytest.mark.asyncio
@@ -82,14 +82,14 @@ async def test_effective_knowledge_projection_matches_runtime_policy(policy_rows
 
 
 @pytest.mark.asyncio
-async def test_stale_authen_projection_fails_closed_only_for_yellow(policy_rows):
+async def test_stale_authen_projection_does_not_gate_knowledge_reads(policy_rows):
     async with SessionLocal() as db:
         snapshot = await db.get(TenantEntitlementSnapshot, "tenant-a")
         snapshot.synced_at = datetime.now(timezone.utc) - timedelta(minutes=16)
         await db.commit()
         policy, _ = await resolve_policy(db, tenant_key="tenant-a", org_id="org-a", catalog=CATALOG)
     assert policy.entitlement_stale is True
-    assert policy.effective_categories == frozenset({"public", "private-a"})
+    assert policy.effective_categories == frozenset({"public", "premium", "private-a"})
 
 
 @pytest.mark.asyncio
@@ -107,14 +107,6 @@ async def test_capability_is_signed_scoped_and_bound_to_policy(policy_rows):
     assert claims["scopes"] == ["premium"]
     assert claims["user_id"] == "user-a"
     assert claims["sources"] == ["tenant_knowledge", "user_notes"]
-    no_knowledge_token = mint_capability(
-        policy,
-        subject_id="run-no-knowledge",
-        entry_point="workflow",
-        requested_scopes=[],
-        user_id="user-a",
-    )
-    assert verify_capability(no_knowledge_token)["scopes"] == []
     payload, signature = token.split(".", 1)
     tampered = ("A" if payload[0] != "A" else "B") + payload[1:] + "." + signature
     with pytest.raises(KnowledgeScopeDenied):
@@ -122,10 +114,10 @@ async def test_capability_is_signed_scoped_and_bound_to_policy(policy_rows):
 
 
 @pytest.mark.asyncio
-async def test_guest_is_limited_to_demo_green_allowlist(policy_rows, monkeypatch):
+async def test_guest_read_policy_is_not_color_or_tenant_gated(policy_rows, monkeypatch):
     monkeypatch.setattr("backend.services.knowledge_policy.GUEST_GREEN_CATEGORIES", frozenset({"public"}))
     async with SessionLocal() as db:
         policy, _ = await resolve_policy(
             db, tenant_key="demo-guest", org_id="", catalog=CATALOG, is_guest=True
         )
-    assert policy.effective_categories == frozenset({"public"})
+    assert policy.effective_categories == frozenset({"public", "premium", "private-a"})

@@ -173,32 +173,13 @@ async def resolve_policy(
         if not stale and snapshot.status == "active":
             entitled = frozenset(str(x) for x in (snapshot.knowledge_entitlements or []))
 
-    effective: set[str] = set()
-    if not POLICY_V2_ENABLED:
-        effective.update(policies if is_super_admin else (wallet & policies.keys()))
-    for category, item in policies.items():
-        if not POLICY_V2_ENABLED:
-            continue
-        if not item.is_active:
-            continue
-        if is_super_admin and allow_admin_bypass:
-            effective.add(category)
-        elif item.security_level == "green":
-            if not is_guest or category in GUEST_GREEN_CATEGORIES:
-                effective.add(category)
-        elif item.security_level == "red" and item.owner_tenant == tenant_key:
-            effective.add(category)
-        elif item.security_level == "yellow":
-            key = item.entitlement_key or category
-            if key in entitled:
-                effective.add(category)
+    # Knowledge is a shared readable corpus. Authentication still protects the
+    # API, but tenant, plan, color and subscription labels do not gate reads.
+    effective = {category for category, item in policies.items() if item.is_active}
 
     version_seed = json.dumps(
         {
-            "tenant": tenant_key,
-            "entitlement_version": entitlement_version,
             "effective": sorted(effective),
-            "stale": stale,
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -228,16 +209,7 @@ def mint_capability(
     ttl_seconds: int | None = None,
     book_scope: dict[str, str] | None = None,
 ) -> str:
-    # ``None`` accepts the policy default. An explicit empty iterable means
-    # no knowledge access and must not widen to every tenant category.
-    requested = None if requested_scopes is None else tuple(requested_scopes)
-    scopes = sorted(
-        policy.effective_categories
-        if requested is None
-        else policy.restrict(requested)
-        if requested
-        else ()
-    )
+    scopes = sorted(policy.restrict(requested_scopes))
     allowed_sources = {"tenant_knowledge", "user_notes"}
     requested_sources = set(sources or ("tenant_knowledge",))
     if not requested_sources.issubset(allowed_sources):

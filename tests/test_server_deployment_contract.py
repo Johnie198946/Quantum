@@ -12,57 +12,16 @@ import yaml
 
 
 UPDATE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "update.sh"
-EXACT_DEPLOY_SCRIPT = UPDATE_SCRIPT.parents[1] / "scripts" / "deploy_exact_sha.sh"
 CI_WORKFLOW = UPDATE_SCRIPT.parents[1] / ".github" / "workflows" / "ci.yml"
 SYSTEMD_DIR = UPDATE_SCRIPT.parents[1] / "ops" / "systemd"
 BRIDGE_SCRIPT = UPDATE_SCRIPT.parents[1] / "scripts" / "hermes_bridge.py"
 EGRESS_TUNNEL_SCRIPT = UPDATE_SCRIPT.parents[1] / "ops" / "scripts" / "clash-verge-egress-tunnel.sh"
 
 
-def test_server_deploy_downloads_current_repository_release_archive() -> None:
+def test_server_deploy_downloads_quantum_release_archive() -> None:
     script = UPDATE_SCRIPT.read_text(encoding="utf-8")
-    assert "https://codeload.github.com/Johnie198946/ai-lab-platform/tar.gz/$EXPECTED_SHA" in script
-    assert "codeload.github.com/Johnie198946/Quantum" not in script
-
-
-def test_exact_sha_deploy_transfers_an_attested_local_source_archive() -> None:
-    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    assert 'git archive --format=tar --prefix="ai-lab-platform-$EXPECTED_SHA/" "$EXPECTED_SHA"' in script
-    assert 'SOURCE_HASH="$(shasum -a 256 "$LOCAL_SOURCE"' in script
-    assert 'REMOTE_SOURCE="/opt/ai-lab-shared/offline-source/ai-lab-platform-$EXPECTED_SHA.tar.gz"' in script
-    assert 'AI_LAB_SOURCE_ARCHIVE="$REMOTE_SOURCE"' in script
-    assert 'AI_LAB_SOURCE_ARCHIVE_SHA256="$SOURCE_HASH"' in script
-
-
-def test_exact_sha_deploy_uses_portable_trailing_mktemp_templates() -> None:
-    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    assert 'mktemp "${TMPDIR:-/tmp}/ai-lab-source.XXXXXX"' in script
-    assert 'mktemp /tmp/ai-lab-source.XXXXXX)' in script
-    assert "XXXXXX.tar.gz" not in script
-
-
-def test_exact_sha_deploy_can_pin_the_trusted_known_hosts_file() -> None:
-    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    assert 'KNOWN_HOSTS_FILE="${AI_LAB_DEPLOY_KNOWN_HOSTS_FILE:?' in script
-    assert "SSH_OPTIONS=(-F /dev/null -o BatchMode=yes)" in script
-    assert "SCP_OPTIONS=(-q -F /dev/null -o BatchMode=yes)" in script
-    assert 'SSH_OPTIONS+=(-o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS_FILE")' in script
-    assert 'SCP_OPTIONS+=(-o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS_FILE")' in script
-
-
-def test_exact_sha_deploy_forwards_the_active_release_cas() -> None:
-    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    assert 'EXPECTED_CURRENT_SHA="${AI_LAB_EXPECTED_CURRENT_SHA:?' in script
-    assert 'if [[ ! "$EXPECTED_CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]]' in script
-    assert '"$REMOTE_SOURCE" "$SOURCE_HASH" "$EXPECTED_CURRENT_SHA"' in script
-    assert 'AI_LAB_EXPECTED_CURRENT_SHA="$EXPECTED_CURRENT_SHA"' in script
-
-
-def test_exact_sha_deploy_uses_sudo_for_root_owned_archive_when_requested() -> None:
-    script = EXACT_DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    assert 'sudo -n install -d -o root -g root -m 0755' in script
-    assert 'sudo -n install -o root -g root -m 0600' in script
-    assert 'sudo -n rm -f -- "$REMOTE_SOURCE"' in script
+    assert "https://codeload.github.com/Johnie198946/Quantum/tar.gz/$EXPECTED_SHA" in script
+    assert "codeload.github.com/Johnie198946/ai-lab-platform" not in script
 
 
 def test_server_deploy_accepts_only_attested_root_owned_offline_source_archive() -> None:
@@ -222,6 +181,29 @@ def test_optional_hermes_egress_is_file_only_and_not_inlined() -> None:
             assert f"Environment={key}=" not in unit
 
 
+def test_mihomo_is_loopback_only_and_hardened() -> None:
+    unit = (SYSTEMD_DIR / "mihomo.service").read_text(encoding="utf-8")
+    installer = (
+        UPDATE_SCRIPT.parents[1] / "ops" / "scripts" / "install-server-mihomo.sh"
+    ).read_text(encoding="utf-8")
+    assert "User=mihomo" in unit
+    assert "NoNewPrivileges=true" in unit
+    assert "ProtectSystem=strict" in unit
+    assert "ReadWritePaths=/var/lib/mihomo" in unit
+    assert 'VERSION="1.19.31"' in installer
+    assert 'SHA256="d5e74bbddbdfff49a1aef7775bf5911da59f0d7196ed509a0ac914b3653dd5f1"' in installer
+    assert "127.0.0.1:7890" in installer
+    assert 'ARCHIVE="${MIHOMO_ARCHIVE:-}"' in installer
+    assert 'GEOIP_DATABASE="${MIHOMO_GEOIP_DATABASE:-}"' in installer
+    assert 'GEOIP_SHA256="${MIHOMO_GEOIP_SHA256:-}"' in installer
+    assert "sha256sum --check --status" in installer
+    assert "config.yaml" not in {
+        path.name
+        for path in UPDATE_SCRIPT.parents[1].rglob("*")
+        if path.is_file() and ".git" not in path.parts
+    }
+
+
 def test_worker_database_env_is_derived_without_compose_json_or_secret_arguments(
     tmp_path: Path,
 ) -> None:
@@ -300,11 +282,14 @@ def test_hermes_egress_env_accepts_only_exact_metadata_and_loopback_contract(
     tmp_path: Path,
 ) -> None:
     valid = (
-        "HTTPS_PROXY=http://127.0.0.1:17897\n"
-        "HTTP_PROXY=http://127.0.0.1:17897\n"
+        "HTTPS_PROXY=http://127.0.0.1:7890\n"
+        "HTTP_PROXY=http://127.0.0.1:7890\n"
         "NO_PROXY=localhost,127.0.0.1,172.18.0.1,::1\n"
     )
     result = _verify_egress_env(tmp_path, valid)
+    assert result.returncode == 0, result.stderr
+    tunneled = valid.replace("127.0.0.1:7890", "127.0.0.1:17897")
+    result = _verify_egress_env(tmp_path, tunneled)
     assert result.returncode == 0, result.stderr
     for metadata in (
         "1:0:600:160", "0:1:600:160", "0:0:640:160", "0:0:600:0", "0:0:600:1025",
@@ -329,14 +314,14 @@ verify_hermes_egress_env 172.18.0.1
 @pytest.mark.parametrize(
     "content",
     (
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\nALL_PROXY=http://127.0.0.1:17897\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nhttp_proxy=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://user:pass@127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://192.0.2.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:7897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTPS_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nUNKNOWN=value\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
-        "HTTPS_PROXY=http://127.0.0.1:17897\nHTTP_PROXY=http://127.0.0.1:17897\nNO_PROXY=localhost,127.0.0.1,$(id)\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\nALL_PROXY=http://127.0.0.1:7890\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nhttp_proxy=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://user:pass@127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://192.0.2.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7897\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTPS_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nUNKNOWN=value\nNO_PROXY=localhost,127.0.0.1,172.18.0.1\n",
+        "HTTPS_PROXY=http://127.0.0.1:7890\nHTTP_PROXY=http://127.0.0.1:7890\nNO_PROXY=localhost,127.0.0.1,$(id)\n",
     ),
 )
 def test_hermes_egress_env_rejects_unsafe_keys_values_and_expansion(
@@ -443,7 +428,7 @@ def test_runtime_scripts_use_the_official_dedicated_user_install() -> None:
         assert contract in update
     assert "/opt/hermes" not in update
     assert '"$HERMES_PYTHON" -m pip install' not in update
-    assert "127.0.0.1:7890" not in update
+    assert "127.0.0.1:17897" not in update
     bridge_config = update[update.index("configure_hermes_bridge_network() {"):update.index(
         "verify_hermes_bridge_unit() {"
     )]
@@ -1275,7 +1260,7 @@ def test_restart_hermes_runtime_absent_units_succeed_and_restart_failure_propaga
         env={**os.environ, "AI_LAB_UPDATE_LIBRARY_ONLY": "1"}, capture_output=True, text=True,
     )
     assert absent.returncode == 0, absent.stderr
-    assert absent.stdout.count("hermes_restart_status=skipped_absent") == 5
+    assert absent.stdout.count("hermes_restart_status=skipped_absent") == 6
 
     failed = subprocess.run(
         ["bash", "-c", f'''source "{UPDATE_SCRIPT}"
@@ -1297,7 +1282,7 @@ def test_server_deploy_enables_units_without_starting_them_during_quarantine() -
         "restart_hermes_runtime() {"
     )]
     enable = install_function.index(
-        "systemctl enable hermes-bridge.service hermes-chat-worker.service"
+        "systemctl enable quantum-tenant-coder.service hermes-bridge.service hermes-chat-worker.service"
     )
     enabled_check = install_function.index("verify_hermes_units_enabled", enable)
     assert enable < enabled_check

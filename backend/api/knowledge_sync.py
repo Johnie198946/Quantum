@@ -54,12 +54,11 @@ class NoteSyncRequest(BaseModel):
     markdown: str = Field(..., min_length=1, max_length=1_000_000)
     content_hash: str = Field(..., min_length=64, max_length=64)
     base_hash: str | None = Field(None, min_length=64, max_length=64)
-    create_only: bool = False
     updated_at: datetime | None = None
 
 
 class NoteArchiveRequest(BaseModel):
-    merged_into_note_id: str | None = Field(None, min_length=1, max_length=128)
+    merged_into_note_id: str = Field(..., min_length=1, max_length=128)
     expected_content_hash: str | None = Field(None, min_length=64, max_length=64)
 
 
@@ -496,27 +495,7 @@ async def sync_note(
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         current_hash = _digest(note_path.read_bytes()) if note_path.is_file() else None
         previous_metadata = _read_metadata(metadata_path)
-        archived_path, _ = _archived_paths(tenant_key, user_id, note_id)
-        archived_hash = (
-            _digest(archived_path.read_bytes()) if body.create_only and archived_path.is_file()
-            else None
-        )
-        if archived_hash == actual_hash:
-            return {
-                "note_id": note_id, "content_hash": actual_hash, "changed": False,
-                "sync_status": "archived", "compile_status": "private_index_unchanged",
-                "private_index_hash": None,
-            }
-        if body.create_only and (
-            current_hash not in {None, actual_hash} or archived_hash is not None
-        ):
-            raise HTTPException(status_code=409, detail={
-                "code": "idempotency_conflict", "current_hash": current_hash,
-            })
-        # A retry of the same confirmed CAS write is already complete.  Accept
-        # it before comparing the stale base so QCP idempotency survives a lost
-        # response without allowing a different payload to overwrite anything.
-        if base_hash is not None and current_hash not in {base_hash, actual_hash}:
+        if base_hash is not None and current_hash != base_hash:
             raise HTTPException(status_code=409, detail={
                 "code": "sync_conflict", "current_hash": current_hash,
                 "action": "pull_or_duplicate",
@@ -631,10 +610,7 @@ async def archive_note(
     body: NoteArchiveRequest,
     payload: dict[str, Any] = Depends(require_auth),
 ) -> dict[str, Any]:
-    merge_target = body.merged_into_note_id
-    if merge_target is not None and (
-        not _NOTE_ID.fullmatch(merge_target) or note_id == merge_target
-    ):
+    if not _NOTE_ID.fullmatch(body.merged_into_note_id) or note_id == body.merged_into_note_id:
         raise HTTPException(status_code=422, detail={"code": "invalid_merged_note_id"})
     tenant_key = str(payload.get("tenant_key") or "")
     user_id = str(payload.get("user_id") or payload.get("sub") or "")
@@ -643,7 +619,7 @@ async def archive_note(
     if archived_note.is_file():
         archived_state = _read_metadata(archived_metadata)
         current_target = str(archived_state.get("merged_into_note_id") or "")
-        if (current_target or None) != merge_target:
+        if current_target and current_target != body.merged_into_note_id:
             raise HTTPException(status_code=409, detail={"code": "archive_target_conflict"})
         if body.expected_content_hash and _digest(archived_note.read_bytes()) != body.expected_content_hash:
             raise HTTPException(status_code=409, detail={"code": "archive_source_changed"})
@@ -661,7 +637,7 @@ async def archive_note(
         return {
             "note_id": note_id,
             "archive_status": "archived",
-            "merged_into_note_id": merge_target,
+            "merged_into_note_id": body.merged_into_note_id,
             "changed": removed_active,
             "withdrawn_contribution_event_ids": withdrawn,
         }
@@ -680,13 +656,9 @@ async def archive_note(
     metadata.update({
         "archive_status": "archived",
         "archived_at": datetime.now(timezone.utc).isoformat(),
-        "archive_reason": "merge_source" if merge_target else "ordinary",
+        "merged_into_note_id": body.merged_into_note_id,
         "contribution_revision": int(metadata.get("contribution_revision") or 1) + 1,
     })
-    if merge_target:
-        metadata["merged_into_note_id"] = merge_target
-    else:
-        metadata.pop("merged_into_note_id", None)
     _atomic_write(
         archived_metadata,
         json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -702,7 +674,7 @@ async def archive_note(
     return {
         "note_id": note_id,
         "archive_status": "archived",
-        "merged_into_note_id": merge_target,
+        "merged_into_note_id": body.merged_into_note_id,
         "changed": True,
         "withdrawn_contribution_event_ids": withdrawn,
     }

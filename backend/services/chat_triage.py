@@ -86,9 +86,22 @@ _INTERNAL_RE = re.compile(
     re.IGNORECASE,
 )
 _USER_NOTE_RE = re.compile(
-    r"(?:我的|我(?:之前|刚才)?(?:保存|写|记|整理)的|用户|私人|个人|本地)?笔记|"
+    r"(?:我的|我(?:之前|刚才)?(?:保存|写|记|整理|上传)的|用户|私人|个人|本地)?笔记|"
     r"(?:my|user|private|personal)\s+notes?\b|"
-    r"(?:从|在)(?:我的|个人|私人)(?:知识|记录)(?:里|中)?",
+    r"(?:从|在)(?:我的|个人|私人|上传的)(?:知识|记录|笔记)(?:里|中)?",
+    re.IGNORECASE,
+)
+_DOCUMENT_INTENT_RE = re.compile(
+    r"(?:(?:这份|这个|刚才|刚刚|上传的|本地|私有|该|此)(?:文档|附件|文件|PDF|DOCX?|PPTX?|Word|PPT))|"
+    r"(?:附件)(?:里|中|内容|第[0-9一二三四五六七八九十]+(?:页|段|章|节|部分|条))|"
+    r"(?:上传|附上).{0,6}(?:文档|附件|文件|PDF|DOCX?|PPTX?|Word|PPT)",
+    re.IGNORECASE,
+)
+_ACTIVE_DOCUMENT_TASK_RE = re.compile(
+    r"(?:第[0-9一二三四五六七八九十]+(?:页|段|章|节|部分|条))|"
+    r"(?:这|该|此)(?:一)?(?:部分|段|页|处|项)|"
+    r"(?:总结|分析|提取|梳理|查看|研读).{0,10}(?:文档|附件|文件|内容|全文)|"
+    r"^(?:(?:请|帮我)\s*)?(?:总结|分析|提取|梳理|解释|概括|查看|研读)(?:一下|重点|内容)?[。！？?!]?$",
     re.IGNORECASE,
 )
 _BUSINESS_FACT_RE = re.compile(
@@ -117,12 +130,8 @@ class TriageDecision:
             "confidence": round(self.confidence, 2),
             "reason_code": self.reason_code,
             "evidence_requirements": list(self.evidence_requirements),
-            "agency_enabled": bool(
-                agency_enabled and self.route_class == PROFESSIONAL_TASK
-            ),
-            "skill_enabled": bool(
-                skill_enabled and self.route_class == PROFESSIONAL_TASK
-            ),
+            "agency_enabled": bool(agency_enabled),
+            "skill_enabled": bool(skill_enabled),
         }
 
 
@@ -139,15 +148,19 @@ def _is_supplied_translation(text: str) -> bool:
     ))
 
 
-def _evidence_requirements(text: str) -> tuple[str, ...]:
+def _evidence_requirements(text: str, *, has_local_notes: bool = False) -> tuple[str, ...]:
     if _is_supplied_translation(text):
         return ()
     requirements: list[str] = []
     if _URL_RE.search(text):
         requirements.append("web_extract")
     # Business/company facts are local-knowledge-first by default. Personal-note
-    # intent is a separate source and must never be silently routed to Wiki.
-    user_note_intent = bool(_USER_NOTE_RE.search(text))
+    # and uploaded-document intent are separate sources.
+    user_note_intent = (
+        bool(_USER_NOTE_RE.search(text))
+        or bool(_DOCUMENT_INTENT_RE.search(text))
+        or (bool(has_local_notes) and bool(_ACTIVE_DOCUMENT_TASK_RE.search(text)))
+    )
     if user_note_intent:
         requirements.append("user_note_search")
     elif _INTERNAL_RE.search(text) or _BUSINESS_FACT_RE.search(text):
@@ -165,12 +178,16 @@ def _evidence_requirements(text: str) -> tuple[str, ...]:
 def classify_request(
     question: str,
     *,
+    quoted_context: str | None = None,
+    has_local_notes: bool = False,
     explicit_agent: bool = False,
     explicit_skill: bool = False,
 ) -> TriageDecision:
     """Classify a single user turn without model latency or client authority."""
     text = " ".join(str(question or "").strip().split())
-    evidence = _evidence_requirements(text)
+    quote = " ".join(str(quoted_context or "").strip().split()) if quoted_context else ""
+    eval_text = f"{text} {quote}".strip() if quote else text
+    evidence = _evidence_requirements(eval_text, has_local_notes=has_local_notes)
     if explicit_agent or explicit_skill:
         return TriageDecision(
             PROFESSIONAL_TASK,
@@ -178,29 +195,35 @@ def classify_request(
             "explicit_capability",
             evidence,
         )
-    if _is_supplied_translation(text):
+    if not quote and _is_supplied_translation(text):
         return TriageDecision(GENERAL_QA, 0.99, "supplied_translation", ())
-    if not text:
+    if not eval_text:
         return TriageDecision(GENERAL_QA, 0.55, "empty_or_ambiguous", evidence)
-    if _DIRECT_RESPONSE_RE.fullmatch(text):
+    if not quote and _DIRECT_RESPONSE_RE.fullmatch(text):
         return TriageDecision(GENERAL_QA, 0.99, "direct_response", ())
-    if not _URL_RE.search(text) and (
+    if not quote and not _URL_RE.search(text) and (
         _CASUAL_RE.fullmatch(text) or _SOCIAL_RE.search(text)
     ):
         return TriageDecision(CASUAL, 0.98, "conversation_marker", ())
 
-    action = bool(_PROFESSIONAL_ACTION_RE.search(text))
-    high_action = bool(_HIGH_PROFESSIONAL_ACTION_RE.search(text))
-    deliverable = bool(_DELIVERABLE_RE.search(text))
-    depth = bool(_DEPTH_RE.search(text))
-    constraints = bool(_CONSTRAINT_RE.search(text))
+    if quote and not evidence:
+        # 选词/划词提问：携带被选词/上下文，激活知识库/笔记查证链路
+        evidence = ("knowledge_search",)
+
+    action = bool(_PROFESSIONAL_ACTION_RE.search(eval_text))
+    high_action = bool(_HIGH_PROFESSIONAL_ACTION_RE.search(eval_text))
+    deliverable = bool(_DELIVERABLE_RE.search(eval_text))
+    depth = bool(_DEPTH_RE.search(eval_text))
+    constraints = bool(_CONSTRAINT_RE.search(eval_text))
     score = (3 if high_action else int(action) * 2)
     score += int(deliverable) * 2 + int(depth) + int(constraints)
-    if len(text) >= 180:
+    if len(eval_text) >= 180:
         score += 1
     if action and evidence and any(
         item in evidence for item in ("web_extract", "web_search")
     ):
+        score += 1
+    if quote and (action or depth or any(kw in text for kw in ("解释", "说明", "分析", "理解", "为什么", "怎么看", "定义", "含义", "意思", "如何", "怎样"))):
         score += 1
 
     if score >= 3:
@@ -209,6 +232,8 @@ def classify_request(
             reason = "professional_url_research"
         elif action and "web_search" in evidence:
             reason = "professional_public_research"
+        elif quote:
+            reason = "quote_professional_inquiry"
         return TriageDecision(
             PROFESSIONAL_TASK,
             min(0.97, 0.72 + score * 0.04),
@@ -216,5 +241,5 @@ def classify_request(
             evidence,
         )
 
-    reason = "evidence_qa" if evidence else "general_question"
+    reason = "quote_follow_up" if quote else ("evidence_qa" if evidence else "general_question")
     return TriageDecision(GENERAL_QA, 0.84 if evidence else 0.78, reason, evidence)

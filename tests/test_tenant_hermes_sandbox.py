@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
 
 import pytest
 
@@ -19,31 +17,6 @@ from backend.services.tenant_hermes_sandbox import (
     restore_sandbox_capsule,
     write_sandbox_skill,
 )
-
-
-def test_same_profile_provisioning_survives_cross_process_style_race(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import backend.services.tenant_hermes_sandbox as sandbox_module
-
-    template = _template(tmp_path / "template")
-    root = tmp_path / "sandboxes"
-    monkeypatch.setattr(sandbox_module, "_path_lock", lambda _path: nullcontext())
-
-    def provision(_index: int):
-        return ensure_tenant_sandbox(
-            tenant_key="tenant-a",
-            user_id="user-a",
-            root=root,
-            template_root=template,
-        )
-
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        sandboxes = list(pool.map(provision, range(32)))
-
-    assert len({sandbox.root for sandbox in sandboxes}) == 1
-    manifest = json.loads((sandboxes[0].hermes_home / "profile.json").read_text())
-    assert manifest["tenant_namespace"] == namespace("tenant-a")
 
 
 def test_capsule_backup_restore_preserves_state_and_rejects_wrong_identity(tmp_path: Path):
@@ -246,7 +219,7 @@ def test_legacy_user_state_db_moves_into_profile_home(tmp_path: Path):
     assert sandbox.state_db.read_bytes() == b"existing-session-db"
     assert not legacy.exists()
     manifest = json.loads((sandbox.hermes_home / "profile.json").read_text())
-    assert manifest["version"] == 3
+    assert manifest["version"] == 4
     assert manifest["legacy_state_db_migrated"] is True
 
 

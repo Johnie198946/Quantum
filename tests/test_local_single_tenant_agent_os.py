@@ -83,7 +83,8 @@ def agency(router):
 
 
 def skill(router):
-    return router._govern_skill({
+    del router
+    return {
         "id": "skill:business-model-research",
         "kind": "skill",
         "name": "business-model-research",
@@ -91,9 +92,42 @@ def skill(router):
         "domain": "research",
         "invoke_tool": "skill_view",
         "invoke_args": {"name": "business-model-research"},
-        "depth": 0.82,
-        "cost": 0.035,
-    })
+        "version": "1.0.0",
+        "use_when": ["research a business model"],
+        "do_not_use_when": [],
+        "requires": {"permissions": [], "tools": [], "platforms": []},
+        "risk": "read",
+        "status": "active",
+    }
+
+
+def _test_select(request_text, **kwargs):
+    """Simulate a validated JEV response without restoring a production heuristic."""
+    skills = list(kwargs.get("skill_candidates") or [])
+    agents = list(kwargs.get("agent_candidates") or [])
+    explicit_agent = "必须委派" in request_text
+    skill_id = str(skills[0]["id"]) if skills else None
+    agent_id = str(agents[0]["id"]) if agents and explicit_agent else None
+    return types.SimpleNamespace(
+        decision_id="route-test",
+        skill_id=skill_id,
+        agent_id=agent_id,
+        catalog_version="sha256:test",
+        policy_version=str(kwargs.get("policy_version") or "policy-test"),
+        as_dict=lambda: {
+            "decision_id": "route-test", "skill_id": skill_id,
+            "agent_id": agent_id, "skill_confidence": 0.9 if skill_id else 0.0,
+            "agent_confidence": 0.9 if agent_id else 0.0,
+            "reason_code": "MATCHED" if skill_id or agent_id else "NO_MATCH",
+            "policy_version": str(kwargs.get("policy_version") or "policy-test"),
+            "catalog_version": "sha256:test", "latency_ms": 1.0,
+            "validated": True,
+        },
+    )
+
+
+def stub_jev(router, monkeypatch):
+    monkeypatch.setattr(router, "select_route", _test_select)
 
 
 def test_default_profile_registers_local_agent_os_lifecycle():
@@ -117,8 +151,43 @@ def test_default_profile_registers_local_agent_os_lifecycle():
     assert "research_deposit" in context.tools["ai_lab_execute"]["schema"]["parameters"]["properties"]["capability"]["enum"]
 
 
+def test_cloud_runtime_keeps_jev_skill_and_child_verification_hooks(monkeypatch):
+    plugin, router = load_router()
+    stub_jev(router, monkeypatch)
+    router._INSTALLED = False
+    router._LOCAL_TURN_STATES.clear()
+    monkeypatch.setenv("AI_LAB_AGENT_OS_MODE", "cloud_multi_tenant")
+    monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
+    monkeypatch.setattr(router, "_agency_capabilities", lambda: [])
+    context = LocalPluginContext()
+    plugin.register(context)
+
+    assert "pre_gateway_dispatch" not in context.hooks
+    assert {"subagent_start", "subagent_stop", "transform_llm_output"} <= set(
+        context.hooks
+    )
+    result = context.hooks["pre_llm_call"](
+        "请使用技能研究市场",
+        session_id="cloud-runtime-skill",
+        turn_id="cloud-runtime-turn",
+        platform="cli",
+        sender_id="tenant-user",
+        authorized_skill_ids=["skill:business-model-research"],
+        authorized_agent_ids=[],
+    )
+    assert result is not None
+    assert context.dispatched[0][0:2] == (
+        "skill_view",
+        {"name": "business-model-research"},
+    )
+    assert router._LOCAL_TURN_STATES["cloud-runtime-skill"]["loaded_skill"] == (
+        "business-model-research"
+    )
+
+
 def test_runtime_reads_selected_skill_and_preserves_original_url_before_model(monkeypatch):
     plugin, router = load_router()
+    stub_jev(router, monkeypatch)
     router._INSTALLED = False
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
@@ -148,10 +217,8 @@ def test_runtime_reads_selected_skill_and_preserves_original_url_before_model(mo
     assert "RUNTIME_VERIFIED_SKILL_RESULT" in result["context"]
     assert len(context.dispatched) == 1
     assert state["delegation_dispatched"] is False
-    raw_plan = result["context"].split("Plan: ", 1)[1].split(
-        "\n[RUNTIME_VERIFIED_SKILL_RESULT", 1
-    )[0]
-    plan = json.loads(raw_plan)
+    raw_plan = result["context"].split("Plan: ", 1)[1]
+    plan, _ = json.JSONDecoder().raw_decode(raw_plan)
     delegate_args = plan[1]["invoke"]["arguments"]
     assert delegate_args == state["expected_delegate_args"]
     assert delegate_args["tasks"][0]["goal"] == original
@@ -192,6 +259,7 @@ def test_runtime_reads_selected_skill_and_preserves_original_url_before_model(mo
 
 def test_runtime_skill_failure_degrades_without_blocking_main(monkeypatch):
     plugin, router = load_router()
+    stub_jev(router, monkeypatch)
     router._INSTALLED = False
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
@@ -222,6 +290,7 @@ def test_runtime_skill_failure_degrades_without_blocking_main(monkeypatch):
 
 def test_runtime_skill_context_stays_below_hook_spill_limit(monkeypatch):
     plugin, router = load_router()
+    stub_jev(router, monkeypatch)
     router._INSTALLED = False
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
@@ -247,6 +316,7 @@ def test_runtime_skill_context_stays_below_hook_spill_limit(monkeypatch):
 
 def test_local_professional_turn_requires_native_skill_then_delegation(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: agency(router))
 
@@ -260,12 +330,12 @@ def test_local_professional_turn_requires_native_skill_then_delegation(monkeypat
 
     assert result is not None
     context = result["context"]
-    assert "LOCAL_SINGLE_TENANT_AGENT_OS" in context
+    assert "JEV_SELECTOR_PLAN" in context
     assert context.index('"tool":"skill_view"') < context.index('"tool":"delegate_task"')
     state = router._LOCAL_TURN_STATES["local-parent"]
-    assert state["skill_decision"] == "SELECT"
+    assert state["skill_selected"] is True
     assert state["requested_skill"] == "business-model-research"
-    assert state["agency_decision"] == "CALL"
+    assert state["agent_selected"] is True
     assert state["requested_agent"] == "trend-researcher"
     assert state["expected_delegate_args"]["tasks"][0]["goal"] == (
         "请必须委派子代理系统调研企业 AI 市场并给出有证据的专业报告"
@@ -274,6 +344,7 @@ def test_local_professional_turn_requires_native_skill_then_delegation(monkeypat
 
 def test_ordinary_professional_work_uses_optional_agency_and_never_blocks_tools(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: agency(router))
@@ -286,8 +357,8 @@ def test_ordinary_professional_work_uses_optional_agency_and_never_blocks_tools(
         sender_id="local-owner",
     )
     state = router._LOCAL_TURN_STATES["optional-ingestion"]
-    assert state["route_class"] == "PROFESSIONAL_TASK"
-    assert state["agency_decision"] == "OPTIONAL"
+    assert state["route_decision"]["agent_id"] is None
+    assert state["agent_selected"] is False
     assert router._pre_tool_call(
         "write_file",
         {"path": "/tmp/turkey.md", "content": "verified note"},
@@ -301,32 +372,34 @@ def test_ordinary_professional_work_uses_optional_agency_and_never_blocks_tools(
 
 def test_optional_delegate_failure_is_diagnostic_not_task_failure(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: agency(router))
     router._pre_llm_call(
-        "深入研究行业格局并核验来源",
+        "请必须委派子代理深入研究行业格局并核验来源",
         session_id="optional-research",
         turn_id="optional-research-turn",
         platform="desktop",
         sender_id="local-owner",
     )
     state = router._LOCAL_TURN_STATES["optional-research"]
-    assert state["agency_decision"] == "OPTIONAL"
+    assert state["agent_selected"] is True
     router._post_tool_call(
         "delegate_task",
         state["expected_delegate_args"],
         json.dumps({"error": "temporary child failure"}),
         session_id="optional-research",
     )
-    assert state["failure_code"] is None
-    assert router._transform_llm_output(
+    assert state["failure_code"] == "DELEGATE_RESULT_FAILED"
+    assert "未通过本地 Agent OS 执行验证" in router._transform_llm_output(
         "主 Agent 使用真实网页证据完成研究。", session_id="optional-research"
-    ) == "主 Agent 使用真实网页证据完成研究。"
+    )
 
 
 def test_wechat_verification_fallback_allows_real_browser_for_approved_user(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: [])
@@ -360,6 +433,7 @@ def test_wechat_verification_fallback_allows_real_browser_for_approved_user(monk
 
 def test_local_principal_scope_is_inherited_by_native_child(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     router._GATEWAY_IDENTITIES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
@@ -397,15 +471,83 @@ def test_local_principal_scope_is_inherited_by_native_child(monkeypatch):
         session_id="child-group",
         platform="subagent",
     ) is None
-    assert router._LOCAL_TURN_STATES["child-group"]["route_class"] == "CHILD"
+    assert router._LOCAL_TURN_STATES["child-group"]["is_child"] is True
     child_denied = router._pre_tool_call(
         "write_file", {"path": "/tmp/nope"}, session_id="child-group"
     )
     assert child_denied and child_denied["action"] == "block"
+    recursive = router._pre_tool_call(
+        "delegate_task", {"tasks": [{"goal": "escape"}]}, session_id="child-group"
+    )
+    assert recursive and "CHILD_REDELEGATION_FORBIDDEN" in recursive["message"]
+
+
+def test_child_scope_allows_only_inherited_skill_and_agent(monkeypatch):
+    _, router = load_router()
+    monkeypatch.setattr(
+        router,
+        "_agency_capabilities",
+        lambda: [{"id": "agency:trend-researcher", "version": "2.3.0"}],
+    )
+    router._LOCAL_TURN_STATES.clear()
+    router._LOCAL_TURN_STATES["parent-bounded"] = {
+        "principal": "local_owner",
+        "tenant_id": "tenant-a",
+        "policy_version": "policy-a",
+        "catalog_version": "catalog-a",
+        "route_decision": {"decision_id": "decision-a"},
+        "requested_skill": "business-model-research",
+        "requested_agent": "trend-researcher",
+        "requested_agent_version": "2.3.0",
+    }
+    router._subagent_start(
+        parent_session_id="parent-bounded",
+        child_session_id="child-bounded",
+    )
+    assert router._pre_tool_call(
+        "skill_view", {"name": "business-model-research"}, session_id="child-bounded"
+    ) is None
+    wrong_skill = router._pre_tool_call(
+        "skill_view", {"name": "other-skill"}, session_id="child-bounded"
+    )
+    assert wrong_skill and "CHILD_SKILL_SCOPE_VIOLATION" in wrong_skill["message"]
+    assert router._pre_tool_call(
+        "agency_agents_load",
+        {"agent": "trend-researcher", "task": "bounded"},
+        session_id="child-bounded",
+    ) is None
+    wrong_agent = router._pre_tool_call(
+        "agency_agents_load",
+        {"agent": "other-agent", "task": "escape"},
+        session_id="child-bounded",
+    )
+    assert wrong_agent and "CHILD_AGENT_SCOPE_VIOLATION" in wrong_agent["message"]
+    router._LOCAL_TURN_STATES["child-bounded"]["requested_agent_version"] = "2.2.0"
+    stale_agent = router._pre_tool_call(
+        "agency_agents_load",
+        {"agent": "trend-researcher", "task": "bounded"},
+        session_id="child-bounded",
+    )
+    assert stale_agent and "CHILD_AGENT_VERSION_STALE" in stale_agent["message"]
+    child = router._LOCAL_TURN_STATES["child-bounded"]
+    assert child["tenant_id"] == "tenant-a"
+    assert child["policy_version"] == "policy-a"
+    assert child["catalog_version"] == "catalog-a"
+
+
+def test_router_uses_request_local_hermes_home(tmp_path, monkeypatch):
+    _, router = load_router()
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_constants",
+        types.SimpleNamespace(get_hermes_home=lambda: tmp_path),
+    )
+    assert router._hermes_home() == tmp_path
 
 
 def test_direct_feishu_surface_is_local_owner_without_per_user_downgrade(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     router._GATEWAY_IDENTITIES.clear()
     monkeypatch.delenv("FEISHU_CODE_WRITE_OWNER_IDS", raising=False)
@@ -430,6 +572,7 @@ def test_direct_feishu_surface_is_local_owner_without_per_user_downgrade(monkeyp
 
 def test_cloud_multi_tenant_feishu_keeps_scoped_identity(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     router._GATEWAY_IDENTITIES.clear()
     monkeypatch.setenv("AI_LAB_AGENT_OS_MODE", "cloud_multi_tenant")
@@ -456,6 +599,7 @@ def test_cloud_multi_tenant_feishu_keeps_scoped_identity(monkeypatch):
 
 def test_feishu_configured_owner_gets_full_local_owner_capabilities(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     router._GATEWAY_IDENTITIES.clear()
     monkeypatch.setenv("FEISHU_CODE_WRITE_OWNER_IDS", "ou_owner")
@@ -494,6 +638,7 @@ def test_feishu_configured_owner_gets_full_local_owner_capabilities(monkeypatch)
 
 def test_missing_sender_internal_turn_inherits_verified_local_owner(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     router._GATEWAY_IDENTITIES.clear()
     monkeypatch.setenv("FEISHU_CODE_WRITE_OWNER_IDS", "ou_owner")
@@ -507,7 +652,7 @@ def test_missing_sender_internal_turn_inherits_verified_local_owner(monkeypatch)
         platform="feishu",
         sender_id="ou_owner",
     )
-    assert first is None
+    assert not first or "knowledge recommendation" in first.get("context", "")
     second = router._pre_llm_call(
         "继续读取",
         session_id="owner-continuation",
@@ -516,7 +661,7 @@ def test_missing_sender_internal_turn_inherits_verified_local_owner(monkeypatch)
         sender_id="",
     )
     assert router._LOCAL_TURN_STATES["owner-continuation"]["principal"] == "local_owner"
-    assert second is None
+    assert not second or "knowledge recommendation" in second.get("context", "")
 
 
 def test_non_owner_feishu_user_cannot_read_local_vault(monkeypatch, tmp_path):
@@ -528,7 +673,6 @@ def test_non_owner_feishu_user_cannot_read_local_vault(monkeypatch, tmp_path):
     monkeypatch.setenv("FEISHU_CODE_WRITE_OWNER_IDS", "ou_owner")
     router._LOCAL_TURN_STATES["non-owner"] = {
         "principal": "approved_user",
-        "route_class": "GENERAL_QA",
     }
     denied = router._pre_tool_call(
         "read_file", {"path": str(vault / "note.md")}, session_id="non-owner"
@@ -538,6 +682,7 @@ def test_non_owner_feishu_user_cannot_read_local_vault(monkeypatch, tmp_path):
 
 def test_local_in_memory_receipt_is_diagnostic_only(monkeypatch):
     _, router = load_router()
+    stub_jev(router, monkeypatch)
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: agency(router))

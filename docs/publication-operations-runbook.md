@@ -21,7 +21,6 @@ The operator reads each named local file, computes its SHA-256, copies the bytes
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/ai-history.json" \
   --body-file "$PRIVATE_INTAKE/ai-history.md" \
-  --cover-file "$PRIVATE_INTAKE/ai-history-cover.jpg" \
   --source-file source_snapshot="$PRIVATE_INTAKE/ai-history-sources.json" \
   --rights-file owner_attestation="$PRIVATE_INTAKE/owner-publication-attestation.json" \
   --review-file "$PRIVATE_INTAKE/ai-history-content-review.json"
@@ -29,7 +28,6 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/ai-practice.json" \
   --body-file "$PRIVATE_INTAKE/ai-practice.md" \
-  --cover-file "$PRIVATE_INTAKE/ai-practice-cover.jpg" \
   --source-file source_snapshot="$PRIVATE_INTAKE/ai-practice-sources.json" \
   --rights-file owner_attestation="$PRIVATE_INTAKE/owner-publication-attestation.json" \
   --review-file "$PRIVATE_INTAKE/ai-practice-content-review.json" \
@@ -38,7 +36,6 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_operator.py \
   --root /app/data/runtime/publications stage "$PRIVATE_INTAKE/original.json" \
   --body-file "$PRIVATE_INTAKE/original.md" \
-  --cover-file "$PRIVATE_INTAKE/original-cover.jpg" \
   --source-file pinned_original="$PRIVATE_INTAKE/original.md" \
   --source-file download_manifest="$PRIVATE_INTAKE/original-download-manifest.json" \
   --rights-file redistribution_license="$PRIVATE_INTAKE/original-license.txt" \
@@ -46,6 +43,15 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 ```
 
 The owner attestation and content review are distinct evidence: the former binds publication authority to the named policy and body hashes; the latter binds editorial review to exact body bytes. A full original must also include a `pinned_original` receipt whose hash equals the body hash.
+
+Every new `ai-toolkit` edition must pass both controlled covers during `stage`:
+
+```bash
+--shelf-cover-file "$PRIVATE_INTAKE/shelf-cover.png" \
+--reader-cover-file "$PRIVATE_INTAKE/reader-cover.png"
+```
+
+The operator accepts only verified PNG/JPEG bytes at 1440×2560 (`shelf_cover`) and 2560×1440 (`reader_cover`). It stores opaque receipts in the bundle, never the local file paths.
 
 ## Status, release, and withdrawal
 
@@ -79,15 +85,15 @@ Use status-only mode to inspect the same sanitized contract without calling any 
 scripts/publication_release_remote.py --status-only
 ```
 
-This is not a promise of zero SQLite filesystem effects: the existing store connection may create directories, enable WAL, and initialize or migrate schema. The JSON summary keeps every historical edition state total separate from raw blocked/missing issues. It reports the Asia/Shanghai day and requires exactly one published `ai-history` plus exactly one `ai-practice`; unavailable observations are the string `unknown`, never synthetic zeroes. `released_edition_ids` is authoritative release-receipt output, while `observed_published_publication_id_delta` is only the before/after publication-ID set difference and may include concurrent work or omit a same-publication edition upgrade. Response bodies, hashes, titles, and other private metadata are excluded. Malformed/conflicting envelopes, missing trust files, remote nonzero exits, blocked/overdue receipt contradictions, blocked/missing status, or per-series count mismatches fail closed; attention conditions exit `3`.
+This is not a promise of zero SQLite filesystem effects: the existing store connection may create directories, enable WAL, and initialize or migrate schema. Every due edition is evaluated and released independently. A missing or blocked sibling series is retained in `issues`, `missing`, and `attention_required`, but never changes another qualified edition's release result or the sweep exit status. Series observability is derived from the server status response rather than a client-side all-series constant, so adding a series does not expand an atomic release set. `released_edition_ids` is authoritative release-receipt output, while `observed_published_publication_id_delta` is only the before/after publication-ID set difference and may include concurrent work or omit a same-publication edition upgrade. Response bodies, hashes, titles, and other private metadata are excluded. Malformed/conflicting envelopes, trust failures, transport failures, or failed post-release readback still fail closed. `--target-publication-id` remains an optional exact readback assertion, not an exemption from a global gate.
 
 Publication scheduling is Mac-native and uses only the existing jobs and runtime. Update those jobs with the native `cronjob` tool; do not create duplicates, add server jobs or runtimes, or edit Cron storage by hand. The Asia/Shanghai topology is:
 
 - The existing `08:00` Hermes writer produces drafts and evidence only. It must not upload, stage, or release.
 - The existing `10:00` Hermes reviewer runs in a fresh, independent context. It validates byte-bound facts, privacy, rights, and execution evidence, then performs only the scoped upload and stage for approved bytes. Do not use child delegation: separate job contexts preserve independent review.
-- The existing deterministic `no_agent` release runs at noon (`0 12 * * *`). Its deterministic `no_agent` retry job runs every five minutes from `12:05` through `23:55` (`5-59/5 12-23 * * *`); there are no hour-zero retries.
+- The deterministic `no_agent` release sweep runs at noon (`0 12 * * *`). Its deterministic `no_agent` retry job runs every five minutes from `12:05` through `23:55` (`5-59/5 12-23 * * *`); there are no hour-zero retries. The sweep is only shared scheduling infrastructure: each edition keeps its own quality gates and outcome. A future series may use its own Cron without changing release code or an all-series gate.
 
-Both AI jobs use `skills=[]` and load a needed skill on demand with native `skill_view`. Their toolsets are `file`, `terminal`, `web`, `browser`, and `skills`; `execute_code` remains denied. The release jobs call the reviewed local wrapper and add no agent or publication logic. A blocked or overdue unpublished result remains nonzero. Keep job identifiers and secret paths out of this runbook, and do not treat job update or start receipts as end-to-end acceptance.
+Both AI jobs use `skills=[]` and load a needed skill on demand with native `skill_view`. Their toolsets are `file`, `terminal`, `web`, `browser`, and `skills`; `execute_code` remains denied. The release jobs call the reviewed local wrapper and add no agent or publication logic. Blocked and overdue items remain visible alerts; only execution/readback failure or an explicitly requested target assertion is nonzero. Keep job identifiers and secret paths out of this runbook, and do not treat job update or start receipts as end-to-end acceptance.
 
 ## Verification and rollback
 

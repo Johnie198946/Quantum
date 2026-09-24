@@ -59,7 +59,10 @@ with patch.object(plugins, 'get_plugin_manager', return_value=manager):
                       {'task_id':'synthetic-no-session-or-turn'}):
             key = scope.get('turn_id') or scope['task_id']
             base = 'https://example.org'
-            manager.invoke_hook('pre_llm_call', user_message='研究 ' + base, **scope)
+            manager.invoke_hook(
+                'pre_llm_call', user_message='研究 ' + base,
+                platform='cli', sender_id='tenant-user', **scope,
+            )
             def call(paths, wrapped=False):
                 args = {'urls': [base + path for path in paths]}
                 name = 'web_extract'
@@ -73,6 +76,7 @@ with patch.object(plugins, 'get_plugin_manager', return_value=manager):
                 raw = model_tools.handle_function_call(name, args, enabled_toolsets=['web'], **scope)
                 return json.loads(raw)
             first = call(['/start', '/fail'])
+            assert 'results' in first, first
             assert first['results'][0]['content'].startswith('Synthetic evidence'), first
             assert first['results'][1]['error'], first
             assert router._WEB_RESEARCH_TURNS[key][base + '/start'] == 'success'

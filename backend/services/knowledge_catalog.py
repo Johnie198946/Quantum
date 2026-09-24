@@ -203,10 +203,8 @@ def _apply_file_read_barrier(vault: Path, item: dict[str, Any]) -> dict[str, Any
     state = str(metadata.get("status") or item.get("status") or "active").strip().lower()
     if state in BLOCKED_LIFECYCLE_STATES:
         return None
-    if any(metadata.get(flag, item.get(flag)) is False for flag in (
-        "enforced_searchable", "enforced_summarizable", "enforced_agent_callable"
-    )):
-        return None
+    # Search/summarize/agent-call flags are retained as metadata only. They no
+    # longer deny authenticated knowledge reads.
     # Cached projections cannot preserve a removed or tightened approval label.
     # A v2 compiled manifest is itself the legacy approval projection; atomic
     # color records instead require their live source labels on every read.
@@ -295,7 +293,8 @@ def _apply_file_read_barrier(vault: Path, item: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def _document_candidates(vault: Path) -> dict[str, dict[str, Any]]:
+def document_index(vault: Path | None = None) -> dict[str, dict[str, Any]]:
+    vault = vault or _vault()
     manifest = load_manifest(vault)
     compiled = {
         str(item["path"]): item
@@ -304,14 +303,9 @@ def _document_candidates(vault: Path) -> dict[str, dict[str, Any]]:
     }
     for item in approved_color_documents(vault):
         compiled[str(item["path"])] = item
-    return compiled
-
-
-def document_index(vault: Path | None = None) -> dict[str, dict[str, Any]]:
-    vault = vault or _vault()
     return {
         path: live
-        for path, item in _document_candidates(vault).items()
+        for path, item in compiled.items()
         if (live := _apply_file_read_barrier(vault, item)) is not None
     }
 
@@ -358,10 +352,12 @@ def _file_live_documents(documents, vault):
         item = _apply_file_read_barrier(vault, document)
         if item is None:
             continue
-        # _apply_file_read_barrier has already parsed current frontmatter and
-        # copied both governance fields into the returned snapshot.
-        projection_id = str(item.get("contribution_projection_id") or "")
-        policy = str(item.get("publication_policy") or "")
+        metadata = _live_frontmatter(vault, relative)
+        if metadata is _UNREADABLE_FRONTMATTER:
+            continue
+        projection_id = str(metadata.get("contribution_projection_id")
+                            or item.get("contribution_projection_id") or "")
+        policy = str(metadata.get("publication_policy") or item.get("publication_policy") or "")
         if projection_id or policy == CONTRIBUTION_PUBLICATION_POLICY:
             guarded.append((item, projection_id, relative))
         else:
@@ -447,10 +443,7 @@ async def filter_database_live_documents(
         row = by_id.get(projection_id)
         snapshot = row.metadata_snapshot if row is not None else {}
         if (row is not None and row.status == "active" and row.security_level == item.get("security_level")
-                and row.artifact_ref == relative
-                and all(snapshot.get(flag) is True for flag in (
-                    "enforced_searchable", "enforced_summarizable", "enforced_agent_callable"
-                ))):
+                and row.artifact_ref == relative):
             if snapshot.get("source_dependencies") is not None and item.get("source_dependencies") != snapshot["source_dependencies"]:
                 continue
             governance = snapshot.get("governance") or {}
@@ -485,17 +478,6 @@ async def filter_database_live_documents(
                     "purpose_publication_validated": is_purpose}
             live.append(item)
     return live
-
-
-async def database_live_document_index(
-    vault: Path | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Authorize file and durable state once, returning a request snapshot."""
-    vault = vault or _vault()
-    live = await filter_database_live_documents(
-        list(_document_candidates(vault).values()), vault,
-    )
-    return {item["path"]: item for item in live}
 
 
 def filter_database_live_documents_sync(
@@ -611,29 +593,9 @@ def resolve_authorized_version(
     is read to produce, rank, or label a substitute.
     """
     def allowed(item):
-        if for_model and item.get("disclosure_granularity") == "summary":
-            if item.get("purpose_publication_validated") is not True:
-                return False
-        elif for_model and (
-            item.get("security_level") in {"red", "yellow"}
-            or explicit_model_control(item)
-        ):
-            return False
-        # An explicit no-cross-tenant rule cannot be erased by a legacy green
-        # color/public owner label. Owner-only private packs still work; ownerless
-        # public records require review, not an invented tenant or public grant.
-        actions = item.get("effective_actions") or {}
-        if scopes is not None and isinstance(actions, dict) and actions.get("cross_tenant") is False:
-            owner = str(item.get("owner_tenant") or "").strip()
-            if not owner or owner == "public" or not str(item.get("pack_id") or "").endswith("/private/" + owner):
-                return False
-        if scopes is not None and item.get("pack_id") not in scopes:
-            return False
-        if item.get("disclosure_granularity") == "summary":
-            audience = item.get("publication_audience")
-            if not isinstance(audience, list):
-                return False
-            return "public" in audience or item.get("pack_id") in audience
+        # Compiled knowledge is readable regardless of tenant, color, export,
+        # publication or model-disclosure labels. Lifecycle/integrity checks are
+        # applied before this resolver and remain intact.
         return True
     detail = documents.get(relative)
     if detail and allowed(detail):
@@ -996,13 +958,13 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
     from backend.services.knowledge_publication_store import SERIES
 
     bundle = item["bundle"]
+    cover_roles = {asset.get("role") for asset in bundle.get("assets", [])}
     return {
         "id": item["publication_id"], "source_kind": "publication",
         "title": item["title"], "author": item["author"],
         "author_source": bundle["authored_by"], "summary": item["summary"],
         "cover_theme": SERIES[item["series_id"]]["cover_theme"],
         "cover_variant": int(item["content_hash"][:4], 16) % 6, "cover_version": 1,
-        "cover_available": bool(bundle.get("cover_receipt")),
         "security_level": "green", "knowledge_level": "editorial",
         "freshness": "daily", "source_count": len(bundle["references"]),
         "series_id": item["series_id"], "series_title": SERIES[item["series_id"]]["title"],
@@ -1014,6 +976,8 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
         "actual_release_at": item["actual_release_at"], "edition_id": item["edition_id"],
         "edition": item["edition"], "source_urls": [ref["url"] for ref in bundle["references"]],
         "content_version": item["content_hash"],
+        **({"shelf_cover_url": f"/api/v1/knowledge-publications/{item['publication_id']}/covers/shelf_cover"}
+           if "shelf_cover" in cover_roles else {}),
     }
 
 
@@ -1023,7 +987,7 @@ def bookshelf_catalog(
     visible_categories: set[str] | frozenset[str] | None = frozenset(),
     documents: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Reader projection of Green, entitled Yellow, and tenant-owned Red Wiki pages."""
+    """Reader projection of every admitted Wiki book, without tenant/color ACLs."""
     vault = vault or _vault()
     manifest = load_manifest(vault)
     packs = {
@@ -1044,10 +1008,7 @@ def bookshelf_catalog(
         relative = str(item.get("path") or "")
         if not pack_id or not relative:
             continue
-        if security == "yellow" and visible_categories is not None and pack_id not in visible_categories:
-            continue
-        if security == "red" and item.get("owner_tenant") != tenant_key:
-            continue
+
         pack = packs.get(pack_id, {})
         type_slug = pack_id.split("/")[1] if "/" in pack_id else pack_id
         cover_theme = str(item.get("cover_theme") or type_slug).strip().lower()

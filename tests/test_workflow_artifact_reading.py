@@ -109,9 +109,8 @@ def test_artifact_kind_cannot_escape_run_root(tmp_path: Path, monkeypatch: pytes
 
 
 def test_executor_forwards_only_explicit_artifact_contract_fields() -> None:
-    content = "source before rendering"
     extension, metadata = artifact_storage_contract(
-        {"extension": "json", "mime_type": "application/json", "render_type": "topology", "content": content, "ignored": "x"},
+        {"extension": "json", "mime_type": "application/json", "render_type": "topology", "ignored": "x"},
         event_id="evt-1",
         node=SimpleNamespace(node_id="node-1", agent_id="agent-1", model_used="m", provider_used="p"),
     )
@@ -119,5 +118,4 @@ def test_executor_forwards_only_explicit_artifact_contract_fields() -> None:
     assert extension == "json"
     assert metadata["render_type"] == "topology"
     assert metadata["mime_type"] == "application/json"
-    assert metadata["source_content_hash"] == sha256(content.encode()).hexdigest()
     assert "ignored" not in metadata

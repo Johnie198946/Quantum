@@ -17,13 +17,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
 from backend.services.skill_router import (  # noqa: E402
-    apply_routing_overrides,
     legacy_routing_hints,
     legacy_skill_level,
     legacy_skill_path,
-    load_routing_overrides,
     normalize_skill_record,
-    rank_skill_candidates,
     routing_quality_issues,
 )
 
@@ -122,23 +119,8 @@ def main() -> int:
     parser.add_argument("root", type=Path)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--query")
-    parser.add_argument("--overrides", type=Path)
     args = parser.parse_args()
     result = audit(args.root.expanduser().resolve())
-    routed_records = result["records"]
-    if args.overrides:
-        routed_records = apply_routing_overrides(
-            routed_records,
-            load_routing_overrides(str(args.overrides.expanduser().resolve())),
-        )
-        result["effective_compliant"] = sum(
-            not record.get("routing_issues") for record in routed_records
-        )
-    if args.query:
-        result["candidates"] = rank_skill_candidates(
-            args.query, routed_records, limit=5
-        )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
@@ -149,14 +131,7 @@ def main() -> int:
         for issue, count in result["issue_counts"].items():
             print(f"issue.{issue}={count}")
         print(f"collision_groups={len(result['collision_groups'])}")
-        if "effective_compliant" in result:
-            print(f"effective_compliant={result['effective_compliant']}")
-        for index, candidate in enumerate(result.get("candidates") or [], start=1):
-            print(
-                f"candidate.{index}={candidate['name']}"
-                f" score={candidate['score']} path={candidate['skill_path']}"
-                f" level={candidate['skill_level']}"
-            )
+
     return 1 if args.strict and result["noncompliant"] else 0
 
 

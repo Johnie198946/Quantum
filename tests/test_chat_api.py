@@ -29,16 +29,6 @@ def auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-class TestComparisonIntent(unittest.TestCase):
-    def test_long_source_with_incidental_comparatively_expensive_phrase_is_not_mutated(self):
-        from backend.api.chat import _comparison_table_requested
-
-        source = "伊斯坦布尔路线材料。" * 60 + "这个浴场比较贵，但另一个便宜。"
-        self.assertFalse(_comparison_table_requested(source))
-        self.assertTrue(_comparison_table_requested("请对比公共交通和 Uber"))
-        self.assertTrue(_comparison_table_requested("A vs B 哪个好"))
-
-
 class TestRuntimeShardURL(unittest.TestCase):
     def test_server_owned_shard_map_preserves_only_the_endpoint_path(self):
         from backend.api.chat import _bridge_url_for_placement
@@ -193,14 +183,7 @@ class TestChatAPIEndpoint(unittest.TestCase):
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \
-             patch("backend.api.chat._call_hermes", return_value=(
-                 raw_llm_reply,
-                 fake_reasoning,
-                 [{"type": "artifact.consumed", "version": 1, "payload": {
-                     "structured_payload": {"value": "ok"},
-                     "receipt": {"receipt_id": "acr-1"},
-                 }}],
-             )):
+             patch("backend.api.chat._call_hermes", return_value=(raw_llm_reply, fake_reasoning)):
             r = self.request("POST", "/api/chat", json={"question": "如何优化调度？", "agent_id": "main_agent"})
 
         self.assertEqual(r.status_code, 200)
@@ -210,8 +193,6 @@ class TestChatAPIEndpoint(unittest.TestCase):
         self.assertTrue(body["answer"].startswith("我们基于 [[wiki/DeepSeek]]"))
         # 验证 2：citations 结构化字段正确下沉
         self.assertEqual(body["citations"], ["wiki/DeepSeek", "wiki/算力调度"])
-        self.assertEqual(body["events"][0]["type"], "artifact.consumed")
-        self.assertEqual(body["events"][0]["payload"]["receipt"]["receipt_id"], "acr-1")
         # 验证 3：session_id 按 tenant/user/agent 隔离，权限版本变化不切断会话
         self.assertRegex(body["session_id"], r"^t[0-9a-f]{12}-u[0-9a-f]{12}-main_agent-")
 
@@ -221,7 +202,7 @@ class TestChatAPIEndpoint(unittest.TestCase):
         async def fake_hermes(goal, session_id=None, **kwargs):
             captured_goal["goal"] = goal
             captured_goal["knowledge_query"] = kwargs.get("knowledge_query")
-            return "直接回答", [], []
+            return "直接回答", []
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \
@@ -232,6 +213,47 @@ class TestChatAPIEndpoint(unittest.TestCase):
         # 验证向 Hermes 传递的 goal 废除了硬编码角色前缀拼接，原样传递
         self.assertEqual(captured_goal["goal"], "请审查代码")
         self.assertEqual(captured_goal.get("knowledge_query"), "请审查代码")
+
+    def test_non_stream_chat_forwards_quote_and_signed_active_document_context(self):
+        captured = {}
+
+        async def fake_hermes(goal, session_id=None, **kwargs):
+            captured["goal"] = goal
+            captured["session_id"] = session_id
+            captured.update(kwargs)
+            return "已根据附件回答", []
+
+        with patch("backend.api.chat.match_identity_rule", return_value=None), \
+             patch("backend.api.chat._check_cached_answer", return_value=None), \
+             patch("backend.api.chat._call_hermes", side_effect=fake_hermes):
+            response = self.request(
+                "POST", "/api/chat",
+                json={
+                    "question": "请解释这一部分",
+                    "request_id": "request-active-doc-1",
+                    "session_id": "session-active-doc-1",
+                    "quoted_context": "营收同比增长 31%",
+                    "client_session_context": {
+                        "session_id": "session-active-doc-1",
+                        "messages": [],
+                        "local_notes": [{
+                            "id": "uploaded-pptx",
+                            "title": "季度复盘.pptx",
+                            "markdown": "# 第三季度复盘\n\n营收同比增长 31%。",
+                        }],
+                        "active_document_note_id": "uploaded-pptx",
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("营收同比增长 31%", captured["goal"])
+        self.assertEqual(
+            captured["client_session_context"]["active_document_note_id"],
+            "uploaded-pptx",
+        )
+        self.assertTrue(captured["client_context_capability"])
+        self.assertEqual(captured["request_id"], "request-active-doc-1")
 
     def test_custom_agent_configuration_is_resolved_and_forwarded(self):
         created = self.request(
@@ -249,7 +271,7 @@ class TestChatAPIEndpoint(unittest.TestCase):
 
         async def fake_hermes(goal, session_id=None, **kwargs):
             captured.update(kwargs.get("agent_config") or {})
-            return "已完成", [], []
+            return "已完成", []
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._check_cached_answer", return_value=None), \

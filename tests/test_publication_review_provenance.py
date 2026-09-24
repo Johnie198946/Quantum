@@ -1,5 +1,7 @@
 """Isolated synthetic native DB tests; never production review evidence."""
 import hashlib
+import base64
+import gzip
 import json
 import sqlite3
 
@@ -50,6 +52,79 @@ def test_exact_native_completed_output_is_signed_and_readonly(native):
     assert verify_review_proof(proof, public, **expected) == []
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
     assert "content" not in proof
+
+
+def test_base64_review_material_survives_markdown_fences(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        first = json.loads(conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0].split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        manuscript = first.pop("manuscript")
+        first["manuscript_b64"] = base64.b64encode(manuscript.encode()).decode()
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (REQUEST_START + json.dumps(first) + REQUEST_END,))
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+def test_gzip_base64_review_material_survives_bounded_transport(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        manuscript = first.pop("manuscript")
+        first["manuscript_gzip_b64"] = base64.b64encode(
+            gzip.compress(manuscript.encode(), mtime=0)
+        ).decode()
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+def test_chunked_gzip_base64_survives_token_redaction_boundaries(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        manuscript = first.pop("manuscript")
+        compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
+        first["manuscript_gzip_b64_chunks"] = [
+            compressed[i:i + 12] for i in range(0, len(compressed), 12)
+        ]
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+@pytest.mark.parametrize("chunks", [[], [""], ["a" * 13], ["valid", 1]])
+def test_invalid_chunked_gzip_review_material_is_rejected(native, chunks):
+    db, review, key, _, _ = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        first.pop("manuscript")
+        first["manuscript_gzip_b64_chunks"] = chunks
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    with pytest.raises(ValueError, match="lacks actual review material"):
+        attest_native_review(db, review, key)
+
+
+def test_corrupted_gzip_review_material_is_rejected(native):
+    db, review, key, _, _ = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        first.pop("manuscript")
+        first["manuscript_gzip_b64"] = "not-gzip"
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    with pytest.raises(ValueError, match="lacks actual review material"):
+        attest_native_review(db, review, key)
 
 
 @pytest.mark.parametrize("sql", [
@@ -109,6 +184,22 @@ def test_observed_native_surface_terminal_pairs(native, source, end_reason):
         conn.execute('UPDATE sessions SET source=?,end_reason=?', (source,end_reason))
     proof = attest_native_review(db, review, key)
     assert verify_review_proof(proof, public, **expected) == []
+
+
+def test_local_owner_can_review_a_feishu_authored_draft(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE sessions SET source='feishu',user_id='ou_local_owner' WHERE id='writer'")
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+def test_local_owner_bridge_does_not_accept_untrusted_writer_surface(native):
+    db, review, key, _, _ = native
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE sessions SET source='cloud',user_id='other' WHERE id='writer'")
+    with pytest.raises(ValueError, match="owner/profile"):
+        attest_native_review(db, review, key)
 
 
 def test_request_and_final_must_bind_same_nonce(native):

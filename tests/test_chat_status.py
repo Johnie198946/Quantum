@@ -567,81 +567,6 @@ class TestDurableBridgeStatus(unittest.TestCase):
         self.assertFalse(result["consumed"])
         self.assertTrue(self._status()["consumed"])
 
-    def test_session_switch_completed_status_replays_qcp_events_after_client_cursor(self):
-        run, _ = self.store.create_or_get(
-            tenant_user_hash=self.owner,
-            session_id=self.session_id,
-            request_id="request-session-switch",
-        )
-        self.store.append_event(run["run_id"], {"type": "delta", "content": "done"})
-        consumed = self.store.append_event(run["run_id"], {
-            "type": "artifact.consumed", "version": 1,
-            "payload": {"receipt": {"receipt_id": "acr-switch"}},
-        })
-        self.store.append_event(run["run_id"], {
-            "type": "not.in.catalog", "payload": {"secret": "must-not-leak"},
-        })
-        self.store.append_event(run["run_id"], {"type": "done", "answer": "done"})
-
-        result = self._status(offset=1)
-
-        self.assertEqual(result["events"], [consumed])
-        self.assertEqual(result["events_next_offset"], result["event_sequence"])
-        self.assertEqual(self._status(offset=result["events_next_offset"])["events"], [])
-
-    def test_durable_status_bounds_qcp_events_without_skipping_next_page(self):
-        run, _ = self.store.create_or_get(
-            tenant_user_hash=self.owner,
-            session_id=self.session_id,
-            request_id="request-bounded-events",
-        )
-        for index in range(101):
-            self.store.append_event(run["run_id"], {
-                "type": "artifact.consumed", "version": 1,
-                "payload": {"receipt": {"receipt_id": f"acr-{index}"}},
-            })
-        self.store.append_event(run["run_id"], {"type": "done", "answer": "done"})
-
-        first = self._status()
-        second = self._status(offset=first["events_next_offset"])
-
-        self.assertEqual(len(first["events"]), 100)
-        self.assertLess(first["events_next_offset"], first["event_sequence"])
-        self.assertEqual(
-            [item["payload"]["receipt"]["receipt_id"] for item in second["events"]],
-            ["acr-100"],
-        )
-        self.assertEqual(second["events_next_offset"], second["event_sequence"])
-
-    def test_pre_first_frame_restart_keeps_persisted_qcp_event_until_cursor_advances(self):
-        run, _ = self.store.create_or_get(
-            tenant_user_hash=self.owner,
-            session_id=self.session_id,
-            request_id="request-before-first-frame",
-        )
-        consumed = self.store.append_event(run["run_id"], {
-            "type": "artifact.consumed", "version": 1,
-            "payload": {"receipt": {"receipt_id": "acr-restart"}},
-        })
-        self.store.append_event(run["run_id"], {"type": "done", "answer": "recovered"})
-        restarted = self.bridge.DurableChatRunStore(self.store.path)
-
-        with patch.object(self.bridge, "_chat_run_store", restarted):
-            before_checkpoint = self.bridge._durable_status(
-                self.session_id, self.tenant_id, self.user_id, 0
-            )
-            retry_before_checkpoint = self.bridge._durable_status(
-                self.session_id, self.tenant_id, self.user_id, 0
-            )
-            after_checkpoint = self.bridge._durable_status(
-                self.session_id, self.tenant_id, self.user_id,
-                before_checkpoint["events_next_offset"],
-            )
-
-        self.assertEqual(before_checkpoint["events"], [consumed])
-        self.assertEqual(retry_before_checkpoint["events"], [consumed])
-        self.assertEqual(after_checkpoint["events"], [])
-
     def test_normal_durable_sse_delivery_marks_run_consumed(self):
         run, _ = self.store.create_or_get(
             tenant_user_hash=self.owner,
@@ -939,24 +864,6 @@ class TestChatStatusPassthrough(unittest.TestCase):
         self.assertEqual(resp.answer, "已有答案")
         self.assertEqual(resp.reasoning[0].type, "thought")
 
-    def test_check_cached_answer_returns_persisted_qcp_events(self):
-        from backend.api.chat import _check_cached_answer
-
-        event = {
-            "type": "artifact.consumed", "version": 1,
-            "payload": {"receipt": {"receipt_id": "acr-cache"}},
-            "event_sequence": 7,
-        }
-        with patch("backend.api.chat._call_hermes_status", return_value={
-            "status": "completed", "answer": "已有答案", "reasoning": [],
-            "consumed": False, "events": [event],
-        }):
-            resp = asyncio.run(_check_cached_answer(
-                "问题", "sid", tenant_id="tenant-a", user_id="user-a"
-            ))
-
-        self.assertEqual(resp.events, [event])
-
     def test_check_cached_answer_skips_consumed(self):
         from backend.api.chat import _check_cached_answer
 
@@ -1154,7 +1061,6 @@ class TestInFlightUsers(unittest.TestCase):
             store.worker_heartbeat("worker-test")
             with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
                  patch.object(bridge, "DURABLE_CHAT_WORKER_ENABLED", True), \
-                 patch.object(bridge, "DURABLE_WORKER_HEARTBEAT_MAX_AGE", 60.0), \
                  patch.object(bridge, "_chat_run_store", store):
                 response = asyncio.run(chat_stream(GoalRequest(
                     goal="hi",
@@ -1163,13 +1069,12 @@ class TestInFlightUsers(unittest.TestCase):
                     regenerate=False,
                     request_id="request-durable-inflight",
                     knowledge_query=None,
-                    client_capabilities=["qcp_v1", "knowledge_action_v1"],
+                    client_capabilities=["knowledge_action_v1"],
                 ), "test-internal-token"))
                 run = store.get_unchecked(response.headers["x-run-id"])
 
         self.assertEqual(response.headers["x-session-id"], "u_durable")
         self.assertTrue(json.loads(run["execution_payload_json"])["knowledge_action_enabled"])
-        self.assertTrue(json.loads(run["execution_payload_json"])["qcp_enabled"])
         self.assertNotIn("u_durable", bridge._in_flight_users)
         self.assertFalse(bridge._is_in_flight("u_durable"))
 

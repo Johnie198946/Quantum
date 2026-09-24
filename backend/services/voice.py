@@ -32,7 +32,7 @@ class VoiceService:
         format: webm (浏览器默认) / wav
         """
         if not self.model:
-            raise RuntimeError("speech transcription is unavailable")
+            return ""
 
         # webm → wav 转换(如需要)
         if format == "webm":

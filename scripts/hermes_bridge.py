@@ -26,14 +26,11 @@ v4.1 (2026-08-10·Supervision 批复返工):
 """
 import ast
 import asyncio
-import base64
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 import contextvars
-import fcntl
 import hashlib
 import ipaddress
-import inspect
 import json
 import os
 import queue
@@ -46,7 +43,6 @@ import sys
 import tempfile
 import threading
 import time
-import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -102,55 +98,28 @@ from backend.services.chat_triage import (  # noqa: E402
     PROFESSIONAL_TASK,
 )
 from backend.services.agent_capabilities import SAFE_GLOBAL_TOOLS  # noqa: E402
-from backend.services.batch6_refactor_guard import (  # noqa: E402
-    require_batch6_execution_enabled,
+from backend.services.html_illustration import (  # noqa: E402
+    embed_illustration,
+    illustration_prompt_instruction,
+    select_illustration_context,
+    validate_illustration_prompt,
+    validate_illustration_svg,
 )
-from backend.services.workflow_document_contracts import (  # noqa: E402
-    apply_explicit_document_replacements as _apply_explicit_document_replacements,
-    document_required_source_labels as _document_required_source_labels,
-    document_source_constraint_instruction as _document_source_constraint_instruction,
-    document_source_constraint_issues as _document_source_constraint_issues,
-    document_source_constraints as _document_source_constraints,
-    ensure_document_page_breaks as _ensure_document_page_breaks,
-    workflow_minimum_document_pages as _workflow_minimum_document_pages,
-    workflow_output_incomplete as _workflow_output_incomplete,
+from backend.services.html_tool_renderer import secure_html_tool  # noqa: E402
+from backend.services.tenant_coder_tools import (  # noqa: E402
+    patch_text as tenant_coder_patch,
+    read_text as tenant_coder_read,
+    run_command as tenant_coder_run,
+    search_text as tenant_coder_search,
+    write_text as tenant_coder_write,
 )
-from backend.services.skill_router import (  # noqa: E402
-    apply_routing_overrides,
-    candidate_prompt,
-    load_routing_overrides,
-    rank_skill_candidates,
-)
+
 try:  # module import in tests versus direct systemd script execution
     from scripts.chat_run_store import DurableChatRunStore  # noqa: E402
 except ModuleNotFoundError:  # pragma: no cover - direct ``python scripts/hermes_bridge.py``
     from chat_run_store import DurableChatRunStore  # type: ignore[no-redef]  # noqa: E402
 
 app = FastAPI(title="Hermes Bridge v6.0")
-_bridge_async_loop: asyncio.AbstractEventLoop | None = None
-_bridge_async_loop_lock: Any = None
-
-
-def _run_bridge_coroutine(coro, *, timeout: float):
-    """Run DB-backed bridge work on the process-owned asyncio loop."""
-    loop = _bridge_async_loop
-    if loop is None or loop.is_closed():
-        return asyncio.run(coro)
-    if loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        try:
-            return future.result(timeout=timeout)
-        except TimeoutError:
-            future.cancel()
-            raise
-    lock = _bridge_async_loop_lock
-    if lock is None:
-        return loop.run_until_complete(coro)
-    with lock:
-        return loop.run_until_complete(coro)
-CAPABILITY_DISPATCH_TIMEOUT_SECONDS = 30
-
-SKILL_ROUTING_OVERRIDES = _REPO_ROOT / "config" / "skill-routing-overrides.yaml"
 
 
 def _isolated_agent_context_kwargs() -> dict[str, bool]:
@@ -255,16 +224,16 @@ def _mutate_sandbox_memory(
 
 
 def _routed_skill_catalog(sandbox: TenantHermesSandbox) -> list[dict[str, Any]]:
-    return apply_routing_overrides(
-        list_sandbox_skills(sandbox),
-        load_routing_overrides(str(SKILL_ROUTING_OVERRIDES)),
-    )
+    """Return PCM metadata projection without ranking or selection."""
+    # list_sandbox_skills is already the tenant-authorized runtime projection.
+    # Do not enrich it with legacy alias/trigger/bonus routing overrides.
+    return list_sandbox_skills(sandbox)
+
 
 HERMES_BIN = os.environ.get(
     "HERMES_BIN", "/var/lib/quantumn-hermes/.local/bin/hermes"
 )
 HERMES_CWD = os.environ.get("HERMES_CWD", "/opt/ai-lab-platform")
-LOCAL_DATA_DIR = Path(os.environ.get("AI_LAB_DATA_DIR", str(Path.cwd() / "data")))
 # hermes serve 地址（本机回环·不暴露公网）
 HERMES_SERVE_URL = os.environ.get("HERMES_SERVE_URL", "http://127.0.0.1:9119")
 # hermes serve WebSocket PTY 地址
@@ -279,13 +248,13 @@ STATE_DB = os.environ.get(
 MAPPING_FILE = Path(
     os.environ.get(
         "HERMES_MAPPING_FILE",
-        str(LOCAL_DATA_DIR / "session_mappings.json"),
+        "/opt/ai-lab-platform/data/session_mappings.json",
     )
 )
 STATE_DB_MAPPING_FILE = Path(
     os.environ.get(
         "HERMES_STATE_DB_MAPPING_FILE",
-        str(LOCAL_DATA_DIR / "session_state_dbs.json"),
+        "/opt/ai-lab-platform/data/session_state_dbs.json",
     )
 )
 # 消费水位线持久化文件（user_id -> 已投递最大消息 id），供断点 0ms 回读判定
@@ -296,7 +265,6 @@ WATERMARK_FILE = Path(
     )
 )
 MAX_INPUT = 12000
-MAX_GENERATIVE_WORKFLOW_INPUT = 32_000
 MAX_DOCUMENT_WORKFLOW_INPUT = 96_000
 ALLOWED_CHAT_SKILLS = {"solution-consultant-persona"}
 DEFAULT_TIMEOUT = 300
@@ -371,7 +339,6 @@ def _durable_worker_is_live() -> bool:
 
 def _require_durable_worker() -> None:
     if not _durable_worker_is_live():
-        print("[bridge] durable chat rejected: execution worker heartbeat unavailable")
         raise HTTPException(
             status_code=503,
             detail=_WORKER_MAINTENANCE,
@@ -677,7 +644,6 @@ class GoalRequest(BaseModel):
     goal: str = Field(..., max_length=262_144)
     request_id: str | None = Field(None, min_length=8, max_length=100)
     session_id: str | None = None  # 前端传入的 user_id（用于映射 Hermes 原生 session）
-    client_session_id: str | None = Field(None, min_length=1, max_length=100)
     skill_id: str | None = Field(None, max_length=80)
     # 重新生成语义（2026-08-17 修复）：true 时作废旧 run（interrupt 旧 agent + discard 注册）
     # 再启动全新尝试——对齐 ChatGPT「重新生成」= 上次回答作废重跑，而非被并发防护拒绝
@@ -745,7 +711,6 @@ class WorkflowRunRequest(BaseModel):
     knowledge_policy_version: str = Field(..., min_length=8, max_length=80)
     agent_config: dict[str, Any] = Field(default_factory=dict)
     source_document: dict[str, Any] | None = None
-    source_material: dict[str, Any] | None = None
 
     @field_validator("agent_config")
     @classmethod
@@ -757,51 +722,13 @@ class WorkflowRunRequest(BaseModel):
     def _trusted_source_document(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if value is None:
             return None
-        allowed = {
-            "source_id", "source_revision", "content_hash", "filename", "content_type", "text",
-            "source_client_session_id", "scope_state",
-        }
+        allowed = {"source_id", "source_revision", "content_hash", "filename", "content_type", "text"}
         if set(value) - allowed or not re.fullmatch(r"doc_[a-f0-9]{32}", str(value.get("source_id") or "")) or not re.fullmatch(r"[a-f0-9]{64}", str(value.get("content_hash") or "")):
             raise ValueError("invalid private source document")
         text = str(value.get("text") or "")
         if not text or len(text) > 80_000:
             raise ValueError("private source document text exceeds 80000 characters; truncation is forbidden")
-        if value.get("source_client_session_id") is not None and not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}",
-            str(value.get("source_client_session_id") or ""),
-        ):
-            raise ValueError("invalid private source document session")
-        if value.get("scope_state") is not None and value.get("scope_state") not in {
-            "bound", "legacy_isolated"
-        }:
-            raise ValueError("invalid private source document scope state")
         return {key: value[key] for key in allowed if key in value}
-
-    @field_validator("source_material")
-    @classmethod
-    def _trusted_source_material(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        if value is None:
-            return None
-        allowed = {
-            "source_id", "content_hash", "text", "source_client_session_id", "scope_state"
-        }
-        if set(value) != allowed:
-            raise ValueError("invalid inline source material fields")
-        text = str(value.get("text") or "")
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        if (
-            not re.fullmatch(r"txt_[a-f0-9]{32}", str(value.get("source_id") or ""))
-            or value.get("content_hash") != digest
-            or not text
-            or len(text) > 80_000
-            or not re.fullmatch(
-                r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}",
-                str(value.get("source_client_session_id") or ""),
-            )
-            or value.get("scope_state") not in {"bound", "legacy_isolated"}
-        ):
-            raise ValueError("invalid inline source material")
-        return {key: value[key] for key in allowed}
 
 
 class ClarificationTurn(BaseModel):
@@ -829,12 +756,8 @@ class ClarificationDecision(BaseModel):
 
 
 class WorkflowRetryRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     from_node_id: str | None = Field(None, max_length=80)
     revision_comment: str | None = Field(None, max_length=2000)
-    knowledge_capability: str | None = Field(None, min_length=20)
-    knowledge_policy_version: str | None = Field(None, min_length=8, max_length=80)
 
 
 class WorkflowGateApprovalRequest(BaseModel):
@@ -844,8 +767,6 @@ class WorkflowGateApprovalRequest(BaseModel):
     artifact_version: int = Field(..., ge=1)
     artifact_id: str = Field(..., pattern=r"^wfa_[a-f0-9]{32}$")
     expected_hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
-    knowledge_capability: str | None = Field(None, min_length=20)
-    knowledge_policy_version: str | None = Field(None, min_length=8, max_length=80)
 
 
 class AgentEvaluationRequest(BaseModel):
@@ -876,7 +797,6 @@ def _expand_requested_skill(
         raise HTTPException(status_code=400, detail=f"unsupported skill: {skill_id}")
     instructions = read_sandbox_skill(sandbox, skill_id)
     if not instructions:
-        print(f"[bridge] chat skill unavailable in tenant sandbox: {skill_id}")
         raise HTTPException(status_code=503, detail=f"skill not installed: {skill_id}")
     return (
         "【已从当前租户 Hermes 沙箱加载 Skill；只遵循以下副本】\n"
@@ -995,82 +915,6 @@ def _save_state_db_mapping() -> None:
                 raise
         except Exception as error:
             print(f"[bridge] state.db 映射持久化失败: {error}")
-
-
-def _read_string_mapping(path: Path) -> dict[str, str]:
-    """Read one persisted mapping without trusting malformed entries."""
-    if not path.exists():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    return {
-        str(key): str(value)
-        for key, value in raw.items()
-        if isinstance(key, str) and isinstance(value, str)
-    }
-
-
-def _write_string_mapping(path: Path, values: dict[str, str]) -> None:
-    """Atomically write a mapping while the cross-process lock is held."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.stem}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(values, ensure_ascii=False, indent=2))
-        os.replace(tmp_path, path)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
-def _sync_session_mappings(
-    *,
-    user_id: str | None = None,
-    hermes_sid: str | None = None,
-    state_db: str | Path | None = None,
-    delete: bool = False,
-) -> None:
-    """Refresh or mutate both session maps without sibling-process clobbering.
-
-    The bridge API and durable worker are separate processes.  A process-local
-    lock plus whole-file writes can otherwise erase bindings written by its
-    sibling after a restart.  Keep the existing JSON registries, but serialize
-    read/modify/write through one advisory lock and refresh both local caches.
-    """
-    lock_file = MAPPING_FILE.parent / ".session_mappings.lock"
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-    with _mapping_lock, lock_file.open("a+", encoding="utf-8") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        sessions = _read_string_mapping(MAPPING_FILE)
-        state_dbs = _read_string_mapping(STATE_DB_MAPPING_FILE)
-        if user_id is not None:
-            if delete:
-                sessions.pop(user_id, None)
-                state_dbs.pop(user_id, None)
-            else:
-                if not hermes_sid:
-                    raise ValueError("hermes_sid_required")
-                sessions[user_id] = hermes_sid
-                if state_db is not None:
-                    state_dbs[user_id] = str(state_db)
-            # A state-db-only crash is harmless; a session binding without its
-            # owning DB is not. Persist the physical location first.
-            _write_string_mapping(STATE_DB_MAPPING_FILE, state_dbs)
-            _write_string_mapping(MAPPING_FILE, sessions)
-        _user_session_map.clear()
-        _user_session_map.update(sessions)
-        _user_state_db_map.clear()
-        _user_state_db_map.update(state_dbs)
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def _load_watermarks() -> None:
@@ -1628,6 +1472,7 @@ def _knowledge_gateway_search(
     include_content: bool = False,
     book_request: dict[str, Any] | None = None,
     wiki_request: dict[str, Any] | None = None,
+    note_ids: list[str] | None = None,
     with_status: bool = False,
     timeout_seconds: float = 20.0,
 ) -> list[dict[str, Any]] | dict[str, Any]:
@@ -1640,6 +1485,8 @@ def _knowledge_gateway_search(
     if wiki_request:
         request_body.update({key: value for key, value in wiki_request.items()
                              if key in {"entities", "topics", "paths"}})
+    if note_ids:
+        request_body["note_ids"] = [str(item)[:128] for item in note_ids[:10]]
     if book_request is not None:
         request_body.update({key: value for key, value in book_request.items()
                              if key in {"book_id", "content_version", "operation", "section", "page"}})
@@ -1679,20 +1526,19 @@ class _PropagatedRequestContext:
 
 
 _knowledge_tool_context = _PropagatedRequestContext("qws_knowledge_tool_context")
-_knowledge_gate_context = _PropagatedRequestContext("knowledge_consumption_gate_context")
 _knowledge_tool_registration_lock = threading.Lock()
 _knowledge_tool_registered = False
 _sandbox_tool_context = _PropagatedRequestContext("qws_sandbox_tool_context")
 _skill_route_context = _PropagatedRequestContext("qws_skill_route_context")
 _sandbox_tool_registration_lock = threading.Lock()
 _sandbox_tool_registered = False
+_tenant_coder_tool_registration_lock = threading.Lock()
+_tenant_coder_tools_registered = False
 _client_context_tool_context = _PropagatedRequestContext("qws_client_context_tool_context")
 _client_context_tool_registration_lock = threading.Lock()
 _client_context_tools_registered = False
 _knowledge_workspace_tool_registration_lock = threading.Lock()
 _knowledge_workspace_tools_registered = False
-_app_capability_tool_registration_lock = threading.Lock()
-_app_capability_tools_registered = False
 _NOTE_DRAFT_REQUEST_RE = re.compile(
     r"(?:总结|整理|保存|入库|记录|生成|完善|补充|修改|更新).{0,40}(?:笔记|note)"
     r"|(?:笔记|note).{0,40}(?:保存|入库|总结|整理|完善|补充|修改|更新)"
@@ -1715,29 +1561,11 @@ _REVISION_REQUEST_RE = re.compile(
 _SKILL_CREATE_REQUEST_RE = re.compile(
     r"(?:创建|新建|生成|做|建).{0,12}(?:技能|skill)", re.IGNORECASE
 )
-_PRESENTATION_CREATE_REQUEST_RE = re.compile(
-    r"(?:(?:创建|生成|制作|做|写|导出).{0,20}(?:pptx?|演示文稿|幻灯片)|"
-    r"(?:create|make|build|generate|export).{0,24}(?:pptx?|presentation|slides?))",
-    re.IGNORECASE,
-)
 
 
 def _is_note_draft_request(goal: str) -> bool:
     value = str(goal or "").strip().lower()
     return value in {"保存", "save"} or bool(_NOTE_DRAFT_REQUEST_RE.search(value))
-
-
-def _presentation_capability_directive(goal: str, qcp_enabled: bool) -> str:
-    if not qcp_enabled or not _PRESENTATION_CREATE_REQUEST_RE.search(str(goal or "")):
-        return ""
-    return (
-        "\n当前请求明确要求创建演示文稿。必须直接调用原生 "
-        "app_presentation_create_from_text 工具生成待确认提案：title 使用用户主题，"
-        "text_material 使用当前请求及会话中与该主题直接相关的材料；不要向用户输出"
-        "‘create a durable proposal’、‘one-time token’或要求用户手工构造提案/令牌。"
-        "工具返回 awaiting_confirmation 后，简短提示用户在 iOS 确认卡中确认，"
-        "不得声称文件已经生成。若缺少主题或实质材料，先只询问缺失信息。"
-    )
 
 
 def _requires_browser_fallback(goal: str) -> bool:
@@ -1810,23 +1638,8 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
              if book_request else _knowledge_fallback_payload("knowledge_scope_unavailable", query=query)),
             ensure_ascii=False,
         )
-    if "tenant_knowledge" not in set(
-        context.get("sources") or ["tenant_knowledge"]
-    ):
-        return json.dumps(
-            ({"success": False, "error": "knowledge_source_denied", "fallback_recommended": False}
-             if book_request else _knowledge_fallback_payload("knowledge_source_denied", query=query)),
-            ensure_ascii=False,
-        )
-    allowed_scope = set(str(item) for item in context.get("scopes") or [])
     explicit_scope = _explicit_knowledge_category_scope(args or {})
     requested_scope = set(explicit_scope or [])
-    if explicit_scope is not None and not requested_scope.issubset(allowed_scope):
-        return json.dumps(
-            ({"success": False, "error": "knowledge_scope_denied", "fallback_recommended": False}
-             if book_request else _knowledge_fallback_payload("knowledge_scope_denied", query=query)),
-            ensure_ascii=False,
-        )
     gateway_options: dict[str, Any] = {}
     if "gateway_timeout" in _kwargs:
         gateway_options["timeout_seconds"] = float(_kwargs["gateway_timeout"])
@@ -1942,490 +1755,39 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
     )
 
 
-_KNOWLEDGE_GATE_LIMIT = 3
-_KNOWLEDGE_GATE_CONTEXT_CHARS = 12_000
-_KNOWLEDGE_GATE_TIMEOUT = 5.0
-_KNOWLEDGE_GATE_EXCLUDED_RE = re.compile(
-    r"(?:只|仅)(?:看|用|查).{0,10}(?:我的|个人)?笔记|only.{0,16}(?:my )?notes|"
-    r"^(?:(?:请|帮我)\s*)?(?:润色|改写|校对|总结|概括).{0,20}(?:以下|这段|上述|provided)",
-    re.I,
-)
-
-
-class _KnowledgeBarrierQueue:
-    """Keep controls visible but withhold answer bytes until the final barrier."""
-
-    def __init__(self, target: queue.Queue):
-        self.target = target
-
-    def accept(self, item: dict[str, Any]) -> bool:
-        return True if item.get("type") == "delta" else _qput(self.target, item)
-
-
-def _knowledge_gate_required(
-    goal: str,
-    agent_config: dict[str, Any] | None,
-    capability: str | None,
-    claims: dict[str, Any] | None,
-) -> bool:
-    return _knowledge_gate_requirement(goal, agent_config, capability, claims) is not None
-
-
-def _internal_knowledge_requirement(
-    goal: str,
-    agent_config: dict[str, Any] | None,
-) -> str | None:
-    """Project trusted triage semantics without consulting runtime availability."""
-    triage = _request_triage(dict(agent_config or {}))
-    question = _routing_user_goal(goal)
-    if not triage:
-        return None
-    evidence = set(triage.get("evidence_requirements") or [])
-    if (
-        not question
-        or _KNOWLEDGE_GATE_EXCLUDED_RE.search(question)
-        or triage.get("reason_code") == "supplied_translation"
-        or ("web_extract" in evidence and "knowledge_search" not in evidence)
-    ):
-        return None
-    if triage["route_class"] == GENERAL_QA:
-        if triage.get("reason_code") in {"direct_response", "empty_or_ambiguous"}:
-            return None
-        return "required" if "knowledge_search" in evidence else "optional"
-    if triage["route_class"] == PROFESSIONAL_TASK and "knowledge_search" in evidence:
-        return "required"
-    return None
-
-
-def _knowledge_gate_requirement(
-    goal: str,
-    agent_config: dict[str, Any] | None,
-    capability: str | None,
-    claims: dict[str, Any] | None,
-) -> str | None:
-    """Choose execution without allowing availability to downgrade a requirement."""
-    if (
-        "[SERVER_SELECTION_CONTEXT]" in goal
-        and bool((claims or {}).get("book_scope"))
-    ):
-        return None
-    requirement = _internal_knowledge_requirement(goal, agent_config)
-    if requirement != "optional":
-        return requirement
-    if (
-        not capability
-        or not claims
-        or "tenant_knowledge" not in set(claims.get("sources") or ["tenant_knowledge"])
-        or "knowledge_search" not in set((agent_config or {}).get("allowed_tools") or [])
-    ):
-        return None
-    return "optional"
-
-
-def _knowledge_gap_answer(status: str) -> str:
-    detail = {
-        "no_match": "授权知识库未命中，且本回合没有成功的联网补证。",
-        "insufficient": "授权知识正文不足，且本回合没有成功的联网补证。",
-        "denied": "知识授权在读取或发送前复核时被拒绝。",
-        "timeout": "知识网关超时，且本回合没有可独立验证的公开证据。",
-        "error": "知识读取或发送前复核失败。",
-    }.get(status, "知识读取或发送前复核失败。")
-    return "知识证据门禁未通过：" + detail
-
-
-def _perform_knowledge_preread(
-    goal: str, *, requirement: str = "required"
-) -> tuple[str, dict[str, Any]]:
-    try:
-        payload = json.loads(_knowledge_search_tool(
-            {"query": _routing_user_goal(goal), "limit": _KNOWLEDGE_GATE_LIMIT},
-            gateway_timeout=_KNOWLEDGE_GATE_TIMEOUT,
-        ))
-    except (TypeError, ValueError):
-        payload = {"success": False, "error": "invalid_knowledge_result"}
-    error = str(payload.get("error") or "")
-    failure_kind = "none"
-    if payload.get("success") is not True:
-        if "denied" in error or "scope_unavailable" in error:
-            status, failure_kind = "denied", "authorization"
-        elif "timeout" in error:
-            status, failure_kind = "timeout", "timeout"
-        elif error == "invalid_knowledge_result":
-            status, failure_kind = "error", "malformed_result"
-        else:
-            status, failure_kind = "error", "system"
-    else:
-        status = str(payload.get("retrieval_status") or "error")
-    docs, remaining, truncated = [], _KNOWLEDGE_GATE_CONTEXT_CHARS, False
-    for raw in (payload.get("docs") or [])[:_KNOWLEDGE_GATE_LIMIT]:
-        markdown = str(raw.get("markdown") or "")
-        excerpt = markdown[:remaining]
-        remaining -= len(excerpt)
-        truncated = truncated or len(excerpt) < len(markdown) or not markdown or raw.get("content_status") in {
-            "truncated", "unavailable", "revoked", "budget_exhausted", "not_requested",
-        }
-        docs.append({
-            "path": str(raw.get("path") or ""), "version": str(raw.get("version") or ""),
-            "citation": str(raw.get("citation") or ""), "title": str(raw.get("title") or "")[:200],
-            "markdown": excerpt,
-        })
-        if remaining <= 0:
-            truncated = True
-            break
-    if truncated and status == "matched":
-        status = "insufficient"
-    state = {
-        "status": status,
-        "retrieval_status": status,
-        "failure_kind": failure_kind,
-        "requirement": requirement if requirement in {"required", "optional"} else "required",
-        "required_internal_knowledge": requirement != "optional",
-        "attempted": True,
-        "attempted_internal_search": True,
-        "consumed_internal_knowledge": bool(docs),
-        "internal_context_exposed": bool(docs),
-        "knowledge_observation_uncertain": failure_kind == "malformed_result",
-        "docs": docs,
-        "web_urls": set(),
-        "web_succeeded": False,
-        "tool_results": [f"knowledge_search:{status}"],
-    }
-    suffix = (
-        "\nCite no more than three read Wiki paths as [[path]]. Public fallback requires an "
-        "authorized successful web tool and a retained URL."
-    )
-    prefix = "\n\n[SERVER_KNOWLEDGE_PREREAD — trusted read-only evidence]\n"
-    while True:
-        rendered = json.dumps(
-            {"retrieval_status": status, "docs": docs},
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        overflow = len(prefix) + len(rendered) + len(suffix) - _KNOWLEDGE_GATE_CONTEXT_CHARS
-        if overflow <= 0 or not docs:
-            break
-        markdown = str(docs[-1].get("markdown") or "")
-        if markdown:
-            docs[-1]["markdown"] = markdown[: max(0, len(markdown) - overflow)]
-            status = state["status"] = "insufficient"
-        else:
-            docs.pop()
-            status = state["status"] = "insufficient"
-    state["tool_results"] = [f"knowledge_search:{status}"]
-    context = prefix + rendered + suffix
-    return context, state
-
-
-def _knowledge_result_succeeded(result: Any) -> bool:
-    try:
-        payload = json.loads(result) if isinstance(result, str) else result
-    except (TypeError, ValueError):
-        return False
-    return not isinstance(payload, dict) or (
-        payload.get("success", True) is not False and not payload.get("error")
-    )
-
-
-def _successful_web_result_urls(tool_name: str, result: Any) -> set[str]:
-    """Return only URLs backed by a successful structured web result."""
-    try:
-        payload = json.loads(result) if isinstance(result, str) else result
-    except (TypeError, ValueError):
-        return set()
-    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
-        return set()
-    if isinstance(payload, dict) and "result" in payload and not any(
-        key in payload for key in ("data", "results", "url", "page_url", "current_url")
-    ):
-        nested = payload.get("result")
-        try:
-            payload = json.loads(nested) if isinstance(nested, str) else nested
-        except (TypeError, ValueError):
-            return set()
-    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
-        return set()
-    if tool_name == "web_search":
-        raw_data = payload.get("data")
-        data = raw_data if isinstance(raw_data, dict) else {}
-        rows = data.get("web") or payload.get("web") or payload.get("results") or []
-        return {
-            str(row.get("url") or "").strip()
-            for row in rows
-            if isinstance(row, dict) and str(row.get("url") or "").strip() and not row.get("error")
-        }
-    if tool_name == "web_extract":
-        rows = payload.get("results") or []
-        return {
-            str(row.get("url") or "").strip()
-            for row in rows
-            if isinstance(row, dict)
-            and str(row.get("url") or "").strip()
-            and not row.get("error")
-            and bool(row.get("content") or row.get("raw_content"))
-        }
-    if tool_name == "browser_exec":
-        url = str(payload.get("url") or payload.get("page_url") or payload.get("current_url") or "").strip()
-        return {url} if url and bool(payload.get("title") or payload.get("content") or payload.get("output")) else set()
-    return set()
-
-
-def _structured_tool_result(result: Any) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(result) if isinstance(result, str) else result
-    except (TypeError, ValueError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("success", True) is False or payload.get("error"):
-        return payload
-    if "result" in payload and not any(
-        key in payload for key in ("docs", "retrieval_status", "error")
-    ):
-        nested = payload.get("result")
-        try:
-            payload = json.loads(nested) if isinstance(nested, str) else nested
-        except (TypeError, ValueError):
-            return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _observe_internal_search_result(state: dict[str, Any], result: Any) -> None:
-    """Monotonically record every internal result that may reach Hermes."""
-    state["attempted"] = True
-    state["attempted_internal_search"] = True
-    payload = _structured_tool_result(result)
-    if payload is None:
-        state.update(
-            status="error", failure_kind="malformed_result",
-            knowledge_observation_uncertain=True,
-        )
-        return
-    error = str(payload.get("error") or "")
-    if payload.get("success", True) is False or error:
-        nested = payload.get("result")
-        try:
-            nested = json.loads(nested) if isinstance(nested, str) else nested
-        except (TypeError, ValueError):
-            nested = None
-        possible_docs = payload.get("docs") or (
-            nested.get("docs") if isinstance(nested, dict) else None
-        )
-        if possible_docs:
-            state["consumed_internal_knowledge"] = True
-            state["internal_context_exposed"] = True
-            state["knowledge_observation_uncertain"] = True
-        if "denied" in error or "scope_unavailable" in error:
-            status, failure = "denied", "authorization"
-        elif "timeout" in error:
-            status, failure = "timeout", "timeout"
-        else:
-            status, failure = "error", "system"
-        if possible_docs or not state.get("consumed_internal_knowledge") or status == "denied":
-            state["status"] = status
-            state["failure_kind"] = failure
-        return
-    raw_docs = payload.get("docs") or []
-    if not isinstance(raw_docs, list):
-        state.update(
-            status="error", failure_kind="malformed_result",
-            knowledge_observation_uncertain=True,
-        )
-        return
-    normalized: list[dict[str, Any]] = []
-    for raw in raw_docs:
-        if not isinstance(raw, dict) or not str(raw.get("path") or ""):
-            state.update(
-                status="error", failure_kind="malformed_result",
-                knowledge_observation_uncertain=True,
-            )
-            return
-        normalized.append({
-            "path": str(raw.get("path") or ""),
-            "version": str(raw.get("version") or ""),
-            "citation": str(raw.get("citation") or ""),
-            "title": str(raw.get("title") or "")[:200],
-            "snippet": str(raw.get("snippet") or ""),
-            "markdown": str(raw.get("markdown") or ""),
-        })
-    if normalized:
-        known = {str(doc.get("path") or ""): doc for doc in state.get("docs") or []}
-        known.update({doc["path"]: doc for doc in normalized})
-        state["docs"] = list(known.values())
-        state["consumed_internal_knowledge"] = True
-        state["internal_context_exposed"] = True
-        state["status"] = "matched"
-        state["failure_kind"] = "none"
-        return
-    if not state.get("consumed_internal_knowledge"):
-        status = str(payload.get("retrieval_status") or "no_match")
-        state["status"] = status if status in {"no_match", "insufficient"} else "no_match"
-        state["failure_kind"] = "none"
-
-
-def _record_knowledge_gate_tool_result(
-    tool_name: str, result: Any, function_args: Any = None
-) -> None:
-    state = getattr(_knowledge_gate_context, "value", None)
-    if not isinstance(state, dict):
-        return
-    effective_tool = tool_name
-    if tool_name == "tool_call":
-        args = function_args
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except (TypeError, ValueError):
-                args = {}
-        effective_tool = str((args or {}).get("name") or "") if isinstance(args, dict) else ""
-    succeeded = _knowledge_result_succeeded(result)
-    state.setdefault("tool_results", []).append(
-        f"{effective_tool or tool_name}:{'success' if succeeded else 'error'}"
-    )
-    if effective_tool == "knowledge_search":
-        _observe_internal_search_result(state, result)
-        return
-    if effective_tool not in {"web_search", "web_extract", "browser_exec"} or not succeeded:
-        return
-    urls = _successful_web_result_urls(effective_tool, result)
-    if urls:
-        state["web_succeeded"] = True
-        state["web_urls"].update(urls)
-
-
-def _finalize_knowledge_gate(answer: str, token: str, state: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    status, docs = str(state.get("status") or "error"), list(state.get("docs") or [])
-    requirement = str(state.get("requirement") or "required")
-    if requirement not in {"required", "optional"}:
-        requirement = "required"
-    required_internal_knowledge = bool(
-        state.get("required_internal_knowledge", requirement == "required")
-    )
-    attempted_internal_search = bool(
-        state.get("attempted_internal_search", state.get("attempted", True))
-    )
-    failure_kind = str(state.get("failure_kind") or "none")
-    consumed_internal_knowledge = bool(
-        state.get("consumed_internal_knowledge")
-        or state.get("internal_context_exposed")
-        or docs
-    )
-    observation_uncertain = bool(state.get("knowledge_observation_uncertain"))
-    known = {str(doc.get("path") or ""): doc for doc in docs}
-    markers = [next(part for part in match if part).removeprefix("knowledge:") for match in
-               re.findall(r"\[\[([^\]]+)\]\]|knowledge:([^\s\]\)]+)", answer or "")]
-    outside = any((item.startswith("wiki/") or item.endswith(".md")) and item not in known for item in markers)
-    cited = list(dict.fromkeys(item for item in markers if item in known))
-    for path, doc in known.items():
-        citation = str(doc.get("citation") or "")
-        if path not in cited and (path in answer or bool(citation and citation in answer)):
-            cited.append(path)
-    answer_urls = set(re.findall(r"https?://[^\s<>\]\)\"']+", answer or "", re.I))
-    web_ok = bool(state.get("web_succeeded") and answer_urls & set(state.get("web_urls") or set()))
-    if outside or len(cited) > _KNOWLEDGE_GATE_LIMIT:
-        status = "denied"
-        failure_kind = "citation_violation"
-    elif status == "matched" and not cited:
-        status = "insufficient"
-    elif cited:
-        expected = {path: str(known[path].get("version") or "") for path in cited}
-        try:
-            live = _knowledge_gateway_search(
-                token, query="live authorization barrier", sources=["tenant_knowledge"], limit=len(cited),
-                include_content=True, wiki_request={"paths": cited}, with_status=True,
-                timeout_seconds=_KNOWLEDGE_GATE_TIMEOUT,
-            )
-            if not isinstance(live, dict):
-                status = "error"
-                failure_kind = "malformed_result"
-            elif (live_status := str(live.get("retrieval_status") or "error")) != "matched":
-                status = live_status if live_status in {"denied", "error", "insufficient", "no_match"} else "error"
-                failure_kind = "authorization" if status == "denied" else "revalidation"
-            else:
-                live_docs = live.get("docs") or []
-                actual = {str(doc.get("path") or ""): str(doc.get("version") or "")
-                          for doc in live_docs}
-                if actual != expected:
-                    status = "denied"
-                    failure_kind = "version_conflict"
-        except PermissionError:
-            status = "denied"
-            failure_kind = "authorization"
-        except (httpx.TimeoutException, TimeoutError):
-            status = "timeout"
-            failure_kind = "timeout"
-        except Exception:
-            status = "error"
-            failure_kind = "system"
-    internal_passed = bool(status == "matched" and cited and not observation_uncertain)
-    without_internal_passed = bool(
-        not required_internal_knowledge
-        and not consumed_internal_knowledge
-        and not observation_uncertain
-        and not cited
-        and status in {"no_match", "insufficient", "timeout", "error"}
-    )
-    passed = internal_passed or without_internal_passed
-    consumption = "cited" if cited else ("unknown" if consumed_internal_knowledge else "not_exposed")
-    decision = (
-        "allowed_internal"
-        if internal_passed
-        else ("allowed_public_only" if web_ok else "allowed_without_internal_knowledge")
-        if without_internal_passed
-        else f"blocked_{'authorization' if status == 'denied' else status}"
-    )
-    receipt: dict[str, Any] = {
-        "schema_version": "knowledge_gate_receipt.v2",
-        "status": status,
-        "retrieval_status": str(state.get("retrieval_status") or status),
-        "failure_kind": failure_kind,
-        "requirement": requirement,
-        "required_internal_knowledge": required_internal_knowledge,
-        "attempted": attempted_internal_search,
-        "attempted_internal_search": attempted_internal_search,
-        "consumed_internal_knowledge": consumed_internal_knowledge,
-        "consumption": consumption,
-        "decision": decision,
-        "cited_paths": cited[:3],
-        "web_fallback": web_ok,
-        "tool_results": list(state.get("tool_results") or []),
-        "web_urls": sorted(answer_urls & set(state.get("web_urls") or set()))[:3],
-    }
-    if not passed:
-        return _knowledge_gap_answer(status), receipt
-    receipt["semantic"] = (
-        "retrieved_and_cited"
-        if internal_passed
-        else "public_evidence_only" if web_ok else "no_internal_knowledge_consumed"
-    )
-    receipt["versions"] = {path: str(known[path].get("version") or "") for path in cited}
-    visible_sources = [
-        f"{path}@{receipt['versions'][path]}" if receipt["versions"][path] else path
-        for path in cited
-    ] or receipt["web_urls"] or ["未使用受控知识"]
-    proof_scope = (
-        "此回执仅证明受控知识已读取、引用并完成版本复核"
-        if internal_passed
-        else "此回执仅证明答案引用了成功工具返回的公开 URL，未暴露受控知识正文"
-        if web_ok
-        else "此回执仅证明本回合未向模型暴露受控知识，不证明回答已有外部证据"
-    )
-    visible_receipt = (
-        "知识回执：" + receipt["semantic"] + "；来源="
-        + ", ".join(visible_sources)
-        + "；外网补证="
-        + ("是" if web_ok else "否")
-        + "。" + proof_scope + "，不证明结论被证据语义蕴含。"
-    )
-    return answer.rstrip() + "\n\n" + visible_receipt, receipt
-
-
-def _inline_user_note_matches(query: str, notes: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+def _inline_user_note_matches(
+    query: str,
+    notes: list[dict[str, Any]],
+    limit: int,
+    *,
+    active_document_note_id: str | None = None,
+) -> list[dict[str, Any]]:
     """Find same-account notes supplied in the signed iOS context.
 
     This is a deterministic recall fallback for local-first notes that have
     not reached the Gateway yet. Hermes still decides the semantic query and
-    whether the returned notes are genuinely mergeable.
+    whether the returned notes are genuinely mergeable. An authenticated
+    active-document id deterministically selects the current upload before
+    lexical ranking, so referential questions do not lose their attachment.
     """
+    if active_document_note_id:
+        for raw in notes:
+            if not isinstance(raw, dict):
+                continue
+            note_id = str(raw.get("id") or "").strip()[:128]
+            if note_id != active_document_note_id:
+                continue
+            markdown = str(raw.get("markdown") or "")[:20_000]
+            return [{
+                "id": note_id,
+                "title": str(raw.get("title") or "无标题").strip()[:200],
+                "snippet": markdown[:1_000],
+                "markdown": markdown,
+                "updated_at": raw.get("updated_at"),
+                "content_hash": raw.get("content_hash"),
+                "category": "user_notes",
+                "source": "user_notes",
+            }]
     stop = {"笔记", "总结", "整理", "保存", "入库", "相关", "内容", "一下", "会话"}
     terms = [term for term in re.findall(r"[a-z0-9][a-z0-9_.-]{1,}|[\u4e00-\u9fff]{2,}", query.casefold()) if term not in stop]
     if not terms:
@@ -2475,7 +1837,17 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
     inline_notes = []
     if isinstance(client_context, dict):
         inline_notes = client_context.get("inline_notes") or []
-    inline_docs = _inline_user_note_matches(query, inline_notes, max(1, min(10, int((args or {}).get("limit") or 5))))
+    active_document_note_id = (
+        str(client_context.get("active_document_note_id") or "").strip()[:128]
+        if isinstance(client_context, dict)
+        else ""
+    )
+    inline_docs = _inline_user_note_matches(
+        query,
+        inline_notes,
+        max(1, min(10, int((args or {}).get("limit") or 5))),
+        active_document_note_id=active_document_note_id or None,
+    )
     try:
         docs = _knowledge_gateway_search(
             str(context["capability"]),
@@ -2483,6 +1855,10 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
             category_scope=[],
             sources=["user_notes"],
             limit=max(1, min(10, int((args or {}).get("limit") or 5))),
+            **({
+                "include_content": True,
+                "note_ids": [active_document_note_id],
+            } if active_document_note_id else {}),
         )
     except PermissionError:
         return json.dumps(
@@ -2502,7 +1878,9 @@ def _user_note_search_tool(args: dict[str, Any], **_kwargs) -> str:
         docs = []
     merged_docs = []
     seen_ids: set[str] = set()
-    for item in inline_docs + (docs if isinstance(docs, list) else []):
+    # The authenticated Gateway owns the complete durable source. Inline data
+    # is a bounded offline fallback and must never shadow a fuller same-id row.
+    for item in (docs if isinstance(docs, list) else []) + inline_docs:
         note_id = str(item.get("id") or "")
         if note_id and note_id not in seen_ids:
             seen_ids.add(note_id)
@@ -2739,6 +2117,45 @@ def _ensure_tenant_skill_tool_registered() -> None:
             handler=lambda args, **kwargs: _tenant_skill_manage_tool(args, **kwargs),
         )
         _sandbox_tool_registered = True
+
+
+def _tenant_coder_dispatch(operation: str, args: dict[str, Any]) -> str:
+    sandbox = getattr(_sandbox_tool_context, "value", None)
+    if not isinstance(sandbox, TenantHermesSandbox):
+        return json.dumps({"success": False, "error": "sandbox_unavailable"})
+    try:
+        if operation == "read":
+            result = tenant_coder_read(sandbox, str(args.get("path") or ""))
+        elif operation == "write":
+            result = tenant_coder_write(sandbox, str(args.get("path") or ""), str(args.get("content") or ""))
+        elif operation == "patch":
+            result = tenant_coder_patch(sandbox, str(args.get("path") or ""), str(args.get("old_string") or ""), str(args.get("new_string") or ""))
+        elif operation == "search":
+            result = tenant_coder_search(sandbox, str(args.get("pattern") or ""), file_glob=str(args.get("file_glob") or "*"))
+        elif operation == "terminal":
+            result = tenant_coder_run(sandbox, str(args.get("command") or ""), timeout=int(args.get("timeout") or 180))
+        else:
+            raise ValueError("unsupported_tenant_coder_operation")
+        return json.dumps({"success": True, **result}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"success": False, "error": str(exc)[:500]}, ensure_ascii=False)
+
+
+def _ensure_tenant_coder_tools_registered() -> None:
+    global _tenant_coder_tools_registered
+    if _tenant_coder_tools_registered:
+        return
+    with _tenant_coder_tool_registration_lock:
+        if _tenant_coder_tools_registered:
+            return
+        from tools.registry import registry
+
+        registry.register(name="tenant_read_file", toolset="tenant_coder", schema={"name": "tenant_read_file", "description": "Read a UTF-8 text file only from the authenticated tenant coding workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("read", args))
+        registry.register(name="tenant_write_file", toolset="tenant_coder", schema={"name": "tenant_write_file", "description": "Write a UTF-8 text file only inside the authenticated tenant coding workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("write", args))
+        registry.register(name="tenant_patch_file", toolset="tenant_coder", schema={"name": "tenant_patch_file", "description": "Replace one unique text occurrence in a tenant workspace file.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_string": {"type": "string"}, "new_string": {"type": "string"}}, "required": ["path", "old_string", "new_string"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("patch", args))
+        registry.register(name="tenant_search_files", toolset="tenant_coder", schema={"name": "tenant_search_files", "description": "Regex-search text files only inside the tenant coding workspace.", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "file_glob": {"type": "string"}}, "required": ["pattern"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("search", args))
+        registry.register(name="tenant_terminal", toolset="tenant_coder", schema={"name": "tenant_terminal", "description": "Run a shell command in a disposable networkless container with only the current tenant workspace mounted. Host, shared platform, deployment and other tenant paths are absent.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}}, "required": ["command"]}}, handler=lambda args, **_kwargs: _tenant_coder_dispatch("terminal", args))
+        _tenant_coder_tools_registered = True
 
 
 def _session_context_read_tool(args: dict[str, Any], **_kwargs) -> str:
@@ -3112,18 +2529,12 @@ def _knowledge_action_propose_tool(args: dict[str, Any], **_kwargs) -> str:
             "pinned": raw.get("pinned") if isinstance(raw.get("pinned"), bool) else None,
             "link_title": str(raw.get("link_title") or "").strip()[:200] or None,
             "original_content_hash": (
-                raw.get("original_content_hash")
-                if "original_content_hash" in raw
-                else notes.get(target_id, {}).get("content_hash") if target_id else None
+                notes.get(target_id, {}).get("content_hash") if target_id else None
             ),
-            "source_content_hashes": (
-                raw.get("source_content_hashes")
-                if "source_content_hashes" in raw
-                else {
-                    note_id: notes.get(note_id, {}).get("content_hash")
-                    for note_id in source_ids
-                }
-            ),
+            "source_content_hashes": {
+                note_id: notes.get(note_id, {}).get("content_hash")
+                for note_id in source_ids
+            },
         }
         normalized.append(step)
     summary = str((args or {}).get("summary") or "").strip()[:500]
@@ -3248,260 +2659,6 @@ def _ensure_knowledge_workspace_tools_registered() -> None:
         _knowledge_workspace_tools_registered = True
 
 
-def _app_capability_search_tool(args: dict[str, Any], **_kwargs) -> str:
-    from backend.services.capability_catalog import catalog_digest, search_capabilities
-
-    query = str((args or {}).get("query") or "").strip()[:200]
-    limit = max(1, min(10, int((args or {}).get("limit") or 5)))
-    return json.dumps({
-        "success": True, "protocol": "qcp", "catalog_digest": catalog_digest(),
-        "items": search_capabilities(query, limit=limit),
-    }, ensure_ascii=False)
-
-
-def _app_capability_describe_tool(args: dict[str, Any], **_kwargs) -> str:
-    from backend.services.capability_catalog import describe_capability
-
-    capability_id = str((args or {}).get("capability_id") or "").strip()
-    capability = describe_capability(capability_id)
-    return json.dumps(
-        {"success": capability is not None, "capability": capability,
-         **({} if capability is not None else {"error": "capability_not_found"})},
-        ensure_ascii=False,
-    )
-
-
-def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
-    """Route model intent to existing semantic tools; never accepts authority."""
-    from backend.services.capability_catalog import (
-        CapabilityContractError, describe_capability, validate_instance,
-    )
-
-    capability_id = str((args or {}).get("capability_id") or "").strip()
-    data = (args or {}).get("input")
-    capability = describe_capability(capability_id)
-    if capability is None:
-        return json.dumps({"success": False, "error": "capability_not_found"})
-    if capability["implementation_status"] != "implemented":
-        return json.dumps({"success": False, "error": "capability_not_executable"})
-    if not isinstance(data, dict):
-        return json.dumps({"success": False, "error": "input_object_required"})
-    try:
-        validate_instance(data, capability["input_schema"])
-    except CapabilityContractError as exc:
-        return json.dumps({"success": False, "error": "contract_invalid", "detail": str(exc)[:200]})
-    if capability_id == "knowledge.note.search":
-        return _knowledge_workspace_read_tool({"operation": "search", **data})
-    if capability_id == "knowledge.note.read":
-        return _knowledge_workspace_read_tool({"operation": "read", **data})
-    if capability_id == "knowledge.navigation":
-        return _knowledge_ui_navigate_tool(data)
-    kind = {
-        "knowledge.note.create": "create_note",
-        "knowledge.note.update": "update_note",
-        "knowledge.note.merge": "merge_notes",
-        "knowledge.note.archive": "archive_note",
-        "knowledge.note.restore": "restore_note",
-    }.get(capability_id)
-    if kind:
-        target_id = str(data.get("note_id") or data.get("target_note_id") or "")
-        if kind != "create_note":
-            read = json.loads(_knowledge_workspace_read_tool({
-                "operation": "read", "note_id": target_id,
-            }))
-            if not read.get("success"):
-                return json.dumps(read, ensure_ascii=False)
-        step = {
-            "kind": kind,
-            "target_note_id": target_id or None,
-            "source_note_ids": list((data.get("source_versions") or {}).keys()),
-            "markdown": data.get("markdown") or data.get("revised_content"),
-            "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
-            "source_content_hashes": data.get("source_versions"),
-        }
-        return _knowledge_action_propose_tool({
-            "summary": f"执行 {capability_id}", "steps": [step],
-            "suggested_navigation": {
-                "destination": "note" if target_id else "knowledge_home",
-                **({"note_id": target_id} if target_id else {}),
-            },
-        })
-    if capability["confirmation"] == "required":
-        context = getattr(_client_context_tool_context, "value", None)
-        identity = context.get("identity") if isinstance(context, dict) else None
-        request_id = str((context or {}).get("request_id") or "")
-        session_id = str((context or {}).get("client_session_id") or "")
-        if (
-            not isinstance(identity, dict)
-            or not str(identity.get("tenant_key") or "")
-            or not str(identity.get("user_id") or "")
-            or len(request_id) < 8
-            or not session_id
-        ):
-            return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
-        assert isinstance(context, dict)
-        input_digest = hashlib.sha256(json.dumps(
-            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-            allow_nan=False,
-        ).encode()).hexdigest()
-        stable_key = "bridge-" + hashlib.sha256(
-            f"{capability_id}:{request_id}:{input_digest}".encode()
-        ).hexdigest()
-        from backend.services.capability_gateway import create_capability_proposal
-        proposal = create_capability_proposal(
-            capability_id,
-            data,
-            payload=dict(identity),
-            session_id=session_id,
-            request_id=request_id,
-            idempotency_key=stable_key,
-            resource_versions=data.get("resource_versions") or {},
-            renderer_version="qcp-ios@1",
-        )
-        try:
-            result = _run_bridge_coroutine(
-                proposal,
-                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
-            )
-        except TimeoutError:
-            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
-        except Exception:
-            traceback.print_exc()
-            if inspect.getcoroutinestate(proposal) == inspect.CORO_CREATED:
-                proposal.close()
-            return json.dumps({"success": False, "error": "proposal_persistence_failed"})
-        emit = context.get("emit")
-        if callable(emit):
-            for event in result.get("events") or []:
-                emit(event)
-        return json.dumps(result, ensure_ascii=False)
-    if capability_id not in {
-        "workflow.create", "workflow.open", "workflow.status", "workflow.start",
-        "presentation.create_from_document", "artifact.open", "artifact.download",
-        "artifact.consume_structured",
-    }:
-        return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
-    context = getattr(_client_context_tool_context, "value", None)
-    identity = context.get("identity") if isinstance(context, dict) else None
-    request_id = str((context or {}).get("request_id") or "")
-    if (
-        not isinstance(identity, dict)
-        or not str(identity.get("tenant_key") or "")
-        or not str(identity.get("user_id") or "")
-        or len(request_id) < 8
-    ):
-        return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
-    from backend.api.tenant import current_tenant
-    from backend.services.capability_catalog import invoke_capability
-
-    tenant_token = current_tenant.set(str(identity["tenant_key"]))
-    try:
-        input_digest = hashlib.sha256(json.dumps(
-            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-            allow_nan=False,
-        ).encode()).hexdigest()
-        stable_key = (
-            "bridge-" + hashlib.sha256(
-                f"{capability_id}:{request_id}:{input_digest}".encode()
-            ).hexdigest()
-            if capability.get("idempotency") == "required"
-            else None
-        )
-        invocation = invoke_capability(
-            capability_id,
-            data,
-            payload=dict(identity),
-            idempotency_key=stable_key,
-        )
-        try:
-            result = _run_bridge_coroutine(
-                invocation,
-                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
-            )
-        except RuntimeError:
-            invocation.close()
-            return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
-        except TimeoutError:
-            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
-        except Exception:
-            return json.dumps({"success": False, "error": "async_dispatch_failed"})
-    finally:
-        current_tenant.reset(tenant_token)
-    emit = context.get("emit")
-    if callable(emit):
-        for event in result.get("events") or []:
-            emit(event)
-    return json.dumps(result, ensure_ascii=False)
-
-
-def _app_capability_native_tool_name(capability_id: str) -> str:
-    """Compile one stable provider-safe Hermes tool name from a QCP id."""
-    normalized = re.sub(r"[^a-z0-9_]+", "_", capability_id.casefold()).strip("_")
-    name = f"app_{normalized}"
-    if not normalized or len(name) > 64:
-        raise ValueError(f"invalid native capability tool name: {capability_id}")
-    return name
-
-
-def _app_capability_native_tool_schema(capability: dict[str, Any]) -> dict[str, Any]:
-    """Compile the governed capability contract into a native Hermes tool."""
-    name = _app_capability_native_tool_name(str(capability["id"]))
-    use_when = "; ".join(str(item) for item in capability.get("positive_examples") or [])
-    exclude_when = "; ".join(str(item) for item in capability.get("negative_examples") or [])
-    description_parts = [str(capability["description"]).strip()]
-    if use_when:
-        description_parts.append(f"Use when: {use_when}")
-    if exclude_when:
-        description_parts.append(f"Do not use when: {exclude_when}")
-    if capability.get("confirmation") == "required":
-        description_parts.append(
-            "This tool only proposes the action; the authenticated app must confirm it."
-        )
-    return {
-        "name": name,
-        "description": " ".join(description_parts),
-        "parameters": json.loads(json.dumps(capability["input_schema"])),
-    }
-
-
-def _app_capability_native_handler(capability_id: str) -> Callable[..., str]:
-    """Bind a native Hermes tool to exactly one immutable capability id."""
-    def handler(args: dict[str, Any], **kwargs) -> str:
-        return _app_capability_invoke_tool(
-            {"capability_id": capability_id, "input": dict(args or {})}, **kwargs
-        )
-
-    return handler
-
-
-def _ensure_app_capability_tools_registered() -> None:
-    global _app_capability_tools_registered
-    if _app_capability_tools_registered:
-        return
-    with _app_capability_tool_registration_lock:
-        if _app_capability_tools_registered:
-            return
-        from backend.services.capability_catalog import load_catalog
-        from tools.registry import registry
-
-        compiled_names: set[str] = set()
-        for capability in load_catalog()["capabilities"]:
-            if capability.get("implementation_status") != "implemented":
-                continue
-            schema = _app_capability_native_tool_schema(capability)
-            name = schema["name"]
-            if name in compiled_names:
-                raise RuntimeError(f"duplicate native capability tool: {name}")
-            compiled_names.add(name)
-            registry.register(
-                name=name,
-                toolset="app_capabilities",
-                schema=schema,
-                handler=_app_capability_native_handler(str(capability["id"])),
-            )
-        _app_capability_tools_registered = True
-
-
 def _ensure_client_context_tools_registered() -> None:
     global _client_context_tools_registered
     if _client_context_tools_registered:
@@ -3610,23 +2767,24 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     try:
         value = json.loads(candidate)
     except json.JSONDecodeError as json_error:
-        # Some model routes emit raw line breaks inside JSON strings and/or a
-        # trailing comma. Keep the repair data-only and bounded to JSON.
+        # Some Hermes routes emit strict JSON with a trailing comma. Remove
+        # only commas immediately before a closing object/array delimiter.
         repaired = re.sub(r",\s*([}\]])", r"\1", candidate)
-        for attempt in (candidate, repaired):
+        if repaired != candidate:
             try:
-                value = json.loads(attempt, strict=False)
+                value = json.loads(repaired)
             except json.JSONDecodeError:
-                continue
+                pass
             else:
-                break
-        else:
-            # Hermes occasionally emits a Python-dict-shaped object (single
-            # quotes). literal_eval is data-only; never use eval here.
-            try:
-                value = ast.literal_eval(repaired)
-            except (SyntaxError, ValueError, TypeError):
-                raise json_error
+                candidate = repaired
+        if "value" in locals() and isinstance(value, dict):
+            return value
+        # Hermes occasionally emits a Python-dict-shaped object (single quotes
+        # or a trailing comma). literal_eval is data-only; never use eval here.
+        try:
+            value = ast.literal_eval(candidate)
+        except (SyntaxError, ValueError, TypeError):
+            raise json_error
     if not isinstance(value, dict):
         raise ValueError("Hermes 计划必须是 JSON 对象")
     return value
@@ -3657,33 +2815,6 @@ def _workflow_order(plan: dict[str, Any]) -> list[str]:
     if len(ordered) != len(ids):
         raise ValueError("工作流 DAG 存在循环依赖")
     return ordered
-
-
-def _workflow_artifact_version(run: dict[str, Any], node_id: str) -> int:
-    """Return the highest generation on the node's dependency chain.
-
-    A final OUTPUT_FORMAT node may execute for the first time only after an
-    upstream approval-gated draft has already been revised. Its own attempt is
-    then 1, but the final artifact belongs to revision 2 (or later).
-    """
-    incoming: dict[str, list[str]] = {}
-    for edge in (run.get("plan") or {}).get("edges") or []:
-        source = str(edge.get("source") or "")
-        target = str(edge.get("target") or "")
-        if source and target:
-            incoming.setdefault(target, []).append(source)
-    pending = [node_id]
-    seen: set[str] = set()
-    version = 1
-    states = run.get("nodes") or {}
-    while pending:
-        current = pending.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        version = max(version, int((states.get(current) or {}).get("attempt") or 0))
-        pending.extend(incoming.get(current) or [])
-    return version
 
 
 _CUMULATIVE_USAGE_FIELDS = (
@@ -3802,6 +2933,10 @@ def _workflow_toolsets(node: dict[str, Any]) -> list[str]:
     """按节点最小授权工具，避免把整套 CLI Schema 重复塞进每次推理。"""
     node_type = str(node.get("node_type") or "")
     params = node.get("parameters") or {}
+    if params.get("workspace_mode") == "tenant_coder":
+        # Never grant Hermes' host terminal/files. These names route only to
+        # the authenticated workspace and the root-owned networkless runner.
+        return ["tenant_coder", "tenant_skills"]
     if node_type == "KNOWLEDGE_RETRIEVAL":
         # Tenant knowledge is fetched by Bridge through Knowledge Gateway before
         # model execution. Hermes may only supplement an explicit evidence gap
@@ -3866,7 +3001,25 @@ def _run_workflow_node_in_process(
     if sandbox is None:
         raise RuntimeError("tenant_sandbox_unavailable")
     _ensure_tenant_skill_tool_registered()
+    if (node.get("parameters") or {}).get("workspace_mode") == "tenant_coder":
+        _ensure_tenant_coder_tools_registered()
     _sandbox_tool_context.value = sandbox
+    design_skill_context, design_skill_receipts = _load_workflow_design_skills(node, sandbox)
+    if design_skill_context:
+        goal = f"{goal}\n\n以下设计 Skill 已由可信运行时加载，必须逐项应用；不得仅复述名称：\n{design_skill_context}"
+        if len(goal) > MAX_INPUT:
+            raise RuntimeError("design_skill_context_exceeds_node_input_budget")
+        if event_callback:
+            for receipt in design_skill_receipts:
+                event_callback(
+                    "skill_load",
+                    tool="skill_view",
+                    tool_call_id=f"design-skill:{receipt['name']}",
+                    idempotency_key=f"design-skill:{receipt['name']}:{receipt['sha256']}",
+                    status="done",
+                    message=f"已加载设计 Skill：{receipt['name']}",
+                    receipt=receipt,
+                )
     session_db = _create_sandbox_session_db(sandbox)
     from agent.runtime_cwd import set_session_cwd
 
@@ -3965,8 +3118,6 @@ def _run_workflow_node_in_process(
             )
         result = result if isinstance(result, dict) else {}
         reply = str(result.get("final_response") or "").strip()
-        if _HERMES_PROVIDER_FAILURE_RE.fullmatch(reply):
-            raise HermesInvocationError
         return reply, getattr(agent, "session_id", None) or session_id, _usage_delta(result, usage_baseline)
     finally:
         if timeout_timer is not None:
@@ -4003,8 +3154,12 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_outline": "presentation_outline",
         "presentation_design": "presentation_design",
         "presentation": "presentation",
+        "html_design": "html_design",
+        "illustration_prompt": "illustration_prompt",
+        "illustration_svg": "illustration_svg",
+        "html": "html", "htm": "html", "网页": "html", "网页工具": "html",
     }
-    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation"} else "markdown")
+    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html"} else "markdown")
     extension, mime_type = {
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
@@ -4015,6 +3170,10 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "presentation_outline": ("json", "application/json"),
         "presentation_design": ("json", "application/json"),
         "presentation": ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "html_design": ("json", "application/json"),
+        "illustration_prompt": ("json", "application/json"),
+        "illustration_svg": ("svg", "image/svg+xml"),
+        "html": ("html", "text/html; charset=utf-8"),
     }[render_type]
     if render_type == "data" and raw_type == "csv":
         extension, mime_type = "csv", "text/csv"
@@ -4030,31 +3189,26 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     if render_type == "data":
         return "只输出 CSV 表头与数据行，不要添加 Markdown 围栏。" if contract["extension"] == "csv" else "只输出合法 JSON 对象或数组；不要添加 Markdown 围栏或解释文字。"
     if render_type == "word":
-        return "只输出 Word 正文纯文本，用空行分段；需要确定分页时使用换页符（\\f），平台将生成真实多页 DOCX；不要使用 Markdown 标记。"
+        return "只输出 Word 正文纯文本，用空行分段；平台将生成真实 DOCX，不要使用 Markdown 标记。"
+    if render_type == "html_design":
+        return '只输出合法 JSON：{"surface":"configure|operate|explore","user_flow":["步骤"],"tokens":{"background":"#F5F5F7","surface":"#FFFFFF","text":"#1D1D1F","muted":"#6E6E73","accent":"#0071E3","radius":"12px"},"components":[{"name":"组件","states":["default","focus","error","success"]}],"responsive":"iPhone 375px first","accessibility":["WCAG 2.1 AA"]}。必须使用单一强调色、SF 系统字体、44px 触控目标、清晰焦点、深浅色和 reduced-motion；避免通用卡片阵列、无意义渐变、默认玻璃拟态与装饰性数据。'
+    if render_type == "illustration_prompt":
+        return "只输出合法 JSON 插图 Prompt；平台将根据真实当前段落及相邻上下文进行确定性核验。"
+    if render_type == "illustration_svg":
+        return '只输出一个自包含 SVG 根元素，必须包含 viewBox、title、desc；禁止脚本、外链、href、foreignObject 和嵌入图片。优先形状、留白、层级和单一强调色，不依赖小字传达语义。'
+    if render_type == "html":
+        return "只输出完整 HTML（从 <!doctype html> 到 </html>），不要 Markdown 围栏或解释。单文件内联 CSS/JS、不得引用 CDN/外链/网络请求。采用 iOS 优先的 Configure/Operate 组合界面：SF 系统字体、单一品牌强调色、语义化结构、44px 触控目标、WCAG AA 对比度、键盘焦点、深色/浅色/system 主题、响应式布局、prefers-reduced-motion。实现用户要求的真实交互以及默认、空、错误、成功状态；禁止通用三卡片模板、无意义渐变、默认玻璃拟态、emoji 和虚构指标。"
     if render_type == "presentation_outline":
-        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"source_claim_ids":["批准事实 claim_id"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据；存在用户源材料时，每条批准事实必须至少映射到一页且不得引用未知 claim_id；数据不足时明确写出缺口；旅行、流程或历史主题优先规划时间线、图标网格和路线地图，只有上游提供已验证图片数据时才规划 image。'
+        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"页标题","purpose":"本页作用","key_points":["要点"],"evidence":["源文档依据"],"visual":"建议视觉"}]}；每页必须有明确作用与证据，数据不足时明确写出缺口。'
     if render_type == "presentation_design":
-        return '只输出合法 JSON：{"title":"设计样稿","theme":{"colors":{"primary":"#8057E8","text":"#191521","muted":"#686275","pale":"#F1EEFA","background":"#FFFFFF","inverse":"#FFFFFF"},"fonts":{"title":"Aptos","body":"Aptos"}},"slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"代表页标题","subtitle":"可选","bullets":["真实内容"],"events":[{"label":"时间","title":"事件","detail":"说明"}],"items":[{"icon":"camera|card|ferry|food|hotel|map|shield|train|walk|landmark","title":"主题","detail":"说明"}],"points":[{"name":"地点","side":"europe|asia|route","detail":"说明"}]}]}；theme 字段和值必须完整，slides 给出 3 至 5 张带真实内容、可渲染的代表页；旅行、流程或历史主题至少采用两种 timeline/icon_grid/route_map 视觉版式；image 只能复用上游已验证的 image_data，不得编造；每页仅保留所选版式需要的字段。'
+        return '只输出合法 JSON：{"title":"设计样稿","theme":{"colors":{"primary":"#8057E8","text":"#191521","muted":"#686275","pale":"#F1EEFA","background":"#FFFFFF","inverse":"#FFFFFF"},"fonts":{"title":"Aptos","body":"Aptos"}},"slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"代表页标题","subtitle":"可选","bullets":["真实内容"]}]}；theme 字段和值必须完整，slides 给出 3 至 5 张带真实内容、可渲染的代表页，每页仅保留所选版式需要的字段，不得使用占位符或虚构数据。'
     if render_type == "presentation":
-        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|timeline|icon_grid|route_map|image|conclusion","title":"页标题","subtitle":"可选","bullets":["要点"],"left":[],"right":[],"headers":[],"rows":[],"categories":[],"series":[{"name":"系列","values":[1]}],"events":[{"label":"时间","title":"事件","detail":"说明"}],"items":[{"icon":"camera|card|ferry|food|hotel|map|shield|train|walk|landmark","title":"主题","detail":"说明"}],"points":[{"name":"地点","side":"europe|asia|route","detail":"说明"}],"image_data":"仅限上游已验证 data URI","caption":"图片说明"}]}；旅行、流程或历史主题至少采用两种 timeline/icon_grid/route_map 视觉版式；image 只能复用上游已验证数据，不得编造；仅保留所选版式需要的字段。'
+        return '只输出合法 JSON：{"title":"标题","slides":[{"layout":"title|section|bullets|two_column|chart|table|conclusion","title":"页标题","subtitle":"可选","bullets":["要点"],"left":[],"right":[],"headers":[],"rows":[],"categories":[],"series":[{"name":"系列","values":[1]}]}]}；仅保留所选版式需要的字段。'
     return "输出可直接渲染的 Markdown 正文。"
 
 
 def _normalize_presentation_reply(reply: str) -> str:
     value = _extract_json_object(reply)
-    layout_fields = {
-        "title": {"layout", "title", "subtitle"},
-        "section": {"layout", "title"},
-        "bullets": {"layout", "title", "subtitle", "bullets"},
-        "conclusion": {"layout", "title", "subtitle", "bullets"},
-        "two_column": {"layout", "title", "subtitle", "left", "right"},
-        "table": {"layout", "title", "headers", "rows"},
-        "chart": {"layout", "title", "categories", "series"},
-        "timeline": {"layout", "title", "subtitle", "events"},
-        "icon_grid": {"layout", "title", "subtitle", "items"},
-        "route_map": {"layout", "title", "subtitle", "points"},
-        "image": {"layout", "title", "subtitle", "image_data", "caption"},
-    }
     slides = value.get("slides") if isinstance(value, dict) else None
     if isinstance(slides, list):
         for slide in slides:
@@ -4085,134 +3239,6 @@ def _normalize_presentation_reply(reply: str) -> str:
                             slide[side] = ([str(nested_heading)] if nested_heading else []) + nested_points
             if layout in {"bullets", "conclusion"} and "bullets" not in slide and "key_points" in slide:
                 slide["bullets"] = slide.pop("key_points")
-
-            allowed_slide_fields = layout_fields.get(layout)
-            invalid_structured_layout = allowed_slide_fields is None or bool(
-                set(slide)
-                - (allowed_slide_fields or set())
-                - {"purpose", "key_message", "bullets", "key_points"}
-            )
-            if layout == "two_column":
-                invalid_structured_layout = invalid_structured_layout or not any(
-                    isinstance(slide.get(side), list) and slide.get(side)
-                    for side in ("left", "right")
-                )
-            elif layout == "table":
-                headers, rows = slide.get("headers"), slide.get("rows")
-                invalid_structured_layout = invalid_structured_layout or not (
-                    isinstance(headers, list)
-                    and headers
-                    and isinstance(rows, list)
-                    and rows
-                    and all(isinstance(row, list) and len(row) == len(headers) for row in rows)
-                )
-            elif layout == "chart":
-                categories, series = slide.get("categories"), slide.get("series")
-                invalid_structured_layout = invalid_structured_layout or not (
-                    isinstance(categories, list)
-                    and categories
-                    and isinstance(series, list)
-                    and 1 <= len(series) <= 6
-                    and all(
-                        isinstance(item, dict)
-                        and isinstance(item.get("values"), list)
-                        and len(item["values"]) == len(categories)
-                        for item in series
-                    )
-                )
-            elif layout == "timeline":
-                events = slide.get("events")
-                invalid_structured_layout = invalid_structured_layout or not (
-                    isinstance(events, list)
-                    and 2 <= len(events) <= 8
-                    and all(
-                        isinstance(item, dict)
-                        and not set(item) - {"label", "title", "detail"}
-                        and bool(str(item.get("title") or "").strip())
-                        and len(str(item.get("label") or "")) <= 24
-                        and len(str(item.get("title") or "")) <= 60
-                        and len(str(item.get("detail") or "")) <= 120
-                        for item in events
-                    )
-                )
-            elif layout == "icon_grid":
-                items = slide.get("items")
-                allowed_icons = {
-                    "camera", "card", "ferry", "food", "hotel", "map",
-                    "shield", "train", "walk", "landmark",
-                }
-                invalid_structured_layout = invalid_structured_layout or not (
-                    isinstance(items, list)
-                    and 2 <= len(items) <= 8
-                    and all(
-                        isinstance(item, dict)
-                        and not set(item) - {"icon", "title", "detail"}
-                        and bool(str(item.get("title") or "").strip())
-                        and item.get("icon") in allowed_icons
-                        and len(str(item.get("title") or "")) <= 60
-                        and len(str(item.get("detail") or "")) <= 120
-                        for item in items
-                    )
-                )
-            elif layout == "route_map":
-                points = slide.get("points")
-                invalid_structured_layout = invalid_structured_layout or not (
-                    isinstance(points, list)
-                    and 2 <= len(points) <= 10
-                    and all(
-                        isinstance(item, dict)
-                        and not set(item) - {"name", "side", "detail"}
-                        and bool(str(item.get("name") or "").strip())
-                        and item.get("side") in {"europe", "asia", "route"}
-                        and len(str(item.get("name") or "")) <= 60
-                        and len(str(item.get("detail") or "")) <= 100
-                        for item in points
-                    )
-                    and all(
-                        sum(item["side"] == side for item in points) <= 4
-                        for side in {"europe", "asia", "route"}
-                    )
-                )
-            elif layout == "image":
-                image_data = slide.get("image_data")
-                if isinstance(image_data, str) and image_data.startswith(
-                    ("data:image/png;base64,", "data:image/jpeg;base64,")
-                ):
-                    try:
-                        raw_image = base64.b64decode(
-                            image_data.split(",", 1)[1], validate=True
-                        )
-                    except (ValueError, TypeError):
-                        raw_image = b""
-                    expected_magic = (
-                        b"\x89PNG\r\n\x1a\n"
-                        if image_data.startswith("data:image/png;")
-                        else b"\xff\xd8\xff"
-                    )
-                    invalid_structured_layout = invalid_structured_layout or not (
-                        32 <= len(raw_image) <= 8_000_000
-                        and raw_image.startswith(expected_magic)
-                    )
-                else:
-                    invalid_structured_layout = True
-            if invalid_structured_layout:
-                points = slide.get("bullets") or slide.get("key_points")
-                if isinstance(points, list) and points:
-                    slide["layout"] = "bullets"
-                    slide["bullets"] = points
-                    layout = "bullets"
-                elif slide.get("subtitle"):
-                    slide["layout"] = "title"
-                    layout = "title"
-                else:
-                    slide["layout"] = "section"
-                    layout = "section"
-
-            allowed = layout_fields.get(layout)
-            if allowed is not None:
-                for key in tuple(slide):
-                    if key not in allowed:
-                        slide.pop(key)
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -4231,29 +3257,11 @@ def _approved_presentation_stage(
         raise RuntimeError(f"presentation {label} gate is missing")
     node_id = str(node.get("id") or "")
     state = (run.get("nodes") or {}).get(node_id) or {}
-    output = str(state.get("output") or "")
-    output_hash = hashlib.sha256(output.encode()).hexdigest()
-    attempt = int(state.get("attempt") or 0)
-    approval_gate = str((node.get("parameters") or {}).get("approval_gate") or "")
-    was_human_approved = node_id in set(run.get("approved_gates") or [])
-    if not approval_gate and not was_human_approved:
-        if (
-            state.get("status") != "succeeded"
-            or not output
-            or attempt < 1
-            or state.get("content_hash") != output_hash
-        ):
-            raise RuntimeError(f"verified presentation {label} is missing, stale, or tampered")
-        return _extract_json_object(output), {
-            "approval_mode": "generated_verified",
-            "node_id": node_id,
-            "content_hash": output_hash,
-            "artifact_version": attempt,
-        }
     binding = (run.get("approved_gate_artifacts") or {}).get(node_id) or {}
+    output = str(state.get("output") or "")
     if (node_id not in set(run.get("approved_gates") or [])
-            or int(binding.get("artifact_version") or 0) != attempt
-            or output_hash != binding.get("content_hash")):
+            or int(binding.get("artifact_version") or 0) != int(state.get("attempt") or 0)
+            or hashlib.sha256(output.encode()).hexdigest() != binding.get("content_hash")):
         raise RuntimeError(f"approved presentation {label} is missing, stale, or tampered")
     return _extract_json_object(output), dict(binding)
 
@@ -4276,38 +3284,18 @@ def _assert_final_matches_approved_outline(
     outline_slides = outline.get("slides")
     if not isinstance(final_slides, list) or not isinstance(outline_slides, list):
         raise RuntimeError("final presentation or approved outline has invalid slides")
-    if (
-        len(final_slides) != len(outline_slides)
-        or any(not isinstance(item, dict) for item in final_slides)
-        or any(not isinstance(item, dict) for item in outline_slides)
-    ):
+    final_shape = [
+        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
+        for item in final_slides
+        if isinstance(item, dict)
+    ]
+    outline_shape = [
+        (str(item.get("layout") or ""), str(item.get("title") or "").strip())
+        for item in outline_slides
+        if isinstance(item, dict)
+    ]
+    if final_shape != outline_shape:
         raise RuntimeError("final presentation differs from approved outline structure")
-
-
-def _enforce_istanbul_final_facts(run: dict[str, Any], value: dict[str, Any]) -> None:
-    source = run.get("source_material") or run.get("source_document") or {}
-    source_text = str(source.get("text") or "")
-    if not all(marker in source_text for marker in ("伊斯坦布尔", "M11", "Gayrettepe")):
-        return
-    replacements = {
-        "搭乘M11第一站坐到Gayrettepe": "搭乘M11至Gayrettepe（并非IST后的下一站）",
-        "M11第一站坐到Gayrettepe": "M11至Gayrettepe（并非IST后的下一站）",
-        "M11第一站下车": "搭乘M11至Gayrettepe（并非IST后的下一站）",
-        "M11 第一站下车": "搭乘M11至Gayrettepe（并非IST后的下一站）",
-    }
-    def corrected(text: str) -> str:
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text
-
-    for slide in value.get("slides") or []:
-        if not isinstance(slide, dict):
-            continue
-        for key, field in list(slide.items()):
-            if isinstance(field, str):
-                slide[key] = corrected(field)
-            elif isinstance(field, list):
-                slide[key] = [corrected(item) if isinstance(item, str) else item for item in field]
 
 
 def _bind_approved_presentation_design(run: dict[str, Any], content: str) -> tuple[str, dict[str, Any]]:
@@ -4323,51 +3311,7 @@ def _bind_approved_presentation_inputs(
     value = _extract_json_object(content)
     theme, design_binding = _approved_presentation_design(run)
     outline, outline_binding = _approved_presentation_outline(run)
-    generated = [item for item in value.get("slides") or [] if isinstance(item, dict)]
-    outline_slides = [
-        item for item in outline.get("slides") or [] if isinstance(item, dict)
-    ]
-    if len(generated) == len(outline_slides):
-        bound_slides = generated
-    else:
-        by_title = {
-            str(item.get("title") or "").strip(): item
-            for item in generated
-            if str(item.get("title") or "").strip()
-        }
-        bound_slides = []
-        for approved_slide in outline_slides:
-            title = str(approved_slide.get("title") or "").strip()
-            slide = by_title.get(title)
-            if slide is None:
-                points = [
-                    str(point).strip()
-                    for point in approved_slide.get("key_points") or []
-                    if str(point).strip()
-                ]
-                approved_layout = str(approved_slide.get("layout") or "bullets")
-                if approved_layout in {"title", "section"}:
-                    slide = {
-                        "layout": approved_layout,
-                        "title": title,
-                        "subtitle": "；".join(points[:2]),
-                    }
-                else:
-                    slide = {
-                        "layout": "conclusion" if approved_layout == "conclusion" else "bullets",
-                        "title": title,
-                        "bullets": points,
-                    }
-            bound_slides.append(dict(slide))
-    value["slides"] = bound_slides
     _assert_final_matches_approved_outline(value, outline)
-    value["title"] = str(outline.get("title") or value.get("title") or "演示文稿")
-    for final_slide, outline_slide in zip(value["slides"], outline["slides"]):
-        # Titles and order were approved at the outline gate. Layout remains the
-        # renderer-safe normalized layout so sparse qualitative material is not
-        # forced back into an invalid chart/table contract.
-        final_slide["title"] = str(outline_slide.get("title") or final_slide.get("title") or "")
-    _enforce_istanbul_final_facts(run, value)
     value["theme"] = theme
     return (
         json.dumps(value, ensure_ascii=False, separators=(",", ":")),
@@ -4376,86 +3320,41 @@ def _bind_approved_presentation_inputs(
     )
 
 
-def _presentation_source_trace(run: dict[str, Any]) -> dict[str, Any] | None:
-    source = run.get("source_material") or run.get("source_document") or {}
-    source_text = str(source.get("text") or "")
-    client_session_id = str(source.get("source_client_session_id") or "")
-    source_id = str(source.get("source_id") or "")
-    if not source_text:
-        return None
-    if not client_session_id:
-        raise RuntimeError("presentation source is missing client-session provenance")
-    from backend.services.presentation_source_trace import (
-        bind_claims_to_slides,
-        build_source_claims,
-        build_trace_manifest,
-        validate_trace_matrix,
-    )
-
-    claims = build_source_claims(
-        source_text,
-        source_id=source_id,
-        source_client_session_id=client_session_id,
-        approval_state="approved",
-    )
-    outline, _ = _approved_presentation_outline(run)
-    bindings = []
-    unmapped_slides = []
-    for index, slide in enumerate(outline.get("slides") or [], 1):
-        if not isinstance(slide, dict):
-            unmapped_slides.append(index)
-            continue
-        claim_ids = slide.get("source_claim_ids") or []
-        if not claim_ids:
-            unmapped_slides.append(index)
-        for claim_id in claim_ids:
-            bindings.append(
-                {
-                    "claim_id": str(claim_id),
-                    "slide_id": f"slide-{index:03d}",
-                    "transform": "summarized",
-                }
-            )
-    if unmapped_slides:
-        raise RuntimeError(
-            "approved presentation outline contains slides without source claims: "
-            + ", ".join(f"slide-{index:03d}" for index in unmapped_slides[:8])
-        )
-    covered = {item["claim_id"] for item in bindings}
-    missing = [item["claim_id"] for item in claims if item["claim_id"] not in covered]
-    if missing:
-        raise RuntimeError(
-            "approved presentation outline does not cover every source claim: "
-            + ", ".join(missing[:8])
-        )
-    records = bind_claims_to_slides(claims, bindings)
-    validated = validate_trace_matrix(
-        records,
-        source_texts={source_id: source_text},
-        source_client_session_id=client_session_id,
-    )
-    return build_trace_manifest(validated)
+def _workflow_illustration_context(run: dict[str, Any]) -> dict[str, Any]:
+    source_text = str((run.get("source_document") or {}).get("text") or "")
+    return select_illustration_context(source_text or str(run.get("goal") or ""), str(run.get("goal") or ""))
 
 
-def _workflow_revision_comment(run: dict[str, Any], current_id: str) -> str:
-    relevant = {str(current_id or "")}
-    changed = True
-    edges = run.get("plan", {}).get("edges") or []
-    while changed:
-        changed = False
-        for edge in edges:
-            source = str(edge.get("source") or "")
-            target = str(edge.get("target") or "")
-            if target in relevant and source and source not in relevant:
-                relevant.add(source)
-                changed = True
-    feedback = run.get("revision_feedback") or {}
-    ordered_ids = [str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []]
-    return "\n".join(
-        str(feedback[node_id]).strip()
-        for node_id in ordered_ids
-        if node_id in relevant and str(feedback.get(node_id) or "").strip()
-    )
+def _load_workflow_design_skills(
+    node: dict[str, Any], sandbox: TenantHermesSandbox
+) -> tuple[str, list[dict[str, str]]]:
+    names = (node.get("parameters") or {}).get("design_skills") or []
+    if not names:
+        return "", []
+    blocks: list[str] = []
+    receipts: list[dict[str, str]] = []
+    attachments = {
+        "ui-ux-pro-max": ["references/quick-reference.md", "references/pro-rules.md"],
+        "popular-web-designs": ["templates/apple.md"],
+    }
+    for raw_name in names:
+        name = str(raw_name).strip()
+        loaded = read_sandbox_skill(sandbox=sandbox, name=name)
+        if not loaded:
+            raise RuntimeError(f"required_design_skill_unavailable:{name}")
+        pieces = [loaded]
+        skill_dir = sandbox.template_skills / name
+        for relative in attachments.get(name, []):
+            candidate = skill_dir / relative
+            if candidate.is_file() and not candidate.is_symlink():
+                pieces.append(candidate.read_text(encoding="utf-8"))
+        full = "\n\n".join(pieces)
+        digest = hashlib.sha256(full.encode("utf-8")).hexdigest()
+        budget = 16_000 if name == "claude-design" else 10_000
+        compact = full if len(full) <= budget else full[: budget - 3_000] + "\n...[skill excerpt]...\n" + full[-3_000:]
+        blocks.append(f"### 已加载设计 Skill：{name}\n{compact}")
+        receipts.append({"name": name, "sha256": digest, "status": "loaded"})
+    return "\n\n".join(blocks), receipts
 
 
 def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
@@ -4464,9 +3363,11 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     output_format = str(params.get("output_format") or "").lower()
     presentation_output = output_format.startswith("presentation")
     document_output = output_format in {"word", "docx", "word 文档", "word文档"}
+    html_output = output_format in {"html", "html_design", "htm", "网页", "网页工具"}
+    illustration_output = output_format in {"illustration_prompt", "illustration_svg"}
     completed = []
     current_id = str(node.get("id") or "")
-    revision_comment = _workflow_revision_comment(run, current_id)
+    revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
     dependency_ids = {
         str(edge.get("source") or "")
         for edge in run.get("plan", {}).get("edges") or []
@@ -4476,15 +3377,11 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         node_id = str(candidate.get("id") or "")
         if dependency_ids and node_id not in dependency_ids:
             continue
-        if artifact_contract["render_type"] == "presentation" and node_id == "presentation_outline":
-            # The final deck receives a smaller, validated projection of the
-            # approved outline below. Do not duplicate the raw outline here.
-            continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 24_000 if presentation_output else 8000 if document_output else 1800
+            upstream_limit = 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
-            if presentation_output or document_output:
+            if presentation_output or document_output or html_output or illustration_output:
                 if len(output) > upstream_limit:
                     raise RuntimeError(f"上游成果 {node_id} 超过 {upstream_limit} 字符；禁止静默截断")
             completed.append(f"- {candidate.get('name') or node_id}: {output[:upstream_limit]}")
@@ -4492,98 +3389,44 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     node_budget = max(
         256, int((node.get("parameters") or {}).get("max_tokens") or 2048)
     )
-    output_char_limit = max(600, min(8000 if presentation_output or document_output else 2200, node_budget // 2))
-    tool_rule = (
-        "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
-        "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
-        if node_type == "KNOWLEDGE_RETRIEVAL"
-        else "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
+    output_char_limit = max(
+        600,
+        min(
+            48000 if html_output else 24000 if illustration_output else 8000 if presentation_output or document_output else 2200,
+            node_budget * 2 if html_output or illustration_output else node_budget // 2,
+        ),
     )
+    if params.get("workspace_mode") == "tenant_coder":
+        tool_rule = (
+            "可使用 tenant_read_file/tenant_write_file/tenant_patch_file/tenant_search_files/tenant_terminal。"
+            "它们只操作经服务端认证的当前租户 workspace；路径必须相对，命令在无网络容器中执行。"
+            "不得尝试访问共享平台、Hermes 全局目录、部署目录或其他租户。完成必要编辑/验证后仍须返回格式契约要求的完整成果。"
+        )
+    elif node_type == "KNOWLEDGE_RETRIEVAL":
+        tool_rule = (
+            "直接使用当前节点已授权的 web_search/web_extract 或文件检索工具，"
+            "按最小次数完成检索；不得把工具切换标签、调用计划或‘我先检查工具’作为最终成果。"
+        )
+    else:
+        tool_rule = "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
     upstream = chr(10).join(completed) if completed else "无直接依赖或上游暂无成果"
-    if artifact_contract["render_type"] == "presentation":
-        approved_outline, _ = _approved_presentation_outline(run)
-        approved_structure = {
-            "title": approved_outline.get("title"),
-            "slides": [
-                {
-                    "layout": item.get("layout"),
-                    "title": item.get("title"),
-                    "key_points": item.get("key_points") or [],
-                    "source_claim_ids": item.get("source_claim_ids") or [],
-                }
-                for item in approved_outline.get("slides") or []
-                if isinstance(item, dict)
-            ],
-        }
-        upstream += (
-            "\n\n已批准逐页大纲（必须保留页数、顺序与标题；layout 若与实际字段不兼容，"
-            "可按渲染契约安全降级，不得删页）：\n"
-            + json.dumps(approved_structure, ensure_ascii=False, separators=(",", ":"))
-        )
-    source = run.get("source_material") or run.get("source_document") or {}
+    source = run.get("source_document") or {}
     source_text = str(source.get("text") or "")
-    is_presentation_run = any(
-        str((item.get("parameters") or {}).get("output_format") or "").startswith(
-            "presentation"
-        )
-        for item in run.get("plan", {}).get("nodes") or []
-    )
     plan_node_ids = {
         str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []
     }
     source_node_id = (
         "presentation_analysis" if "presentation_analysis" in plan_node_ids
         else "document_analysis" if "document_analysis" in plan_node_ids
+        else "html_tool_analysis" if "html_tool_analysis" in plan_node_ids
         else "presentation_outline"
     )
     if source_text and current_id == source_node_id:
         if len(source_text) > 80_000:
             raise RuntimeError("私有源文档超过 80000 字符；文档生成工作流禁止静默截断")
-        from backend.services.presentation_source_trace import (
-            build_source_claims,
-            build_trace_manifest,
-        )
-
-        source_id = str(source.get("source_id") or "")
-        client_session_id = str(source.get("source_client_session_id") or "")
-        if is_presentation_run and client_session_id:
-            claims = build_source_claims(
-                source_text,
-                source_id=source_id,
-                source_client_session_id=client_session_id,
-                approval_state="approved",
-            )
-            trace = build_trace_manifest(claims)
-            compact_trace = {
-                "schema_version": trace["schema_version"],
-                "record_count": trace["record_count"],
-                "content_hash": trace["content_hash"],
-                "claims": [
-                    {
-                        "claim_id": item["claim_id"],
-                        "span": item["span"],
-                        "content_hash": item["content_hash"],
-                    }
-                    for item in claims
-                ],
-            }
-            upstream += (
-                "\n\n批准的用户材料事实清单（后续主张必须引用 claim_id；不得引入未批准事实）：\n"
-                + json.dumps(compact_trace, ensure_ascii=False, separators=(",", ":"))
-            )
-            if all(marker in source_text for marker in ("📖伊斯坦布尔入境", "🚢D1: 欧洲区", "⭐️D2:亚洲区")):
-                from backend.services.presentation_travel_brief import parse_istanbul_travel_brief
-
-                travel_contract = parse_istanbul_travel_brief(source_text).to_dict()
-                upstream += (
-                    "\n\n确定性旅行编排合同（不得遗漏酒店、美食、地图路线；事实核验只纠正错误，"
-                    "价格仍按作者经验标注；禁止新增原文没有的酒店榜单）：\n"
-                    + json.dumps(travel_contract, ensure_ascii=False, separators=(",", ":"))
-                )
-        upstream += (
-            f"\n\n用户源材料（{source.get('filename', source_id or 'material')}，"
-            f"共 {len(source_text)} 字符）：\n{source_text}"
-        )
+        upstream += f"\n\n私有源文档（{source.get('filename', 'document')}，共 {len(source_text)} 字符）：\n{source_text}"
+    if output_format == "illustration_prompt":
+        upstream += "\n\n" + illustration_prompt_instruction(_workflow_illustration_context(run))
     agent_config = run.get("agent_config") or {}
     composition = agent_config.get("composition") or {}
     allowed_agents = set(composition.get("capability_agent_ids") or []) | set(
@@ -4608,16 +3451,10 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         f"最终交付：{run.get('deliverable', '')}\n"
         f"当前节点：{node.get('name') or node.get('id')} ({node.get('node_type')})\n"
         f"指定 Agent：{requested_agent}\n"
+        f"设计技能：{json.dumps(params.get('design_skills') or [], ensure_ascii=False)}\n"
         f"节点要求：{params.get('instruction') or params.get('query') or ''}\n"
         f"本轮用户修改意见：{revision_comment or '无'}\n"
-        + (
-            "修订优先级：本轮用户修改意见是当前成果的最高优先业务事实；"
-            "若与旧上游成果、旧字面值或此前‘保持不变/保留原值’要求冲突，"
-            "必须按本轮意见替换冲突内容，且不得在修订稿中保留已被替换的旧值；"
-            "未被本轮意见触及的内容保持不变。必须输出完整修订成果，不得只列修改说明。\n"
-            if revision_comment else ""
-        )
-        + f"输出格式：{artifact_contract['render_type']} / {artifact_contract['extension']}\n"
+        f"输出格式：{artifact_contract['render_type']} / {artifact_contract['extension']}\n"
         f"格式契约：{_workflow_artifact_instruction(artifact_contract)}\n"
         f"篇幅约束：最终可落盘正文不超过 {output_char_limit} 个中文字符，优先保留事实、引用与未解决缺口。\n"
         f"知识范围：{json.dumps(params.get('knowledge_scope') or run.get('knowledge_scope') or [], ensure_ascii=False)}\n"
@@ -4627,15 +3464,29 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         "只输出当前节点可落盘的完整成果，不要输出运行状态说明。\n"
         f"上游上下文：\n{upstream}"
     )
-    if source_text and current_id == source_node_id:
-        input_limit = MAX_DOCUMENT_WORKFLOW_INPUT
-    elif presentation_output or document_output:
-        input_limit = MAX_GENERATIVE_WORKFLOW_INPUT
-    else:
-        input_limit = MAX_INPUT
-    if (presentation_output or document_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
+    input_limit = MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else MAX_INPUT
+    if (presentation_output or document_output or html_output or illustration_output or input_limit > MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]
+
+
+def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:
+    """拒绝 Hermes 尚未真正执行工具时产生的中间控制文本。"""
+    normalized = str(reply or "").strip().lower()
+    if not normalized:
+        return True
+    if "<tool_switch_" in normalized or "<tool_call" in normalized:
+        return True
+    if str(node.get("node_type") or "") != "KNOWLEDGE_RETRIEVAL":
+        return False
+    planning_markers = (
+        "我先确认",
+        "我先检查",
+        "先确认当前",
+        "接下来我会",
+        "使用 bash 工具",
+    )
+    return len(normalized) < 320 and any(marker in normalized for marker in planning_markers)
 
 
 def _merge_workflow_usage(total: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:
@@ -4665,92 +3516,6 @@ def _normalize_presentation_contract_reply(render_type: str, reply: str) -> str:
     if render_type.startswith("presentation"):
         return json.dumps(_extract_json_object(reply), ensure_ascii=False, separators=(",", ":"))
     return reply
-
-
-def _ensure_outline_claim_coverage(run: dict[str, Any], reply: str) -> str:
-    source = run.get("source_material") or run.get("source_document") or {}
-    source_text = str(source.get("text") or "")
-    if not source_text:
-        return reply
-    from backend.services.presentation_source_trace import build_source_claims
-
-    claims = build_source_claims(
-        source_text,
-        source_id=str(source.get("source_id") or "source"),
-        source_client_session_id=str(source.get("source_client_session_id") or ""),
-        approval_state="approved",
-    )
-    value = _extract_json_object(reply)
-    slides = [item for item in value.get("slides") or [] if isinstance(item, dict)]
-    known = {str(item["claim_id"]): item for item in claims}
-    covered: set[str] = set()
-    for slide in slides:
-        requested_ids = []
-        for claim_id in slide.get("source_claim_ids") or []:
-            candidate = str(claim_id)
-            shorthand = re.fullmatch(r"C(\d{2})", candidate, re.IGNORECASE)
-            stale_ordinal = re.fullmatch(r"c(\d{3}):[0-9a-f]{12}", candidate, re.IGNORECASE)
-            ordinal = shorthand or stale_ordinal
-            if ordinal and 1 <= int(ordinal.group(1)) <= len(claims):
-                candidate = str(claims[int(ordinal.group(1)) - 1]["claim_id"])
-            requested_ids.append(candidate)
-        unknown = [claim_id for claim_id in requested_ids if claim_id not in known]
-        if unknown:
-            raise RuntimeError(
-                "presentation outline references unknown source claims: "
-                + ", ".join(unknown[:8])
-            )
-        slide["source_claim_ids"] = requested_ids
-        covered.update(requested_ids)
-    missing = [item for item in claims if str(item["claim_id"]) not in covered]
-    if missing and not slides:
-        raise RuntimeError("presentation outline has no slides for source claim coverage")
-    category_terms = (
-        (("入境", "免签", "Passport"), ("入境", "签证")),
-        (("ATM", "METRO", "M11", "M2", "T1", "公共交通", "打车", "机场"), ("机场", "交通", "进城", "换乘")),
-        (("蓝色清真寺", "圣索菲亚", "苏莱曼尼", "Sarayburnu", "加拉塔大桥", "大巴扎", "巴拉特", "seven hills", "土耳其浴"), ("D1", "上午", "午后", "傍晚", "收尾")),
-        (("独立大街", "加拉塔石塔", "Galata Konak", "奥塔科伊", "Kuzguncuk", "Nusr-Et"), ("D2", "独立大街", "奥塔科伊", "Kuzguncuk", "吃")),
-    )
-    for item in missing:
-        claim = str(item["claim"])
-        preferred_terms: tuple[str, ...] = ()
-        for claim_terms, slide_terms in category_terms:
-            if any(term.lower() in claim.lower() for term in claim_terms):
-                preferred_terms = slide_terms
-                break
-
-        def score(slide: dict[str, Any]) -> tuple[int, int]:
-            haystack = " ".join(
-                str(part)
-                for part in (
-                    slide.get("title"),
-                    slide.get("purpose"),
-                    *(slide.get("key_points") or []),
-                )
-                if part
-            ).lower()
-            category_score = 100 if preferred_terms and any(term.lower() in haystack for term in preferred_terms) else 0
-            overlap_score = sum(1 for index in range(max(0, len(claim) - 1)) if claim[index : index + 2].lower() in haystack)
-            return category_score + overlap_score, -len(slide.get("source_claim_ids") or [])
-
-        target = max(slides, key=score)
-        target.setdefault("source_claim_ids", []).append(str(item["claim_id"]))
-        projected = claim
-        if "中国大陆免签" in claim:
-            projected = "中国大陆普通护照并非免签；符合条件者须提前申请电子签证，具体条件出发前复核。"
-        elif "不适合女生" in claim:
-            projected = "行李多、频繁换乘、楼梯、行动不便或携老人儿童时，应优先减少换乘。"
-        elif "M11第一站" in claim:
-            projected = "M11到Gayrettepe换M2，再由Vezneciler步行至Laleli换T1；不要表述为机场后的下一站。"
-        elif "D2:亚洲区" in claim:
-            projected = "保留原文D2分组，但地图注明独立大街、加拉塔塔、奥塔科伊和大巴扎在欧洲侧，Kuzguncuk在亚洲侧。"
-        elif any(term in claim for term in ("165里拉", "4500里拉", "30欧", "手续费")):
-            projected = f"作者当次经验（价格和政策会变化，出发前复核）：{claim}"
-        key_points = target.setdefault("key_points", [])
-        if len(projected.strip()) > 12 and projected not in key_points:
-            key_points.append(projected)
-    value["slides"] = slides
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _workflow_run_sync(execution_id: str) -> None:
@@ -4796,26 +3561,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                     agent_id=(node.get("parameters") or {}).get("agent_id") or "main_agent",
                     message=f"开始：{node.get('name') or node_id}",
                 )
-            direct_output = ""
-            contract_hint = _workflow_artifact_contract(node)
-            if (
-                str(node.get("node_type") or "") == "OUTPUT_FORMAT"
-                and contract_hint.get("render_type") == "word"
-            ):
-                dependencies = [
-                    str(edge.get("source") or "")
-                    for edge in (plan.get("edges") or [])
-                    if str(edge.get("target") or "") == node_id
-                ]
-                approved_outputs = [
-                    str((run.get("nodes") or {}).get(dependency, {}).get("output") or "")
-                    for dependency in dependencies
-                    if (run.get("nodes") or {}).get(dependency, {}).get("status") == "succeeded"
-                ]
-                if len(approved_outputs) != 1 or not approved_outputs[0]:
-                    raise RuntimeError("Word OUTPUT_FORMAT 必须且只能绑定一份已批准上游全文")
-                direct_output = approved_outputs[0]
-            node_prompt = "" if direct_output else _workflow_node_prompt(run, node)
+            node_prompt = _workflow_node_prompt(run, node)
             binding = (node.get("parameters") or {}).get("skill_binding") or {}
             if binding:
                 receipt = _verify_workflow_skill_binding(binding, sandbox)
@@ -4830,8 +3576,8 @@ def _workflow_run_sync(execution_id: str) -> None:
                         message=f"已核验并加载 Skill：{receipt['skill_id']}",
                     )
             node_usage: dict[str, Any] = {}
-            reply = direct_output
-            gateway_completed = bool(direct_output)
+            reply = ""
+            gateway_completed = False
             if str(node.get("node_type") or "") == "KNOWLEDGE_RETRIEVAL":
                 params = node.get("parameters") or {}
                 requested_scope = list(params.get("knowledge_scope") or run.get("knowledge_scope") or [])
@@ -4903,24 +3649,23 @@ def _workflow_run_sync(execution_id: str) -> None:
             approved_design = None
             approved_outline = None
             render_type = str(contract["render_type"])
-            revision_comment = _workflow_revision_comment(run, str(node.get("id") or ""))
-            if render_type == "word" and revision_comment:
-                reply = _apply_explicit_document_replacements(reply, revision_comment)
-            if render_type == "word":
-                source_issues = _document_source_constraint_issues(run, reply)
-                if source_issues and not direct_output:
+            if render_type == "illustration_prompt":
+                context = _workflow_illustration_context(run)
+                try:
+                    reply = validate_illustration_prompt(reply, context)
+                except (ValueError, json.JSONDecodeError) as exc:
                     with _workflow_runs_lock:
                         _workflow_event(
                             run,
                             "node_repairing",
                             node_id=node_id,
                             usage=node_usage,
-                            message="Word 来源约束未满足，正在受控修复：" + "；".join(source_issues)[:480],
+                            message=f"插图 Prompt 未通过上下文核验，正在修复：{str(exc)[:240]}",
                         )
                     repair_prompt = (
                         node_prompt
-                        + "\n\n"
-                        + _document_source_constraint_instruction(run)
+                        + f"\n\n上一次输出未通过确定性核验：{str(exc)[:240]}。"
+                        "重新输出一个完整 JSON；必须逐字包含 subject、semantic_relationship、style、composition 的值于 prompt 字段。"
                     )[:MAX_INPUT]
                     reply, new_sid, raw_usage = _run_workflow_node_in_process(
                         repair_prompt,
@@ -4932,24 +3677,25 @@ def _workflow_run_sync(execution_id: str) -> None:
                     )
                     if new_sid:
                         hermes_sid = new_sid
-                    delta = _accumulate_usage(run, raw_usage)
-                    node_usage = _merge_workflow_usage(node_usage, delta)
-                    if reply.startswith("⚠️"):
-                        raise RuntimeError(reply)
-                    if revision_comment:
-                        reply = _apply_explicit_document_replacements(reply, revision_comment)
-                    source_issues = _document_source_constraint_issues(run, reply)
-                if source_issues:
-                    raise RuntimeError("Word 来源约束未满足：" + "；".join(source_issues))
-                reply = _ensure_document_page_breaks(
-                    reply,
-                    _workflow_minimum_document_pages(run),
-                )
+                    node_usage = _merge_workflow_usage(
+                        node_usage, _accumulate_usage(run, raw_usage)
+                    )
+                    reply = validate_illustration_prompt(reply, context)
+            elif render_type == "illustration_svg":
+                prompt_state = (run.get("nodes") or {}).get("html_tool_illustration_prompt") or {}
+                prompt_json = str(prompt_state.get("output") or "")
+                if not prompt_json:
+                    raise RuntimeError("verified_illustration_prompt_missing")
+                reply = validate_illustration_svg(reply, prompt_json)
+            elif render_type == "html":
+                svg_state = (run.get("nodes") or {}).get("html_tool_illustration") or {}
+                prompt_state = (run.get("nodes") or {}).get("html_tool_illustration_prompt") or {}
+                prompt_json = str(prompt_state.get("output") or "")
+                svg = validate_illustration_svg(str(svg_state.get("output") or ""), prompt_json)
+                reply = secure_html_tool(embed_illustration(reply, svg))
             if render_type.startswith("presentation"):
                 try:
                     reply = _normalize_presentation_contract_reply(render_type, reply)
-                    if render_type == "presentation_outline":
-                        reply = _ensure_outline_claim_coverage(run, reply)
                 except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
                     with _workflow_runs_lock:
                         _workflow_event(
@@ -4980,21 +3726,11 @@ def _workflow_run_sync(execution_id: str) -> None:
                     if reply.startswith("⚠️"):
                         raise RuntimeError(reply)
                     reply = _normalize_presentation_contract_reply(render_type, reply)
-                    if render_type == "presentation_outline":
-                        reply = _ensure_outline_claim_coverage(run, reply)
             if render_type == "presentation":
                 reply, approved_design, approved_outline = _bind_approved_presentation_inputs(run, reply)
-                source_trace = _presentation_source_trace(run)
-            else:
-                source_trace = None
             with _workflow_runs_lock:
                 run["hermes_session_id"] = hermes_sid
-                state.update({
-                    "status": "succeeded",
-                    "output": reply,
-                    "content_hash": hashlib.sha256(reply.encode()).hexdigest(),
-                    "usage": node_usage,
-                })
+                state.update({"status": "succeeded", "output": reply, "usage": node_usage})
                 artifact_kind = (
                     "final" if node.get("node_type") == "OUTPUT_FORMAT"
                     else "review" if node.get("node_type") == "FILTER_PASS"
@@ -5003,11 +3739,6 @@ def _workflow_run_sync(execution_id: str) -> None:
                 )
                 artifact_contract = contract
                 approval_gate = str((node.get("parameters") or {}).get("approval_gate") or "")
-                artifact_version = (
-                    _workflow_artifact_version(run, node_id)
-                    if artifact_kind == "final"
-                    else int(state["attempt"])
-                )
                 _workflow_event(
                     run,
                     "node_succeeded",
@@ -5026,10 +3757,9 @@ def _workflow_run_sync(execution_id: str) -> None:
                         "source_kind": "hermes_output",
                         **artifact_contract,
                         "approval_gate": approval_gate or None,
-                        "artifact_version": artifact_version,
+                        "artifact_version": state["attempt"],
                         "approved_design": approved_design,
                         "approved_outline": approved_outline,
-                        "source_trace": source_trace,
                     },
                     message=f"完成：{node.get('name') or node_id}",
                 )
@@ -5049,7 +3779,6 @@ def _workflow_run_sync(execution_id: str) -> None:
                 "run_completed",
                 progress=100,
                 usage=run.get("usage") or {},
-                hermes_session_id=run.get("hermes_session_id") or hermes_sid,
                 message="Hermes 执行完成，等待成果复核",
             )
     except Exception as exc:
@@ -5126,10 +3855,6 @@ def _append_session_messages(
 
 def _resolve_hermes_session(user_id: str) -> str | None:
     """Resolve a user's session in the same state.db where it was created."""
-    # The HTTP bridge and durable worker share these registries across process
-    # boundaries. Refresh before resolution so either process sees the other's
-    # latest per-session binding instead of its startup snapshot.
-    _sync_session_mappings()
     hermes_sid = _user_session_map.get(user_id)
     state_db = _user_state_db_map.get(user_id)
     if not hermes_sid:
@@ -5148,12 +3873,17 @@ def _resolve_hermes_session(user_id: str) -> str | None:
         if aliases:
             (hermes_sid, encoded_db), _legacy_key = next(iter(aliases.items()))
             state_db = encoded_db or None
-            _sync_session_mappings(
-                user_id=user_id, hermes_sid=hermes_sid, state_db=state_db
-            )
+            _user_session_map[user_id] = hermes_sid
+            if state_db:
+                _user_state_db_map[user_id] = state_db
+            _save_mapping()
+            _save_state_db_mapping()
     if hermes_sid and not _session_exists(hermes_sid, state_db):
         print(f"[bridge] user {user_id} session {hermes_sid} 已失效·清除映射·新建")
-        _sync_session_mappings(user_id=user_id, delete=True)
+        _user_session_map.pop(user_id, None)
+        _user_state_db_map.pop(user_id, None)
+        _save_mapping()
+        _save_state_db_mapping()
         hermes_sid = None
     return hermes_sid
 
@@ -5162,9 +3892,11 @@ def _update_session_mapping(
     user_id: str, hermes_sid: str, state_db: str | Path | None = None
 ) -> None:
     """Persist user -> Hermes session and its physical state.db binding."""
-    _sync_session_mappings(
-        user_id=user_id, hermes_sid=hermes_sid, state_db=state_db
-    )
+    _user_session_map[user_id] = hermes_sid
+    _save_mapping()
+    if state_db is not None:
+        _user_state_db_map[user_id] = str(state_db)
+        _save_state_db_mapping()
     print(f"[bridge] 会话映射: user={user_id} -> session={hermes_sid}")
 
 
@@ -5525,15 +4257,6 @@ def _durable_status(
     if run is None:
         return None
     run_id = str(run["run_id"])
-    from backend.services.capability_catalog import load_catalog
-    qcp_event_types = {item["id"] for item in load_catalog()["events"]}
-    semantic_events = [
-        event for event in _chat_run_store.events_after(
-            run_id, max(0, offset), tenant_user_hash=owner_hash
-        )
-        if event.get("type") in qcp_event_types
-    ]
-    bounded_semantic_events = semantic_events[:100]
     exact_status = str(run["status"])
     execution_available = _durable_worker_is_live()
     status = (
@@ -5610,11 +4333,6 @@ def _durable_status(
         latest_step = _WORKER_MAINTENANCE["message"]
         clarify = None
     cursor = int(run["event_sequence"])
-    events_next_offset = (
-        int(bounded_semantic_events[-1]["event_sequence"])
-        if len(semantic_events) > len(bounded_semantic_events)
-        else cursor
-    )
     return {
         "status": status,
         "run_status": exact_status,
@@ -5629,8 +4347,6 @@ def _durable_status(
         "clarify": clarify,
         "last_message_id": cursor,
         "event_sequence": cursor,
-        "events_next_offset": events_next_offset,
-        "events": bounded_semantic_events,
         "run_id": run_id,
         "consumed": float(run.get("consumed_at") or 0) > 0,
         **({
@@ -5813,8 +4529,7 @@ async def _stream_from_serve(goal: str, session_id: str | None = None):
 
 @app.on_event("startup")
 async def _startup():
-    global _bridge_async_loop, _chat_run_store
-    _bridge_async_loop = asyncio.get_running_loop()
+    global _chat_run_store
     _chat_run_store = DurableChatRunStore(HERMES_CHAT_RUN_DB)
     stalled = _chat_run_store.recover_after_restart()
     if stalled:
@@ -5845,12 +4560,6 @@ async def _startup():
         f"[bridge] watchdog 已启动: 间隔 {WATCHDOG_INTERVAL_SECONDS}s"
         f"·detached 超时 {STREAM_MAX_DURATION_SECONDS}s"
     )
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    global _bridge_async_loop
-    _bridge_async_loop = None
 
 
 def _block_safe_event(event: dict[str, Any]) -> dict[str, Any] | None:
@@ -6025,97 +4734,6 @@ async def durable_chat_blocks(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-class OwnerSessionRequest(BaseModel):
-    session_key: str
-
-
-def _require_owner_session(
-    body: OwnerSessionRequest,
-    internal_token: str | None,
-    tenant_id: str | None,
-    user_id: str | None,
-) -> tuple[str, TenantHermesSandbox]:
-    _require_internal_strict(internal_token)
-    tenant, user = str(tenant_id or ""), str(user_id or "")
-    if not tenant or not user:
-        raise HTTPException(status_code=403, detail="owner_context_required")
-    prefix = (
-        f"t{hashlib.sha256(tenant.encode()).hexdigest()[:12]}-"
-        f"u{hashlib.sha256(user.encode()).hexdigest()[:12]}-"
-    )
-    session_key = str(body.session_key or "")
-    if not session_key.startswith(prefix) or len(session_key) > 100:
-        raise HTTPException(status_code=403, detail="session_owner_mismatch")
-    return session_key, ensure_tenant_sandbox(tenant_key=tenant, user_id=user)
-
-
-def _owner_session_snapshot(session_key: str, sandbox: TenantHermesSandbox) -> dict[str, Any]:
-    with _mapping_lock:
-        hermes_id = _user_session_map.get(session_key)
-    if not hermes_id:
-        raise HTTPException(status_code=404, detail="hermes_session_not_found")
-    db = _create_sandbox_session_db(sandbox)
-    row = db.get_session(hermes_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="hermes_session_not_found")
-    return {
-        "client_session_key": session_key,
-        "hermes_session_id": hermes_id,
-        "created_at": row.get("created_at"),
-        "updated_at": row.get("updated_at") or row.get("last_active_at"),
-        "ended_at": row.get("ended_at"),
-        "end_reason": row.get("end_reason"),
-    }
-
-
-@app.post("/v1/owner-sessions/resolve")
-async def owner_session_resolve(
-    body: OwnerSessionRequest,
-    x_hermes_internal_token: str | None = Header(None),
-    x_tenant_id: str | None = Header(None),
-    x_user_id: str | None = Header(None),
-):
-    key, sandbox = _require_owner_session(
-        body, x_hermes_internal_token, x_tenant_id, x_user_id
-    )
-    return _owner_session_snapshot(key, sandbox)
-
-
-@app.post("/v1/owner-sessions/resume")
-async def owner_session_resume(
-    body: OwnerSessionRequest,
-    x_hermes_internal_token: str | None = Header(None),
-    x_tenant_id: str | None = Header(None),
-    x_user_id: str | None = Header(None),
-):
-    key, sandbox = _require_owner_session(
-        body, x_hermes_internal_token, x_tenant_id, x_user_id
-    )
-    snapshot = _owner_session_snapshot(key, sandbox)
-    db = _create_sandbox_session_db(sandbox)
-    db.reopen_session(snapshot["hermes_session_id"])
-    snapshot["resumed"] = True
-    return snapshot
-
-
-@app.post("/v1/owner-sessions/delete")
-async def owner_session_delete(
-    body: OwnerSessionRequest,
-    x_hermes_internal_token: str | None = Header(None),
-    x_tenant_id: str | None = Header(None),
-    x_user_id: str | None = Header(None),
-):
-    key, sandbox = _require_owner_session(
-        body, x_hermes_internal_token, x_tenant_id, x_user_id
-    )
-    snapshot = _owner_session_snapshot(key, sandbox)
-    db = _create_sandbox_session_db(sandbox)
-    if not db.delete_session(snapshot["hermes_session_id"]):
-        raise HTTPException(status_code=409, detail="hermes_session_delete_failed")
-    _sync_session_mappings(user_id=key, delete=True)
-    return {**snapshot, "deleted": True}
-
-
 @app.post("/v1/chat/stream")
 async def chat_stream(
     body: GoalRequest,
@@ -6178,7 +4796,6 @@ async def chat_stream(
                     "goal": goal,
                     "agent_config": body.agent_config,
                     "knowledge_claims": knowledge_claims,
-                    "client_session_id": body.client_session_id,
                     "client_session_context": body.client_session_context,
                     "client_context_claims": client_context_claims,
                     "qws_business_context": body.qws_business_context,
@@ -6186,7 +4803,6 @@ async def chat_stream(
                     "knowledge_action_enabled": (
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
-                    "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
                     "answer_blocks_v1": "answer_blocks_v1" in set(body.client_capabilities),
                 },
             )
@@ -6281,13 +4897,12 @@ async def chat_stream(
                 _sse_from_in_process(
                     user_id,
                     goal,
-                    request_id=request_id,
+                    request_id=body.request_id,
                     reserved_run_id=run_id,
                     allow_local_files=False,
                     agent_config=body.agent_config,
                     knowledge_capability=body.knowledge_capability,
                     knowledge_claims=knowledge_claims,
-                    client_session_id=body.client_session_id,
                     client_session_context=body.client_session_context,
                     client_context_claims=client_context_claims,
                     qws_business_context=body.qws_business_context,
@@ -6295,8 +4910,6 @@ async def chat_stream(
                     knowledge_action_enabled=(
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
-                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
-                    trusted_identity_claims=qws_context_claims,
                 ),
                 media_type="text/event-stream",
                 headers={
@@ -6312,7 +4925,6 @@ async def chat_stream(
             print(f"[bridge] v7 进程内流式失败·降级: {stream_err}")
 
     if knowledge_claims or client_context_claims or qws_context_claims:
-        print("[bridge] tenant sandbox request reached disabled in-process fallback")
         raise HTTPException(
             status_code=503, detail="tenant_sandbox_requires_in_process_runtime"
         )
@@ -6435,7 +5047,6 @@ async def chat_prewarm(
             "knowledge_action_enabled": (
                 "knowledge_action_v1" in set(body.client_capabilities)
             ),
-            "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
         },
     )
     return {"run_id": run["run_id"], "status": run["status"]}
@@ -6597,7 +5208,6 @@ def _prewarm_session_agent(
     sandbox: "TenantHermesSandbox",
     *,
     knowledge_action_enabled: bool = False,
-    qcp_enabled: bool = False,
 ) -> tuple[str, bool]:
     """Build the ordinary fast-lane agent without spending a model turn."""
     hermes_sid = _resolve_hermes_session(user_id)
@@ -6626,7 +5236,6 @@ def _prewarm_session_agent(
             agent_config=agent_config,
             client_context_enabled=False,
             knowledge_action_enabled=knowledge_action_enabled,
-            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
         )
         source = str(route.get("agent_cache_source") or "cold_build")
@@ -6801,13 +5410,9 @@ def _request_runtime_placement(agent_config: dict[str, Any]) -> dict[str, Any] |
 
 
 def _triage_route_marker(triage: dict[str, Any] | None) -> str:
-    """Private marker consumed by the capability hook, never user-authored."""
-    if triage is None:
-        return ""
-    agency = "1" if triage.get("agency_enabled") else "0"
-    return (
-        f'<<AI_LAB_TRIAGE class="{triage["route_class"]}" agency="{agency}">>\n'
-    )
+    """Legacy compatibility: triage no longer controls Skill/Agent routing."""
+    del triage
+    return ""
 
 
 def _triage_system_directive(
@@ -6817,13 +5422,8 @@ def _triage_system_directive(
 ) -> str:
     if triage is None:
         return ""
-    route_class = triage["route_class"]
     evidence = set(triage.get("evidence_requirements") or [])
-    lines = [
-        "\n服务端任务分诊（必须遵守，不得自行升级权限）：",
-        f"route_class={route_class}; reason_code={triage['reason_code']}; "
-        f"agency_enabled={str(bool(triage.get('agency_enabled'))).lower()}.",
-    ]
+    lines = ["\n服务端证据需求（不参与 Skill/Agent 选择，也不授予权限）："]
     if note_draft_request:
         lines.append(
             "这是当前 Hermes 会话内的笔记动作：Main 必须依次调用 user_note_search 和 "
@@ -6833,26 +5433,7 @@ def _triage_system_directive(
             "用该主题检索当前用户笔记；命中真正同主题内容时必须生成 merge_candidates 和"
             "完整 merged_markdown 供用户选择新建或合并；零命中才只生成新建草稿。"
         )
-    elif route_class == CASUAL:
-        lines.append("这是闲聊：自然简短地直接回答，不搜索、不加载 Skill、不调用 Agent。")
-    elif route_class == GENERAL_QA:
-        lines.append("这是普通问答：由 Main 直接负责，不调用 Agency 专家。")
-        if _knowledge_tools_eligible(triage):
-            lines.append(
-                "知识需求与任务复杂度无关。判断问题是否需要已有知识：若需要，默认联合调用"
-                "user_note_search 定位个人笔记与 knowledge_search 定位当前获准的平台知识；"
-                "不得要求用户说检索口令，也不得因此升级专家流程。纯翻译、改写已给材料等"
-                "不需要额外知识时可直接回答。遵守用户只用个人笔记、仅内部材料或禁止联网"
-                "的范围约束。对候选检查实体、时间、版本、适用条件与其支持的判断；"
-                "搜索片段只用于定位，未取得授权正文时不能声称已完整阅读。受限原文不得"
-                "进入上下文，只有明确获准的概括版本可代替详细版。知识缺口明确保留。"
-            )
-    else:
-        lines.append(
-            "这是专业任务：若 agency_enabled=true，必须按注入候选调用原生 delegate_task，"
-            "由隔离子 Agent 使用候选给出的精确 slug 加载 Agency 专家，并等待终态结果；"
-            "父 Agent 只加载提示词不算委派，不得自行拼接 division 前缀。"
-        )
+
     if "web_extract" in evidence:
         lines.append(
             "用户指定了 URL：回答前必须先调用 web_extract 读取原文。若返回结果已包含可识别的"
@@ -6863,11 +5444,11 @@ def _triage_system_directive(
     if "web_search" in evidence:
         lines.append("该请求需要公开证据：必须调用 web_search；涉及 URL 时在 extract 后扩展。")
     if "knowledge_search" in evidence:
-        lines.append("该请求需要内部证据：使用已授权的知识检索工具，零命中时明确说明。")
+        lines.append("可按需使用已授权的知识检索工具补充内部证据；不得把检索作为回答前置条件。")
     if "user_note_search" in evidence:
         lines.append(
-            "用户正在查询自己的笔记：必须调用 user_note_search；不得用平台 Wiki 零命中"
-            "替代用户笔记检索。"
+            "用户可能在查询自己的笔记：可按需调用 user_note_search；未检索时直接基于"
+            "现有上下文回答，不得伪造命中。"
         )
     if "web_extract" in evidence:
         lines.append(
@@ -6913,33 +5494,16 @@ def _apply_triage_toolset_policy(
     note_draft_request: bool = False,
     public_knowledge_fallback: bool = False,
 ) -> list[str]:
-    """Final fail-closed filter after all legacy/plugin toolset assembly."""
+    """Apply evidence-source boundaries without filtering Skill/Agent tools."""
     if note_draft_request:
         denied = {"agency_agents", "ai_lab", "delegation"}
         return [item for item in selected if item not in denied]
-    if triage is None:
-        return list(selected)
-    route_class = triage["route_class"]
-    evidence = set(triage.get("evidence_requirements") or [])
-    if route_class == CASUAL:
-        return [item for item in selected if item in {"memory", "session_search"}]
-
-    denied = set()
-    if route_class == GENERAL_QA:
-        denied.update({
-            "agency_agents", "ai_lab", "delegation", "skills",
-            "tenant_skills", "file", "terminal",
-        })
-    elif not triage.get("agency_enabled"):
-        denied.update({"agency_agents", "ai_lab", "delegation"})
+    evidence = set((triage or {}).get("evidence_requirements") or [])
+    denied: set[str] = set()
     if not evidence & {"web_search", "web_extract"} and not public_knowledge_fallback:
         denied.add("web")
-    if not _knowledge_tools_eligible(triage):
-        denied.add("knowledge_gateway")
     if "user_note_search" not in evidence:
         denied.add("user_notes_gateway")
-    if not triage.get("skill_enabled"):
-        denied.update({"skills", "tenant_skills"})
     return [item for item in selected if item not in denied]
 
 
@@ -7385,7 +5949,6 @@ def _tenantize_created_skill(
 
 def _emit_tool_complete(stream_q: queue.Queue, tool_call_id, function_name, function_args=None, result=None) -> None:
     """工具完成事件（模块级可测）：不发 raw result（对齐 api_server 契约·防内部信息泄露）。"""
-    _record_knowledge_gate_tool_result(str(function_name or ""), result, function_args)
     if not tool_call_id or (function_name or "").startswith("_"):
         return
     _qput(stream_q, {
@@ -7626,9 +6189,7 @@ def _memory_tool_succeeded(result: Any) -> bool:
 def _legacy_client_context_enabled(
     client_context_enabled: bool, knowledge_action_enabled: bool
 ) -> bool:
-    # Historical note_draft events remain decodable, but every new write intent
-    # must converge on knowledge_action/QCP.
-    return False
+    return client_context_enabled and not knowledge_action_enabled
 
 
 def _expose_eager_request_tools(agent: Any, toolsets: list[str]) -> None:
@@ -7655,7 +6216,6 @@ def _build_in_process_agent(
     knowledge_capability: str | None = None,
     client_context_enabled: bool = False,
     knowledge_action_enabled: bool = False,
-    qcp_enabled: bool = False,
     sandbox: TenantHermesSandbox | None = None,
     timing_origin: float | None = None,
 ) -> tuple[object, object, dict[str, Any]]:
@@ -7692,11 +6252,7 @@ def _build_in_process_agent(
         tier = inference_policy["tier"].upper()
         cfg_model = os.environ.get(f"HERMES_{tier}_CHAT_MODEL", "").strip() or cfg_model
     route_class = triage.get("route_class") if triage else None
-    note_draft_request = (
-        knowledge_action_enabled
-        and not (agent_config or {}).get("knowledge_stage_only")
-        and _is_note_draft_request(_routing_user_goal(goal))
-    )
+    note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
     if route_class == GENERAL_QA:
         cfg_model = os.environ.get("HERMES_FAST_CHAT_MODEL", "gpt-5.4-nano")
     evidence_requirements = set(
@@ -7708,10 +6264,7 @@ def _build_in_process_agent(
         and (inference_policy is None or inference_policy["allow_subagents"])
         and (
             agency_business_surface
-            or (
-                route_class == PROFESSIONAL_TASK
-                and (triage or {}).get("agency_enabled")
-            )
+            or "delegate_task" in set(agent_config.get("allowed_tools") or [])
         )
     )
     if sandbox is None:
@@ -7722,32 +6275,15 @@ def _build_in_process_agent(
     knowledge_tool_enabled = bool(
         knowledge_capability
         and allowed_tools & {"knowledge_search", "user_note_search"}
-        and (
-            note_draft_request
-            or _knowledge_tools_eligible(triage)
-        )
     )
-    tenant_skill_enabled = bool(
-        "skill_load" in allowed_tools
-        and (
-            triage is None
-            or (
-                route_class == PROFESSIONAL_TASK
-                and (triage or {}).get("skill_enabled")
-            )
-        )
-    )
+    tenant_skill_enabled = "skill_load" in allowed_tools
     skill_candidates: list[dict[str, Any]] = []
     pinned_skills: set[str] = set()
     agent_id = str(agent_config.get("id") or "")
     if agent_id.startswith("skill_"):
         pinned_skills.add(agent_id[6:])
-    if tenant_skill_enabled:
-        skill_candidates = rank_skill_candidates(
-            _routing_user_goal(goal),
-            _routed_skill_catalog(sandbox),
-            limit=5,
-        )
+    # The Bridge no longer performs keyword/alias/bonus ranking. The JEV
+    # adapter in capability_router is the sole Skill/Agent semantic selector.
     candidate_names = {item["name"] for item in skill_candidates}
     _skill_route_context.value = {
         "enforced": tenant_skill_enabled,
@@ -7777,7 +6313,6 @@ def _build_in_process_agent(
         (not note_draft_request)
         and (inference_policy is None or inference_policy["allow_subagents"])
         and "delegate_task" in allowed_tools
-        and (triage is None or route_class == PROFESSIONAL_TASK)
     )
     platform_tools = set(_get_cached_tools(cfg))
     if agency_route_enabled:
@@ -7811,14 +6346,10 @@ def _build_in_process_agent(
         _ensure_client_context_tools_registered()
         if "client_context" not in toolsets_list:
             toolsets_list.append("client_context")
-    if knowledge_action_enabled and not qcp_enabled:
+    if knowledge_action_enabled:
         _ensure_knowledge_workspace_tools_registered()
         if "knowledge_workspace" not in toolsets_list:
             toolsets_list.append("knowledge_workspace")
-    if qcp_enabled:
-        _ensure_app_capability_tools_registered()
-        if "app_capabilities" not in toolsets_list:
-            toolsets_list.append("app_capabilities")
     if allowed_tools:
         requested_toolsets = _tenant_base_toolsets(allowed_tools)
         if network_tool_requested:
@@ -7835,10 +6366,8 @@ def _build_in_process_agent(
             requested_toolsets.add("user_notes_gateway")
         if legacy_client_context_enabled:
             requested_toolsets.add("client_context")
-        if knowledge_action_enabled and not qcp_enabled:
+        if knowledge_action_enabled:
             requested_toolsets.add("knowledge_workspace")
-        if qcp_enabled:
-            requested_toolsets.add("app_capabilities")
         if agency_route_enabled:
             requested_toolsets.update(
                 {"agency_agents", "ai_lab"} & platform_tools
@@ -7850,14 +6379,6 @@ def _build_in_process_agent(
         note_draft_request=note_draft_request,
         public_knowledge_fallback=public_knowledge_fallback,
     )
-    if (
-        knowledge_action_enabled
-        and not qcp_enabled
-        and "knowledge_workspace" not in toolsets_list
-    ):
-        toolsets_list.append("knowledge_workspace")
-    if qcp_enabled and "app_capabilities" not in toolsets_list:
-        toolsets_list.append("app_capabilities")
     fast_general = bool(
         route_class == GENERAL_QA
         and not evidence_requirements
@@ -7865,8 +6386,6 @@ def _build_in_process_agent(
         and not tenant_skill_enabled
         and not knowledge_tool_enabled
         and not delegation_tool_enabled
-        and not knowledge_action_enabled
-        and not qcp_enabled
     )
     if fast_general:
         # Keep only native profile continuity on the fast lane.
@@ -8034,7 +6553,6 @@ def _build_in_process_agent(
                 "skill_candidates": skill_candidates,
                 "legacy_client_context": legacy_client_context_enabled,
                 "knowledge_action": knowledge_action_enabled,
-                "qcp": qcp_enabled,
                 "fast_general": fast_general,
             },
             ensure_ascii=False,
@@ -8087,6 +6605,7 @@ def _build_in_process_agent(
         enabled_toolsets=toolsets_list,
         quiet_mode=True,
         platform="cli",
+        user_id=user_id,
         # Context files and external memory providers stay disabled. The explicit
         # memory toolset loads only MEMORY/USER from the ContextVar-bound sandbox.
         **_isolated_agent_context_kwargs(),
@@ -8109,7 +6628,7 @@ def _build_in_process_agent(
             + "。只可调用当前回合实际提供 Schema 的工具；不得调用权限上限之外工具。"
             + "\nSkill 只能通过 tenant_skill_read 从当前租户沙箱副本读取；"
               "禁止读取全局 Hermes Skill 目录。"
-            + (candidate_prompt(skill_candidates) if tenant_skill_enabled else "")
+            + "\nSkill/Agent 语义选择只接受 capability_router 注入并校验过的 JEV Plan。"
             + "\n知识来源路由：当前对话以 Hermes SessionDB 已恢复的原生消息历史为准；"
               "session_context_read 仅用于首次迁移、灾难恢复或一致性核验；当前用户笔记用"
               " user_note_search（仅明确笔记需求或来源缺口指向笔记时补查，Gateway 已覆盖同范围 notes 则不重复查）；"
@@ -8163,7 +6682,6 @@ def _build_in_process_agent(
                 if knowledge_action_enabled else ""
             )
             + (_KNOWLEDGE_MERGE_DIRECTIVE if knowledge_action_enabled else "")
-            + _presentation_capability_directive(goal, qcp_enabled)
             + _triage_system_directive(
                 triage,
                 note_draft_request=note_draft_request and not knowledge_action_enabled,
@@ -8179,7 +6697,7 @@ def _build_in_process_agent(
         # - Hermes 原生 resolve_reasoning_config 处理 DeepSeek 映射；不支持的 Provider 自动忽略
         reasoning_config={"effort": "minimal"},
     )
-    if knowledge_action_enabled or qcp_enabled:
+    if knowledge_action_enabled:
         _expose_eager_request_tools(agent, toolsets_list)
 
     # 支柱二兜底：若模型能力检测不支持 reasoning_effort 字段注入，保留 prompt 级限词约束
@@ -8218,15 +6736,11 @@ def _run_agent_sync(
     agent_config: dict[str, Any] | None = None,
     knowledge_capability: str | None = None,
     knowledge_claims: dict[str, Any] | None = None,
-    client_session_id: str | None = None,
     client_session_context: dict[str, Any] | None = None,
     client_context_claims: dict[str, Any] | None = None,
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
-    qcp_enabled: bool = False,
-    trusted_request_id: str | None = None,
-    trusted_identity_claims: dict[str, Any] | None = None,
 ) -> None:
     """Run one Hermes turn, retaining only a bounded session-safe warm agent."""
     timing_origin = time.monotonic()
@@ -8236,11 +6750,12 @@ def _run_agent_sync(
     cache_keep = False
     usage_baseline: dict[str, Any] = {}
     result_usage: dict[str, Any] | None = None
-    knowledge_gate_state: dict[str, Any] | None = None
+
 
     execution_started = False
     original_goal = goal
     hermes_home_token: Any = None
+    routing_scope_token: Any = None
     try:
         # This SSE request is finite: once ``done`` is emitted there is no
         # Hermes gateway consumer that can re-enter a detached child result.
@@ -8263,6 +6778,38 @@ def _run_agent_sync(
         from hermes_constants import set_hermes_home_override
 
         hermes_home_token = set_hermes_home_override(_sandbox_hermes_home(sandbox))
+        from backend.services.capability_projection import set_runtime_routing_scope
+
+        scope_seed = str(
+            getattr(sandbox, "root", "")
+            or getattr(sandbox, "hermes_home", "")
+            or getattr(sandbox, "state_db", "")
+            or "sandbox"
+        )
+        tenant_namespace = str(
+            getattr(sandbox, "tenant_namespace", "")
+            or hashlib.sha256(scope_seed.encode()).hexdigest()[:24]
+        )
+        user_namespace = str(
+            getattr(sandbox, "user_namespace", "")
+            or hashlib.sha256(scope_seed.encode()).hexdigest()[24:48]
+        )
+        authorized_tools = set(
+            str(item) for item in (agent_config or {}).get("allowed_tools") or []
+        )
+        routing_scope_token = set_runtime_routing_scope({
+            "tenant_scope": f"tenant:{tenant_namespace}:user:{user_namespace}",
+            "policy_version": str(
+                (agent_config or {}).get("routing_policy_version")
+                or "runtime-policy-v1"
+            ),
+            "authorized_skill_ids": (
+                None if "skill_load" in authorized_tools else []
+            ),
+            "authorized_agent_ids": (
+                None if "delegate_task" in authorized_tools else []
+            ),
+        })
         _sandbox_tool_context.value = sandbox
         explicit_memory = _explicit_memory_content(original_goal)
         if explicit_memory is not None:
@@ -8289,19 +6836,13 @@ def _run_agent_sync(
                 "\n\n【平台记忆回执】该内容已由平台写入当前用户的长期记忆。"
                 "不要再次调用 memory；只需简洁确认。"
             )
-        note_draft_request = (
-            knowledge_action_enabled
-            and not (agent_config or {}).get("knowledge_stage_only")
-            and _is_note_draft_request(_routing_user_goal(goal))
-        )
-        note_context_claims = (
-            client_context_claims or knowledge_claims or trusted_identity_claims
-        )
+        note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _is_note_draft_request(goal)
+        note_context_claims = client_context_claims or knowledge_claims
         has_client_context = (
             client_session_context is not None and client_context_claims is not None
         )
         if note_context_claims is not None and (
-            has_client_context or note_draft_request or knowledge_action_enabled or qcp_enabled
+            has_client_context or note_draft_request or knowledge_action_enabled
         ):
             assert note_context_claims is not None
             transcript = (
@@ -8315,18 +6856,11 @@ def _run_agent_sync(
                 "transcript": transcript,
                 "request_id": (
                     (client_context_claims or {}).get("request_id")
-                    or trusted_request_id
                     or run_state.get("request_id")
                 ),
-                "identity": {
-                    "tenant_key": str(note_context_claims.get("tenant_key") or ""),
-                    "user_id": str(note_context_claims.get("user_id") or ""),
-                    "knowledge_policy_version": str(
-                        note_context_claims.get("policy_version") or "unknown"
-                    ),
-                },
-                "client_session_id": client_session_id or transcript.get("session_id") or user_id,
+                "client_session_id": transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],
+                "active_document_note_id": transcript.get("active_document_note_id"),
                 "account_scope": (
                     hashlib.sha256(str(note_context_claims.get("tenant_key") or "").encode()).hexdigest()[:20]
                     + ":"
@@ -8406,19 +6940,8 @@ def _run_agent_sync(
                     "可判断的 Use when 描述、至少两层 skill_path、skill_level、"
                     "trigger_phrases 和 negative_phrases。工具返回 success=true 后才可称已创建。"
                 )
-        agent_stream_q: Any = stream_q
-        knowledge_gate_requirement = _knowledge_gate_requirement(
-            original_goal, agent_config, knowledge_capability, knowledge_claims
-        )
-        if knowledge_gate_requirement is not None:
-            preread_context, knowledge_gate_state = _perform_knowledge_preread(
-                original_goal, requirement=knowledge_gate_requirement
-            )
-            _knowledge_gate_context.value = knowledge_gate_state
-            goal += preread_context
-            agent_stream_q = _KnowledgeBarrierQueue(stream_q)
         agent, session_db, route_context = _build_in_process_agent(
-            goal, user_id, hermes_sid, agent_stream_q,
+            goal, user_id, hermes_sid, stream_q,
             allow_local_files=allow_local_files,
             agent_config=agent_config,
             knowledge_capability=knowledge_capability,
@@ -8427,7 +6950,6 @@ def _run_agent_sync(
                 or (note_draft_request and knowledge_claims is not None)
             ),
             knowledge_action_enabled=knowledge_action_enabled,
-            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
             timing_origin=timing_origin,
         )
@@ -8527,6 +7049,7 @@ def _run_agent_sync(
                 persistent_goal,
                 conversation_history=conversation_history,
             )
+        cache_keep = True
         result_dict = result if isinstance(result, dict) else {}
         raw_usage = (
             result_dict.get("usage")
@@ -8538,12 +7061,6 @@ def _run_agent_sync(
             result_dict.get("final_response") or ""
             if result_dict else str(result or "")
         )
-        # Hermes can return a provider transport failure as an exit-zero final
-        # response. It is not an assistant answer and must never be decorated
-        # with a knowledge receipt or retained as a successful cached turn.
-        if _HERMES_PROVIDER_FAILURE_RE.fullmatch(str(final or "").strip()):
-            raise HermesInvocationError
-        cache_keep = True
         client_tool_context = getattr(_client_context_tool_context, "value", None)
         if (
             isinstance(client_tool_context, dict)
@@ -8564,9 +7081,8 @@ def _run_agent_sync(
             return
         if (
             isinstance(client_tool_context, dict)
-            and _is_note_draft_request(_routing_user_goal(goal))
+            and _is_note_draft_request(goal)
             and not knowledge_action_enabled
-            and _legacy_client_context_enabled(has_client_context, knowledge_action_enabled)
             and not client_tool_context.get("draft_emitted")
             and str(final or "").strip()
         ):
@@ -8582,27 +7098,14 @@ def _run_agent_sync(
                         "source_message_ids": source_ids,
                     }
                 )
-        knowledge_receipt = None
-        if knowledge_gate_state is not None:
-            final, knowledge_receipt = _finalize_knowledge_gate(
-                str(final or ""), str(knowledge_capability or ""), knowledge_gate_state
-            )
         done_event = {
             "type": "done",
             "session_id": user_id,
             "answer": final,
             "usage": result_usage,
         }
-        if knowledge_receipt is not None:
-            done_event["knowledge_receipt"] = knowledge_receipt
+
         _qput(stream_q, done_event)
-    except HermesInvocationError:
-        _qput(stream_q, {
-            "type": "error",
-            "code": HermesInvocationError.category,
-            "message": "模型服务暂时不可用，请稍后重试。",
-            "usage": result_usage or {},
-        })
     except Exception as e:
         print(f"[bridge] ⚠️ 进程内 agent 执行失败: {e}")
         # Completed usage survives post-processing errors. If Hermes raised
@@ -8619,7 +7122,7 @@ def _run_agent_sync(
         })
     finally:
         _knowledge_tool_context.value = None
-        _knowledge_gate_context.value = None
+
         _client_context_tool_context.value = None
         _sandbox_tool_context.value = None
         _skill_route_context.value = None
@@ -8633,6 +7136,12 @@ def _run_agent_sync(
             else:
                 _close_agent_resources(agent, session_db)
         finally:
+            if routing_scope_token is not None:
+                from backend.services.capability_projection import (
+                    reset_runtime_routing_scope,
+                )
+
+                reset_runtime_routing_scope(routing_scope_token)
             if hermes_home_token is not None:
                 from hermes_constants import reset_hermes_home_override
 
@@ -8657,14 +7166,11 @@ def _sse_from_in_process(
     agent_config: dict[str, Any] | None = None,
     knowledge_capability: str | None = None,
     knowledge_claims: dict[str, Any] | None = None,
-    client_session_id: str | None = None,
     client_session_context: dict[str, Any] | None = None,
     client_context_claims: dict[str, Any] | None = None,
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
-    qcp_enabled: bool = False,
-    trusted_identity_claims: dict[str, Any] | None = None,
 ):
     """SSE 事件生成器：agent 线程事件 → queue → asyncio 逐帧输出（thread-safe）。
 
@@ -8690,22 +7196,12 @@ def _sse_from_in_process(
 
     worker = threading.Thread(
         target=_run_agent_sync,
-        args=(goal, user_id, hermes_sid, stream_q, agent_holder),
-        kwargs={
-            "allow_local_files": allow_local_files,
-            "agent_config": agent_config,
-            "knowledge_capability": knowledge_capability,
-            "knowledge_claims": knowledge_claims,
-            "client_session_id": client_session_id,
-            "client_session_context": client_session_context,
-            "client_context_claims": client_context_claims,
-            "sandbox": sandbox,
-            "knowledge_action_enabled": knowledge_action_enabled,
-            "qws_business_context": qws_business_context,
-            "qcp_enabled": qcp_enabled,
-            "trusted_request_id": request_id,
-            "trusted_identity_claims": trusted_identity_claims,
-        },
+        args=(
+            goal, user_id, hermes_sid, stream_q, agent_holder,
+            allow_local_files, agent_config, knowledge_capability, knowledge_claims,
+            client_session_context, client_context_claims, sandbox,
+            knowledge_action_enabled, qws_business_context,
+        ),
         daemon=True,
         name=f"agent-stream-{user_id[:12]}",
     )
@@ -8721,7 +7217,6 @@ def _sse_from_in_process(
     worker.start()
 
     finished = False
-    confirmation_proposed = False
     try:
         first_delta_recorded = False
         while True:
@@ -8743,22 +7238,6 @@ def _sse_from_in_process(
             if item is None:
                 print(f"[bridge] SSE-BREAK item_none user={user_id}")
                 break
-            if item.get("type") == "capability.proposed":
-                confirmation_proposed = True
-            elif item.get("type") == "error" and confirmation_proposed:
-                # The governed action proposal is already durable in QCP. A
-                # late provider/post-processing error must not erase the
-                # confirmation card that is now the user's next step.
-                print(
-                    f"[bridge] suppressing post-proposal error user={user_id} "
-                    f"code={item.get('code')}"
-                )
-                item = {
-                    "type": "done",
-                    "session_id": user_id,
-                    "answer": "",
-                    "usage": item.get("usage") or {},
-                }
             # reasoning_callback 按治理要求不外发；首字指标必须记录真正的正文
             # delta，否则旧 first_thought_ms 永远不会产生，无法诊断用户体感。
             if not first_delta_recorded and item.get("type") == "delta":
@@ -9171,22 +7650,16 @@ async def chat(
                     hermes_sid,
                     event_queue,
                     agent_holder,
-                    allow_local_files=False,
-                    agent_config=body.agent_config,
-                    knowledge_capability=body.knowledge_capability,
-                    knowledge_claims=knowledge_claims,
-                    client_session_id=body.client_session_id,
-                    client_session_context=body.client_session_context,
-                    client_context_claims=client_context_claims,
-                    sandbox=sandbox,
-                    knowledge_action_enabled=(
-                        client_context_claims is not None
-                        and "knowledge_action_v1" in set(body.client_capabilities)
-                    ),
-                    qws_business_context=body.qws_business_context,
-                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
-                    trusted_request_id=body.request_id,
-                    trusted_identity_claims=qws_context_claims,
+                    False,
+                    body.agent_config,
+                    body.knowledge_capability,
+                    knowledge_claims,
+                    body.client_session_context,
+                    client_context_claims,
+                    sandbox,
+                    client_context_claims is not None
+                    and "knowledge_action_v1" in set(body.client_capabilities),
+                    body.qws_business_context,
                 )
                 events: list[dict[str, Any]] = []
                 while not event_queue.empty():
@@ -9197,8 +7670,6 @@ async def chat(
                 if error:
                     raise HTTPException(status_code=502, detail=error.get("message") or "Hermes failed")
                 done = next((item for item in reversed(events) if item.get("type") == "done"), {})
-                from backend.services.capability_catalog import load_catalog
-                qcp_event_types = {item["id"] for item in load_catalog()["events"]}
                 return {
                     "reply": str(done.get("answer") or ""),
                     "session_id": user_id,
@@ -9208,7 +7679,7 @@ async def chat(
                     "knowledge_receipt": done.get("knowledge_receipt"),
                     "events": [
                         item for item in events
-                        if item.get("type") in qcp_event_types or item.get("type") in {
+                        if item.get("type") in {
                             "note_draft", "knowledge_action_draft", "knowledge_navigation",
                             "tool_start", "tool_complete", "delegate_receipt", "memory_receipt"
                         }
@@ -9595,7 +8066,6 @@ async def start_workflow_run(
 ):
     """幂等启动或恢复 Hermes 工作流 Run。"""
     _require_internal(x_hermes_internal_token)
-    require_batch6_execution_enabled("hermes_workflow_run")
     claims = _validated_knowledge_claims(
         body.knowledge_capability,
         subject_id=body.execution_id,
@@ -9726,32 +8196,6 @@ async def cancel_workflow_run(
         return {"ok": True, "status": run.get("status")}
 
 
-def _refresh_workflow_authorization(
-    run: dict[str, Any],
-    capability: str | None,
-    policy_version: str | None,
-) -> None:
-    if bool(capability) != bool(policy_version):
-        raise HTTPException(status_code=422, detail="incomplete workflow authorization refresh")
-    if not capability:
-        return
-    claims = _validated_knowledge_claims(
-        capability,
-        subject_id=str(run.get("execution_id") or ""),
-        policy_version=policy_version,
-    )
-    if (
-        str((claims or {}).get("entry_point") or "") != "workflow"
-        or str((claims or {}).get("tenant_key") or "") != str(run.get("tenant_id") or "")
-    ):
-        raise HTTPException(status_code=403, detail="knowledge_scope_denied")
-    run["knowledge_capability"] = capability
-    run["knowledge_policy_version"] = policy_version
-    run["knowledge_scope"] = sorted(
-        str(item) for item in (claims or {}).get("scopes") or [] if str(item)
-    )
-
-
 @app.post("/v1/workflow-runs/{execution_id}/retry")
 async def retry_workflow_run(
     execution_id: str,
@@ -9763,9 +8207,6 @@ async def retry_workflow_run(
         run = _workflow_runs.get(execution_id)
         if not run:
             raise HTTPException(status_code=404, detail="workflow run not found")
-        _refresh_workflow_authorization(
-            run, body.knowledge_capability, body.knowledge_policy_version
-        )
         order = _workflow_order(run["plan"])
         target = body.from_node_id
         if target is None:
@@ -9893,9 +8334,6 @@ async def approve_workflow_gate(execution_id: str, body: WorkflowGateApprovalReq
         run = _workflow_runs.get(execution_id)
         if not run or run.get("status") != "awaiting_approval":
             raise HTTPException(status_code=409, detail="workflow is not awaiting approval")
-        _refresh_workflow_authorization(
-            run, body.knowledge_capability, body.knowledge_policy_version
-        )
         state = (run.get("nodes") or {}).get(body.node_id) or {}
         node = next((item for item in run["plan"].get("nodes") or [] if item.get("id") == body.node_id), None)
         if not node or not (node.get("parameters") or {}).get("approval_gate") or state.get("status") != "succeeded" or int(state.get("attempt") or 0) != body.artifact_version:
@@ -9942,109 +8380,23 @@ async def list_skills(
     }
 
 
-class SkillCreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")
-    content: str = Field(..., min_length=1, max_length=200_000)
-
-
-class SkillUpdateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    content: str = Field(..., min_length=1, max_length=200_000)
-
-
-def _skill_sandbox(capability: str) -> TenantHermesSandbox:
-    try:
-        claims = verify_capability(capability)
-    except KnowledgeScopeDenied as exc:
-        raise HTTPException(status_code=403, detail="sandbox_identity_denied") from exc
-    if str(claims.get("entry_point") or "") != "skills":
-        raise HTTPException(status_code=403, detail="sandbox_identity_denied")
-    return _tenant_sandbox_from_claims(
-        subject_id=str(claims.get("subject_id") or "skills"),
-        knowledge_claims=claims,
-        client_claims=None,
-    )
-
-
-def _write_skill_and_verify(
-    sandbox: TenantHermesSandbox, *, name: str, content: str, replace: bool
-) -> dict[str, Any]:
-    catalog = _routed_skill_catalog(sandbox)
-    owned = {
-        str(item.get("name")): item
-        for item in catalog
-        if item.get("scope") == "tenant"
-    }
-    if replace and name not in owned:
-        raise HTTPException(status_code=404, detail="tenant_skill_not_found")
-    if not replace and any(item.get("name") == name for item in catalog):
-        raise HTTPException(status_code=409, detail="skill_exists")
-    try:
-        path = write_sandbox_skill(sandbox, name, content, replace=replace)
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail="skill_exists") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    record = next((
-        item for item in _routed_skill_catalog(sandbox)
-        if item.get("scope") == "tenant" and item.get("name") == name
-    ), None)
-    if (
-        record is None
-        or record.get("sha256") != digest
-        or read_sandbox_skill(sandbox, name) != content
-    ):
-        raise HTTPException(status_code=500, detail="tenant_skill_write_not_verified")
-    return {"name": name, "sha256": digest, "scope": "tenant", "verified": True}
-
-
-@app.post("/v1/skills")
-async def create_skill(
-    body: SkillCreateRequest,
-    x_knowledge_capability: str = Header(default=""),
-    x_idempotency_key: str = Header(default=""),
-):
-    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
-        raise HTTPException(status_code=400, detail="idempotency_key_required")
-    return _write_skill_and_verify(
-        _skill_sandbox(x_knowledge_capability),
-        name=body.name,
-        content=body.content,
-        replace=False,
-    )
-
-
-@app.put("/v1/skills/{name}")
-async def update_skill(
-    name: str,
-    body: SkillUpdateRequest,
-    x_knowledge_capability: str = Header(default=""),
-    x_idempotency_key: str = Header(default=""),
-):
-    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
-        raise HTTPException(status_code=400, detail="idempotency_key_required")
-    return _write_skill_and_verify(
-        _skill_sandbox(x_knowledge_capability),
-        name=name,
-        content=body.content,
-        replace=True,
-    )
-
-
 @app.delete("/v1/skills/{name}")
 async def delete_skill(
     name: str,
     x_knowledge_capability: str = Header(default=""),
-    x_idempotency_key: str = Header(default=""),
 ):
     """Delete only a custom Skill in the signed tenant sandbox."""
-    if x_idempotency_key and len(x_idempotency_key) > 160:
-        raise HTTPException(status_code=400, detail="invalid_idempotency_key")
-    sandbox = _skill_sandbox(x_knowledge_capability)
+    try:
+        claims = verify_capability(x_knowledge_capability)
+    except KnowledgeScopeDenied as exc:
+        raise HTTPException(status_code=403, detail="sandbox_identity_denied") from exc
+    if str(claims.get("entry_point") or "") != "skills":
+        raise HTTPException(status_code=403, detail="sandbox_identity_denied")
+    sandbox = _tenant_sandbox_from_claims(
+        subject_id=str(claims.get("subject_id") or "skills"),
+        knowledge_claims=claims,
+        client_claims=None,
+    )
     try:
         deleted = delete_sandbox_skill(sandbox, name)
     except ValueError as exc:
@@ -10057,7 +8409,7 @@ async def delete_skill(
         for item in remaining
     ):
         raise HTTPException(status_code=500, detail="tenant_skill_delete_not_verified")
-    return {"deleted": True, "name": name, "verified": True}
+    return {"deleted": True, "name": name}
 
 
 @app.get("/health")

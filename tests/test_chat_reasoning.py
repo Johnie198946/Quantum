@@ -36,8 +36,6 @@ class _FakeAsyncClient:
         return False
 
     async def post(self, *args, **kwargs):
-        self.post_args = args
-        self.post_kwargs = kwargs
         return self._response
 
 
@@ -74,36 +72,9 @@ class TestCallHermes(unittest.TestCase):
             "backend.api.chat.httpx.AsyncClient",
             return_value=_FakeAsyncClient(fake_resp),
         ):
-            reply, reasoning, events = asyncio.run(_call_hermes("hi", "s1"))
+            reply, reasoning = asyncio.run(_call_hermes("hi", "s1"))
         self.assertEqual(reply, "答案")
         self.assertEqual([s.type for s in reasoning], ["thought", "tool_call"])
-        self.assertEqual(events, [])
-
-    def test_call_hermes_preserves_bridge_semantic_events(self):
-        semantic_events = [
-            {"type": "capability.proposed", "version": 1, "payload": {"proposal_id": "p1"}},
-            {"type": "artifact.consumed", "version": 1, "payload": {"receipt": {"receipt_id": "r1"}}},
-        ]
-        fake_resp = _FakeResponse({
-            "reply": "已处理", "reasoning": [], "events": semantic_events,
-        })
-        with patch(
-            "backend.api.chat.httpx.AsyncClient",
-            return_value=_FakeAsyncClient(fake_resp),
-        ):
-            reply, reasoning, events = asyncio.run(_call_hermes("consume", "s1"))
-        self.assertEqual((reply, reasoning), ("已处理", []))
-        self.assertEqual(events, semantic_events)
-
-    def test_call_hermes_builds_qcp_request_with_effective_request_id(self):
-        client = _FakeAsyncClient(_FakeResponse({"reply": "答案", "reasoning": []}))
-        with patch("backend.api.chat.httpx.AsyncClient", return_value=client):
-            asyncio.run(_call_hermes(
-                "hi", "s1", client_capabilities=["qcp_v1"],
-                request_id="effective-request-123",
-            ))
-        self.assertEqual(client.post_kwargs["json"]["client_capabilities"], ["qcp_v1"])
-        self.assertEqual(client.post_kwargs["json"]["request_id"], "effective-request-123")
 
 
 class TestChatReasoningFlow(unittest.TestCase):
@@ -115,27 +86,15 @@ class TestChatReasoningFlow(unittest.TestCase):
 
     def test_chat_passes_through_reasoning(self):
         steps = [ReasoningStep(type="tool_call", title="调用工具: read_file", detail="")]
-        observed = {}
-
-        async def fake_hermes(*_args, **kwargs):
-            observed.update(kwargs)
-            return "答案", steps, [{
-                "type": "artifact.consumed", "version": 1,
-                "payload": {"receipt": {"receipt_id": "acr-1"}},
-            }]
-
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
-             patch("backend.api.chat._call_hermes", side_effect=fake_hermes):
+             patch("backend.api.chat._call_hermes", return_value=("答案", steps)):
             resp = asyncio.run(chat(
-                ChatRequest(question="hi", client_capabilities=["qcp_v1"]),
+                ChatRequest(question="hi"),
                 payload={"tenant_key": "test", "sub": "test-user"},
             ))
         self.assertEqual(resp.answer, "答案")
         self.assertEqual(len(resp.reasoning), 1)
         self.assertEqual(resp.reasoning[0].type, "tool_call")
-        self.assertEqual(observed["client_capabilities"], ["qcp_v1"])
-        self.assertGreaterEqual(len(observed["request_id"]), 8)
-        self.assertEqual(resp.events[0]["type"], "artifact.consumed")
 
 
 if __name__ == "__main__":

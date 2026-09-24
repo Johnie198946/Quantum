@@ -51,7 +51,7 @@ def native(tmp_path, monkeypatch):
     router._WEB_RESEARCH_TURNS.clear()
     # No network provider installation or global manifest monkeypatching. The
     # actual registered router, deposition and composed finalizer all run.
-    with patch.object(ctx, "register_web_search_provider"), patch.object(router, "_extend_tool_search"), patch.object(router, "_compact_skill_manifest"):
+    with patch.object(ctx, "register_web_search_provider"), patch.object(router, "_compact_skill_manifest"):
         plugin.register(ctx)
     scope = dict(session_id="synthetic-session", task_id="synthetic-task", turn_id="synthetic-turn", platform="desktop")
     yield manager, ctx, plugin.research_deposition, scope
@@ -81,7 +81,7 @@ def test_native_preview_has_no_dispatch_or_deposit_obligation(native, text):
     assert not deposit.execute({}, **scope)["success"]
     final = manager.invoke_hook("transform_llm_output", response_text="Synthetic preview", **scope)
     assert final == ["Synthetic preview"]
-    assert router._LOCAL_TURN_STATES[scope["session_id"]]["agency_decision"] == "SKIP"
+    assert router._LOCAL_TURN_STATES[scope["session_id"]]["requested_agent"] is None
     assert router._pre_tool_call("web_extract", {"urls": [URL]}, **scope) is None
 
 
@@ -162,7 +162,9 @@ def test_operational_meta_never_creates_research_obligation(native, text):
     assert "SOURCE_FIRST_RESEARCH" not in context
     assert not ctx.state.get(deposit.key(scope), {}).get("obligation")
     assert not ctx.state.get(deposit.key(scope), {}).get("veto")
-    assert [x["id"] for x in router.recommend(text)] == ["hermes:direct"]
+    state = router._LOCAL_TURN_STATES[scope["session_id"]]
+    assert state["requested_skill"] is None
+    assert state["requested_agent"] is None
 
 
 @pytest.mark.parametrize("text", ["研究一下，是否买入这个股票 " + URL, "研究文章后确定用药剂量 " + URL,
@@ -255,11 +257,12 @@ def test_portable_catalog_cannot_force_source_first_into_specialist(native, monk
                  {"id": "skill:evidence-first-content-research", "kind": "skill"}]
     monkeypatch.setattr(router, "_skill_capabilities", lambda: inventory[1:])
     monkeypatch.setattr(router, "_agency_capabilities", lambda: inventory[:1])
-    assert [x["id"] for x in router.recommend(text)] == ["hermes:direct"]
-    assert router.recommend(text, capabilities=inventory) == []
     with patch.object(ctx, "dispatch_tool") as dispatch:
         assert "SOURCE_FIRST_RESEARCH" in invoke(manager, scope, text)
         dispatch.assert_not_called()
+    state = router._LOCAL_TURN_STATES[scope["session_id"]]
+    assert state["requested_skill"] is None
+    assert state["requested_agent"] is None
 
 
 @pytest.mark.skipif(
@@ -270,11 +273,12 @@ def test_real_full_catalog_cannot_force_preview_into_specialist():
     skills, agents = router._skill_capabilities(), router._agency_capabilities()
     assert len(skills) > 100 and len(agents) > 100
     for text in [QUICK, "完整研究 " + URL, "看看 " + URL]:
-        assert [x["id"] for x in router.recommend(text)] == ["hermes:direct"]
-        assert router.recommend(text, capabilities=skills + agents) == []
         ctx = Mock()
         router._pre_llm_with_runtime_skill(ctx, text, session_id="synthetic-catalog", platform="desktop")
         ctx.dispatch_tool.assert_not_called()
+        state = router._LOCAL_TURN_STATES["synthetic-catalog"]
+        assert state["requested_skill"] is None
+        assert state["requested_agent"] is None
 
 
 @pytest.mark.parametrize("suffix", ["不要保存", "不要入库", "no_save", "no-save", "不保存"])

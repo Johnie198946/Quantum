@@ -2,151 +2,60 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
+from typing import Any
 
 
 REPO = Path(__file__).resolve().parents[1]
-ROUTER_PATH = (
-    REPO
-    / "agency"
-    / "hermes-plugins"
-    / "ai-lab-capabilities"
-    / "capability_router.py"
-)
+PLUGIN = REPO / "agency/hermes-plugins/ai-lab-capabilities"
 
 
 def _router():
-    spec = importlib.util.spec_from_file_location("agency_abstention_router", ROUTER_PATH)
+    package = "agency_abstention_jev_plugin"
+    for name in list(sys.modules):
+        if name == package or name.startswith(package + "."):
+            sys.modules.pop(name, None)
+    pkg = type(sys)(package)
+    pkg.__path__ = [str(PLUGIN)]
+    sys.modules[package] = pkg
+    spec = importlib.util.spec_from_file_location(
+        f"{package}.capability_router", PLUGIN / "capability_router.py"
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
-def _agency(slug: str, name: str, description: str, search_text: str, depth: float) -> dict:
-    return {
-        "id": f"agency:{slug}",
+def test_parallel_keyword_abstention_router_is_removed():
+    router = _router()
+    for name in (
+        "recommend", "_candidate_context", "_score_capability",
+        "_selected_agency", "_direct_capability",
+    ):
+        assert not hasattr(router, name)
+
+
+def test_provider_unavailable_abstains_without_fallback_ranking(monkeypatch):
+    router = _router()
+    monkeypatch.delenv("JEV_SELECTOR_URL", raising=False)
+    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
+    monkeypatch.setattr(router, "_agency_capabilities", lambda: [{
+        "id": "agency:ui-designer",
         "kind": "agency_agent",
-        "name": name,
-        "description": description,
-        "domain": "specialist",
-        "depth": depth,
-        "cost": 0.0,
-        "_search_text": search_text,
-    }
-
-
-def test_professional_router_abstains_when_only_body_noise_matches() -> None:
-    router = _router()
-    context = router._candidate_context(
-        "请做专业评审并给出执行建议",
-        capabilities=[
-            _agency(
-                "bilibili-content-strategist",
-                "Bilibili Content Strategist",
-                "Bilibili video and audience growth specialist",
-                "请做专业评审并给出执行建议 " * 20,
-                1.0,
-            )
-        ],
-        professional_only=True,
+        "name": "UI Designer",
+        "description": "UI and visual design",
+    }])
+    state: dict[str, Any] = {"tenant_id": "local", "principal": "local_owner"}
+    context = router._jev_routing_context(
+        "审计 Agent OS 控制面",
+        state,
+        authorized_skill_ids=[],
+        authorized_agent_ids=["agency:ui-designer"],
     )
-    assert context is None
-
-
-def test_domain_priority_is_only_a_tie_break_after_real_fit() -> None:
-    router = _router()
-    cards = router.recommend(
-        "规划产品 MVP、用户故事和 90 天路线图",
-        capabilities=[
-            _agency(
-                "product-manager",
-                "Product Manager",
-                "Product manager",
-                "product manager",
-                0.1,
-            ),
-            _agency(
-                "trend-researcher",
-                "Product Trend Researcher",
-                "Product roadmap, MVP, user stories, acceptance metrics",
-                "规划产品 MVP 用户故事 90 天路线图 product roadmap MVP user stories acceptance metrics " * 10,
-                1.0,
-            ),
-        ],
-        stats={},
-    )
-    assert cards[0]["id"] == "agency:trend-researcher"
-
-
-def test_professional_router_requires_positive_task_fit() -> None:
-    router = _router()
-    card = {
-        "id": "agency:title-only",
-        "kind": "agency_agent",
-        "fit": 90.0,
-        "confidence": 90.0,
-        "description": "Title-only candidate",
-        "skill_path": None,
-        "skill_level": None,
-        "trigger_phrases": [],
-        "negative_phrases": [],
-        "factors": {
-            "task_fit": 0.0,
-            "depth_fit": 1.0,
-            "quality": 1.0,
-            "title_fit": 1.0,
-            "trigger_fit": 0.0,
-            "scope_alignment": 0.0,
-        },
-        "invoke": {"tool": "delegate_task", "arguments": {}},
-    }
-    setattr(router, "recommend", lambda *_args, **_kwargs: [card])
-    assert router._candidate_context(
-        "专业任务",
-        capabilities=[_agency("title-only", "Title Only", "", "", 1.0)],
-        professional_only=True,
-    ) is None
-
-
-def test_agent_os_architecture_audit_never_routes_to_ui_designer() -> None:
-    router = _router()
-    query = (
-        "体检本体生产是否使用 Agent OS，审计 Hermes 单一 Runtime、控制面、"
-        "delegation receipt 和 Main adoption 是否违背设计。"
-    )
-    ui = _agency(
-        "ui-designer",
-        "UI Designer",
-        "UI architecture, visual design systems, component libraries and interface specialist",
-        "design review system design audit " * 20,
-        0.82,
-    )
-    multi_agent = _agency(
-        "multi-agent-systems-architect",
-        "Multi-Agent Systems Architect",
-        "Systems architect for multi-agent coordination, governance and failure recovery",
-        "Agent OS runtime control plane delegation receipts Main adoption trust governance",
-        0.82,
-    )
-
-    cards = router.recommend(query, capabilities=[ui, multi_agent], stats={})
-    assert cards[0]["id"] == "agency:multi-agent-systems-architect"
-    assert "agency:ui-designer" not in {card["id"] for card in cards}
-
-
-def test_agent_os_architecture_audit_abstains_when_only_ui_candidate_exists() -> None:
-    router = _router()
-    context = router._candidate_context(
-        "审计 Agent OS 控制面、委派回执和 Main adoption 是否符合单一运行时设计",
-        capabilities=[
-            _agency(
-                "ui-designer",
-                "UI Designer",
-                "UI architecture, visual design systems and interface specialist",
-                "architecture design audit " * 20,
-                0.82,
-            )
-        ],
-        professional_only=True,
-    )
-    assert context is None
+    assert context == ""
+    assert state["requested_agent"] is None
+    decision = state["route_decision"]
+    assert isinstance(decision, dict)
+    assert decision["reason_code"] == "PROVIDER_UNAVAILABLE"

@@ -1,83 +1,47 @@
-# Clash Verge loopback egress tunnel
+# Mac Clash 反向 SSH 应急出口
 
-This path gives only the Hermes Bridge and durable worker outbound HTTP(S) proxy
-settings. It does not expose Clash, SSH, or the Bridge publicly and does not copy
-proxy subscriptions, node URIs, controller credentials, private keys, or traffic
-logs into this repository or onto the server.
+## 定位
 
-## Server contract
+此链路仅用于服务器本地 mihomo 故障时的**人工应急回退**，不是生产默认出口。生产 Hermes Bridge/Worker 必须默认使用服务器 `127.0.0.1:7890`。
 
-Create a dedicated, locked SSH account used only for remote forwarding. Its
-`authorized_keys` entry must use a separate public key and restrict the key to the
-single listener, for example:
+Mac Clash Verge 监听 `127.0.0.1:7897`；LaunchAgent `com.quantumn.clash-egress-tunnel` 可建立 SSH 反向转发，使云服务器 `127.0.0.1:17897` 临时转发至该端口。两个端口刻意分离，避免覆盖服务器本地 mihomo。
 
-```text
-restrict,port-forwarding,permitlisten="127.0.0.1:17897" <public-key>
+## 生产默认状态
+
+```bash
+# 服务器
+systemctl is-active mihomo.service
+ss -lntp | grep '127.0.0.1:7890'
+curl --proxy http://127.0.0.1:7890 --fail --max-time 20 https://chatgpt.com/cdn-cgi/trace
 ```
 
-Keep `GatewayPorts no` effective for that account. If an sshd `Match User` block
-is required, allow remote TCP forwarding only, keep agent/X11/TTY forwarding and
-commands disabled, and retain the `PermitListen 127.0.0.1:17897` restriction.
-Validate the effective sshd configuration before reloading it. The server must
-listen only on `127.0.0.1:17897`; never add a public firewall rule or bind the
-reverse forward to `0.0.0.0`, `*`, a public address, or a Docker gateway address.
+`/etc/ai-lab-platform/hermes-egress.env` 必须是：
 
-Install `/etc/ai-lab-platform/hermes-egress.env` as a root-owned, root-group,
-regular non-symlink file with mode `0600`, no more than 1024 bytes, and exactly:
-
-```text
-HTTPS_PROXY=http://127.0.0.1:17897
-HTTP_PROXY=http://127.0.0.1:17897
-NO_PROXY=localhost,127.0.0.1,<validated-Hermes-Bridge-bind-address>,::1
+```dotenv
+HTTPS_PROXY=http://127.0.0.1:7890
+HTTP_PROXY=http://127.0.0.1:7890
+NO_PROXY=localhost,127.0.0.1,<bridge-address>,::1
 ```
 
-The optional systemd `EnvironmentFile` is shared by Bridge and Worker. If the
-file is absent, direct egress behavior is unchanged. If it exists but ownership,
-mode, type, size, keys, values, loopback endpoint, or `NO_PROXY` contract is
-wrong, deployment and rollback verification fail closed before a runtime restart.
+## 应急回退
 
-## macOS contract
+仅当服务器本地 mihomo 已确认故障、短期无法修复且 Mac 隧道已验证可用时：
 
-In Clash Verge, set `allow-lan: false`, keep the HTTP/mixed listener on
-`127.0.0.1:7897`, enable Clash Verge launch at login, and confirm it is running
-before relying on the tunnel. Store the dedicated SSH private key as a user-owned
-regular non-symlink file with mode `0400` or `0600`; keep a pinned, user-owned,
-non-writable `known_hosts` file separately.
+1. 确认 durable chat 队列不存在 `queued`、`accepted` 或 `running` 任务。
+2. Mac 执行 `launchctl print gui/$(id -u)/com.quantumn.clash-egress-tunnel`。
+3. 服务器确认 `127.0.0.1:17897` 监听，并经该端口真实访问模型上游。
+4. 备份 `/etc/ai-lab-platform/hermes-egress.env`，临时把两个代理值改为 `http://127.0.0.1:17897`。
+5. 重启 Bridge/Worker，执行 `API → Bridge → Worker → Provider` 合成请求。
+6. 记录故障、切换时间、验证 run ID 与回滚路径。
 
-Use a per-user LaunchAgent with `RunAtLoad` and `KeepAlive` to call the generic
-repository script with only host, restricted user, key path, known-hosts path,
-and a non-sensitive HTTPS reachability URL:
+注意：当前 `scripts/update.sh` 的正式部署契约只接受 `127.0.0.1:7890`。应急值会使正常部署门禁失败，以防临时回退长期化。
 
-```xml
-<key>ProgramArguments</key>
-<array>
-  <string>/path/to/ops/scripts/clash-verge-egress-tunnel.sh</string>
-  <string>server.example.invalid</string>
-  <string>restricted-egress-user</string>
-  <string>/Users/you/.ssh/restricted-egress</string>
-  <string>/Users/you/.ssh/restricted-egress-known-hosts</string>
-  <string>https://example.com/</string>
-</array>
-<key>RunAtLoad</key><true/>
-<key>KeepAlive</key><true/>
-```
+## 恢复主出口
 
-Do not put private-key contents, proxy configuration, subscriptions, node URIs,
-controller credentials, or authenticated probe URLs in the plist, logs, shell
-history, repository, or server environment file.
+1. 修复并验证服务器 `mihomo.service` 与 `127.0.0.1:7890`。
+2. 再次确认 durable 队列为空。
+3. 将 `/etc/ai-lab-platform/hermes-egress.env` 恢复为 `127.0.0.1:7890`。
+4. 重启 Bridge/Worker，并以完整合成请求验收。
+5. 确认 Worker 主进程环境指向 `7890`，公网健康接口为 `200`。
 
-## Verification and rollback
-
-Before enabling Hermes, verify on macOS that Clash owns only
-`127.0.0.1:7897`, the HTTPS probe succeeds through it, and the LaunchAgent stays
-loaded. On the server verify that SSH owns only `127.0.0.1:17897`, then run the
-deployment verifier and inspect both units' effective `EnvironmentFiles`. Restart
-Bridge and Worker only after those checks; verify real provider model sync, one
-durable run, and the physical-device end-to-end path.
-
-To roll back, quarantine or stop Bridge and Worker, unload the LaunchAgent, remove
-the server egress env file, and confirm port 17897 is absent. Restore the prior
-units/release through the normal deployment rollback, restart without proxy
-variables, and repeat health checks. Leave the restricted account/key disabled if
-the tunnel is retired. Never weaken host-key checking or widen either listener to
-recover service.
+切勿仅凭端口监听、systemd `active` 或 `/health` 判断模型链路恢复。

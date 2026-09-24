@@ -30,7 +30,6 @@ from backend.api.auth import require_auth
 from backend.api.catalog import compute_catalog
 from backend.api.identity import match_identity_rule
 from backend.db import SessionLocal
-from backend.services.workflow_session_scope import register_client_session
 from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
@@ -148,16 +147,6 @@ HERMES_BRIDGE_PREWARM_URL = os.environ.get(
     "http://host.docker.internal:9118/v1/chat/prewarm",
 )
 HERMES_BRIDGE_INTERNAL_TOKEN = os.environ.get("HERMES_BRIDGE_INTERNAL_TOKEN", "")
-
-
-def _comparison_table_requested(question: str) -> bool:
-    return len(question) <= 500 and bool(
-        re.search(
-            r"对比(?:一下|下)?|比较(?:一下|下)|\bvs\b|区别|差异|哪个好",
-            question,
-            re.IGNORECASE,
-        )
-    )
 
 
 def _bridge_url_for_placement(
@@ -318,6 +307,7 @@ class ClientSessionContext(BaseModel):
     # It is covered by the signed client-context capability and never becomes
     # a tenant Wiki source.
     local_notes: List[LocalNoteContext] = Field(default_factory=list, max_length=50)
+    active_document_note_id: Optional[str] = Field(None, min_length=1, max_length=128)
 
 
 class QWSBusinessContext(BaseModel):
@@ -415,7 +405,6 @@ class ChatResponse(BaseModel):
     resolved_agent: Optional[AgentRouteInfo] = None
     delegated_by: Optional[str] = None
     feedback_receipt: Optional[Dict[str, Any]] = None
-    events: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 def _feedback_surface(capabilities: List[str]) -> str:
@@ -478,10 +467,12 @@ async def _call_hermes(
     knowledge_capability: Optional[str] = None, policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
-    client_capabilities: Optional[List[str]] = None,
     request_id: Optional[str] = None,
-) -> tuple[str, List[ReasoningStep], List[Dict[str, Any]]]:
-    """透传 Hermes bridge，返回 reply、reasoning 与原始 QCP semantic events。"""
+    client_session_context: Optional[Dict[str, Any]] = None,
+    client_context_capability: Optional[str] = None,
+    client_capabilities: Optional[List[str]] = None,
+) -> tuple[str, List[ReasoningStep]]:
+    """透传 Hermes bridge，返回 (reply, reasoning)。"""
     _last_hermes_usage.set({})
     payload: Dict[str, Any] = {"goal": _bounded_bridge_goal(goal, knowledge_capability)}
     if session_id:
@@ -497,9 +488,14 @@ async def _call_hermes(
         payload["knowledge_query"] = knowledge_query
     if agent_config:
         payload["agent_config"] = agent_config
-    payload["client_capabilities"] = client_capabilities or []
     if request_id:
         payload["request_id"] = request_id
+    if client_session_context is not None:
+        payload["client_session_context"] = client_session_context
+    if client_context_capability:
+        payload["client_context_capability"] = client_context_capability
+    if client_capabilities:
+        payload["client_capabilities"] = client_capabilities
     async with httpx.AsyncClient(timeout=HERMES_TIMEOUT) as client:
         r = await client.post(
             _bridge_url_for_placement(
@@ -519,9 +515,8 @@ async def _call_hermes(
                 ReasoningStep(**s) if isinstance(s, dict) else s
                 for s in data.get("reasoning", [])
             ]
-            events = [item for item in data.get("events", []) if isinstance(item, dict)]
-            return reply, reasoning, events
-        return f"⚠️ Hermes 桥接失败（HTTP {r.status_code}）", [], []
+            return reply, reasoning
+        return f"⚠️ Hermes 桥接失败（HTTP {r.status_code}）", []
 
 
 async def _call_hermes_recorded(
@@ -534,14 +529,16 @@ async def _call_hermes_recorded(
     policy_version: Optional[str] = None,
     knowledge_query: Optional[str] = None,
     agent_config: Optional[Dict[str, Any]] = None,
-    client_capabilities: Optional[List[str]] = None,
     request_id: Optional[str] = None,
-) -> tuple[str, List[ReasoningStep], List[Dict[str, Any]]]:
+    client_session_context: Optional[Dict[str, Any]] = None,
+    client_context_capability: Optional[str] = None,
+    client_capabilities: Optional[List[str]] = None,
+) -> tuple[str, List[ReasoningStep]]:
     started = time.perf_counter()
     quota_owned = bool((agent_config or {}).get("inference_policy"))
     _last_hermes_usage.set({})
     try:
-        reply, reasoning, events = await _call_hermes(
+        reply, reasoning = await _call_hermes(
             goal,
             session_id=session_id,
             skill_id=skill_id,
@@ -549,8 +546,10 @@ async def _call_hermes_recorded(
             policy_version=policy_version,
             knowledge_query=knowledge_query,
             agent_config=agent_config,
-            client_capabilities=client_capabilities,
             request_id=request_id,
+            client_session_context=client_session_context,
+            client_context_capability=client_context_capability,
+            client_capabilities=client_capabilities,
         )
         success = bool(reply) and not reply.lstrip().startswith("⚠️")
         if not quota_owned:
@@ -560,7 +559,7 @@ async def _call_hermes_recorded(
                 latency_ms=round((time.perf_counter() - started) * 1000),
                 success=success,
             )
-        return reply, reasoning, events
+        return reply, reasoning
     except Exception:
         if not quota_owned:
             await record_llm_usage(
@@ -647,7 +646,6 @@ async def _check_cached_answer(
         reasoning=reasoning,
         citations=citations,
         clarify=extract_clarify_payload(reasoning),
-        events=[item for item in data.get("events", []) if isinstance(item, dict)],
     )
 
 
@@ -978,6 +976,10 @@ def _classify_stream_request(
     """
     decision = classify_request(
         question or req.question,
+        quoted_context=req.quoted_context,
+        has_local_notes=bool(
+            req.client_session_context and req.client_session_context.local_notes
+        ),
         explicit_agent=(
             delegated
             or bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
@@ -1030,7 +1032,6 @@ def _message_sse(answer: str, *, clarify: ClarifyPayload | None = None) -> Itera
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     """问答接口 — 身份规则优先，其余直接透传 Hermes 并经首屏熔断与 citations 提炼。"""
-    await register_client_session(payload, req.session_id, req.request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,
@@ -1054,6 +1055,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
 
     skill_id = validate_chat_skill(req.skill_id)
     goal = req.question
+    if req.quoted_context:
+        quote = req.quoted_context.strip()
+        if quote:
+            goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
     policy = await _resolve_chat_policy(payload)
     agent, invocation = await _resolve_agent_route(
         question=req.question, requested_agent_id=req.agent_id, payload=payload
@@ -1103,6 +1108,10 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     delegated_target = invocation.agent if invocation.status == "matched" else None
     triage = classify_request(
         req.question,
+        quoted_context=req.quoted_context,
+        has_local_notes=bool(
+            req.client_session_context and req.client_session_context.local_notes
+        ),
         explicit_agent=(
             delegated_target is not None
             or bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
@@ -1137,6 +1146,19 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     effective_request_id = req.request_id or hashlib.sha256(
         f"{isolated_session_id}\0{req.question}".encode()
     ).hexdigest()[:32]
+    client_context = _validated_client_session_context(
+        req.client_session_context, req.session_id
+    )
+    client_context_capability: str | None = None
+    if client_context is not None:
+        client_context_capability = mint_client_context_capability(
+            tenant_key=str(payload.get("tenant_key") or "public"),
+            user_id=str(payload.get("user_id") or payload.get("sub") or "anonymous"),
+            session_id=isolated_session_id,
+            request_id=effective_request_id,
+            policy_version=policy.policy_version,
+            context_hash=context_digest(client_context),
+        )
     try:
         await reserve_inference(payload, effective_request_id, inference)
     except InferenceQuotaExceeded as error:
@@ -1168,7 +1190,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             child_config["inference_policy"] = inference.bridge_config()
             child_config["runtime_placement"] = placement.bridge_config()
             model_attempted = True
-            child_reply, _, child_events = await _call_hermes_recorded(
+            child_reply, _ = await _call_hermes_recorded(
                 goal + child_context.evidence,
                 auth_payload=payload,
                 session_id=child_session_id,
@@ -1176,8 +1198,6 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
                 policy_version=child_context.policy_version,
                 knowledge_query=child_context.knowledge_query,
                 agent_config=child_config,
-                client_capabilities=req.client_capabilities,
-                request_id=effective_request_id,
             )
             delegated_usage = dict(_last_hermes_usage.get())
             await persist_usage_prefix(payload, effective_request_id, delegated_usage)
@@ -1191,27 +1211,31 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
 
         if skill_id:
             model_attempted = True
-            reply, reasoning, events = await _call_hermes_recorded(
+            reply, reasoning = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id, skill_id=skill_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
-                client_capabilities=req.client_capabilities,
                 request_id=effective_request_id,
+                client_session_context=client_context,
+                client_context_capability=client_context_capability,
+                client_capabilities=req.client_capabilities,
             )
         else:
             model_attempted = True
-            reply, reasoning, events = await _call_hermes_recorded(
+            reply, reasoning = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
                 knowledge_query=source_context.knowledge_query,
                 agent_config=main_agent_config,
-                client_capabilities=req.client_capabilities,
                 request_id=effective_request_id,
+                client_session_context=client_context,
+                client_context_capability=client_context_capability,
+                client_capabilities=req.client_capabilities,
             )
         answer = trim_boilerplate(reply)
         citations = extract_citations(answer)
@@ -1251,7 +1275,6 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             ),
             delegated_by="main_agent" if delegated_target is not None else None,
             feedback_receipt=feedback_payload,
-            events=(child_events if delegated_target is not None else []) + events,
         )
     except (Exception, asyncio.CancelledError) as e:
         if model_attempted:
@@ -1465,7 +1488,6 @@ def _identity_sse(
 async def _call_bridge_stream(
     goal: str,
     session_id: str,
-    client_session_id: Optional[str] = None,
     regenerate: bool = False,
     skill_id: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -1491,7 +1513,6 @@ async def _call_bridge_stream(
             json={
                 "goal": _bounded_bridge_goal(goal, knowledge_capability),
                 "session_id": session_id,
-                "client_session_id": client_session_id,
                 "regenerate": regenerate,
                 "skill_id": skill_id,
                 "request_id": request_id,
@@ -1767,7 +1788,6 @@ async def stream_chat(
     身份话术规则秒回：命中即合成 SSE 流直接返回，零 agent 拉起（「你是谁」秒答）。
     """
     effective_request_id = req.request_id or uuid.uuid4().hex
-    await register_client_session(payload, req.session_id, effective_request_id)
     feedback = await _capture_feedback_safely(
         req.question,
         auth_payload=payload,
@@ -1837,11 +1857,7 @@ async def stream_chat(
         quote = req.quoted_context.strip()
         if quote:
             goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
-            if req.context_scope.selected_book_id or req.context_scope.local_notes:
-                # Trusted platform marker: selected text carried with an
-                # authorized reading scope, not an ungrounded Wiki question.
-                goal = "[SERVER_SELECTION_CONTEXT]\n" + goal
-    if _comparison_table_requested(req.question):
+    if re.search(r"对比|比较|vs|区别|差异|哪个好|对比一下", req.question, re.IGNORECASE):
         goal += (
             "\n\n（输出要求：本问题涉及两个及以上主体对比，请使用 Markdown 表格呈现，"
             "每行一个对比维度、首列为维度名；表格前后各空一行。禁止用罗列式 bullet 代替表格。"
@@ -1971,7 +1987,7 @@ async def stream_chat(
                     child_config["inference_policy"] = inference.bridge_config()
                     child_config["runtime_placement"] = placement.bridge_config()
                     model_attempted = True
-                    child_reply, _, child_events = await _call_hermes_recorded(
+                    child_reply, _ = await _call_hermes_recorded(
                         goal,
                         auth_payload=payload,
                         session_id=child_session_id,
@@ -1979,15 +1995,11 @@ async def stream_chat(
                         policy_version=child_policy_version,
                         knowledge_query=effective_knowledge_query,
                         agent_config=child_config,
-                        client_capabilities=req.client_capabilities,
-                        request_id=effective_request_id,
                     )
                     delegated_usage = dict(_last_hermes_usage.get())
                     await persist_usage_prefix(payload, effective_request_id, delegated_usage)
                     if not child_reply.strip() or child_reply.lstrip().startswith("⚠️"):
                         raise RuntimeError(child_reply.strip() or "专属 Agent 未返回结果")
-                    for event in child_events:
-                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 except Exception as exc:
                     message = f"专属 Agent 调用失败：{exc}"
                     for frame in _message_sse(message):
@@ -2010,7 +2022,6 @@ async def stream_chat(
                 "qws_business_context": qws_business_context,
                 "qws_context_capability": qws_context_capability,
                 "client_capabilities": req.client_capabilities,
-                "client_session_id": req.session_id,
             }
             kwargs["request_id"] = effective_request_id
             model_attempted = True

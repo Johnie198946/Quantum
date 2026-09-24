@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 
@@ -33,7 +34,8 @@ def load_router():
 
 
 def _skill(router):
-    return router._govern_skill({
+    del router
+    return {
         "id": "skill:business-model-research",
         "kind": "skill",
         "name": "business-model-research",
@@ -41,9 +43,10 @@ def _skill(router):
         "domain": "research",
         "invoke_tool": "skill_view",
         "invoke_args": {"name": "business-model-research"},
-        "depth": 0.82,
-        "cost": 0.035,
-    })
+        "version": "1.0.0", "use_when": ["research"], "do_not_use_when": [],
+        "requires": {"permissions": [], "tools": [], "platforms": []},
+        "risk": "read", "status": "active",
+    }
 
 
 def _agency():
@@ -62,6 +65,16 @@ def _agency():
 
 def test_delegate_wrappers_cannot_bypass_skill_first_gate(monkeypatch, tmp_path):
     router = load_router()
+    monkeypatch.setattr(router, "select_route", lambda *_args, **kwargs: types.SimpleNamespace(
+        decision_id="route-review", skill_id="skill:business-model-research",
+        agent_id="agency:trend-researcher", catalog_version="sha256:test",
+        policy_version="policy-test", as_dict=lambda: {
+            "decision_id": "route-review", "skill_id": "skill:business-model-research",
+            "agent_id": "agency:trend-researcher", "skill_confidence": 0.9,
+            "agent_confidence": 0.9, "reason_code": "MATCHED",
+            "policy_version": "policy-test", "catalog_version": "sha256:test",
+            "latency_ms": 1.0, "validated": True,
+        }))
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_stats_path", lambda: tmp_path / "stats.json")
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [_skill(router)])

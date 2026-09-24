@@ -129,7 +129,7 @@ async def test_prewarm_queues_same_general_agent_lane_without_model_call(monkeyp
         chat_mod.ChatPrewarmRequest(
             session_id="client-session",
             agent_id="main_agent",
-            client_capabilities=["qcp_v1", "knowledge_action_v1"],
+            client_capabilities=["knowledge_action_v1"],
         ),
         {"tenant_key": "tenant-a", "user_id": "user-a"},
     )
@@ -137,7 +137,7 @@ async def test_prewarm_queues_same_general_agent_lane_without_model_call(monkeyp
     assert result == {"run_id": "prewarm-run", "status": "queued"}
     assert observed["json"]["session_id"] == "isolated-session"
     assert observed["json"]["agent_config"]["triage"]["route_class"] == "GENERAL_QA"
-    assert observed["json"]["client_capabilities"] == ["qcp_v1", "knowledge_action_v1"]
+    assert observed["json"]["client_capabilities"] == ["knowledge_action_v1"]
     assert observed["headers"]["X-Hermes-Internal-Token"] == "internal-token"
 
 
@@ -160,6 +160,29 @@ def test_trusted_task_surface_keeps_skills_eligible_without_affecting_casual_cha
     assert task_turn.reason_code == "trusted_professional_surface"
     assert task_turn.as_dict(skill_enabled=True)["skill_enabled"] is True
     assert casual_turn.route_class == "CASUAL"
+
+
+def test_stream_triage_uses_attached_local_note_context():
+    request = StreamRequest(
+        question="请解释这一部分",
+        client_session_context={
+            "session_id": "session-attachment",
+            "local_notes": [
+                {
+                    "id": "doc_123",
+                    "title": "briefing",
+                    "markdown": "# briefing\n\n附件中的专有内容",
+                }
+            ],
+        },
+    )
+    decision = _classify_stream_request(
+        request,
+        delegated=False,
+        skill_id=None,
+        trusted_professional_surface=False,
+    )
+    assert "user_note_search" in decision.evidence_requirements
 
 
 @pytest.mark.asyncio
@@ -466,19 +489,12 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
     async def fake_child(*_args, **kwargs):
         observed["child_agent"] = kwargs["agent_config"]["id"]
         observed["child_session"] = kwargs["session_id"]
-        observed["child_capabilities"] = kwargs["client_capabilities"]
-        observed["child_request_id"] = kwargs["request_id"]
-        return "英语评估结果", [], [{
-            "type": "artifact.consumed", "version": 1,
-            "payload": {"receipt": {"receipt_id": "acr-child"}},
-        }]
+        return "英语评估结果", []
 
     async def fake_bridge_stream(goal: str, session_id: str, **kwargs):
         observed["main_agent"] = kwargs["agent_config"]["id"]
         observed["main_session"] = session_id
         observed["goal"] = goal
-        observed["main_capabilities"] = kwargs["client_capabilities"]
-        observed["main_request_id"] = kwargs["request_id"]
         yield 'data: {"type":"done","answer":"已转交"}\n\n'
 
     monkeypatch.setattr(chat_mod, "_resolve_agent_route", fake_route)
@@ -488,22 +504,16 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/chat/stream",
-            json={
-                "question": "调用小学生英语评估 Agent", "session_id": "s1",
-                "request_id": "stream-request-123", "client_capabilities": ["qcp_v1"],
-            },
+            json={"question": "调用小学生英语评估 Agent", "session_id": "s1"},
             headers=auth_headers(),
         )
 
     assert response.status_code == 200
     assert '"type": "agent_route"' in response.text
-    assert '"type": "artifact.consumed"' in response.text
     assert "小学生英语评估" in response.text
     assert observed["child_agent"] == target.id
     assert observed["main_agent"] == main.id
     assert observed["child_session"] != observed["main_session"]
-    assert observed["child_capabilities"] == observed["main_capabilities"] == ["qcp_v1"]
-    assert observed["child_request_id"] == observed["main_request_id"] == "stream-request-123"
     assert "英语评估结果" in observed["goal"]
 
 
@@ -511,11 +521,11 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
 @pytest.mark.parametrize(
     ("question", "route_class", "agency_enabled", "evidence"),
     [
-        ("你好", "CASUAL", False, []),
+        ("你好", "CASUAL", True, []),
         (
             "这个页面讲了什么 https://example.com/post",
             "GENERAL_QA",
-            False,
+            True,
             ["web_extract"],
         ),
         (
@@ -526,7 +536,7 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
         ),
     ],
 )
-async def test_stream_triage_controls_bridge_config_and_emits_route(
+async def test_stream_triage_preserves_evidence_but_not_skill_agent_availability(
     monkeypatch, question, route_class, agency_enabled, evidence
 ):
     import backend.api.chat as chat_mod

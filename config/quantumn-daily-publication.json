@@ -6,7 +6,7 @@
   "editorial_selection": {
     "genres": ["tutorial", "research_report", "popular_science", "feature", "critical_essay"],
     "candidate_sources": ["follow_builders", "authorized_wiki", "published_catalog", "open_research_gaps"],
-    "destinations": ["ai-history", "ai-practice", "quantumn-originals"],
+    "destinations": ["ai-history", "ai-practice", "concept-fables", "ai-toolkit", "quantumn-originals"],
     "publish_nothing_when_no_reader_value": true,
     "required_brief": true
   },
@@ -22,6 +22,18 @@
       "title": "趣味AI落地经历",
       "editorial_mode": "evidence_led_practical_tutorial",
       "audience": "非技术中文读者"
+    },
+    {
+      "id": "concept-fables",
+      "title": "概念寓言",
+      "editorial_mode": "delayed_reveal_allegory_with_explicit_mapping",
+      "audience": "非技术中文读者"
+    },
+    {
+      "id": "ai-toolkit",
+      "title": "AI工具实战",
+      "editorial_mode": "novice_step_by_step_tool_building_tutorial",
+      "audience": "希望用AI完成工作并开发小工具的入门读者"
     }
   ],
   "original_collections": [
@@ -45,7 +57,7 @@
     "schedule": "0 8,14,18 * * *",
     "no_agent": false,
     "prompt_template": "docs/prompts/quantumn-editorial-v2.md",
-    "max_issue_count": 2
+    "per_series_max_issue_count": 1
   },
   "release_job": {
     "schedule": "0 12 * * *",

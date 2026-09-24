@@ -41,7 +41,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     copied = document.execCommand("copy");
   } catch {
-    // Keep the default false result when the legacy command is unavailable.
+    copied = false;
   } finally {
     document.body.removeChild(textarea);
     if (selection) {

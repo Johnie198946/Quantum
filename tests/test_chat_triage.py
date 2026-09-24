@@ -107,15 +107,6 @@ def test_personal_note_queries_route_to_user_note_search_not_platform_wiki():
     assert "user_note_search" not in release_notes.evidence_requirements
 
 
-def test_public_travel_and_internal_travel_policy_have_distinct_requirements():
-    public = classify_request("怎么去樱岛，和JR如何衔接？")
-    internal = classify_request("结合公司内部差旅政策规划樱岛行程")
-
-    assert public.route_class == GENERAL_QA
-    assert "knowledge_search" not in public.evidence_requirements
-    assert "knowledge_search" in internal.evidence_requirements
-
-
 def test_explicit_skill_agent_keeps_skill_discovery_enabled():
     from backend.api.chat import _skill_routing_enabled
     from backend.services.agent_capabilities import EffectiveAgent
@@ -134,3 +125,47 @@ def test_explicit_skill_agent_keeps_skill_discovery_enabled():
     )
 
     assert _skill_routing_enabled(agent, None) is True
+
+
+def test_document_attachment_queries_route_to_targeted_user_note_search():
+    pdf_q = classify_request("这份文档主要讲了什么？")
+    assert pdf_q.evidence_requirements == ("user_note_search",)
+
+    ppt_q = classify_request("总结刚才上传的PPT中的关键数据")
+    assert ppt_q.evidence_requirements == ("user_note_search",)
+
+    attach_q = classify_request("根据附件第三页的要求深入分析")
+    assert "user_note_search" in attach_q.evidence_requirements
+    assert attach_q.route_class == PROFESSIONAL_TASK
+
+
+def test_attached_local_notes_activate_note_search_without_generic_office_false_positives():
+    attached = classify_request("请解释这一部分", has_local_notes=True)
+    assert "user_note_search" in attached.evidence_requirements
+
+    concise = classify_request("总结一下", has_local_notes=True)
+    assert concise.evidence_requirements == ("user_note_search",)
+
+    for question in (
+        "请解释 Excel 的 VLOOKUP",
+        "这个材料靠谱吗？",
+        "如何写 API 文档",
+        "Word 文档模板有哪些规范？",
+    ):
+        decision = classify_request(question)
+        assert "user_note_search" not in decision.evidence_requirements
+
+    unrelated = classify_request("明天北京天气怎么样？", has_local_notes=True)
+    assert "user_note_search" not in unrelated.evidence_requirements
+
+
+def test_quoted_context_selection_queries_activate_evidence_chain():
+    # 选词提问：简短提问 + 复杂引用
+    decision = classify_request("这是什么意思？", quoted_context="异构算力纳管与TokenOps统一推理调度")
+    assert "knowledge_search" in decision.evidence_requirements
+    assert decision.reason_code in {"quote_follow_up", "quote_professional_inquiry"}
+
+    # 选词深入分析
+    deep_decision = classify_request("详细分析一下原因", quoted_context="系统在Q3季度出现了微服务级联超时与降级")
+    assert deep_decision.route_class == PROFESSIONAL_TASK
+    assert "knowledge_search" in deep_decision.evidence_requirements

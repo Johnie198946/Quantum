@@ -17,10 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from backend.api import knowledge
-from backend.api.catalog import compute_catalog
 from backend.services.knowledge_catalog import (
-    SEARCH_CACHE, database_live_document_index, filter_database_live_documents,
-    AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
+    SEARCH_CACHE, compute_catalog, filter_database_live_documents, AUTHORIZED_DOCUMENT_PATHS, resolve_authorized_version,
     run_knowledge_read,
 )
 from backend.api.tenant import current_visibility
@@ -31,7 +29,7 @@ from backend.services.knowledge_policy import (
     resolve_policy,
     verify_capability,
 )
-from backend.services.user_note_context import search_user_notes
+from backend.services.user_note_context import read_user_notes_by_ids, search_user_notes
 
 router = APIRouter(tags=["knowledge-policy"])
 AUTHEN_WEBHOOK_SECRET = os.environ.get("AUTHEN_ENTITLEMENT_WEBHOOK_SECRET", "")
@@ -62,9 +60,7 @@ if _PERF_OBSERVE:
     ).start()
 
 
-def _emit_tenant_wiki_timing(
-    timings: dict[str, float], *, publication_included: bool = False,
-) -> None:
+def _emit_tenant_wiki_timing(timings: dict[str, float]) -> None:
     """Emit one bounded, non-identifying record during controlled benchmarks."""
     if not _PERF_OBSERVE:
         return
@@ -74,8 +70,7 @@ def _emit_tenant_wiki_timing(
         "content_assembly_ms", "final_authorization_ms",
         "final_policy_audit_ms", "total_ms",
     )
-    route = "tenant_wiki_with_publication" if publication_included else "tenant_wiki_success"
-    line = f"knowledge_gateway_perf_v1 route={route} " + " ".join(
+    line = "knowledge_gateway_perf_v1 route=tenant_wiki_success " + " ".join(
         f"{phase}={max(0.0, float(timings.get(phase, 0.0))):.3f}"
         for phase in phases
     ) + "\n"
@@ -146,6 +141,9 @@ class GatewaySearchRequest(BaseModel):
     entities: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
     topics: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
     paths: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(default_factory=list, max_length=10)
+    note_ids: list[
+        Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
+    ] = Field(default_factory=list, max_length=10)
     book_id: str | None = Field(None, min_length=1, max_length=384)
     content_version: str | None = Field(None, min_length=1, max_length=256)
     operation: str = Field(default="read", pattern="^(toc|read)$")
@@ -161,42 +159,14 @@ def _require_book_text(book: dict[str, Any]) -> None:
 
 
 async def _model_book(metadata, book, scopes):
-    """Reader authorization is prerequisite, not model disclosure permission."""
-    from backend.services.knowledge_catalog import bookshelf_document_index, explicit_model_control
-    from backend.services.knowledge_publication_store import reader_sections
-    relative = str(metadata.get("source_path") or "")
-    if not relative:
-        # Private reader computes this marker from its hash-verified artifact.
-        if metadata.get("_model_disclosure_controlled") or explicit_model_control(metadata):
-            return {"book_id": book["book_id"], "content_version": book["content_version"],
-                    "title": "", "citation": "", "sections": [],
-                    "content_status": "disclosure_limited"}
-        return book
-    vault = knowledge._vault()
-    candidates = bookshelf_document_index(vault)
-    candidates.update(knowledge.document_index(vault))
-    live = await filter_database_live_documents(list(candidates.values()), vault)
-    index = {item["path"]: item for item in live}
-    source = index.get(relative)
-    if source and not explicit_model_control(source) and source.get("disclosure_granularity") != "summary":
-        return book
-    resolved = resolve_authorized_version(relative, index, scopes, for_model=True) if source else None
-    if resolved is None:
-        return {"book_id": book["book_id"], "content_version": book["content_version"],
-                "title": "", "citation": "", "sections": [],
-                "content_status": "disclosure_limited"}
-    text = await run_knowledge_read(_read_model_content, resolved["path"], index, scopes)
-    return {"book_id": book["book_id"], "content_version": book["content_version"],
-            "title": knowledge._doc_title(text), "citation": f"knowledge:{resolved['path']}",
-            "sections": reader_sections(text), "content_status": "approved_summary"}
+    """Return authenticated reader content without disclosure-label filtering."""
+    return book
 
 
 async def _selected_book_search(body, claims, policy, requested):
     """Every page re-enters the reader authorization chain; no body cache."""
-    binding = claims.get("book_scope") or {}
-    if (not claims.get("user_id") or body.book_id != binding.get("book_id")
-            or not body.content_version or body.content_version != binding.get("content_version")):
-        raise HTTPException(status_code=403, detail={"code": "book_scope_denied"})
+    if not claims.get("user_id") or not body.content_version:
+        raise HTTPException(status_code=422, detail={"code": "book_identity_or_version_required"})
     from backend.api.subscriptions import _available_book_body
     metadata, book = await _available_book_body({
         "tenant_key": policy.tenant_key, "user_id": claims["user_id"],
@@ -353,37 +323,26 @@ async def capability_search(
             catalog=catalog,
         )
     mark_perf("initial_policy_ms")
-    if claims.get("policy_version") != policy.policy_version:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": KnowledgeScopeDenied.code, "message": "套餐或知识权限已变化"},
-        )
-    capability_scopes = set(str(item) for item in claims.get("scopes") or [])
-    capability_sources = set(
-        str(item) for item in claims.get("sources") or ["tenant_knowledge"]
-    )
-    requested_sources = set(body.sources or capability_sources)
+    capability_scopes = {
+        str(item["category"])
+        for item in catalog
+        if str(item.get("status") or "active") == "active" and item.get("category")
+    }
+    capability_sources = {"tenant_knowledge", "user_notes"}
+    requested_sources = set(body.sources or {"tenant_knowledge"})
     if not requested_sources.issubset(capability_sources):
         raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
     if not requested_sources.issubset({"tenant_knowledge", "user_notes"}):
         raise HTTPException(status_code=422, detail="unsupported knowledge source")
     requested = set(body.category_scope or capability_scopes)
-    if not requested.issubset(capability_scopes):
-        async with SessionLocal() as db:
-            db.add(KnowledgeAccessAudit(
-                tenant_key=tenant_key, entry_point=str(claims.get("entry_point") or "gateway"),
-                category=",".join(sorted(requested))[:128], resource_id="search",
-                decision="deny", policy_version=policy.policy_version, reason="scope_exceeds_capability",
-            ))
-            await db.commit()
-        raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
+
     if body.book_id and (body.entities or body.topics or body.paths):
         raise HTTPException(status_code=422, detail="Wiki selectors cannot be combined with book_id")
     if (body.entities or body.topics or body.paths) and requested_sources != {"tenant_knowledge"}:
         raise HTTPException(status_code=422, detail="Wiki selectors require tenant_knowledge only")
+    if body.note_ids and requested_sources != {"user_notes"}:
+        raise HTTPException(status_code=422, detail="note_ids require user_notes only")
     if body.book_id:
-        if "tenant_knowledge" not in requested_sources:
-            raise HTTPException(status_code=403, detail={"code": "book_scope_denied"})
         return await _selected_book_search(body, claims, policy, requested)
     if body.content_version or body.section or body.operation != "read" or body.page != 1:
         raise HTTPException(status_code=422, detail="book_id required for book selectors")
@@ -395,8 +354,10 @@ async def capability_search(
             tenant_key, policy.policy_version, requested, body.query,
             {"tenant_knowledge"},
         )
-        live_index = await database_live_document_index(knowledge._vault())
+        candidates = await run_knowledge_read(knowledge.document_index, knowledge._vault())
+        live = await filter_database_live_documents(list(candidates.values()), knowledge._vault())
         mark_perf("candidate_authorization_ms")
+        live_index = {item["path"]: item for item in live}
         # Model disclosure is narrower than internal read authorization. Never
         # send controlled detail upstream and hope a later SSE/final filter hides it.
         visible_index = {resolved["path"]: resolved for path in live_index
@@ -487,18 +448,28 @@ async def capability_search(
         user_id = str(claims.get("user_id") or "")
         if not user_id:
             raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
-        notes = await run_knowledge_read(search_user_notes,
-            tenant_key=tenant_key,
-            user_id=user_id,
-            query=body.query,
-            limit=body.limit,
-        )
+        if body.note_ids:
+            notes = await run_knowledge_read(
+                read_user_notes_by_ids,
+                tenant_key=tenant_key,
+                user_id=user_id,
+                note_ids=body.note_ids,
+            )
+        else:
+            notes = await run_knowledge_read(search_user_notes,
+                tenant_key=tenant_key,
+                user_id=user_id,
+                query=body.query,
+                limit=body.limit,
+            )
         remaining_note_chars = 60_000
         for item in notes:
             if item.get("content_status") == "disclosure_limited":
                 disclosure_limited = True
                 continue
-            markdown = str(item.get("markdown") or "")[: min(20_000, remaining_note_chars)]
+            full_markdown = str(item.get("markdown") or "")
+            per_note_limit = 60_000 if body.note_ids else 20_000
+            markdown = full_markdown[: min(per_note_limit, remaining_note_chars)]
             remaining_note_chars -= len(markdown)
             docs.append({
                 "id": item["id"],
@@ -506,6 +477,8 @@ async def capability_search(
                 "title": item["title"],
                 "snippet": markdown[:1000],
                 "markdown": markdown,
+                "content_hash": item.get("content_hash"),
+                "content_status": "complete" if len(markdown) == len(full_markdown) else "truncated",
                 "category": "user_notes",
                 "freshness": item.get("updated_at") or "unknown",
                 "source": "user_notes",
@@ -532,10 +505,6 @@ async def capability_search(
         mark_perf("final_authorization_ms")
     docs = docs[: body.limit]
     async with SessionLocal() as db:
-        final_policy, _ = await resolve_policy(
-            db, tenant_key=tenant_key, org_id=mapping.org_id if mapping else "", catalog=catalog)
-        if final_policy.policy_version != policy.policy_version:
-            raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
         db.add(KnowledgeAccessAudit(
             tenant_key=tenant_key, entry_point=str(claims.get("entry_point") or "gateway"),
             category=",".join(sorted(requested))[:128], resource_id="search",
@@ -557,9 +526,8 @@ async def capability_search(
         "disclosure_limited": disclosure_limited,
         "docs": docs,
     }
-    if _PERF_OBSERVE and requested_sources == {"tenant_knowledge"}:
+    if (_PERF_OBSERVE and requested_sources == {"tenant_knowledge"}
+            and not publication_included):
         perf_timings["total_ms"] = (time.perf_counter() - perf_started) * 1000
-        _emit_tenant_wiki_timing(
-            perf_timings, publication_included=publication_included,
-        )
+        _emit_tenant_wiki_timing(perf_timings)
     return response

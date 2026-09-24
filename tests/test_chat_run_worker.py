@@ -59,7 +59,7 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
         user_key="session-key",
         session_id="session-key",
         request_id="request-123",
-        execution_payload={"goal": "hello", "client_session_id": "client-session-123"},
+        execution_payload={"goal": "hello"},
     )
     claimed = store.claim_next("worker-test")
     assert claimed and claimed["run_id"] == run["run_id"]
@@ -68,21 +68,10 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
     monkeypatch.setattr(worker.bridge, "_hermes_session_for_request", lambda *_: None)
     monkeypatch.setattr(worker, "_renew_knowledge_capability", lambda *_: None)
 
-    def fake_run(goal, user_key, hermes_sid, sink, holder, *args, **kwargs):
+    def fake_run(goal, user_key, hermes_sid, sink, holder, *args):
         assert goal == "hello"
-        assert kwargs["client_session_id"] == "client-session-123"
-        assert hasattr(kwargs["sandbox"], "state_db")
         worker.bridge._qput(sink, {"type": "delta", "content": "hello"})
-        worker.bridge._qput(sink, {
-            "type": "done", "answer": "hello",
-            "knowledge_receipt": {
-                "schema_version": "knowledge_gate_receipt.v2",
-                "required_internal_knowledge": False,
-                "attempted_internal_search": True,
-                "consumed_internal_knowledge": False,
-                "decision": "allowed_public_only",
-            },
-        })
+        worker.bridge._qput(sink, {"type": "done", "answer": "hello"})
 
     monkeypatch.setattr(worker.bridge, "_run_agent_sync", fake_run)
     worker.execute(store, claimed)
@@ -95,8 +84,6 @@ def test_worker_executes_claimed_run_and_persists_terminal(monkeypatch, tmp_path
         (1, "runtime_timing"), (2, "delta"), (3, "done"),
     ]
     assert events[0]["phase"] == "queue_claimed" and events[0]["queue_delay_ms"] >= 0
-    assert events[-1]["knowledge_receipt"]["schema_version"] == "knowledge_gate_receipt.v2"
-    assert events[-1]["knowledge_receipt"]["decision"] == "allowed_public_only"
 
 
 def test_worker_marks_hermes_invocation_failure_failed(monkeypatch, tmp_path):
@@ -186,7 +173,7 @@ def test_worker_prewarms_agent_without_running_a_model_turn(monkeypatch, tmp_pat
             },
         },
         sandbox,
-        {"knowledge_action_enabled": True, "qcp_enabled": False},
+        {"knowledge_action_enabled": True},
     )]
     timing = store.events_after(run["run_id"], 0, tenant_user_hash=owner)
     assert [event.get("phase") for event in timing[:-1]] == [
@@ -224,7 +211,7 @@ def test_worker_auto_ingests_high_confidence_research(monkeypatch, tmp_path):
     captured = []
     monkeypatch.setattr(worker, "persist_generated_private_note", lambda **kwargs: captured.append(kwargs))
 
-    def fake_run(_goal, _user_key, _hermes_sid, sink, _holder, *args, **kwargs):
+    def fake_run(_goal, _user_key, _hermes_sid, sink, _holder, *args):
         answer = "有来源支撑的华为财报研究结论。" * 12
         worker.bridge._qput(sink, {"type": "delta", "content": answer})
         worker.bridge._qput(sink, {"type": "done", "answer": answer})

@@ -22,7 +22,6 @@ OPERATOR = (
     "python", "/app/scripts/publication_operator.py",
     "--root", "/app/data/runtime/publications",
 )
-DAILY_SERIES = ("ai-history", "ai-practice")
 STATES = ("draft", "staged", "scheduled", "blocked", "published", "withdrawn")
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
 UNKNOWN = "unknown"
@@ -35,6 +34,7 @@ def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--known-hosts-file")
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--editorial-root", help="opt-in v2 manifest relay before release (or AI_LAB_PUBLICATION_EDITORIAL_ROOT)")
+    parser.add_argument("--target-publication-id", help="require this exact publication to read back as published")
     return parser.parse_args(argv)
 
 
@@ -151,13 +151,11 @@ def _release(stdout: str, returncode: int) -> dict:
     if returncode not in {0, 3}:
         raise ValueError(f"release-due command failed (exit {returncode})")
     ok, result = _json(stdout, "release-due")
-    expected_status = {0: "ok", 3: "attention_required"}.get(returncode)
-    if expected_status is None:
-        raise ValueError("release-due command failed")
+    expected_status = {0: "ok", 3: "attention_required"}[returncode]
+    if result.get("status") not in {expected_status, "ok"}:
+        raise ValueError("release-due exit code disagrees with its status")
     if ok is not None and ok != (returncode == 0):
         raise ValueError("release-due exit code disagrees with its envelope")
-    if result.get("status") != expected_status:
-        raise ValueError("release-due exit code disagrees with its status")
     if any(not isinstance(result.get(key), list) for key in ("released", "blocked", "superseded", "missing")):
         raise ValueError("release-due returned an invalid result")
     released, blocked, superseded, missing = (result[key] for key in ("released", "blocked", "superseded", "missing"))
@@ -189,7 +187,10 @@ def _release(stdout: str, returncode: int) -> dict:
     ):
         raise ValueError("release-due returned an invalid result")
     overdue = any(item["status"].startswith("overdue_") for item in missing)
-    if (returncode == 0 and (blocked or overdue)) or (returncode == 3 and not (blocked or overdue)):
+    attention = result.get("attention_required", bool(blocked or overdue))
+    if not isinstance(attention, bool) or attention != bool(blocked or overdue):
+        raise ValueError("release-due returned a contradictory result")
+    if returncode == 3 and not attention:
         raise ValueError("release-due returned a contradictory result")
     return result
 
@@ -229,12 +230,15 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
             "observed_published_publication_id_delta": UNKNOWN,
             "released_edition_ids": UNKNOWN,
             "today": {
-                "date": day, "expected": len(DAILY_SERIES), "published": UNKNOWN,
-                "by_series": {series: UNKNOWN for series in DAILY_SERIES},
+                "date": day, "expected": UNKNOWN, "published": UNKNOWN, "by_series": UNKNOWN,
             },
             "totals": {**{state: UNKNOWN for state in STATES}, "missing": UNKNOWN},
         }
     items, missing = status["items"], status["missing"]
+    daily_series = tuple(sorted(
+        {item["series_id"] for item in items if item["issue_date"] == day}
+        | {item["series_id"] for item in missing if item["issue_date"] == day}
+    ))
     totals = {state: sum(item["state"] == state for item in items) for state in STATES}
     totals["missing"] = len(missing)
     published = {
@@ -242,7 +246,7 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
             item["publication_id"] for item in items
             if item.get("state") == "published" and item.get("issue_date") == day and item.get("series_id") == series
         })
-        for series in DAILY_SERIES
+        for series in daily_series
     }
     before_ids = {
         item["publication_id"] for item in (before or {}).get("items", []) if item.get("state") == "published"
@@ -267,22 +271,48 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
         },
         "observed_published_publication_id_delta": sorted(after_ids - before_ids) if before is not None else UNKNOWN,
         "released_edition_ids": UNKNOWN,
-        "today": {"date": day, "expected": len(DAILY_SERIES), "published": sum(published.values()), "by_series": published},
+        "today": {
+            "date": day, "expected": len(daily_series), "published": sum(published.values()),
+            "by_series": published,
+        },
         "totals": totals,
     }
 
 
 def _attention(summary: dict) -> bool:
-    totals = summary["totals"]
-    return bool(totals["blocked"] or totals["missing"] or any(count != 1 for count in summary["today"]["by_series"].values()))
+    day = summary["today"]["date"]
+    current_blocked = [item for item in summary["issues"]["blocked"] if item.get("issue_date") == day]
+    return bool(current_blocked or summary["issues"]["missing"] or any(
+        count != 1 for count in summary["today"]["by_series"].values()
+    ))
+
+
+def _target(status: dict, publication_id: str) -> dict:
+    rows = [item for item in status["items"] if item["publication_id"] == publication_id]
+    if not rows:
+        return {"publication_id": publication_id, "state": "missing"}
+    published = [item for item in rows if item["state"] == "published"]
+    row = published[0] if published else max(rows, key=lambda item: item["edition"])
+    return {
+        "publication_id": publication_id,
+        "edition_id": row["edition_id"],
+        "series_id": row["series_id"],
+        "issue_date": row["issue_date"],
+        "state": row["state"],
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     summary = _summary()
     exit_code = 1
     errors: list[Exception] = []
+    target_id: str | None = None
+    target_status: dict | None = None
     try:
         args = _args(argv)
+        target_id = args.target_publication_id
+        if target_id is not None and not _valid_id(target_id):
+            raise ValueError("target publication ID is invalid")
         identity, known_hosts = _trust(args)
         if args.status_only:
             post_status = _ssh(identity, known_hosts, _command("status"))
@@ -290,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
             status = _status(post_status.stdout, post_status.returncode)
             summary = _summary(status)
             summary["released_edition_ids"] = []
+            target_status = status
         else:
             editorial_root = args.editorial_root or os.environ.get("AI_LAB_PUBLICATION_EDITORIAL_ROOT")
             if editorial_root:
@@ -313,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
                     exit_code = post_status.returncode
                 status = _status(post_status.stdout, post_status.returncode)
                 summary = _summary(status, before)
+                target_status = status
             except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
                 errors.append(exc)
             if release is not None:
@@ -321,10 +353,24 @@ def main(argv: list[str] | None = None) -> int:
                     summary["released_edition_ids"] = sorted(receipt["released"])
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append(exc)
-            if errors and not exit_code:
-                exit_code = 1
-        if summary["totals"]["published"] != UNKNOWN and _attention(summary):
-            exit_code = exit_code or 3
+            if errors:
+                if release is not None and release.returncode not in {0, 3}:
+                    exit_code = release.returncode
+                else:
+                    exit_code = 1
+            elif release is not None and target_status is not None:
+                # Missing or blocked sibling series are alerts, not a cross-series release failure.
+                exit_code = 0
+        if summary["totals"]["published"] != UNKNOWN:
+            attention = _attention(summary)
+            summary["global_attention"] = attention
+            if target_id is not None and target_status is not None:
+                summary["target"] = _target(target_status, target_id)
+                if not errors and summary["target"]["state"] == "published":
+                    exit_code = 0
+                elif not errors:
+                    exit_code = exit_code or 3
+
     except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
         errors.append(exc)
         exit_code = exit_code or 1

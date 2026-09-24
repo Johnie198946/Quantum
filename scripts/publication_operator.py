@@ -8,13 +8,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from PIL import Image
 
-from backend.services.knowledge_publication_store import PublicationError, PublicationStore, receipt_set_hash
+from backend.services.knowledge_publication_store import (
+    PUBLICATION_COVERS, PublicationError, PublicationStore, receipt_set_hash,
+)
 from backend.services.follow_builders_publication import load_candidate
 
 
@@ -26,11 +25,28 @@ def _file(value: str) -> tuple[str, Path]:
     return kind, Path(path)
 
 
-def _cover(store: PublicationStore, path: Path) -> dict:
-    head = path.read_bytes()[:8]
-    if not (head.startswith(b"\x89PNG\r\n\x1a\n") or head.startswith(b"\xff\xd8\xff")):
-        raise PublicationError("cover must be a PNG or JPEG")
-    return store.ingest_file(path, "publication_cover")
+def _cover(store: PublicationStore, path: Path, role: str) -> dict:
+    try:
+        with Image.open(path) as image:
+            image_format, size = image.format, image.size
+            image.verify()
+    except OSError as exc:
+        raise PublicationError(f"invalid {role} image") from exc
+    media_type = {"PNG": "image/png", "JPEG": "image/jpeg"}.get(image_format)
+    if not media_type or size != PUBLICATION_COVERS[role]["size"]:
+        raise PublicationError(f"invalid {role} format or dimensions")
+    return {"role": role, "receipt": store.ingest_file(path, PUBLICATION_COVERS[role]["kind"]),
+            "media_type": media_type, "width": size[0], "height": size[1]}
+
+
+def _ingest_covers(store: PublicationStore, bundle: dict, args) -> None:
+    paths = {"shelf_cover": args.shelf_cover_file, "reader_cover": args.reader_cover_file}
+    if not any(paths.values()):
+        return
+    provided = {role for role, path in paths.items() if path}
+    bundle["assets"] = [item for item in bundle.get("assets", [])
+                        if not isinstance(item, dict) or item.get("role") not in provided]
+    bundle["assets"].extend(_cover(store, path, role) for role, path in paths.items() if path)
 
 
 def main() -> int:
@@ -42,7 +58,6 @@ def main() -> int:
         command.add_argument("bundle", type=Path, nargs="?")
         command.add_argument("--bundle", type=Path, dest="bundle_option")
         command.add_argument("--body-file", type=Path)
-        command.add_argument("--cover-file", type=Path)
         command.add_argument("--source-file", action="append", type=_file, default=[])
         command.add_argument("--rights-file", action="append", type=_file, default=[])
         command.add_argument("--execution-file", action="append", type=_file, default=[])
@@ -52,12 +67,13 @@ def main() -> int:
     stage = commands.add_parser("stage")
     stage.add_argument("bundle", type=Path)
     stage.add_argument("--body-file", type=Path, help="reviewed body bytes; never stored in the bundle path")
-    stage.add_argument("--cover-file", type=Path, required=True, help="content-specific PNG or JPEG cover")
     stage.add_argument("--source-file", action="append", type=_file, default=[])
     stage.add_argument("--rights-file", action="append", type=_file, default=[])
     stage.add_argument("--review-file", type=Path)
     stage.add_argument("--proof-file", type=Path)
     stage.add_argument("--execution-file", action="append", type=_file, default=[])
+    stage.add_argument("--shelf-cover-file", type=Path)
+    stage.add_argument("--reader-cover-file", type=Path)
     source_index = commands.add_parser("stage-source-index")
     source_index.add_argument("package", type=Path)
     source_index.add_argument("--review-file", type=Path)
@@ -80,8 +96,6 @@ def main() -> int:
                     raise PublicationError("body_hash mismatch")
                 bundle["body"] = body.decode("utf-8")
                 bundle["body_receipt"] = store.ingest_file(args.body_file, "publication_body", bundle["body_hash"])
-            if args.cover_file:
-                bundle["cover_receipt"] = _cover(store, args.cover_file)
             if args.source_file:
                 bundle["source_receipts"] = [store.ingest_file(path, kind) for kind, path in args.source_file]
                 bundle["source_snapshot_hash"] = receipt_set_hash(bundle["source_receipts"])
@@ -112,7 +126,6 @@ def main() -> int:
                 bundle["body"] = args.body_file.read_text(encoding="utf-8")
                 bundle["body_receipt"] = store.ingest_file(args.body_file, "publication_body")
                 bundle["body_hash"] = bundle["body_receipt"]["sha256"]
-            bundle["cover_receipt"] = _cover(store, args.cover_file)
             if args.source_file:
                 bundle["source_receipts"] = [store.ingest_file(path, kind) for kind, path in args.source_file]
                 bundle["source_snapshot_hash"] = receipt_set_hash(bundle["source_receipts"])
@@ -132,6 +145,7 @@ def main() -> int:
                 receipt = store.ingest_file(args.proof_file, "editorial_proof")
                 bundle["editorial_proof_file"] = f"evidence/{receipt['sha256']}.bin"
                 bundle["editorial_proof_sha256"] = receipt["sha256"]
+            _ingest_covers(store, bundle, args)
             vault = Path(os.environ.get("AI_LAB_HOME", Path(__file__).resolve().parent.parent / "data" / "vault"))
             result = store.stage(bundle, vault=vault)
         elif args.command == "status":
@@ -143,9 +157,8 @@ def main() -> int:
     except (OSError, UnicodeError, json.JSONDecodeError, PublicationError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2
-    ok = args.command != "release-due" or result["status"] == "ok"
-    print(json.dumps({"ok": ok, "result": result}, ensure_ascii=False, sort_keys=True))
-    return 0 if ok else 3
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":

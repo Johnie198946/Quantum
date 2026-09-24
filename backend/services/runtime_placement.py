@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -10,13 +9,12 @@ import os
 
 from sqlalchemy import func, select, text
 
-from backend.db import SessionLocal, engine
+from backend.db import SessionLocal
 from backend.models.tenant import RuntimePlacement
 from backend.services.llm_usage import usage_user_id
 
 
 LEASE_SECONDS = max(int(os.environ.get("QUANTUM_RUNTIME_LEASE_SECONDS", "900")), 60)
-_SQLITE_PLACEMENT_LOCK = asyncio.Lock()
 
 
 class RuntimePlacementConflict(RuntimeError):
@@ -87,7 +85,7 @@ async def claim_runtime_placement(auth_payload: dict) -> Placement:
             return Placement(owner_hash, row.shard_id, int(row.generation))
 
 
-async def _resolve_runtime_placement(
+async def resolve_runtime_placement(
     auth_payload: dict, *, preferred_shard: str | None = None,
 ) -> Placement:
     """Persist a least-loaded shard choice without granting filesystem write access."""
@@ -124,18 +122,6 @@ async def _resolve_runtime_placement(
             if row.shard_id not in shards:
                 raise RuntimePlacementConflict("runtime_shard_not_configured")
             return Placement(owner_hash, row.shard_id, int(row.generation))
-
-
-async def resolve_runtime_placement(
-    auth_payload: dict, *, preferred_shard: str | None = None,
-) -> Placement:
-    # ponytail: local SQLite has no advisory lock; one process-wide lock is enough.
-    if engine.dialect.name == "sqlite":
-        async with _SQLITE_PLACEMENT_LOCK:
-            return await _resolve_runtime_placement(
-                auth_payload, preferred_shard=preferred_shard
-            )
-    return await _resolve_runtime_placement(auth_payload, preferred_shard=preferred_shard)
 
 
 async def migrate_runtime_placement(

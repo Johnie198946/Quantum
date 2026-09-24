@@ -67,11 +67,11 @@ def harness(tmp_path, monkeypatch):
     calls = []
 
     def execute(answer):
-        def inference(goal, user_key, sid, sink, holder, **kwargs):
+        def inference(goal, user_key, sid, sink, holder, local, config, capability, *rest):
             calls.append((sid, goal))
             assert sid == user_key
-            assert kwargs["agent_config"]["knowledge_stage_only"] is True
-            assert not kwargs["knowledge_capability"] and not kwargs["allow_local_files"]
+            assert config["knowledge_stage_only"] is True
+            assert not capability and not local
             worker.bridge._qput(sink, {"type": "delta", "content": "unvalidated"})
             worker.bridge._qput(sink, {"type": "knowledge_stage_receipt", "validated": True})
             worker.bridge._qput(sink, {"type": "done", "answer": answer})

@@ -329,7 +329,6 @@ async def _available_books(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
 _PUBLIC_BOOK_FIELDS = (
     "id", "title", "author", "author_source", "summary", "cover_theme",
     "cover_variant", "cover_version", "security_level", "knowledge_level",
-    "cover_available",
     "freshness", "source_count", "series_id", "series_title", "issue_id",
     "issue_date", "test_serial", "release_at", "actual_release_at", "edition_id",
     "edition", "source_urls",
@@ -338,6 +337,7 @@ _PUBLIC_BOOK_FIELDS = (
     "source_id", "body_origin", "completeness", "source_classification",
     "readable", "unavailable_reason", "content_version",
     "publication_format", "publication_type_label", "editorial_genre",
+    "shelf_cover_url",
 )
 
 
@@ -400,6 +400,8 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             "publication_type_label": book["publication_type_label"],
             "actual_release_at": item["actual_release_at"], "edition_id": item["edition_id"],
             "source_urls": [ref["url"] for ref in item["bundle"]["references"]],
+            **({"reader_cover_url": f"/api/v1/knowledge-publications/{book_id}/covers/reader_cover"}
+               if any(asset.get("role") == "reader_cover" for asset in item["bundle"].get("assets", [])) else {}),
         } if sections else None)
     else:
         source_path = str(book["source_path"])
@@ -506,19 +508,20 @@ async def knowledge_book_body(book_id: str, payload=Depends(require_auth)):
     return {**body, "edition": edition}
 
 
-@router.get("/knowledge-books/{book_id}/cover")
-async def knowledge_book_cover(book_id: str, payload=Depends(require_auth)):
-    if (not book_id.startswith("publication-")
-            or (payload.get("visible_categories") is not None
-                and PUBLICATION_CATEGORY not in payload["visible_categories"])):
-        raise _error(404, code="book_cover_not_found", message="这本书没有可用封面",
-                     action="refresh_catalog", retryable=False)
-    cover = PublicationStore().get_published_cover(book_id, vault=knowledge._vault())
+@router.get("/knowledge-publications/{publication_id}/covers/{role}")
+async def knowledge_publication_cover(publication_id: str, role: str, payload=Depends(require_auth)):
+    if role not in {"shelf_cover", "reader_cover"}:
+        raise HTTPException(status_code=422, detail="unknown publication cover role")
+    if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
+        raise HTTPException(status_code=422, detail="invalid publication_id")
+    visible = payload.get("visible_categories")
+    cover = (PublicationStore().get_published_cover(publication_id, role, vault=knowledge._vault())
+             if visible is None or PUBLICATION_CATEGORY in visible else None)
     if cover is None:
-        raise _error(404, code="book_cover_not_found", message="这本书没有可用封面",
-                     action="refresh_catalog", retryable=False)
+        raise _error(404, code="cover_not_found", message="封面已下架或当前无权读取",
+                     action="refresh_catalog", retryable=True)
     data, media_type = cover
-    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=86400"})
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/me/book-subscriptions")

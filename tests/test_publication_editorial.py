@@ -35,7 +35,8 @@ def synthetic_fixture(format="book"):
     parts = []
     for i in range(count):
         prose = "".join(chr(rng.randrange(0x4E00, 0x9FFF + 1)) for _ in range(length))
-        parts.append(f"## 第{i + 1}章 合成测试\n\n### 机制与示例\n\n{prose}\n\n")
+        title = f"第{i + 1}章 合成测试" if format == "book" else "合成测试"
+        parts.append(f"## {title}\n\n### 机制与示例\n\n{prose}\n\n")
     body = "".join(parts)
     receipts = [{"source_url": "https://example.org/synthetic", "sha256": "a" * 64,
                  "kind": "synthetic-test-only"}]
@@ -64,6 +65,26 @@ def synthetic_fixture(format="book"):
 @pytest.mark.parametrize("format", ["book", "chapter"])
 def test_complete_synthetic_contract(format):
     assert validate_editorial(*synthetic_fixture(format)) == []
+
+
+def test_standalone_chapter_rejects_visible_number_and_book_requires_sequence():
+    body, _, _, receipts = synthetic_fixture("chapter")
+    numbered = body.replace("## 合成测试", "## 第1章 合成测试")
+    contract = make_editorial_contract(
+        numbered, format="chapter", writer_sessions=["hermes:writer"], revision=1,
+        learning_objectives=["验证单篇连载不得显示孤立章号"],
+        editorial_brief=synthetic_brief(), source_receipts=receipts,
+    )
+    assert "quality.orphan_chapter_number" in validate_editorial(numbered, contract)
+
+    book, _, _, book_receipts = synthetic_fixture("book")
+    skipped = book.replace("## 第2章 合成测试", "## 第3章 合成测试", 1)
+    contract = make_editorial_contract(
+        skipped, format="book", writer_sessions=["hermes:writer"], revision=1,
+        learning_objectives=["验证多章交付物的可见章号必须连续"],
+        editorial_brief=synthetic_brief(), source_receipts=book_receipts,
+    )
+    assert "quality.chapter_sequence" in validate_editorial(skipped, contract)
 
 
 def test_only_ast_prose_counts_and_h3_rolls_up():

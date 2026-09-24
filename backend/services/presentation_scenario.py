@@ -1,4 +1,4 @@
-"""Existing Workflow contracts for explicitly requested PPTX and DOCX outputs."""
+"""Governed Workflow contracts for PPTX, DOCX and self-contained HTML outputs."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from typing import Any
 SCENARIO_ID = "presentation-generation"
 LEGACY_SCENARIO_ID = "document-to-presentation"
 DOCUMENT_SCENARIO_ID = "document-generation"
-SCENARIO_VERSION = "3.0.0"
+HTML_TOOL_SCENARIO_ID = "html-tool-generation"
+SCENARIO_VERSION = "2.0.0"
 DEFAULT_THEME = {
     "colors": {
         "primary": "#8057E8",
@@ -60,32 +61,17 @@ def is_document_workflow(workflow) -> bool:
     return (workflow.requirements_snapshot or {}).get("scenario_id") == DOCUMENT_SCENARIO_ID
 
 
+def is_html_tool_workflow(workflow) -> bool:
+    return (workflow.requirements_snapshot or {}).get("scenario_id") == HTML_TOOL_SCENARIO_ID
+
+
 def build_presentation_plan(
     workflow, *, plan_id: str, knowledge_scope: list[str]
 ) -> dict[str, Any] | None:
     if not is_presentation_workflow(workflow):
         return None
-    snapshot = workflow.requirements_snapshot or {}
-    configured_review_gates = snapshot.get("presentation_review_gates")
-    if configured_review_gates is None:
-        configured_review_gates = []
-    if (
-        not isinstance(configured_review_gates, list)
-        or any(gate not in {"outline", "design"} for gate in configured_review_gates)
-    ):
-        raise ValueError("presentation_review_gates contains unsupported values")
-    review_gates = set(configured_review_gates)
-    source = snapshot.get("source_document") or {}
-    text_material = str(snapshot.get("text_material") or "").strip()
-    editorial_instruction = str(snapshot.get("editorial_instruction") or "").strip()
-    should_research = not source and not text_material
-    source_hint = (
-        "源文档"
-        if source
-        else "用户提供的文字材料"
-        if text_material
-        else "用户指令与检索到的可靠资料"
-    )
+    source = (workflow.requirements_snapshot or {}).get("source_document") or {}
+    source_hint = "源文档" if source else "用户指令与检索到的可靠资料"
     common = {
         "scenario_id": SCENARIO_ID,
         "scenario_version": SCENARIO_VERSION,
@@ -101,15 +87,7 @@ def build_presentation_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "markdown",
-                "instruction": (
-                    f"基于{source_hint}形成演示简报：受众目标、核心结论、关键事实、可用数据、内容缺口与不得推断项。"
-                    "每项事实必须保留事实清单中的 claim_id；不得凭空补造事实。"
-                    + (
-                        f"\n编排要求：{editorial_instruction}"
-                        if editorial_instruction
-                        else ""
-                    )
-                ),
+                "instruction": f"基于{source_hint}形成演示简报：受众目标、核心结论、关键事实、可用数据、内容缺口与不得推断项。不得凭空补造事实。",
                 "max_tokens": 5000,
             },
         },
@@ -121,8 +99,8 @@ def build_presentation_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "presentation_outline",
-                **({"approval_gate": "outline"} if "outline" in review_gates else {}),
-                "instruction": "基于分析和已确认需求设计逐页故事线。每页写明标题、页面作用、核心要点、source_claim_ids 与建议视觉；标题直接说明主题或有证据支持的结论，不得补造事实。",
+                "approval_gate": "outline",
+                "instruction": "基于分析和已确认需求设计逐页故事线。每页写明标题、页面作用、核心要点、证据依据与建议视觉；标题直接说明主题或有证据支持的结论，不得补造事实。",
                 "max_tokens": 8000,
             },
         },
@@ -134,8 +112,8 @@ def build_presentation_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "presentation_design",
-                **({"approval_gate": "design"} if "design" in review_gates else {}),
-                "instruction": "仅基于已批准大纲生成 3 至 5 张带真实内容的代表页，覆盖封面、关键正文以及适用的数据或结论页；同时给出完整配色与字体。保留 source_claim_ids，不得使用空占位符或虚构数据。",
+                "approval_gate": "design",
+                "instruction": "基于已批准大纲生成 3 至 5 张带真实内容的代表页，覆盖封面、关键正文以及适用的数据或结论页；同时给出完整配色与字体。不得使用空占位符，不得虚构数据。",
                 "max_tokens": 7000,
             },
         },
@@ -152,7 +130,7 @@ def build_presentation_plan(
             },
         },
     ]
-    if should_research:
+    if not source:
         nodes.insert(0, {
             "id": "presentation_research",
             "node_type": "KNOWLEDGE_RETRIEVAL",
@@ -166,11 +144,12 @@ def build_presentation_plan(
         })
     edges = [
         {"source": "presentation_analysis", "target": "presentation_outline"},
+        {"source": "presentation_analysis", "target": "presentation_design"},
         {"source": "presentation_outline", "target": "presentation_design"},
         {"source": "presentation_outline", "target": "presentation_deck"},
         {"source": "presentation_design", "target": "presentation_deck"},
     ]
-    if should_research:
+    if not source:
         edges.insert(0, {"source": "presentation_research", "target": "presentation_analysis"})
     return {
         "plan_id": plan_id,
@@ -188,36 +167,12 @@ def build_document_plan(
 ) -> dict[str, Any] | None:
     if not is_document_workflow(workflow):
         return None
-    snapshot = workflow.requirements_snapshot or {}
-    source = snapshot.get("source_document") or {}
-    text_material = str(snapshot.get("text_material") or "").strip()
-    profile = snapshot.get("document_profile") or {}
-    document_kind = str(profile.get("kind") or "word")
-    citation_style = str(profile.get("citation_style") or "none")
-    required_structure = str(
-        profile.get("required_structure") or "清晰的标题层级与正文"
-    )
-    page_source = "\n".join((str(workflow.description or ""), text_material))
-    chinese_pages = {"二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6}
-    page_matches = re.findall(
-        r"(?:至少|不少于|不低于)\s*([二两三四五六]|\d+)\s*页",
-        page_source,
-    )
-    minimum_pages = max(
-        (
-            int(token) if token.isdigit() else chinese_pages.get(token, 1)
-            for token in page_matches
-        ),
-        default=1,
-    )
+    source = (workflow.requirements_snapshot or {}).get("source_document") or {}
     common = {
         "scenario_id": DOCUMENT_SCENARIO_ID,
         "scenario_version": SCENARIO_VERSION,
         "knowledge_scope": knowledge_scope,
-        "allow_network": profile.get("evidence_policy") != "user_material_only",
-        "document_kind": document_kind,
-        "citation_style": citation_style,
-        "minimum_pages": minimum_pages,
+        "allow_network": True,
     }
     nodes = [
         {
@@ -228,7 +183,7 @@ def build_document_plan(
                 **common,
                 "agent_id": "main_agent",
                 "output_format": "markdown",
-                "instruction": f"基于用户指令、可选源文件和可靠资料，明确文档目的、读者、核心观点、证据、结构约束与内容缺口，不得虚构。文档类型：{document_kind}；必要结构：{required_structure}；引文格式：{citation_style}。",
+                "instruction": "基于用户指令、可选源文件和可靠资料，明确文档目的、读者、核心观点、证据、结构约束与内容缺口，不得虚构。",
                 "max_tokens": 5000,
             },
         },
@@ -241,7 +196,7 @@ def build_document_plan(
                 "agent_id": "main_agent",
                 "output_format": "markdown",
                 "approval_gate": "outline",
-                "instruction": f"基于分析和已确认需求生成可审阅的分级大纲，逐节说明目的、要点和证据依据；必须覆盖：{required_structure}。",
+                "instruction": "基于分析和已确认需求生成可审阅的分级大纲，逐节说明目的、要点和证据依据。",
                 "max_tokens": 7000,
             },
         },
@@ -254,7 +209,7 @@ def build_document_plan(
                 "agent_id": "main_agent",
                 "output_format": "word",
                 "approval_gate": "content",
-                "instruction": f"严格按已批准大纲写成完整、可直接使用的正文；结构清晰、事实可核验、语言符合用户指定风格；引文和参考文献统一采用 {citation_style}，未知来源必须标记待核验而非编造。",
+                "instruction": "严格按已批准大纲写成完整、可直接使用的正文；结构清晰、事实可核验、语言符合用户指定风格。",
                 "max_tokens": 16000,
             },
         },
@@ -276,11 +231,7 @@ def build_document_plan(
         {"source": "document_outline", "target": "document_draft"},
         {"source": "document_draft", "target": "document_file"},
     ]
-    # First-class text document capabilities already bind their approved source
-    # material into the requirements snapshot. Sending those workflows through
-    # generic knowledge retrieval both discards that truth source and makes a
-    # local product chain depend on an unrelated search service.
-    if not source and not text_material:
+    if not source:
         nodes.insert(0, {
             "id": "document_research",
             "node_type": "KNOWLEDGE_RETRIEVAL",
@@ -301,4 +252,103 @@ def build_document_plan(
         "source_document": source,
         "nodes": nodes,
         "edges": edges,
+    }
+
+
+def build_html_tool_plan(
+    workflow, *, plan_id: str, knowledge_scope: list[str]
+) -> dict[str, Any] | None:
+    """Reuse the reviewed PPT pipeline for one sandboxed, single-file web tool."""
+    if not is_html_tool_workflow(workflow):
+        return None
+    source = (workflow.requirements_snapshot or {}).get("source_document") or {}
+    common = {
+        "scenario_id": HTML_TOOL_SCENARIO_ID,
+        "scenario_version": SCENARIO_VERSION,
+        "knowledge_scope": knowledge_scope,
+        "allow_network": False,
+    }
+    nodes = [
+        {
+            "id": "html_tool_analysis", "node_type": "LLM_INFERENCE",
+            "name": "分析工具目标与交互边界",
+            "parameters": {
+                **common, "agent_id": "main_agent", "output_format": "markdown",
+                "instruction": "明确用户、核心任务、输入输出、关键状态、内容依据、隐私边界与验收标准；禁止虚构数据。",
+                "max_tokens": 5000,
+            },
+        },
+        {
+            "id": "html_tool_design", "node_type": "LLM_INFERENCE",
+            "name": "生成 UI/UX 设计方案",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "html_design",
+                "approval_gate": "design",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "先明确唯一主界面类型（Configure 或 Operate），再按 iOS 优先给出可审阅设计规范：信息架构、任务流、组件状态、色彩与排版 token、深浅色、无障碍、响应式及动效原则；最后执行 AI 设计俗套自检。",
+                "max_tokens": 7000,
+            },
+        },
+        {
+            "id": "html_tool_illustration_prompt", "node_type": "LLM_INFERENCE",
+            "name": "设计并核验章节插图 Prompt",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "illustration_prompt",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "读取当前段落及相邻上下文，建立主体、语义关系、必含与禁止元素、风格、构图、可读性和无障碍说明；不得仅按章节标题套模板。",
+                "max_tokens": 6000,
+            },
+        },
+        {
+            "id": "html_tool_illustration", "node_type": "LLM_INFERENCE",
+            "name": "生成章节语义插图",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "illustration_svg",
+                "workspace_mode": "tenant_coder",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "严格按已核验 Prompt 生成自包含 SVG 插图；画面必须表达当前段落的核心语义关系，使用 title/desc 提供无障碍说明，不得包含脚本、外链、foreignObject 或依赖小字传达信息。",
+                "max_tokens": 10000,
+            },
+        },
+        {
+            "id": "html_tool_file", "node_type": "OUTPUT_FORMAT",
+            "name": "生成自包含 HTML 工具",
+            "parameters": {
+                **common, "agent_id": "coder", "output_format": "html",
+                "workspace_mode": "tenant_coder",
+                "design_skills": [
+                    "ui-ux-pro-max", "claude-design",
+                    "popular-web-designs", "design-md",
+                ],
+                "instruction": "严格沿用已批准设计方案，生成一个完整、自包含、可离线运行的 HTML 工具；实现真实交互和默认、空、错误、成功状态，并在内容语义对应位置保留 <!-- QUANTUM_ILLUSTRATION -->，平台会嵌入已核验插图。",
+                "max_tokens": 24000,
+            },
+        },
+    ]
+    return {
+        "plan_id": plan_id,
+        "name": workflow.title,
+        "version": SCENARIO_VERSION,
+        "scenario_id": HTML_TOOL_SCENARIO_ID,
+        "source_document": source,
+        "nodes": nodes,
+        "edges": [
+            {"source": "html_tool_analysis", "target": "html_tool_design"},
+            {"source": "html_tool_analysis", "target": "html_tool_illustration_prompt"},
+            {"source": "html_tool_design", "target": "html_tool_illustration_prompt"},
+            {"source": "html_tool_illustration_prompt", "target": "html_tool_illustration"},
+            {"source": "html_tool_design", "target": "html_tool_illustration"},
+            {"source": "html_tool_analysis", "target": "html_tool_file"},
+            {"source": "html_tool_design", "target": "html_tool_file"},
+            {"source": "html_tool_illustration", "target": "html_tool_file"},
+        ],
     }

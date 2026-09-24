@@ -35,8 +35,8 @@ from backend.services.knowledge_catalog import (
     _apply_file_read_barrier, run_knowledge_read,
 )
 
-# Candidate metadata is request-local, not an authorization cache. HTTP
-# boundaries authorize it before search and recheck durable state before return.
+# Candidate metadata is request-local, not an authorization cache. Every target
+# still passes the live file barrier, and HTTP boundaries recheck durable state.
 _CANDIDATE_INDEX: ContextVar = ContextVar("knowledge_candidate_index", default=None)
 
 
@@ -135,18 +135,12 @@ def _rel_visible(rel: str, vis: set[str] | frozenset[str] | None) -> bool:
     scope = _CANDIDATE_INDEX.get()
     vault = scope[0] if scope is not None else _vault()
     document = _candidate_documents(vault).get(rel)
-    live_paths = AUTHORIZED_DOCUMENT_PATHS.get()
-    if live_paths is not None and rel not in live_paths:
-        return False
-    # An authenticated request boundary installs only paths that have already
-    # passed the live file and durable database barriers. Re-reading the same
-    # frontmatter for every WikiLink adds no authorization boundary; the
-    # Gateway rechecks the complete response before it leaves the request.
-    if document is not None and live_paths is None:
+    if document is not None:
         document = _apply_file_read_barrier(vault, document)
     if document is None:
         return False
-    if document.get("disclosure_granularity") == "summary" and live_paths is None:
+    live_paths = AUTHORIZED_DOCUMENT_PATHS.get()
+    if live_paths is not None and rel not in live_paths:
         return False
     resolved = resolve_authorized_version(rel, {rel: document}, vis)
     return resolved is not None
@@ -353,6 +347,9 @@ def _tokenize_query(text: str) -> List[str]:
     cleaned = normalized
     for phrase in _QUERY_NOISE:
         cleaned = cleaned.replace(phrase, " ")
+    # Split common possessive questions ("实体的主题是什么") even when jieba is
+    # unavailable; otherwise the fallback tokenizer produces one compound token.
+    cleaned = cleaned.replace("的", " ")
     cleaned = re.sub(r"[^\w\u4e00-\u9fff]+", " ", cleaned).strip()
     candidates: List[str] = []
     if 2 <= len(cleaned) <= 40:
@@ -368,11 +365,6 @@ def _tokenize_query(text: str) -> List[str]:
         if len(token) >= 2 and token not in _QUERY_NOISE
     )
     return list(dict.fromkeys(candidates))
-
-
-def warm_query_tokenizer() -> None:
-    """Pay the optional tokenizer initialization cost during API startup."""
-    _tokenize_query("知识网关预热")
 
 
 def _aliases(text: str) -> List[str]:

@@ -1,6 +1,6 @@
 name: ai-lab-capabilities
-version: 1.6.0
-description: Governed Skill/Agency routing plus safe no-key web extraction for Mac and cloud Hermes.
+version: 2.0.0
+description: PCM-projected JEV Skill/Agent selection with Hermes-only execution and existing QCP enforcement.
 provides_tools:
   - ai_lab_capabilities
   - ai_lab_execute

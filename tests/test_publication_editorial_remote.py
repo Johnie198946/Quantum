@@ -3,6 +3,7 @@ Never a production review, publication, credential, or network operation.
 """
 
 import base64
+import gzip
 import json
 from pathlib import Path
 import shlex
@@ -11,6 +12,7 @@ import subprocess
 import sys
 
 import pytest
+from PIL import Image
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -106,7 +108,6 @@ def flow(tmp_path, monkeypatch):
     body = fixture_bundle()
     raw = body.pop("body").encode()
     (local / "body.md").write_bytes(raw)
-    (local / "cover.jpg").write_bytes(b"\xff\xd8\xff\xe0synthetic-cover")
     (local / "source.json").write_text('{"synthetic":true}')
     (local / "rights.json").write_text(
         json.dumps(
@@ -136,8 +137,6 @@ def flow(tmp_path, monkeypatch):
         "bundle_file": "bundle.json",
         "body_file": "body.md",
         "body_sha256": relay.sha(raw),
-        "cover_file": "cover.jpg",
-        "cover_sha256": relay.sha((local / "cover.jpg").read_bytes()),
         "source_files": [
             {
                 "kind": "source_snapshot",
@@ -281,7 +280,12 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         .split("PUBLICATION_REVIEW_REQUEST\n")[1]
         .split("\nEND_PUBLICATION_REVIEW_REQUEST")[0]
     )
-    assert request["manuscript"] == (local / "body.md").read_text()
+    chunks = request["manuscript_gzip_b64_chunks"]
+    assert chunks and all(0 < len(chunk) <= 12 for chunk in chunks)
+    assert "manuscript_gzip_b64" not in request
+    assert gzip.decompress(base64.b64decode(
+        "".join(chunks), validate=True
+    )).decode() == (local / "body.md").read_text()
     frozen = json.loads(manifest.read_text())["items"][0]["bundle_file"]
     assert (
         request["quality_contract"]
@@ -293,6 +297,30 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
     )
     assert request["writer_sessions"] == request["quality_contract"]["writer_sessions"]
     assert not (local / "proof.json").exists()
+
+
+def test_global_review_scan_skips_locally_reviewed_stale_attempt_before_remote_readback(flow, monkeypatch):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    item = json.loads(manifest.read_text())["items"][0]
+    (manifest.parent / item["review_file"]).write_text("{}", encoding="utf-8")
+
+    def unexpected_attempt(*_args, **_kwargs):
+        raise AssertionError("reviewed historical attempt must not block the global scan")
+
+    monkeypatch.setattr(relay, "attempt", unexpected_attempt)
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+
+
+def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
+    stale = tmp_path / "historical" / "draft-manifest.json"
+    stale.parent.mkdir()
+    stale.write_text(
+        json.dumps({"version": "legacy", "items": [{"status": "prepared", "batch": "invalid legacy batch"}]}),
+        encoding="utf-8",
+    )
+
+    assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review"}
 
 
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
@@ -312,6 +340,45 @@ def test_real_native_signature_record_and_readback(flow, decision):
     assert not any("release-due" in c for c in calls)
     assert relay.finalize(local, remote, db=db, key=key) == {"items": []}
     assert "manuscript" not in json.loads((local / "proof.json").read_text())
+
+
+def test_approved_finalize_explicitly_promotes_author_draft_to_staged(flow):
+    local, manifest, remote, _, _, store, _ = flow
+    value = json.loads(manifest.read_text())
+    bundle_path = local / value["items"][0]["bundle_file"]
+    bundle = json.loads(bundle_path.read_text())
+    bundle["state"] = "draft"
+    relay.save(bundle_path, bundle)
+    value["items"][0]["bundle_sha256"] = relay.sha(bundle_path.read_bytes())
+    relay.save(manifest, value)
+
+    db, key = native(flow)
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    from backend.services.knowledge_publication_store import PublicationStore
+    staged = PublicationStore(store).status()
+    assert len(staged) == 1 and staged[0]["state"] == "staged"
+
+
+def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
+    local, manifest, remote, calls, *_ = flow
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    for role, size in (("shelf_cover", (1440, 2560)), ("reader_cover", (2560, 1440))):
+        path = local / f"{role}.jpg"
+        Image.new("RGB", size, "#335577").save(path, format="JPEG")
+        item[f"{role}_file"] = path.name
+        item[f"{role}_sha256"] = relay.sha(path.read_bytes())
+    relay.save(manifest, value)
+
+    db, key = native(flow)
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    stage_call = next(call for call in calls if "stage" in call)
+    assert "--shelf-cover-file" in stage_call
+    assert "--reader-cover-file" in stage_call
 
 
 def test_running_native_is_pending_without_upload(flow):
@@ -469,7 +536,10 @@ def test_draft_manifest_name_and_long_full_manuscript(flow):
         .split("\nEND_PUBLICATION_REVIEW_REQUEST", 1)[0]
     )
     assert len(body.encode()) > 105_000
-    assert request["manuscript"] == body
+    assert gzip.decompress(base64.b64decode(
+        "".join(request["manuscript_gzip_b64_chunks"]), validate=True
+    )).decode() == body
+    assert len("".join(request["manuscript_gzip_b64_chunks"])) < len(body.encode())
 
 
 def test_ended_failed_native_is_error_not_pending(flow):
@@ -500,7 +570,7 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     old = json.loads(manifest.read_text())["items"][0]
     next_dir = local / "next"
     next_dir.mkdir()
-    for name in ("bundle.json", "body.md", "cover.jpg", "source.json", "rights.json"):
+    for name in ("bundle.json", "body.md", "source.json", "rights.json"):
         shutil.copyfile(local / name, next_dir / name)
     item = {
         k: v

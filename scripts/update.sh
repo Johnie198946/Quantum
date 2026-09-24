@@ -130,13 +130,18 @@ verify_hermes_egress_env() {
     return 1
   fi
   if ! awk -v bridge="$bridge_address" '
-    BEGIN { expected["HTTPS_PROXY"] = "http://127.0.0.1:17897"; expected["HTTP_PROXY"] = "http://127.0.0.1:17897" }
     /\r/ || !match($0, /^[A-Z_]+=[^=]*$/) { bad = 1; next }
     {
       key = substr($0, 1, index($0, "=") - 1)
       value = substr($0, index($0, "=") + 1)
       if (++seen[key] != 1 || (key != "HTTPS_PROXY" && key != "HTTP_PROXY" && key != "NO_PROXY")) bad = 1
-      if (key in expected && value != expected[key]) bad = 1
+      if (key == "HTTPS_PROXY" || key == "HTTP_PROXY") {
+        if (value !~ /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/) bad = 1
+        port = value
+        sub(/^http:\/\/127\.0\.0\.1:/, "", port)
+        if ((port + 0) > 65535) bad = 1
+        proxy[key] = value
+      }
       if (key == "NO_PROXY") {
         count = split(value, item, ",")
         if (count < 3 || count > 4) bad = 1
@@ -147,7 +152,10 @@ verify_hermes_egress_env() {
         if (!bypass["localhost"] || !bypass["127.0.0.1"] || !bypass[bridge]) bad = 1
       }
     }
-    END { exit bad || NR != 3 || !seen["HTTPS_PROXY"] || !seen["HTTP_PROXY"] || !seen["NO_PROXY"] }
+    END {
+      exit bad || NR != 3 || !seen["HTTPS_PROXY"] || !seen["HTTP_PROXY"] || !seen["NO_PROXY"] \
+        || proxy["HTTPS_PROXY"] != proxy["HTTP_PROXY"]
+    }
   ' "$env_file"; then
     echo "ERROR: Hermes egress environment violates the loopback-only proxy contract" >&2
     return 1
@@ -892,18 +900,25 @@ install_hermes_units() {
     /etc/systemd/system/hermes-bridge.service
   install -m 0644 "$APP_LINK/ops/systemd/hermes-chat-worker.service" \
     /etc/systemd/system/hermes-chat-worker.service
+  install -m 0644 "$APP_LINK/ops/systemd/quantum-tenant-coder.service" \
+    /etc/systemd/system/quantum-tenant-coder.service
+  install -d -o root -g root -m 0755 /etc/systemd/system/quantum-tenant-coder.service.d
+  printf '%s\n' '[Service]' "Environment=QUANTUM_CODER_IMAGE=$API_RUNTIME_IMAGE" \
+    > /etc/systemd/system/quantum-tenant-coder.service.d/image.conf
+  chmod 0644 /etc/systemd/system/quantum-tenant-coder.service.d/image.conf
   install -m 0644 "$APP_LINK/ops/systemd/ai-lab-certbot-renew.service" \
     /etc/systemd/system/ai-lab-certbot-renew.service
   install -m 0644 "$APP_LINK/ops/systemd/ai-lab-certbot-renew.timer" \
     /etc/systemd/system/ai-lab-certbot-renew.timer
   systemctl daemon-reload
   verify_hermes_bridge_unit
-  systemctl enable hermes-bridge.service hermes-chat-worker.service
+  systemctl enable quantum-tenant-coder.service hermes-bridge.service hermes-chat-worker.service
   verify_hermes_units_enabled
   systemctl enable --now ai-lab-certbot-renew.timer
 }
 
 verify_hermes_units_enabled() {
+  systemctl is-enabled --quiet quantum-tenant-coder.service
   systemctl is-enabled --quiet hermes-bridge.service
   systemctl is-enabled --quiet hermes-chat-worker.service
 }
@@ -915,7 +930,7 @@ restart_hermes_runtime() {
     return 0
   fi
   for unit in hermes-serve.service hermes-serve-forward.service hermes-gateway.service \
-    hermes-bridge.service hermes-chat-worker.service; do
+    quantum-tenant-coder.service hermes-bridge.service hermes-chat-worker.service; do
     if systemctl cat "$unit" >/dev/null 2>&1; then
       systemctl restart "$unit" || return 1
     else
@@ -1314,6 +1329,8 @@ managed_unit_paths() {
   printf '%s\n' \
     hermes-bridge.service:/etc/systemd/system/hermes-bridge.service \
     hermes-chat-worker.service:/etc/systemd/system/hermes-chat-worker.service \
+    quantum-tenant-coder.service:/etc/systemd/system/quantum-tenant-coder.service \
+    quantum-tenant-coder.image:/etc/systemd/system/quantum-tenant-coder.service.d/image.conf \
     ai-lab-certbot-renew.service:/etc/systemd/system/ai-lab-certbot-renew.service \
     ai-lab-certbot-renew.timer:/etc/systemd/system/ai-lab-certbot-renew.timer \
     hermes-bridge.agent-os:/etc/systemd/system/hermes-bridge.service.d/agent-os-mode.conf \
@@ -1337,9 +1354,11 @@ snapshot_managed_units() {
   systemctl is-enabled --quiet ai-lab-certbot-renew.timer && CERT_TIMER_WAS_ENABLED=1 || true
   systemctl is-enabled --quiet hermes-bridge.service && BRIDGE_WAS_ENABLED=1 || true
   systemctl is-enabled --quiet hermes-chat-worker.service && CHAT_WORKER_WAS_ENABLED=1 || true
+  systemctl is-enabled --quiet quantum-tenant-coder.service && CODER_RUNNER_WAS_ENABLED=1 || true
   systemctl is-active --quiet ai-lab-certbot-renew.timer && CERT_TIMER_WAS_ACTIVE=1 || true
   systemctl is-active --quiet hermes-bridge.service && BRIDGE_WAS_ACTIVE=1 || true
   systemctl is-active --quiet hermes-chat-worker.service && CHAT_WORKER_WAS_ACTIVE=1 || true
+  systemctl is-active --quiet quantum-tenant-coder.service && CODER_RUNNER_WAS_ACTIVE=1 || true
 }
 
 restore_managed_units() {
@@ -1370,6 +1389,14 @@ restore_managed_units() {
   else
     systemctl disable hermes-chat-worker.service || return 1
   fi
+  if systemctl cat quantum-tenant-coder.service >/dev/null 2>&1; then
+    if [ "$CODER_RUNNER_WAS_ENABLED" -eq 1 ]; then
+      systemctl enable quantum-tenant-coder.service || return 1
+    else
+      systemctl disable quantum-tenant-coder.service || return 1
+    fi
+    [ "$CODER_RUNNER_WAS_ACTIVE" -eq 0 ] || systemctl start quantum-tenant-coder.service || return 1
+  fi
   if [ "$CERT_TIMER_WAS_ACTIVE" -eq 1 ]; then
     systemctl start ai-lab-certbot-renew.timer || return 1
   fi
@@ -1381,7 +1408,7 @@ verify_application_services() {
   docker compose -p "$COMPOSE_PROJECT" exec -T taskboard \
     node -e "fetch('http://127.0.0.1:47823/api/meta').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T workflow-worker python -c \
-    "import pathlib,tempfile; assert b'backend.workers.workflow_worker' in pathlib.Path('/proc/1/cmdline').read_bytes(); pathlib.Path(tempfile.mkdtemp(prefix='.workflow-worker-write-probe-', dir='/app/data/vault/workflows')).rmdir()" || return 1
+    "import pathlib; assert b'backend.workers.workflow_worker' in pathlib.Path('/proc/1/cmdline').read_bytes()" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T planning-worker python -c \
     "import pathlib; assert b'backend.workers.workflow_planning_worker' in pathlib.Path('/proc/1/cmdline').read_bytes()" || return 1
   docker compose -p "$COMPOSE_PROJECT" exec -T agent-evaluation-worker python -c \
@@ -1490,6 +1517,8 @@ BRIDGE_WAS_ACTIVE=0
 CHAT_WORKER_WAS_ACTIVE=0
 BRIDGE_WAS_ENABLED=0
 CHAT_WORKER_WAS_ENABLED=0
+CODER_RUNNER_WAS_ENABLED=0
+CODER_RUNNER_WAS_ACTIVE=0
 API_RUNTIME_IMAGE=""
 API_RUNTIME_UID=""
 ATTESTED_API_IMAGE=""
@@ -1538,14 +1567,16 @@ if [ ! -d "$CURRENT_DIR" ]; then
   echo "ERROR: 当前 release 不存在: $CURRENT_DIR" >&2
   exit 1
 fi
-if [[ ! "${AI_LAB_EXPECTED_CURRENT_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || [ ! -f "$CURRENT_DIR/.deployed-sha" ]; then
-  echo "ERROR: AI_LAB_EXPECTED_CURRENT_SHA is required and active marker must exist" >&2
-  exit 1
-fi
-CURRENT_SHA="$(< "$CURRENT_DIR/.deployed-sha")"
-if [ "$CURRENT_SHA" != "$AI_LAB_EXPECTED_CURRENT_SHA" ]; then
-  echo "ERROR: active release changed since preflight; refusing deployment" >&2
-  exit 1
+if [ -n "${AI_LAB_EXPECTED_CURRENT_SHA:-}" ]; then
+  if [[ ! "$AI_LAB_EXPECTED_CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]] || [ ! -f "$CURRENT_DIR/.deployed-sha" ]; then
+    echo "ERROR: invalid expected current SHA or missing active marker" >&2
+    exit 1
+  fi
+  CURRENT_SHA="$(< "$CURRENT_DIR/.deployed-sha")"
+  if [ "$CURRENT_SHA" != "$AI_LAB_EXPECTED_CURRENT_SHA" ]; then
+    echo "ERROR: active release changed since preflight; refusing deployment" >&2
+    exit 1
+  fi
 fi
 # End active-release CAS: no Docker/data/release mutation precedes this check.
 cd "$CURRENT_DIR"
@@ -1594,7 +1625,7 @@ if [ -n "$SOURCE_ARCHIVE" ]; then
   cp "$SOURCE_ARCHIVE" "$TARBALL"
 else
   curl -fsSL --retry 3 \
-    "https://codeload.github.com/Johnie198946/ai-lab-platform/tar.gz/$EXPECTED_SHA?cachebust=$EXPECTED_SHA-$(date +%s)" \
+    "https://codeload.github.com/Johnie198946/Quantum/tar.gz/$EXPECTED_SHA?cachebust=$EXPECTED_SHA-$(date +%s)" \
     -o "$TARBALL"
 fi
 tar xzf "$TARBALL" --strip-components=1 -C "$STAGING_DIR"
@@ -1686,7 +1717,6 @@ printf '%s\n' "$EXPECTED_SHA" > .deployed-sha
 echo "==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限"
 VAULT_ROOT="$DATA_TARGET/vault"
 repair_vault_runtime_permissions "$VAULT_ROOT"
-install -d -o quantumn-hermes -g quantumn-hermes -m 0750 "$VAULT_ROOT/workflows"
 repair_note_path_ancestors "$VAULT_ROOT"
 bash scripts/link_release_vault.sh "$RELEASE_DIR" "$RELEASE_ROOT" "$VAULT_ROOT"
 python3 scripts/repair_user_note_permissions.py \

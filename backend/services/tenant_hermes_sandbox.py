@@ -9,7 +9,6 @@ are never used as path segments.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import errno
 import hashlib
 import json
 import os
@@ -63,6 +62,10 @@ def template_skills_root() -> Path:
     return home / "skills" if home.name == ".hermes" else home / ".hermes" / "skills"
 
 
+def runtime_skill_packs_root() -> Path:
+    return Path(__file__).resolve().parents[1] / "skill_packs"
+
+
 @dataclass(frozen=True)
 class TenantHermesSandbox:
     tenant_namespace: str
@@ -101,24 +104,26 @@ def _template_files(root: Path) -> list[Path]:
     return list(dict.fromkeys(files))
 
 
-def _template_version(root: Path) -> str:
+def _template_version(roots: list[Path]) -> str:
     digest = hashlib.sha256()
-    for path in _template_files(root):
-        relative = path.relative_to(root).as_posix()
-        digest.update(relative.encode())
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
+    for root in roots:
+        for path in _template_files(root):
+            relative = path.relative_to(root).as_posix()
+            digest.update(relative.encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
     return digest.hexdigest()[:20]
 
 
-def _copy_template_version(source: Path, destination: Path) -> None:
+def _copy_template_version(sources: list[Path], destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
-    for source_file in _template_files(source):
-        relative = source_file.relative_to(source)
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_file, target, follow_symlinks=False)
+    for source in sources:
+        for source_file in _template_files(source):
+            relative = source_file.relative_to(source)
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_file, target, follow_symlinks=False)
 
 
 def ensure_tenant_sandbox(
@@ -127,6 +132,7 @@ def ensure_tenant_sandbox(
     user_id: str,
     root: Path | None = None,
     template_root: Path | None = None,
+    runtime_skills_root: Path | None = None,
 ) -> TenantHermesSandbox:
     if not str(tenant_key).strip() or not str(user_id).strip():
         raise ValueError("tenant_key and user_id are required")
@@ -142,8 +148,10 @@ def ensure_tenant_sandbox(
     agents_root = hermes_home / "agents"
     state_db = hermes_home / "state.db"
     legacy_state_db = profile_root / "state.db"
-    source = template_root or template_skills_root()
-    version = _template_version(source)
+    sources = [template_root or template_skills_root()]
+    if runtime_skills_root is not None or template_root is None:
+        sources.append(runtime_skills_root or runtime_skill_packs_root())
+    version = _template_version(sources)
     active_template = templates_root / (version or "empty")
     manifest_path = hermes_home / "profile.json"
 
@@ -177,15 +185,8 @@ def ensure_tenant_sandbox(
                 # mkdtemp creates the directory; copy into a child so the
                 # final rename is atomic and never exposes a partial template.
                 payload = staging / "payload"
-                _copy_template_version(source, payload)
-                try:
-                    os.replace(payload, active_template)
-                except OSError as error:
-                    if (
-                        error.errno not in {errno.EEXIST, errno.ENOTEMPTY}
-                        or not active_template.is_dir()
-                    ):
-                        raise
+                _copy_template_version(sources, payload)
+                os.replace(payload, active_template)
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
         migrated_state_db = bool(previous_manifest.get("legacy_state_db_migrated"))
@@ -197,25 +198,18 @@ def ensure_tenant_sandbox(
             os.replace(legacy_state_db, state_db)
             migrated_state_db = True
         manifest = {
-            "version": 3,
+            "version": 4,
             "tenant_namespace": tenant_ns,
             "user_namespace": user_ns,
             "active_template_version": version or "empty",
             "legacy_state_db_migrated": migrated_state_db,
             "legacy_tenant_skills_quarantined": legacy_tenant_skills.is_dir(),
         }
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=".profile-", suffix=".tmp", dir=manifest_path.parent
+        temporary = manifest_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True), encoding="utf-8"
         )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, manifest_path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        os.replace(temporary, manifest_path)
 
     return TenantHermesSandbox(
         tenant_namespace=tenant_ns,

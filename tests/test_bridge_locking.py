@@ -66,57 +66,6 @@ class TestMappingAtomicWrite(unittest.TestCase):
                 leftovers = [p for p in Path(d).iterdir() if p.suffix == ".tmp"]
                 self.assertEqual(leftovers, [])
 
-    def test_session_binding_merges_sibling_process_writes(self):
-        import scripts.hermes_bridge as bridge
-
-        with tempfile.TemporaryDirectory() as d:
-            mapping_file = Path(d) / "session_mappings.json"
-            state_file = Path(d) / "session_state_dbs.json"
-            mapping_file.write_text(json.dumps({"sibling": "session-a"}))
-            state_file.write_text(json.dumps({"sibling": "/tmp/a.db"}))
-            with patch.object(bridge, "MAPPING_FILE", mapping_file), patch.object(
-                bridge, "STATE_DB_MAPPING_FILE", state_file
-            ):
-                # Model the stale startup snapshot held by the other service.
-                bridge._user_session_map = {"stale": "old"}
-                bridge._user_state_db_map = {"stale": "/tmp/old.db"}
-                bridge._update_session_mapping("current", "session-b", "/tmp/b.db")
-
-                self.assertEqual(
-                    json.loads(mapping_file.read_text()),
-                    {"sibling": "session-a", "current": "session-b"},
-                )
-                self.assertEqual(
-                    json.loads(state_file.read_text()),
-                    {"sibling": "/tmp/a.db", "current": "/tmp/b.db"},
-                )
-                self.assertNotIn("stale", bridge._user_session_map)
-
-    def test_resolve_refreshes_binding_written_by_sibling_process(self):
-        import scripts.hermes_bridge as bridge
-
-        with tempfile.TemporaryDirectory() as d:
-            mapping_file = Path(d) / "session_mappings.json"
-            state_file = Path(d) / "session_state_dbs.json"
-            db_file = Path(d) / "state.db"
-            with sqlite3.connect(db_file) as connection:
-                connection.execute(
-                    "CREATE TABLE sessions (id TEXT PRIMARY KEY, archived INTEGER NOT NULL)"
-                )
-                connection.execute(
-                    "INSERT INTO sessions(id, archived) VALUES ('hermes-current', 0)"
-                )
-            mapping_file.write_text(json.dumps({"logical": "hermes-current"}))
-            state_file.write_text(json.dumps({"logical": str(db_file)}))
-            with patch.object(bridge, "MAPPING_FILE", mapping_file), patch.object(
-                bridge, "STATE_DB_MAPPING_FILE", state_file
-            ):
-                bridge._user_session_map = {}
-                bridge._user_state_db_map = {}
-                self.assertEqual(
-                    bridge._resolve_hermes_session("logical"), "hermes-current"
-                )
-
 
 class TestWatermark(unittest.TestCase):
     def setUp(self):
@@ -286,21 +235,24 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             sources=["tenant_knowledge"], limit=5, include_content=True, with_status=True,
         )
 
-    def test_search_rejects_complete_path_scope_escalation_and_recommends_web(self):
+    def test_search_forwards_explicit_scope_without_capability_acl(self):
         import scripts.hermes_bridge as bridge
 
         bridge._knowledge_tool_context.value = {
             "capability": "signed-capability",
             "scopes": ["knowledge/product/public"],
         }
-        with patch.object(bridge, "_knowledge_gateway_search") as search:
+        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]) as search:
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "产品 A",
                 "category_scope": ["knowledge/secret/entitlement/root"],
             }))
-        self.assertEqual(payload["error"], "knowledge_scope_denied")
-        self.assertTrue(payload["fallback_recommended"])
-        search.assert_not_called()
+        self.assertTrue(payload["success"])
+        search.assert_called_once_with(
+            "signed-capability", query="产品 A",
+            category_scope=["knowledge/secret/entitlement/root"],
+            sources=["tenant_knowledge"], limit=5, include_content=True, with_status=True,
+        )
 
 
 class TestChatReasoningIntegration(unittest.TestCase):
@@ -308,16 +260,13 @@ class TestChatReasoningIntegration(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         bridge._user_session_map = {}
-        bridge._user_state_db_map = {}
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.mapping = Path(self.tmp_dir.name) / "mappings.json"
-        self.state_mapping = Path(self.tmp_dir.name) / "state_mappings.json"
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
 
         bridge._user_session_map = {}
-        bridge._user_state_db_map = {}
         self.tmp_dir.cleanup()
 
     def _run_chat(self, body):
@@ -327,7 +276,6 @@ class TestChatReasoningIntegration(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "STATE_DB_MAPPING_FILE", self.state_mapping), \
              patch.object(bridge, "_session_exists", return_value=False), \
              patch.object(bridge, "_run_hermes", return_value=("ok", "sess_new")), \
              patch.object(bridge, "_readback_delta", return_value=[]):
@@ -341,7 +289,6 @@ class TestChatReasoningIntegration(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "STATE_DB_MAPPING_FILE", self.state_mapping), \
              patch.object(bridge, "_session_exists", return_value=False), \
              patch.object(bridge, "_run_hermes", return_value=("ok", "sess_new")), \
              patch.object(bridge, "_readback_delta", side_effect=sqlite3.Error("corrupt")):
@@ -368,7 +315,6 @@ class TestChatReasoningIntegration(unittest.TestCase):
             return ("ok", "sess_new")
 
         with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "STATE_DB_MAPPING_FILE", self.state_mapping), \
              patch.object(bridge, "_session_exists", return_value=False), \
              patch.object(bridge, "_run_hermes", side_effect=fake_run), \
              patch.object(bridge, "_readback_delta", return_value=[]):

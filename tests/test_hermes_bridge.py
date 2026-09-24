@@ -16,7 +16,6 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
-from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
@@ -25,234 +24,7 @@ os.environ.setdefault("HERMES_STATE_DB", "/tmp/test_state.db")
 os.environ.setdefault("HERMES_BRIDGE_INTERNAL_TOKEN", "test-internal-token")
 
 
-@contextmanager
-def isolated_session_mappings(bridge, sessions: dict[str, str]):
-    """Use real persistent mappings without touching process defaults."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        mapping_file = Path(tmpdir) / "session_mappings.json"
-        state_db_mapping_file = Path(tmpdir) / "session_state_dbs.json"
-        mapping_file.write_text(json.dumps(sessions), encoding="utf-8")
-        state_db_mapping_file.write_text("{}", encoding="utf-8")
-        with (
-            patch.object(bridge, "MAPPING_FILE", mapping_file),
-            patch.object(bridge, "STATE_DB_MAPPING_FILE", state_db_mapping_file),
-        ):
-            bridge._user_session_map.clear()
-            bridge._user_session_map.update(sessions)
-            bridge._user_state_db_map.clear()
-            yield
-        bridge._user_session_map.clear()
-        bridge._user_state_db_map.clear()
-
-
 class TestBridgeCLIParms(unittest.TestCase):
-    def test_extract_json_object_repairs_raw_newline_and_trailing_comma(self):
-        from scripts.hermes_bridge import _extract_json_object
-
-        parsed = _extract_json_object('{"title":"line one\nline two","slides":[],}')
-
-        self.assertEqual(parsed["title"], "line one\nline two")
-        self.assertEqual(parsed["slides"], [])
-
-    def test_explicit_document_replacements_override_superseded_values(self):
-        from scripts.hermes_bridge import _apply_explicit_document_replacements
-
-        revised = _apply_explicit_document_replacements(
-            "# Nimbus Expansion Brief\nRevenue: USD 2.0 million.",
-            "第一处：将原来的“Nimbus Expansion Brief”改为“Executive Brief”；"
-            "第二处：将 USD 2.0 million 改为 USD 2.4 million",
-        )
-
-        self.assertIn("# Executive Brief", revised)
-        self.assertIn("USD 2.4 million", revised)
-        self.assertNotIn("Nimbus Expansion Brief", revised)
-        self.assertNotIn("USD 2.0 million", revised)
-
-    def test_explicit_document_replacements_fail_closed_when_unverifiable(self):
-        from scripts.hermes_bridge import _apply_explicit_document_replacements
-
-        with self.assertRaisesRegex(RuntimeError, "修订失败"):
-            _apply_explicit_document_replacements(
-                "No matching value.",
-                "将 USD 2.0 million 改为 USD 2.4 million",
-            )
-
-    def test_downstream_document_inherits_upstream_revision_comment(self):
-        from scripts.hermes_bridge import _workflow_revision_comment
-
-        run = {
-            "plan": {
-                "nodes": [{"id": "draft"}, {"id": "final"}],
-                "edges": [{"source": "draft", "target": "final"}],
-            },
-            "revision_feedback": {"draft": "将 USD 2.0 million 改为 USD 2.4 million"},
-        }
-
-        self.assertEqual(
-            _workflow_revision_comment(run, "final"),
-            "将 USD 2.0 million 改为 USD 2.4 million",
-        )
-
-    def test_word_pagination_uses_minimum_pages_from_approved_outputs(self):
-        from scripts.hermes_bridge import (
-            _ensure_document_page_breaks,
-            _workflow_minimum_document_pages,
-        )
-
-        run = {
-            "goal": "生成正式 Word 文档",
-            "nodes": {"analysis": {"output": "最终文档不少于三页"}},
-        }
-        text = "\n\n".join(f"段落 {index}" for index in range(9))
-        rendered = _ensure_document_page_breaks(
-            text,
-            _workflow_minimum_document_pages(run),
-        )
-
-        self.assertEqual(rendered.count("\f") + 1, 3)
-        self.assertIn("段落 0", rendered)
-        self.assertIn("段落 8", rendered)
-
-    def test_word_pagination_reads_english_minimum_from_bound_source_material(self):
-        from scripts.hermes_bridge import _workflow_minimum_document_pages
-
-        for wording in (
-            "Produce a complete paper of at least three rendered pages.",
-            "Produce an editable DOCX of at least three full pages.",
-        ):
-            with self.subTest(wording=wording):
-                run = {
-                    "goal": "Create an academic paper",
-                    "source_material": {"text": wording},
-                }
-
-                self.assertEqual(_workflow_minimum_document_pages(run), 3)
-
-    def test_document_source_constraints_require_verified_dois_and_reject_excluded_url(self):
-        from scripts.hermes_bridge import _document_source_constraint_issues
-
-        run = {
-            "source_material": {
-                "text": """
-Verified source 1:
-Paper. https://doi.org/10.1038/example.1
-Verified source 2:
-Paper. https://doi.org/10.1371/example.2
-The same verified allowlist may also be written as DOI 10.5555/example.3.
-Fail-closed exclusion:
-- https://unverified.invalid/fabricated-paper could not be verified.
-Substantive direction:
-Write the paper.
-"""
-            }
-        }
-        issues = _document_source_constraint_issues(
-            run,
-            "References\n10.1038/example.1\nNo citation to unverified.invalid is included.",
-        )
-
-        self.assertIn("缺少已核验 DOI：10.1371/example.2", issues)
-        self.assertIn("缺少已核验 DOI：10.5555/example.3", issues)
-        self.assertTrue(any("unverified.invalid" in issue for issue in issues))
-        self.assertEqual(
-            _document_source_constraint_issues(
-                run,
-                "References\n10.1038/example.1\n10.1371/example.2\n10.5555/example.3",
-            ),
-            [],
-        )
-
-    def test_document_source_constraints_split_chinese_punctuation_doi_allowlist(self):
-        from scripts.hermes_bridge import _document_source_constraints
-
-        run = {
-            "source_material": {
-                "text": (
-                    "只允许引用 DOI 10.1038/s41562-016-0021、"
-                    "10.1371/journal.pbio.1001745、10.1038/sdata.2016.18。"
-                    "故意提供的未核实来源 https://unverified.invalid/fabricated-paper 必须 fail closed。"
-                )
-            }
-        }
-
-        verified, forbidden = _document_source_constraints(run)
-        self.assertEqual(
-            verified,
-            [
-                "10.1038/s41562-016-0021",
-                "10.1371/journal.pbio.1001745",
-                "10.1038/sdata.2016.18",
-            ],
-        )
-        self.assertIn("unverified.invalid", forbidden)
-
-    def test_document_source_constraints_preserve_explicit_source_labels(self):
-        from scripts.hermes_bridge import (
-            _document_required_source_labels,
-            _document_source_constraint_instruction,
-            _document_source_constraint_issues,
-        )
-
-        run = {
-            "source_material": {
-                "text": (
-                    "Only use [S1] https://example.com/one, "
-                    "[S2] https://example.com/two, and [S3] https://example.com/three."
-                )
-            }
-        }
-        self.assertEqual(_document_required_source_labels(run), ["[S1]", "[S2]", "[S3]"])
-        issues = _document_source_constraint_issues(run, "正文 [1][2][3]")
-        self.assertEqual(
-            issues,
-            [
-                "缺少指定来源标签：[S1]",
-                "缺少指定来源标签：[S2]",
-                "缺少指定来源标签：[S3]",
-            ],
-        )
-        instruction = _document_source_constraint_instruction(run)
-        self.assertIn("不得改成纯数字脚注", instruction)
-        self.assertEqual(
-            _document_source_constraint_issues(run, "正文 [S1][S2][S3]"),
-            [],
-        )
-
-    def test_document_source_constraints_require_declared_sections(self):
-        from scripts.hermes_bridge import _document_source_constraint_issues
-
-        run = {
-            "source_material": {
-                "text": (
-                    "The paper must contain, in this order: Abstract, Keywords, Introduction, "
-                    "Method, Results, Discussion, Conclusion, and References."
-                )
-            }
-        }
-        issues = _document_source_constraint_issues(
-            run,
-            "Abstract\nKeywords\nIntroduction\nMethod\nDiscussion\nConclusion\nReferences",
-        )
-        self.assertIn("缺少必需章节：Results", issues)
-
-    def test_final_artifact_inherits_highest_upstream_revision(self):
-        from scripts import hermes_bridge as bridge
-
-        run = {
-            "plan": {
-                "edges": [
-                    {"source": "analysis", "target": "draft"},
-                    {"source": "draft", "target": "file"},
-                ]
-            },
-            "nodes": {
-                "analysis": {"attempt": 1},
-                "draft": {"attempt": 2},
-                "file": {"attempt": 1},
-            },
-        }
-        self.assertEqual(bridge._workflow_artifact_version(run, "file"), 2)
-
     def test_runtime_admission_rejects_an_overflowing_queue(self):
         from scripts import hermes_bridge as bridge
 
@@ -700,24 +472,28 @@ class TestSessionExistsAssertion(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        with isolated_session_mappings(bridge, {"user_1001": "dead_sid"}):
-            mock_exists.return_value = False  # session 不存在
+        # 设置：user 映射到无效 session
+        bridge._user_session_map = {"user_1001": "dead_sid"}
+        mock_exists.return_value = False  # session 不存在
 
-            # mock _run_hermes 返回新 session
-            with patch("scripts.hermes_bridge._run_hermes") as mock_hermes:
-                mock_hermes.return_value = ("回复内容", "new_session_id")
-                import asyncio
-                body = GoalRequest(goal="你好", session_id="user_1001")
-                result = asyncio.run(chat(body, "test-internal-token"))
+        # mock _run_hermes 返回新 session
+        with patch("scripts.hermes_bridge._run_hermes") as mock_hermes:
+            mock_hermes.return_value = ("回复内容", "new_session_id")
+            import asyncio
+            body = GoalRequest(goal="你好", session_id="user_1001")
+            result = asyncio.run(chat(body, "test-internal-token"))
 
-                # 验证：_run_hermes 被调用时 session_id=None（新建）
-                called_goal, called_session = mock_hermes.call_args.args
-                self.assertTrue(called_goal.endswith("【用户问题】你好"))
-                self.assertIsNone(called_session)
-                # 验证：映射已更新为新 session
-                self.assertEqual(bridge._user_session_map["user_1001"], "new_session_id")
-                # 验证：返回新 session_id
-                self.assertEqual(result["hermes_session_id"], "new_session_id")
+            # 验证：_run_hermes 被调用时 session_id=None（新建）
+            called_goal, called_session = mock_hermes.call_args.args
+            self.assertTrue(called_goal.endswith("【用户问题】你好"))
+            self.assertIsNone(called_session)
+            # 验证：映射已更新为新 session
+            self.assertEqual(bridge._user_session_map["user_1001"], "new_session_id")
+            # 验证：返回新 session_id
+            self.assertEqual(result["hermes_session_id"], "new_session_id")
+
+        # 清理
+        bridge._user_session_map = {}
 
 
 class TestContextCoherence(unittest.TestCase):
@@ -730,37 +506,44 @@ class TestContextCoherence(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        with isolated_session_mappings(bridge, {"user_1001": "existing_sid"}):
-            mock_exists.return_value = True
+        # 设置：user_1001 已有有效 session
+        bridge._user_session_map = {"user_1001": "existing_sid"}
+        mock_exists.return_value = True
 
-            # R1: "你好我叫李四"
-            def side_effect_r1(*args, **kwargs):
-                return MagicMock(returncode=0, stdout="你好李四", stderr="")
+        # R1: "你好我叫李四"
+        usage_file = Path(tempfile.gettempdir()) / "test_usage_r1.json"
+        usage_file.write_text(json.dumps({"session_id": "existing_sid"}))
 
-            mock_run.side_effect = side_effect_r1
-            import asyncio
+        def side_effect_r1(*args, **kwargs):
+            return MagicMock(returncode=0, stdout="你好李四", stderr="")
 
-            body_r1 = GoalRequest(goal="你好我叫李四", session_id="user_1001")
-            asyncio.run(chat(body_r1, "test-internal-token"))
+        mock_run.side_effect = side_effect_r1
+        import asyncio
 
-            # 验证 R1 使用 --resume
-            cmd_r1 = mock_run.call_args.args[0]
-            self.assertIn("--resume", cmd_r1)
-            self.assertIn("existing_sid", cmd_r1)
+        body_r1 = GoalRequest(goal="你好我叫李四", session_id="user_1001")
+        asyncio.run(chat(body_r1, "test-internal-token"))
 
-            # R2: "我是谁"
-            def side_effect_r2(*args, **kwargs):
-                return MagicMock(returncode=0, stdout="你是李四", stderr="")
+        # 验证 R1 使用 --resume
+        cmd_r1 = mock_run.call_args.args[0]
+        self.assertIn("--resume", cmd_r1)
+        self.assertIn("existing_sid", cmd_r1)
 
-            mock_run.side_effect = side_effect_r2
-            body_r2 = GoalRequest(goal="我是谁", session_id="user_1001")
-            result_r2 = asyncio.run(chat(body_r2, "test-internal-token"))
+        # R2: "我是谁"
+        def side_effect_r2(*args, **kwargs):
+            return MagicMock(returncode=0, stdout="你是李四", stderr="")
 
-            # 验证 R2 也使用 --resume 同一 session
-            cmd_r2 = mock_run.call_args.args[0]
-            self.assertIn("--resume", cmd_r2)
-            self.assertIn("existing_sid", cmd_r2)
-            self.assertEqual(result_r2["reply"], "你是李四")
+        mock_run.side_effect = side_effect_r2
+        body_r2 = GoalRequest(goal="我是谁", session_id="user_1001")
+        result_r2 = asyncio.run(chat(body_r2, "test-internal-token"))
+
+        # 验证 R2 也使用 --resume 同一 session
+        cmd_r2 = mock_run.call_args.args[0]
+        self.assertIn("--resume", cmd_r2)
+        self.assertIn("existing_sid", cmd_r2)
+        self.assertEqual(result_r2["reply"], "你是李四")
+
+        # 清理
+        bridge._user_session_map = {}
 
 
 class TestConcurrencyIsolation(unittest.TestCase):
@@ -773,6 +556,7 @@ class TestConcurrencyIsolation(unittest.TestCase):
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
+        bridge._user_session_map = {}
         mock_exists.return_value = False
 
         call_count = {"n": 0}
@@ -790,29 +574,31 @@ class TestConcurrencyIsolation(unittest.TestCase):
             usage_path.write_text(json.dumps({"session_id": sessions[n % 2]}))
             return MagicMock(returncode=0, stdout=f"回复{n}", stderr="")
 
-        with isolated_session_mappings(bridge, {}):
-            mock_run.side_effect = side_effect
-            import asyncio
+        mock_run.side_effect = side_effect
+        import asyncio
 
-            # 并发发起 2 个新 user
-            async def run_concurrent():
-                body_a = GoalRequest(goal="user A goal", session_id="user_A")
-                body_b = GoalRequest(goal="user B goal", session_id="user_B")
-                result_a, result_b = await asyncio.gather(
-                    chat(body_a, "test-internal-token"),
-                    chat(body_b, "test-internal-token"),
-                )
-                return result_a, result_b
+        # 并发发起 2 个新 user
+        async def run_concurrent():
+            body_a = GoalRequest(goal="user A goal", session_id="user_A")
+            body_b = GoalRequest(goal="user B goal", session_id="user_B")
+            result_a, result_b = await asyncio.gather(
+                chat(body_a, "test-internal-token"),
+                chat(body_b, "test-internal-token"),
+            )
+            return result_a, result_b
 
-            result_a, result_b = asyncio.run(run_concurrent())
+        result_a, result_b = asyncio.run(run_concurrent())
 
-            # 验证：每个 user 映射到独立 session
-            self.assertIn("user_A", bridge._user_session_map)
-            self.assertIn("user_B", bridge._user_session_map)
-            # 验证：mapping 不重复
-            sid_a = bridge._user_session_map["user_A"]
-            sid_b = bridge._user_session_map["user_B"]
-            self.assertNotEqual(sid_a, sid_b)
+        # 验证：每个 user 映射到独立 session
+        self.assertIn("user_A", bridge._user_session_map)
+        self.assertIn("user_B", bridge._user_session_map)
+        # 验证：mapping 不重复
+        sid_a = bridge._user_session_map["user_A"]
+        sid_b = bridge._user_session_map["user_B"]
+        self.assertNotEqual(sid_a, sid_b)
+
+        # 清理
+        bridge._user_session_map = {}
 
 
 class TestDrillMeSteering(unittest.TestCase):

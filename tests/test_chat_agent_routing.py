@@ -58,7 +58,7 @@ class TestChatAgentRouting(unittest.TestCase):
         async def fake_hermes(goal, session_id=None, **kwargs):
             captured["goal"] = goal
             captured["session_id"] = session_id
-            return "答案", [], []
+            return "答案", []
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._call_hermes", side_effect=fake_hermes):
@@ -74,7 +74,7 @@ class TestChatAgentRouting(unittest.TestCase):
 
     def test_session_isolation_by_agent_prefix(self):
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
-             patch("backend.api.chat._call_hermes", return_value=("ok", [], [])) as mock_hermes:
+             patch("backend.api.chat._call_hermes", return_value=("ok", [])) as mock_hermes:
             asyncio.run(chat(
                 ChatRequest(question="hi", agent_id="coder"),
                 payload={"tenant_key": "test", "sub": "test-user"},
@@ -101,14 +101,7 @@ class TestChatAgentRouting(unittest.TestCase):
 
         async def fake_hermes(goal, session_id=None, agent_config=None, **kwargs):
             calls.append((goal, session_id, agent_config["id"]))
-            event_type = (
-                "capability.proposed" if agent_config["id"] == target.id
-                else "artifact.consumed"
-            )
-            return (
-                "评估结果" if agent_config["id"] == target.id else "已转交：评估结果",
-                [], [{"type": event_type, "version": 1, "payload": {}}],
-            )
+            return ("评估结果" if agent_config["id"] == target.id else "已转交：评估结果", [])
 
         with patch("backend.api.chat.match_identity_rule", return_value=None), \
              patch("backend.api.chat._resolve_agent_route", return_value=(main, AgentInvocationMatch(status="matched", agent=target))), \
@@ -122,10 +115,6 @@ class TestChatAgentRouting(unittest.TestCase):
         self.assertNotEqual(calls[0][1], calls[1][1])
         self.assertEqual(response.resolved_agent.id, target.id)
         self.assertEqual(response.delegated_by, "main_agent")
-        self.assertEqual(
-            [event["type"] for event in response.events],
-            ["capability.proposed", "artifact.consumed"],
-        )
 
 
 class _FakeScalars:

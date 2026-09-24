@@ -12,7 +12,6 @@ from backend.db import canonical_plan_hash
 
 INTENT_CHANGE_KINDS = frozenset({
     "PROJECT_DEFINITION",
-    "PROJECT_ARCHIVE",
     "TASK_CREATE",
     "TASK_DELETE",
     "TASK_CONTRACT",

@@ -1,0 +1,67 @@
+{
+  "article": "用 Gemini Notebook 把一份长 PDF 变成可核对的学习笔记",
+  "generation_backend": "codex_builtin_image_generation",
+  "model": "not_exposed_by_tool",
+  "images": [
+    {
+      "role": "shelf_cover",
+      "filename": "shelf-cover.png",
+      "prompt": "Editorial book cover illustration for a beginner Chinese AI tools field guide about turning one long PDF into trustworthy study notes with source citations. A warm desk scene viewed slightly from above: one open PDF document, a clean notebook, three color-coded citation tabs connected by thin lines, and a small friendly AI spark organizing information. Calm cobalt blue, cream, and coral palette, tactile paper-cut editorial style, clear single focal point, generous negative space at top for a Chinese title added later, no readable text, no logos, no app interface, no product branding, premium publishing design.",
+      "generated_at": "2026-09-24T07:08:56.766659+08:00",
+      "width": 1440,
+      "height": 2560,
+      "sha256": "c51b9ebe03a646d9537192ba2d579b6552e6850dcf2c7727ca63b32f7b1c1f12",
+      "validation": {
+        "status": "passed",
+        "subject": "Long source document connects through three color-coded citations to study cards and a final notebook.",
+        "readable_text": false,
+        "logo_or_branded_ui": false,
+        "watermark": false,
+        "crop": "native 9:16 with generous title-safe negative space"
+      }
+    },
+    {
+      "role": "reader_cover",
+      "filename": "reader-cover.png",
+      "prompt": "Wide editorial hero illustration for a step-by-step beginner guide: a long PDF on the left flows through a gentle AI-assisted path into three verified study cards on the right, each connected back to highlighted source passages with visible citation lines. Show the visual idea of upload, ask precise questions, click citations, correct notes, and export a final checklist. Calm cobalt blue, cream, and coral palette, modern paper-cut infographic style, welcoming to non-technical readers, spacious center composition, no readable text, no logos, no branded UI, 16:9.",
+      "generated_at": "2026-09-24T07:08:57.048527+08:00",
+      "width": 2560,
+      "height": 1440,
+      "sha256": "f0a46ec59ffafa6f538bb8ebeea5451969c62ac98ae43e94c590ad9085d7df58",
+      "validation": {
+        "status": "passed",
+        "subject": "A source document flows through upload, question, citation inspection and correction into three study cards and a checklist, with arrows returning to source highlights.",
+        "readable_text": false,
+        "logo_or_branded_ui": false,
+        "watermark": false,
+        "crop": "native 16:9 independent composition"
+      }
+    }
+  ],
+  "publication_derivatives": [
+    {
+      "role": "shelf_cover",
+      "filename": "shelf-cover-publication.jpg",
+      "source_filename": "shelf-cover.png",
+      "format": "JPEG",
+      "quality": 85,
+      "width": 1440,
+      "height": 2560,
+      "byte_count": 836721,
+      "sha256": "64a08525c04af6a31e0d3403017a5003d3aeec8c9f9183ead9621e09531f6524",
+      "validation": "passed; visually matches approved original and is below the 2 MiB editorial transport limit"
+    },
+    {
+      "role": "reader_cover",
+      "filename": "reader-cover-publication.jpg",
+      "source_filename": "reader-cover.png",
+      "format": "JPEG",
+      "quality": 85,
+      "width": 2560,
+      "height": 1440,
+      "byte_count": 682365,
+      "sha256": "6872030e353378305ea958d0a3307ad070e5ad3492892faab6bd532a6c9ea241",
+      "validation": "passed; visually matches approved original and is below the 2 MiB editorial transport limit"
+    }
+  ]
+}

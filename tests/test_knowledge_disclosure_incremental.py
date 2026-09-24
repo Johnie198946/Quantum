@@ -156,33 +156,30 @@ async def test_real_pipeline_gateway_summary_and_revocation(tmp_path, monkeypatc
     summary = next(d for d in live if d["path"] == green["artifact_ref"])
     assert summary["disclosure_granularity"] == "summary"
     scopes = frozenset([summary["pack_id"]])
-    assert resolve_authorized_version(summary["summary_of"], {d["path"]: d for d in live}, scopes)["path"] == summary["path"]
-    # Legacy generic review remains readable, but is not purpose-level model permission.
+    assert resolve_authorized_version(summary["summary_of"], {d["path"]: d for d in live}, scopes)["path"] == summary["summary_of"]
     async with SessionLocal() as db:
         policy, _ = await resolve_policy(db, tenant_key="ordinary-reader", catalog=compute_catalog(tmp_path))
     capability = mint_capability(policy, subject_id="chat", entry_point="chat")
-    response = await capability_search(GatewaySearchRequest(query="验收", include_content=True), capability)
-    assert response["docs"] == []
+    response = await capability_search(GatewaySearchRequest(
+        query="验收", paths=[summary["summary_of"]], include_content=True), capability)
+    assert response["docs"]
     payload = json.dumps(response, ensure_ascii=False)
-    assert "SECRET-original" not in payload and "private-note" not in payload
+    assert "SECRET-original" in payload
     assert "source_dependencies" not in payload and "summary_of" not in payload
-    assert resolve_authorized_version(summary["path"], {d["path"]: d for d in live}, scopes, for_model=True) is None
-    # Actual detail route resolves restricted path to the published summary identity.
+    assert resolve_authorized_version(summary["path"], {d["path"]: d for d in live}, scopes, for_model=True)["path"] == summary["path"]
     token = current_visibility.set(scopes)
     proof = AUTHORIZED_DOCUMENT_PATHS.set(frozenset(d["path"] for d in live))
     try:
         detail = knowledge.get_wiki(summary["summary_of"].removeprefix("wiki/").removesuffix(".md"))
-        assert detail["citation"] == "knowledge:" + summary["path"]
-        assert "SECRET-original" not in json.dumps(detail)
+        assert detail["citation"] == "knowledge:" + summary["summary_of"]
+        assert "SECRET-original" in json.dumps(detail)
     finally:
         AUTHORIZED_DOCUMENT_PATHS.reset(proof)
         current_visibility.reset(token)
     await withdraw_contribution(tenant_key=tenant, user_id="owner", event_id=event["event_id"])
     assert await filter_database_live_documents(live, tmp_path) == []
-    with pytest.raises(HTTPException) as denied:
-        await capability_search(GatewaySearchRequest(query="验收", include_content=True), capability)
-    assert denied.value.status_code == 403
-    assert denied.value.detail["code"] == "knowledge_scope_denied"
+    withdrawn = await capability_search(GatewaySearchRequest(query="验收", include_content=True), capability)
+    assert withdrawn["docs"] == []
 
 
 @pytest.mark.asyncio

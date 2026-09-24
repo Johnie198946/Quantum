@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import importlib.util
 
 import pytest
 
@@ -39,43 +38,15 @@ def test_bridge_bootstrap_resolves_tools_registry_from_hermes() -> None:
     assert probe.returncode == 0, probe.stderr
 
 
-def _load_capability_router():
+
+def test_legacy_parallel_candidate_router_is_absent() -> None:
     path = (
-        REPO
-        / "agency"
-        / "hermes-plugins"
-        / "ai-lab-capabilities"
+        REPO / "agency" / "hermes-plugins" / "ai-lab-capabilities"
         / "capability_router.py"
     )
-    spec = importlib.util.spec_from_file_location("agent_os_acceptance_router", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_professional_agency_router_skips_unrelated_candidate() -> None:
-    router = _load_capability_router()
-    bilibili = {
-        "id": "agency:bilibili-content-strategist",
-        "kind": "agency_agent",
-        "name": "Bilibili Content Strategist",
-        "description": (
-            "Plans Bilibili video content, audience growth, and branded content strategy."
-        ),
-        "_search_text": "product research roadmap user story solution design",
-        "domain": "media",
-        "depth": 0.82,
-        "cost": 0.10,
-    }
-
-    context = router._candidate_context(
-        "设计制造业AI质量异常闭环产品，给出目标客户、MVP、路线图和验收指标",
-        capabilities=[bilibili],
-        professional_only=True,
-    )
-
-    assert context is None
+    source = path.read_text(encoding="utf-8")
+    assert "def _candidate_context(" not in source
+    assert "def recommend(" not in source
 
 
 def test_tenant_skill_read_records_selected_skill(tmp_path: Path) -> None:
@@ -339,59 +310,8 @@ def test_receipt_accepts_verified_deferred_agency_load(monkeypatch) -> None:
     assert receipt["verification_source"] == "deferred_trace+transcript"
 
 
-def test_skill_candidate_prompt_requires_decision_before_delegation() -> None:
-    from backend.services.skill_router import candidate_prompt
+def test_legacy_skill_candidate_prompt_and_ranker_are_removed() -> None:
+    import backend.services.skill_router as router
 
-    prompt = candidate_prompt(
-        [
-            {
-                "name": "article-research-summary",
-                "description": (
-                    "Use when researching an article; do not use for code changes."
-                ),
-                "skill_path": "research/article",
-                "skill_level": "professional",
-                "trigger_phrases": ["研究这篇文章"],
-                "negative_phrases": ["修改代码"],
-                "score": 0.9,
-            }
-        ]
-    )
-
-    assert "在回答或调用 delegate_task 前" in prompt
-    assert "tenant_skill_read" in prompt
-
-
-def test_professional_agency_router_excludes_skill_cards() -> None:
-    router = _load_capability_router()
-    skill = {
-        "id": "skill:ipd-04-architecture",
-        "kind": "skill",
-        "name": "Product Architecture Planning Expert",
-        "description": "Professional product planning architecture roadmap MVP expert.",
-        "_search_text": "product roadmap MVP user story manufacturing acceptance product",
-        "domain": "product",
-        "depth": 0.99,
-        "cost": 0.0,
-        "skill_level": "professional",
-    }
-    product_manager = {
-        "id": "agency:product-manager",
-        "kind": "agency_agent",
-        "name": "Product Manager",
-        "description": "Owns product discovery, MVP roadmap, and outcome measurement.",
-        "_search_text": "product MVP roadmap",
-        "domain": "product",
-        "depth": 0.79,
-        "cost": 0.1,
-    }
-
-    context = router._candidate_context(
-        "设计制造业AI质量异常闭环产品，给出MVP、路线图和验收指标",
-        capabilities=[skill, product_manager],
-        professional_only=True,
-    )
-
-    assert context is not None
-    assert "AI_LAB_AGENCY_SPECIALIST=product-manager" in context
-    assert "AI_LAB_AGENCY_SPECIALIST=skill:" not in context
+    assert not hasattr(router, "candidate_prompt")
+    assert not hasattr(router, "rank_skill_candidates")

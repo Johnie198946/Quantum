@@ -24,6 +24,7 @@
 
 ## Implementation
 
+- Built the release candidate as a controlled merge: production backend/root tree from `origin/main@92d7d273fc94052a696183ebc36dedc8cd7093d4`, complete Build 48 iOS tree from the tested feature commit, and only this task's four backend/test patches replayed on production.
 - Reused the existing versioned book subscription checkpoint and reader sections.
 - Added `last_section_id`, `last_block_index`, and `last_character_offset` to the existing subscription row and additive startup migration.
 - Extended the existing progress write contract with a validated section/block/character checkpoint.
@@ -35,6 +36,7 @@
 ## Tests and checks
 
 - `python3 -m pytest tests/test_book_subscriptions.py -q`: 12 passed.
+- Post-integration backend and deployment contracts: 135 passed (`test_book_subscriptions`, `test_server_deployment_contract`, `test_deploy_current_release_cas`).
 - `python3 -m pytest tests/test_book_progress_legacy.py -q`: migration test passed; 11 HTTP tests blocked by the existing Starlette/httpx incompatibility (`Client.__init__() got an unexpected keyword argument 'app'`).
 - `xcodebuild ... -only-testing:...testBookWritesMatchBackendWireContract -only-testing:...testLearningResumeDecodesExactSectionAndTwoPoints`: 2 passed.
 - `git diff --check`: passed.
