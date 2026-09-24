@@ -1,6 +1,6 @@
 name: ai-lab-capabilities
-version: 2.1.0
-description: Resident PCM-projected JEV Skill/Agent selection with Hermes-only execution and existing QCP enforcement.
+version: 2.2.0
+description: Remote semantic JEV as the sole Skill/Agent selector, with resident shortlist, Hermes-only execution, and QCP enforcement.
 provides_tools:
   - ai_lab_capabilities
   - ai_lab_execute

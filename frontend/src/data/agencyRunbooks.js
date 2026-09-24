@@ -154,7 +154,7 @@ ${customerBrief.trim()}
 业务问题：${runbook.question}
 业务目标：${runbook.summary}
 
-必须使用 agency-agents-router，按需加载并委派以下专家，不得只复述角色说明：
+以下角色仅作为 Runbook 的候选专业范围。最终由远程 semantic JEV 在当前轮最多选择一个独立 Agent；不得调用 agency_agents_search、agency_agents_inspect 或 agency_agents_delegate 重新分诊：
 ${agentLines}
 
 执行时优先通过 ai_lab_capabilities 查询能力，再用 ai_lab_execute 调用以下能力：
@@ -164,7 +164,7 @@ ${capabilityLines}
 ${outputLines}
 
 执行规则：
-1. 由 Agents Orchestrator 组织顺序和并行工作，并记录每个专家的真实贡献。
+1. Hermes 是唯一 Runtime；仅执行 JEV 已验证的 Skill/Agent 计划，并记录所选专家的真实贡献。
 2. 需要内部事实时调用 AI Lab knowledge_search；需要外部事实时调用 web_research/web_extract。
 3. 结论必须区分证据、推断和待确认项；没有工具结果时不得声称已经执行。
 4. 最终输出采用中文 Markdown，依次包含：执行摘要、员工分工、证据与发现、正式交付物、风险、下一步。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the pinned Agency Agents lazy router plus the AI Lab capability router.
+# Install the pinned Agency catalog/exact loader plus the AI Lab JEV selector.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -43,6 +43,15 @@ echo "==> Generate and validate Hermes lazy router"
 (cd "$tmp_dir/source" && "$HERMES_PYTHON" scripts/check-hermes-plugin.py)
 HOME="$(dirname "$HERMES_HOME")" HERMES_HOME="$HERMES_HOME" \
   bash "$tmp_dir/source/scripts/install.sh" --tool hermes
+
+echo "==> Replace legacy Agency selector with the JEV-only exact loader"
+agency_plugin="$HERMES_HOME/plugins/agency-agents-router"
+test -f "$agency_plugin/data/agents.json" || {
+  echo "ERROR: generated Agency catalog missing: $agency_plugin/data/agents.json" >&2
+  exit 2
+}
+cp agency/hermes-plugins/agency-agents-exact-loader/__init__.py "$agency_plugin/__init__.py"
+cp agency/hermes-plugins/agency-agents-exact-loader/plugin.yaml "$agency_plugin/plugin.yaml"
 
 echo "==> Install AI Lab capability router"
 plugin_root="$HERMES_HOME/plugins"
@@ -95,7 +104,7 @@ finally:
 PY
 
 echo "==> Agency/Hermes integration installed"
-echo "    agency-agents-router: $HERMES_HOME/plugins/agency-agents-router"
+echo "    agency-agents-router: $HERMES_HOME/plugins/agency-agents-router (exact loader only)"
 echo "    ai-lab-capabilities:  $plugin_dest"
 
 echo "==> Configure safe AI Lab web extraction"
@@ -107,7 +116,7 @@ echo "==> Configure safe AI Lab web extraction"
   --target "$plugin_dest/_html_dependencies" \
   -r "$plugin_dest/requirements-html.txt"
 
-if [[ "${JEV_RESIDENT_ENABLE:-0}" == "1" ]]; then
+if [[ "${JEV_RESIDENT_ENABLE:-1}" == "1" ]]; then
   echo "==> Provision resident JEV selector"
   jev_args=(--hermes-home "$HERMES_HOME")
   [[ -n "${JEV_SELECTOR_PROVIDER:-}" ]] && jev_args+=(--decision-provider "$JEV_SELECTOR_PROVIDER")
@@ -115,5 +124,5 @@ if [[ "${JEV_RESIDENT_ENABLE:-0}" == "1" ]]; then
   [[ -n "${JEV_SELECTOR_API_MODE:-}" ]] && jev_args+=(--decision-api-mode "$JEV_SELECTOR_API_MODE")
   "$HERMES_PYTHON" scripts/provision_jev_resident.py "${jev_args[@]}"
 else
-  echo "==> Resident JEV selector not enabled (set JEV_RESIDENT_ENABLE=1)"
+  echo "==> Resident JEV selector explicitly disabled (JEV_RESIDENT_ENABLE=0)"
 fi

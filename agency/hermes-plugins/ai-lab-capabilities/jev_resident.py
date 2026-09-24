@@ -86,11 +86,11 @@ def enabled() -> bool:
 
 
 def request_timeout_seconds() -> float:
-    return max(0.1, _number("provider_timeout_seconds", 7.0))
+    return max(0.1, _number("provider_timeout_seconds", 12.0))
 
 
 def warmup_timeout_seconds() -> float:
-    return max(request_timeout_seconds(), _number("provider_warmup_timeout_seconds", 15.0))
+    return max(request_timeout_seconds(), _number("provider_warmup_timeout_seconds", 20.0))
 
 
 def _hermes_home() -> Path:

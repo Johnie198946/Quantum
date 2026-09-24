@@ -130,6 +130,27 @@ def stub_jev(router, monkeypatch):
     monkeypatch.setattr(router, "select_route", _test_select)
 
 
+def test_parallel_agency_selector_tools_are_blocked_for_parent_turn():
+    _, router = load_router()
+    router._LOCAL_TURN_STATES["jev-parent"] = {
+        "principal": "local_owner",
+        "is_child": False,
+        "agent_selected": False,
+    }
+    for tool in (
+        "agency_agents_search",
+        "agency_agents_inspect",
+        "agency_agents_delegate",
+    ):
+        denial = router._pre_tool_call(tool, {}, session_id="jev-parent")
+        assert denial and denial["action"] == "block"
+        assert "PARALLEL_AGENT_SELECTOR_FORBIDDEN" in denial["message"]
+    load_denial = router._pre_tool_call(
+        "agency_agents_load", {"agent": "trend-researcher"}, session_id="jev-parent"
+    )
+    assert load_denial and "PARENT_AGENT_LOAD_FORBIDDEN" in load_denial["message"]
+
+
 def test_default_profile_registers_local_agent_os_lifecycle():
     plugin, router = load_router()
     router._INSTALLED = False

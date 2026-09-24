@@ -1641,6 +1641,32 @@ def _pre_tool_call(
         if denial is not None:
             return denial
 
+        # Remote semantic JEV is the sole Skill/Agent selector.  The retained
+        # Agency plugin is an exact catalog loader for an already-validated
+        # child binding; its legacy search/inspect/delegate surfaces must not
+        # form a parallel heuristic router.
+        if effective_tool in {
+            "agency_agents_search",
+            "agency_agents_inspect",
+            "agency_agents_delegate",
+        }:
+            return {
+                "action": "block",
+                "message": (
+                    "JEV is the sole Agent selector. Agency search, inspection, and wrapper "
+                    "delegation are disabled; use the validated JEV plan and native "
+                    "delegate_task. [PARALLEL_AGENT_SELECTOR_FORBIDDEN]"
+                ),
+            }
+        if effective_tool == "agency_agents_load" and local_state.get("is_child") is not True:
+            return {
+                "action": "block",
+                "message": (
+                    "Agency specialist loading is allowed only inside the exact child binding "
+                    "selected by JEV. [PARENT_AGENT_LOAD_FORBIDDEN]"
+                ),
+            }
+
         if local_state.get("is_child") is True:
             if effective_tool == "delegate_task":
                 return {

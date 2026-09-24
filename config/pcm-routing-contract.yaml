@@ -1,4 +1,4 @@
-version: 1.2.0
+version: 1.3.0
 status: active
 owner: platform-runtime
 runtime: hermes
@@ -74,7 +74,7 @@ observability:
   adoption: existing_main_adoption_verifier
 resident_model:
   runtime_owner: hermes_gateway_process
-  deployment_activation: opt_in_until_accuracy_and_latency_gates_pass
+  deployment_activation: enabled_remote_semantic_default
   shortlist:
     purpose: candidate_shortlisting_only
     repository: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
@@ -94,5 +94,36 @@ resident_model:
   decision:
     purpose: selection_only
     provider: hermes_auxiliary_client
-    residency: cached_client_in_gateway_process
+    model_provider: openai-codex
+    model: gpt-6-luna
+    api_mode: codex_responses
+    residency: cached_client_in_gateway_process_remote_semantic_provider
     config_key: auxiliary.jev_selection
+    network_access: required_on_cache_miss
+    structured_output: required
+    request_timeout_seconds: 12.0
+    warmup_timeout_seconds: 20.0
+release_acceptance:
+  decision: accepted_accuracy_over_latency
+  accepted_by: owner
+  accepted_on: 2026-09-25
+  quality_evidence:
+    sample_scope: 12_unique_intents_repeated_3_times
+    skill_accuracy: 1.0
+    agent_accuracy: 0.972222
+    strict_joint_accuracy: 0.972222
+    abstain_accuracy: 1.0
+  observed_latency:
+    cache_miss_p50_ms: 2193.255
+    cache_miss_p95_ms: 3404.529
+    cache_hit_p95_ms: 19.097
+    runtime_ttft_p50_delta_ms: 2425.932
+    runtime_paired_ttft_median_delta_ms: 2337.143
+    runtime_paired_ttft_p95_delta_ms: 4046.812
+    provider_fallback_count: 0
+  policy:
+    accuracy_gate: passed_on_bounded_acceptance_set
+    latency_gate: explicitly_waived_by_owner
+    timeout_or_invalid_output: hermes_direct
+    legacy_agency_selector: forbidden
+    jev_semantic_selector: sole
