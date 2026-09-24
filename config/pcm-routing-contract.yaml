@@ -1,10 +1,18 @@
-version: 1.0.0
+version: 1.2.0
 status: active
 owner: platform-runtime
 runtime: hermes
 selector:
   adapter: agency/hermes-plugins/ai-lab-capabilities/jev_selector.py
   request_scope: contextvar_bound_by_existing_bridge
+  residency: hermes_gateway_process
+  cold_start_on_request: forbidden
+  config_key: plugins.entries.ai-lab-capabilities.settings.jev
+  candidate_projection:
+    source: pcm_authorized_cards
+    shortlist: resident_multilingual_embedding_top_k
+    semantic_decision: resident_hermes_auxiliary_client
+    low_affinity_behavior: hermes_direct
   output_schema:
     skill_id: string|null
     agent_id: string|null
@@ -64,3 +72,27 @@ observability:
   receipt: existing_canonical_delegation_receipt
   result_hash: sha256
   adoption: existing_main_adoption_verifier
+resident_model:
+  runtime_owner: hermes_gateway_process
+  deployment_activation: opt_in_until_accuracy_and_latency_gates_pass
+  shortlist:
+    purpose: candidate_shortlisting_only
+    repository: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+    artifacts:
+      arm64:
+        path: onnx/model_qint8_arm64.onnx
+        sha256: 783fea82d71a58179b830a4dbd2d58447e640609e98eedf9ffa12622d375a672
+      x86_64:
+        path: onnx/model_quint8_avx2.onnx
+        sha256: 98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f
+    tokenizer:
+      path: tokenizer.json
+      sha256: 2c3387be76557bd40970cec13153b3bbf80407865484b209e655e5e4729076b8
+    provisioner: scripts/provision_jev_resident.py
+    license: Apache-2.0
+  decision:
+    purpose: selection_only
+    provider: hermes_auxiliary_client
+    residency: cached_client_in_gateway_process
+    config_key: auxiliary.jev_selection

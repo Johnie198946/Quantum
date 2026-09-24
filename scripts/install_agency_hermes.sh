@@ -106,3 +106,14 @@ echo "==> Configure safe AI Lab web extraction"
 "$HERMES_PYTHON" -m pip install --disable-pip-version-check --no-input \
   --target "$plugin_dest/_html_dependencies" \
   -r "$plugin_dest/requirements-html.txt"
+
+if [[ "${JEV_RESIDENT_ENABLE:-0}" == "1" ]]; then
+  echo "==> Provision resident JEV selector"
+  jev_args=(--hermes-home "$HERMES_HOME")
+  [[ -n "${JEV_SELECTOR_PROVIDER:-}" ]] && jev_args+=(--decision-provider "$JEV_SELECTOR_PROVIDER")
+  [[ -n "${JEV_SELECTOR_MODEL:-}" ]] && jev_args+=(--decision-model "$JEV_SELECTOR_MODEL")
+  [[ -n "${JEV_SELECTOR_API_MODE:-}" ]] && jev_args+=(--decision-api-mode "$JEV_SELECTOR_API_MODE")
+  "$HERMES_PYTHON" scripts/provision_jev_resident.py "${jev_args[@]}"
+else
+  echo "==> Resident JEV selector not enabled (set JEV_RESIDENT_ENABLE=1)"
+fi

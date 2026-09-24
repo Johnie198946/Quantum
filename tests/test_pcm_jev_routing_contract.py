@@ -82,6 +82,38 @@ def test_pcm_routing_contract_is_parseable_and_declares_single_runtime():
         "subagent_scope": "parent_subset",
     }
     assert contract["selector"]["limits"] == {"skills": 1, "agents": 1}
+    assert contract["selector"]["residency"] == "hermes_gateway_process"
+    assert contract["selector"]["cold_start_on_request"] == "forbidden"
+    assert contract["selector"]["config_key"] == "plugins.entries.ai-lab-capabilities.settings.jev"
+    assert contract["selector"]["candidate_projection"] == {
+        "source": "pcm_authorized_cards",
+        "shortlist": "resident_multilingual_embedding_top_k",
+        "semantic_decision": "resident_hermes_auxiliary_client",
+        "low_affinity_behavior": "hermes_direct",
+    }
+    assert contract["resident_model"]["runtime_owner"] == "hermes_gateway_process"
+    assert contract["resident_model"]["deployment_activation"] == (
+        "opt_in_until_accuracy_and_latency_gates_pass"
+    )
+    shortlist = contract["resident_model"]["shortlist"]
+    assert shortlist["provisioner"] == "scripts/provision_jev_resident.py"
+    assert shortlist["artifacts"] == {
+        "arm64": {
+            "path": "onnx/model_qint8_arm64.onnx",
+            "sha256": "783fea82d71a58179b830a4dbd2d58447e640609e98eedf9ffa12622d375a672",
+        },
+        "x86_64": {
+            "path": "onnx/model_quint8_avx2.onnx",
+            "sha256": "98a01d88b7de996cdea58c32ca71208c09968d143798814b2ea09d3439dc334f",
+        },
+    }
+    assert contract["resident_model"]["decision"]["provider"] == "hermes_auxiliary_client"
+    assert contract["resident_model"]["decision"]["config_key"] == "auxiliary.jev_selection"
+    provisioner = (ROOT / "scripts/provision_jev_resident.py").read_text(encoding="utf-8")
+    installer = (ROOT / "scripts/install_agency_hermes.sh").read_text(encoding="utf-8")
+    assert "verify_dependencies()" in provisioner
+    assert '"pip"' not in provisioner
+    assert 'JEV_RESIDENT_ENABLE:-0' in installer
     assert set(contract["candidate_card_schema"]["required"]) == {
         "id", "kind", "version", "use_when", "do_not_use_when",
         "requires", "risk", "status",

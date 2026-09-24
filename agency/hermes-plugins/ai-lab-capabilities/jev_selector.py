@@ -10,9 +10,12 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, replace
 import hashlib
+import importlib.util
 import json
 import math
 import os
+from pathlib import Path
+import sys
 import threading
 import time
 from typing import Any, Callable, Iterable
@@ -36,6 +39,7 @@ _VALID_KINDS = {"skill", "agent"}
 _VALID_RISKS = {"read", "write", "external_write", "privileged"}
 _CACHE_LOCK = threading.Lock()
 _CACHE: "OrderedDict[str, tuple[float, RouteDecision]]" = OrderedDict()
+_RESIDENT_MODULE: Any = None
 
 
 def _env_float(name: str, default: float) -> float:
@@ -129,10 +133,57 @@ def _null_decision(
     )
 
 
+def _resident_module() -> Any:
+    global _RESIDENT_MODULE
+    if _RESIDENT_MODULE is not None:
+        return _RESIDENT_MODULE
+    try:
+        from . import jev_resident as module
+    except ImportError:
+        name = "ai_lab_capabilities_jev_resident"
+        spec = importlib.util.spec_from_file_location(
+            name, Path(__file__).with_name("jev_resident.py")
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("resident_jev_module_unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    _RESIDENT_MODULE = module
+    return module
+
+
+def start_resident_warmup(
+    skill_candidates: Iterable[dict[str, Any]],
+    agent_candidates: Iterable[dict[str, Any]],
+) -> None:
+    """Preload the optional in-process selector during gateway startup."""
+    module = _resident_module()
+    if not module.enabled():
+        return
+    cards = [compact_card(item) for item in skill_candidates]
+    cards.extend(compact_card(item) for item in agent_candidates)
+    module.start_warmup(cards)
+
+
+def resident_status() -> dict[str, Any]:
+    return dict(_resident_module().status())
+
+
+def _default_timeout_seconds() -> float:
+    module = _resident_module()
+    if module.enabled():
+        return float(module.request_timeout_seconds())
+    return _env_float("JEV_SELECTOR_TIMEOUT_SECONDS", 2.5)
+
+
 def _provider(payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     endpoint = os.environ.get("JEV_SELECTOR_URL", "").strip()
     if not endpoint:
-        raise RuntimeError("JEV_SELECTOR_URL is not configured")
+        module = _resident_module()
+        if module.enabled():
+            return module.select(payload, timeout_seconds)
+        raise RuntimeError("JEV selector is not configured")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     api_key = os.environ.get("JEV_SELECTOR_API_KEY", "").strip()
     if api_key:
@@ -300,7 +351,7 @@ def select_route(
         0.01,
         timeout_seconds
         if timeout_seconds is not None
-        else _env_float("JEV_SELECTOR_TIMEOUT_SECONDS", 2.5),
+        else _default_timeout_seconds(),
     )
     threshold = (
         confidence_threshold

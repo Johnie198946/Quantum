@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
 import threading
+import time
+import types
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,3 +253,195 @@ def test_default_provider_round_trips_over_real_http(monkeypatch):
     assert decision.skill_id == "skill:research"
     assert decision.validated is True
     assert captured["catalog_version"] == decision.catalog_version
+
+
+def test_resident_provider_is_used_without_http_or_request_cold_start(monkeypatch):
+    calls = []
+
+    class Resident:
+        @staticmethod
+        def enabled():
+            return True
+
+        @staticmethod
+        def select(payload, timeout):
+            calls.append((payload, timeout))
+            return {
+                "skill_id": "skill:research",
+                "agent_id": None,
+                "skill_confidence": 0.97,
+                "agent_confidence": 0.0,
+                "reason_code": "MATCHED",
+            }
+
+        @staticmethod
+        def status():
+            return {"enabled": True, "ready": True}
+
+    monkeypatch.delenv("JEV_SELECTOR_URL", raising=False)
+    monkeypatch.setattr(module, "_RESIDENT_MODULE", Resident)
+    decision = module.select_route(
+        "resident route",
+        task_state={"turn_id": "resident-route-turn"},
+        policy_version="policy-resident",
+        skill_candidates=[capability("skill:research", "skill")],
+        agent_candidates=[],
+        timeout_seconds=0.8,
+    )
+
+    assert decision.skill_id == "skill:research"
+    assert decision.validated is True
+    assert len(calls) == 1
+    assert calls[0][1] == 0.8
+
+
+def test_resident_catalog_warmup_is_explicit_and_bounded(monkeypatch):
+    warmed = []
+
+    class Resident:
+        @staticmethod
+        def enabled():
+            return True
+
+        @staticmethod
+        def start_warmup(cards):
+            warmed.extend(cards)
+
+    monkeypatch.setattr(module, "_RESIDENT_MODULE", Resident)
+    module.start_resident_warmup(
+        [capability("skill:research", "skill")],
+        [capability("agency:reviewer", "agency_agent")],
+    )
+
+    assert [card["id"] for card in warmed] == ["skill:research", "agency:reviewer"]
+    assert [card["kind"] for card in warmed] == ["skill", "agent"]
+
+
+def test_resident_provider_uses_structured_selection_tool(monkeypatch):
+    resident = module._resident_module()
+    captured = {}
+
+    def call_llm(**kwargs):
+        captured.update(kwargs)
+        function = types.SimpleNamespace(
+            name="select_route",
+            arguments=json.dumps({
+                "skill_id": "skill:research",
+                "agent_id": None,
+                "skill_confidence": 0.97,
+                "agent_confidence": 0.0,
+                "reason_code": "MATCHED",
+            }),
+        )
+        message = types.SimpleNamespace(
+            content=None,
+            tool_calls=[types.SimpleNamespace(function=function)],
+        )
+        return types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message)]
+        )
+
+    agent_module = types.ModuleType("agent")
+    auxiliary_client = types.ModuleType("agent.auxiliary_client")
+    setattr(auxiliary_client, "call_llm", call_llm)
+    setattr(agent_module, "auxiliary_client", auxiliary_client)
+    monkeypatch.setitem(sys.modules, "agent", agent_module)
+    monkeypatch.setitem(sys.modules, "agent.auxiliary_client", auxiliary_client)
+    output = resident._provider_select({
+        "request": "research",
+        "task_state": {},
+        "skill_candidates": [module.compact_card(capability("skill:research", "skill"))],
+        "agent_candidates": [],
+    })
+
+    assert output["skill_id"] == "skill:research"
+    assert captured["tools"][0]["function"]["name"] == "select_route"
+    assert set(captured["tools"][0]["function"]["parameters"]["required"]) == {
+        "skill_id", "agent_id", "skill_confidence",
+        "agent_confidence", "reason_code",
+    }
+
+
+def test_resident_shortlist_fails_closed_when_catalog_is_stale(monkeypatch):
+    resident = module._resident_module()
+    monkeypatch.setattr(resident, "_READY", True)
+    monkeypatch.setattr(resident, "_CARD_IDS", ["skill:known"])
+    monkeypatch.setattr(resident, "_CARD_EMBEDDINGS", object())
+
+    try:
+        resident._shortlist({
+            "request": "new capability",
+            "skill_candidates": [module.compact_card(capability("skill:new", "skill"))],
+            "agent_candidates": [],
+        })
+    except RuntimeError as exc:
+        assert str(exc) == "resident_catalog_stale"
+    else:
+        raise AssertionError("stale resident catalog must not silently abstain")
+
+
+def test_resident_provider_warm_failure_keeps_local_abstain_and_can_retry(monkeypatch):
+    resident = module._resident_module()
+    cards = [{"id": "skill:research", "kind": "skill", "version": "1"}]
+
+    monkeypatch.setattr(resident, "enabled", lambda: True)
+    monkeypatch.setattr(resident, "request_timeout_seconds", lambda: 1.0)
+    monkeypatch.setattr(resident, "_READY", False)
+    monkeypatch.setattr(resident, "_PROVIDER_READY", False)
+    monkeypatch.setattr(resident, "_NEXT_RETRY_AT", 0.0)
+    monkeypatch.setattr(resident, "_WARM_THREAD", None)
+    monkeypatch.setattr(resident, "_WARM_CARDS", [])
+    monkeypatch.setattr(resident, "_CARD_FINGERPRINT", "")
+    monkeypatch.setattr(resident, "_CARD_IDS", [])
+    monkeypatch.setattr(resident, "_CARD_EMBEDDINGS", None)
+
+    def load_embeddings(items):
+        resident._CARD_FINGERPRINT = resident._fingerprint(items)
+        resident._CARD_IDS = ["skill:research"]
+        resident._CARD_EMBEDDINGS = object()
+
+    monkeypatch.setattr(resident, "_load_embeddings", load_embeddings)
+    monkeypatch.setattr(
+        resident, "_provider_warmup",
+        lambda: (_ for _ in ()).throw(RuntimeError("down")),
+    )
+    resident.start_warmup(cards)
+    resident._WARM_THREAD.join(timeout=2)
+    assert resident.status()["ready"] is True
+    assert resident.status()["provider_ready"] is False
+
+    monkeypatch.setattr(resident, "_shortlist", lambda _payload: ([], [], -1.0, -1.0))
+    assert resident.select({"request": "hello"}, 0.1)["reason_code"] == "NO_MATCH"
+
+    monkeypatch.setattr(resident, "_NEXT_RETRY_AT", 0.0)
+    monkeypatch.setattr(resident, "_provider_warmup", lambda: None)
+    resident.start_warmup(cards)
+    resident._WARM_THREAD.join(timeout=2)
+    assert resident.status()["provider_ready"] is True
+
+
+def test_resident_provider_call_has_a_hard_request_deadline(monkeypatch):
+    resident = module._resident_module()
+    release = threading.Event()
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(
+        resident,
+        "_shortlist",
+        lambda _payload: ([{"id": "skill:research"}], [], 0.9, -1.0),
+    )
+
+    def blocked(_payload):
+        release.wait(timeout=1)
+        return {}
+
+    monkeypatch.setattr(resident, "_provider_select", blocked)
+    started = time.perf_counter()
+    try:
+        resident.select({"request": "research"}, 0.02)
+    except TimeoutError as exc:
+        assert str(exc) == "resident_jev_timeout"
+    else:
+        raise AssertionError("resident provider must honor the hard deadline")
+    finally:
+        release.set()
+    assert time.perf_counter() - started < 0.2
