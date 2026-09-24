@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 import pytest
+from PIL import Image
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -309,6 +310,26 @@ def test_real_native_signature_record_and_readback(flow, decision):
     assert not any("release-due" in c for c in calls)
     assert relay.finalize(local, remote, db=db, key=key) == {"items": []}
     assert "manuscript" not in json.loads((local / "proof.json").read_text())
+
+
+def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
+    local, manifest, remote, calls, *_ = flow
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    for role, size in (("shelf_cover", (1440, 2560)), ("reader_cover", (2560, 1440))):
+        path = local / f"{role}.jpg"
+        Image.new("RGB", size, "#335577").save(path, format="JPEG")
+        item[f"{role}_file"] = path.name
+        item[f"{role}_sha256"] = relay.sha(path.read_bytes())
+    relay.save(manifest, value)
+
+    db, key = native(flow)
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    stage_call = next(call for call in calls if "stage" in call)
+    assert "--shelf-cover-file" in stage_call
+    assert "--reader-cover-file" in stage_call
 
 
 def test_running_native_is_pending_without_upload(flow):

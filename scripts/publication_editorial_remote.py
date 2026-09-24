@@ -35,7 +35,8 @@ CHUNK = 24 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_files",
           "rights_files", "execution_files", "review_file", "proof_file", "status",
-          "batch", "quality_contract", "receipt", "error"}
+          "batch", "quality_contract", "receipt", "error", "shelf_cover_file",
+          "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256"}
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
 
@@ -114,6 +115,12 @@ def load_manifest(path):
             raise ValueError("unknown manifest fields or invalid status")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
                   (item.get("body_file"), item.get("body_sha256"))]
+        for role in ("shelf_cover", "reader_cover"):
+            name, digest = item.get(f"{role}_file"), item.get(f"{role}_sha256")
+            if (name is None) != (digest is None):
+                raise ValueError("cover file and hash must be provided together")
+            if name is not None:
+                inputs.append((name, digest))
         for group in GROUPS:
             entries = item.get(group)
             if not isinstance(entries, list) or len(entries) > 64:
@@ -235,7 +242,7 @@ class Remote:
         return expected
 
 
-def arguments(remote, base, item, bundle, review=None, proof=None):
+def arguments(remote, base, item, bundle, review=None, proof=None, *, stage=False):
     batch = item["batch"]
     args = [remote.upload(batch, encoded(bundle), ".json"), "--body-file",
             remote.upload(batch, read(local_path(base, item["body_file"])), ".md")]
@@ -246,6 +253,12 @@ def arguments(remote, base, item, bundle, review=None, proof=None):
         args += ["--review-file", remote.upload(batch, review, ".json")]
     if proof is not None:
         args += ["--proof-file", remote.upload(batch, encoded(proof), ".json")]
+    if stage:
+        for role in ("shelf_cover", "reader_cover"):
+            name = item.get(f"{role}_file")
+            if name:
+                args += [f"--{role.replace('_', '-')}-file",
+                         remote.upload(batch, read(local_path(base, name)), ".bin")]
     return args
 
 
@@ -406,7 +419,9 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                     raise ValueError("recorded review hash mismatch")
                 if review["decision"] == "approved":
                     bundle["review"] = {"content_hash": review["content_hash"], "decision": "approved", "reviewed_by": review["reviewer_session"], "reviewed_at": review["reviewed_at"], "receipt": None}
-                    staged = remote.operator("stage", *arguments(remote, path.parent, item, bundle, raw, proof))
+                    staged = remote.operator(
+                        "stage", *arguments(remote, path.parent, item, bundle, raw, proof, stage=True)
+                    )
                     status = remote.operator("status")
                     matches = [r for r in status.get("items", []) if r.get("edition_id") == staged.get("edition_id")]
                     if len(matches) != 1 or not staged.get("edition_id"):
