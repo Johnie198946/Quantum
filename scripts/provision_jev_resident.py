@@ -118,6 +118,7 @@ def main() -> int:
             f"{prefix}.shortlist_per_kind": "20",
             f"{prefix}.fast_abstain_similarity": "0.36",
             f"{prefix}.provider_timeout_seconds": "7.0",
+            f"{prefix}.provider_warmup_timeout_seconds": "15.0",
             f"{prefix}.embedding_threads": "4",
         }.items():
             set_config(home, key, value)

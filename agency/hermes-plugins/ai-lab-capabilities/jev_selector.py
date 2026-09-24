@@ -40,6 +40,10 @@ _VALID_RISKS = {"read", "write", "external_write", "privileged"}
 _CACHE_LOCK = threading.Lock()
 _CACHE: "OrderedDict[str, tuple[float, RouteDecision]]" = OrderedDict()
 _RESIDENT_MODULE: Any = None
+_VOLATILE_TASK_STATE_KEYS = {
+    "turn_id", "request_id", "trace_id", "decision_id",
+    "timestamp", "created_at", "updated_at",
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -48,6 +52,13 @@ def _env_float(name: str, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return value if math.isfinite(value) else default
+
+
+def _cache_task_state(task_state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value for key, value in task_state.items()
+        if key not in _VOLATILE_TASK_STATE_KEYS
+    }
 
 
 @dataclass(frozen=True)
@@ -331,7 +342,7 @@ def select_route(
         "policy_version": policy_version,
         "catalog_version": version,
         "request": payload["request"],
-        "task_state": payload["task_state"],
+        "task_state": _cache_task_state(payload["task_state"]),
     }, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
     ttl = max(0.0, _env_float("JEV_SELECTOR_CACHE_TTL_SECONDS", 60.0))
     now = time.monotonic()

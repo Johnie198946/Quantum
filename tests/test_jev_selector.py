@@ -144,10 +144,17 @@ def test_cache_key_isolated_by_tenant_principal_policy_catalog_and_request():
         skill_candidates=[], agent_candidates=[], provider=provider,
     )
     first = module.select_route(**common, tenant_scope="a", principal_scope="u1")
-    cached = module.select_route(**common, tenant_scope="a", principal_scope="u1")
+    cached = module.select_route(
+        **dict(common, task_state={"turn_id": "cache-turn-2"}),
+        tenant_scope="a", principal_scope="u1",
+    )
     module.select_route(**common, tenant_scope="b", principal_scope="u1")
     module.select_route(**common, tenant_scope="a", principal_scope="u2")
-    assert len(calls) == 3
+    module.select_route(
+        **dict(common, task_state={"turn_id": "cache-turn-3", "phase": "review"}),
+        tenant_scope="a", principal_scope="u1",
+    )
+    assert len(calls) == 4
     assert cached.cache_hit is True
     assert cached.decision_id != first.decision_id
 
@@ -355,6 +362,12 @@ def test_resident_provider_uses_structured_selection_tool(monkeypatch):
     })
 
     assert output["skill_id"] == "skill:research"
+    provider_payload = json.loads(captured["messages"][1]["content"])
+    assert provider_payload["skill_candidates"][0][:3] == [
+        "skill:research", "skill", "1.0.0",
+    ]
+    assert "Evaluate them independently" in captured["messages"][0]["content"]
+    assert captured["max_tokens"] == 80
     assert captured["tools"][0]["function"]["name"] == "select_route"
     assert set(captured["tools"][0]["function"]["parameters"]["required"]) == {
         "skill_id", "agent_id", "skill_confidence",
