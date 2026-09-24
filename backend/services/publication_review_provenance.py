@@ -95,7 +95,13 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         if not isinstance(writers, list) or not writers or reviewer in writers:
             raise ValueError("native reviewer is not independent")
         manuscript, contract = request.get("manuscript"), request.get("quality_contract")
+        chunks = request.get("manuscript_gzip_b64_chunks")
         compressed = request.get("manuscript_gzip_b64")
+        if manuscript is None and chunks is not None:
+            if (not isinstance(chunks, list) or not chunks
+                    or any(not isinstance(chunk, str) or not chunk or len(chunk) > 32 for chunk in chunks)):
+                raise ValueError("native request lacks actual review material")
+            compressed = "".join(chunks)
         if manuscript is None and isinstance(compressed, str):
             try:
                 manuscript = gzip.decompress(base64.b64decode(compressed, validate=True)).decode()

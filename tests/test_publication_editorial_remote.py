@@ -280,8 +280,11 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         .split("PUBLICATION_REVIEW_REQUEST\n")[1]
         .split("\nEND_PUBLICATION_REVIEW_REQUEST")[0]
     )
+    chunks = request["manuscript_gzip_b64_chunks"]
+    assert chunks and all(0 < len(chunk) <= 32 for chunk in chunks)
+    assert "manuscript_gzip_b64" not in request
     assert gzip.decompress(base64.b64decode(
-        request["manuscript_gzip_b64"], validate=True
+        "".join(chunks), validate=True
     )).decode() == (local / "body.md").read_text()
     frozen = json.loads(manifest.read_text())["items"][0]["bundle_file"]
     assert (
@@ -491,9 +494,9 @@ def test_draft_manifest_name_and_long_full_manuscript(flow):
     )
     assert len(body.encode()) > 105_000
     assert gzip.decompress(base64.b64decode(
-        request["manuscript_gzip_b64"], validate=True
+        "".join(request["manuscript_gzip_b64_chunks"]), validate=True
     )).decode() == body
-    assert len(request["manuscript_gzip_b64"]) < len(body.encode())
+    assert len("".join(request["manuscript_gzip_b64_chunks"])) < len(body.encode())
 
 
 def test_ended_failed_native_is_error_not_pending(flow):

@@ -81,6 +81,38 @@ def test_gzip_base64_review_material_survives_bounded_transport(native):
     assert verify_review_proof(proof, public, **expected) == []
 
 
+def test_chunked_gzip_base64_survives_token_redaction_boundaries(native):
+    db, review, key, public, expected = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        manuscript = first.pop("manuscript")
+        compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
+        first["manuscript_gzip_b64_chunks"] = [
+            compressed[i:i + 32] for i in range(0, len(compressed), 32)
+        ]
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    proof = attest_native_review(db, review, key)
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+@pytest.mark.parametrize("chunks", [[], [""], ["a" * 33], ["valid", 1]])
+def test_invalid_chunked_gzip_review_material_is_rejected(native, chunks):
+    db, review, key, _, _ = native
+    with sqlite3.connect(db) as conn:
+        content = conn.execute("SELECT content FROM messages WHERE id=1").fetchone()[0]
+        first = json.loads(content.split(REQUEST_START, 1)[1].split(REQUEST_END, 1)[0])
+        first.pop("manuscript")
+        first["manuscript_gzip_b64_chunks"] = chunks
+        conn.execute("UPDATE messages SET content=? WHERE id=1", (
+            REQUEST_START + json.dumps(first) + REQUEST_END,
+        ))
+    with pytest.raises(ValueError, match="lacks actual review material"):
+        attest_native_review(db, review, key)
+
+
 def test_corrupted_gzip_review_material_is_rejected(native):
     db, review, key, _, _ = native
     with sqlite3.connect(db) as conn:
