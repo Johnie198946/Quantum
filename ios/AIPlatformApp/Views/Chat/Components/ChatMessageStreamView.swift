@@ -632,6 +632,7 @@ private struct LearningQuestion: Identifiable {
 }
 
 struct HomeJourneyView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var sessionManager: SessionManager
     @ObservedObject private var noteStore = KnowledgeNoteStore.shared
     @State private var subscription: KnowledgeBookSubscriptionDTO?
@@ -658,6 +659,8 @@ struct HomeJourneyView: View {
     @State private var showClearReadConfirmation = false
     @State private var importantOnly = false
     @State private var learningDraft = ""
+    @State private var learningPlanNotice: String?
+    @State private var isClosingJourney = false
     @State private var workDraft = ""
     @State private var cleanupDraft = ""
 
@@ -668,18 +671,21 @@ struct HomeJourneyView: View {
     var body: some View {
         ZStack {
             QuantumMistBackground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    header
-                    switch action.id {
-                    case "continue-learning": learningPage
-                    case "continue-doing": workPage
-                    case "help-me-clean": cleanupPage
-                    default: attentionPage
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 16)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        switch action.id {
+                        case "continue-learning": learningPage
+                        case "continue-doing": workPage
+                        case "help-me-clean": cleanupPage
+                        default: attentionPage
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 28)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 28)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -784,6 +790,7 @@ struct HomeJourneyView: View {
             Button(action: closeJourney) {
                 Image(systemName: "chevron.left").font(.title3.weight(.semibold)).frame(width: 44, height: 44)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("返回工作台")
             .accessibilityIdentifier("journey-back-to-workbench")
             Spacer()
@@ -843,6 +850,13 @@ struct HomeJourneyView: View {
                     )
                 }
                 NotebookExcerptCard(excerpt: lastReadingExcerpt, keyText: learningPlan.keyExcerpt)
+            }
+            if let learningPlanNotice {
+                Label(learningPlanNotice, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(HomePalette.secondary)
+                    .padding(.horizontal, 4)
+                    .accessibilityIdentifier("learning-plan-nonblocking-notice")
             }
         }
     }
@@ -1056,6 +1070,9 @@ struct HomeJourneyView: View {
     }
 
     private func closeJourney() {
+        guard !isClosingJourney else { return }
+        isClosingJourney = true
+        dismiss()
         onBack()
     }
 
@@ -1167,6 +1184,7 @@ struct HomeJourneyView: View {
     private func resetLearningPlan() async {
         guard !isResettingPlan else { return }
         isResettingPlan = true
+        learningPlanNotice = nil
         defer { isResettingPlan = false }
         let memories = (try? await APIClient.shared.fetchHermesMemory().items.map(\.content).joined(separator: "\n")) ?? ""
         let prompt = """
@@ -1186,7 +1204,7 @@ struct HomeJourneyView: View {
             let answer = try await collectChatAnswer(from: stream)
             if let parsed = LearningPlanResponse.parse(answer) { learningPlan = parsed }
         } catch {
-            cleanupMessage = "个性化计划暂时无法更新，已保留当前计划。"
+            learningPlanNotice = "个性化计划暂时无法更新，已保留当前计划。"
         }
     }
 

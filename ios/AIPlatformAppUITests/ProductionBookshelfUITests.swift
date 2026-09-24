@@ -42,6 +42,25 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testBuild46ContinueLearningBackReturnsToWorkbench() throws {
+        app.terminate()
+        app.launchArguments = ["-tabBarPreview"]
+        app.launch()
+
+        let workbenchGreeting = app.staticTexts["下午好，今天想从哪里继续？"]
+        XCTAssertTrue(workbenchGreeting.waitForExistence(timeout: 10))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.38)).tap()
+
+        let back = app.buttons["journey-back-to-workbench"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        XCTAssertTrue(back.isEnabled)
+        XCTAssertTrue(back.isHittable)
+        back.tap()
+
+        XCTAssertTrue(workbenchGreeting.waitForExistence(timeout: 10))
+        XCTAssertFalse(back.exists)
+    }
+
     func testProductionBookshelfReadingAndSelectedBookChat() throws {
         guard requireAuthenticatedKnowledgeTab() != nil else { return }
 
