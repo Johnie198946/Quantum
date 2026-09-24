@@ -281,7 +281,7 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         .split("\nEND_PUBLICATION_REVIEW_REQUEST")[0]
     )
     chunks = request["manuscript_gzip_b64_chunks"]
-    assert chunks and all(0 < len(chunk) <= 32 for chunk in chunks)
+    assert chunks and all(0 < len(chunk) <= 12 for chunk in chunks)
     assert "manuscript_gzip_b64" not in request
     assert gzip.decompress(base64.b64decode(
         "".join(chunks), validate=True

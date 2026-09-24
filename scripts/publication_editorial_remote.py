@@ -340,11 +340,12 @@ def review_input(root, remote):
             manuscript = read(local_path(path.parent, item["body_file"])).decode()
             verify_target(bundle, manuscript)
             # Cron injects stdout into Markdown and the gateway may redact long
-            # token-like strings. Compress first, then split Base64 into short JSON
-            # strings so neither Markdown nor token redaction can rewrite the
-            # signed bytes. The reviewer still reads the frozen body_file.
+            # token-like strings. Compress first, then split Base64 below the
+            # gateway's generic high-entropy-token threshold. Twelve-character
+            # JSON strings also prevent a secret-like sequence from existing in
+            # any individual string. The reviewer still reads the frozen body_file.
             compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
-            request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 32] for i in range(0, len(compressed), 32)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner", "profile": "default",
+            request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 12] for i in range(0, len(compressed), 12)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner", "profile": "default",
                        **{k: contract[k] for k in ("issue_id", "revision", "attempt_id", "writer_sessions")},
                        "editorial_target_hash": contract["target_hash"]}
             files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}

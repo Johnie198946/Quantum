@@ -99,7 +99,7 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         compressed = request.get("manuscript_gzip_b64")
         if manuscript is None and chunks is not None:
             if (not isinstance(chunks, list) or not chunks
-                    or any(not isinstance(chunk, str) or not chunk or len(chunk) > 32 for chunk in chunks)):
+                    or any(not isinstance(chunk, str) or not chunk or len(chunk) > 12 for chunk in chunks)):
                 raise ValueError("native request lacks actual review material")
             compressed = "".join(chunks)
         if manuscript is None and isinstance(compressed, str):

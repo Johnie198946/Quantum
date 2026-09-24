@@ -89,7 +89,7 @@ def test_chunked_gzip_base64_survives_token_redaction_boundaries(native):
         manuscript = first.pop("manuscript")
         compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
         first["manuscript_gzip_b64_chunks"] = [
-            compressed[i:i + 32] for i in range(0, len(compressed), 32)
+            compressed[i:i + 12] for i in range(0, len(compressed), 12)
         ]
         conn.execute("UPDATE messages SET content=? WHERE id=1", (
             REQUEST_START + json.dumps(first) + REQUEST_END,
@@ -98,7 +98,7 @@ def test_chunked_gzip_base64_survives_token_redaction_boundaries(native):
     assert verify_review_proof(proof, public, **expected) == []
 
 
-@pytest.mark.parametrize("chunks", [[], [""], ["a" * 33], ["valid", 1]])
+@pytest.mark.parametrize("chunks", [[], [""], ["a" * 13], ["valid", 1]])
 def test_invalid_chunked_gzip_review_material_is_rejected(native, chunks):
     db, review, key, _, _ = native
     with sqlite3.connect(db) as conn:
