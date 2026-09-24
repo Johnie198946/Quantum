@@ -3,6 +3,7 @@ Never a production review, publication, credential, or network operation.
 """
 
 import base64
+import gzip
 import json
 from pathlib import Path
 import shlex
@@ -279,7 +280,9 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         .split("PUBLICATION_REVIEW_REQUEST\n")[1]
         .split("\nEND_PUBLICATION_REVIEW_REQUEST")[0]
     )
-    assert base64.b64decode(request["manuscript_b64"], validate=True).decode() == (local / "body.md").read_text()
+    assert gzip.decompress(base64.b64decode(
+        request["manuscript_gzip_b64"], validate=True
+    )).decode() == (local / "body.md").read_text()
     frozen = json.loads(manifest.read_text())["items"][0]["bundle_file"]
     assert (
         request["quality_contract"]
@@ -487,7 +490,10 @@ def test_draft_manifest_name_and_long_full_manuscript(flow):
         .split("\nEND_PUBLICATION_REVIEW_REQUEST", 1)[0]
     )
     assert len(body.encode()) > 105_000
-    assert base64.b64decode(request["manuscript_b64"], validate=True).decode() == body
+    assert gzip.decompress(base64.b64decode(
+        request["manuscript_gzip_b64"], validate=True
+    )).decode() == body
+    assert len(request["manuscript_gzip_b64"]) < len(body.encode())
 
 
 def test_ended_failed_native_is_error_not_pending(flow):

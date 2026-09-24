@@ -8,6 +8,7 @@ Only hashes of native messages leave the local machine, never private transcript
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import json
 import sqlite3
@@ -94,7 +95,13 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         if not isinstance(writers, list) or not writers or reviewer in writers:
             raise ValueError("native reviewer is not independent")
         manuscript, contract = request.get("manuscript"), request.get("quality_contract")
-        if manuscript is None and isinstance(request.get("manuscript_b64"), str):
+        compressed = request.get("manuscript_gzip_b64")
+        if manuscript is None and isinstance(compressed, str):
+            try:
+                manuscript = gzip.decompress(base64.b64decode(compressed, validate=True)).decode()
+            except (ValueError, OSError, UnicodeDecodeError) as exc:
+                raise ValueError("native request lacks actual review material") from exc
+        elif manuscript is None and isinstance(request.get("manuscript_b64"), str):
             try:
                 manuscript = base64.b64decode(request["manuscript_b64"], validate=True).decode()
             except (ValueError, UnicodeDecodeError) as exc:
