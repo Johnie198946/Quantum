@@ -384,12 +384,33 @@ public struct KnowledgeBookSubscriptionDTO: Codable, Hashable {
     public let edition: Int
     public let contentVersion: String?
     public let progress: Double
+    public var lastSectionId: String? = nil
+    public var lastBlockIndex: Int? = nil
+    public var lastCharacterOffset: Int? = nil
     public let subscribedAt: String
     public let lastReadAt: String
 }
 
 public struct KnowledgeBookSubscriptionsResponse: Codable {
     public let subscriptions: [KnowledgeBookSubscriptionDTO]
+}
+
+public struct LearningResumePointDTO: Codable, Hashable {
+    public let title: String
+    public let detail: String
+}
+
+public struct LearningResumeDTO: Codable, Hashable {
+    public let subscription: KnowledgeBookSubscriptionDTO
+    public let sectionId: String
+    public let sectionTitle: String
+    public let blockIndex: Int?
+    public let characterOffset: Int?
+    public let keyPoints: [LearningResumePointDTO]
+}
+
+public struct LearningResumeResponse: Codable {
+    public let resume: LearningResumeDTO?
 }
 
 public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
@@ -440,11 +461,17 @@ private struct KnowledgeBookProgressWrite: Encodable {
     let bookId: String
     let progress: Double
     let contentVersion: String
+    let sectionId: String
+    let blockIndex: Int
+    let characterOffset: Int
 
     private enum CodingKeys: String, CodingKey {
         case bookId = "book_id"
         case progress
         case contentVersion = "content_version"
+        case sectionId = "section_id"
+        case blockIndex = "block_index"
+        case characterOffset = "character_offset"
     }
 }
 
@@ -2957,6 +2984,11 @@ public final class APIClient: ObservableObject {
         return response.subscriptions
     }
 
+    public func fetchLearningResume() async throws -> LearningResumeDTO? {
+        let response = try await request(LearningResumeResponse.self, path: "me/learning-resume")
+        return response.resume
+    }
+
     public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
         try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
     }
@@ -2981,14 +3013,17 @@ public final class APIClient: ObservableObject {
     }
 
     public func updateBookProgress(
-        id: String, progress: Double, contentVersion: String
+        id: String, progress: Double, contentVersion: String, sectionId: String,
+        blockIndex: Int = 0, characterOffset: Int = 0
     ) async throws -> KnowledgeBookSubscriptionDTO {
         try await request(
             KnowledgeBookSubscriptionDTO.self,
             path: "me/book-subscriptions/progress",
             method: "PATCH",
             body: KnowledgeBookProgressWrite(
-                bookId: id, progress: progress, contentVersion: contentVersion
+                bookId: id, progress: progress, contentVersion: contentVersion,
+                sectionId: sectionId, blockIndex: blockIndex,
+                characterOffset: characterOffset
             )
         )
     }

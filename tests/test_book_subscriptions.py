@@ -85,7 +85,8 @@ def test_book_subscription_lifecycle_is_user_scoped(book_db):
     other = run(subscriptions.my_book_subscriptions({**AUTH, "user_id": "reader-2"}))
     progressed = run(subscriptions.update_book_progress(
         subscriptions.BookProgressWrite(
-            book_id=BOOK["id"], progress=0.42, content_version=VERSION
+            book_id=BOOK["id"], progress=0.42, content_version=VERSION,
+            section_id="section-1", block_index=2, character_offset=17,
         ), AUTH
     ))
     removed = run(subscriptions.unsubscribe_book(body, AUTH))
@@ -95,8 +96,74 @@ def test_book_subscription_lifecycle_is_user_scoped(book_db):
     assert len(mine["subscriptions"]) == 1
     assert other["subscriptions"] == []
     assert progressed["progress"] == pytest.approx(0.42)
+    assert progressed["last_section_id"] == "section-1"
+    assert progressed["last_block_index"] == 2
+    assert progressed["last_character_offset"] == 17
     assert removed == {"book_id": BOOK["id"], "deleted": True}
     assert run(subscriptions.my_book_subscriptions(AUTH))["subscriptions"] == []
+
+
+def test_learning_resume_returns_exact_section_and_two_dynamic_points(book_db, monkeypatch):
+    body = {
+        **BODY,
+        "sections": [
+            {"id": "section-1", "title": "基础", "level": 1, "markdown": "旧内容"},
+            {
+                "id": "section-2",
+                "title": "极限的判断",
+                "level": 1,
+                "markdown": "## 单调有界\n单调有界数列必有极限。\n\n极限值由上下确界约束。",
+            },
+        ],
+    }
+
+    async def available_body(_payload, _book_id):
+        return BOOK, body
+
+    monkeypatch.setattr(subscriptions, "_available_book_body", available_body)
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+    run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+        book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+        section_id="section-2", block_index=1, character_offset=6,
+    ), AUTH))
+
+    resume = run(subscriptions.learning_resume(AUTH))["resume"]
+
+    assert resume["section_id"] == "section-2"
+    assert resume["section_title"] == "极限的判断"
+    assert resume["block_index"] == 1
+    assert resume["character_offset"] == 6
+    assert len(resume["key_points"]) == 2
+    assert resume["key_points"][0] == {
+        "title": "单调有界", "detail": "单调有界数列必有极限。",
+    }
+    assert resume["key_points"][1]["detail"] == "极限值由上下确界约束。"
+
+
+def test_progress_rejects_section_from_another_book_version(book_db):
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+
+    with pytest.raises(HTTPException) as error:
+        run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+            book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+            section_id="missing-section",
+        ), AUTH))
+
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "book_section_not_found"
+
+
+def test_character_checkpoint_requires_block_and_section(book_db):
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+
+    with pytest.raises(HTTPException) as error:
+        run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+            book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+            character_offset=12,
+        ), AUTH))
+
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "book_block_required"
 
 
 def test_concurrent_duplicate_puts_are_idempotent(book_db):

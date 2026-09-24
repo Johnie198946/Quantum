@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -75,6 +76,9 @@ class BookProgressWrite(BaseModel):
     book_id: str = Field(..., min_length=1, max_length=384)
     progress: float = Field(..., ge=0, le=1)
     content_version: str | None = Field(default=None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    section_id: str | None = Field(default=None, min_length=1, max_length=160)
+    block_index: int | None = Field(default=None, ge=0, le=10_000)
+    character_offset: int | None = Field(default=None, ge=0, le=1_000_000)
 
     @field_validator("content_version", mode="before")
     @classmethod
@@ -432,11 +436,60 @@ def _book_subscription(row: KnowledgeBookSubscription | None, book: dict[str, An
         "edition": (row.edition + int(changed)) if row else int(book.get("edition") or 1),
         "content_version": current_version,
         "progress": 0 if changed or row is None else row.progress,
+        "last_section_id": None if changed or row is None else row.last_section_id,
+        "last_block_index": None if changed or row is None else row.last_block_index,
+        "last_character_offset": None if changed or row is None else row.last_character_offset,
         "legacy_progress": row.legacy_progress if row else None,
         "legacy_last_read_at": row.legacy_last_read_at if row else None,
         "subscribed_at": row.subscribed_at if row else subscribed_at,
         "last_read_at": row.last_read_at if row else subscribed_at,
     }
+
+
+def _plain_learning_lines(markdown: str) -> list[str]:
+    lines: list[str] = []
+    for raw in markdown.splitlines():
+        value = raw.strip()
+        if not value or value.startswith(("```", "$$", "<!--")):
+            continue
+        value = re.sub(r"^#{1,6}\s+", "", value)
+        value = re.sub(r"^[-*+]\s+", "", value)
+        value = re.sub(r"^\d+[.)]\s+", "", value)
+        value = re.sub(r"!\[[^]]*]\([^)]*\)", "", value)
+        value = re.sub(r"\[([^]]+)]\([^)]*\)", r"\1", value)
+        value = re.sub(r"[*_`>|]", "", value).strip()
+        if len(value) >= 4 and value not in lines:
+            lines.append(value)
+    return lines
+
+
+def _learning_resume_points(section: dict[str, Any]) -> list[dict[str, str]]:
+    lines = _plain_learning_lines(str(section.get("markdown") or ""))
+    fallback = str(section.get("title") or "继续阅读")
+    while len(lines) < 3:
+        lines.append(f"继续理解“{fallback}”中的核心概念与推理关系。")
+    return [
+        {
+            "title": lines[0][:48],
+            "detail": lines[1][:180],
+        },
+        {
+            "title": lines[2][:48] if len(lines) > 3 else "本节关键联系",
+            "detail": (lines[3] if len(lines) > 3 else lines[2])[:180],
+        },
+    ]
+
+
+def _resume_section(body: dict[str, Any], checkpoint: dict[str, Any]) -> dict[str, Any] | None:
+    sections = list(body.get("sections") or [])
+    if not sections:
+        return None
+    section_id = checkpoint.get("last_section_id")
+    exact = next((item for item in sections if item.get("id") == section_id), None)
+    if exact is not None:
+        return exact
+    index = min(int(float(checkpoint.get("progress") or 0) * len(sections)), len(sections) - 1)
+    return sections[max(index, 0)]
 
 
 @router.get("/knowledge-books/{book_id}")
@@ -504,6 +557,31 @@ async def my_book_subscriptions(payload=Depends(require_auth)):
     return {"subscriptions": followed + legacy}
 
 
+@router.get("/me/learning-resume")
+async def learning_resume(payload=Depends(require_auth)):
+    subscriptions = (await my_book_subscriptions(payload))["subscriptions"]
+    if not subscriptions:
+        return {"resume": None}
+    checkpoint = max(
+        subscriptions,
+        key=lambda item: item.get("last_read_at") or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    _, body = await _available_book_body(payload, checkpoint["book"]["id"])
+    section = _resume_section(body, checkpoint)
+    if section is None:
+        return {"resume": None}
+    return {
+        "resume": {
+            "subscription": checkpoint,
+            "section_id": section["id"],
+            "section_title": section["title"],
+            "block_index": checkpoint.get("last_block_index"),
+            "character_offset": checkpoint.get("last_character_offset"),
+            "key_points": _learning_resume_points(section),
+        }
+    }
+
+
 @router.put("/me/book-subscriptions")
 async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_auth)):
     tenant_key, user_id = _reader_identity(payload)
@@ -528,6 +606,9 @@ async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_au
             if row.content_version != current_version:
                 row.edition += 1
                 row.progress = 0
+                row.last_section_id = None
+                row.last_block_index = None
+                row.last_character_offset = None
                 row.content_version = current_version
             row.last_read_at = datetime.now(timezone.utc)
         if book.get("series_id") and await db.get(KnowledgeSeriesSubscription, (tenant_key, user_id, book["series_id"])) is None:
@@ -552,6 +633,9 @@ async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_au
             if row.content_version != current_version:
                 row.edition += 1
                 row.progress = 0
+                row.last_section_id = None
+                row.last_block_index = None
+                row.last_character_offset = None
                 row.content_version = current_version
             row.last_read_at = datetime.now(timezone.utc)
             if book.get("series_id") and await db.get(KnowledgeSeriesSubscription, (tenant_key, user_id, book["series_id"])) is None:
@@ -568,6 +652,17 @@ async def update_book_progress(body: BookProgressWrite, payload=Depends(require_
     if body.content_version is not None and body.content_version != reader_body["content_version"]:
         raise _error(409, code="book_edition_changed", message="正文已更新，请刷新后继续阅读",
                      action="refresh_book", retryable=True)
+    if body.section_id is not None and not any(
+        section.get("id") == body.section_id for section in reader_body.get("sections") or []
+    ):
+        raise _error(422, code="book_section_not_found", message="阅读位置不属于当前版本正文",
+                     action="refresh_book", retryable=True)
+    if body.block_index is not None and body.section_id is None:
+        raise _error(422, code="book_section_required", message="段落位置必须绑定正文章节",
+                     action="refresh_book", retryable=False)
+    if body.character_offset is not None and body.block_index is None:
+        raise _error(422, code="book_block_required", message="字符位置必须绑定正文段落",
+                     action="refresh_book", retryable=False)
     async with SessionLocal() as db:
         row = await db.scalar(
             select(KnowledgeBookSubscription).where(
@@ -615,8 +710,14 @@ async def update_book_progress(body: BookProgressWrite, payload=Depends(require_
         if row.content_version != reader_body["content_version"]:
             row.edition += 1
             row.progress = 0
+            row.last_section_id = None
+            row.last_block_index = None
+            row.last_character_offset = None
             row.content_version = reader_body["content_version"]
         row.progress = body.progress
+        row.last_section_id = body.section_id
+        row.last_block_index = body.block_index
+        row.last_character_offset = body.character_offset
         row.last_read_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)

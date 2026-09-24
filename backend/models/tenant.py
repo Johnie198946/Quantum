@@ -70,6 +70,9 @@ class KnowledgeBookSubscription(Base):
     edition: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     content_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    last_section_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    last_block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_character_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Unknown-version checkpoints must never overwrite a versioned position.
     legacy_progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     legacy_last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

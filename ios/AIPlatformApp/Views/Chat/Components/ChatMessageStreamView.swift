@@ -637,6 +637,7 @@ struct HomeJourneyView: View {
     @ObservedObject private var noteStore = KnowledgeNoteStore.shared
     @State private var subscription: KnowledgeBookSubscriptionDTO?
     @State private var bookBody: KnowledgeBookBodyDTO?
+    @State private var learningResume: LearningResumeDTO?
     @State private var selectedBook: KnowledgeBookDTO?
     @State private var learningQuestion: LearningQuestion?
     @State private var inspectedLearningAnnotation: ReaderAnnotationEntry?
@@ -748,6 +749,8 @@ struct HomeJourneyView: View {
                 onSaveExcerpt: nil,
                 startsInReading: true,
                 initialSectionID: currentSection?.id,
+                initialBlockIndex: learningResume?.blockIndex,
+                initialCharacterOffset: learningResume?.characterOffset,
                 onDismiss: { selectedBook = nil }
             )
             .environmentObject(APIClient.shared)
@@ -807,20 +810,26 @@ struct HomeJourneyView: View {
         .padding(.top, 4)
     }
 
-    private var currentTitle: String { subscription?.book.title ?? "数学分析 · 第 3 章" }
-    private var currentProgress: Double { subscription.map { min(max($0.progress, 0), 1) } ?? 0.68 }
+    private var currentTitle: String { subscription?.book.title ?? "继续学习" }
+    private var currentProgress: Double { subscription.map { min(max($0.progress, 0), 1) } ?? 0 }
 
     private var learningPage: some View {
         Group {
             HeroStrip(title: currentTitle, subtitle: subscription == nil ? "上次学习 · 昨天 22:14" : "上次学习 · 已同步", progress: currentProgress)
             PaperCard {
                 SectionHeading(icon: "lightbulb.fill", tint: HomePalette.blue, title: "先帮你找回思路", subtitle: "根据你上次的学习内容，整理了这些关键点：")
-                learningPoint(number: 1, color: HomePalette.blue, title: "柯西列与收敛", detail: "回顾定义、收敛的充要条件及基本性质。")
-                learningPoint(number: 2, color: HomePalette.green, title: "完备性的核心条件", detail: "理解完备空间的定义及其与柯西列的关系。")
+                ForEach(Array((learningResume?.keyPoints ?? []).prefix(2).enumerated()), id: \.offset) { index, point in
+                    learningPoint(
+                        number: index + 1,
+                        color: index == 0 ? HomePalette.blue : HomePalette.green,
+                        title: point.title,
+                        detail: point.detail
+                    )
+                }
                 NumberedPoint(
                     number: 3,
                     color: Color(hex: "7367EF"),
-                    title: "你停在：\(currentSection?.title ?? "Bolzano–Weierstrass 定理")",
+                    title: "你停在：\(currentSection?.title ?? learningResume?.sectionTitle ?? "尚未记录阅读位置")",
                     detail: "回到上次记录的章节位置继续阅读。",
                     annotationCount: 0,
                     onTap: openCurrentReading,
@@ -1078,6 +1087,10 @@ struct HomeJourneyView: View {
 
     private var currentSection: KnowledgeBookSectionDTO? {
         guard let sections = bookBody?.sections, !sections.isEmpty else { return nil }
+        if let sectionID = learningResume?.sectionId,
+           let exact = sections.first(where: { $0.id == sectionID }) {
+            return exact
+        }
         let index = min(Int(currentProgress * Double(sections.count)), sections.count - 1)
         return sections[max(index, 0)]
     }
@@ -1093,7 +1106,7 @@ struct HomeJourneyView: View {
 
     private var lastReadingExcerpt: String {
         guard let section = currentSection else {
-            return "设 {xₙ} 是实数列，柯西列的定义要求任意 ε > 0 时，序列后部任意两项距离都小于 ε。"
+            return "暂无可恢复的阅读片段。"
         }
         let blocks = ReadingSectionContent.parse(section.markdown).blocks
         let text = blocks.compactMap { block -> String? in
@@ -1242,9 +1255,10 @@ struct HomeJourneyView: View {
     }
 
     @MainActor private func loadData() async {
-        async let fetchedSubscriptions = try? APIClient.shared.fetchBookSubscriptions()
+        async let fetchedResume = try? APIClient.shared.fetchLearningResume()
         async let fetchedNotes = try? APIClient.shared.fetchKnowledgeNotes(includeArchived: true)
-        subscription = await fetchedSubscriptions?.first
+        learningResume = await fetchedResume
+        subscription = learningResume?.subscription
         notes = await fetchedNotes?.items ?? []
         if let book = subscription?.book {
             bookBody = try? await APIClient.shared.fetchKnowledgeBookBody(id: book.id)

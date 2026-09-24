@@ -2998,6 +2998,8 @@ struct KnowledgeBookReaderView: View {
     var onSaveExcerpt: (() -> Void)? = nil
     var startsInReading = false
     var initialSectionID: String? = nil
+    var initialBlockIndex: Int? = nil
+    var initialCharacterOffset: Int? = nil
     let onDismiss: () -> Void
 
     @State private var appeared = false
@@ -3014,6 +3016,8 @@ struct KnowledgeBookReaderView: View {
         onSaveExcerpt: (() -> Void)? = nil,
         startsInReading: Bool = false,
         initialSectionID: String? = nil,
+        initialBlockIndex: Int? = nil,
+        initialCharacterOffset: Int? = nil,
         onDismiss: @escaping () -> Void
     ) {
         self.book = book
@@ -3023,6 +3027,8 @@ struct KnowledgeBookReaderView: View {
         self.onSaveExcerpt = onSaveExcerpt
         self.startsInReading = startsInReading
         self.initialSectionID = initialSectionID
+        self.initialBlockIndex = initialBlockIndex
+        self.initialCharacterOffset = initialCharacterOffset
         self.onDismiss = onDismiss
         _showingReading = State(initialValue: startsInReading || ProcessInfo.processInfo.arguments.contains("-bookReadingPreview"))
     }
@@ -3228,6 +3234,8 @@ struct KnowledgeBookReaderView: View {
             KnowledgeBookReadingView(
                 book: book,
                 initialSectionID: initialSectionID,
+                initialBlockIndex: initialBlockIndex,
+                initialCharacterOffset: initialCharacterOffset,
                 onScopeChange: { body, section in
                     selectedBookVersion = body.contentVersion
                     selectedBookSectionID = section.id
@@ -3308,8 +3316,14 @@ private struct KnowledgeBookReadingView: View {
     @State private var progress = 0.0
     @State private var originalProgress = 0.0
     @State private var lastSentProgress = 0.0
+    @State private var lastSentSectionID: String?
+    @State private var lastSentBlockIndex: Int?
+    @State private var lastSentCharacterOffset: Int?
     @State private var hasProgressBaseline = false
     @State private var pendingProgressIndex: Int?
+    @State private var pendingBlockIndex = 0
+    @State private var pendingCharacterOffset = 0
+    @State private var locationSaveTask: Task<Void, Never>?
     @State private var selectedExcerpt = ""
     @State private var selectedSection: KnowledgeBookSectionDTO?
     @State private var annotationDraft = ""
@@ -3320,6 +3334,8 @@ private struct KnowledgeBookReadingView: View {
     @State private var inspectedAnnotation: ReaderAnnotationEntry?
     let book: KnowledgeBookDTO
     let initialSectionID: String?
+    let initialBlockIndex: Int?
+    let initialCharacterOffset: Int?
     let onScopeChange: (KnowledgeBookBodyDTO, KnowledgeBookSectionDTO) -> Void
     let onDismiss: () -> Void
 
@@ -3354,10 +3370,16 @@ private struct KnowledgeBookReadingView: View {
                     progress = subscription.progress
                     originalProgress = subscription.progress
                     lastSentProgress = subscription.progress
+                    lastSentSectionID = subscription.lastSectionId
+                    lastSentBlockIndex = subscription.lastBlockIndex
+                    lastSentCharacterOffset = subscription.lastCharacterOffset
                 } else {
                     progress = 0
                     originalProgress = 0
                     lastSentProgress = 0
+                    lastSentSectionID = nil
+                    lastSentBlockIndex = nil
+                    lastSentCharacterOffset = nil
                 }
             } else {
                 progressError = "正文已加载，但阅读进度暂时无法同步。"
@@ -3371,24 +3393,58 @@ private struct KnowledgeBookReadingView: View {
     }
 
     @MainActor
-    private func recordReading(sectionIndex: Int) async {
+    private func recordReading(
+        sectionIndex: Int,
+        blockIndex: Int,
+        characterOffset: Int
+    ) async {
         guard let bookBody, hasProgressBaseline else { return }
         let account = KnowledgeNoteStore.shared.accountFingerprint
+        let sectionID = bookBody.sections[sectionIndex].id
         let next = Double(sectionIndex + 1) / Double(bookBody.sections.count)
-        guard next > lastSentProgress else { return }
-        progress = next
+        guard next > lastSentProgress
+                || sectionID != lastSentSectionID
+                || blockIndex != lastSentBlockIndex
+                || characterOffset != lastSentCharacterOffset else { return }
+        let completedProgress = max(next, lastSentProgress)
+        progress = completedProgress
         do {
             _ = try await api.updateBookProgress(
-                id: book.id, progress: next, contentVersion: bookBody.contentVersion
+                id: book.id, progress: completedProgress, contentVersion: bookBody.contentVersion,
+                sectionId: sectionID, blockIndex: blockIndex,
+                characterOffset: characterOffset
             )
             guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
-            lastSentProgress = next
+            lastSentProgress = completedProgress
+            lastSentSectionID = sectionID
+            lastSentBlockIndex = blockIndex
+            lastSentCharacterOffset = characterOffset
             pendingProgressIndex = nil
             progressError = nil
         } catch {
             guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
             pendingProgressIndex = sectionIndex
+            pendingBlockIndex = blockIndex
+            pendingCharacterOffset = characterOffset
             progressError = "阅读进度未同步，点按重试。"
+        }
+    }
+
+    @MainActor
+    private func scheduleReadingLocation(
+        sectionIndex: Int,
+        blockIndex: Int,
+        characterOffset: Int
+    ) {
+        locationSaveTask?.cancel()
+        locationSaveTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            await recordReading(
+                sectionIndex: sectionIndex,
+                blockIndex: blockIndex,
+                characterOffset: characterOffset
+            )
         }
     }
 
@@ -3517,7 +3573,15 @@ private struct KnowledgeBookReadingView: View {
                     .accessibilityIdentifier("publication-reader-progress.\(book.id)")
                 if let progressError {
                     if let index = pendingProgressIndex {
-                        Button(progressError) { Task { await recordReading(sectionIndex: index) } }
+                        Button(progressError) {
+                            Task {
+                                await recordReading(
+                                    sectionIndex: index,
+                                    blockIndex: pendingBlockIndex,
+                                    characterOffset: pendingCharacterOffset
+                                )
+                            }
+                        }
                             .padding(.top, 12)
                     } else {
                         Label(progressError, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
@@ -3574,13 +3638,16 @@ private struct KnowledgeBookReadingView: View {
                     .frame(minHeight: 44, maxHeight: .infinity)
             }
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                ForEach(Array(content.blocks.enumerated()), id: \.offset) { _, block in
+                ForEach(Array(content.blocks.enumerated()), id: \.offset) { blockIndex, block in
                     readerBlock(
                         block,
+                        blockIndex: blockIndex,
+                        sectionIndex: index,
                         section: section,
                         bookBody: bookBody,
                         annotations: sectionAnnotations
                     )
+                    .id("\(section.id):\(blockIndex)")
                 }
             }
             if let first = sectionAnnotations.first {
@@ -3612,12 +3679,17 @@ private struct KnowledgeBookReadingView: View {
             }
         }
         .id(section.id)
-        .onAppear { Task { await recordReading(sectionIndex: index) } }
+        .onAppear {
+            guard section.id != initialSectionID || initialBlockIndex == nil else { return }
+            scheduleReadingLocation(sectionIndex: index, blockIndex: 0, characterOffset: 0)
+        }
     }
 
     @ViewBuilder
     private func readerBlock(
         _ block: MarkdownBlock,
+        blockIndex: Int,
+        sectionIndex: Int,
         section: KnowledgeBookSectionDTO,
         bookBody: KnowledgeBookBodyDTO,
         annotations: [ReaderAnnotationEntry]
@@ -3641,6 +3713,16 @@ private struct KnowledgeBookReadingView: View {
                 onAnnotateSelection: { excerpt in
                     prepareSelection(excerpt, section: section, bookBody: bookBody)
                     isWritingAnnotation = true
+                },
+                resumeCharacterOffset: section.id == initialSectionID && blockIndex == initialBlockIndex
+                    ? initialCharacterOffset
+                    : nil,
+                onVisibleCharacter: { characterOffset in
+                    scheduleReadingLocation(
+                        sectionIndex: sectionIndex,
+                        blockIndex: blockIndex,
+                        characterOffset: characterOffset
+                    )
                 }
             ) { excerpt in
                 prepareSelection(excerpt, section: section, bookBody: bookBody)
@@ -3738,8 +3820,13 @@ private struct KnowledgeBookReadingView: View {
             .task(id: bookBody?.contentVersion) {
                 guard let initialSectionID, bookBody != nil else { return }
                 await Task.yield()
-                proxy.scrollTo(initialSectionID, anchor: .top)
+                if let initialBlockIndex {
+                    proxy.scrollTo("\(initialSectionID):\(initialBlockIndex)", anchor: .top)
+                } else {
+                    proxy.scrollTo(initialSectionID, anchor: .top)
+                }
             }
+            .onDisappear { locationSaveTask?.cancel() }
             }
         }
     }
@@ -3889,6 +3976,79 @@ struct ReadingTextHighlight: Hashable {
     let quote: String
 }
 
+final class ReadingPositionTextView: UITextView {
+    var onVisibleCharacter: (Int) -> Void = { _ in }
+    var restoreCharacterOffset: Int?
+    private weak var outerScrollView: UIScrollView?
+    private var contentOffsetObservation: NSKeyValueObservation?
+    private var restoredOffset: Int?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        contentOffsetObservation?.invalidate()
+        var ancestor = superview
+        while let view = ancestor, outerScrollView == nil {
+            outerScrollView = view as? UIScrollView
+            ancestor = view.superview
+        }
+        guard let outerScrollView else { return }
+        contentOffsetObservation = outerScrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.reportVisibleCharacter() }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreIfNeeded()
+            self?.reportVisibleCharacter()
+        }
+    }
+
+    deinit {
+        contentOffsetObservation?.invalidate()
+    }
+
+    func restoreIfNeeded(force: Bool = false) {
+        guard let outerScrollView, let requested = restoreCharacterOffset,
+              (force || requested != restoredOffset), textStorage.length > 0 else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let offset = min(max(requested, 0), textStorage.length - 1)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: offset, length: 1),
+            actualCharacterRange: nil
+        )
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        rect.origin.x += textContainerInset.left
+        rect.origin.y += textContainerInset.top
+        let target = convert(rect, to: outerScrollView)
+        let minimum = -outerScrollView.adjustedContentInset.top
+        let maximum = max(
+            minimum,
+            outerScrollView.contentSize.height - outerScrollView.bounds.height
+                + outerScrollView.adjustedContentInset.bottom
+        )
+        outerScrollView.setContentOffset(
+            CGPoint(x: outerScrollView.contentOffset.x, y: min(max(target.minY - 120, minimum), maximum)),
+            animated: false
+        )
+        restoredOffset = requested
+    }
+
+    private func reportVisibleCharacter() {
+        guard let outerScrollView, window != nil, textStorage.length > 0 else { return }
+        let readingLine = CGPoint(
+            x: outerScrollView.bounds.midX,
+            y: outerScrollView.bounds.minY + outerScrollView.adjustedContentInset.top + 120
+        )
+        let local = convert(readingLine, from: outerScrollView)
+        guard local.y >= bounds.minY, local.y <= bounds.maxY else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let textPoint = CGPoint(
+            x: min(max(local.x - textContainerInset.left, 0), textContainer.size.width),
+            y: max(local.y - textContainerInset.top, 0)
+        )
+        let glyph = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+        onVisibleCharacter(min(layoutManager.characterIndexForGlyph(at: glyph), textStorage.length - 1))
+    }
+}
+
 struct ReaderSelectionActionDock: View {
     let excerpt: String
     let isEnglish: Bool
@@ -4027,6 +4187,8 @@ struct SelectableReadingText: UIViewRepresentable {
     var onAskSelection: (String) -> Void = { _ in }
     var onHighlightSelection: (String) -> Void = { _ in }
     var onAnnotateSelection: (String) -> Void = { _ in }
+    var resumeCharacterOffset: Int?
+    var onVisibleCharacter: (Int) -> Void = { _ in }
     let onSelection: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -4039,8 +4201,8 @@ struct SelectableReadingText: UIViewRepresentable {
         )
     }
 
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+    func makeUIView(context: Context) -> ReadingPositionTextView {
+        let view = ReadingPositionTextView()
         view.isEditable = false
         view.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -4053,14 +4215,19 @@ struct SelectableReadingText: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: UITextView, context: Context) {
+    func updateUIView(_ view: ReadingPositionTextView, context: Context) {
         context.coordinator.onSelection = onSelection
         context.coordinator.onAnnotationTap = onAnnotationTap
         context.coordinator.onAskSelection = onAskSelection
         context.coordinator.onHighlightSelection = onHighlightSelection
         context.coordinator.onAnnotateSelection = onAnnotateSelection
+        view.onVisibleCharacter = onVisibleCharacter
+        view.restoreCharacterOffset = resumeCharacterOffset
         let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|")
-        guard context.coordinator.source != markdown || context.coordinator.highlightSignature != signature else { return }
+        guard context.coordinator.source != markdown || context.coordinator.highlightSignature != signature else {
+            DispatchQueue.main.async { view.restoreIfNeeded() }
+            return
+        }
         context.coordinator.source = markdown
         context.coordinator.highlightSignature = signature
         let renderedMarkdown = InlineMathPresentation.segments(in: markdown)
@@ -4100,9 +4267,15 @@ struct SelectableReadingText: UIViewRepresentable {
             }
         }
         view.accessibilityHint = "Long press to select text. Tap an underlined passage to read its note."
+        DispatchQueue.main.async {
+            view.restoreIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                view.restoreIfNeeded(force: true)
+            }
+        }
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ReadingPositionTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
         return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
     }

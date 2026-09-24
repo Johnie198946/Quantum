@@ -147,6 +147,8 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         case (true, "PUT", "/api/v1/me/book-subscriptions"),
              (true, "PATCH", "/api/v1/me/book-subscriptions/progress"):
             responseBody = Self.subscriptionResponse
+        case (true, "GET", "/api/v1/me/learning-resume"):
+            responseBody = Data(#"{"resume":{"subscription":{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"last_section_id":"section-2","last_block_index":3,"last_character_offset":18,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"},"section_id":"section-2","section_title":"边界条件","block_index":3,"character_offset":18,"key_points":[{"title":"条件一","detail":"先验证输入。"},{"title":"条件二","detail":"再检查结果。"}]}}"#.utf8)
         case (true, "DELETE", "/api/v1/me/book-subscriptions"):
             responseBody = Data(#"{"deleted":true}"#.utf8)
         case (true, "PUT", let notePath) where notePath.hasPrefix("/api/v1/me/knowledge-notes/"):
@@ -718,7 +720,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
         let subscription = try await client.subscribeBook(id: "kn-1")
         let progress = try await client.updateBookProgress(
-            id: "kn-1", progress: 0.42, contentVersion: contentVersion
+            id: "kn-1", progress: 0.42, contentVersion: contentVersion,
+            sectionId: "section-2", blockIndex: 3, characterOffset: 18
         )
         try await client.unsubscribeBook(id: "kn-1")
 
@@ -750,10 +753,35 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(Set(bodies[0].keys), Set(["book_id", "edition"]))
         XCTAssertEqual(bodies[0]["book_id"] as? String, "kn-1")
         XCTAssertEqual(bodies[0]["edition"] as? Int, 1)
-        XCTAssertEqual(Set(bodies[1].keys), Set(["book_id", "progress", "content_version"]))
+        XCTAssertEqual(Set(bodies[1].keys), Set(["book_id", "progress", "content_version", "section_id", "block_index", "character_offset"]))
         XCTAssertEqual(bodies[1]["content_version"] as? String, contentVersion)
+        XCTAssertEqual(bodies[1]["section_id"] as? String, "section-2")
+        XCTAssertEqual(bodies[1]["block_index"] as? Int, 3)
+        XCTAssertEqual(bodies[1]["character_offset"] as? Int, 18)
         XCTAssertEqual(try XCTUnwrap(bodies[1]["progress"] as? Double), 0.42, accuracy: 0.001)
         XCTAssertEqual(bodies[2]["book_id"] as? String, "kn-1")
+    }
+
+    @MainActor
+    func testLearningResumeDecodesExactSectionAndTwoPoints() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        let fetched = try await client.fetchLearningResume()
+        let resume = try XCTUnwrap(fetched)
+
+        XCTAssertEqual(resume.sectionId, "section-2")
+        XCTAssertEqual(resume.subscription.lastSectionId, "section-2")
+        XCTAssertEqual(resume.blockIndex, 3)
+        XCTAssertEqual(resume.characterOffset, 18)
+        XCTAssertEqual(resume.keyPoints.map(\.title), ["条件一", "条件二"])
     }
 
     func testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges() {
