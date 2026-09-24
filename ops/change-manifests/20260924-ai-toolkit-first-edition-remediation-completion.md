@@ -51,8 +51,8 @@
 - source_revision: `91c21864f970cb75ca27e7473f7780835524a60b11d182912ec0c70cfc46cbca`
 - receipt SHA-256: `3621409ab2c685d290d46f917251739a1d62198d1ca462ac382e7ed6eb72677a`
 - saved/storage_verified/admission: `true / true / admitted`
-- queued: `true`，Writer job `c067f0237f86`
-- compiled: `false`（`compilation.verified=false`, `wiki_compiled=false`）；未把排队冒充编译。
+- queued: `true`，Writer job `c067f0237f86`。
+- compiled: `true`；状态回读 `stage=compiled`, `compilation.verified=true`, `wiki_compiled=true`，目标 `wiki/方法论/Wiki Compile Log.md`，event `68fd038159a2ee0270eb8746ecd92c6fd6498204e58b5086abb943f2bb783ba7`。
 
 ## 部署与回滚
 
@@ -76,5 +76,5 @@ health_check: API ok/ready; Bridge active; Compose running/healthy
 functional_check: publication/store/API/cover hashes verified; iOS build passed, rendered-cover UI blocked by expired login
 rollback_point: /opt/releases/ai-lab-platform-b4a2d34a2d23.3ohPyx
 manifest: ops/change-manifests/20260924-ai-toolkit-first-edition-remediation-completion.md
-remaining_risks: iOS authenticated rendered-cover acceptance remains unverified; Google signed-in UI intentionally untested; full repository suite remains red (38 failed, 99 errors); research is saved/queued but not Writer-verified compiled
+remaining_risks: iOS authenticated rendered-cover acceptance remains unverified; Google signed-in UI intentionally untested; full repository suite remains red (38 failed, 99 errors)
 ```
