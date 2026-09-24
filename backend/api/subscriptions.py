@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -333,6 +334,7 @@ _PUBLIC_BOOK_FIELDS = (
     "source_id", "body_origin", "completeness", "source_classification",
     "readable", "unavailable_reason", "content_version",
     "publication_format", "publication_type_label", "editorial_genre",
+    "shelf_cover_url",
 )
 
 
@@ -395,6 +397,8 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             "publication_type_label": book["publication_type_label"],
             "actual_release_at": item["actual_release_at"], "edition_id": item["edition_id"],
             "source_urls": [ref["url"] for ref in item["bundle"]["references"]],
+            **({"reader_cover_url": f"/api/v1/knowledge-publications/{book_id}/covers/reader_cover"}
+               if any(asset.get("role") == "reader_cover" for asset in item["bundle"].get("assets", [])) else {}),
         } if sections else None)
     else:
         source_path = str(book["source_path"])
@@ -450,6 +454,22 @@ async def knowledge_book_body(book_id: str, payload=Depends(require_auth)):
         ))
     edition = 1 if row is None else row.edition + int(row.content_version != body["content_version"])
     return {**body, "edition": edition}
+
+
+@router.get("/knowledge-publications/{publication_id}/covers/{role}")
+async def knowledge_publication_cover(publication_id: str, role: str, payload=Depends(require_auth)):
+    if role not in {"shelf_cover", "reader_cover"}:
+        raise HTTPException(status_code=422, detail="unknown publication cover role")
+    if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
+        raise HTTPException(status_code=422, detail="invalid publication_id")
+    visible = payload.get("visible_categories")
+    cover = (PublicationStore().get_published_cover(publication_id, role, vault=knowledge._vault())
+             if visible is None or PUBLICATION_CATEGORY in visible else None)
+    if cover is None:
+        raise _error(404, code="cover_not_found", message="封面已下架或当前无权读取",
+                     action="refresh_catalog", retryable=True)
+    data, media_type = cover
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/me/book-subscriptions")

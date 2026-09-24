@@ -308,8 +308,15 @@ public struct KnowledgeView: View {
                                                 .lineLimit(2)
                                         }
                                         .padding(12)
+                                        PublicationCoverImage(
+                                            path: item.book.shelfCoverUrl,
+                                            accessibilityLabel: "《\(item.book.title)》封面",
+                                            aspectRatio: 9 / 16,
+                                            contentMode: .fill
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                                     }
-                                    .frame(width: 104, height: 142)
+                                    .frame(width: 104, height: 185)
                                     .rotationEffect(.degrees(index.isMultiple(of: 2) ? -2 : 2.5))
                                     .shadow(color: AppTheme.Colors.primary.opacity(0.08), radius: 10, y: 7)
                                     Text(item.book.title)
@@ -1313,6 +1320,46 @@ private struct KnowledgeNoteEditor: View {
             selectedRange = NSRange(location: location + offset, length: placeholder.utf16.count)
         } else {
             selectedRange = NSRange(location: location + (replacement as NSString).length, length: 0)
+        }
+    }
+}
+
+struct PublicationCoverImage: View {
+    @EnvironmentObject private var api: APIClient
+    let path: String?
+    let accessibilityLabel: String
+    let aspectRatio: CGFloat
+    let contentMode: ContentMode
+    @State private var image: UIImage?
+    @State private var failed = false
+    @State private var loading = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(aspectRatio, contentMode: contentMode)
+                    .accessibilityLabel(accessibilityLabel)
+            } else if path != nil, !failed {
+                ZStack {
+                    Color.clear.aspectRatio(aspectRatio, contentMode: contentMode)
+                    if loading { ProgressView().accessibilityLabel("正在加载封面") }
+                }
+            }
+        }
+        .task(id: path) {
+            image = nil
+            failed = false
+            guard let path else { return }
+            loading = true
+            defer { loading = false }
+            guard let loaded = try? await api.fetchPublicationImage(path: path),
+                  !Task.isCancelled, let decoded = UIImage(data: loaded) else {
+                failed = true
+                return
+            }
+            image = decoded
         }
     }
 }

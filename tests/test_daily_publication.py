@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pytest
+from PIL import Image
 from test_publication_editorial import synthetic_fixture
 from publication_editorial_fixture import approve_fixture
 from fastapi import HTTPException
@@ -77,6 +78,19 @@ def ready(store: PublicationStore, value: dict, *, execution=False, editorial=Tr
 
 def stage(store: PublicationStore, value=None, **kwargs):
     return store.stage(ready(store, value or bundle()), **kwargs)
+
+
+def add_covers(store: PublicationStore, value: dict, *, shelf_size=(1440, 2560), reader_size=(2560, 1440), image_format="PNG") -> dict:
+    assets = []
+    for role, size in (("shelf_cover", shelf_size), ("reader_cover", reader_size)):
+        path = store.root / "fixture-inputs" / f"{role}.{image_format.lower()}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", size, "#335577").save(path, format=image_format)
+        assets.append({"role": role, "receipt": store.ingest_file(path, f"publication_{role}"),
+                       "media_type": "image/jpeg" if image_format == "JPEG" else "image/png",
+                       "width": size[0], "height": size[1]})
+    value["assets"] = assets
+    return value
 
 
 def test_before_noon_invisible_and_exact_noon_releases(monkeypatch, tmp_path):
@@ -153,6 +167,89 @@ def test_ai_toolkit_becomes_required_on_launch_date(tmp_path):
     assert {item["series_id"] for item in missing} == {
         "ai-history", "ai-practice", "concept-fables", "ai-toolkit",
     }
+
+
+def test_ai_toolkit_dual_covers_release_and_project_urls(monkeypatch, tmp_path):
+    runtime, vault = tmp_path / "runtime", tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(runtime))
+    monkeypatch.setenv("AI_LAB_HOME", str(vault))
+    store = PublicationStore(runtime)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    item = store.stage(value, now=at(3))
+    assert item["state"] == "scheduled"
+    assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+    payload = {"tenant_key": "tenant-a", "user_id": "reader", "visible_categories": frozenset({PUBLICATION_CATEGORY})}
+    book = asyncio.run(subscriptions._visible_bookshelves(payload))[0]["books"][0]
+    _, body = asyncio.run(subscriptions._available_book_body(payload, item["publication_id"]))
+    assert book["shelf_cover_url"].endswith(f"/{item['publication_id']}/covers/shelf_cover")
+    assert body["reader_cover_url"].endswith(f"/{item['publication_id']}/covers/reader_cover")
+    response = asyncio.run(subscriptions.knowledge_publication_cover(item["publication_id"], "shelf_cover", payload))
+    assert response.media_type == "image/png" and response.body.startswith(b"\x89PNG")
+    with pytest.raises(HTTPException) as unknown:
+        asyncio.run(subscriptions.knowledge_publication_cover(item["publication_id"], "../evidence", payload))
+    assert unknown.value.status_code == 422
+    with pytest.raises(HTTPException) as hidden:
+        asyncio.run(subscriptions.knowledge_publication_cover(
+            item["publication_id"], "shelf_cover", {**payload, "visible_categories": frozenset()}
+        ))
+    assert hidden.value.status_code == 404
+
+
+def test_ai_toolkit_missing_cover_is_blocked_and_old_edition_stays_readable(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    value["assets"] = value["assets"][:1]
+    item = store.stage(value, now=at(3))
+    assert item["state"] == "blocked"
+    assert "required_publication_covers_missing" in item["blocked_reasons"]
+
+    db = store._connect()
+    legacy_bundle = json.loads(db.execute("SELECT bundle_json FROM editions").fetchone()[0])
+    legacy_bundle["assets"] = []
+    db.execute("UPDATE editions SET state='published',actual_release_at=?,blocked_reasons='[]',bundle_json=?",
+               (at(4).isoformat(), json.dumps(legacy_bundle)))
+    db.execute("DELETE FROM publication_migrations WHERE name='editorial-v1'")
+    db.close()
+    assert store.get_published(item["publication_id"], now=at(4))
+
+
+def test_cover_role_contract_and_image_bytes_are_strict(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    value["assets"][0]["role"] = "other_cover"
+    with pytest.raises(PublicationError, match="cover role"):
+        store.stage(value, now=at(3))
+
+    wrong = add_covers(store, ready(store, bundle(series="ai-toolkit", body=bundle()["body"] + "wrong")))
+    wrong["assets"][0]["media_type"] = "image/jpeg"
+    with pytest.raises(PublicationError, match="bytes, format or dimensions"):
+        store.stage(wrong, now=at(3))
+
+    dimensions = add_covers(store, ready(store, bundle(series="ai-toolkit", body=bundle()["body"] + "dimensions")))
+    small = store.root / "fixture-inputs" / "small.png"
+    Image.new("RGB", (10, 10)).save(small)
+    dimensions["assets"][0]["receipt"] = store.ingest_file(small, "publication_shelf_cover")
+    with pytest.raises(PublicationError, match="bytes, format or dimensions"):
+        store.stage(dimensions, now=at(3))
+
+
+def test_cover_tamper_and_withdraw_fail_closed(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    item = store.stage(value, now=at(3))
+    store.release_due(now=at(4))
+    assert store.get_published_cover(item["publication_id"], "reader_cover", now=at(4))
+    receipt = next(asset["receipt"] for asset in item["bundle"]["assets"] if asset["role"] == "reader_cover")
+    (store.evidence / f"{receipt['sha256']}.bin").write_bytes(b"tampered")
+    assert store.get_published_cover(item["publication_id"], "reader_cover", now=at(4)) is None
+
+    store2 = PublicationStore(tmp_path / "withdraw")
+    value2 = add_covers(store2, ready(store2, bundle(series="ai-toolkit")))
+    item2 = store2.stage(value2, now=at(3))
+    store2.release_due(now=at(4))
+    store2.withdraw(item2["publication_id"], now=at(5))
+    assert store2.get_published_cover(item2["publication_id"], "shelf_cover", now=at(5)) is None
 
 
 def test_overdue_unpublished_series_report_actual_state(tmp_path):

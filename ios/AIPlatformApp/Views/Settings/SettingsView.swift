@@ -2348,6 +2348,13 @@ struct KnowledgeBookReaderView: View {
                     .lineLimit(2)
             }
             .padding(18)
+            PublicationCoverImage(
+                path: book.shelfCoverUrl,
+                accessibilityLabel: "《\(book.title)》封面",
+                aspectRatio: 9 / 16,
+                contentMode: .fill
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .frame(width: 176, height: 248)
         .shadow(color: AppTheme.Colors.primary.opacity(0.10), radius: 22, x: 8, y: 16)
@@ -2546,6 +2553,18 @@ private struct KnowledgeBookReadingView: View {
                 .font(.system(.title3, design: .serif))
                 .foregroundStyle(Color.brown.opacity(0.78))
                 .padding(.top, 12)
+
+            if let readerCoverUrl = bookBody?.readerCoverUrl {
+                PublicationCoverImage(
+                    path: readerCoverUrl,
+                    accessibilityLabel: "《\(book.title)》阅读页封面",
+                    aspectRatio: 16 / 9,
+                    contentMode: .fit
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.top, 24)
+                .accessibilityIdentifier("publication-reader-cover.\(book.id)")
+            }
 
             HStack(spacing: 12) {
                 Rectangle().frame(width: 54, height: 1)

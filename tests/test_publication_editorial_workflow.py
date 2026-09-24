@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from backend.services.knowledge_publication_store import PublicationError, PublicationStore
-from test_daily_publication import at, bundle, ready
+from test_daily_publication import add_covers, at, bundle, ready
 from test_publication_editorial import synthetic_brief
 
 
@@ -206,6 +206,30 @@ def test_cli_signed_approval_ingests_proof_and_releases(tmp_path):
     assert store.published(now=at(4))  # frozen approved attempt, not current draft
 
 
+def test_cli_stage_ingests_named_covers_without_exposing_paths(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    cover_paths = {asset["role"]: store.root / "fixture-inputs" / f"{asset['role']}.png"
+                   for asset in value["assets"]}
+    value["assets"] = []
+    bundle_path = tmp_path / "cover-bundle.json"
+    bundle_path.write_text(json.dumps(value), encoding="utf-8")
+
+    run = subprocess.run([
+        sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path), "stage", str(bundle_path),
+        "--shelf-cover-file", str(cover_paths["shelf_cover"]),
+        "--reader-cover-file", str(cover_paths["reader_cover"]),
+    ], capture_output=True, text=True)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    result = json.loads(run.stdout)["result"]
+    assert result["state"] == "scheduled"
+    assets = result["bundle"]["assets"]
+    assert {asset["role"] for asset in assets} == {"shelf_cover", "reader_cover"}
+    assert all(set(asset) == {"role", "receipt", "media_type", "width", "height"} for asset in assets)
+    assert "shelf_cover.png" not in run.stdout and "reader_cover.png" not in run.stdout
+
+
 def test_research_resolution_reaudit_then_publish(tmp_path):
     from publication_editorial_fixture import approve_fixture
     store = PublicationStore(tmp_path)
@@ -220,6 +244,26 @@ def test_research_resolution_reaudit_then_publish(tmp_path):
     assert store.stage(revised, now=at(3))["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"]
     assert store.status_report()["editorial_attempts"][0]["state"] == "rejected"
+
+
+def test_resolved_prior_topic_gaps_do_not_pollute_replacement_contract(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    value["quality_contract"]["research_gaps"] = [{
+        "id": "old-topic", "question": "旧选题的证据边界应如何核验并避免迁移到新选题？",
+        "state": "resolved", "resolution": "旧选题已按当时来源完成核验，历史记录保留在不可变的上一版审稿合同中。",
+        "source_urls": ["https://example.com/old-topic"],
+    }]
+    rejected = reject(store, value, store.prepare_editorial(value))
+    next_value = draft(store, body="## 全新主题\n\n" + "新的独立教程内容。" * 400)
+    next_value["quality_contract"]["research_gaps"] = [{
+        **gap, "state": "resolved", "resolution": "新稿已按审稿意见补齐机制、证据和完整示例并重新提交独立复核。",
+        "source_urls": ["https://example.com/new-topic"],
+    } for gap in rejected["gaps"] if gap["state"] == "open"]
+    attempt = store.prepare_editorial(next_value)
+    ids = {gap["id"] for gap in attempt["quality_contract"]["research_gaps"]}
+    assert "old-topic" not in ids
+    assert "mechanism" in ids
 
 
 def test_new_published_cannot_acquire_legacy_exemption(tmp_path):

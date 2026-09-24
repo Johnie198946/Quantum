@@ -297,6 +297,7 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public var sourceClassification: String? = nil
     public var readable: Bool? = nil
     public var unavailableReason: String? = nil
+    public var shelfCoverUrl: String? = nil
 
     public var isBodyUnavailable: Bool { readable == false || contentStatus == "metadata_only" }
     public var publicationTypeLabel: String? {
@@ -423,6 +424,7 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var bodyOrigin: String? = nil
     public var completeness: String? = nil
     public var sourceClassification: String? = nil
+    public var readerCoverUrl: String? = nil
 }
 
 private struct KnowledgeBookSubscriptionWrite: Encodable {
@@ -2315,6 +2317,24 @@ public final class APIClient: ObservableObject {
 
     public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
         try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
+    }
+
+    public func fetchPublicationImage(path: String) async throws -> Data {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 6, parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
+              parts[3].hasPrefix("publication-"), parts[3].count == 44,
+              parts[3].dropFirst(12).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+              parts[4] == "covers", ["shelf_cover", "reader_cover"].contains(parts[5]),
+              !path.contains("?") && !path.contains("#"),
+              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
+              url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port else {
+            throw APIError.network("无效的出版封面地址")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("image/png, image/jpeg", forHTTPHeaderField: "Accept")
+        applyClientContract(to: &request)
+        return try await perform(request, session: session, canRetry: true)
     }
 
     public func subscribeBook(id: String) async throws -> KnowledgeBookSubscriptionDTO {

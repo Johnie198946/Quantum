@@ -983,6 +983,7 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
     from backend.services.knowledge_publication_store import SERIES
 
     bundle = item["bundle"]
+    cover_roles = {asset.get("role") for asset in bundle.get("assets", [])}
     return {
         "id": item["publication_id"], "source_kind": "publication",
         "title": item["title"], "author": item["author"],
@@ -1000,6 +1001,8 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
         "actual_release_at": item["actual_release_at"], "edition_id": item["edition_id"],
         "edition": item["edition"], "source_urls": [ref["url"] for ref in bundle["references"]],
         "content_version": item["content_hash"],
+        **({"shelf_cover_url": f"/api/v1/knowledge-publications/{item['publication_id']}/covers/shelf_cover"}
+           if "shelf_cover" in cover_roles else {}),
     }
 
 

@@ -44,6 +44,15 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 
 The owner attestation and content review are distinct evidence: the former binds publication authority to the named policy and body hashes; the latter binds editorial review to exact body bytes. A full original must also include a `pinned_original` receipt whose hash equals the body hash.
 
+Every new `ai-toolkit` edition must pass both controlled covers during `stage`:
+
+```bash
+--shelf-cover-file "$PRIVATE_INTAKE/shelf-cover.png" \
+--reader-cover-file "$PRIVATE_INTAKE/reader-cover.png"
+```
+
+The operator accepts only verified PNG/JPEG bytes at 1440×2560 (`shelf_cover`) and 2560×1440 (`reader_cover`). It stores opaque receipts in the bundle, never the local file paths.
+
 ## Status, release, and withdrawal
 
 ```bash

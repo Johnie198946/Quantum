@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import io
 import json
 import os
 import re
@@ -16,6 +17,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from markdown_it import MarkdownIt
+from PIL import Image, UnidentifiedImageError
 from backend.services.publication_editorial import (
     editorial_target_hash, make_editorial_contract, validate_editorial,
     validate_editorial_brief,
@@ -37,6 +39,11 @@ PUBLICATION_CATEGORY = "knowledge/publication/public"
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
 _MD = MarkdownIt("commonmark", {"html": True})
+PUBLICATION_COVERS = {
+    "shelf_cover": {"size": (1440, 2560), "kind": "publication_shelf_cover"},
+    "reader_cover": {"size": (2560, 1440), "kind": "publication_reader_cover"},
+}
+_COVER_MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg"}
 
 
 class PublicationError(ValueError):
@@ -351,14 +358,29 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
     if not isinstance(assets, list) or len(assets) > 50:
         raise PublicationError("invalid assets")
     normalized_assets = []
+    cover_roles = set()
     for item in assets:
+        if isinstance(item, dict) and "role" in item:
+            if set(item) != {"role", "receipt", "media_type", "width", "height"}:
+                raise PublicationError("cover assets require role, receipt, media_type, width and height")
+            role = item.get("role")
+            if role not in PUBLICATION_COVERS or role in cover_roles:
+                raise PublicationError("invalid or duplicate cover role")
+            expected = PUBLICATION_COVERS[role]
+            receipt = _receipts([item["receipt"]], "cover asset", 1)[0]
+            if (receipt["kind"] != expected["kind"] or item.get("media_type") not in _COVER_MEDIA_TYPES.values()
+                    or (item.get("width"), item.get("height")) != expected["size"]):
+                raise PublicationError(f"invalid {role} contract")
+            cover_roles.add(role)
+            normalized_assets.append({**item, "receipt": receipt})
+            continue
         if not isinstance(item, dict) or set(item) != {"url", "receipt", "status"}:
-            raise PublicationError("assets require url, receipt and status")
+            raise PublicationError("assets require either a cover role or url, receipt and status")
         status = item.get("status")
         if status not in {"verified", "missing"}:
             raise PublicationError("invalid asset status")
         normalized_assets.append({"url": _safe_url(item["url"], "asset url"), "receipt": _receipts([item["receipt"]], "asset", 1)[0], "status": status})
-    declared_assets = {item["url"]: item for item in normalized_assets}
+    declared_assets = {item["url"]: item for item in normalized_assets if "url" in item}
     wiki_refs = bundle.get("wiki_references") or []
     if not isinstance(wiki_refs, list) or len(wiki_refs) > 100:
         raise PublicationError("invalid wiki_references")
@@ -424,6 +446,8 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         blocked.append("full_original_source_receipt_mismatch")
     if any(url not in declared_assets or declared_assets[url]["status"] != "verified" for url in image_targets):
         blocked.append("missing_or_unverified_asset")
+    if series_id == "ai-toolkit" and cover_roles != set(PUBLICATION_COVERS):
+        blocked.append("required_publication_covers_missing")
     if rights_scope == "local_owner_original":
         if (authored_by != "quantumn_editorial" or not _SAFE_ID.fullmatch(str(bundle.get("owner_policy_id") or ""))
                 or not rights or bundle.get("rights_evidence_status") != "operator_attested"):
@@ -565,6 +589,25 @@ class PublicationStore:
             return False
         return all(self._receipt_valid(db, item) for item in receipts)
 
+    def _cover_asset_valid(self, db: sqlite3.Connection, asset: dict[str, Any]) -> bool:
+        role, receipt = asset.get("role"), asset.get("receipt")
+        expected = PUBLICATION_COVERS.get(role)
+        if not expected or not isinstance(receipt, dict) or not self._receipt_valid(db, receipt):
+            return False
+        row = db.execute("SELECT private_ref FROM evidence WHERE artifact_id=?", (receipt["artifact_id"],)).fetchone()
+        try:
+            raw = self._path(row["private_ref"]).read_bytes()
+            with Image.open(io.BytesIO(raw)) as image:
+                actual = (image.format, image.size)
+                image.verify()
+        except (AttributeError, OSError, UnidentifiedImageError):
+            return False
+        expected_format = {value: key for key, value in _COVER_MEDIA_TYPES.items()}.get(asset.get("media_type"))
+        return receipt.get("kind") == expected["kind"] and actual == (expected_format, expected["size"])
+
+    def _cover_assets_valid(self, db: sqlite3.Connection, bundle: dict[str, Any]) -> bool:
+        return all(self._cover_asset_valid(db, item) for item in bundle.get("assets", []) if "role" in item)
+
     def _review_receipt_valid(self, db: sqlite3.Connection, bundle: dict[str, Any], content_hash: str) -> bool:
         receipt = bundle.get("review", {}).get("receipt")
         if not receipt or not self._receipt_valid(db, receipt):
@@ -643,6 +686,8 @@ class PublicationStore:
                 return sorted(set(reasons))
         if not self._bundle_receipts_valid(db, bundle):
             reasons.append("intake_receipt_missing_or_hash_mismatch")
+        if not self._cover_assets_valid(db, bundle):
+            reasons.append("cover_asset_invalid")
         if not self._review_receipt_valid(db, bundle, row["content_hash"]):
             reasons.append("review_receipt_missing_or_unbound")
         if not self._owner_attestation_valid(db, bundle, row["content_hash"]):
@@ -701,6 +746,8 @@ class PublicationStore:
                 raise PublicationError("duplicate research gaps")
             if current:
                 for gap in json.loads(current["gaps_json"]):
+                    if gap.get("state") != "open":
+                        continue
                     if gap["id"] in by_id and by_id[gap["id"]].get("question") != gap.get("question"):
                         raise PublicationError("research gap question cannot be replaced")
                     by_id.setdefault(gap["id"], gap)
@@ -862,6 +909,8 @@ class PublicationStore:
         db = self._connect()
         try:
             db.execute("BEGIN IMMEDIATE")
+            if not self._cover_assets_valid(db, normalized):
+                raise PublicationError("cover asset bytes, format or dimensions mismatch")
             blocked.extend(self._editorial_check(db, normalized))
             if not self._bundle_receipts_valid(db, normalized):
                 blocked.append("intake_receipt_missing_or_hash_mismatch")
@@ -1030,6 +1079,33 @@ class PublicationStore:
             if row is None or self._access_reasons(db, row, actual, kwargs.get("vault")):
                 return None
             return self._record(row, body=True)
+        finally:
+            db.close()
+
+    def get_published_cover(
+        self, publication_id: str, role: str, *, now: datetime | None = None,
+        vault: Path | None = None,
+    ) -> tuple[bytes, str] | None:
+        if role not in PUBLICATION_COVERS or not self.db_path.exists():
+            return None
+        db, actual = self._connect(), now or _now()
+        try:
+            row = db.execute(
+                "SELECT * FROM editions WHERE state='published' AND publication_id=?",
+                (publication_id,),
+            ).fetchone()
+            if row is None or self._access_reasons(db, row, actual, vault):
+                return None
+            bundle = json.loads(row["bundle_json"])
+            asset = next((item for item in bundle.get("assets", []) if item.get("role") == role), None)
+            if not asset or not self._cover_asset_valid(db, asset):
+                return None
+            evidence = db.execute(
+                "SELECT private_ref FROM evidence WHERE artifact_id=?", (asset["receipt"]["artifact_id"],)
+            ).fetchone()
+            return self._path(evidence["private_ref"]).read_bytes(), asset["media_type"]
+        except (KeyError, TypeError, json.JSONDecodeError, OSError):
+            return None
         finally:
             db.close()
 

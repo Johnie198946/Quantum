@@ -85,6 +85,8 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             responseBody = Self.subscriptionResponse
         case (true, "DELETE", "/api/v1/me/book-subscriptions"):
             responseBody = Data(#"{"deleted":true}"#.utf8)
+        case (true, "GET", let coverPath) where coverPath.hasPrefix("/api/v1/knowledge-publications/publication-"):
+            responseBody = Data("synthetic-image-bytes".utf8)
         case (true, "PUT", let notePath) where notePath.hasPrefix("/api/v1/me/knowledge-notes/"):
             let body = String(data: requestBody ?? Data(), encoding: .utf8) ?? ""
             let object = (try? JSONSerialization.jsonObject(with: requestBody ?? Data())) as? [String: Any]
@@ -491,6 +493,35 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(bodies[2]["book_id"] as? String, "kn-1")
     }
 
+    @MainActor
+    func testPublicationCoverUsesAuthenticatedRelativeAPIPath() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "cover-token"
+        )
+        let publicationID = "publication-" + String(repeating: "a", count: 32)
+
+        let data = try await client.fetchPublicationImage(
+            path: "/api/v1/knowledge-publications/\(publicationID)/covers/shelf_cover"
+        )
+
+        XCTAssertEqual(data, Data("synthetic-image-bytes".utf8))
+        let request = try XCTUnwrap(APIContractURLProtocol.requests().first?.request)
+        XCTAssertEqual(request.url?.host, "contract.invalid")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer cover-token")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg")
+        do {
+            _ = try await client.fetchPublicationImage(path: "https://evil.invalid/cover.png")
+            XCTFail("absolute cover URLs must be rejected")
+        } catch {}
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+    }
+
     func testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges() {
         XCTAssertTrue(LoginConsentPolicy.hasValidAgreementVersion("service-v1"))
         XCTAssertFalse(LoginConsentPolicy.hasValidAgreementVersion(""))
@@ -868,10 +899,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(shelf.books.first?.coverVariant, 3)
         XCTAssertEqual(shelf.books.first?.author, "Anthropic")
         XCTAssertEqual(shelf.books.first?.authorSource, "raw")
+        XCTAssertNil(shelf.books.first?.shelfCoverUrl)
     }
 
     func testDailyPublicationDTOFieldsDecode() throws {
-        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
+        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full","shelf_cover_url":"/api/v1/knowledge-publications/publication-1/covers/shelf_cover"}"#.utf8)
         let book = try decoder().decode(KnowledgeBookDTO.self, from: data)
         XCTAssertEqual(book.seriesId, "ai-history")
         XCTAssertEqual(book.issueDate, "2026-09-08")
@@ -880,6 +912,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(book.publicationFormat, "chapter")
         XCTAssertEqual(book.editorialGenre, "popular_science")
         XCTAssertEqual(book.publicationTypeLabel, "科普 · 连载章节")
+        XCTAssertEqual(book.shelfCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/shelf_cover")
     }
 
     func testPublicationFormatLabelsDoNotInferFromCompleteness() throws {
@@ -923,7 +956,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testReaderBodySurvivesSubscriptionFailure() async throws {
         let body = try decoder().decode(
             KnowledgeBookBodyDTO.self,
-            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
+            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","reader_cover_url":"/api/v1/knowledge-publications/publication-1/covers/reader_cover","sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
         )
 
         let loaded = try await loadKnowledgeBookReaderData(
@@ -932,6 +965,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
 
         XCTAssertEqual(loaded.body, body)
+        XCTAssertEqual(loaded.body.readerCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/reader_cover")
         XCTAssertNil(loaded.subscriptions)
 
         do {
