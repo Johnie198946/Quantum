@@ -1,0 +1,66 @@
+version: 1.0.0
+status: active
+owner: platform-runtime
+runtime: hermes
+selector:
+  adapter: agency/hermes-plugins/ai-lab-capabilities/jev_selector.py
+  request_scope: contextvar_bound_by_existing_bridge
+  output_schema:
+    skill_id: string|null
+    agent_id: string|null
+    skill_confidence: number[0,1]
+    agent_confidence: number[0,1]
+    reason_code:
+      - MATCHED
+      - NO_MATCH
+      - LOW_CONFIDENCE
+      - INVALID_OUTPUT
+      - PROVIDER_UNAVAILABLE
+      - TIMEOUT
+  limits:
+    skills: 1
+    agents: 1
+  low_confidence_behavior: hermes_direct
+catalog_sources:
+  skills:
+    source: hermes_dynamic_skill_index
+    projection: pcm_candidate_card_v1
+    loader: skill_view
+  agents:
+    source: agency_runtime_catalog
+    projection: pcm_candidate_card_v1
+    loader: agency_agents_load
+    executor: delegate_task
+candidate_card_schema:
+  required:
+    - id
+    - kind
+    - version
+    - use_when
+    - do_not_use_when
+    - requires
+    - risk
+    - status
+  kind: [skill, agent]
+  risk: [read, write, external_write, privileged]
+  status: [active, disabled, deprecated]
+execution:
+  runtime: hermes
+  skill_adapter: native-skill-view
+  agent_adapter: native-delegate-task
+  agent_catalog: agency_catalog_only
+  named_profile_binding: forbidden
+  recursive_agent_selection: forbidden
+  tool_authorization: qcp
+  subagent_scope: parent_subset
+observability:
+  decision_fields:
+    - decision_id
+    - policy_version
+    - catalog_version
+    - latency_ms
+    - validated
+    - cache_hit
+  receipt: existing_canonical_delegation_receipt
+  result_hash: sha256
+  adoption: existing_main_adoption_verifier

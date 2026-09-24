@@ -130,12 +130,8 @@ class TriageDecision:
             "confidence": round(self.confidence, 2),
             "reason_code": self.reason_code,
             "evidence_requirements": list(self.evidence_requirements),
-            "agency_enabled": bool(
-                agency_enabled and self.route_class == PROFESSIONAL_TASK
-            ),
-            "skill_enabled": bool(
-                skill_enabled and self.route_class == PROFESSIONAL_TASK
-            ),
+            "agency_enabled": bool(agency_enabled),
+            "skill_enabled": bool(skill_enabled),
         }
 
 

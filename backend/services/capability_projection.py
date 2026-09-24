@@ -1,6 +1,26 @@
 """Project capability truth from server facts only."""
 
+from contextvars import ContextVar, Token
 from datetime import datetime, timedelta, timezone
+from typing import Any
+
+
+_RUNTIME_ROUTING_SCOPE: ContextVar[dict[str, Any] | None] = ContextVar(
+    "quantum_runtime_routing_scope", default=None
+)
+
+
+def set_runtime_routing_scope(scope: dict[str, Any]) -> Token:
+    """Bind server-authorized routing scope to the current Hermes request."""
+    return _RUNTIME_ROUTING_SCOPE.set(dict(scope))
+
+
+def get_runtime_routing_scope() -> dict[str, Any]:
+    return dict(_RUNTIME_ROUTING_SCOPE.get() or {})
+
+
+def reset_runtime_routing_scope(token: Token) -> None:
+    _RUNTIME_ROUTING_SCOPE.reset(token)
 
 
 def project_capability(*, connected: bool, checked_at: datetime | None, ttl_seconds: int, now: datetime | None = None) -> dict[str, object]:

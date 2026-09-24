@@ -106,170 +106,6 @@ def test_ai_lab_capability_plugin_routes_only_supported_tools():
     }
 
 
-def test_capability_router_understands_chinese_and_prefers_professional_depth():
-    router = load_capability_router()
-    inventory = [
-        router._direct_capability(),
-        {
-            "id": "skill:quick-marketing-note",
-            "kind": "skill",
-            "name": "quick-marketing-note",
-            "description": "Write a short general marketing note.",
-            "domain": "marketing",
-            "invoke_tool": "skill_view",
-            "invoke_args": {"name": "quick-marketing-note"},
-            "depth": 0.38,
-            "cost": 0.02,
-        },
-        {
-            "id": "agency:business-strategist",
-            "kind": "agency_agent",
-            "name": "Business Strategist",
-            "description": (
-                "Senior management consulting specialist for market entry, "
-                "go-to-market strategy, business models and strategic decisions."
-            ),
-            "domain": "marketing strategy",
-            "invoke_tool": "tool_call",
-            "invoke_args": {
-                "name": "agency_agents_load",
-                "arguments": {"agent": "business-strategist"},
-            },
-            "depth": 0.86,
-            "cost": 0.10,
-        },
-    ]
-    prompt = (
-        "我们准备面向企业客户发布一款AI知识管理SaaS。请输出可供管理层评审的专业GTM方案，"
-        "包含ICP、定价假设、渠道、90天节奏、指标和风险，不要泛泛而谈。"
-    )
-    cards = router.recommend(prompt, capabilities=inventory, stats={})
-    assert cards[0]["id"] == "agency:business-strategist"
-    assert cards[0]["invoke"] == {
-        "tool": "tool_call",
-        "arguments": {
-            "name": "agency_agents_load",
-            "arguments": {"agent": "business-strategist"},
-        },
-    }
-    assert cards[0]["fit"] > cards[1]["fit"]
-    assert "marketing" in router._tokens("市场营销方案")
-    assert "pricing" in router._tokens("给出定价假设")
-
-
-def test_capability_router_distinguishes_system_architecture_from_ux_architecture():
-    router = load_capability_router()
-    inventory = [
-        {
-            "id": "agency:ux-architect",
-            "kind": "agency_agent",
-            "name": "UX Architect",
-            "description": "Technical architecture and UX specialist for interface foundations.",
-            "domain": "Design",
-            "_search_text": "CSS design systems interaction patterns and user experience.",
-            "depth": 0.82,
-            "cost": 0.10,
-        },
-        {
-            "id": "agency:multi-agent-systems-architect",
-            "kind": "agency_agent",
-            "name": "Multi-Agent Systems Architect",
-            "description": "Systems architect for multi-agent AI platform coordination and governance.",
-            "domain": "Engineering",
-            "_search_text": (
-                "multi-tenant isolation task queues state persistence observability "
-                "fault recovery capacity planning and architecture tradeoffs"
-            ),
-            "depth": 0.82,
-            "cost": 0.10,
-        },
-    ]
-    system_prompt = (
-        "请设计一个生产级多租户Agent平台架构，覆盖身份隔离、任务队列、状态持久化、"
-        "可观测性、故障恢复和容量规划，并给出关键技术取舍。"
-    )
-    assert router.recommend(system_prompt, capabilities=inventory, stats={})[0]["id"] == (
-        "agency:multi-agent-systems-architect"
-    )
-
-    ux_prompt = "请设计移动端操作台的信息架构、交互流程、视觉层级和可用性测试。"
-    assert router.recommend(ux_prompt, capabilities=inventory, stats={})[0]["id"] == (
-        "agency:ux-architect"
-    )
-
-
-def test_capability_router_distinguishes_product_strategy_from_pricing_analysis():
-    router = load_capability_router()
-    inventory = [
-        {
-            "id": "agency:pricing-analyst",
-            "kind": "agency_agent",
-            "name": "Pricing Analyst",
-            "description": "Pricing research, packaging, willingness-to-pay and price experiments.",
-            "domain": "Product",
-            "_search_text": "pricing assumptions tiers monetization and revenue analysis",
-            "depth": 0.82,
-            "cost": 0.10,
-        },
-        {
-            "id": "agency:product-manager",
-            "kind": "agency_agent",
-            "name": "Product Manager",
-            "description": "Holistic product leader for discovery, strategy and roadmap.",
-            "domain": "Product",
-            "_search_text": "target customer pain points MVP roadmap metrics lifecycle pricing",
-            "depth": 0.82,
-            "cost": 0.10,
-        },
-    ]
-    strategy_prompt = (
-        "请为AI质量检测SaaS制定完整产品策略：定义目标客户、核心痛点、MVP范围、"
-        "定价假设、12个月路线图与可量化验收指标。"
-    )
-    assert router.recommend(strategy_prompt, capabilities=inventory, stats={})[0]["id"] == (
-        "agency:product-manager"
-    )
-
-    pricing_prompt = "只分析这款SaaS的定价、套餐、支付意愿和价格实验，不做产品路线图。"
-    assert router.recommend(pricing_prompt, capabilities=inventory, stats={})[0]["id"] == (
-        "agency:pricing-analyst"
-    )
-
-
-def test_capability_router_keeps_context_bounded_and_can_choose_direct_answer():
-    router = load_capability_router()
-    inventory = [router._direct_capability()]
-    inventory.extend({
-        "id": f"agency:specialist-{index}",
-        "kind": "agency_agent",
-        "name": f"Specialist {index}",
-        "description": "Expert go-to-market GTM specialist " + ("long description " * 80),
-        "domain": "specialized",
-        "invoke_tool": "agency_agents_load",
-        "invoke_args": {"agent": f"specialist-{index}"},
-        "depth": 0.85,
-        "cost": 0.10,
-    } for index in range(500))
-    cards = router.recommend(
-        "快速简单解释一下什么是GTM",
-        capabilities=inventory,
-        stats={},
-        limit=50,
-    )
-    assert len(cards) == router.MAX_CANDIDATES
-    assert cards[0]["id"] == "hermes:direct"
-
-    original = router.recommend
-    try:
-        router.recommend = lambda query, limit=5: cards
-        context = router._candidate_context("快速解释")
-    finally:
-        router.recommend = original
-    assert context is not None
-    assert len(context) <= router.MAX_INJECTED_CHARS
-    json.loads(context.split("Candidates: ", 1)[1])
-
-
 def test_capability_router_learns_success_without_storing_conversation(tmp_path, monkeypatch):
     router = load_capability_router()
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -305,113 +141,14 @@ def test_capability_plugin_reuses_hermes_hooks_instead_of_registering_router_too
         "pre_llm_call",
         "pre_tool_call",
         "post_tool_call",
+        "subagent_start",
+        "subagent_stop",
+        "transform_llm_output",
         "transform_tool_result",
     }
     assert not any("router" in name for name in context.tools)
     # Stable discovery does not grant unknown/non-default contexts write access.
     assert "research_deposit" in context.tools["ai_lab_execute"]["schema"]["parameters"]["properties"]["capability"]["enum"]
-
-
-def test_capability_hook_abstains_without_installed_knowledge_method(monkeypatch):
-    router = load_capability_router()
-    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
-    assert router._pre_llm_call(
-        '<<AI_LAB_TRIAGE class="CASUAL" agency="0">>\n你好'
-    ) is None
-    assert router._pre_llm_call(
-        '<<AI_LAB_TRIAGE class="GENERAL_QA" agency="0">>\n解释一下 API'
-    ) is None
-
-
-def test_mac_native_triage_keeps_chat_and_general_qa_direct_without_method(monkeypatch):
-    router = load_capability_router()
-    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
-    assert router._skill_route_class("你好") == "CASUAL"
-    assert router._pre_llm_call("你好") is None
-    assert router._skill_route_class("什么是 API") == "GENERAL_QA"
-    assert router._pre_llm_call("什么是 API") is None
-
-
-@pytest.mark.parametrize(
-    "question",
-    [
-        "做个测试：你回答我OK",
-        "只回复收到",
-        "回答 yes",
-        "不要解释，只输出1",
-        "按你建议做",
-        "简单解释一下什么是 API",
-    ],
-)
-def test_mac_native_direct_response_and_simple_qa_never_enter_agent_os(question, monkeypatch):
-    router = load_capability_router()
-    # Discovery is optional and must not depend on the developer's live skills.
-    # Installed-method ordinary QA is covered by test_mac_ordinary_knowledge_discovery.
-    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
-    assert router._skill_route_class(question) in {"CASUAL", "GENERAL_QA"}
-    assert router._pre_llm_call(question, session_id="fast-path") is None
-    assert router._LOCAL_TURN_STATES["fast-path"]["route_class"] in {
-        "CASUAL",
-        "GENERAL_QA",
-    }
-
-
-def test_mac_native_explicit_skill_research_shortlists_governed_skill(monkeypatch):
-    router = load_capability_router()
-    inventory = [
-        router._govern_skill({
-            "id": "skill:evidence-first-content-research",
-            "kind": "skill",
-            "name": "evidence-first-content-research",
-            "description": "Research content.",
-            "domain": "research",
-            "invoke_tool": "skill_view",
-            "invoke_args": {"name": "evidence-first-content-research"},
-            "depth": 0.62,
-            "cost": 0.035,
-        }),
-        router._govern_skill({
-            "id": "skill:authenticated-web-e2e-verification",
-            "kind": "skill",
-            "name": "authenticated-web-e2e-verification",
-            "description": "Verify a web application.",
-            "domain": "engineering",
-            "invoke_tool": "skill_view",
-            "invoke_args": {"name": "authenticated-web-e2e-verification"},
-            "depth": 0.62,
-            "cost": 0.035,
-        }),
-    ]
-    cards = router.recommend(
-        "使用技能深入研究这个链接 https://example.com/report 并核验外部资料",
-        capabilities=inventory,
-        stats={},
-    )
-    assert cards[0]["id"] == "skill:evidence-first-content-research"
-    assert "skill:authenticated-web-e2e-verification" not in {
-        card["id"] for card in cards
-    }
-
-
-def test_mac_native_negative_boundary_overrides_positive_keyword():
-    router = load_capability_router()
-    skill = router._govern_skill({
-        "id": "skill:content-research-ingest",
-        "kind": "skill",
-        "name": "content-research-ingest",
-        "description": "Research and ingest content.",
-        "domain": "knowledge",
-        "invoke_tool": "skill_view",
-        "invoke_args": {"name": "content-research-ingest"},
-        "depth": 0.62,
-        "cost": 0.035,
-    })
-    cards = router.recommend(
-        "研究这个链接，但只读研究，不要保存",
-        capabilities=[skill],
-        stats={},
-    )
-    assert cards == []
 
 
 def test_link_research_blocks_terminal_and_duplicate_extract():
@@ -695,117 +432,6 @@ def test_native_extract_uses_wechat_profile_only_for_wechat_host():
     assert normal_limit == module.MAX_RESPONSE_BYTES
 
 
-def test_capability_hook_uses_only_exact_agency_slugs_for_professional_turn(monkeypatch):
-    router = load_capability_router()
-    observed = {}
-    agency = [{
-        "id": "agency:trend-researcher",
-        "kind": "agency_agent",
-        "name": "Trend Researcher",
-        "description": "Research market trends with evidence.",
-        "domain": "research",
-        "invoke_tool": "tool_call",
-        "invoke_args": {
-            "name": "agency_agents_load",
-            "arguments": {"agent": "trend-researcher"},
-        },
-        "depth": 0.82,
-        "cost": 0.10,
-    }]
-    monkeypatch.setattr(router, "_agency_capabilities", lambda: agency)
-
-    original = router.recommend
-
-    def capture(query, **kwargs):
-        observed["query"] = query
-        observed["capabilities"] = kwargs.get("capabilities")
-        return original(query, **kwargs)
-
-    monkeypatch.setattr(router, "recommend", capture)
-    result = router._pre_llm_call(
-        '<<AI_LAB_TRIAGE class="PROFESSIONAL_TASK" agency="1">>\n'
-        "调研企业 AI 市场"
-    )
-    assert result is not None
-    assert observed["query"] == "调研企业 AI 市场"
-    assert observed["capabilities"] == agency
-    cards = json.loads(result["context"].split("Candidates: ", 1)[1])
-    assert len(cards) == 1
-    assert cards[0]["invoke"]["tool"] == "delegate_task"
-    tasks = cards[0]["invoke"]["arguments"]["tasks"]
-    assert len(tasks) == 1
-    assert tasks[0]["goal"] == "调研企业 AI 市场"
-    delegate_context = tasks[0]["context"]
-    assert "AI_LAB_AGENCY_SPECIALIST=trend-researcher" in delegate_context
-    assert "agency_agents_load" in delegate_context
-    assert '{"agent":"trend-researcher"}' in delegate_context
-    assert "exact verified specialist slug" in delegate_context
-    assert "do not search the catalog" in delegate_context
-    assert "never claim that the catalog returned no slug" in delegate_context
-    assert "engineering-trend-researcher" not in result["context"]
-
-
-def test_professional_candidate_survives_long_user_task(monkeypatch):
-    router = load_capability_router()
-    agency = [{
-        "id": "agency:trend-researcher",
-        "kind": "agency_agent",
-        "name": "Trend Researcher",
-        "description": "Research market trends with evidence.",
-        "domain": "research",
-        "invoke_tool": "agency_agents_load",
-        "invoke_args": {"agent": "trend-researcher"},
-        "depth": 0.82,
-        "cost": 0.10,
-    }]
-    monkeypatch.setattr(router, "_agency_capabilities", lambda: agency)
-    result = router._pre_llm_call(
-        '<<AI_LAB_TRIAGE class="PROFESSIONAL_TASK" agency="1">>\n'
-        + ("专业研究任务" * 800)
-    )
-    assert result is not None
-    assert len(result["context"]) <= router.MAX_PROFESSIONAL_INJECTED_CHARS
-    cards = json.loads(result["context"].split("Candidates: ", 1)[1])
-    assert cards[0]["invoke"]["tool"] == "delegate_task"
-    assert cards[0]["invoke"]["arguments"]["tasks"][0]["goal"]
-
-
-def test_capability_router_extends_existing_tool_search_contract(monkeypatch):
-    router = load_capability_router()
-    fake_search = types.ModuleType("tools.tool_search")
-    fake_search.dispatch_tool_search = lambda args, **kwargs: json.dumps({
-        "query": args["query"],
-        "matches": [{"name": "existing_deferred_tool"}],
-    })
-    fake_search.bridge_tool_schemas = lambda *args, **kwargs: [{
-        "type": "function",
-        "function": {
-            "name": "tool_search",
-            "description": "Original Hermes search description.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    }]
-    fake_tools = types.ModuleType("tools")
-    fake_tools.tool_search = fake_search
-    monkeypatch.setitem(sys.modules, "tools", fake_tools)
-    monkeypatch.setitem(sys.modules, "tools.tool_search", fake_search)
-    monkeypatch.setattr(router, "recommend", lambda query, limit=5: [{
-        "id": "agency:business-strategist",
-        "fit": 88.0,
-    }])
-
-    router._extend_tool_search()
-    payload = json.loads(fake_search.dispatch_tool_search({"query": "战略", "limit": 3}))
-    assert payload["matches"] == [{"name": "existing_deferred_tool"}]
-    assert payload["capability_matches"] == [{
-        "id": "agency:business-strategist",
-        "fit": 88.0,
-    }]
-    schemas = fake_search.bridge_tool_schemas(1)
-    assert "Original Hermes search description" in schemas[0]["function"]["description"]
-    assert "Hermes skills and Agency specialists" in schemas[0]["function"]["description"]
-
-
 def test_installer_preserves_pre_install_plugin_config_and_adds_both_routers():
     installer = (ROOT / "scripts/install_agency_hermes.sh").read_text()
     assert (
@@ -833,58 +459,26 @@ def test_agency_plugins_are_added_after_lightweight_tool_selection():
     )
     assert selected == ["clarify", "delegation", "agency_agents", "ai_lab"]
     assert "terminal" not in selected
-
-
-def test_bridge_applies_fail_closed_toolsets_from_server_triage():
+def test_bridge_triage_does_not_gate_skill_or_agent_tools():
     all_tools = [
         "clarify", "memory", "web", "delegation", "skills",
         "tenant_skills", "agency_agents", "ai_lab", "file", "terminal",
     ]
-    casual = _request_triage({"triage": {
-        "route_class": "CASUAL",
-        "reason_code": "conversation_marker",
-        "agency_enabled": True,
-    }})
-    assert casual is not None
-    assert _apply_triage_toolset_policy(all_tools, casual) == ["memory"]
+    for route_class in ("CASUAL", "GENERAL_QA", "PROFESSIONAL_TASK"):
+        triage = _request_triage({"triage": {
+            "route_class": route_class,
+            "reason_code": "legacy_transport_only",
+            "evidence_requirements": [],
+            "agency_enabled": False,
+            "skill_enabled": False,
+        }})
+        assert triage is not None
+        routed = _apply_triage_toolset_policy(all_tools, triage)
+        assert "web" not in routed
+        for toolset in ("delegation", "skills", "tenant_skills", "agency_agents", "ai_lab"):
+            assert toolset in routed
+        assert _triage_route_marker(triage) == ""
 
-    general = _request_triage({"triage": {
-        "route_class": "GENERAL_QA",
-        "reason_code": "evidence_qa",
-        "evidence_requirements": ["web_extract"],
-        "agency_enabled": True,
-    }})
-    assert general is not None
-    assert _apply_triage_toolset_policy(all_tools, general) == [
-        "clarify", "memory", "web",
-    ]
-
-    professional = _request_triage({"triage": {
-        "route_class": "PROFESSIONAL_TASK",
-        "reason_code": "professional_url_research",
-        "evidence_requirements": ["web_extract", "web_search"],
-        "agency_enabled": True,
-        "skill_enabled": False,
-    }})
-    assert professional is not None
-    assert _apply_triage_toolset_policy(all_tools, professional) == [
-        "clarify", "memory", "web", "delegation",
-        "agency_agents", "ai_lab", "file", "terminal",
-    ]
-    assert _triage_route_marker(professional).startswith(
-        '<<AI_LAB_TRIAGE class="PROFESSIONAL_TASK" agency="1">>'
-    )
-
-    no_agency = _request_triage({"triage": {
-        "route_class": "PROFESSIONAL_TASK",
-        "reason_code": "tenant_skill_management",
-        "evidence_requirements": [],
-        "agency_enabled": False,
-        "skill_enabled": True,
-    }})
-    assert no_agency is not None
-    assert "delegation" not in _apply_triage_toolset_policy(all_tools, no_agency)
-    assert "tenant_skills" in _apply_triage_toolset_policy(all_tools, no_agency)
 
 
 def test_note_route_keeps_note_tools_and_removes_agency_for_every_triage_class():
@@ -946,7 +540,7 @@ def test_user_note_evidence_keeps_private_note_gateway_and_directive():
     directive = _triage_system_directive(triage)
 
     assert routed == ["clarify", "knowledge_gateway", "user_notes_gateway"]
-    assert "必须调用 user_note_search" in directive
+    assert "可按需调用 user_note_search" in directive
 
 
 def test_general_wiki_question_cannot_call_private_note_search():
@@ -1209,7 +803,7 @@ def test_delegate_receipt_rejects_dispatch_empty_result_or_slug_mismatch(tmp_pat
 
 def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_path):
     """A finite Bridge request must force delegate_task onto its sync path."""
-    observed: dict[str, bool] = {"async_delivery_supported": True}
+    observed: dict[str, object] = {"async_delivery_supported": True}
     gateway = types.ModuleType("gateway")
     gateway.__path__ = []
     session_context = types.ModuleType("gateway.session_context")
@@ -1225,6 +819,11 @@ def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_pa
         session_id = "parent-session"
 
         def run_conversation(self, _goal, **_kwargs):
+            from backend.services.capability_projection import (
+                get_runtime_routing_scope,
+            )
+
+            observed["routing_scope"] = get_runtime_routing_scope()
             return {"final_response": "done"}
 
         def close(self):
@@ -1250,13 +849,24 @@ def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_pa
         None,
         events,
         [None],
-        agent_config={},
+        agent_config={
+            "allowed_tools": ["skill_load"],
+            "routing_policy_version": "policy-test",
+        },
         sandbox=sandbox,
     )
 
     assert observed["async_delivery_supported"] is False
     assert observed["agent_closed"] is True
     assert observed["db_closed"] is True
+    routing_scope = observed["routing_scope"]
+    assert isinstance(routing_scope, dict)
+    assert routing_scope["authorized_skill_ids"] is None
+    assert routing_scope["authorized_agent_ids"] == []
+    assert routing_scope["policy_version"] == "policy-test"
+    from backend.services.capability_projection import get_runtime_routing_scope
+
+    assert get_runtime_routing_scope() == {}
     timing = events.get_nowait()
     assert timing["type"] == "runtime_timing"
     assert timing["phase"] == "reasoning_ready" and timing["elapsed_ms"] >= 0

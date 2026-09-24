@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
 
@@ -50,7 +51,8 @@ def agency():
 
 
 def skill(router):
-    return router._govern_skill({
+    del router
+    return {
         "id": "skill:business-model-research",
         "kind": "skill",
         "name": "business-model-research",
@@ -58,9 +60,23 @@ def skill(router):
         "domain": "research",
         "invoke_tool": "skill_view",
         "invoke_args": {"name": "business-model-research"},
-        "depth": 0.82,
-        "cost": 0.035,
-    })
+        "version": "1.0.0", "use_when": ["research"], "do_not_use_when": [],
+        "requires": {"permissions": [], "tools": [], "platforms": []},
+        "risk": "read", "status": "active",
+    }
+
+
+def select_both(*_args, **_kwargs):
+    return types.SimpleNamespace(
+        decision_id="route-hardening", skill_id="skill:business-model-research",
+        agent_id="agency:trend-researcher", catalog_version="sha256:test",
+        policy_version="policy-test", as_dict=lambda: {
+            "decision_id": "route-hardening", "skill_id": "skill:business-model-research",
+            "agent_id": "agency:trend-researcher", "skill_confidence": 0.9,
+            "agent_confidence": 0.9, "reason_code": "MATCHED",
+            "policy_version": "policy-test", "catalog_version": "sha256:test",
+            "latency_ms": 1.0, "validated": True,
+        })
 
 
 def _create_state_db(path: Path) -> sqlite3.Connection:
@@ -123,6 +139,7 @@ def _insert_receipt_fixture(
 
 def test_delegate_task_is_blocked_until_selected_skill_really_loads(monkeypatch, tmp_path):
     router = load_router()
+    monkeypatch.setattr(router, "select_route", select_both)
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_stats_path", lambda: tmp_path / "stats.json")
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [skill(router)])
@@ -167,6 +184,14 @@ def test_delegate_task_is_blocked_until_selected_skill_really_loads(monkeypatch,
 
 def test_final_transform_never_falls_back_to_in_memory_receipt(monkeypatch):
     router = load_router()
+    monkeypatch.setattr(router, "select_route", lambda *_args, **_kwargs: types.SimpleNamespace(
+        decision_id="route-agent", skill_id=None, agent_id="agency:trend-researcher",
+        catalog_version="sha256:test", policy_version="policy-test",
+        as_dict=lambda: {"decision_id": "route-agent", "skill_id": None,
+            "agent_id": "agency:trend-researcher", "skill_confidence": 0.0,
+            "agent_confidence": 0.9, "reason_code": "MATCHED",
+            "policy_version": "policy-test", "catalog_version": "sha256:test",
+            "latency_ms": 1.0, "validated": True}))
     router._LOCAL_TURN_STATES.clear()
     monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
     monkeypatch.setattr(router, "_agency_capabilities", agency)
@@ -201,7 +226,7 @@ def test_final_transform_never_falls_back_to_in_memory_receipt(monkeypatch):
 def test_failed_deploy_cannot_claim_concurrent_release_as_its_success():
     router = load_router()
     router._LOCAL_TURN_STATES.clear()
-    router._LOCAL_TURN_STATES["deploy-failed"] = {"route_class": "GENERAL_QA"}
+    router._LOCAL_TURN_STATES["deploy-failed"] = {}
     router._post_tool_call(
         "terminal",
         {"command": "ssh prod 'bash scripts/update.sh abc'"},
@@ -227,7 +252,7 @@ def test_failed_deploy_cannot_claim_concurrent_release_as_its_success():
 def test_matching_deploy_receipt_allows_success_claim():
     router = load_router()
     router._LOCAL_TURN_STATES.clear()
-    router._LOCAL_TURN_STATES["deploy-retried"] = {"route_class": "GENERAL_QA"}
+    router._LOCAL_TURN_STATES["deploy-retried"] = {}
     command = "bash scripts/deploy_exact_sha.sh " + "a" * 40
     router._post_tool_call(
         "terminal",
@@ -313,11 +338,11 @@ def test_async_completion_is_adoption_continuation_not_new_routing(monkeypatch):
     router._LOCAL_TURN_STATES.clear()
     state = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "skill_decision": "SELECT",
+        "route_decision": {"decision_id": "route-adoption"},
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": "ipd-04-architecture",
-        "agency_decision": "CALL",
+        "agent_selected": True,
         "requested_agent": "multi-agent-systems-architect",
         "receipt": None,
         "main_adopted": False,
@@ -331,7 +356,7 @@ def test_async_completion_is_adoption_continuation_not_new_routing(monkeypatch):
         sender_id="local-owner",
     )
     assert result is not None and result["defer_streaming"] is True
-    assert state["route_class"] == "PROFESSIONAL_TASK"
+    assert state["route_decision"]["decision_id"] == "route-adoption"
     assert state["requested_skill"] == "ipd-04-architecture"
     assert state["requested_agent"] == "multi-agent-systems-architect"
     assert state["completion_delegation_id"] == "deleg_exact123"
@@ -348,11 +373,11 @@ def test_transform_binds_canonical_lookup_to_completion_delegation(monkeypatch):
     router._LOCAL_TURN_STATES.clear()
     router._LOCAL_TURN_STATES["bound-parent"] = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "skill_decision": "SELECT",
+        "route_decision": {"decision_id": "route-bound"},
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": "ipd-04-architecture",
-        "agency_decision": "CALL",
+        "agent_selected": True,
         "requested_agent": "multi-agent-systems-architect",
         "completion_delegation_id": "deleg_bound123",
         "receipt": None,

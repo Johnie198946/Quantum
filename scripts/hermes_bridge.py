@@ -113,20 +113,13 @@ from backend.services.tenant_coder_tools import (  # noqa: E402
     search_text as tenant_coder_search,
     write_text as tenant_coder_write,
 )
-from backend.services.skill_router import (  # noqa: E402
-    apply_routing_overrides,
-    candidate_prompt,
-    load_routing_overrides,
-    rank_skill_candidates,
-)
+
 try:  # module import in tests versus direct systemd script execution
     from scripts.chat_run_store import DurableChatRunStore  # noqa: E402
 except ModuleNotFoundError:  # pragma: no cover - direct ``python scripts/hermes_bridge.py``
     from chat_run_store import DurableChatRunStore  # type: ignore[no-redef]  # noqa: E402
 
 app = FastAPI(title="Hermes Bridge v6.0")
-
-SKILL_ROUTING_OVERRIDES = _REPO_ROOT / "config" / "skill-routing-overrides.yaml"
 
 
 def _isolated_agent_context_kwargs() -> dict[str, bool]:
@@ -231,10 +224,11 @@ def _mutate_sandbox_memory(
 
 
 def _routed_skill_catalog(sandbox: TenantHermesSandbox) -> list[dict[str, Any]]:
-    return apply_routing_overrides(
-        list_sandbox_skills(sandbox),
-        load_routing_overrides(str(SKILL_ROUTING_OVERRIDES)),
-    )
+    """Return PCM metadata projection without ranking or selection."""
+    # list_sandbox_skills is already the tenant-authorized runtime projection.
+    # Do not enrich it with legacy alias/trigger/bonus routing overrides.
+    return list_sandbox_skills(sandbox)
+
 
 HERMES_BIN = os.environ.get(
     "HERMES_BIN", "/var/lib/quantumn-hermes/.local/bin/hermes"
@@ -5416,13 +5410,9 @@ def _request_runtime_placement(agent_config: dict[str, Any]) -> dict[str, Any] |
 
 
 def _triage_route_marker(triage: dict[str, Any] | None) -> str:
-    """Private marker consumed by the capability hook, never user-authored."""
-    if triage is None:
-        return ""
-    agency = "1" if triage.get("agency_enabled") else "0"
-    return (
-        f'<<AI_LAB_TRIAGE class="{triage["route_class"]}" agency="{agency}">>\n'
-    )
+    """Legacy compatibility: triage no longer controls Skill/Agent routing."""
+    del triage
+    return ""
 
 
 def _triage_system_directive(
@@ -5432,13 +5422,8 @@ def _triage_system_directive(
 ) -> str:
     if triage is None:
         return ""
-    route_class = triage["route_class"]
     evidence = set(triage.get("evidence_requirements") or [])
-    lines = [
-        "\n服务端任务分诊（必须遵守，不得自行升级权限）：",
-        f"route_class={route_class}; reason_code={triage['reason_code']}; "
-        f"agency_enabled={str(bool(triage.get('agency_enabled'))).lower()}.",
-    ]
+    lines = ["\n服务端证据需求（不参与 Skill/Agent 选择，也不授予权限）："]
     if note_draft_request:
         lines.append(
             "这是当前 Hermes 会话内的笔记动作：Main 必须依次调用 user_note_search 和 "
@@ -5448,26 +5433,7 @@ def _triage_system_directive(
             "用该主题检索当前用户笔记；命中真正同主题内容时必须生成 merge_candidates 和"
             "完整 merged_markdown 供用户选择新建或合并；零命中才只生成新建草稿。"
         )
-    elif route_class == CASUAL:
-        lines.append("这是闲聊：自然简短地直接回答，不搜索、不加载 Skill、不调用 Agent。")
-    elif route_class == GENERAL_QA:
-        lines.append("这是普通问答：由 Main 直接负责，不调用 Agency 专家。")
-        if _knowledge_tools_eligible(triage):
-            lines.append(
-                "知识需求与任务复杂度无关。判断问题是否需要已有知识：若需要，默认联合调用"
-                "user_note_search 定位个人笔记与 knowledge_search 定位当前获准的平台知识；"
-                "不得要求用户说检索口令，也不得因此升级专家流程。纯翻译、改写已给材料等"
-                "不需要额外知识时可直接回答。遵守用户只用个人笔记、仅内部材料或禁止联网"
-                "的范围约束。对候选检查实体、时间、版本、适用条件与其支持的判断；"
-                "搜索片段只用于定位，未取得授权正文时不能声称已完整阅读。受限原文不得"
-                "进入上下文，只有明确获准的概括版本可代替详细版。知识缺口明确保留。"
-            )
-    else:
-        lines.append(
-            "这是专业任务：若 agency_enabled=true，必须按注入候选调用原生 delegate_task，"
-            "由隔离子 Agent 使用候选给出的精确 slug 加载 Agency 专家，并等待终态结果；"
-            "父 Agent 只加载提示词不算委派，不得自行拼接 division 前缀。"
-        )
+
     if "web_extract" in evidence:
         lines.append(
             "用户指定了 URL：回答前必须先调用 web_extract 读取原文。若返回结果已包含可识别的"
@@ -5478,11 +5444,11 @@ def _triage_system_directive(
     if "web_search" in evidence:
         lines.append("该请求需要公开证据：必须调用 web_search；涉及 URL 时在 extract 后扩展。")
     if "knowledge_search" in evidence:
-        lines.append("该请求需要内部证据：使用已授权的知识检索工具，零命中时明确说明。")
+        lines.append("可按需使用已授权的知识检索工具补充内部证据；不得把检索作为回答前置条件。")
     if "user_note_search" in evidence:
         lines.append(
-            "用户正在查询自己的笔记：必须调用 user_note_search；不得用平台 Wiki 零命中"
-            "替代用户笔记检索。"
+            "用户可能在查询自己的笔记：可按需调用 user_note_search；未检索时直接基于"
+            "现有上下文回答，不得伪造命中。"
         )
     if "web_extract" in evidence:
         lines.append(
@@ -5528,33 +5494,16 @@ def _apply_triage_toolset_policy(
     note_draft_request: bool = False,
     public_knowledge_fallback: bool = False,
 ) -> list[str]:
-    """Final fail-closed filter after all legacy/plugin toolset assembly."""
+    """Apply evidence-source boundaries without filtering Skill/Agent tools."""
     if note_draft_request:
         denied = {"agency_agents", "ai_lab", "delegation"}
         return [item for item in selected if item not in denied]
-    if triage is None:
-        return list(selected)
-    route_class = triage["route_class"]
-    evidence = set(triage.get("evidence_requirements") or [])
-    if route_class == CASUAL:
-        return [item for item in selected if item in {"memory", "session_search"}]
-
-    denied = set()
-    if route_class == GENERAL_QA:
-        denied.update({
-            "agency_agents", "ai_lab", "delegation", "skills",
-            "tenant_skills", "file", "terminal",
-        })
-    elif not triage.get("agency_enabled"):
-        denied.update({"agency_agents", "ai_lab", "delegation"})
+    evidence = set((triage or {}).get("evidence_requirements") or [])
+    denied: set[str] = set()
     if not evidence & {"web_search", "web_extract"} and not public_knowledge_fallback:
         denied.add("web")
-    if not _knowledge_tools_eligible(triage):
-        denied.add("knowledge_gateway")
     if "user_note_search" not in evidence:
         denied.add("user_notes_gateway")
-    if not triage.get("skill_enabled"):
-        denied.update({"skills", "tenant_skills"})
     return [item for item in selected if item not in denied]
 
 
@@ -6315,10 +6264,7 @@ def _build_in_process_agent(
         and (inference_policy is None or inference_policy["allow_subagents"])
         and (
             agency_business_surface
-            or (
-                route_class == PROFESSIONAL_TASK
-                and (triage or {}).get("agency_enabled")
-            )
+            or "delegate_task" in set(agent_config.get("allowed_tools") or [])
         )
     )
     if sandbox is None:
@@ -6329,32 +6275,15 @@ def _build_in_process_agent(
     knowledge_tool_enabled = bool(
         knowledge_capability
         and allowed_tools & {"knowledge_search", "user_note_search"}
-        and (
-            note_draft_request
-            or _knowledge_tools_eligible(triage)
-        )
     )
-    tenant_skill_enabled = bool(
-        "skill_load" in allowed_tools
-        and (
-            triage is None
-            or (
-                route_class == PROFESSIONAL_TASK
-                and (triage or {}).get("skill_enabled")
-            )
-        )
-    )
+    tenant_skill_enabled = "skill_load" in allowed_tools
     skill_candidates: list[dict[str, Any]] = []
     pinned_skills: set[str] = set()
     agent_id = str(agent_config.get("id") or "")
     if agent_id.startswith("skill_"):
         pinned_skills.add(agent_id[6:])
-    if tenant_skill_enabled:
-        skill_candidates = rank_skill_candidates(
-            _routing_user_goal(goal),
-            _routed_skill_catalog(sandbox),
-            limit=5,
-        )
+    # The Bridge no longer performs keyword/alias/bonus ranking. The JEV
+    # adapter in capability_router is the sole Skill/Agent semantic selector.
     candidate_names = {item["name"] for item in skill_candidates}
     _skill_route_context.value = {
         "enforced": tenant_skill_enabled,
@@ -6384,7 +6313,6 @@ def _build_in_process_agent(
         (not note_draft_request)
         and (inference_policy is None or inference_policy["allow_subagents"])
         and "delegate_task" in allowed_tools
-        and (triage is None or route_class == PROFESSIONAL_TASK)
     )
     platform_tools = set(_get_cached_tools(cfg))
     if agency_route_enabled:
@@ -6677,6 +6605,7 @@ def _build_in_process_agent(
         enabled_toolsets=toolsets_list,
         quiet_mode=True,
         platform="cli",
+        user_id=user_id,
         # Context files and external memory providers stay disabled. The explicit
         # memory toolset loads only MEMORY/USER from the ContextVar-bound sandbox.
         **_isolated_agent_context_kwargs(),
@@ -6699,7 +6628,7 @@ def _build_in_process_agent(
             + "。只可调用当前回合实际提供 Schema 的工具；不得调用权限上限之外工具。"
             + "\nSkill 只能通过 tenant_skill_read 从当前租户沙箱副本读取；"
               "禁止读取全局 Hermes Skill 目录。"
-            + (candidate_prompt(skill_candidates) if tenant_skill_enabled else "")
+            + "\nSkill/Agent 语义选择只接受 capability_router 注入并校验过的 JEV Plan。"
             + "\n知识来源路由：当前对话以 Hermes SessionDB 已恢复的原生消息历史为准；"
               "session_context_read 仅用于首次迁移、灾难恢复或一致性核验；当前用户笔记用"
               " user_note_search（仅明确笔记需求或来源缺口指向笔记时补查，Gateway 已覆盖同范围 notes 则不重复查）；"
@@ -6821,9 +6750,12 @@ def _run_agent_sync(
     cache_keep = False
     usage_baseline: dict[str, Any] = {}
     result_usage: dict[str, Any] | None = None
+
+
     execution_started = False
     original_goal = goal
     hermes_home_token: Any = None
+    routing_scope_token: Any = None
     try:
         # This SSE request is finite: once ``done`` is emitted there is no
         # Hermes gateway consumer that can re-enter a detached child result.
@@ -6846,6 +6778,38 @@ def _run_agent_sync(
         from hermes_constants import set_hermes_home_override
 
         hermes_home_token = set_hermes_home_override(_sandbox_hermes_home(sandbox))
+        from backend.services.capability_projection import set_runtime_routing_scope
+
+        scope_seed = str(
+            getattr(sandbox, "root", "")
+            or getattr(sandbox, "hermes_home", "")
+            or getattr(sandbox, "state_db", "")
+            or "sandbox"
+        )
+        tenant_namespace = str(
+            getattr(sandbox, "tenant_namespace", "")
+            or hashlib.sha256(scope_seed.encode()).hexdigest()[:24]
+        )
+        user_namespace = str(
+            getattr(sandbox, "user_namespace", "")
+            or hashlib.sha256(scope_seed.encode()).hexdigest()[24:48]
+        )
+        authorized_tools = set(
+            str(item) for item in (agent_config or {}).get("allowed_tools") or []
+        )
+        routing_scope_token = set_runtime_routing_scope({
+            "tenant_scope": f"tenant:{tenant_namespace}:user:{user_namespace}",
+            "policy_version": str(
+                (agent_config or {}).get("routing_policy_version")
+                or "runtime-policy-v1"
+            ),
+            "authorized_skill_ids": (
+                None if "skill_load" in authorized_tools else []
+            ),
+            "authorized_agent_ids": (
+                None if "delegate_task" in authorized_tools else []
+            ),
+        })
         _sandbox_tool_context.value = sandbox
         explicit_memory = _explicit_memory_content(original_goal)
         if explicit_memory is not None:
@@ -7140,6 +7104,7 @@ def _run_agent_sync(
             "answer": final,
             "usage": result_usage,
         }
+
         _qput(stream_q, done_event)
     except Exception as e:
         print(f"[bridge] ⚠️ 进程内 agent 执行失败: {e}")
@@ -7157,6 +7122,7 @@ def _run_agent_sync(
         })
     finally:
         _knowledge_tool_context.value = None
+
         _client_context_tool_context.value = None
         _sandbox_tool_context.value = None
         _skill_route_context.value = None
@@ -7170,6 +7136,12 @@ def _run_agent_sync(
             else:
                 _close_agent_resources(agent, session_db)
         finally:
+            if routing_scope_token is not None:
+                from backend.services.capability_projection import (
+                    reset_runtime_routing_scope,
+                )
+
+                reset_runtime_routing_scope(routing_scope_token)
             if hermes_home_token is not None:
                 from hermes_constants import reset_hermes_home_override
 

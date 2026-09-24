@@ -74,9 +74,8 @@ def test_nested_delegate_wrappers_cannot_bypass_skill_first(tool_name, args):
     session = "nested-skill-parent"
     router._LOCAL_TURN_STATES[session] = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "agency_decision": "CALL",
-        "skill_decision": "SELECT",
+        "agent_selected": True,
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": None,
     }
@@ -93,9 +92,8 @@ def test_nested_delegate_wrappers_cannot_bypass_adoption_recursion(tool_name, ar
     session = "nested-adoption-parent"
     router._LOCAL_TURN_STATES[session] = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "agency_decision": "CALL",
-        "skill_decision": "SELECT",
+        "agent_selected": True,
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": "ipd-04-architecture",
         "adoption_continuation": True,
@@ -112,9 +110,8 @@ def test_malformed_or_overdeep_wrapper_fails_closed():
     session = "malformed-wrapper-parent"
     router._LOCAL_TURN_STATES[session] = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "agency_decision": "CALL",
-        "skill_decision": "SELECT",
+        "agent_selected": True,
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": None,
     }
@@ -141,9 +138,8 @@ def test_wrapper_depth_boundary_allows_eight_and_blocks_nine():
     session = "wrapper-depth-boundary-parent"
     router._LOCAL_TURN_STATES[session] = {
         "principal": "local_owner",
-        "route_class": "PROFESSIONAL_TASK",
-        "agency_decision": "CALL",
-        "skill_decision": "SELECT",
+        "agent_selected": True,
+        "skill_selected": True,
         "requested_skill": "ipd-04-architecture",
         "loaded_skill": None,
     }

@@ -22,6 +22,7 @@ def router(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_skill_capabilities", lambda: [{
+        "id": "skill:vault-knowledge-retrieval",
         "name": "vault-knowledge-retrieval",
         "kind": "skill",
         "negative_phrases": [],
@@ -43,9 +44,12 @@ def test_local_general_qa_only_recommends_knowledge(router):
     assert "defer_streaming" not in result
     ctx.dispatch_tool.assert_not_called()
     state = router._LOCAL_TURN_STATES["open-knowledge"]
-    assert state["route_class"] == "GENERAL_QA"
+    assert state["requested_skill"] is None
+    assert state["requested_agent"] is None
+    assert state["route_decision"]["reason_code"] in {
+        "PROVIDER_UNAVAILABLE", "INVALID_OUTPUT"
+    }
     assert "knowledge_gate" not in state
-    assert "requested_skill" not in state
     assert router._pre_tool_call(
         "web_search", {"query": "policy"}, session_id="open-knowledge"
     ) is None

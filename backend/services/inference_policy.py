@@ -64,10 +64,14 @@ def decide_inference(
     reasoning_allowed = bool(auth_payload.get("is_super_admin")) or plan in {
         "pro", "professional", "enterprise",
     }
-    if route_class in {"casual", "general_qa"}:
-        tier = "fast"
-    elif reasoning_allowed and agency_enabled and confidence >= 0.9:
+    normalized_route = str(route_class or "").casefold()
+    # Delegation capacity follows the authenticated plan/tool scope, not
+    # chat_triage's semantic class or confidence. JEV may validly select an
+    # Agent for any request; QCP still enforces the actual permission subset.
+    if reasoning_allowed and agency_enabled:
         tier = "reasoning"
+    elif normalized_route in {"casual", "general_qa"}:
+        tier = "fast"
     else:
         tier = "balanced"
     reserved, output, subagents = _TIER_BUDGETS[tier]

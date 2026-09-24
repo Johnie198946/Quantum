@@ -374,8 +374,8 @@ class ResearchDepositionTests(unittest.TestCase):
                             for call in transforms), "Install the parent-owned generic finalizer scope patch")
         router = sys.modules["research_plugin_test.capability_router"]
         router._INSTALLED = False
-        with patch.object(router, "_extend_tool_search"), patch.object(router, "_compact_skill_manifest"), \
-             patch.object(router, "_skill_capabilities", return_value=[]), patch.object(router, "_agency_capabilities", return_value=[]), \
+        with patch.object(router, "_skill_capabilities", return_value=[]), \
+             patch.object(router, "_agency_capabilities", return_value=[]), \
              patch.object(self.ctx, "register_web_search_provider"):
             plugin.register(self.ctx)
             try:
@@ -893,12 +893,9 @@ print(json.dumps(module.ResearchDeposit(ctx).execute({{"action": "recover"}}, **
         scope = dict(self.scope, task_id="purpose", task_purpose="wiki_compile", platform="cron")
         self.assertIn("Research maintenance", self.begin("研究补证", scope)["context"])
 
-    def test_score_ingestion_not_excluded_without_store_word(self):
+    def test_legacy_capability_scoring_is_absent(self):
         router = sys.modules["research_plugin_test.capability_router"]
-        card = {"id": "skill:research", "kind": "skill", "name": "research", "description": "research analysis", "skill_path": "knowledge/ingestion", "negative_phrases": []}
-        _, factors = router._score_capability(card, "research retrieval designs", {})
-        self.assertNotIn("excluded", factors)
-        self.assertEqual(router._score_capability(card, "research but do not save", {})[0], 0)
+        self.assertFalse(hasattr(router, "_score_capability"))
 
 
     def test_disabled_policy_preserves_evidence_and_readonly_status(self):
@@ -1076,7 +1073,9 @@ print(json.dumps(module.ResearchDeposit(ctx).execute({{"action": "recover"}}, **
     def test_deposition_never_bypasses_required_delegation_router(self):
         router = sys.modules["research_plugin_test.capability_router"]
         router._LOCAL_TURN_STATES["synthetic-required"] = dict(principal="local_owner",
-            route_class="PROFESSIONAL_TASK", agency_decision="CALL", skill_decision="NONE")
+            route_decision={"decision_id": "synthetic-route"}, agent_selected=True,
+            requested_agent="deep-researcher", requested_agent_version="1",
+            skill_selected=False, expected_delegate_tasks=[{"goal": "synthetic"}])
         try:
             for action in ("status", "recover"):
                 args = {"capability": "research_deposit", "inputs": {"action": action}}

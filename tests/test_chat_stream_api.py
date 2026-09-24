@@ -521,11 +521,11 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
 @pytest.mark.parametrize(
     ("question", "route_class", "agency_enabled", "evidence"),
     [
-        ("你好", "CASUAL", False, []),
+        ("你好", "CASUAL", True, []),
         (
             "这个页面讲了什么 https://example.com/post",
             "GENERAL_QA",
-            False,
+            True,
             ["web_extract"],
         ),
         (
@@ -536,7 +536,7 @@ async def test_stream_emits_agent_route_and_handoffs_child_result(
         ),
     ],
 )
-async def test_stream_triage_controls_bridge_config_and_emits_route(
+async def test_stream_triage_preserves_evidence_but_not_skill_agent_availability(
     monkeypatch, question, route_class, agency_enabled, evidence
 ):
     import backend.api.chat as chat_mod
