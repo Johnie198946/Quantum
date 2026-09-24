@@ -741,13 +741,16 @@ class PublicationStore:
             proposed = options["research_gaps"] or []
             if any(not isinstance(g, dict) or not isinstance(g.get("id"), str) for g in proposed):
                 raise PublicationError("invalid research gaps")
-            by_id = {g["id"]: g for g in proposed}
-            if len(by_id) != len(proposed):
+            proposed_by_id = {g["id"]: g for g in proposed}
+            if len(proposed_by_id) != len(proposed):
                 raise PublicationError("duplicate research gaps")
+            by_id = dict(proposed_by_id)
+            inherited_open = []
             if current:
                 for gap in json.loads(current["gaps_json"]):
                     if gap.get("state") != "open":
                         continue
+                    inherited_open.append(gap)
                     if gap["id"] in by_id and by_id[gap["id"]].get("question") != gap.get("question"):
                         raise PublicationError("research gap question cannot be replaced")
                     by_id.setdefault(gap["id"], gap)
@@ -766,7 +769,24 @@ class PublicationStore:
                 raise PublicationError("current await_review attempt must reach a terminal review before changing target")
             failures = db.execute("SELECT COUNT(*) FROM editorial_attempts WHERE issue_id=? AND state IN ('failed','rejected')", (issue_id,)).fetchone()[0]
             if failures >= 4:
-                raise PublicationError("editorial retry limit reached")
+                closes_inherited_gaps = (
+                    failures == 4
+                    and current is not None
+                    and normalized["body_hash"] == current["body_hash"]
+                    and bool(inherited_open)
+                    and all(
+                        (replacement := proposed_by_id.get(gap["id"])) is not None
+                        and replacement.get("question") == gap.get("question")
+                        and replacement.get("state") == "resolved"
+                        and isinstance(replacement.get("resolution"), str)
+                        and bool(replacement["resolution"].strip())
+                        and isinstance(replacement.get("source_urls"), list)
+                        and bool(replacement["source_urls"])
+                        for gap in inherited_open
+                    )
+                )
+                if not closes_inherited_gaps:
+                    raise PublicationError("editorial retry limit reached")
             contract = make_editorial_contract(normalized["body"], **options,
                 revision=current["revision"] + 1 if current else 1,
                 issue_id=issue_id, attempt_id="attempt-" + uuid.uuid4().hex,

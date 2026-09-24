@@ -68,6 +68,56 @@ def test_rejection_four_times_terminal_and_gaps_persist(tmp_path):
     assert "mechanism" in {g["id"] for g in report["open_gaps"]}
 
 
+def test_retry_limit_allows_one_same_body_gap_closure_attempt(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    last = None
+    for _ in range(4):
+        last = reject(store, value, store.prepare_editorial(value))
+
+    open_gaps = [gap for gap in last["gaps"] if gap["state"] == "open"]
+    assert open_gaps
+    closure = copy.deepcopy(value)
+    closure["quality_contract"]["research_gaps"] = [
+        {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "该合成回归明确关闭继承缺口并保留原问题文本，仅验证受控恢复契约。",
+            "source_urls": ["https://example.org/source"],
+        }
+        for gap in open_gaps
+    ]
+    recovered = store.prepare_editorial(closure)
+    assert recovered["revision"] == 5
+    assert not [gap for gap in recovered["quality_contract"]["research_gaps"] if gap["state"] == "open"]
+
+    reject(store, closure, recovered)
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(closure)
+
+
+def test_retry_limit_gap_closure_cannot_change_body(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = draft(store)
+    last = None
+    for _ in range(4):
+        last = reject(store, value, store.prepare_editorial(value))
+    changed = draft(store, "## 变更正文\n\n重试上限后的恢复不得借机替换正文。")
+    changed["quality_contract"]["research_gaps"] = [
+        {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "即使字段完整也不能在受控缺口恢复轮次中变更已经审核过的正文内容。",
+            "source_urls": ["https://example.org/source"],
+        }
+        for gap in last["gaps"] if gap["state"] == "open"
+    ]
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(changed)
+
+
 def test_gaps_cannot_be_dropped_or_reworded(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
