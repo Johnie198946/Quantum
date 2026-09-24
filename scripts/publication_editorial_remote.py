@@ -328,14 +328,30 @@ def verify_target(bundle, manuscript):
 
 def review_input(root, remote):
     for path in manifests(root):
+        # Historical output roots can contain pre-v2 or abandoned manifests.
+        # They are irrelevant unless they explicitly claim a pending review;
+        # avoid letting an invalid non-candidate block today's global scan.
+        try:
+            raw = json.loads(read(path))
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid manifest JSON") from exc
+        if not any(
+            isinstance(item, dict) and item.get("status") == "await_review"
+            for item in raw.get("items", [])
+        ):
+            continue
         path, value = load_manifest(path)
         for item in value["items"]:
             if item["status"] != "await_review":
                 continue
             contract = item["quality_contract"]
-            attempt(remote, contract, {"await_review"})
+            # A completed local review may precede the deterministic finalizer.
+            # Skip it before requiring the remote attempt to remain await_review;
+            # otherwise a global scan is blocked by historical manifests whose
+            # server state has already advanced to approved or rejected.
             if local_path(path.parent, item["review_file"], output=True).exists():
                 continue
+            attempt(remote, contract, {"await_review"})
             bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
             manuscript = read(local_path(path.parent, item["body_file"])).decode()
             verify_target(bundle, manuscript)

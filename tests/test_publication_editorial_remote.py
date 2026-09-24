@@ -299,6 +299,30 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
     assert not (local / "proof.json").exists()
 
 
+def test_global_review_scan_skips_locally_reviewed_stale_attempt_before_remote_readback(flow, monkeypatch):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    item = json.loads(manifest.read_text())["items"][0]
+    (manifest.parent / item["review_file"]).write_text("{}", encoding="utf-8")
+
+    def unexpected_attempt(*_args, **_kwargs):
+        raise AssertionError("reviewed historical attempt must not block the global scan")
+
+    monkeypatch.setattr(relay, "attempt", unexpected_attempt)
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+
+
+def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
+    stale = tmp_path / "historical" / "draft-manifest.json"
+    stale.parent.mkdir()
+    stale.write_text(
+        json.dumps({"version": "legacy", "items": [{"status": "prepared", "batch": "invalid legacy batch"}]}),
+        encoding="utf-8",
+    )
+
+    assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review"}
+
+
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
     local, manifest, remote, calls, *_ = flow
