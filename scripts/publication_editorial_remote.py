@@ -422,6 +422,10 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                     raise ValueError("recorded review hash mismatch")
                 if review["decision"] == "approved":
                     bundle["review"] = {"content_hash": review["content_hash"], "decision": "approved", "reviewed_by": review["reviewer_session"], "reviewed_at": review["reviewed_at"], "receipt": None}
+                    # Author bundles may remain in draft while awaiting review.
+                    # Staging is an explicit operator transition; never inherit
+                    # the author's draft state into the stage request.
+                    bundle["state"] = "staged"
                     staged = remote.operator(
                         "stage", *arguments(remote, path.parent, item, bundle, raw, proof, stage=True)
                     )

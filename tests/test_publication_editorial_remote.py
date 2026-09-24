@@ -318,6 +318,25 @@ def test_real_native_signature_record_and_readback(flow, decision):
     assert "manuscript" not in json.loads((local / "proof.json").read_text())
 
 
+def test_approved_finalize_explicitly_promotes_author_draft_to_staged(flow):
+    local, manifest, remote, _, _, store, _ = flow
+    value = json.loads(manifest.read_text())
+    bundle_path = local / value["items"][0]["bundle_file"]
+    bundle = json.loads(bundle_path.read_text())
+    bundle["state"] = "draft"
+    relay.save(bundle_path, bundle)
+    value["items"][0]["bundle_sha256"] = relay.sha(bundle_path.read_bytes())
+    relay.save(manifest, value)
+
+    db, key = native(flow)
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    from backend.services.knowledge_publication_store import PublicationStore
+    staged = PublicationStore(store).status()
+    assert len(staged) == 1 and staged[0]["state"] == "staged"
+
+
 def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
     local, manifest, remote, calls, *_ = flow
     value = json.loads(manifest.read_text())
