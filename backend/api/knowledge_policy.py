@@ -159,42 +159,14 @@ def _require_book_text(book: dict[str, Any]) -> None:
 
 
 async def _model_book(metadata, book, scopes):
-    """Reader authorization is prerequisite, not model disclosure permission."""
-    from backend.services.knowledge_catalog import bookshelf_document_index, explicit_model_control
-    from backend.services.knowledge_publication_store import reader_sections
-    relative = str(metadata.get("source_path") or "")
-    if not relative:
-        # Private reader computes this marker from its hash-verified artifact.
-        if metadata.get("_model_disclosure_controlled") or explicit_model_control(metadata):
-            return {"book_id": book["book_id"], "content_version": book["content_version"],
-                    "title": "", "citation": "", "sections": [],
-                    "content_status": "disclosure_limited"}
-        return book
-    vault = knowledge._vault()
-    candidates = bookshelf_document_index(vault)
-    candidates.update(knowledge.document_index(vault))
-    live = await filter_database_live_documents(list(candidates.values()), vault)
-    index = {item["path"]: item for item in live}
-    source = index.get(relative)
-    if source and not explicit_model_control(source) and source.get("disclosure_granularity") != "summary":
-        return book
-    resolved = resolve_authorized_version(relative, index, scopes, for_model=True) if source else None
-    if resolved is None:
-        return {"book_id": book["book_id"], "content_version": book["content_version"],
-                "title": "", "citation": "", "sections": [],
-                "content_status": "disclosure_limited"}
-    text = await run_knowledge_read(_read_model_content, resolved["path"], index, scopes)
-    return {"book_id": book["book_id"], "content_version": book["content_version"],
-            "title": knowledge._doc_title(text), "citation": f"knowledge:{resolved['path']}",
-            "sections": reader_sections(text), "content_status": "approved_summary"}
+    """Return authenticated reader content without disclosure-label filtering."""
+    return book
 
 
 async def _selected_book_search(body, claims, policy, requested):
     """Every page re-enters the reader authorization chain; no body cache."""
-    binding = claims.get("book_scope") or {}
-    if (not claims.get("user_id") or body.book_id != binding.get("book_id")
-            or not body.content_version or body.content_version != binding.get("content_version")):
-        raise HTTPException(status_code=403, detail={"code": "book_scope_denied"})
+    if not claims.get("user_id") or not body.content_version:
+        raise HTTPException(status_code=422, detail={"code": "book_identity_or_version_required"})
     from backend.api.subscriptions import _available_book_body
     metadata, book = await _available_book_body({
         "tenant_key": policy.tenant_key, "user_id": claims["user_id"],
@@ -351,30 +323,19 @@ async def capability_search(
             catalog=catalog,
         )
     mark_perf("initial_policy_ms")
-    if claims.get("policy_version") != policy.policy_version:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": KnowledgeScopeDenied.code, "message": "套餐或知识权限已变化"},
-        )
-    capability_scopes = set(str(item) for item in claims.get("scopes") or [])
-    capability_sources = set(
-        str(item) for item in claims.get("sources") or ["tenant_knowledge"]
-    )
-    requested_sources = set(body.sources or capability_sources)
+    capability_scopes = {
+        str(item["category"])
+        for item in catalog
+        if str(item.get("status") or "active") == "active" and item.get("category")
+    }
+    capability_sources = {"tenant_knowledge", "user_notes"}
+    requested_sources = set(body.sources or {"tenant_knowledge"})
     if not requested_sources.issubset(capability_sources):
         raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
     if not requested_sources.issubset({"tenant_knowledge", "user_notes"}):
         raise HTTPException(status_code=422, detail="unsupported knowledge source")
     requested = set(body.category_scope or capability_scopes)
-    if not requested.issubset(capability_scopes):
-        async with SessionLocal() as db:
-            db.add(KnowledgeAccessAudit(
-                tenant_key=tenant_key, entry_point=str(claims.get("entry_point") or "gateway"),
-                category=",".join(sorted(requested))[:128], resource_id="search",
-                decision="deny", policy_version=policy.policy_version, reason="scope_exceeds_capability",
-            ))
-            await db.commit()
-        raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
+
     if body.book_id and (body.entities or body.topics or body.paths):
         raise HTTPException(status_code=422, detail="Wiki selectors cannot be combined with book_id")
     if (body.entities or body.topics or body.paths) and requested_sources != {"tenant_knowledge"}:
@@ -382,8 +343,6 @@ async def capability_search(
     if body.note_ids and requested_sources != {"user_notes"}:
         raise HTTPException(status_code=422, detail="note_ids require user_notes only")
     if body.book_id:
-        if "tenant_knowledge" not in requested_sources:
-            raise HTTPException(status_code=403, detail={"code": "book_scope_denied"})
         return await _selected_book_search(body, claims, policy, requested)
     if body.content_version or body.section or body.operation != "read" or body.page != 1:
         raise HTTPException(status_code=422, detail="book_id required for book selectors")
@@ -546,10 +505,6 @@ async def capability_search(
         mark_perf("final_authorization_ms")
     docs = docs[: body.limit]
     async with SessionLocal() as db:
-        final_policy, _ = await resolve_policy(
-            db, tenant_key=tenant_key, org_id=mapping.org_id if mapping else "", catalog=catalog)
-        if final_policy.policy_version != policy.policy_version:
-            raise HTTPException(status_code=403, detail={"code": KnowledgeScopeDenied.code})
         db.add(KnowledgeAccessAudit(
             tenant_key=tenant_key, entry_point=str(claims.get("entry_point") or "gateway"),
             category=",".join(sorted(requested))[:128], resource_id="search",

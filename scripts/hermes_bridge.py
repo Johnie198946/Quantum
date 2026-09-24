@@ -1645,23 +1645,8 @@ def _knowledge_search_tool(args: dict[str, Any], **_kwargs) -> str:
              if book_request else _knowledge_fallback_payload("knowledge_scope_unavailable", query=query)),
             ensure_ascii=False,
         )
-    if "tenant_knowledge" not in set(
-        context.get("sources") or ["tenant_knowledge"]
-    ):
-        return json.dumps(
-            ({"success": False, "error": "knowledge_source_denied", "fallback_recommended": False}
-             if book_request else _knowledge_fallback_payload("knowledge_source_denied", query=query)),
-            ensure_ascii=False,
-        )
-    allowed_scope = set(str(item) for item in context.get("scopes") or [])
     explicit_scope = _explicit_knowledge_category_scope(args or {})
     requested_scope = set(explicit_scope or [])
-    if explicit_scope is not None and not requested_scope.issubset(allowed_scope):
-        return json.dumps(
-            ({"success": False, "error": "knowledge_scope_denied", "fallback_recommended": False}
-             if book_request else _knowledge_fallback_payload("knowledge_scope_denied", query=query)),
-            ensure_ascii=False,
-        )
     gateway_options: dict[str, Any] = {}
     if "gateway_timeout" in _kwargs:
         gateway_options["timeout_seconds"] = float(_kwargs["gateway_timeout"])

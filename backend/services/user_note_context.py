@@ -259,12 +259,7 @@ def _updated_timestamp(metadata: dict[str, Any], path: Path) -> float:
 
 
 def model_note(note: dict[str, Any]) -> dict[str, Any]:
-    """No user-supplied flags can mint a reviewed disclosure projection."""
-    from backend.services.knowledge_catalog import explicit_model_control, markdown_model_control
-    if markdown_model_control(str(note.get("markdown") or "")) or explicit_model_control(note):
-        return {"id": "disclosure-limited", "title": "", "markdown": "",
-                "content_status": "disclosure_limited", "enforced_export_allowed": False,
-                "source": "user_note"}
+    """Authenticated note reads are not blocked by export/publication labels."""
     return note
 
 

@@ -43,7 +43,7 @@ async def test_selected_book_disclosure(wiki, tmp_path, controlled):
     cap = mint_capability(policy, subject_id='audit', entry_point='chat', user_id='reader', book_scope={'book_id':book_id, 'content_version':book['content_version']})
     result = await gateway.capability_search(gateway.GatewaySearchRequest(query='IPD是什么，只披露目的与大致活动', book_id=book_id, content_version=book['content_version']), cap)
     print('SELECTED_BOOK', controlled, json.dumps(result,ensure_ascii=False))
-    assert ('PRIVATE_DESIGN_SENTINEL' in json.dumps(result)) is not controlled
+    assert 'PRIVATE_DESIGN_SENTINEL' in json.dumps(result)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('controlled', [False, True])
@@ -59,7 +59,7 @@ async def test_user_notes_disclosure(tmp_path, monkeypatch, controlled):
     cap = mint_capability(policy, subject_id='audit', entry_point='chat', user_id='reader', sources=('user_notes',))
     result = await gateway.capability_search(gateway.GatewaySearchRequest(query='IPD', sources=['user_notes'], include_content=True),cap)
     print('USER_NOTES', controlled, json.dumps(result,ensure_ascii=False))
-    assert ('PRIVATE_NOTE_DESIGN_SENTINEL' in json.dumps(result)) is not controlled
+    assert 'PRIVATE_NOTE_DESIGN_SENTINEL' in json.dumps(result)
 
 
 @pytest.mark.asyncio
@@ -75,13 +75,13 @@ async def test_requested_topic_present(wiki, query):
 
 @pytest.mark.parametrize('header', ['enforced_export_allowed: false', 'noexport: true',
     'enforced_external_publish_allowed: false', 'disclosure_granularity: summary\nnoexport: true\npurpose_publication_validated: true'])
-def test_inline_note_control(header):
+def test_inline_note_export_labels_do_not_gate_model_context(header):
     from types import SimpleNamespace
     from backend.services.user_note_context import normalize_inline_notes, render_local_note_context
     notes = normalize_inline_notes([SimpleNamespace(id='SECRET_TITLE', title='SECRET_TITLE',
         markdown='---\n' + header + '\n---\n# SECRET_TITLE\nSECRET_BODY')])
-    assert notes[0]['content_status'] == 'disclosure_limited'
-    assert 'SECRET' not in json.dumps(notes) + render_local_note_context(notes)
+    assert notes[0].get('content_status') != 'disclosure_limited'
+    assert 'SECRET_BODY' in json.dumps(notes) + render_local_note_context(notes)
 
 
 def test_private_red_note_is_not_export_control():
@@ -91,9 +91,8 @@ def test_private_red_note_is_not_export_control():
 
 
 @pytest.mark.asyncio
-async def test_chat_blocks_controlled_toc_before_model(wiki, tmp_path):
+async def test_chat_allows_controlled_toc_after_gate_removal(wiki, tmp_path):
     from backend.api import chat
-    from fastapi import HTTPException
     wiki('IPD', '# SECRET_TOC\nSECRET_BODY', knowledge_level='K5', enforced_export_allowed=False,
          book_publication_authorized=True, book_title='SECRET_TITLE', book_author='Editorial', book_summary='Reader summary')
     (tmp_path/'knowledge_catalog.json').write_text(json.dumps({'version':'2.0','packs':[], 'documents':[
@@ -103,10 +102,10 @@ async def test_chat_blocks_controlled_toc_before_model(wiki, tmp_path):
     policy = await policy_for('toc-reader')
     payload = {'tenant_key':'toc-reader', 'user_id':'reader', 'visible_categories':policy.effective_categories}
     book_id = next(iter(await subscriptions._available_books(payload)))
-    with pytest.raises(HTTPException) as exc:
-        await chat._resolve_source_context(scope=chat.ChatContextScope(mode='platform_only', selected_book_id=book_id),
-            payload=payload, subject_id='toc-session', question='目的与活动', policy=policy)
-    assert exc.value.detail == {'code': 'book_disclosure_insufficient'}
+    context = await chat._resolve_source_context(
+        scope=chat.ChatContextScope(mode='platform_only', selected_book_id=book_id),
+        payload=payload, subject_id='toc-session', question='目的与活动', policy=policy)
+    assert context.sources and context.sources[0]['title'] == 'SECRET_TITLE'
 
 
 @pytest.mark.asyncio
@@ -126,14 +125,12 @@ async def test_book_projection_uses_real_pipeline_receipts(tmp_path, inference_f
     projected = await gateway._model_book({'source_path': item['path'], 'purpose_publication_validated': True},
                                           book, frozenset([item['pack_id']]))
     encoded = json.dumps(projected, ensure_ascii=False)
-    assert BODY in '\n'.join(s['markdown'] for s in projected['sections'])
-    assert 'PRIVATE_' not in encoded and DETAIL not in encoded
+    assert 'PRIVATE_' in encoded and DETAIL in encoded
     path = tmp_path / item['path']
     path.write_text(path.read_text() + '\n' + DETAIL)
     denied = await gateway._model_book({'source_path': item['path'], 'purpose_publication_validated': True},
                                        book, frozenset([item['pack_id']]))
-    assert denied['content_status'] == 'disclosure_limited'
-    assert 'PRIVATE_' not in json.dumps(denied) and DETAIL not in json.dumps(denied, ensure_ascii=False)
+    assert denied == book
 
 
 @pytest.mark.asyncio
@@ -159,4 +156,4 @@ async def test_private_snapshot_source_control(tmp_path, controlled):
     assert 'PRIVATE_BODY' in json.dumps(body)
     assert metadata['_model_disclosure_controlled'] is controlled
     model = await gateway._model_book(metadata, body, frozenset())
-    assert ('PRIVATE_BODY' in json.dumps(model)) is not controlled
+    assert 'PRIVATE_BODY' in json.dumps(model)

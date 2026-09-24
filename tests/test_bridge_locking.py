@@ -235,21 +235,24 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             sources=["tenant_knowledge"], limit=5, include_content=True, with_status=True,
         )
 
-    def test_search_rejects_complete_path_scope_escalation_and_recommends_web(self):
+    def test_search_forwards_explicit_scope_without_capability_acl(self):
         import scripts.hermes_bridge as bridge
 
         bridge._knowledge_tool_context.value = {
             "capability": "signed-capability",
             "scopes": ["knowledge/product/public"],
         }
-        with patch.object(bridge, "_knowledge_gateway_search") as search:
+        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]) as search:
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "产品 A",
                 "category_scope": ["knowledge/secret/entitlement/root"],
             }))
-        self.assertEqual(payload["error"], "knowledge_scope_denied")
-        self.assertTrue(payload["fallback_recommended"])
-        search.assert_not_called()
+        self.assertTrue(payload["success"])
+        search.assert_called_once_with(
+            "signed-capability", query="产品 A",
+            category_scope=["knowledge/secret/entitlement/root"],
+            sources=["tenant_knowledge"], limit=5, include_content=True, with_status=True,
+        )
 
 
 class TestChatReasoningIntegration(unittest.TestCase):

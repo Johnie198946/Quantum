@@ -142,8 +142,6 @@ def _rel_visible(rel: str, vis: set[str] | frozenset[str] | None) -> bool:
     live_paths = AUTHORIZED_DOCUMENT_PATHS.get()
     if live_paths is not None and rel not in live_paths:
         return False
-    if document.get("disclosure_granularity") == "summary" and live_paths is None:
-        return False
     resolved = resolve_authorized_version(rel, {rel: document}, vis)
     return resolved is not None
 
@@ -349,6 +347,9 @@ def _tokenize_query(text: str) -> List[str]:
     cleaned = normalized
     for phrase in _QUERY_NOISE:
         cleaned = cleaned.replace(phrase, " ")
+    # Split common possessive questions ("实体的主题是什么") even when jieba is
+    # unavailable; otherwise the fallback tokenizer produces one compound token.
+    cleaned = cleaned.replace("的", " ")
     cleaned = re.sub(r"[^\w\u4e00-\u9fff]+", " ", cleaned).strip()
     candidates: List[str] = []
     if 2 <= len(cleaned) <= 40:

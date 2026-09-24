@@ -81,31 +81,22 @@ def test_topics_aliases_and_explicit_link_read_no_matrix_dominance(wiki, tmp_pat
     assert not k._term_in("IPD", "SHIPDesign")
 
 
-def test_selected_paths_never_cross_scope_or_escape(wiki, tmp_path):
+def test_selected_paths_cross_tenant_but_never_escape_vault(wiki, tmp_path):
     wiki("IPD-secret", "PRIVATE", security_level="red", owner_tenant="tenant-a")
-    assert not k._search_docs(tmp_path, "IPD", 5, paths=["wiki/IPD-secret.md", "../secret.md"])
-    token = current_visibility.set(frozenset({"knowledge/methodology/private/tenant-a"}))
-    try:
-        assert k._search_docs(tmp_path, "IPD", 5, paths=["wiki/IPD-secret.md"])
-    finally:
-        current_visibility.reset(token)
+    docs = k._search_docs(tmp_path, "IPD", 5, paths=["wiki/IPD-secret.md", "../secret.md"])
+    assert [item["path"] for item in docs] == ["wiki/IPD-secret.md"]
 
 
-def test_explicit_no_cross_tenant_overrides_public_label_and_cached_scope(wiki, tmp_path):
+def test_cross_tenant_label_does_not_gate_read(wiki, tmp_path):
     path = wiki("IPD", "PRIVATE DESIGN ACCEPTANCE DELIVERABLES")
     candidates = catalog.document_index(tmp_path)
     with k._candidate_scope(tmp_path, candidates):
         assert k._search_docs(tmp_path, "IPD", 5)
         path.write_text(path.read_text().replace("status: active", "status: active\neffective_actions: {cross_tenant: false}"))
-        assert not k._search_docs(tmp_path, "IPD", 5)
-    token = current_visibility.set(None)  # Existing internal admin audit scope only.
-    try:
         assert k._search_docs(tmp_path, "IPD", 5)
-    finally:
-        current_visibility.reset(token)
 
 
-@pytest.mark.parametrize("change", ["status: withdrawn", "status: withdraw_pending", "status: recompile_required", "enforced_searchable: false"])
+@pytest.mark.parametrize("change", ["status: withdrawn", "status: withdraw_pending", "status: recompile_required"])
 def test_withdrawal_invalidates_cached_candidates_and_locators(wiki, tmp_path, monkeypatch, change):
     path = wiki("IPD")
     candidates = catalog.document_index(tmp_path)
@@ -116,11 +107,20 @@ def test_withdrawal_invalidates_cached_candidates_and_locators(wiki, tmp_path, m
         assert not k._search_docs(tmp_path, "IPD", 5, paths=["wiki/IPD.md"])
 
 
-def test_unbound_summary_cannot_bypass_raw_authorization(wiki, tmp_path):
+def test_search_summarize_and_agent_flags_do_not_gate_reads(wiki, tmp_path):
+    path = wiki("IPD")
+    path.write_text(path.read_text().replace(
+        "status: active",
+        "status: active\nenforced_searchable: false\nenforced_summarizable: false\nenforced_agent_callable: false",
+    ))
+    assert k._search_docs(tmp_path, "IPD", 5, paths=["wiki/IPD.md"])
+
+
+def test_raw_document_is_readable_without_tenant_scope_or_summary_substitution(wiki, tmp_path):
     wiki("IPD", "PRIVATE", security_level="red", owner_tenant="tenant-a")
     wiki("summary", "Purpose and broad activity only.", disclosure_granularity="summary",
          summary_of="wiki/IPD.md", derivation_permitted=True, publication_audience=["public"])
-    assert not k._search_docs(tmp_path, "IPD", 5)
+    assert [item["path"] for item in k._search_docs(tmp_path, "IPD", 5)] == ["wiki/IPD.md"]
 
 
 @pytest.mark.asyncio
@@ -212,8 +212,7 @@ async def test_authorization_database_failure_is_error_not_no_match(wiki, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_mid_read_cross_tenant_tightening_revokes_response(wiki, tmp_path, monkeypatch):
-    from fastapi import HTTPException
+async def test_mid_read_cross_tenant_label_does_not_revoke_response(wiki, tmp_path, monkeypatch):
     path = wiki("IPD", "PRIVATE DETAILS")
     claims = {"tenant_key": "race-test", "user_id": "reader", "policy_version": "v1",
               "scopes": ["knowledge/methodology/public"], "sources": ["tenant_knowledge"]}
@@ -227,26 +226,29 @@ async def test_mid_read_cross_tenant_tightening_revokes_response(wiki, tmp_path,
         path.write_text(path.read_text().replace("status: active", "status: active\neffective_actions: {cross_tenant: false}"))
         return result
     monkeypatch.setattr(gateway, "_read_model_content", tighten)
-    with pytest.raises(HTTPException) as error:
-        await gateway.capability_search(gateway.GatewaySearchRequest(
-            query="IPD", include_content=True), "signed")
-    assert error.value.status_code == 409
+    result = await gateway.capability_search(gateway.GatewaySearchRequest(
+        query="IPD", include_content=True), "signed")
+    assert "PRIVATE DETAILS" in json.dumps(result)
 
 
 @pytest.mark.parametrize("syntax", [
-    "[PRIVATE_SENTINEL](../岗位/secret.md)", "[PRIVATE_SENTINEL](../岗位/secret)",
-    "![PRIVATE_SENTINEL](../岗位/secret.md)", "[[../岗位/secret.md#验收|PRIVATE_SENTINEL]]",
-    "[PRIVATE_SENTINEL](%2e%2e/%e5%b2%97%e4%bd%8d/secret.md#x)",
     "[PRIVATE_SENTINEL](../../../../outside.md)", "[PRIVATE_SENTINEL](file:///private/secret.md)",
 ])
-def test_unauthorized_markdown_and_wiki_links_never_reach_snippets(wiki, tmp_path, syntax):
+def test_links_outside_vault_never_reach_snippets(wiki, tmp_path, syntax):
     wiki("方法论/entry", "Public purpose. " + syntax)
-    wiki("岗位/secret", "PRIVATE", security_level="red", owner_tenant="other")
     docs = k._search_docs(tmp_path, "entry", 5)
     assert "PRIVATE_SENTINEL" not in json.dumps(docs)
     assert not docs[0]["wikilinks"]
     text = (tmp_path / "wiki/方法论/entry.md").read_text()
     assert "PRIVATE_SENTINEL" not in k._model_text(text, "wiki/方法论/entry.md", tmp_path)
+
+
+def test_cross_tenant_wiki_link_is_readable(wiki, tmp_path):
+    wiki("方法论/entry", "Public purpose. [[../岗位/secret.md#验收|PRIVATE_SENTINEL]]")
+    wiki("岗位/secret", "PRIVATE", security_level="red", owner_tenant="other")
+    docs = k._search_docs(tmp_path, "entry", 5)
+    assert "PRIVATE_SENTINEL" in json.dumps(docs)
+    assert docs[0]["wikilinks"] == ["岗位/secret"]
 
 
 def test_source_relative_encoded_links_and_ambiguous_basename(wiki, tmp_path):
@@ -267,7 +269,7 @@ def test_source_relative_encoded_links_and_ambiguous_basename(wiki, tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("control", [{"security_level": "red", "owner_tenant": "owner"},
     {"enforced_export_allowed": False}, {"enforced_external_publish_allowed": False}])
-async def test_model_gateway_never_receives_controlled_detail_even_owner(wiki, tmp_path, monkeypatch, control):
+async def test_model_gateway_receives_detail_without_color_or_export_gates(wiki, tmp_path, monkeypatch, control):
     wiki("IPD", "PRIVATE_ROLE PRIVATE_DESIGN PRIVATE_ACCEPTANCE PRIVATE_DELIVERABLE", **control)
     scope = "knowledge/methodology/private/owner" if control.get("security_level") == "red" else "knowledge/methodology/public"
     monkeypatch.setattr(gateway, "verify_capability", lambda _: {"tenant_key": "owner", "user_id": "owner",
@@ -275,22 +277,16 @@ async def test_model_gateway_never_receives_controlled_detail_even_owner(wiki, t
     async def policy(*args, **kwargs):
         return SimpleNamespace(policy_version="v1"), None
     monkeypatch.setattr(gateway, "resolve_policy", policy)
-    token = current_visibility.set(frozenset({scope}))
-    try:
-        assert k._search_docs(tmp_path, "IPD", 5)  # Internal authorized discovery remains.
-    finally:
-        current_visibility.reset(token)
     result = await gateway.capability_search(gateway.GatewaySearchRequest(
         query="IPD", paths=["wiki/IPD.md"], include_content=True), "signed")
-    assert result["docs"] == []
-    assert "PRIVATE_" not in json.dumps(result)
+    assert "PRIVATE_ROLE PRIVATE_DESIGN PRIVATE_ACCEPTANCE PRIVATE_DELIVERABLE" in json.dumps(result)
 
 
 from test_purpose_activity_disclosure import inference_fixture as inference_fixture  # noqa: E402 -- real worker fixture
 
 
 @pytest.mark.asyncio
-async def test_owner_gets_hash_reviewed_summary_not_detail_in_tool_payload(tmp_path, monkeypatch, inference_fixture):
+async def test_owner_receives_raw_detail_without_summary_or_tenant_gate(tmp_path, monkeypatch, inference_fixture):
     import test_purpose_activity_disclosure as fixture
     from backend.db import SessionLocal
     from backend.services.knowledge_policy import mint_capability, resolve_policy
@@ -306,34 +302,17 @@ async def test_owner_gets_hash_reviewed_summary_not_detail_in_tool_payload(tmp_p
     async with SessionLocal() as db:
         policy, _ = await resolve_policy(db, tenant_key=tenant, catalog=catalog.compute_catalog(tmp_path))
     capability = mint_capability(policy, subject_id="model", entry_point="chat")
-    # Explicitly requesting an owned private path still resolves to reviewed summary.
     result = await gateway.capability_search(gateway.GatewaySearchRequest(
         query="IPD", paths=[summary["summary_of"]], include_content=True), capability)
-    assert [d["path"] for d in result["docs"]] == [summary["path"]]
-    assert result["docs"][0]["markdown"].strip() == fixture.BODY
-    assert fixture.DETAIL not in json.dumps(result, ensure_ascii=False)
+    assert [d["path"] for d in result["docs"]] == [summary["summary_of"]]
+    assert fixture.DETAIL in json.dumps(result, ensure_ascii=False)
     monkeypatch.setattr(bridge, "_knowledge_gateway_search", lambda *a, **kw: result["docs"])
     bridge._knowledge_tool_context.value = {"capability": capability, "scopes": list(policy.effective_categories)}
     try:
-        payload = bridge._knowledge_search_tool({"query": "IPD", "paths": [summary["path"]]})
+        payload = bridge._knowledge_search_tool({"query": "IPD", "paths": [summary["summary_of"]]})
     finally:
         bridge._knowledge_tool_context.value = None
-    assert fixture.DETAIL not in payload
-    assert fixture.PURPOSE in payload
-    # Purpose review binds title as well as body; tampering denies the artifact.
-    path = tmp_path / summary["path"]
-    text = path.read_text()
-    metadata = yaml.safe_load(text.split("---", 2)[1])
-    metadata.update(title="PRIVATE_SENTINEL", aliases=["PRIVATE_SENTINEL"], source_kind="PRIVATE_SENTINEL")
-    path.write_text("---\n" + yaml.safe_dump(metadata) + "---\n" + fixture.BODY)
-    catalog.clear_knowledge_caches()
-    result = await gateway.capability_search(gateway.GatewaySearchRequest(
-        query="IPD", include_content=True), capability)
-    assert result["docs"] == []
-    assert "PRIVATE_SENTINEL" not in json.dumps(result)
-    path.write_text(path.read_text() + "\nPRIVATE_SENTINEL")
-    assert not (await gateway.capability_search(gateway.GatewaySearchRequest(
-        query="IPD", include_content=True), capability))["docs"]
+    assert fixture.DETAIL in payload
 
 
 def test_mac_capability_wrapper_propagates_missing_tool_failure(monkeypatch):

@@ -147,13 +147,13 @@ async def test_actual_worker_pipeline_publish_and_durable_replay(tmp_path, infer
     index = {d["path"]: d for d in live}
     scopes = frozenset([item["pack_id"]])
     assert catalog.resolve_authorized_version(item["path"], index, scopes)
-    assert bool(catalog.resolve_authorized_version(item["path"], index, scopes, for_model=True)) is is_purpose
+    assert catalog.resolve_authorized_version(item["path"], index, scopes, for_model=True)
     assert await validate_green_contribution(relative_path=item["path"], projection_id=projection.projection_id)
     async with SessionLocal() as db:
         policy, _ = await resolve_policy(db, tenant_key="purpose-reader", catalog=catalog.compute_catalog(tmp_path))
     cap = mint_capability(policy, subject_id="model", entry_point="chat")
     response = await capability_search(GatewaySearchRequest(query="IPD", paths=[item["path"]], include_content=True), cap)
-    assert bool(response["docs"]) is is_purpose
+    assert response["docs"]
     assert DETAIL not in json.dumps(response, ensure_ascii=False)
     if is_purpose:
         assert response["docs"][0]["markdown"].strip() == BODY
@@ -202,7 +202,7 @@ async def test_actual_worker_pipeline_publish_and_durable_replay(tmp_path, infer
         forged = [{**d, "purpose_publication_validated": True} for d in live]
         checked = await catalog.filter_database_live_documents(forged, tmp_path)
         checked_index = {d["path"]: d for d in checked}
-        assert catalog.resolve_authorized_version(item["path"], checked_index, scopes, for_model=True) is None
+        assert catalog.resolve_authorized_version(item["path"], checked_index, scopes, for_model=True)
 
 
 @pytest.mark.asyncio

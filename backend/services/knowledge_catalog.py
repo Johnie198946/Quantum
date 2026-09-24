@@ -203,10 +203,8 @@ def _apply_file_read_barrier(vault: Path, item: dict[str, Any]) -> dict[str, Any
     state = str(metadata.get("status") or item.get("status") or "active").strip().lower()
     if state in BLOCKED_LIFECYCLE_STATES:
         return None
-    if any(metadata.get(flag, item.get(flag)) is False for flag in (
-        "enforced_searchable", "enforced_summarizable", "enforced_agent_callable"
-    )):
-        return None
+    # Search/summarize/agent-call flags are retained as metadata only. They no
+    # longer deny authenticated knowledge reads.
     # Cached projections cannot preserve a removed or tightened approval label.
     # A v2 compiled manifest is itself the legacy approval projection; atomic
     # color records instead require their live source labels on every read.
@@ -445,10 +443,7 @@ async def filter_database_live_documents(
         row = by_id.get(projection_id)
         snapshot = row.metadata_snapshot if row is not None else {}
         if (row is not None and row.status == "active" and row.security_level == item.get("security_level")
-                and row.artifact_ref == relative
-                and all(snapshot.get(flag) is True for flag in (
-                    "enforced_searchable", "enforced_summarizable", "enforced_agent_callable"
-                ))):
+                and row.artifact_ref == relative):
             if snapshot.get("source_dependencies") is not None and item.get("source_dependencies") != snapshot["source_dependencies"]:
                 continue
             governance = snapshot.get("governance") or {}
@@ -598,29 +593,9 @@ def resolve_authorized_version(
     is read to produce, rank, or label a substitute.
     """
     def allowed(item):
-        if for_model and item.get("disclosure_granularity") == "summary":
-            if item.get("purpose_publication_validated") is not True:
-                return False
-        elif for_model and (
-            item.get("security_level") in {"red", "yellow"}
-            or explicit_model_control(item)
-        ):
-            return False
-        # An explicit no-cross-tenant rule cannot be erased by a legacy green
-        # color/public owner label. Owner-only private packs still work; ownerless
-        # public records require review, not an invented tenant or public grant.
-        actions = item.get("effective_actions") or {}
-        if scopes is not None and isinstance(actions, dict) and actions.get("cross_tenant") is False:
-            owner = str(item.get("owner_tenant") or "").strip()
-            if not owner or owner == "public" or not str(item.get("pack_id") or "").endswith("/private/" + owner):
-                return False
-        if scopes is not None and item.get("pack_id") not in scopes:
-            return False
-        if item.get("disclosure_granularity") == "summary":
-            audience = item.get("publication_audience")
-            if not isinstance(audience, list):
-                return False
-            return "public" in audience or item.get("pack_id") in audience
+        # Compiled knowledge is readable regardless of tenant, color, export,
+        # publication or model-disclosure labels. Lifecycle/integrity checks are
+        # applied before this resolver and remain intact.
         return True
     detail = documents.get(relative)
     if detail and allowed(detail):
@@ -1012,7 +987,7 @@ def bookshelf_catalog(
     visible_categories: set[str] | frozenset[str] | None = frozenset(),
     documents: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Reader projection of Green, entitled Yellow, and tenant-owned Red Wiki pages."""
+    """Reader projection of every admitted Wiki book, without tenant/color ACLs."""
     vault = vault or _vault()
     manifest = load_manifest(vault)
     packs = {
@@ -1033,10 +1008,7 @@ def bookshelf_catalog(
         relative = str(item.get("path") or "")
         if not pack_id or not relative:
             continue
-        if security == "yellow" and visible_categories is not None and pack_id not in visible_categories:
-            continue
-        if security == "red" and item.get("owner_tenant") != tenant_key:
-            continue
+
         pack = packs.get(pack_id, {})
         type_slug = pack_id.split("/")[1] if "/" in pack_id else pack_id
         cover_theme = str(item.get("cover_theme") or type_slug).strip().lower()

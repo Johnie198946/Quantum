@@ -173,32 +173,13 @@ async def resolve_policy(
         if not stale and snapshot.status == "active":
             entitled = frozenset(str(x) for x in (snapshot.knowledge_entitlements or []))
 
-    effective: set[str] = set()
-    if not POLICY_V2_ENABLED:
-        effective.update(policies if is_super_admin else (wallet & policies.keys()))
-    for category, item in policies.items():
-        if not POLICY_V2_ENABLED:
-            continue
-        if not item.is_active:
-            continue
-        if is_super_admin and allow_admin_bypass:
-            effective.add(category)
-        elif item.security_level == "green":
-            if not is_guest or category in GUEST_GREEN_CATEGORIES:
-                effective.add(category)
-        elif item.security_level == "red" and item.owner_tenant == tenant_key:
-            effective.add(category)
-        elif item.security_level == "yellow":
-            key = item.entitlement_key or category
-            if key in entitled:
-                effective.add(category)
+    # Knowledge is a shared readable corpus. Authentication still protects the
+    # API, but tenant, plan, color and subscription labels do not gate reads.
+    effective = {category for category, item in policies.items() if item.is_active}
 
     version_seed = json.dumps(
         {
-            "tenant": tenant_key,
-            "entitlement_version": entitlement_version,
             "effective": sorted(effective),
-            "stale": stale,
         },
         separators=(",", ":"),
         sort_keys=True,
