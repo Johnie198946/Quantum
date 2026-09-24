@@ -1753,69 +1753,6 @@ def _verification_failure(
     return f"未通过本地 Agent OS 执行验证：{message}（{code}）"
 
 
-def _finalize_vault_gate(response_text: str, state: dict[str, Any]) -> str:
-    reads = dict(state.get("vault_reads") or {})
-    marker_paths: dict[str, list[str]] = {}
-    for path in reads:
-        candidate = Path(path)
-        markers = {candidate.stem}
-        for root in _configured_vault_roots():
-            try:
-                relative = candidate.relative_to(root).as_posix()
-            except ValueError:
-                continue
-            markers.update({relative, relative.removesuffix(".md")})
-        for marker in markers:
-            marker_paths.setdefault(marker, []).append(path)
-    linked = list(dict.fromkeys(re.findall(r"\[\[([^\]]+)\]\]", response_text)))
-    ambiguous = any(len(marker_paths.get(marker, [])) > 1 for marker in linked)
-    cited = list(dict.fromkeys(
-        marker_paths[marker][0]
-        for marker in linked
-        if len(marker_paths.get(marker, [])) == 1
-    ))
-    outside = any(
-        (marker.startswith("wiki/") or marker.endswith(".md"))
-        and marker not in marker_paths
-        for marker in linked
-    )
-    answer_urls = set(re.findall(r"https?://[^\s<>\]\)\"']+", response_text, re.I))
-    web_ok = bool(state.get("web_succeeded") and answer_urls & set(state.get("web_urls") or set()))
-    changed = False
-    for path, digest in reads.items():
-        try:
-            changed = changed or not hmac.compare_digest(
-                digest, hashlib.sha256(Path(path).read_bytes()).hexdigest()
-            )
-        except OSError:
-            changed = True
-    if state.get("requested_skill") and state.get("loaded_skill") != state.get("requested_skill"):
-        return "知识证据门禁未通过：必需的 Vault 检索 Skill 未成功加载。（VAULT_SKILL_REQUIRED）"
-    if changed:
-        return "知识证据门禁未通过：已读取的 Vault 文档在发送前发生变化。（VAULT_HASH_CHANGED）"
-    if outside or ambiguous or len(cited) > 3:
-        return "知识证据门禁未通过：引用超出本回合实际读取的最多三篇文档。（VAULT_CITATION_DENIED）"
-    if not reads and not (state.get("vault_no_match") and web_ok):
-        return "知识证据门禁未通过：没有实际读取 Vault 正文，且无获准的公开补证。（VAULT_READ_REQUIRED）"
-    if reads and not cited:
-        return "知识证据门禁未通过：答案未引用本回合实际读取的 Vault 文档。（VAULT_CITATION_REQUIRED）"
-    receipt_sources = []
-    for path in cited:
-        exact_markers = [marker for marker in linked if marker_paths.get(marker) == [path]]
-        receipt_sources.append(min(
-            exact_markers,
-            key=lambda marker: (not marker.startswith("wiki/"), not marker.endswith(".md"), marker),
-        ))
-    if not cited:
-        receipt_sources = sorted(answer_urls & set(state.get("web_urls") or set()))[:3]
-    return (
-        response_text.rstrip()
-        + "\n\n知识回执：retrieved_and_cited；来源="
-        + ", ".join(receipt_sources)
-        + "。此回执仅证明读取并引用，不证明结论被证据语义蕴含。"
-    )
-
-
 def _transform_llm_output(response_text: str, session_id: str = "", **kwargs: Any) -> str:
     del kwargs
     with _LOCAL_STATE_LOCK:
@@ -1837,8 +1774,6 @@ def _transform_llm_output(response_text: str, session_id: str = "", **kwargs: An
             pass
     with _LOCAL_STATE_LOCK:
         state = _LOCAL_TURN_STATES.get(session_id)
-        if state and state.get("knowledge_gate"):
-            return _finalize_vault_gate(response_text, state)
         if state and state.get("deployment_attribution_failure") and _DEPLOYMENT_SUCCESS_RE.search(
             response_text
         ):
@@ -2062,29 +1997,10 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             _ordinary_knowledge_context(_routing_query(user_message))
             if route_class == "GENERAL_QA" else ""
         )
-        gated_vault = bool(
-            knowledge_context
-            and (
-                principal == "vault_owner"
-                or (_LOCAL_ENABLED and principal == "local_owner" and bool(state["sender_id"]))
-            )
-        )
-        if gated_vault:
-            state.update({
-                "knowledge_gate": True,
-                "skill_decision": "SELECT",
-                "requested_skill": "vault-knowledge-retrieval",
-                "loaded_skill": None,
-                "vault_reads": {},
-                "vault_lookup_complete": False,
-                "vault_no_match": False,
-                "web_succeeded": False,
-                "web_urls": set(),
-            })
         context = "\n".join(part for part in (knowledge_context, vault_context) if part)
         if not context:
             return None
-        return {"context": context, **({"defer_streaming": True} if gated_vault else {})}
+        return {"context": context}
     context = _local_professional_context(_routing_query(user_message), state)
     if vault_context:
         context = f"{context}\n{vault_context}"
@@ -2145,10 +2061,7 @@ def _pre_llm_with_runtime_skill(
         should_load = bool(
             state
             and state.get("skill_decision") == "SELECT"
-            and (
-                state.get("route_class") == "PROFESSIONAL_TASK"
-                or state.get("knowledge_gate") is True
-            )
+            and state.get("route_class") == "PROFESSIONAL_TASK"
             and not state.get("adoption_continuation")
             and requested
         )
@@ -2275,15 +2188,6 @@ def _pre_tool_call(
         denial = _principal_denial(tool_name, args, local_state)
         if denial is not None:
             return denial
-        if (
-            local_state.get("knowledge_gate")
-            and effective_tool in {"web_search", "web_extract", "browser_exec"}
-            and not local_state.get("vault_lookup_complete")
-        ):
-            return {
-                "action": "block",
-                "message": "Knowledge-first gate requires a Vault search/read before public web. [VAULT_LOOKUP_REQUIRED]",
-            }
         if effective_tool == "delegate_task" and local_state.get("adoption_continuation"):
             return {
                 "action": "block",
@@ -2427,49 +2331,6 @@ def _result_succeeded(result: str) -> bool:
     return not bool(parsed.get("error")) and parsed.get("success", True) is not False
 
 
-def _successful_web_result_urls(tool_name: str, result: Any) -> set[str]:
-    """Return only URLs backed by a successful structured web result."""
-    try:
-        payload = json.loads(result) if isinstance(result, str) else result
-    except (TypeError, ValueError):
-        return set()
-    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
-        return set()
-    if isinstance(payload, dict) and "result" in payload and not any(
-        key in payload for key in ("data", "results", "url", "page_url", "current_url")
-    ):
-        nested = payload.get("result")
-        try:
-            payload = json.loads(nested) if isinstance(nested, str) else nested
-        except (TypeError, ValueError):
-            return set()
-    if not isinstance(payload, dict) or payload.get("success", True) is False or payload.get("error"):
-        return set()
-    if tool_name == "web_search":
-        raw_data = payload.get("data")
-        data = raw_data if isinstance(raw_data, dict) else {}
-        rows = data.get("web") or payload.get("web") or payload.get("results") or []
-        return {
-            str(row.get("url") or "").strip()
-            for row in rows
-            if isinstance(row, dict) and str(row.get("url") or "").strip() and not row.get("error")
-        }
-    if tool_name == "web_extract":
-        rows = payload.get("results") or []
-        return {
-            str(row.get("url") or "").strip()
-            for row in rows
-            if isinstance(row, dict)
-            and str(row.get("url") or "").strip()
-            and not row.get("error")
-            and bool(row.get("content") or row.get("raw_content"))
-        }
-    if tool_name == "browser_exec":
-        url = str(payload.get("url") or payload.get("page_url") or payload.get("current_url") or "").strip()
-        return {url} if url and bool(payload.get("title") or payload.get("content") or payload.get("output")) else set()
-    return set()
-
-
 def _record_deployment_result(
     tool_name: str,
     args: dict[str, Any],
@@ -2515,45 +2376,6 @@ def _record_deployment_result(
             }
 
 
-def _record_vault_gate_result(
-    state: dict[str, Any], tool_name: str, args: dict[str, Any], result: Any
-) -> None:
-    if not state.get("knowledge_gate") or not _result_succeeded(result):
-        return
-    if tool_name == "search_files":
-        try:
-            payload = json.loads(result) if isinstance(result, str) else result
-        except (TypeError, ValueError):
-            payload = {}
-        if isinstance(payload, dict):
-            total = payload.get("total_count")
-            positive_total = (
-                isinstance(total, (int, float)) and not isinstance(total, bool) and total > 0
-            ) or (isinstance(total, str) and total.isdigit() and int(total) > 0)
-            found = bool(payload.get("matches") or payload.get("files") or positive_total)
-        else:
-            found = False
-        state["vault_lookup_complete"] = True
-        state["vault_no_match"] = not found
-    elif tool_name == "read_file":
-        raw_path = str(args.get("path") or "")
-        try:
-            path = Path(raw_path).expanduser().resolve(strict=True)
-            if path.suffix.casefold() != ".md" or _vault_path_denial("read_file", {"path": str(path)}):
-                return
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        except OSError:
-            return
-        state["vault_lookup_complete"] = True
-        state["vault_no_match"] = False
-        state.setdefault("vault_reads", {})[str(path)] = digest
-    elif tool_name in {"web_search", "web_extract", "browser_exec"}:
-        urls = _successful_web_result_urls(tool_name, result)
-        if urls:
-            state["web_succeeded"] = True
-            state.setdefault("web_urls", set()).update(urls)
-
-
 def _post_tool_call(
     tool_name: str,
     args: dict[str, Any],
@@ -2563,10 +2385,6 @@ def _post_tool_call(
 ) -> None:
     session_id = str(kwargs.get("session_id") or "")
     effective_tool, effective_args = _effective_local_call(tool_name, args)
-    with _LOCAL_STATE_LOCK:
-        gate_state = _LOCAL_TURN_STATES.get(session_id)
-        if gate_state is not None:
-            _record_vault_gate_result(gate_state, effective_tool, effective_args, result)
     _record_deployment_result(effective_tool, effective_args, result, session_id)
     turn_key = str(kwargs.get("turn_id") or kwargs.get("task_id") or session_id or "")
     if effective_tool == "web_extract" and kwargs.get("status") != "blocked":
