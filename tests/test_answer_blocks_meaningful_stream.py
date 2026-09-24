@@ -151,7 +151,9 @@ def test_first_visible_timing_ignores_whitespace_and_rejected_sink(monkeypatch, 
     monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _: {"provider": "test"})
     monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _: None)
     monkeypatch.setattr(bridge, "_get_cached_tools", lambda _: set())
-    monkeypatch.setattr(bridge, "_resolve_dynamic_toolsets", lambda *_: [])
+    monkeypatch.setattr(
+        bridge, "_resolve_base_toolsets", lambda *_args, **_kwargs: []
+    )
     monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _: object())
     monkeypatch.setattr(bridge, "persist_agent_snapshot", lambda *_: None)
     events = queue.Queue()

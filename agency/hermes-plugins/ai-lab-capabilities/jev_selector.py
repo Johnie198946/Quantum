@@ -41,7 +41,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE: "OrderedDict[str, tuple[float, RouteDecision]]" = OrderedDict()
 _RESIDENT_MODULE: Any = None
 _VOLATILE_TASK_STATE_KEYS = {
-    "turn_id", "request_id", "trace_id", "decision_id",
+    "session_id", "turn_id", "request_id", "trace_id", "decision_id",
     "timestamp", "created_at", "updated_at",
 }
 
@@ -121,7 +121,7 @@ def validate_card(card: dict[str, Any]) -> None:
 
 
 def catalog_version(cards: Iterable[dict[str, Any]]) -> str:
-    stable = sorted((card["id"], card["version"]) for card in cards)
+    stable = sorted(cards, key=lambda card: str(card["id"]))
     raw = json.dumps(stable, ensure_ascii=False, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
@@ -395,8 +395,9 @@ def select_route(
                                   catalog_version_value=version,
                                   latency_ms=(time.perf_counter() - started) * 1000,
                                   decision_id=decision_id)
-    with _CACHE_LOCK:
-        _CACHE[digest] = (now, decision)
-        while len(_CACHE) > 512:
-            _CACHE.popitem(last=False)
+    if decision.validated:
+        with _CACHE_LOCK:
+            _CACHE[digest] = (now, decision)
+            while len(_CACHE) > 512:
+                _CACHE.popitem(last=False)
     return decision

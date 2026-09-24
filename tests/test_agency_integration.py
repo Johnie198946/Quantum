@@ -606,7 +606,8 @@ def test_wechat_goal_adds_builtin_browser_toolset_without_terminal(monkeypatch, 
         "scripts.hermes_bridge._get_cached_tools", lambda _cfg: {"web", "browser"}
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._resolve_dynamic_toolsets", lambda *_: ["web"]
+        "scripts.hermes_bridge._resolve_base_toolsets",
+        lambda *_args, **_kwargs: ["web"],
     )
     monkeypatch.setattr(
         "scripts.hermes_bridge._create_sandbox_session_db", lambda _sandbox: object()
@@ -895,7 +896,10 @@ def test_bridge_agent_disables_host_profile_and_project_context(monkeypatch, tmp
     )
     monkeypatch.setattr("scripts.hermes_bridge._get_cached_fallback", lambda _cfg: None)
     monkeypatch.setattr("scripts.hermes_bridge._get_cached_tools", lambda _cfg: set())
-    monkeypatch.setattr("scripts.hermes_bridge._resolve_dynamic_toolsets", lambda *_: [])
+    monkeypatch.setattr(
+        "scripts.hermes_bridge._resolve_base_toolsets",
+        lambda *_args, **_kwargs: [],
+    )
     monkeypatch.setattr(
         "scripts.hermes_bridge._create_sandbox_session_db",
         lambda _sandbox: object(),

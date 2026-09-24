@@ -25,6 +25,24 @@ os.environ.setdefault("HERMES_BRIDGE_INTERNAL_TOKEN", "test-internal-token")
 
 
 class TestBridgeCLIParms(unittest.TestCase):
+    def test_base_toolsets_are_permission_driven_not_goal_driven(self):
+        from scripts import hermes_bridge as bridge
+
+        cfg = {}
+        with patch.object(bridge, "_get_cached_tools", return_value={
+            "clarify", "skills", "web", "file", "terminal", "memory",
+            "session_search", "delegation",
+        }):
+            lightweight = bridge._resolve_base_toolsets(cfg, allow_local_files=False)
+            local = bridge._resolve_base_toolsets(cfg, allow_local_files=True)
+
+        self.assertNotIn("file", lightweight)
+        self.assertNotIn("terminal", lightweight)
+        self.assertNotIn("web", lightweight)
+        self.assertNotIn("delegation", lightweight)
+        self.assertIn("file", local)
+        self.assertIn("terminal", local)
+
     def test_runtime_admission_rejects_an_overflowing_queue(self):
         from scripts import hermes_bridge as bridge
 

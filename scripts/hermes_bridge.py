@@ -5302,29 +5302,17 @@ def _get_cached_fallback(cfg: dict):
     return _CACHED_FALLBACK
 
 
-def _resolve_dynamic_toolsets(goal: str, cfg: dict) -> list:
-    """工具按需动态装配（消灭 18 个全量工具 Schema 导致的 2~3s TTFT 延迟与无关干扰）：
-    - 意图分析：若目标涉及终端执行、写代码、构建部署等重度任务，挂载全量执行工具；
-    - 方案/需求/澄清/知识检索阶段：仅挂载极简轻量核心工具集（Prompt 缩减 70%，TTFT 提速 60%）。
-    """
+def _resolve_base_toolsets(cfg: dict, *, allow_local_files: bool) -> list[str]:
+    """Build a stable base from explicit local authority, never goal keywords."""
     platform_tools = set(_get_cached_tools(cfg))
-    execution_keywords = (
-        "运行", "执行", "终端", "命令", "部署", "编译", "写代码", "脚本",
-        "测试", "install", "run", "build", "npm", "git", "docker", "pip",
-        "pytest", "terminal", "subagent", "delegate", "重写", "修复代码"
-    )
-    is_execution = any(k in goal.lower() for k in execution_keywords)
-    if is_execution:
-        return sorted(list(platform_tools))
-
-    # 核心轻量对话与技能管理工具集（仅 6 个核心工具）
+    # Keep the prompt surface small and byte-stable. Request-level authorization
+    # adds network, tenant, knowledge, and Agency toolsets below.
     # Delegation is part of the normal Hermes reasoning loop, not only a coding
     # task.  Omitting it here made ``delegate_task`` impossible even when the
     # server-owned agent capability explicitly allowed it.
-    core_tools = {
-        "clarify", "skills", "web", "file", "memory", "session_search",
-        "delegation",
-    }
+    core_tools = {"clarify"}
+    if allow_local_files:
+        core_tools.update({"file", "terminal"})
     return sorted(list(core_tools & platform_tools))
 
 
@@ -6271,7 +6259,9 @@ def _build_in_process_agent(
         raise RuntimeError("tenant_sandbox_unavailable")
     persist_agent_snapshot(sandbox, agent_config)
     allowed_tools = set(str(item) for item in agent_config.get("allowed_tools") or [])
-    toolsets_list = _resolve_dynamic_toolsets(goal, cfg)
+    toolsets_list = _resolve_base_toolsets(
+        cfg, allow_local_files=allow_local_files
+    )
     knowledge_tool_enabled = bool(
         knowledge_capability
         and allowed_tools & {"knowledge_search", "user_note_search"}
@@ -6352,6 +6342,8 @@ def _build_in_process_agent(
             toolsets_list.append("knowledge_workspace")
     if allowed_tools:
         requested_toolsets = _tenant_base_toolsets(allowed_tools)
+        if allow_local_files:
+            requested_toolsets.update({"file", "terminal"})
         if network_tool_requested:
             requested_toolsets.add("web")
         if browser_fallback_requested:
@@ -6372,6 +6364,9 @@ def _build_in_process_agent(
             requested_toolsets.update(
                 {"agency_agents", "ai_lab"} & platform_tools
             )
+        toolsets_list = _include_available_toolsets(
+            toolsets_list, platform_tools, requested_toolsets
+        )
         toolsets_list = [item for item in toolsets_list if item in requested_toolsets]
     toolsets_list = _apply_triage_toolset_policy(
         toolsets_list,

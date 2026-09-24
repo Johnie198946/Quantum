@@ -2,7 +2,7 @@ import json
 from unittest.mock import patch
 
 
-def test_dynamic_chat_tools_include_delegation_when_platform_supports_it():
+def test_base_chat_tools_do_not_grant_delegation_without_request_authority():
     import scripts.hermes_bridge as bridge
 
     with patch.object(
@@ -10,8 +10,8 @@ def test_dynamic_chat_tools_include_delegation_when_platform_supports_it():
         "_get_cached_tools",
         return_value=["clarify", "skills", "web", "delegation"],
     ):
-        resolved = bridge._resolve_dynamic_toolsets("洞察超聚变的竞争优势", {})
-    assert "delegation" in resolved
+        resolved = bridge._resolve_base_toolsets({}, allow_local_files=False)
+    assert resolved == ["clarify"]
 
 
 def test_hermes_knowledge_tool_uses_query_and_capability_default_scope():

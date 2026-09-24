@@ -47,9 +47,11 @@ _WARM_CARDS: list[dict[str, Any]] = []
 _SESSION: Any = None
 _TOKENIZER: Any = None
 _CARD_IDS: list[str] = []
+_CARD_TEXTS: dict[str, str] = {}
 _CARD_EMBEDDINGS: Any = None
 _CARD_FINGERPRINT = ""
-_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="jev-resident")
+_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="jev-resident")
+_PROVIDER_SLOTS = threading.BoundedSemaphore(2)
 
 
 def _config() -> dict[str, Any]:
@@ -232,8 +234,10 @@ def _load_embeddings(cards: list[dict[str, Any]]) -> None:
         np.savez_compressed(cache_path, ids=np.asarray(ids), embeddings=embeddings)
         cache_path.chmod(0o600)
     with _LOCK:
-        global _CARD_IDS, _CARD_EMBEDDINGS, _CARD_FINGERPRINT
-        _CARD_IDS, _CARD_EMBEDDINGS, _CARD_FINGERPRINT = ids, embeddings, fingerprint
+        global _CARD_IDS, _CARD_TEXTS, _CARD_EMBEDDINGS, _CARD_FINGERPRINT
+        _CARD_IDS = ids
+        _CARD_TEXTS = {str(card["id"]): _card_text(card) for card in cards}
+        _CARD_EMBEDDINGS, _CARD_FINGERPRINT = embeddings, fingerprint
 
 
 def _semantic_cards(cards: Iterable[dict[str, Any]]) -> list[list[Any]]:
@@ -410,11 +414,16 @@ def _shortlist(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict
         if not _READY or _CARD_EMBEDDINGS is None:
             raise RuntimeError("resident_selector_not_ready")
         id_to_index = {identifier: index for index, identifier in enumerate(_CARD_IDS)}
+        card_texts = dict(_CARD_TEXTS)
         embeddings = _CARD_EMBEDDINGS
     supplied = list(payload.get("skill_candidates") or []) + list(
         payload.get("agent_candidates") or []
     )
-    if any(str(card.get("id") or "") not in id_to_index for card in supplied):
+    if any(
+        str(card.get("id") or "") not in id_to_index
+        or card_texts.get(str(card.get("id") or "")) != _card_text(card)
+        for card in supplied
+    ):
         raise RuntimeError("resident_catalog_stale")
     query = _encode([str(payload.get("request") or "")])[0]
     top_k = max(1, min(32, _integer("shortlist_per_kind", 20)))
@@ -439,6 +448,10 @@ def select(payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     """Return one bounded decision; low-affinity ordinary turns never call a model."""
     skills, agents, skill_max, agent_max = _shortlist(payload)
     threshold = min(1.0, max(-1.0, _number("fast_abstain_similarity", 0.36)))
+    if skill_max < threshold:
+        skills = []
+    if agent_max < threshold:
+        agents = []
     if skill_max < threshold and agent_max < threshold:
         return {
             "skill_id": None,
@@ -453,12 +466,32 @@ def select(payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     if not provider_ready:
         start_warmup(retry_cards)
         raise RuntimeError("resident_provider_not_ready")
-    future = _EXECUTOR.submit(
-        _provider_select,
-        dict(payload, skill_candidates=skills, agent_candidates=agents),
-    )
+    if not _PROVIDER_SLOTS.acquire(blocking=False):
+        raise RuntimeError("resident_provider_busy")
     try:
-        return future.result(timeout=max(0.01, timeout_seconds))
+        future = _EXECUTOR.submit(
+            _provider_select,
+            dict(payload, skill_candidates=skills, agent_candidates=agents),
+        )
+    except Exception:
+        _PROVIDER_SLOTS.release()
+        raise
+    future.add_done_callback(lambda _future: _PROVIDER_SLOTS.release())
+    try:
+        output = future.result(timeout=max(0.01, timeout_seconds))
     except FutureTimeout as exc:
         future.cancel()
         raise TimeoutError("resident_jev_timeout") from exc
+    skill_ids = {str(card.get("id") or "") for card in skills}
+    agent_ids = {str(card.get("id") or "") for card in agents}
+    selected_skill = output.get("skill_id")
+    selected_agent = output.get("agent_id")
+    if (
+        selected_skill is not None
+        and (not isinstance(selected_skill, str) or selected_skill not in skill_ids)
+    ) or (
+        selected_agent is not None
+        and (not isinstance(selected_agent, str) or selected_agent not in agent_ids)
+    ):
+        raise ValueError("resident_jev_candidate_escape")
+    return output
