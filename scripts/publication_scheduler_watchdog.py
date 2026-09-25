@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
-"""Advance at most one phase of the daily publication pipeline."""
+"""Conservatively recover one item-scoped phase of today's publication flow.
+
+This component is intentionally not scheduled by this repository.  It derives
+progress from validated editorial manifests and production readback, never from
+job completion timestamps.  Every dispatch is protected by a durable,
+item/material-scoped idempotency claim.
+"""
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
+import os
+import re
 import sqlite3
 import subprocess
 from contextlib import contextmanager
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 from zoneinfo import ZoneInfo
 
 STATUS_CLIENT = Path(__file__).with_name("publication_release_remote.py")
+EDITORIAL_CLIENT = Path(__file__).with_name("publication_editorial_remote.py")
+OUTPUT_ROOT = Path.home() / ".hermes/outputs/quantumn-editorial-v2"
 EXECUTIONS_DB = Path.home() / ".hermes/cron/executions.db"
+RECOVERY_DB = Path.home() / ".hermes/cron/publication-recovery.db"
 LOCK_FILE = Path.home() / ".hermes/cron/publication-scheduler-watchdog.lock"
 AUTHOR_JOBS = {
     "ai-history": "5a3f2a2eb988",
@@ -22,16 +35,51 @@ AUTHOR_JOBS = {
     "ai-toolkit": "171a125ddb63",
 }
 REVIEW_JOB = "fbd1cd1217d7"
-RELEASE_JOB = "1ad93e85cec2"
-DELIVERY_JOB = "b43e1d486861"
-TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB, RELEASE_JOB, DELIVERY_JOB)
-MAX_ROUNDS = 3
+TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB)
+SERIES = tuple(AUTHOR_JOBS)
+HASH = re.compile(r"[0-9a-f]{64}\Z")
+MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
+EVIDENCE_GROUPS = ("source_files", "rights_files", "execution_files")
+PHASE_ORDER = {"finalize": 0, "review": 1, "prepare": 2, "author": 3}
+
+
+@dataclass(frozen=True)
+class Item:
+    manifest: Path
+    series: str
+    day: str
+    material_hash: str
+    status: str
+    review_ready: bool = False
+
+
+@dataclass(frozen=True)
+class Barrier:
+    series: str
+    material_hash: str
+
+
+@dataclass(frozen=True)
+class Action:
+    phase: str
+    barriers: tuple[Barrier, ...]
+    job_id: str | None = None
+    manifest: Path | None = None
+
+
+def _default_profile_only() -> None:
+    profile = os.environ.get("HERMES_PROFILE", "default")
+    home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser().resolve()
+    if profile != "default" or home != (Path.home() / ".hermes").resolve():
+        raise RuntimeError("publication recovery is restricted to the default Hermes profile")
+    if any(part == "profiles" for part in RECOVERY_DB.expanduser().resolve().parts):
+        raise RuntimeError("cross-profile recovery state is forbidden")
 
 
 def _status() -> dict:
     completed = subprocess.run(
         [str(STATUS_CLIENT), "--status-only"], text=True, capture_output=True,
-        timeout=180, check=False,
+        timeout=180, check=False, env=_default_env(),
     )
     if completed.returncode:
         raise RuntimeError("status command failed")
@@ -44,142 +92,402 @@ def _status() -> dict:
     return value
 
 
-def _executions(day: str) -> tuple[dict[str, int], list[str], dict[str, list[float]]]:
-    uri = EXECUTIONS_DB.resolve().as_uri() + "?mode=ro"
-    with sqlite3.connect(uri, uri=True) as database:
-        rows = database.execute(
-            f"SELECT job_id, status, claimed_at, started_at, finished_at FROM executions WHERE job_id IN ({','.join('?' * len(TARGET_JOBS))})",
-            TARGET_JOBS,
-        ).fetchall()
-    active = sorted(job_id for job_id, status, *_ in rows if status in {"claimed", "running"})
-    counts = {job_id: 0 for job_id in TARGET_JOBS}
-    terminal_times: dict[str, list[float]] = {job_id: [] for job_id in TARGET_JOBS}
-    for job_id, status, claimed_at, started_at, finished_at in rows:
-        if status in {"completed", "failed"} and isinstance(claimed_at, str) and claimed_at[:10] == day:
-            counts[job_id] += 1
-            event_at = finished_at or started_at or claimed_at
-            terminal_times[job_id].append(
-                datetime.fromisoformat(str(event_at).replace("Z", "+00:00")).timestamp()
-            )
-    for times in terminal_times.values():
-        times.sort()
-    return counts, active, terminal_times
+def _default_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("HERMES_PROFILE", None)
+    env["HERMES_HOME"] = str(Path.home() / ".hermes")
+    # Recovery may use only the default profile's owner-controlled publication
+    # transport.  Never inherit a Story/profile credential override.
+    for name in tuple(env):
+        if name.startswith("STORY_"):
+            env.pop(name)
+    return env
 
 
-def _run_job(job_id: str) -> None:
-    completed = subprocess.run(
-        ["hermes", "cron", "run", job_id], text=True, capture_output=True,
-        timeout=1800, check=False,
-    )
-    if completed.returncode:
-        raise RuntimeError("cron run failed")
+def _read_json(path: Path) -> dict:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("JSON object required")
+    return value
+
+
+def _material_hash(item: dict) -> str:
+    hashes: list[tuple[str, object]] = [("body", item.get("body_sha256"))]
+    hashes.extend((role, item.get(f"{role}_sha256")) for role in MEDIA_ROLES)
+    for group in EVIDENCE_GROUPS:
+        entries = item.get(group)
+        if not isinstance(entries, list):
+            raise ValueError("manifest evidence list missing")
+        hashes.extend(
+            (f"{group}:{entry.get('kind')}", entry.get("sha256"))
+            for entry in entries if isinstance(entry, dict)
+        )
+    if any(not isinstance(digest, str) or not HASH.fullmatch(digest) for _, digest in hashes):
+        raise ValueError("material hash input missing")
+    encoded = json.dumps(sorted(hashes), ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
+    try:
+        from scripts.publication_editorial_remote import load_manifest
+    except ImportError:
+        from publication_editorial_remote import load_manifest
+
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("editorial root must be a real directory")
+    found: list[Item] = []
+    paths = sorted(set(root.rglob("draft-manifest.json")) | set(root.rglob("*.manifest.json")))
+    for candidate in paths:
+        try:
+            path, value = load_manifest(candidate)
+        except (OSError, ValueError, json.JSONDecodeError):
+            # Preserve a fail-closed marker when even a minimally safe read
+            # identifies a daily item. Invalid unrelated historical files do
+            # not poison today's recovery, but an invalid daily candidate must
+            # never be treated as if no material existed.
+            try:
+                raw = _read_json(candidate)
+                for row in raw.get("items", []):
+                    name = row.get("bundle_file") if isinstance(row, dict) else None
+                    bundle_path = (candidate.parent / name).resolve() if isinstance(name, str) else None
+                    if bundle_path is None or candidate.parent.resolve() not in bundle_path.parents:
+                        continue
+                    bundle = _read_json(bundle_path)
+                    series, day = bundle.get("series_id"), bundle.get("issue_date")
+                    if series in AUTHOR_JOBS and isinstance(day, str):
+                        marker = hashlib.sha256(str(candidate.resolve()).encode()).hexdigest()
+                        found.append(Item(candidate.resolve(), series, day, marker, "invalid"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            continue
+        for row in value["items"]:
+            bundle = _read_json(path.parent / row["bundle_file"])
+            series, day = bundle.get("series_id"), bundle.get("issue_date")
+            if series not in AUTHOR_JOBS or not isinstance(day, str):
+                continue
+            review_ready = False
+            if row["status"] == "await_review":
+                review_path = path.parent / row["review_file"]
+                if review_path.is_file() and not review_path.is_symlink():
+                    try:
+                        review_ready = _read_json(review_path).get("decision") in {"approved", "rejected"}
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        review_ready = False
+            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready))
+    return found
 
 
 def _missing(summary: dict, day: str) -> set[str]:
-    today = summary.get("today")
-    issues = summary.get("issues")
+    today, issues = summary.get("today"), summary.get("issues")
     if not isinstance(today, dict) or not isinstance(issues, dict) or today.get("date") != day:
-        raise ValueError("invalid status summary")
-    by_series = today.get("by_series")
-    missing_rows = issues.get("missing")
-    series = set(AUTHOR_JOBS)
-    if today.get("expected") != len(series) or not isinstance(by_series, dict) or set(by_series) != series:
+        raise ValueError("invalid or wrong-day status summary")
+    by_series, missing_rows = today.get("by_series"), issues.get("missing")
+    if today.get("expected") != len(SERIES) or not isinstance(by_series, dict) or set(by_series) != set(SERIES):
         raise ValueError("unexpected publication series")
-    inferred = set()
+    if not isinstance(missing_rows, list):
+        raise ValueError("invalid missing publication rows")
+    inferred: set[str] = set()
     for name, item in by_series.items():
         if not isinstance(item, dict) or item.get("published") not in {0, 1}:
             raise ValueError("invalid publication status")
         if item["published"] == 0:
             inferred.add(name)
-    if today.get("published") != len(series) - len(inferred) or not isinstance(missing_rows, list):
+    reported = {row.get("series_id") for row in missing_rows if isinstance(row, dict) and row.get("issue_date") == day}
+    if None in reported or reported != inferred or today.get("published") != len(SERIES) - len(inferred):
         raise ValueError("contradictory publication status")
-    reported = {
-        row.get("series_id") for row in missing_rows
-        if isinstance(row, dict) and row.get("issue_date") == day
-    }
-    if None in reported or reported != inferred:
-        raise ValueError("contradictory missing series")
     return inferred
 
 
-def _next_phase(
-    missing: set[str],
-    counts: dict[str, int],
-    terminal_times: dict[str, list[float]],
-) -> tuple[str, int, list[str]] | None:
-    author_jobs = list(dict.fromkeys(AUTHOR_JOBS[series] for series in AUTHOR_JOBS if series in missing))
-    last_release = max(terminal_times[RELEASE_JOB], default=float("-inf"))
-    due_authors = [
-        job_id for job_id in author_jobs
-        if not any(event_at > last_release for event_at in terminal_times[job_id])
-    ]
-    if due_authors:
-        eligible = [job_id for job_id in due_authors if counts[job_id] < MAX_ROUNDS]
-        if not eligible:
-            return None
-        round_number = max(counts[job_id] for job_id in eligible) + 1
-        return "author", round_number, eligible
+def _absent_hash(day: str, series: str, terminal: Sequence[Item]) -> str:
+    payload = {"day": day, "series": series, "terminal_materials": sorted(i.material_hash for i in terminal)}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
-    author_barrier = max(
-        max(event_at for event_at in terminal_times[job_id] if event_at > last_release)
-        for job_id in author_jobs
+
+def _plan(day: str, missing: set[str], items: Sequence[Item]) -> tuple[Action | None, str]:
+    today = [item for item in items if item.day == day and item.series in SERIES]
+    desired: dict[str, Action] = {}
+    invalid_series: set[str] = set()
+    for series in sorted(missing):
+        rows = [item for item in today if item.series == series]
+        if any(item.status == "invalid" for item in rows):
+            invalid_series.add(series)
+            continue
+        active = [item for item in rows if item.status in {"prepared", "await_review", "staged"}]
+        groups = {item.material_hash for item in active}
+        if len(groups) > 1:
+            return None, "ambiguous_manifests"
+        if active and any((item.status, item.review_ready) != (active[0].status, active[0].review_ready) for item in active[1:]):
+            return None, "ambiguous_manifests"
+        barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(day, series, rows))
+        if not active:
+            desired[series] = Action("author", (barrier,), job_id=AUTHOR_JOBS[series])
+        else:
+            item = active[0]
+            if item.status == "prepared":
+                desired[series] = Action("prepare", (barrier,), manifest=item.manifest)
+            elif item.status == "await_review" and not item.review_ready:
+                desired[series] = Action("review", (barrier,), job_id=REVIEW_JOB, manifest=item.manifest)
+            elif item.status == "await_review":
+                desired[series] = Action("finalize", (barrier,), manifest=item.manifest)
+            else:
+                # Staged items have passed five-image and signed editorial gates.
+                # The normal deterministic release job remains the only publisher;
+                # recovery must not start a second publisher.
+                continue
+    if not desired:
+        if invalid_series:
+            return None, "invalid_manifest"
+        return None, "awaiting_release" if missing else "complete"
+    phase = min((action.phase for action in desired.values()), key=PHASE_ORDER.__getitem__)
+    phase_actions = [action for action in desired.values() if action.phase == phase]
+    if phase == "author":
+        first = phase_actions[0]
+        same_job = [a for a in phase_actions if a.job_id == first.job_id]
+        # A shared author job can touch every series in its declared scope.  Run
+        # it only when every currently missing series in that scope is claimed.
+        scope_missing = {s for s in missing if AUTHOR_JOBS[s] == first.job_id}
+        claimed = {b.series for a in same_job for b in a.barriers}
+        if claimed != scope_missing:
+            return None, "ambiguous_author_scope"
+        return Action("author", tuple(b for a in same_job for b in a.barriers), job_id=first.job_id), "ready"
+    action = phase_actions[0]
+    if phase == "review":
+        global_pending = sorted(
+            (i for i in items if i.status == "await_review" and not i.review_ready),
+            key=lambda item: str(item.manifest),
+        )
+        if not global_pending:
+            return None, "review_scope_not_unique"
+        first = global_pending[0]
+        matching = [
+            candidate for candidate in phase_actions
+            if candidate.manifest == first.manifest
+            and candidate.barriers[0].material_hash == first.material_hash
+        ]
+        # publication_review_input scans sorted manifests and consumes at most
+        # one. Claim exactly that same first item; an older/out-of-scope pending
+        # item must be reconciled rather than silently crossed.
+        if len(matching) != 1:
+            return None, "review_scope_not_unique"
+        action = matching[0]
+    return action, "ready"
+
+
+def _owner_alive(pid: int, process_started_at: int | None) -> bool | None:
+    if not isinstance(pid, int) or pid <= 0 or not isinstance(process_started_at, int):
+        return None
+    completed = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "lstart="], text=True, capture_output=True,
+        timeout=5, check=False,
     )
-    reviews = [event_at for event_at in terminal_times[REVIEW_JOB] if event_at > author_barrier]
-    round_number = max(counts[job_id] for job_id in author_jobs)
-    if not reviews:
-        return "review", round_number, [REVIEW_JOB]
-    review_barrier = max(reviews)
-    if not any(event_at > review_barrier for event_at in terminal_times[RELEASE_JOB]):
-        return "release", round_number, [RELEASE_JOB]
-    return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return False
+    try:
+        started = datetime.strptime(completed.stdout.strip(), "%a %b %d %H:%M:%S %Y").timestamp()
+    except ValueError:
+        return None
+    # Hermes records process creation in centiseconds.  A PID reused by a new
+    # process is not the live owner of the old execution.
+    return abs(round(started * 100) - process_started_at) <= 100
+
+
+def _execution_blockers(
+    day: str,
+    database: Path = EXECUTIONS_DB,
+    owner_alive: Callable[[int, int | None], bool | None] = _owner_alive,
+) -> list[str]:
+    uri = database.expanduser().resolve().as_uri() + "?mode=ro"
+    with sqlite3.connect(uri, uri=True) as connection:
+        rows = connection.execute(
+            f"SELECT id,job_id,status,pid,process_started_at,claimed_at,finished_at FROM executions WHERE job_id IN ({','.join('?' * len(TARGET_JOBS))}) AND status IN ('claimed','running','unknown')",
+            TARGET_JOBS,
+        ).fetchall()
+    blockers: list[str] = []
+    for execution_id, job_id, status, pid, started, claimed_at, finished_at in rows:
+        # An unknown row with a persisted finish timestamp is terminal by
+        # definition: the scheduler already recorded that its owner exited.
+        # Its old/reused PID must never keep recovery blocked.
+        alive = False if status == "unknown" and finished_at else owner_alive(pid, started)
+        if status == "unknown":
+            if isinstance(claimed_at, str) and claimed_at[:10] == day:
+                suffix = "live" if alive is True else "unverified" if alive is None else "dead"
+                blockers.append(f"{job_id}:{execution_id}:unknown-{suffix}")
+            continue
+        if alive is not False:
+            blockers.append(f"{job_id}:{execution_id}:{'live' if alive else 'unverified'}")
+    return sorted(blockers)
+
+
+class Claims:
+    MAX_ATTEMPTS = 3
+    DISPATCH_RETRY_AFTER = timedelta(minutes=45)
+
+    def __init__(self, path: Path = RECOVERY_DB):
+        self.path = path
+
+    def _connect(self) -> sqlite3.Connection:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("""CREATE TABLE IF NOT EXISTS recovery_claims (
+            idempotency_key TEXT PRIMARY KEY, day TEXT NOT NULL, series TEXT NOT NULL,
+            material_hash TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL,
+            owner_pid INTEGER NOT NULL, owner_started_at INTEGER NOT NULL,
+            created_at TEXT NOT NULL, finished_at TEXT, attempts INTEGER NOT NULL DEFAULT 1
+        )""")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(recovery_claims)")}
+        if "attempts" not in columns:
+            db.execute("ALTER TABLE recovery_claims ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1")
+        return db
+
+    @staticmethod
+    def key(day: str, phase: str, barrier: Barrier) -> str:
+        return f"publication-recovery-v1:{day}:{barrier.series}:{barrier.material_hash}:{phase}"
+
+    def claim(self, day: str, action: Action) -> bool:
+        now = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+        completed = subprocess.run(
+            ["ps", "-p", str(os.getpid()), "-o", "lstart="], text=True, capture_output=True,
+            timeout=5, check=False,
+        )
+        try:
+            owner_started = round(datetime.strptime(completed.stdout.strip(), "%a %b %d %H:%M:%S %Y").timestamp() * 100)
+        except ValueError as exc:
+            raise RuntimeError("cannot establish recovery claim owner identity") from exc
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            keys = [self.key(day, action.phase, barrier) for barrier in action.barriers]
+            rows = {
+                key: db.execute(
+                    "SELECT state,owner_pid,owner_started_at,attempts,finished_at FROM recovery_claims WHERE idempotency_key=?",
+                    (key,),
+                ).fetchone()
+                for key in keys
+            }
+            for row in rows.values():
+                if row is None:
+                    continue
+                state, pid, started, attempts, finished_at = row
+                if state == "completed" or attempts >= self.MAX_ATTEMPTS:
+                    db.rollback()
+                    return False
+                if state == "dispatched":
+                    try:
+                        finished = datetime.fromisoformat(finished_at)
+                    except (TypeError, ValueError):
+                        db.rollback()
+                        return False
+                    if datetime.now(ZoneInfo("Asia/Shanghai")) - finished < self.DISPATCH_RETRY_AFTER:
+                        db.rollback()
+                        return False
+                if state == "running" and _owner_alive(pid, started) is not False:
+                    db.rollback()
+                    return False
+            for key, barrier in zip(keys, action.barriers, strict=True):
+                row = rows[key]
+                if row is None:
+                    db.execute(
+                        "INSERT INTO recovery_claims VALUES (?,?,?,?,?,'running',?,?,?,NULL,1)",
+                        (key, day, barrier.series, barrier.material_hash, action.phase, os.getpid(), owner_started, now),
+                    )
+                else:
+                    db.execute(
+                        "UPDATE recovery_claims SET state='running',owner_pid=?,owner_started_at=?,created_at=?,finished_at=NULL,attempts=attempts+1 WHERE idempotency_key=?",
+                        (os.getpid(), owner_started, now, key),
+                    )
+            db.commit()
+        return True
+
+    def finish(self, day: str, action: Action, state: str) -> None:
+        if state not in {"completed", "dispatched", "failed"}:
+            raise ValueError("invalid claim terminal state")
+        now = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for barrier in action.barriers:
+                db.execute(
+                    "UPDATE recovery_claims SET state=?,finished_at=? WHERE idempotency_key=? AND state='running'",
+                    (state, now, self.key(day, action.phase, barrier)),
+                )
+            db.commit()
+
+
+def _run_action(action: Action) -> None:
+    if action.phase in {"author", "review"}:
+        assert action.job_id is not None
+        command = ["hermes", "cron", "run", action.job_id]
+        timeout = 1800
+    elif action.phase == "prepare":
+        assert action.manifest is not None
+        command = [str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]
+        timeout = 600
+    elif action.phase == "finalize":
+        assert action.manifest is not None
+        command = [str(EDITORIAL_CLIENT), "finalize", "--root", str(action.manifest.parent)]
+        timeout = 600
+    else:
+        raise ValueError("unsupported recovery phase")
+    completed = subprocess.run(command, text=True, capture_output=True, timeout=timeout, check=False, env=_default_env())
+    if completed.returncode:
+        raise RuntimeError("recovery action failed")
 
 
 def supervise(
     day: str,
+    *,
     status: Callable[[], dict] = _status,
-    executions: Callable[[str], tuple[dict[str, int], list[str], dict[str, list[float]]]] = _executions,
-    run_job: Callable[[str], None] = _run_job,
+    load_items: Callable[[], list[Item]] = _manifest_items,
+    blockers: Callable[[str], list[str]] = _execution_blockers,
+    run_action: Callable[[Action], None] = _run_action,
+    claims: Claims | None = None,
 ) -> dict:
-    summary = status()
-    missing = _missing(summary, day)
-    counts, active, terminal_times = executions(day)
-    if set(counts) != set(TARGET_JOBS) or any(not isinstance(value, int) or value < 0 for value in counts.values()):
-        raise ValueError("invalid execution counts")
-    if set(terminal_times) != set(TARGET_JOBS) or any(
-        any(not isinstance(event_at, (int, float)) for event_at in times)
-        for times in terminal_times.values()
-    ):
-        raise ValueError("invalid execution timeline")
-    if active:
-        return {"ok": True, "action": "none", "reason": "active", "job_ids": active}
-    if not missing:
-        if terminal_times[DELIVERY_JOB]:
-            return {"ok": True, "action": "none", "reason": "complete"}
-        planned = "delivery", 1, [DELIVERY_JOB]
-    else:
-        planned = _next_phase(missing, counts, terminal_times)
-        if planned is None:
-            return {"ok": True, "action": "none", "reason": "round_limit", "missing": sorted(missing)}
-    phase, round_number, job_ids = planned
-    triggered = []
-    for job_id in job_ids:
+    _default_profile_only()
+    missing = _missing(status(), day)
+    items = load_items()
+    action, reason = _plan(day, missing, items)
+    if action is None:
+        return {"ok": True, "action": "none", "reason": reason, "missing": sorted(missing)}
+    active = blockers(day)
+    hard_blockers = [entry for entry in active if not entry.endswith(":unknown-dead")]
+    # Dead unknown executions are reconciled from immutable item/production
+    # state. The durable dispatch claim supplies the bounded retry cooldown;
+    # live or unverifiable owners still block every action.
+    if hard_blockers:
+        return {"ok": True, "action": "none", "reason": "execution_blocked", "executions": sorted(set(hard_blockers))}
+    ledger = claims or Claims()
+    if not ledger.claim(day, action):
+        return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase}
+    try:
+        run_action(action)
+    except Exception:
         try:
-            run_job(job_id)
-            triggered.append(job_id)
+            missing_after = _missing(status(), day)
         except Exception:
+            missing_after = set(SERIES)
+        if all(barrier.series not in missing_after for barrier in action.barriers):
+            ledger.finish(day, action, "completed")
             return {
-                "ok": False, "action": "partial" if triggered else "none", "reason": "trigger_failed",
-                "phase": phase, "round": round_number, "job_ids": triggered,
+                "ok": True,
+                "action": "reconciled",
+                "phase": action.phase,
+                "series": sorted(barrier.series for barrier in action.barriers),
             }
+        ledger.finish(day, action, "failed")
+        return {"ok": False, "action": "none", "reason": "trigger_failed", "phase": action.phase}
+    ledger.finish(day, action, "dispatched" if action.phase in {"author", "review"} else "completed")
     return {
-        "ok": True, "action": "triggered", "phase": phase, "round": round_number,
-        "job_ids": triggered, "missing": sorted(missing),
+        "ok": True, "action": "triggered", "phase": action.phase,
+        "series": sorted(barrier.series for barrier in action.barriers),
+        "material_hashes": sorted(barrier.material_hash for barrier in action.barriers),
     }
 
 
 @contextmanager
 def _exclusive_lock(path: Path = LOCK_FILE) -> Iterator[bool]:
-    with path.open("a+", encoding="utf-8") as lock:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a+") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -191,18 +499,7 @@ def _exclusive_lock(path: Path = LOCK_FILE) -> Iterator[bool]:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def _alert_failure() -> None:
-    subprocess.run(
-        ["hermes", "cron", "run", DELIVERY_JOB],
-        text=True,
-        capture_output=True,
-        timeout=60,
-        check=False,
-    )
-
-
 def main() -> int:
-    result: dict
     try:
         with _exclusive_lock() as acquired:
             if not acquired:
@@ -213,11 +510,6 @@ def main() -> int:
     except Exception:
         result = {"ok": False, "action": "none", "reason": "error"}
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
-    if not result["ok"] or result.get("reason") == "round_limit":
-        try:
-            _alert_failure()
-        except Exception:
-            pass
     return 0 if result["ok"] else 1
 
 
