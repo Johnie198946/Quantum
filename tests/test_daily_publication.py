@@ -17,7 +17,8 @@ from fastapi import HTTPException
 from backend.api import chat, knowledge, knowledge_publication, subscriptions
 from backend.services.knowledge_policy import KnowledgePolicy
 from backend.services.knowledge_publication_store import (
-    PUBLICATION_CATEGORY, PublicationError, PublicationStore, reader_sections, receipt_set_hash,
+    DAILY_MEDIA_REQUIRED_FROM, PUBLICATION_CATEGORY, PublicationError, PublicationStore,
+    reader_sections, receipt_set_hash,
 )
 
 
@@ -123,6 +124,38 @@ def test_all_daily_series_require_covers_and_illustration(tmp_path, series, miss
     item = store.stage(value, now=at(3))
     assert item["state"] == "blocked"
     assert "required_publication_media_missing" in item["blocked_reasons"]
+
+
+def test_pre_media_published_edition_remains_visible_without_new_assets(tmp_path):
+    store = PublicationStore(tmp_path)
+    item = stage(store, now=at(3))
+    assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+
+    # Emulate the immutable bundle of an edition published before the media gate.
+    db = store._connect()
+    try:
+        value = json.loads(db.execute(
+            "SELECT bundle_json FROM editions WHERE edition_id=?", (item["edition_id"],)
+        ).fetchone()[0])
+        value["assets"] = []
+        db.execute("UPDATE editions SET bundle_json=? WHERE edition_id=?",
+                   (json.dumps(value), item["edition_id"]))
+        db.commit()
+    finally:
+        db.close()
+
+    assert [book["edition_id"] for book in store.published(now=at(5))] == [item["edition_id"]]
+    assert store.get_published(item["publication_id"], now=at(5)) is not None
+
+    # The same media-less bundle cannot become a newly published edition.
+    db = store._connect()
+    try:
+        db.execute("UPDATE editions SET actual_release_at=? WHERE edition_id=?",
+                   (DAILY_MEDIA_REQUIRED_FROM.isoformat(), item["edition_id"]))
+        db.commit()
+    finally:
+        db.close()
+    assert store.published(now=at(5, day=25)) == []
 
 
 @pytest.mark.parametrize("roles", [

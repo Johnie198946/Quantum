@@ -48,6 +48,8 @@ PUBLICATION_MEDIA = {
     **{f"illustration_{index:02d}": {"size": (1600, 900), "kind": "publication_illustration"}
        for index in range(1, 4)},
 }
+# Editions released before the visual-media gate retain their frozen publication contract.
+DAILY_MEDIA_REQUIRED_FROM = datetime(2026, 9, 25, 2, 17, 28, tzinfo=timezone.utc)
 _IMAGE_MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg"}
 
 
@@ -704,7 +706,13 @@ class PublicationStore:
             reasons.append("intake_receipt_missing_or_hash_mismatch")
         if not self._media_assets_valid(db, bundle):
             reasons.append("publication_media_invalid")
-        if SERIES.get(row["series_id"], {}).get("kind") == "daily" and not legacy and not self._required_daily_media_present(bundle):
+        try:
+            predates_media_gate = (row["state"] == "published" and
+                _parse_datetime(row["actual_release_at"], "actual_release_at") < DAILY_MEDIA_REQUIRED_FROM)
+        except PublicationError:
+            predates_media_gate = False
+        if (SERIES.get(row["series_id"], {}).get("kind") == "daily" and not legacy
+                and not predates_media_gate and not self._required_daily_media_present(bundle)):
             reasons.append("required_publication_media_missing")
         if SERIES.get(row["series_id"], {}).get("kind") == "daily" and not legacy:
             try:
