@@ -3,10 +3,10 @@
 - canonical_task: `hermes-jev-semantic-capability-migration`
 - parent_change: `ops/change-manifests/jev-bridge-latency-precision-refactor-20260925-completion.md`
 - implementation_commits:
-  - `68d57c3f810c2ea465325532a12121fc2cd4e6d5`
-  - `ec2c528` (post-review single-path and protocol corrections)
-  - `27c60c22b894344af601000c7f6cd7088c2f4b3a` (fail-closed Skill audit mutation)
-- status: `COMMITTED_LOCAL_NOT_PUSHED`
+  - `28552a2` (formal PCM Skills and single-JEV projection)
+  - `a32d3e6` (post-review single-path and protocol corrections)
+  - `df615a6` (fail-closed Skill audit mutation)
+- status: `IMPLEMENTATION_COMPLETE`
 - date: `2026-09-25`
 
 ## Scope completed
