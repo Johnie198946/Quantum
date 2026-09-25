@@ -29,7 +29,7 @@ class TestBridgeCLIParms(unittest.TestCase):
         from scripts import hermes_bridge as bridge
 
         cfg = {}
-        with patch.object(bridge, "_get_cached_tools", return_value={
+        with patch.object(bridge.agent_config, "_get_cached_tools", return_value={
             "clarify", "skills", "web", "file", "terminal", "memory",
             "session_search", "delegation",
         }):
@@ -47,26 +47,27 @@ class TestBridgeCLIParms(unittest.TestCase):
         from scripts import hermes_bridge as bridge
 
         async def run() -> None:
+            runtime = bridge.contracts
             original = (
-                bridge._semaphore,
-                bridge.MAX_QUEUED_REQUESTS,
-                bridge._queued_requests,
+                runtime._semaphore,
+                runtime.MAX_QUEUED_REQUESTS,
+                runtime._queued_requests,
             )
-            bridge._semaphore = asyncio.Semaphore(1)
-            bridge.MAX_QUEUED_REQUESTS = 0
-            bridge._queued_requests = 0
-            await bridge._semaphore.acquire()
+            runtime._semaphore = asyncio.Semaphore(1)
+            runtime.MAX_QUEUED_REQUESTS = 0
+            runtime._queued_requests = 0
+            await runtime._semaphore.acquire()
             try:
                 with self.assertRaises(Exception) as raised:
                     async with bridge._admit_request():
                         pass
                 self.assertEqual(raised.exception.detail, "runtime_capacity_exceeded")
             finally:
-                bridge._semaphore.release()
+                runtime._semaphore.release()
                 (
-                    bridge._semaphore,
-                    bridge.MAX_QUEUED_REQUESTS,
-                    bridge._queued_requests,
+                    runtime._semaphore,
+                    runtime.MAX_QUEUED_REQUESTS,
+                    runtime._queued_requests,
                 ) = original
 
         asyncio.run(run())
@@ -87,7 +88,7 @@ class TestBridgeCLIParms(unittest.TestCase):
         body = bridge.ClarificationBridgeRequest(
             tenant_id="tenant", workflow_id="workflow", goal="clear goal",
         )
-        with patch.object(bridge, "_admit_request", denied):
+        with patch.object(bridge.contracts, "_admit_request", denied):
             with self.assertRaises(Exception) as raised:
                 asyncio.run(bridge.clarify_workflow(body, "test-internal-token"))
         self.assertEqual(raised.exception.status_code, 503)
@@ -143,10 +144,12 @@ class TestBridgeCLIParms(unittest.TestCase):
     def test_every_agent_constructor_uses_the_shared_profile_isolation_guard(self):
         import scripts.hermes_bridge as bridge
 
-        source = Path(bridge.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
+        trees = [
+            ast.parse(path.read_text(encoding="utf-8"))
+            for path in Path(bridge.__file__).with_name("hermes_bridge_runtime").glob("*.py")
+        ]
         constructors = [
-            node for node in ast.walk(tree)
+            node for tree in trees for node in ast.walk(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
             and node.func.id == "AIAgent"
@@ -156,8 +159,12 @@ class TestBridgeCLIParms(unittest.TestCase):
             self.assertTrue(any(
                 keyword.arg is None
                 and isinstance(keyword.value, ast.Call)
-                and isinstance(keyword.value.func, ast.Name)
-                and keyword.value.func.id == "_isolated_agent_context_kwargs"
+                and (
+                    isinstance(keyword.value.func, ast.Name)
+                    and keyword.value.func.id == "_isolated_agent_context_kwargs"
+                    or isinstance(keyword.value.func, ast.Attribute)
+                    and keyword.value.func.attr == "_isolated_agent_context_kwargs"
+                )
                 for keyword in constructor.keywords
             ))
         self.assertEqual(bridge._isolated_agent_context_kwargs(), {
@@ -213,7 +220,7 @@ class TestBridgeCLIParms(unittest.TestCase):
             ("secret", "wrong", 401),
         ):
             with self.subTest(configured=configured, supplied=supplied):
-                with patch.object(bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", configured):
+                with patch.object(bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", configured):
                     with self.assertRaises(HTTPException) as raised:
                         asyncio.run(bridge.chat(body, supplied))
                     self.assertEqual(raised.exception.status_code, status)
@@ -221,11 +228,11 @@ class TestBridgeCLIParms(unittest.TestCase):
         async def accepted(*_args):
             return {"reply": "ok"}
 
-        with patch.object(bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret"), patch.object(
-            bridge, "_legacy_nonstream_chat", accepted
+        with patch.object(bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret"), patch.object(
+            bridge.endpoints, "_legacy_nonstream_chat", accepted
         ):
             self.assertEqual(asyncio.run(bridge.chat(body, "secret")), {"reply": "ok"})
-        with patch.object(bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret"):
+        with patch.object(bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret"):
             with self.assertRaises(HTTPException) as raised:
                 asyncio.run(bridge.chat_stream(body, None))
             self.assertEqual(raised.exception.status_code, 401)
@@ -347,7 +354,7 @@ class TestBridgeCLIParms(unittest.TestCase):
             stderr="sensitive provider diagnostics",
         )
         body = bridge.GoalRequest(goal="test", session_id="provider-failure")
-        with patch.object(bridge, "_resolve_hermes_session", return_value=None):
+        with patch.object(bridge.session_runtime, "_resolve_hermes_session", return_value=None):
             with self.assertRaises(HTTPException) as raised:
                 asyncio.run(bridge.chat(body, "test-internal-token"))
 
@@ -472,7 +479,7 @@ class TestSessionExistsAssertion(unittest.TestCase):
         """存在的 session 返回 True。"""
         import importlib
         import scripts.hermes_bridge as bridge
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             self.assertTrue(bridge._session_exists("valid_sid"))
 
     @patch.dict(os.environ, {"HERMES_STATE_DB": ""})
@@ -480,22 +487,22 @@ class TestSessionExistsAssertion(unittest.TestCase):
         """不存在的 session 返回 False。"""
         import importlib
         import scripts.hermes_bridge as bridge
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             self.assertFalse(bridge._session_exists("nonexistent_sid"))
 
     @patch("scripts.hermes_bridge.subprocess.run")
-    @patch("scripts.hermes_bridge._session_exists")
+    @patch("scripts.hermes_bridge_runtime.persistence._session_exists")
     def test_invalid_session_triggers_new(self, mock_exists, mock_run):
         """映射存在但 session 无效时→清除映射→新建（不 fallback）。"""
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
         # 设置：user 映射到无效 session
-        bridge._user_session_map = {"user_1001": "dead_sid"}
+        bridge.persistence._user_session_map = {"user_1001": "dead_sid"}
         mock_exists.return_value = False  # session 不存在
 
         # mock _run_hermes 返回新 session
-        with patch("scripts.hermes_bridge._run_hermes") as mock_hermes:
+        with patch("scripts.hermes_bridge_runtime.persistence._run_hermes") as mock_hermes:
             mock_hermes.return_value = ("回复内容", "new_session_id")
             import asyncio
             body = GoalRequest(goal="你好", session_id="user_1001")
@@ -506,18 +513,18 @@ class TestSessionExistsAssertion(unittest.TestCase):
             self.assertTrue(called_goal.endswith("【用户问题】你好"))
             self.assertIsNone(called_session)
             # 验证：映射已更新为新 session
-            self.assertEqual(bridge._user_session_map["user_1001"], "new_session_id")
+            self.assertEqual(bridge.persistence._user_session_map["user_1001"], "new_session_id")
             # 验证：返回新 session_id
             self.assertEqual(result["hermes_session_id"], "new_session_id")
 
         # 清理
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
 
 
 class TestContextCoherence(unittest.TestCase):
     """验收项 #4: 原生上下文连贯性（R1李四→R2答李四）。"""
 
-    @patch("scripts.hermes_bridge._session_exists")
+    @patch("scripts.hermes_bridge_runtime.persistence._session_exists")
     @patch("scripts.hermes_bridge.subprocess.run")
     def test_resume_preserves_context(self, mock_run, mock_exists):
         """后续对话使用 --resume 恢复原生 session（上下文连贯）。"""
@@ -525,7 +532,7 @@ class TestContextCoherence(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         # 设置：user_1001 已有有效 session
-        bridge._user_session_map = {"user_1001": "existing_sid"}
+        bridge.persistence._user_session_map = {"user_1001": "existing_sid"}
         mock_exists.return_value = True
 
         # R1: "你好我叫李四"
@@ -561,20 +568,20 @@ class TestContextCoherence(unittest.TestCase):
         self.assertEqual(result_r2["reply"], "你是李四")
 
         # 清理
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
 
 
 class TestConcurrencyIsolation(unittest.TestCase):
     """验收项 #5: 并发 Session 捕获隔离。"""
 
-    @patch("scripts.hermes_bridge._session_exists")
+    @patch("scripts.hermes_bridge_runtime.persistence._session_exists")
     @patch("scripts.hermes_bridge.subprocess.run")
     def test_concurrent_users_isolated(self, mock_run, mock_exists):
         """并发 2 个新 user 各自捕获独立 session_id（mapping 不乱序）。"""
         from scripts.hermes_bridge import chat, GoalRequest
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
         mock_exists.return_value = False
 
         call_count = {"n": 0}
@@ -608,15 +615,15 @@ class TestConcurrencyIsolation(unittest.TestCase):
         result_a, result_b = asyncio.run(run_concurrent())
 
         # 验证：每个 user 映射到独立 session
-        self.assertIn("user_A", bridge._user_session_map)
-        self.assertIn("user_B", bridge._user_session_map)
+        self.assertIn("user_A", bridge.persistence._user_session_map)
+        self.assertIn("user_B", bridge.persistence._user_session_map)
         # 验证：mapping 不重复
-        sid_a = bridge._user_session_map["user_A"]
-        sid_b = bridge._user_session_map["user_B"]
+        sid_a = bridge.persistence._user_session_map["user_A"]
+        sid_b = bridge.persistence._user_session_map["user_B"]
         self.assertNotEqual(sid_a, sid_b)
 
         # 清理
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
 
 
 class TestDrillMeSteering(unittest.TestCase):
@@ -855,8 +862,8 @@ class TestDurableWorkflowPlanningBridge(unittest.TestCase):
     def setUp(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._planning_runs = {}
-        bridge._planning_threads = {}
+        bridge.persistence._planning_runs = {}
+        bridge.contracts._planning_threads = {}
 
     def request(self, key: str = "workflow-plan:wf_1:v1"):
         from scripts.hermes_bridge import WorkflowPlanningStartRequest
@@ -875,8 +882,8 @@ class TestDurableWorkflowPlanningBridge(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         async def run():
-            with patch.object(bridge, "_start_planning_thread"), patch.object(
-                bridge, "_save_planning_runs"
+            with patch.object(bridge.workflow_runtime, "_start_planning_thread"), patch.object(
+                bridge.persistence, "_save_planning_runs"
             ):
                 first = await bridge.start_workflow_plan(
                     self.request(), "test-internal-token"
@@ -884,7 +891,7 @@ class TestDurableWorkflowPlanningBridge(unittest.TestCase):
                 second = await bridge.start_workflow_plan(
                     self.request(), "test-internal-token"
                 )
-                run = bridge._planning_runs[first["run_id"]]
+                run = bridge.persistence._planning_runs[first["run_id"]]
                 bridge._planning_event(run, "skill_load", "加载技能: research")
                 bridge._planning_event(run, "tool_call", "调用工具: search_files")
                 status = await bridge.workflow_plan_status(
@@ -901,8 +908,8 @@ class TestDurableWorkflowPlanningBridge(unittest.TestCase):
         from fastapi import HTTPException
 
         async def run():
-            with patch.object(bridge, "_start_planning_thread"), patch.object(
-                bridge, "_save_planning_runs"
+            with patch.object(bridge.workflow_runtime, "_start_planning_thread"), patch.object(
+                bridge.persistence, "_save_planning_runs"
             ):
                 await bridge.start_workflow_plan(
                     self.request(), "test-internal-token"

@@ -48,7 +48,7 @@ def test_skill_tool_event_type_is_stable_across_start_and_completion():
 
 
 def test_duplicate_terminal_tool_callback_reuses_bridge_event(monkeypatch):
-    monkeypatch.setattr(bridge, "_save_workflow_runs", lambda: None)
+    monkeypatch.setattr(bridge.persistence, "_save_workflow_runs", lambda: None)
     run = {"execution_id": "run-1", "events": [], "next_seq": 1}
     first = bridge._workflow_event(
         run,

@@ -594,25 +594,25 @@ def test_wechat_goal_adds_builtin_browser_toolset_without_terminal(monkeypatch, 
     setattr(run_agent, "AIAgent", FakeAgent)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_config",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_config",
         lambda: {"model": {"default": "test-model"}},
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_runtime",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_runtime",
         lambda _cfg: {"provider": "test", "api_key": "test", "base_url": None},
     )
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_fallback", lambda _cfg: None)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_tools", lambda _cfg: {"web", "browser"}
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_tools", lambda _cfg: {"web", "browser"}
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._resolve_base_toolsets",
+        "scripts.hermes_bridge_runtime.agent_config._resolve_base_toolsets",
         lambda *_args, **_kwargs: ["web"],
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._create_sandbox_session_db", lambda _sandbox: object()
+        "scripts.hermes_bridge_runtime.agent_config._create_sandbox_session_db", lambda _sandbox: object()
     )
-    monkeypatch.setattr("scripts.hermes_bridge.persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_execution.persist_agent_snapshot", lambda *_: None)
     monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
     sandbox = types.SimpleNamespace(
         root=tmp_path / "tenant-root",
@@ -835,10 +835,10 @@ def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_pa
             observed["db_closed"] = True
 
     monkeypatch.setattr(
-        "scripts.hermes_bridge._build_in_process_agent",
+        "scripts.hermes_bridge_runtime.agent_execution._build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr("scripts.hermes_bridge._update_session_mapping", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.session_runtime._update_session_mapping", lambda *_: None)
 
     events: queue.Queue = queue.Queue()
     sandbox = types.SimpleNamespace(
@@ -887,24 +887,24 @@ def test_bridge_agent_disables_host_profile_and_project_context(monkeypatch, tmp
     setattr(run_agent, "AIAgent", FakeAgent)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_config",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_config",
         lambda: {"model": {"default": "test-model"}},
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_runtime",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_runtime",
         lambda _cfg: {"provider": "test", "api_key": "test", "base_url": None},
     )
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_fallback", lambda _cfg: None)
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_tools", lambda _cfg: set())
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_tools", lambda _cfg: set())
     monkeypatch.setattr(
-        "scripts.hermes_bridge._resolve_base_toolsets",
+        "scripts.hermes_bridge_runtime.agent_config._resolve_base_toolsets",
         lambda *_args, **_kwargs: [],
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._create_sandbox_session_db",
+        "scripts.hermes_bridge_runtime.agent_config._create_sandbox_session_db",
         lambda _sandbox: object(),
     )
-    monkeypatch.setattr("scripts.hermes_bridge.persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_execution.persist_agent_snapshot", lambda *_: None)
     monkeypatch.setattr(
         "agent.runtime_cwd.set_session_cwd",
         lambda value: captured.__setitem__("session_cwd", value),

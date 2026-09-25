@@ -609,7 +609,10 @@ def test_theme_schema_rejects_unknown_or_incomplete_fields():
 def test_bridge_theme_validation_stays_inside_bridge_worker_dependencies():
     from pathlib import Path
 
-    bridge_source = Path("scripts/hermes_bridge.py").read_text()
+    bridge_source = "\n".join(
+        path.read_text()
+        for path in Path("scripts/hermes_bridge_runtime").glob("*.py")
+    )
     scenario_source = Path("backend/services/presentation_scenario.py").read_text()
     assert "presentation_scenario import validate_theme" in bridge_source
     assert "from pptx" not in scenario_source
@@ -905,9 +908,9 @@ def test_hermes_gate_rejects_stale_version_and_records_current_approval(monkeypa
             "edges": [],
         },
     }
-    monkeypatch.setattr(bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret")
-    monkeypatch.setattr(bridge, "_start_workflow_thread", lambda execution_id: None)
-    monkeypatch.setattr(bridge, "_save_workflow_runs", lambda: None)
+    monkeypatch.setattr(bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "secret")
+    monkeypatch.setattr(bridge.workflow_runtime, "_start_workflow_thread", lambda execution_id: None)
+    monkeypatch.setattr(bridge.persistence, "_save_workflow_runs", lambda: None)
     bridge._workflow_runs["exec-gate"] = run
     try:
         with pytest.raises(HTTPException) as stale:

@@ -17,7 +17,7 @@ async def test_original_topic_gap(wiki, monkeypatch, query):
     policy = await policy_for('topic-reader')
     cap = mint_capability(policy, subject_id='audit', entry_point='chat', user_id='reader')
     result = await gateway.capability_search(gateway.GatewaySearchRequest(query=query, include_content=True),cap)
-    monkeypatch.setattr(bridge, '_knowledge_gateway_search', lambda *a, **kw: result)
+    monkeypatch.setattr(bridge.persistence, '_knowledge_gateway_search', lambda *a, **kw: result)
     monkeypatch.setattr(bridge._knowledge_tool_context, 'value', {'capability':cap, 'scopes':list(policy.effective_categories)})
     response = json.loads(bridge._knowledge_search_tool({'query':query}))
     print('TOPIC_GAP', query, response)

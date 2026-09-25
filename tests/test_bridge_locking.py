@@ -54,8 +54,8 @@ class TestMappingAtomicWrite(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             mapping_file = Path(d) / "session_mappings.json"
-            with patch.object(bridge, "MAPPING_FILE", mapping_file):
-                bridge._user_session_map = {"u": "s"}
+            with patch.object(bridge.contracts, "MAPPING_FILE", mapping_file):
+                bridge.persistence._user_session_map = {"u": "s"}
                 with patch.object(bridge.os, "replace", wraps=bridge.os.replace) as m:
                     bridge._save_mapping()
                 m.assert_called_once()
@@ -89,7 +89,7 @@ class TestWatermark(unittest.TestCase):
     def test_baseline_returns_max_id(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             self.assertEqual(_get_baseline_id("sess_a"), 2)
             self.assertEqual(_get_baseline_id("sess_b"), 3)
             self.assertEqual(_get_baseline_id("nonexistent"), 0)
@@ -97,7 +97,7 @@ class TestWatermark(unittest.TestCase):
     def test_readback_filters_id_gt_baseline_and_session(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             rows = _readback_delta("sess_a", 1)
             ids = [r["id"] for r in rows]
             self.assertEqual(ids, [2])  # 只回读 id>1 且 session=sess_a
@@ -105,7 +105,7 @@ class TestWatermark(unittest.TestCase):
     def test_readback_missing_db_returns_empty(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", "/tmp/nonexistent_state.db"):
+        with patch.object(bridge.contracts, "STATE_DB", "/tmp/nonexistent_state.db"):
             self.assertEqual(_readback_delta("sess_a", 0), [])
 
 
@@ -137,17 +137,17 @@ class TestTenantSandboxStatus(unittest.TestCase):
         )
         conn.commit()
         conn.close()
-        bridge._user_session_map[self.user_id] = self.session_id
-        bridge._user_state_db_map[self.user_id] = self.tmp_db.name
+        bridge.persistence._user_session_map[self.user_id] = self.session_id
+        bridge.persistence._user_state_db_map[self.user_id] = self.tmp_db.name
 
     def tearDown(self):
-        self.bridge._user_session_map.pop(self.user_id, None)
-        self.bridge._user_state_db_map.pop(self.user_id, None)
-        self.bridge._stream_runs.pop(self.user_id, None)
+        self.bridge.persistence._user_session_map.pop(self.user_id, None)
+        self.bridge.persistence._user_state_db_map.pop(self.user_id, None)
+        self.bridge.contracts._stream_runs.pop(self.user_id, None)
         os.unlink(self.tmp_db.name)
 
     def test_completed_status_reads_tenant_sandbox_database(self):
-        with patch.object(self.bridge, "_pending_clarify", return_value=None):
+        with patch.object(self.bridge.session_runtime, "_pending_clarify", return_value=None):
             status = self.bridge._query_status(self.session_id, self.user_id)
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["answer"], "sandbox answer")
@@ -158,8 +158,8 @@ class TestTenantSandboxStatus(unittest.TestCase):
             "start_ts": time.monotonic(),
             "state_db": self.tmp_db.name,
         })
-        self.bridge._user_state_db_map.pop(self.user_id, None)
-        with patch.object(self.bridge, "_pending_clarify", return_value=None):
+        self.bridge.persistence._user_state_db_map.pop(self.user_id, None)
+        with patch.object(self.bridge.session_runtime, "_pending_clarify", return_value=None):
             status = self.bridge._query_status(self.session_id, self.user_id)
         self.assertEqual(status["status"], "completed")
         self.assertIsNone(self.bridge._stream_run_get(self.user_id))
@@ -182,7 +182,7 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             "path": "wiki/a.md", "title": "A", "snippet": "evidence",
             "markdown": "# A\n\nfull evidence", "content_status": "authorized",
         }]
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=docs) as search:
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=docs) as search:
             payload = json.loads(bridge._knowledge_search_tool({"query": "产品 A", "limit": 3}))
         self.assertTrue(payload["success"])
         self.assertEqual(payload["docs"][0]["path"], "wiki/a.md")
@@ -204,7 +204,7 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             "capability": "signed-capability",
             "scopes": ["pack-a"],
         }
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]) as search:
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]) as search:
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "产品 A", "category_scope": ["pack-secret"]
             }))
@@ -223,7 +223,7 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             "capability": "signed-capability",
             "scopes": [public_scope, entitlement_scope],
         }
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]) as search:
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]) as search:
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "产品 A",
                 "category_scope": [public_scope, entitlement_scope],
@@ -242,7 +242,7 @@ class TestKnowledgeGatewayTool(unittest.TestCase):
             "capability": "signed-capability",
             "scopes": ["knowledge/product/public"],
         }
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]) as search:
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]) as search:
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "产品 A",
                 "category_scope": ["knowledge/secret/entitlement/root"],
@@ -259,14 +259,14 @@ class TestChatReasoningIntegration(unittest.TestCase):
     def setUp(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.mapping = Path(self.tmp_dir.name) / "mappings.json"
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {}
+        bridge.persistence._user_session_map = {}
         self.tmp_dir.cleanup()
 
     def _run_chat(self, body):
@@ -275,10 +275,10 @@ class TestChatReasoningIntegration(unittest.TestCase):
     def test_chat_returns_reasoning_from_readback(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "_session_exists", return_value=False), \
-             patch.object(bridge, "_run_hermes", return_value=("ok", "sess_new")), \
-             patch.object(bridge, "_readback_delta", return_value=[]):
+        with patch.object(bridge.contracts, "MAPPING_FILE", self.mapping), \
+             patch.object(bridge.persistence, "_session_exists", return_value=False), \
+             patch.object(bridge.persistence, "_run_hermes", return_value=("ok", "sess_new")), \
+             patch.object(bridge.session_runtime, "_readback_delta", return_value=[]):
             result = self._run_chat(GoalRequest(goal="hi", session_id="u1"))
 
         self.assertEqual(result["reply"], "ok")
@@ -288,10 +288,10 @@ class TestChatReasoningIntegration(unittest.TestCase):
     def test_chat_readback_failure_degrades_empty(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "_session_exists", return_value=False), \
-             patch.object(bridge, "_run_hermes", return_value=("ok", "sess_new")), \
-             patch.object(bridge, "_readback_delta", side_effect=sqlite3.Error("corrupt")):
+        with patch.object(bridge.contracts, "MAPPING_FILE", self.mapping), \
+             patch.object(bridge.persistence, "_session_exists", return_value=False), \
+             patch.object(bridge.persistence, "_run_hermes", return_value=("ok", "sess_new")), \
+             patch.object(bridge.session_runtime, "_readback_delta", side_effect=sqlite3.Error("corrupt")):
             result = self._run_chat(GoalRequest(goal="hi", session_id="u1"))
 
         # 失败降级：reply 正常返回，reasoning=[]，不抛 500
@@ -314,10 +314,10 @@ class TestChatReasoningIntegration(unittest.TestCase):
                 active["n"] -= 1
             return ("ok", "sess_new")
 
-        with patch.object(bridge, "MAPPING_FILE", self.mapping), \
-             patch.object(bridge, "_session_exists", return_value=False), \
-             patch.object(bridge, "_run_hermes", side_effect=fake_run), \
-             patch.object(bridge, "_readback_delta", return_value=[]):
+        with patch.object(bridge.contracts, "MAPPING_FILE", self.mapping), \
+             patch.object(bridge.persistence, "_session_exists", return_value=False), \
+             patch.object(bridge.persistence, "_run_hermes", side_effect=fake_run), \
+             patch.object(bridge.session_runtime, "_readback_delta", return_value=[]):
 
             async def run():
                 bodies = [GoalRequest(goal="g", session_id="same_user") for _ in range(4)]
@@ -335,11 +335,11 @@ class TestWatchdogKeepAlive(unittest.TestCase):
     def setUp(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._stream_runs.clear()
+        bridge.contracts._stream_runs.clear()
         self.bridge = bridge
 
     def tearDown(self):
-        self.bridge._stream_runs.clear()
+        self.bridge.contracts._stream_runs.clear()
 
     def _register(self, uid, attached, age_seconds, run_id="r1"):
         self.bridge._stream_run_register(uid, {
@@ -351,19 +351,19 @@ class TestWatchdogKeepAlive(unittest.TestCase):
         })
 
     def test_detached_timeout_flagged(self):
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720):
             self._register("w1", attached=False, age_seconds=800)
             victims = self.bridge._watchdog_scan_once()
             self.assertTrue(any(uid == "w1" for uid, _ in victims))
 
     def test_attached_and_detached_share_same_execution_deadline(self):
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720):
             self._register("w2", attached=True, age_seconds=800)
             victims = self.bridge._watchdog_scan_once()
             self.assertTrue(any(uid == "w2" for uid, _ in victims))
 
     def test_detached_within_budget_not_flagged(self):
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720):
             self._register("w3", attached=False, age_seconds=100)
             victims = self.bridge._watchdog_scan_once()
             self.assertFalse(any(uid == "w3" for uid, _ in victims))
@@ -376,8 +376,8 @@ class TestWatchdogKeepAlive(unittest.TestCase):
         def fake_get(uid):
             return {"agent_holder": [agent], "queue": queue.Queue(), "run_id": "r1"}
 
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720), \
-             patch.object(self.bridge, "_stream_run_get", side_effect=fake_get):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720), \
+             patch.object(self.bridge.receipts, "_stream_run_get", side_effect=fake_get):
             self._register("w4", attached=False, age_seconds=800)
             self.bridge._watchdog_loop_step()  # 执行一轮 interrupt+discard
         self.assertEqual(interrupted["n"], 1)
@@ -397,7 +397,7 @@ class TestConcurrencyGuard(unittest.TestCase):
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
-        bridge._stream_runs.clear()
+        bridge.contracts._stream_runs.clear()
 
     def test_atomic_reservation_allows_only_one_request(self):
         import scripts.hermes_bridge as bridge
@@ -418,11 +418,11 @@ class TestConcurrencyGuard(unittest.TestCase):
     def test_busy_returns_running_then_done(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
-             patch.object(bridge, "_stream_run_get", return_value={
+        with patch.object(bridge.contracts, "IN_PROCESS_STREAM_ENABLED", True), \
+             patch.object(bridge.receipts, "_stream_run_get", return_value={
                  "attached": True, "run_id": "r", "start_ts": time.monotonic()
              }), \
-             patch.object(bridge, "_sse_from_in_process") as mock_sse:
+             patch.object(bridge.agent_execution, "_sse_from_in_process") as mock_sse:
             resp = asyncio.run(bridge.chat_stream(
                 GoalRequest(goal="hi", session_id="u_busy"), "test-internal-token"
             ))
@@ -437,9 +437,9 @@ class TestConcurrencyGuard(unittest.TestCase):
         async def fake_sse(user_id, goal, **kwargs):
             yield f"data: {json.dumps({'type': 'status', 'phase': 'boot'})}\n\n"
 
-        with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
-             patch.object(bridge, "_stream_run_get", return_value=None), \
-             patch.object(bridge, "_sse_from_in_process", side_effect=fake_sse):
+        with patch.object(bridge.contracts, "IN_PROCESS_STREAM_ENABLED", True), \
+             patch.object(bridge.receipts, "_stream_run_get", return_value=None), \
+             patch.object(bridge.agent_execution, "_sse_from_in_process", side_effect=fake_sse):
             resp = asyncio.run(bridge.chat_stream(
                 GoalRequest(goal="hi", session_id="u_free"), "test-internal-token"
             ))
@@ -453,7 +453,7 @@ class TestClarifyResolveReason(unittest.TestCase):
     def _resolve(self, session_id="s1", response="x"):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "test-token"):
+        with patch.object(bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "test-token"):
             return asyncio.run(bridge.clarify_resolve(
                 bridge.ClarifyResolveRequest(
                     session_id=session_id, response=response, clarify_id=None
@@ -467,7 +467,7 @@ class TestClarifyResolveReason(unittest.TestCase):
         from types import SimpleNamespace
 
         mock_cg = SimpleNamespace(resolve_text_response_for_session=None, has_pending=None)
-        return mock_cg, patch.object(bridge, "_clarify_gateway", mock_cg)
+        return mock_cg, patch.object(bridge.contracts, "_clarify_gateway", mock_cg)
 
     def test_ok_true(self):
         import scripts.hermes_bridge as bridge
@@ -475,7 +475,7 @@ class TestClarifyResolveReason(unittest.TestCase):
         mock_cg, patcher = self._mock_cg()
         mock_cg.resolve_text_response_for_session = lambda *a, **k: True
         with patcher, \
-             patch.object(bridge, "_stream_run_get", return_value=None):
+             patch.object(bridge.receipts, "_stream_run_get", return_value=None):
             result = self._resolve()
         self.assertEqual(result["ok"], True)
         self.assertEqual(result["state"], "accepted")
@@ -487,7 +487,7 @@ class TestClarifyResolveReason(unittest.TestCase):
         mock_cg.resolve_text_response_for_session = lambda *a, **k: False
         mock_cg.has_pending = lambda *a, **k: True
         with patcher, \
-             patch.object(bridge, "_stream_run_get", return_value={"queue": queue.Queue()}):
+             patch.object(bridge.receipts, "_stream_run_get", return_value={"queue": queue.Queue()}):
             result = self._resolve()
         self.assertEqual(result["ok"], False)
         self.assertEqual(result["state"], "rejected")
@@ -499,11 +499,11 @@ class TestClarifyResolveReason(unittest.TestCase):
         mock_cg.resolve_text_response_for_session = lambda *a, **k: False
         mock_cg.has_pending = lambda *a, **k: False
         with patcher, \
-             patch.object(bridge, "_stream_run_get", return_value={
+             patch.object(bridge.receipts, "_stream_run_get", return_value={
                  "queue": queue.Queue(),
                  "clarify_issued": time.monotonic() - 100,  # 发出不久但已超时清理
              }), \
-             patch.object(bridge, "CLARIFY_TIMEOUT_SECONDS", 180):
+             patch.object(bridge.contracts, "CLARIFY_TIMEOUT_SECONDS", 180):
             result = self._resolve()
         self.assertEqual(result["ok"], False)
         self.assertEqual(result["state"], "expired")
@@ -515,7 +515,7 @@ class TestClarifyResolveReason(unittest.TestCase):
         mock_cg.resolve_text_response_for_session = lambda *a, **k: False
         mock_cg.has_pending = lambda *a, **k: False
         with patcher, \
-             patch.object(bridge, "_stream_run_get", return_value=None):
+             patch.object(bridge.receipts, "_stream_run_get", return_value=None):
             result = self._resolve()
         self.assertEqual(result["ok"], False)
         self.assertEqual(result["state"], "no_pending")

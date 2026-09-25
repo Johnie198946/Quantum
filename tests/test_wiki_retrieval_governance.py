@@ -151,7 +151,7 @@ def test_bridge_outcomes_and_selector_forwarding(monkeypatch, outcome, status, s
     bridge._knowledge_tool_context.value = {"capability": "signed", "scopes": ["knowledge/methodology/public"]}
     mock = Mock(side_effect=outcome if isinstance(outcome, Exception) else None,
                 return_value=outcome)
-    monkeypatch.setattr(bridge, "_knowledge_gateway_search", mock)
+    monkeypatch.setattr(bridge.persistence, "_knowledge_gateway_search", mock)
     try:
         result = json.loads(bridge._knowledge_search_tool({"query": "IPD", "topics": ["IPD"]}))
     finally:
@@ -306,7 +306,7 @@ async def test_owner_receives_raw_detail_without_summary_or_tenant_gate(tmp_path
         query="IPD", paths=[summary["summary_of"]], include_content=True), capability)
     assert [d["path"] for d in result["docs"]] == [summary["summary_of"]]
     assert fixture.DETAIL in json.dumps(result, ensure_ascii=False)
-    monkeypatch.setattr(bridge, "_knowledge_gateway_search", lambda *a, **kw: result["docs"])
+    monkeypatch.setattr(bridge.persistence, "_knowledge_gateway_search", lambda *a, **kw: result["docs"])
     bridge._knowledge_tool_context.value = {"capability": capability, "scopes": list(policy.effective_categories)}
     try:
         payload = bridge._knowledge_search_tool({"query": "IPD", "paths": [summary["summary_of"]]})

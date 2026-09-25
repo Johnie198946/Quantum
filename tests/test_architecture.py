@@ -23,6 +23,9 @@ import ast
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent / "backend"
+ROOT = BACKEND.parent
+HERMES_BRIDGE = ROOT / "scripts" / "hermes_bridge.py"
+HERMES_BRIDGE_PACKAGE = ROOT / "scripts" / "hermes_bridge_runtime"
 
 LAYERS = {
     "api": "backend.api",
@@ -121,6 +124,35 @@ def test_no_circular_api_import():
         capture_output=True, text=True, timeout=30, cwd=str(BACKEND.parent),
     )
     assert r.returncode == 0, f"backend.main 导入失败:\n{r.stderr[:500]}"
+
+
+def test_hermes_bridge_is_a_bounded_composition_root():
+    source = HERMES_BRIDGE.read_text(encoding="utf-8")
+    line_count = len(source.splitlines())
+    assert 200 <= line_count <= 400
+    assert "app = FastAPI(" in source
+    assert "app.add_api_route(" in source
+
+
+def test_hermes_bridge_modules_stay_cohesive_and_static():
+    modules = sorted(HERMES_BRIDGE_PACKAGE.glob("*.py"))
+    assert modules
+    for path in modules:
+        source = path.read_text(encoding="utf-8")
+        assert len(source.splitlines()) <= 1500, path
+        tree = ast.parse(source)
+        assert not any(
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == "*" for alias in node.names)
+            for node in ast.walk(tree)
+        ), path
+        assert not any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"exec", "eval", "compile"}
+            for node in ast.walk(tree)
+        ), path
+        assert "sys.modules" not in source, path
 
 
 if __name__ == "__main__":

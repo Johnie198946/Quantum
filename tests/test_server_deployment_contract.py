@@ -401,7 +401,10 @@ def test_compose_callers_share_the_docker_host_gateway_bridge_contract() -> None
 
 
 def test_runtime_scripts_use_the_official_dedicated_user_install() -> None:
-    bridge = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    bridge = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [BRIDGE_SCRIPT, *sorted((BRIDGE_SCRIPT.parent / "hermes_bridge_runtime").glob("*.py"))]
+    )
     update = UPDATE_SCRIPT.read_text(encoding="utf-8")
 
     assert HERMES_LAUNCHER in bridge
@@ -515,7 +518,10 @@ verify_hermes_install
 
 
 def test_bridge_preflight_accepts_existing_health_without_starting_probe(tmp_path: Path) -> None:
-    bridge = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    bridge = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [BRIDGE_SCRIPT, *sorted((BRIDGE_SCRIPT.parent / "hermes_bridge_runtime").glob("*.py"))]
+    )
     update = UPDATE_SCRIPT.read_text(encoding="utf-8")
 
     assert 'os.environ.get("HERMES_BRIDGE_BIND_ADDRESS", "")' in bridge
@@ -2071,7 +2077,10 @@ def test_every_backend_execution_client_sends_the_internal_token() -> None:
 
 
 def test_bridge_execution_routes_all_use_the_strict_guard() -> None:
-    bridge = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    bridge = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [BRIDGE_SCRIPT, *sorted((BRIDGE_SCRIPT.parent / "hermes_bridge_runtime").glob("*.py"))]
+    )
     assert "def _require_internal(token: str | None)" in bridge
     assert "_require_internal_strict(token)" in bridge
     for function in (
@@ -2079,5 +2088,6 @@ def test_bridge_execution_routes_all_use_the_strict_guard() -> None:
         "start_agent_evaluation", "start_workflow_run",
     ):
         start = bridge.index(f"async def {function}(")
-        body = bridge[start:bridge.find("\n\n@app.", start)]
+        next_function = bridge.find("\n\nasync def ", start + 1)
+        body = bridge[start:next_function if next_function >= 0 else None]
         assert "_require_internal" in body, function

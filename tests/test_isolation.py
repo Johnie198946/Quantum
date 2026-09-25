@@ -41,7 +41,7 @@ def test_missing_capability_means_no_knowledge_access() -> None:
 
 def test_capability_is_bound_to_subject_and_policy(monkeypatch) -> None:
     monkeypatch.setattr(
-        hermes_bridge,
+        hermes_bridge.persistence,
         "verify_capability",
         lambda _token: {
             "tenant_key": "tenant-a",

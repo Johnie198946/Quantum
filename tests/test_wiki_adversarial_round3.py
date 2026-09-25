@@ -52,7 +52,7 @@ async def test_query_only_same_entity_gap(wiki, tmp_path, monkeypatch):
     await signed(monkeypatch)
     result = await gateway.capability_search(gateway.GatewaySearchRequest(
         query='超聚变的IPD是什么', include_content=True), 'signed')
-    monkeypatch.setattr(bridge, '_knowledge_gateway_search', lambda *a, **kw: result['docs'])
+    monkeypatch.setattr(bridge.persistence, '_knowledge_gateway_search', lambda *a, **kw: result['docs'])
     bridge._knowledge_tool_context.value = {'capability': 'signed', 'scopes':['knowledge/methodology/public']}
     try:
         payload = json.loads(bridge._knowledge_search_tool({'query':'超聚变的IPD是什么'}))

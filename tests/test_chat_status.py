@@ -102,18 +102,18 @@ class TestQueryStatusStateMachine(unittest.TestCase):
         )
         import scripts.hermes_bridge as bridge
 
-        bridge._delivered_watermark = {}
+        bridge.persistence._delivered_watermark = {}
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._delivered_watermark = {}
+        bridge.persistence._delivered_watermark = {}
         self.tmp.cleanup()
 
     def _query(self, sid):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             return _query_status(sid)
 
     def test_not_found_when_no_session_id(self):
@@ -180,17 +180,17 @@ class TestQueryStatusTetrad(unittest.TestCase):
         )
         import scripts.hermes_bridge as bridge
 
-        bridge._delivered_watermark = {}
-        bridge._stream_runs.clear()
+        bridge.persistence._delivered_watermark = {}
+        bridge.contracts._stream_runs.clear()
         self.bridge = bridge
 
     def tearDown(self):
-        self.bridge._delivered_watermark = {}
-        self.bridge._stream_runs.clear()
+        self.bridge.persistence._delivered_watermark = {}
+        self.bridge.contracts._stream_runs.clear()
         self.tmp.cleanup()
 
     def _query(self, sid, user_id=None, offset=0):
-        with patch.object(self.bridge, "STATE_DB", self.db_path):
+        with patch.object(self.bridge.contracts, "STATE_DB", self.db_path):
             return _query_status(sid, user_id, offset)
 
     # ---- 四元组字段 ----
@@ -248,7 +248,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             ],
             sub,
         )
-        with patch.object(self.bridge, "STATE_DB", db):
+        with patch.object(self.bridge.contracts, "STATE_DB", db):
             result = _query_status("sid_long", "u_long")
         self.assertLessEqual(len(result["latest_step"]), 70)
 
@@ -276,7 +276,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             ],
             sub,
         )
-        with patch.object(self.bridge, "STATE_DB", db):
+        with patch.object(self.bridge.contracts, "STATE_DB", db):
             # offset=2 → 只回读 id>2 的消息（tool + think2）
             result = _query_status("sid_multi", "u_multi", offset=2)
         # extract_steps 步骤无消息 id 字段；增量语义由 last_message_id 承载
@@ -311,7 +311,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             "c2": self._entry("c2", "other_user", response=None),
         }
         mock_cg = self._mock_cg_with_entries(entries)
-        with patch.object(self.bridge, "_clarify_gateway", mock_cg):
+        with patch.object(self.bridge.contracts, "_clarify_gateway", mock_cg):
             result = self._query("sid_reasoning", "u_clar")
         self.assertEqual(result["phase"], "clarify")
         self.assertEqual(result["clarify"]["clarify_id"], "c1")
@@ -327,7 +327,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             "c1": self._entry("c1", "u_resolved", response="选了A", question="选哪个?"),
         }
         mock_cg = self._mock_cg_with_entries(entries)
-        with patch.object(self.bridge, "_clarify_gateway", mock_cg):
+        with patch.object(self.bridge.contracts, "_clarify_gateway", mock_cg):
             result = self._query("sid_reasoning", "u_resolved")
         self.assertIsNone(result["clarify"])
         self.assertEqual(result["phase"], "reasoning")
@@ -338,13 +338,13 @@ class TestQueryStatusTetrad(unittest.TestCase):
             "c1": self._entry("c1", "u_comp_clar", response=None, question="确认方案?"),
         }
         mock_cg = self._mock_cg_with_entries(entries)
-        with patch.object(self.bridge, "_clarify_gateway", mock_cg):
+        with patch.object(self.bridge.contracts, "_clarify_gateway", mock_cg):
             result = self._query("sid_completed", "u_comp_clar")
         self.assertEqual(result["phase"], "clarify")
         self.assertNotEqual(result["status"], "completed")
 
     def test_clarify_none_when_gateway_unavailable(self):
-        with patch.object(self.bridge, "_clarify_gateway", None):
+        with patch.object(self.bridge.contracts, "_clarify_gateway", None):
             result = self._query("sid_reasoning", "u_nocg")
         self.assertIsNone(result["clarify"])
 
@@ -361,7 +361,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             "start_ts": time.monotonic() - 800,
             "run_id": "r_to",
         })
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720):
             result = self._query("sid_tool", "u_run_to")
         self.assertEqual(result["status"], "timeout")
         self.assertEqual(result["phase"], "timeout")
@@ -378,7 +378,7 @@ class TestQueryStatusTetrad(unittest.TestCase):
             "start_ts": time.monotonic() - 100,
             "run_id": "r_ok",
         })
-        with patch.object(self.bridge, "STREAM_MAX_DURATION_SECONDS", 720):
+        with patch.object(self.bridge.contracts, "STREAM_MAX_DURATION_SECONDS", 720):
             result = self._query("sid_timeout", "u_run_ok")
         self.assertEqual(result["status"], "running")
         self.assertEqual(result["phase"], "tool")
@@ -415,7 +415,7 @@ class TestQueryStatusReadonly(unittest.TestCase):
                 return real_connect(dsn, **kwargs)
 
             with patch.object(bridge.sqlite3, "connect", side_effect=spy), \
-                 patch.object(bridge, "STATE_DB", db_path):
+                 patch.object(bridge.contracts, "STATE_DB", db_path):
                 _query_status("sid")
 
             self.assertTrue(
@@ -436,7 +436,7 @@ class TestQueryStatusReadonly(unittest.TestCase):
             import scripts.hermes_bridge as bridge
 
             before = open(db_path, "rb").read()
-            with patch.object(bridge, "STATE_DB", db_path):
+            with patch.object(bridge.contracts, "STATE_DB", db_path):
                 _query_status("sid")
             after = open(db_path, "rb").read()
             self.assertEqual(before, after)
@@ -458,20 +458,20 @@ class TestBridgeStatusEndpoint(unittest.TestCase):
         )
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {"user_1": "sid_completed"}
-        bridge._delivered_watermark = {}
+        bridge.persistence._user_session_map = {"user_1": "sid_completed"}
+        bridge.persistence._delivered_watermark = {}
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._user_session_map = {}
-        bridge._delivered_watermark = {}
+        bridge.persistence._user_session_map = {}
+        bridge.persistence._delivered_watermark = {}
         self.tmp.cleanup()
 
     def test_endpoint_returns_completed(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             result = asyncio.run(bridge.chat_status("user_1", 0))
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["answer"], "完成答案")
@@ -480,7 +480,7 @@ class TestBridgeStatusEndpoint(unittest.TestCase):
         import scripts.hermes_bridge as bridge
 
         self.assertEqual(bridge._get_watermark("user_1"), 0)
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             result = asyncio.run(bridge.chat_status("user_1", 1))
         self.assertEqual(result["status"], "completed")
         # consume=1 后水位线推进到最新消息 id
@@ -489,7 +489,7 @@ class TestBridgeStatusEndpoint(unittest.TestCase):
     def test_consumed_flag_reflects_watermark(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             # 首次：未消费（consumed=False），consume=1 顺带标记
             first = asyncio.run(bridge.chat_status("user_1", 1))
             self.assertEqual(first["status"], "completed")
@@ -501,7 +501,7 @@ class TestBridgeStatusEndpoint(unittest.TestCase):
     def test_endpoint_unknown_user_not_found(self):
         import scripts.hermes_bridge as bridge
 
-        with patch.object(bridge, "STATE_DB", self.db_path):
+        with patch.object(bridge.contracts, "STATE_DB", self.db_path):
             result = asyncio.run(bridge.chat_status("unknown_user", 0))
         self.assertEqual(result["status"], "not_found")
 
@@ -525,9 +525,9 @@ class TestDurableBridgeStatus(unittest.TestCase):
         self.tmp.cleanup()
 
     def _status(self, *, consume=0, offset=0, owner_user_id=None):
-        with patch.object(self.bridge, "DURABLE_CHAT_WORKER_ENABLED", True), \
-             patch.object(self.bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "internal-test"), \
-             patch.object(self.bridge, "_chat_run_store", self.store):
+        with patch.object(self.bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True), \
+             patch.object(self.bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "internal-test"), \
+             patch.object(self.bridge.session_runtime, "_chat_run_store", self.store):
             return asyncio.run(self.bridge.chat_status(
                 self.session_id,
                 consume,
@@ -552,7 +552,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
         })
         self.store.append_event(run["run_id"], {"type": "delta", "content": "durable"})
         self.store.append_event(run["run_id"], {"type": "done", "answer": "durable answer"})
-        self.bridge._user_session_map = {self.session_id: "stale-legacy-session"}
+        self.bridge.persistence._user_session_map = {self.session_id: "stale-legacy-session"}
 
         result = self._status(consume=1)
 
@@ -580,7 +580,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
                 run["run_id"], self.owner
             )]
 
-        with patch.object(self.bridge, "_chat_run_store", self.store):
+        with patch.object(self.bridge.session_runtime, "_chat_run_store", self.store):
             frames = asyncio.run(collect())
 
         self.assertEqual(len(frames), 1)
@@ -612,7 +612,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
             remaining = [item async for item in stream]
             return initial_page, remaining
 
-        with patch.object(self.bridge, "_chat_run_store", self.store):
+        with patch.object(self.bridge.session_runtime, "_chat_run_store", self.store):
             initial_page, remaining = asyncio.run(collect())
 
         self.assertIn('"type": "answer_page"', initial_page)
@@ -636,7 +636,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
             await stream.aclose()
             return frame
 
-        with patch.object(self.bridge, "_chat_run_store", self.store):
+        with patch.object(self.bridge.session_runtime, "_chat_run_store", self.store):
             frame = asyncio.run(receive_then_disconnect())
 
         self.assertIn('"type": "done"', frame)
@@ -733,7 +733,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
                 run["run_id"], self.owner
             )]
 
-        with patch.object(self.bridge, "_chat_run_store", self.store):
+        with patch.object(self.bridge.session_runtime, "_chat_run_store", self.store):
             frames = asyncio.run(collect())
 
         self.assertEqual(len(frames), 1)
@@ -791,8 +791,8 @@ class TestDurableBridgeStatus(unittest.TestCase):
             [(1, "legacy-session", "assistant", "legacy answer", None, None, None, now, 1)],
             self.tmp.name,
         )
-        self.bridge._user_session_map = {self.session_id: "legacy-session"}
-        with patch.object(self.bridge, "STATE_DB", db_path):
+        self.bridge.persistence._user_session_map = {self.session_id: "legacy-session"}
+        with patch.object(self.bridge.contracts, "STATE_DB", db_path):
             result = self._status()
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["answer"], "legacy answer")
@@ -802,7 +802,7 @@ class TestMarkConsumed(unittest.TestCase):
     def test_mark_consumed_noop_without_session(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._delivered_watermark = {}
+        bridge.persistence._delivered_watermark = {}
         _mark_consumed("u", None)
         self.assertEqual(bridge._get_watermark("u"), 0)
 
@@ -978,12 +978,12 @@ class TestInFlightUsers(unittest.TestCase):
     def setUp(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._in_flight_users = {}
+        bridge.contracts._in_flight_users = {}
 
     def tearDown(self):
         import scripts.hermes_bridge as bridge
 
-        bridge._in_flight_users = {}
+        bridge.contracts._in_flight_users = {}
 
     def test_is_in_flight_true_after_mark(self):
         _mark_in_flight("u1")
@@ -1003,7 +1003,7 @@ class TestInFlightUsers(unittest.TestCase):
 
         _mark_in_flight("u1")
         # 手动把时间戳拨到阈值之外，模拟任务僵死
-        bridge._in_flight_users["u1"] = time.time() - bridge.IN_FLIGHT_STALE_SECONDS - 1
+        bridge.contracts._in_flight_users["u1"] = time.time() - bridge.IN_FLIGHT_STALE_SECONDS - 1
         self.assertFalse(_is_in_flight("u1"))
 
     def test_query_status_running_when_in_flight_no_mapping(self):
@@ -1022,19 +1022,19 @@ class TestInFlightUsers(unittest.TestCase):
         import scripts.hermes_bridge as bridge
         from scripts.hermes_bridge import GoalRequest, chat
 
-        bridge._user_session_map = {}
-        bridge._in_flight_users = {}
+        bridge.persistence._user_session_map = {}
+        bridge.contracts._in_flight_users = {}
         snapshots = []
 
         def fake_run(goal, session_id=None):
-            snapshots.append(dict(bridge._in_flight_users))
+            snapshots.append(dict(bridge.contracts._in_flight_users))
             return ("ok", "sess_new")
 
         with tempfile.TemporaryDirectory() as d:
             mapping = Path(d) / "mappings.json"
-            with patch.object(bridge, "MAPPING_FILE", mapping), \
-                 patch.object(bridge, "_session_exists", return_value=False), \
-                 patch.object(bridge, "_run_hermes", side_effect=fake_run):
+            with patch.object(bridge.contracts, "MAPPING_FILE", mapping), \
+                 patch.object(bridge.persistence, "_session_exists", return_value=False), \
+                 patch.object(bridge.persistence, "_run_hermes", side_effect=fake_run):
                 result = asyncio.run(
                     chat(
                         GoalRequest(goal="hi", session_id="u_inflight"),
@@ -1046,7 +1046,7 @@ class TestInFlightUsers(unittest.TestCase):
         # 执行期间在途标记已登记（fake_run 快照命中）
         self.assertTrue(any("u_inflight" in snap for snap in snapshots))
         # 结束后在途标记已清除
-        self.assertNotIn("u_inflight", bridge._in_flight_users)
+        self.assertNotIn("u_inflight", bridge.contracts._in_flight_users)
         self.assertFalse(bridge._is_in_flight("u_inflight"))
 
     def test_durable_chat_stream_does_not_register_legacy_in_flight(self):
@@ -1055,13 +1055,14 @@ class TestInFlightUsers(unittest.TestCase):
         from scripts.chat_run_store import DurableChatRunStore
         from scripts.hermes_bridge import GoalRequest, chat_stream
 
-        bridge._in_flight_users = {}
+        bridge.contracts._in_flight_users = {}
         with tempfile.TemporaryDirectory() as d:
             store = DurableChatRunStore(str(Path(d) / "runs.sqlite3"))
             store.worker_heartbeat("worker-test")
-            with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
-                 patch.object(bridge, "DURABLE_CHAT_WORKER_ENABLED", True), \
-                 patch.object(bridge, "_chat_run_store", store):
+            with patch.object(bridge.contracts, "IN_PROCESS_STREAM_ENABLED", True), \
+                 patch.object(bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True), \
+                 patch.object(bridge.contracts, "DURABLE_WORKER_HEARTBEAT_MAX_AGE", 30.0), \
+                 patch.object(bridge.session_runtime, "_chat_run_store", store):
                 response = asyncio.run(chat_stream(GoalRequest(
                     goal="hi",
                     session_id="u_durable",
@@ -1075,7 +1076,7 @@ class TestInFlightUsers(unittest.TestCase):
 
         self.assertEqual(response.headers["x-session-id"], "u_durable")
         self.assertTrue(json.loads(run["execution_payload_json"])["knowledge_action_enabled"])
-        self.assertNotIn("u_durable", bridge._in_flight_users)
+        self.assertNotIn("u_durable", bridge.contracts._in_flight_users)
         self.assertFalse(bridge._is_in_flight("u_durable"))
 
     def test_durable_chat_rejects_admission_when_worker_is_inactive(self):
@@ -1085,9 +1086,10 @@ class TestInFlightUsers(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             store = DurableChatRunStore(str(Path(d) / "runs.sqlite3"))
-            with patch.object(bridge, "IN_PROCESS_STREAM_ENABLED", True), \
-                 patch.object(bridge, "DURABLE_CHAT_WORKER_ENABLED", True), \
-                 patch.object(bridge, "_chat_run_store", store):
+            with patch.object(bridge.contracts, "IN_PROCESS_STREAM_ENABLED", True), \
+                 patch.object(bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True), \
+                 patch.object(bridge.contracts, "DURABLE_WORKER_HEARTBEAT_MAX_AGE", 30.0), \
+                 patch.object(bridge.session_runtime, "_chat_run_store", store):
                 with self.assertRaises(bridge.HTTPException) as caught:
                     asyncio.run(chat_stream(GoalRequest(
                         goal="hi",

@@ -6,7 +6,7 @@ def test_base_chat_tools_do_not_grant_delegation_without_request_authority():
     import scripts.hermes_bridge as bridge
 
     with patch.object(
-        bridge,
+        bridge.agent_config,
         "_get_cached_tools",
         return_value=["clarify", "skills", "web", "delegation"],
     ):
@@ -43,7 +43,7 @@ def test_hermes_knowledge_tool_uses_query_and_capability_default_scope():
         }]
 
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", side_effect=fake_search):
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", side_effect=fake_search):
             payload = json.loads(bridge._knowledge_search_tool({
                 "query": "超聚变是做什么的？",
                 "category_scope": ["green"],
@@ -68,7 +68,7 @@ def test_zero_local_results_recommend_public_web_fallback():
         "sources": ["tenant_knowledge"],
     }
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]):
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]):
             payload = json.loads(bridge._knowledge_search_tool({"query": "Token Factory"}))
     finally:
         bridge._knowledge_tool_context.value = None

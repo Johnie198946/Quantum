@@ -43,7 +43,7 @@ def test_authorized_gateway_does_not_enable_public_web_without_evidence():
 
 
 def test_platform_search_reads_authorized_body_and_preserves_evidence_metadata(monkeypatch):
-    monkeypatch.setattr(bridge, "_knowledge_gateway_search", lambda *args, **kwargs: [{
+    monkeypatch.setattr(bridge.persistence, "_knowledge_gateway_search", lambda *args, **kwargs: [{
         "path": "wiki/example.md", "title": "Example", "snippet": "定位片段",
         "markdown": "# Example\n\n完整正文", "content_status": "complete",
         "category": "knowledge/methodology/public", "freshness": "current",

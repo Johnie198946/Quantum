@@ -212,7 +212,7 @@ def test_native_memory_requires_a_signed_memory_capability(monkeypatch) -> None:
         entitlement_stale=False,
     )
     sentinel = object()
-    monkeypatch.setattr(bridge, "_tenant_sandbox_from_claims", lambda **_: sentinel)
+    monkeypatch.setattr(bridge.persistence, "_tenant_sandbox_from_claims", lambda **_: sentinel)
 
     memory_token = mint_capability(
         policy, subject_id="memory-user-a", entry_point="memory", user_id="user-a"
@@ -250,7 +250,7 @@ def test_agent_turn_binds_and_restores_sandbox_home_on_failure(
         assert get_hermes_home() == sandbox.hermes_home
         raise RuntimeError("expected failure")
 
-    monkeypatch.setattr(bridge, "_build_in_process_agent", fail_after_check)
+    monkeypatch.setattr(bridge.agent_execution, "_build_in_process_agent", fail_after_check)
     events: queue.Queue = queue.Queue()
     bridge._run_agent_sync(
         "hello", "session-a", None, events, [None],
@@ -267,7 +267,7 @@ def test_receipt_accepts_verified_deferred_agency_load(monkeypatch) -> None:
     import scripts.hermes_bridge as bridge
 
     monkeypatch.setattr(
-        bridge,
+        bridge.receipts,
         "_verified_delegation_transcript",
         lambda _value: ("deleg_1234abcd", "research-synthesist"),
     )

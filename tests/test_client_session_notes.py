@@ -74,7 +74,7 @@ def test_long_session_ids_keep_distinct_hashes_instead_of_prefix_truncation():
 def test_snapshot_request_resumes_mapped_hermes_history(monkeypatch):
     import scripts.hermes_bridge as bridge
 
-    monkeypatch.setattr(bridge, "_resolve_hermes_session", lambda _user_id: "old-hermes-session")
+    monkeypatch.setattr(bridge.session_runtime, "_resolve_hermes_session", lambda _user_id: "old-hermes-session")
     assert bridge._hermes_session_for_request("isolated-user", None) == "old-hermes-session"
     assert bridge._hermes_session_for_request(
         "isolated-user", {"session_id": "ios-session", "messages": []}
@@ -86,30 +86,30 @@ def test_legacy_policy_scoped_mapping_migrates_to_stable_key(monkeypatch):
 
     legacy = "t123456789abc-u123456789abc-ppolicyv1-main_agent-session"
     stable = "t123456789abc-u123456789abc-main_agent-session"
-    monkeypatch.setattr(bridge, "_user_session_map", {legacy: "hermes-session"})
-    monkeypatch.setattr(bridge, "_user_state_db_map", {legacy: "/tmp/tenant.db"})
-    monkeypatch.setattr(bridge, "_session_exists", lambda *_args: True)
-    monkeypatch.setattr(bridge, "_save_mapping", lambda: None)
-    monkeypatch.setattr(bridge, "_save_state_db_mapping", lambda: None)
+    monkeypatch.setattr(bridge.persistence, "_user_session_map", {legacy: "hermes-session"})
+    monkeypatch.setattr(bridge.persistence, "_user_state_db_map", {legacy: "/tmp/tenant.db"})
+    monkeypatch.setattr(bridge.persistence, "_session_exists", lambda *_args: True)
+    monkeypatch.setattr(bridge.persistence, "_save_mapping", lambda: None)
+    monkeypatch.setattr(bridge.persistence, "_save_state_db_mapping", lambda: None)
 
     assert bridge._resolve_hermes_session(stable) == "hermes-session"
-    assert bridge._user_session_map[stable] == "hermes-session"
-    assert bridge._user_state_db_map[stable] == "/tmp/tenant.db"
+    assert bridge.persistence._user_session_map[stable] == "hermes-session"
+    assert bridge.persistence._user_state_db_map[stable] == "/tmp/tenant.db"
 
 
 def test_conflicting_legacy_policy_aliases_fail_closed(monkeypatch):
     import scripts.hermes_bridge as bridge
 
     stable = "t123456789abc-u123456789abc-main_agent-session"
-    monkeypatch.setattr(bridge, "_user_session_map", {
+    monkeypatch.setattr(bridge.persistence, "_user_session_map", {
         "t123456789abc-u123456789abc-ppolicyv1-main_agent-session": "session-v1",
         "t123456789abc-u123456789abc-ppolicyv2-main_agent-session": "session-v2",
     })
-    monkeypatch.setattr(bridge, "_user_state_db_map", {
+    monkeypatch.setattr(bridge.persistence, "_user_state_db_map", {
         "t123456789abc-u123456789abc-ppolicyv1-main_agent-session": "/tmp/tenant.db",
         "t123456789abc-u123456789abc-ppolicyv2-main_agent-session": "/tmp/tenant.db",
     })
-    monkeypatch.setattr(bridge, "_session_exists", lambda *_args: True)
+    monkeypatch.setattr(bridge.persistence, "_session_exists", lambda *_args: True)
 
     with pytest.raises(RuntimeError, match="ambiguous_legacy_session_mapping"):
         bridge._resolve_hermes_session(stable)
@@ -165,7 +165,7 @@ def test_session_agent_cache_reuses_only_unchanged_native_history():
         close=lambda: None,
     )
     db = FakeDB()
-    bridge._AGENT_CACHE.clear()
+    bridge.agent_config._AGENT_CACHE.clear()
     try:
         assert bridge._finish_cached_agent("user", "signature", agent, db, keep=True) is True
         assert bridge._take_cached_agent(
@@ -179,7 +179,7 @@ def test_session_agent_cache_reuses_only_unchanged_native_history():
         assert bridge._take_cached_agent("user", "signature", "hermes-session") is None
         assert db.closed is True
     finally:
-        bridge._AGENT_CACHE.clear()
+        bridge.agent_config._AGENT_CACHE.clear()
 
 
 def test_prewarm_cache_hit_is_distinguished_from_prior_turn():
@@ -187,14 +187,14 @@ def test_prewarm_cache_hit_is_distinguished_from_prior_turn():
 
     db = SimpleNamespace(message_count=lambda _session_id: 0, close=lambda: None)
     agent = SimpleNamespace(session_id="sid", _api_call_count=0, close=lambda: None)
-    bridge._AGENT_CACHE.clear()
+    bridge.agent_config._AGENT_CACHE.clear()
     try:
         bridge._finish_cached_agent(
             "user", "signature", agent, db, keep=True, cache_origin="prewarm")
         assert bridge._take_cached_agent("user", "signature", "sid") == (
             agent, db, "prewarm")
     finally:
-        bridge._AGENT_CACHE.clear()
+        bridge.agent_config._AGENT_CACHE.clear()
 
 
 def test_session_agent_cache_signature_includes_tenant_sandbox():
@@ -240,10 +240,10 @@ def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypa
     agent = SimpleNamespace(close=lambda: None)
     mappings = []
     retained = []
-    monkeypatch.setattr(bridge, "_resolve_hermes_session", lambda _user: None)
-    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _sandbox: bootstrap)
+    monkeypatch.setattr(bridge.session_runtime, "_resolve_hermes_session", lambda _user: None)
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda _sandbox: bootstrap)
     monkeypatch.setattr(
-        bridge, "_update_session_mapping",
+        bridge.session_runtime, "_update_session_mapping",
         lambda user, sid, state_db: mappings.append((user, sid, state_db)),
     )
     build_kwargs = {}
@@ -259,9 +259,9 @@ def test_session_prewarm_creates_empty_native_session_and_retains_agent(monkeypa
             {"agent_cache_key": "user", "agent_cache_signature": "signature",
              "agent_cache_source": "cold_build"},
         )
-    monkeypatch.setattr(bridge, "_build_in_process_agent", build)
+    monkeypatch.setattr(bridge.agent_execution, "_build_in_process_agent", build)
     monkeypatch.setattr(
-        bridge, "_finish_cached_agent",
+        bridge.agent_config, "_finish_cached_agent",
         lambda *args, **kwargs: retained.append((args, kwargs)) or True,
     )
     sandbox = SimpleNamespace(
@@ -290,12 +290,12 @@ def test_prewarm_does_not_relabel_prior_turn_cache(monkeypatch):
     agent = SimpleNamespace(close=lambda: None)
     db = SimpleNamespace(close=lambda: None)
     observed = []
-    monkeypatch.setattr(bridge, "_resolve_hermes_session", lambda _user: "existing")
-    monkeypatch.setattr(bridge, "_build_in_process_agent", lambda *_args, **_kwargs: (
+    monkeypatch.setattr(bridge.session_runtime, "_resolve_hermes_session", lambda _user: "existing")
+    monkeypatch.setattr(bridge.agent_execution, "_build_in_process_agent", lambda *_args, **_kwargs: (
         agent, db, {"agent_cache_key": "user", "agent_cache_signature": "signature",
                     "agent_cache_source": "prior_turn"},
     ))
-    monkeypatch.setattr(bridge, "_finish_cached_agent",
+    monkeypatch.setattr(bridge.agent_config, "_finish_cached_agent",
                         lambda *args, **kwargs: observed.append(kwargs) or True)
 
     assert bridge._prewarm_session_agent(
@@ -321,15 +321,15 @@ def test_bridge_startup_prewarms_configured_runtime_and_closes_agent(monkeypatch
     module = types.ModuleType("run_agent")
     module.AIAgent = FakeAgent
     monkeypatch.setitem(sys.modules, "run_agent", module)
-    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": {"default": "configured-model"}})
-    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _cfg: {
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": {"default": "configured-model"}})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda _cfg: {
         "api_key": "token", "base_url": "https://provider.test",
         "provider": "provider", "api_mode": "responses",
     })
-    monkeypatch.setattr(bridge, "_get_cached_tools", lambda _cfg: [])
-    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _cfg: None)
-    monkeypatch.setattr(bridge, "_get_clarify_gateway", lambda: object())
-    monkeypatch.setattr(bridge, "_get_shared_session_db", lambda: object())
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_tools", lambda _cfg: [])
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr(bridge.contracts, "_get_clarify_gateway", lambda: object())
+    monkeypatch.setattr(bridge.agent_config, "_get_shared_session_db", lambda: object())
 
     worker = bridge._prewarm_bridge_agent()
     worker.join(timeout=2)
@@ -346,10 +346,10 @@ async def test_bridge_prewarm_is_internal_durable_and_tenant_scoped(monkeypatch,
     store = bridge.DurableChatRunStore(tmp_path / "runs.sqlite3")
     store.worker_heartbeat("worker-test")
     claims = {"tenant_key": "tenant-a", "user_id": "user-a"}
-    monkeypatch.setattr(bridge, "DURABLE_CHAT_WORKER_ENABLED", True)
-    monkeypatch.setattr(bridge, "_chat_run_store", store)
-    monkeypatch.setattr(bridge, "_require_internal_strict", lambda token: None)
-    monkeypatch.setattr(bridge, "_validated_knowledge_claims", lambda *args, **kwargs: claims)
+    monkeypatch.setattr(bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True)
+    monkeypatch.setattr(bridge.session_runtime, "_chat_run_store", store)
+    monkeypatch.setattr(bridge.persistence, "_require_internal_strict", lambda token: None)
+    monkeypatch.setattr(bridge.persistence, "_validated_knowledge_claims", lambda *args, **kwargs: claims)
 
     result = await bridge.chat_prewarm(
         bridge.GoalRequest(
@@ -607,9 +607,9 @@ def test_note_draft_runs_from_native_hermes_history_without_client_snapshot(
         observed["client_context_enabled"] = kwargs["client_context_enabled"]
         return FakeAgent(), FakeSessionDB(), {"triage": None}
 
-    monkeypatch.setattr(bridge, "_build_in_process_agent", fake_build)
-    monkeypatch.setattr(bridge, "_knowledge_gateway_search", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    monkeypatch.setattr(bridge.agent_execution, "_build_in_process_agent", fake_build)
+    monkeypatch.setattr(bridge.persistence, "_knowledge_gateway_search", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args: None)
     gateway_context = types.ModuleType("gateway.session_context")
     setattr(gateway_context, "declare_stateless_channel", lambda: None)
     monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
@@ -665,11 +665,11 @@ def test_save_request_without_knowledge_action_fails_closed(monkeypatch, tmp_pat
             return None
 
     monkeypatch.setattr(
-        bridge,
+        bridge.agent_execution,
         "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args, **_kwargs: None)
     gateway_context = types.ModuleType("gateway.session_context")
     setattr(gateway_context, "declare_stateless_channel", lambda: None)
     monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
@@ -737,11 +737,11 @@ def test_knowledge_action_context_does_not_depend_on_save_wording(monkeypatch, t
             return None
 
     monkeypatch.setattr(
-        bridge,
+        bridge.agent_execution,
         "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args, **_kwargs: None)
     gateway_context = types.ModuleType("gateway.session_context")
     setattr(gateway_context, "declare_stateless_channel", lambda: None)
     monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
@@ -911,7 +911,7 @@ def test_user_note_search_uses_only_signed_user_note_source():
     }
     try:
         with patch.object(
-            bridge, "_knowledge_gateway_search",
+            bridge.persistence, "_knowledge_gateway_search",
             return_value=[{"path": "user-notes/n1.md", "title": "私有笔记"}],
         ) as search:
             payload = json.loads(bridge._user_note_search_tool({"query": "超聚变"}))
@@ -939,7 +939,7 @@ def test_user_note_search_deterministically_returns_active_uploaded_document():
         }],
     }
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]):
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]):
             payload = json.loads(bridge._user_note_search_tool({
                 "query": "请解释这一部分",
             }))
@@ -967,7 +967,7 @@ def test_user_note_search_prefers_exact_gateway_document_over_truncated_inline_c
     }
     full_markdown = "GATEWAY-FULL\n" + ("正文" * 5_000) + "\nTAIL-SENTINEL"
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[{
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[{
             "id": "uploaded-pptx",
             "title": "季度复盘.pptx",
             "markdown": full_markdown,
@@ -995,7 +995,7 @@ def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
         "knowledge_action_v1": True, "inline_notes": [],
     }
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[{
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[{
             "id": "server-note", "title": "TokenOps",
             "markdown": "# TokenOps\n\n服务端私有内容", "content_hash": "hash-server",
         }]):
@@ -1047,10 +1047,10 @@ def test_save_request_allows_verified_no_increment_without_action(monkeypatch, t
             return None
 
     monkeypatch.setattr(
-        bridge, "_build_in_process_agent",
+        bridge.agent_execution, "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args, **_kwargs: None)
     gateway_context = types.ModuleType("gateway.session_context")
     setattr(gateway_context, "declare_stateless_channel", lambda: None)
     monkeypatch.setitem(sys.modules, "gateway.session_context", gateway_context)
@@ -1239,7 +1239,7 @@ def test_user_note_search_recalls_signed_unsynced_local_note():
         }],
     }
     try:
-        with patch.object(bridge, "_knowledge_gateway_search", return_value=[]):
+        with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[]):
             payload = json.loads(bridge._user_note_search_tool({"query": "超聚变"}))
         assert payload["success"] is True
         assert payload["docs"][0]["id"] == "local-1"
