@@ -320,6 +320,29 @@ Return a deterministic checklist.
             knowledge_runtime, "_append_tenant_skill_audit", real_append
         )
 
+        audit_calls = 0
+
+        def reject_commit_audit(*args, **kwargs):
+            nonlocal audit_calls
+            audit_calls += 1
+            if audit_calls == 2:
+                raise OSError("commit audit unavailable")
+            return real_append(*args, **kwargs)
+
+        monkeypatch.setattr(
+            knowledge_runtime, "_append_tenant_skill_audit", reject_commit_audit
+        )
+        commit_denied = json.loads(bridge._tenant_skill_manage_tool({
+            "action": "create", "name": "commit-denied", "content": content,
+        }))
+        assert commit_denied["success"] is False
+        assert "commit-denied" not in {
+            item["name"] for item in list_sandbox_skills(sandbox)
+        }
+        monkeypatch.setattr(
+            knowledge_runtime, "_append_tenant_skill_audit", real_append
+        )
+
         created = json.loads(bridge._tenant_skill_manage_tool({
             "action": "create", "name": "test-helper", "content": content,
         }))

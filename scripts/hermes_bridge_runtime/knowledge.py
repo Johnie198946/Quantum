@@ -540,11 +540,17 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
                 "success": changed,
                 "phase": "committed" if changed else "no_change",
             }
-            _append_tenant_skill_audit(sandbox, receipt)
+            try:
+                _append_tenant_skill_audit(sandbox, receipt)
+            except OSError:
+                if changed and prior is not None:
+                    write_sandbox_skill(sandbox, name, prior, replace=False)
+                raise
             return json.dumps(receipt, ensure_ascii=False)
         if action not in {"create", "update"}:
             return json.dumps({"success": False, "error": "unsupported_action"})
         content = str((args or {}).get("content") or "")
+        prior = read_sandbox_skill(sandbox, name)
         prepared = {
             "success": False,
             "phase": "prepared",
@@ -570,7 +576,14 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
             "phase": "committed",
             "sha256": digest,
         }
-        _append_tenant_skill_audit(sandbox, receipt)
+        try:
+            _append_tenant_skill_audit(sandbox, receipt)
+        except OSError:
+            if prior is None:
+                delete_sandbox_skill(sandbox, name)
+            else:
+                write_sandbox_skill(sandbox, name, prior, replace=True)
+            raise
         return json.dumps(receipt, ensure_ascii=False)
     except (ValueError, FileExistsError, OSError) as error:
         return json.dumps(
