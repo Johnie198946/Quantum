@@ -332,6 +332,21 @@ def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
     assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review"}
 
 
+def test_global_review_scan_isolates_invalid_pending_manifest(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    poisoned = local.parent / "00-poisoned" / "draft-manifest.json"
+    poisoned.parent.mkdir()
+    poisoned.write_text(
+        json.dumps({"version": relay.VERSION, "items": [{"status": "await_review"}]}),
+        encoding="utf-8",
+    )
+
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+
+    assert envelope["manifest"] == str(manifest)
+
+
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
     local, manifest, remote, calls, *_ = flow

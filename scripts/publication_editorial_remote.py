@@ -338,6 +338,7 @@ def verify_target(bundle, manuscript):
 
 
 def review_input(root, remote):
+    invalid_pending: list[str] = []
     for path in manifests(root):
         # Historical output roots can contain pre-v2 or abandoned manifests.
         # They are irrelevant unless they explicitly claim a pending review;
@@ -351,7 +352,13 @@ def review_input(root, remote):
             for item in raw.get("items", [])
         ):
             continue
-        path, value = load_manifest(path)
+        try:
+            path, value = load_manifest(path)
+        except ValueError:
+            # A malformed pending draft must fail its own pipeline, not poison
+            # every other valid candidate in the shared output root.
+            invalid_pending.append(str(path))
+            continue
         for item in value["items"]:
             if item["status"] != "await_review":
                 continue
@@ -378,6 +385,8 @@ def review_input(root, remote):
             files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
             files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
             return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": "Read inputs only; write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
+    if invalid_pending:
+        raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
     return json.dumps({"status": "no_await_review"})
 
 
