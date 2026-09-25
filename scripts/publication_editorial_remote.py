@@ -43,11 +43,27 @@ FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_fi
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
+MEDIA_CONTRACT = {
+    "shelf_cover": ("publication_shelf_cover", 1440, 2560),
+    "reader_cover": ("publication_reader_cover", 2560, 1440),
+    "illustration_01": ("publication_illustration", 1600, 900),
+    "illustration_02": ("publication_illustration", 1600, 900),
+    "illustration_03": ("publication_illustration", 1600, 900),
+}
 DAILY_SERIES = {"ai-history", "ai-practice", "concept-fables", "ai-toolkit"}
 
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    raise ValueError("unsupported publication media extension")
 
 
 def encoded(value):
@@ -298,17 +314,34 @@ def prepare(path, remote):
         item.setdefault("batch", uuid.uuid4().hex)
         save(path, value)  # Stable upload namespace even after transport interruption.
         bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
-        result = remote.operator("prepare-editorial", *arguments(remote, path.parent, item, bundle))
+        result = remote.operator(
+            "prepare-editorial",
+            *arguments(remote, path.parent, item, bundle, stage=True),
+        )
         contract = result.get("quality_contract")
         if not isinstance(contract, dict) or any(key not in contract for key in ("issue_id", "revision", "attempt_id", "target_hash", "writer_sessions")):
             raise ValueError("server contract missing")
         receipt = attempt(remote, contract, {"await_review"})
-        # The operator's ingest receipt IDs are deterministic. Reconstruct only
-        # after successful intake, then verify the exact server target binding.
         for group, field in (("source_files", "source_receipts"), ("rights_files", "rights_evidence"), ("execution_files", "execution_evidence")):
             if item[group]:
                 bundle[field] = [{"artifact_id": f"receipt-{e['kind']}-{e['sha256']}", "sha256": e["sha256"], "kind": e["kind"]} for e in item[group]]
         bundle["source_snapshot_hash"] = sha("\n".join(sorted(e["sha256"] for e in bundle.get("source_receipts", []))).encode())
+        bundle["assets"] = []
+        for role in MEDIA_ROLES:
+            kind, width, height = MEDIA_CONTRACT[role]
+            path_value = local_path(path.parent, item[f"{role}_file"])
+            digest = item[f"{role}_sha256"]
+            bundle["assets"].append({
+                "role": role,
+                "receipt": {
+                    "artifact_id": f"receipt-{kind}-{digest}",
+                    "sha256": digest,
+                    "kind": kind,
+                },
+                "media_type": media_type(path_value),
+                "width": width,
+                "height": height,
+            })
         bundle["quality_contract"] = contract
         verify_target(bundle, read(local_path(path.parent, item["body_file"])).decode())
         # Publish a new frozen bundle pointer and manifest atomically; never
