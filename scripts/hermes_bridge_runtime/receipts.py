@@ -460,8 +460,10 @@ def _tenant_base_toolsets(allowed_tools: set[str]) -> set[str]:
     """Return only tenant-authorized stateful toolsets."""
     requested = {"clarify"}
     requested.update({"memory", "session_search"} & allowed_tools)
+    if "skill_load" in allowed_tools:
+        requested.add("tenant_skill_reader")
     if "tenant_skill_manage" in allowed_tools:
-        requested.add("tenant_skills")
+        requested.add("tenant_skill_authoring")
     return requested
 
 

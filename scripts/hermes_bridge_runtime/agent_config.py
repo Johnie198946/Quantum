@@ -412,22 +412,11 @@ def _triage_route_marker(triage: dict[str, Any] | None) -> str:
 
 def _triage_system_directive(
     triage: dict[str, Any] | None,
-    *,
-    note_draft_request: bool = False,
 ) -> str:
     if triage is None:
         return ""
     evidence = set(triage.get("evidence_requirements") or [])
     lines = ["\n服务端证据需求（不参与 Skill/Agent 选择，也不授予权限）："]
-    if note_draft_request:
-        lines.append(
-            "这是当前 Hermes 会话内的笔记动作：Main 必须依次调用 user_note_search 和 "
-            "note_draft 生成待用户确认的草稿，不得只返回 Markdown；不调用 Agency、不委派。"
-            "从本次保存指令向前回溯，以距离指令最近的实质性话题为主题锚点，再审视当前"
-            "Hermes Session 的完整历史，只纳入与锚点相关的消息，不得混入更早的无关话题。"
-            "用该主题检索当前用户笔记；命中真正同主题内容时必须生成 merge_candidates 和"
-            "完整 merged_markdown 供用户选择新建或合并；零命中才只生成新建草稿。"
-        )
 
     if "web_extract" in evidence:
         lines.append(
@@ -486,13 +475,9 @@ def _apply_triage_toolset_policy(
     selected: list[str],
     triage: dict[str, Any] | None,
     *,
-    note_draft_request: bool = False,
     public_knowledge_fallback: bool = False,
 ) -> list[str]:
     """Apply evidence-source boundaries without filtering Skill/Agent tools."""
-    if note_draft_request:
-        denied = {"agency_agents", "ai_lab", "delegation"}
-        return [item for item in selected if item not in denied]
     evidence = set((triage or {}).get("evidence_requirements") or [])
     denied: set[str] = set()
     if not evidence & {"web_search", "web_extract"} and not public_knowledge_fallback:
@@ -664,44 +649,11 @@ GENERAL_KNOWLEDGE_SPEED_DISCIPLINE = (
 )
 
 
-CLARIFY_GATE_PROMPT = f"""【AI Lab 全局交互与对话规范】
-1. 【输出完整详实】：根据用户指令提供结构清晰、逻辑完整、信息详实的解答与方案。
-2. 【Drill-me 多轮收敛】：用户输入范围过大、缺关键边界的开发/方案需求（如仅有一句"做电商平台"、"开发操作系统"）时，必须进入 Drill-me；每轮只调用一次 clarify，提出一个聚焦问题并给出 2~4 个结构化选项。
-3. 【选项是澄清答案，不是新指令】：clarify 返回的选项文本只是在回答当前问题。收到选择后，必须把答案并入需求状态并继续确认下一个尚未明确的维度；严禁脱离原始需求，单独解释或执行该选项文本。
-4. 【收敛门槛】：Drill-me 至少完成 {_contracts.DRILL_ME_MIN_ROUNDS} 轮、最多 {_contracts.DRILL_ME_MAX_ROUNDS} 轮。依次覆盖目标用户/核心场景、产品范围/优先级、数据与技术约束、验收标准等关键维度；不得一问即答，也不得重复询问已确认内容。
-5. 【需求确认单】：达到最少轮次且关键维度足够明确后，先输出且只输出一份 Markdown 需求确认单，再调用 clarify 做最终确认。确认单格式必须为：二级标题“## 需求确认单”；紧接两列表格，表头固定为“确认维度 | 已确认需求”，用 5~7 行完整覆盖产品形态、目标用户与场景、MVP 范围、技术路线、数据/集成约束、验收标准。单元格文字简明，禁止在表格前后重复复述。最终 clarify 问题固定为“以上需求确认单是否准确？”，选项至少包含“确认，进入方案设计”和“需要修改”。用户确认后才可输出方案；选择修改则继续 clarify 具体修改项。
-6. 【交互形式】：收敛期间禁止用普通正文手写问题，下一问必须继续调用 clarify，以便前端展示下一张选项卡。
-7. 【创建智能体标准流程】：（用户提出"创建/做一个…的agent/智能体"时强制执行）
-   - 用 skill_manage(action=create) 创建租户专属技能作为该 Agent 的载体（技能即 Agent，插件化落地）；
-   - 正文 = 该 Agent 的角色提示词：职责、工作流、调用哪些底层技能、输出格式；
-   - 回复用户：Agent 已创建 + 名称 + 职责 + 可在「拓扑/设置」页面查看使用。"""
-
-
-_DRILL_ME_ACTION_RE = re.compile(
-    r"(?:我想|帮我|需要|打算|准备)?(?:做|开发|搭建|设计|创建|构建|实现|规划)"
-)
-
-
-_DRILL_ME_ARTIFACT_RE = re.compile(
-    r"(?:系统|平台|产品|应用|软件|网站|小程序|工具|服务|方案|agent|智能体|app)",
-    re.IGNORECASE,
-)
-
-
-def _is_drill_me_goal(goal: str) -> bool:
-    """判定当前请求是否属于需要多轮收敛的宽泛开发/方案需求。"""
-    raw_goal = str(goal or "")
-    # bridge 会在原始问题前注入知识库纪律；分类必须只看【用户问题】，否则长度
-    # 超过 240 后所有真实 Drill-me 都会被误判为 False。
-    if "【用户问题】" in raw_goal:
-        raw_goal = raw_goal.rsplit("【用户问题】", 1)[-1]
-    normalized = re.sub(r"\s+", "", raw_goal).strip()
-    if not normalized or len(normalized) > 240:
-        return False
-    return bool(
-        _DRILL_ME_ACTION_RE.search(normalized)
-        and _DRILL_ME_ARTIFACT_RE.search(normalized)
-    )
+CLARIFY_GATE_PROMPT = """【AI Lab 全局交互与对话规范】
+1. 根据用户指令提供直接、准确、结构清晰的结果。
+2. Skill/Agent 语义选择只接受 capability_router 注入并验证的同一次 JEV 决策。
+3. 仅在当前请求确有关键歧义或已验证 Skill 明确要求时调用 clarify；选项回答属于当前问题的状态，不是新的独立指令。
+4. 写操作只能使用当前回合 QCP 已授权并实际提供的工具；工具成功回执前不得声称完成。"""
 
 
 def _steer_drill_me_response(response: str, round_number: int, enabled: bool) -> str:

@@ -96,7 +96,10 @@ def test_tenant_skill_read_records_selected_skill(tmp_path: Path) -> None:
 def test_tenant_base_toolsets_do_not_implicitly_enable_host_memory() -> None:
     import scripts.hermes_bridge as bridge
 
-    assert bridge._tenant_base_toolsets({"skill_load", "delegate_task"}) == {"clarify"}
+    assert bridge._tenant_base_toolsets({"skill_load", "delegate_task"}) == {
+        "clarify",
+        "tenant_skill_reader",
+    }
     assert bridge._tenant_base_toolsets(
         {"memory", "session_search", "delegate_task"}
     ) == {"clarify", "memory", "session_search"}

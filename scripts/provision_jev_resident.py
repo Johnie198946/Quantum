@@ -115,7 +115,7 @@ def main() -> int:
         prefix = "plugins.entries.ai-lab-capabilities.settings.jev"
         for key, value in {
             f"{prefix}.mode": "resident",
-            f"{prefix}.shortlist_per_kind": "20",
+            f"{prefix}.shortlist_total": "5",
             f"{prefix}.fast_abstain_similarity": "0.36",
             f"{prefix}.provider_timeout_seconds": "12.0",
             f"{prefix}.provider_warmup_timeout_seconds": "20.0",

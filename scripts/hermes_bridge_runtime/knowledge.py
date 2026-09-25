@@ -110,18 +110,6 @@ _knowledge_workspace_tool_registration_lock = threading.Lock()
 _knowledge_workspace_tools_registered = False
 
 
-_NOTE_DRAFT_REQUEST_RE = re.compile(
-    r"(?:总结|整理|保存|入库|记录|生成|完善|补充|修改|更新).{0,40}(?:笔记|note)"
-    r"|(?:笔记|note).{0,40}(?:保存|入库|总结|整理|完善|补充|修改|更新)"
-    # “帮我入库/存到用户知识”是明确写入意图，即使用户没有说“笔记”。
-    r"|(?:帮我|请|把|将)?(?:入库|存入(?:我的|用户)?知识|加入(?:我的|用户)?知识|记到(?:我的|用户)?知识|记录到(?:我的|用户)?知识)"
-    r"|(?:以上|上述|这些|前面|刚才|全部|所有).{0,40}(?:帮我|给我|替我).{0,8}(?:保存|记下|收录|入库)"
-    r"|(?:把|将)(?:以上|上述|这些|前面|刚才|全部|所有).{0,40}(?:保存|记下|收录|入库)"
-    r"|(?:关于|围绕).{1,40}(?:帮我|给我|替我)?(?:保存|记下|收录|入库)",
-    re.IGNORECASE,
-)
-
-
 _FULL_KNOWLEDGE_CATEGORY_RE = re.compile(
     r"^knowledge/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)+"
     r"(?:public|entitlement/[A-Za-z0-9][A-Za-z0-9._-]*)$"
@@ -133,16 +121,6 @@ _REVISION_REQUEST_RE = re.compile(
     r"上一版|这一版|这版|语气再|风格再|调整|修改|补充|不要.{0,12}(?:一样|重复))",
     re.IGNORECASE,
 )
-
-
-_SKILL_CREATE_REQUEST_RE = re.compile(
-    r"(?:创建|新建|生成|做|建).{0,12}(?:技能|skill)", re.IGNORECASE
-)
-
-
-def _is_note_draft_request(goal: str) -> bool:
-    value = str(goal or "").strip().lower()
-    return value in {"保存", "save"} or bool(_NOTE_DRAFT_REQUEST_RE.search(value))
 
 
 def _requires_browser_fallback(goal: str) -> bool:
@@ -515,6 +493,22 @@ def _tenant_skill_read_tool(args: dict[str, Any], **_kwargs) -> str:
 
 
 def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
+    try:
+        from backend.services.capability_projection import (
+            get_runtime_capability_selection,
+        )
+
+        selection = get_runtime_capability_selection()
+    except (ImportError, RuntimeError):
+        selection = {}
+    if not (
+        selection.get("validated") is True
+        and selection.get("skill_id") == "skill-authoring"
+    ):
+        return json.dumps({
+            "success": False,
+            "error": "skill_authoring_not_selected",
+        })
     sandbox = getattr(_sandbox_tool_context, "value", None)
     if not isinstance(sandbox, TenantHermesSandbox):
         return json.dumps({"success": False, "error": "sandbox_unavailable"})
@@ -522,11 +516,24 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
     name = str((args or {}).get("name") or "").strip()
     try:
         if action == "delete":
+            prior = read_sandbox_skill(sandbox, name)
             changed = delete_sandbox_skill(sandbox, name)
-            return json.dumps(
-                {"success": changed, "action": action, "name": name},
-                ensure_ascii=False,
-            )
+            receipt = {
+                "success": changed,
+                "action": action,
+                "name": name,
+                "scope": "tenant_private",
+                "decision_id": selection.get("decision_id"),
+                "catalog_version": selection.get("catalog_version"),
+                "policy_version": selection.get("policy_version"),
+                "sha256": (
+                    hashlib.sha256(prior.encode("utf-8")).hexdigest()
+                    if changed and prior is not None
+                    else None
+                ),
+            }
+            _append_tenant_skill_audit(sandbox, receipt)
+            return json.dumps(receipt, ensure_ascii=False)
         if action not in {"create", "update"}:
             return json.dumps({"success": False, "error": "unsupported_action"})
         content = str((args or {}).get("content") or "")
@@ -537,20 +544,42 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
             replace=action == "update",
         )
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        return json.dumps(
-            {
-                "success": True,
-                "action": action,
-                "name": name,
-                "sha256": digest,
-                "scope": "tenant_private",
-            },
-            ensure_ascii=False,
-        )
+        receipt = {
+            "success": True,
+            "action": action,
+            "name": name,
+            "sha256": digest,
+            "scope": "tenant_private",
+            "decision_id": selection.get("decision_id"),
+            "catalog_version": selection.get("catalog_version"),
+            "policy_version": selection.get("policy_version"),
+        }
+        _append_tenant_skill_audit(sandbox, receipt)
+        return json.dumps(receipt, ensure_ascii=False)
     except (ValueError, FileExistsError) as error:
         return json.dumps(
             {"success": False, "error": str(error)[:300]}, ensure_ascii=False
         )
+
+
+def _append_tenant_skill_audit(
+    sandbox: TenantHermesSandbox,
+    receipt: dict[str, Any],
+) -> None:
+    """Append a content-free audit receipt inside the isolated profile."""
+    audit_dir = sandbox.hermes_home / "audit"
+    audit_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    record = {
+        "event": "tenant_skill_manage",
+        "tenant_namespace": sandbox.tenant_namespace,
+        "user_namespace": sandbox.user_namespace,
+        **receipt,
+    }
+    target = audit_dir / "tenant-skill-actions.jsonl"
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _ensure_knowledge_gateway_tool_registered() -> None:
@@ -653,7 +682,7 @@ def _ensure_tenant_skill_tool_registered() -> None:
 
         registry.register(
             name="tenant_skill_read",
-            toolset="tenant_skills",
+            toolset="tenant_skill_reader",
             schema={
                 "name": "tenant_skill_read",
                 "description": (
@@ -670,7 +699,7 @@ def _ensure_tenant_skill_tool_registered() -> None:
         )
         registry.register(
             name="tenant_skill_manage",
-            toolset="tenant_skills",
+            toolset="tenant_skill_authoring",
             schema={
                 "name": "tenant_skill_manage",
                 "description": (

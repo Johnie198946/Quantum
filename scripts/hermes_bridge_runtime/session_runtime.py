@@ -271,6 +271,25 @@ def _pending_clarify(user_id: str) -> dict | None:
     return None
 
 
+def _knowledge_action_authorized(
+    client_capabilities: list[str] | set[str] | tuple[str, ...],
+    *,
+    knowledge_claims: dict | None,
+    client_context_claims: dict | None,
+) -> bool:
+    """Treat the client feature bit as transport negotiation, never authority."""
+    return bool(
+        "knowledge_action_v1" in set(client_capabilities)
+        and (
+            client_context_claims is not None
+            or (
+                knowledge_claims is not None
+                and "user_notes" in set(knowledge_claims.get("sources") or [])
+            )
+        )
+    )
+
+
 def _interrupt_and_discard(user_id: str, run_id: str | None) -> None:
     """超时回收：interrupt agent + discard run（watchdog 与 status 命中 timeout 共用路径）。"""
     state = _receipts._stream_run_get(user_id)
@@ -1021,8 +1040,10 @@ async def chat_stream(
                     "client_context_claims": client_context_claims,
                     "qws_business_context": body.qws_business_context,
                     "qws_context_claims": qws_context_claims,
-                    "knowledge_action_enabled": (
-                        "knowledge_action_v1" in set(body.client_capabilities)
+                    "knowledge_action_enabled": _knowledge_action_authorized(
+                        body.client_capabilities,
+                        knowledge_claims=knowledge_claims,
+                        client_context_claims=client_context_claims,
                     ),
                     "answer_blocks_v1": "answer_blocks_v1" in set(body.client_capabilities),
                 },
@@ -1128,8 +1149,10 @@ async def chat_stream(
                     client_context_claims=client_context_claims,
                     qws_business_context=body.qws_business_context,
                     sandbox=sandbox,
-                    knowledge_action_enabled=(
-                        "knowledge_action_v1" in set(body.client_capabilities)
+                    knowledge_action_enabled=_knowledge_action_authorized(
+                        body.client_capabilities,
+                        knowledge_claims=knowledge_claims,
+                        client_context_claims=client_context_claims,
                     ),
                 ),
                 media_type="text/event-stream",
@@ -1264,8 +1287,10 @@ async def chat_prewarm(
             "run_type": "chat_prewarm",
             "agent_config": body.agent_config,
             "knowledge_claims": claims,
-            "knowledge_action_enabled": (
-                "knowledge_action_v1" in set(body.client_capabilities)
+            "knowledge_action_enabled": _knowledge_action_authorized(
+                body.client_capabilities,
+                knowledge_claims=claims,
+                client_context_claims=None,
             ),
         },
     )

@@ -525,7 +525,7 @@ def test_bridge_preflight_accepts_existing_health_without_starting_probe(tmp_pat
     update = UPDATE_SCRIPT.read_text(encoding="utf-8")
 
     assert 'os.environ.get("HERMES_BRIDGE_BIND_ADDRESS", "")' in bridge
-    assert 'bind_address = _private_bridge_bind_address()' in bridge
+    assert "bind_address = endpoints._private_bridge_bind_address()" in bridge
     assert 'host=bind_address' in bridge
     assert 'host="0.0.0.0"' not in bridge
     assert "socket.gethostbyname('host.docker.internal')" in update

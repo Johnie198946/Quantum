@@ -426,21 +426,35 @@ def _shortlist(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict
     ):
         raise RuntimeError("resident_catalog_stale")
     query = _encode([str(payload.get("request") or "")])[0]
-    top_k = max(1, min(32, _integer("shortlist_per_kind", 20)))
-
-    def select(cards: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], float]:
-        available = [(card, id_to_index.get(str(card.get("id") or ""))) for card in cards]
-        scored = [
-            (float(np.dot(embeddings[index], query)), card)
-            for card, index in available if index is not None
-        ]
-        if not scored:
-            return [], -1.0
-        scored.sort(key=lambda item: (item[0], str(item[1].get("id") or "")), reverse=True)
-        return [card for _, card in scored[:top_k]], scored[0][0]
-
-    skills, skill_max = select(list(payload.get("skill_candidates") or []))
-    agents, agent_max = select(list(payload.get("agent_candidates") or []))
+    # Governance bound: the one semantic decision sees at most five cards total
+    # across both kinds. This embedding shortlist is internal to resident JEV,
+    # not a second router or network round trip.
+    top_k = max(1, min(5, _integer(
+        "shortlist_total",
+        _integer("shortlist_per_kind", 5),
+    )))
+    scored: list[tuple[float, str, dict[str, Any]]] = []
+    kind_max = {"skill": -1.0, "agent": -1.0}
+    for kind, cards in (
+        ("skill", list(payload.get("skill_candidates") or [])),
+        ("agent", list(payload.get("agent_candidates") or [])),
+    ):
+        for card in cards:
+            index = id_to_index.get(str(card.get("id") or ""))
+            if index is None:
+                continue
+            score = float(np.dot(embeddings[index], query))
+            kind_max[kind] = max(kind_max[kind], score)
+            scored.append((score, kind, card))
+    scored.sort(
+        key=lambda item: (item[0], str(item[2].get("id") or "")),
+        reverse=True,
+    )
+    selected = scored[:top_k]
+    skills = [card for _, kind, card in selected if kind == "skill"]
+    agents = [card for _, kind, card in selected if kind == "agent"]
+    skill_max = kind_max["skill"]
+    agent_max = kind_max["agent"]
     return skills, agents, skill_max, agent_max
 
 

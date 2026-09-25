@@ -629,23 +629,16 @@ class TestConcurrencyIsolation(unittest.TestCase):
 class TestDrillMeSteering(unittest.TestCase):
     """Drill-me 前馈、反馈与 Steering Loop 的回归测试。"""
 
-    def test_broad_product_goal_enters_drill_me(self):
-        from scripts.hermes_bridge import _is_drill_me_goal
+    def test_drill_me_is_a_formal_pcm_skill_not_bridge_classifier(self):
+        import scripts.hermes_bridge as bridge
 
-        self.assertTrue(_is_drill_me_goal("我想做一个个人脸识别系统"))
-        self.assertTrue(_is_drill_me_goal("帮我搭建一个数据分析平台"))
-        self.assertTrue(
-            _is_drill_me_goal(
-                "【知识库检索纪律·必须严格遵守】" + "规则" * 200
-                + "\n\n【用户问题】我想做一个 TV 系统"
-            )
-        )
-
-    def test_direct_question_does_not_enter_drill_me(self):
-        from scripts.hermes_bridge import _is_drill_me_goal
-
-        self.assertFalse(_is_drill_me_goal("FastAPI 的依赖注入怎么用？"))
-        self.assertFalse(_is_drill_me_goal("解释一下 OAuth 2.0"))
+        self.assertFalse(hasattr(bridge, "_is_drill_me_goal"))
+        skill = (
+            Path(__file__).resolve().parents[1]
+            / "backend/skill_packs/requirements-clarification/SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("name: requirements-clarification", skill)
+        self.assertIn("Do not use for direct questions", skill)
 
     def test_early_selection_is_steered_to_next_clarify(self):
         from scripts.hermes_bridge import _steer_drill_me_response
@@ -670,12 +663,14 @@ class TestDrillMeSteering(unittest.TestCase):
         result = _steer_drill_me_response("确认开工", round_number=1, enabled=False)
         self.assertEqual(result, "确认开工")
 
-    def test_prompt_requires_table_confirmation_sheet(self):
-        from scripts.hermes_bridge import CLARIFY_GATE_PROMPT
-
-        self.assertIn("## 需求确认单", CLARIFY_GATE_PROMPT)
-        self.assertIn("确认维度 | 已确认需求", CLARIFY_GATE_PROMPT)
-        self.assertIn("确认，进入方案设计", CLARIFY_GATE_PROMPT)
+    def test_selected_skill_requires_table_confirmation_sheet(self):
+        skill = (
+            Path(__file__).resolve().parents[1]
+            / "backend/skill_packs/requirements-clarification/SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("## 需求确认单", skill)
+        self.assertIn("确认维度 | 已确认需求", skill)
+        self.assertIn("确认，进入方案设计", skill)
 
 
 class TestWorkflowHermesRuntime(unittest.TestCase):
@@ -691,7 +686,7 @@ class TestWorkflowHermesRuntime(unittest.TestCase):
                     "parameters": {"allow_network": False},
                 }
             ),
-            ["tenant_skills"],
+            ["tenant_skill_reader"],
         )
         self.assertEqual(
             _workflow_toolsets(
@@ -704,7 +699,7 @@ class TestWorkflowHermesRuntime(unittest.TestCase):
         )
         self.assertEqual(
             _workflow_toolsets({"node_type": "OUTPUT_FORMAT", "parameters": {}}),
-            ["tenant_skills"],
+            ["tenant_skill_reader"],
         )
 
     def test_artifact_contract_is_explicit_and_typed(self):

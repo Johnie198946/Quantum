@@ -210,7 +210,7 @@ def test_runtime_design_skills_are_loaded_with_receipts(tmp_path: Path):
     content, receipts = _load_workflow_design_skills(node, sandbox)
     _ensure_tenant_coder_tools_registered()
     _ensure_tenant_coder_tools_registered()
-    assert _workflow_toolsets(node) == ["tenant_coder", "tenant_skills"]
+    assert _workflow_toolsets(node) == ["tenant_coder", "tenant_skill_reader"]
     assert {receipt["name"] for receipt in receipts} == {
         "ui-ux-pro-max",
         "claude-design",

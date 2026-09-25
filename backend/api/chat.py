@@ -934,31 +934,6 @@ def _skill_routing_enabled(agent: EffectiveAgent, skill_id: str | None) -> bool:
     )
 
 
-_SKILL_MANAGEMENT_INTENT = re.compile(
-    r"(?:创建|新建|生成|做|建|更新|修改|删除|create|update|delete).{0,80}(?:技能|skill)",
-    re.IGNORECASE,
-)
-
-
-def _is_skill_management_request(text: str) -> bool:
-    return "tenant_skill_manage" in (text or "") or bool(
-        _SKILL_MANAGEMENT_INTENT.search(text or "")
-    )
-
-
-def _skill_management_decision(
-    question: str, decision: TriageDecision
-) -> TriageDecision:
-    if not _is_skill_management_request(question):
-        return decision
-    return TriageDecision(
-        PROFESSIONAL_TASK,
-        max(0.99, decision.confidence),
-        "tenant_skill_management",
-        (),
-    )
-
-
 def _classify_stream_request(
     req: "StreamRequest",
     *,
@@ -986,7 +961,6 @@ def _classify_stream_request(
         ),
         explicit_skill=bool(skill_id),
     )
-    decision = _skill_management_decision(question or req.question, decision)
     if trusted_professional_surface and decision.route_class == GENERAL_QA:
         return TriageDecision(
             PROFESSIONAL_TASK,
@@ -997,8 +971,7 @@ def _classify_stream_request(
     return decision
 
 
-def _triage_frame(decision: TriageDecision, config: dict[str, Any]) -> str:
-    triage = dict(config.get("triage") or {})
+def _triage_frame(decision: TriageDecision) -> str:
     payload = {
         "type": "triage_route",
         "route_class": decision.route_class,
@@ -1008,8 +981,6 @@ def _triage_frame(decision: TriageDecision, config: dict[str, Any]) -> str:
         "selected_capabilities": [
             capability
             for capability, enabled in (
-                ("agency_agents", triage.get("agency_enabled")),
-                ("tenant_skills", triage.get("skill_enabled")),
                 ("web", any(
                     item in decision.evidence_requirements
                     for item in ("web_search", "web_extract")
@@ -1118,7 +1089,6 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         ),
         explicit_skill=bool(skill_id),
     )
-    triage = _skill_management_decision(req.question, triage)
     main_agent_config = _triaged_agent_config(
         agent,
         triage,
@@ -1126,7 +1096,6 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             agent.id == DEFAULT_AGENT_ID
             and delegated_target is None
             and not skill_id
-            and not _is_skill_management_request(req.question)
         ),
         skill_enabled=_skill_routing_enabled(agent, skill_id),
     )
@@ -1936,7 +1905,6 @@ async def stream_chat(
                     and agent.id == DEFAULT_AGENT_ID
                     and delegated_target is None
                     and not skill_id
-                    and not _is_skill_management_request(req.question)
                 ),
                 skill_enabled=_skill_routing_enabled(agent, skill_id),
             )
@@ -1955,7 +1923,7 @@ async def stream_chat(
             await reserve_inference(payload, effective_request_id, inference)
             reservation_active = True
             yield f"data: {json.dumps({'type': 'model_route', 'tier': inference.tier, 'policy_version': inference.policy_version, 'max_output_tokens': inference.max_output_tokens}, ensure_ascii=False)}\n\n"
-            yield _triage_frame(triage, main_agent_config)
+            yield _triage_frame(triage)
             policy_version = policy.policy_version
             setup_ms = (time.monotonic() - setup_started) * 1000.0
             print(

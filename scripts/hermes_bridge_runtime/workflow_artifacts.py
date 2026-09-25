@@ -236,20 +236,20 @@ def _workflow_toolsets(node: dict[str, Any]) -> list[str]:
     if params.get("workspace_mode") == "tenant_coder":
         # Never grant Hermes' host terminal/files. These names route only to
         # the authenticated workspace and the root-owned networkless runner.
-        return ["tenant_coder", "tenant_skills"]
+        return ["tenant_coder", "tenant_skill_reader"]
     if node_type == "KNOWLEDGE_RETRIEVAL":
         # Tenant knowledge is fetched by Bridge through Knowledge Gateway before
         # model execution. Hermes may only supplement an explicit evidence gap
         # with the web tool; local Vault/file tools are never granted.
-        return ["web"] if bool(params.get("allow_network")) else ["tenant_skills"]
+        return ["web"] if bool(params.get("allow_network")) else ["tenant_skill_reader"]
     if node_type == "LLM_INFERENCE" and str(params.get("agent_id") or "") not in {
         "",
         "main_agent",
     }:
-        return ["tenant_skills"]
+        return ["tenant_skill_reader"]
     # AIAgent 对空列表存在跨版本 fallback 差异；给纯推理节点一个无执行副作用的
     # 最小 skill 元数据面，同时在节点 Prompt 中明确禁止工具调用。
-    return ["tenant_skills"]
+    return ["tenant_skill_reader"]
 
 
 def _workflow_turn_token_cap(node: dict[str, Any]) -> int:

@@ -129,9 +129,33 @@ def test_no_circular_api_import():
 def test_hermes_bridge_is_a_bounded_composition_root():
     source = HERMES_BRIDGE.read_text(encoding="utf-8")
     line_count = len(source.splitlines())
-    assert 200 <= line_count <= 400
+    assert 100 <= line_count <= 250
     assert "app = FastAPI(" in source
     assert "app.add_api_route(" in source
+
+
+def test_hermes_bridge_facade_forwards_live_reads_and_rebindings(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    original_map = bridge.persistence._user_session_map
+    replacement_map = {"compat-user": "compat-session"}
+    monkeypatch.setattr(bridge, "_user_session_map", replacement_map)
+    assert bridge.persistence._user_session_map is replacement_map
+    assert bridge._user_session_map is replacement_map
+
+    second_map = {"runtime-user": "runtime-session"}
+    bridge.persistence._user_session_map = second_map
+    assert bridge._user_session_map is second_map
+    bridge.persistence._user_session_map = original_map
+
+
+def test_hermes_bridge_facade_forwards_function_monkeypatch(monkeypatch):
+    import scripts.hermes_bridge as bridge
+
+    replacement = lambda *_args, **_kwargs: "compat"  # noqa: E731
+    monkeypatch.setattr(bridge, "_build_in_process_agent", replacement)
+    assert bridge.agent_execution._build_in_process_agent is replacement
+    assert bridge._build_in_process_agent is replacement
 
 
 def test_hermes_bridge_modules_stay_cohesive_and_static():

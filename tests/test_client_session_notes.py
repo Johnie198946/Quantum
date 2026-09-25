@@ -136,7 +136,7 @@ def test_v1_knowledge_actions_do_not_enable_legacy_note_protocol():
 def test_knowledge_merge_directive_covers_decision_rewrite_and_increment_rules():
     import scripts.hermes_bridge as bridge
 
-    assert bridge._is_note_draft_request("关于雾岛交通，帮我保存") is True
+    assert not hasattr(bridge, "_is_note_draft_request")
     directive = bridge._KNOWLEDGE_MERGE_DIRECTIVE
     for rule in (
         "合并主题不等于目标笔记", "最近五轮", "必须询问用户", "先看摘要",
@@ -345,7 +345,11 @@ async def test_bridge_prewarm_is_internal_durable_and_tenant_scoped(monkeypatch,
 
     store = bridge.DurableChatRunStore(tmp_path / "runs.sqlite3")
     store.worker_heartbeat("worker-test")
-    claims = {"tenant_key": "tenant-a", "user_id": "user-a"}
+    claims = {
+        "tenant_key": "tenant-a",
+        "user_id": "user-a",
+        "sources": ["user_notes"],
+    }
     monkeypatch.setattr(bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True)
     monkeypatch.setattr(bridge.session_runtime, "_chat_run_store", store)
     monkeypatch.setattr(bridge.persistence, "_require_internal_strict", lambda token: None)
@@ -390,17 +394,16 @@ def test_ios_normal_send_does_not_export_sqlite_transcript():
     assert "sessionId: sid" in coordinator
 
 
-def test_note_draft_request_detection_and_title_fallback():
+def test_note_action_uses_formal_pcm_skill_and_keeps_nonsemantic_helpers():
     import scripts.hermes_bridge as bridge
 
-    assert bridge._is_note_draft_request("保存")
-    assert bridge._is_note_draft_request("总结为笔记")
-    assert bridge._is_note_draft_request("把我们聊的内容保存入库成为笔记")
-    assert bridge._is_note_draft_request("帮我完善《TokenBox》这篇笔记")
-    assert bridge._is_note_draft_request("以上所有关于采尔马特的都帮我保存")
-    assert bridge._is_note_draft_request("把刚才的内容都记下来")
-    assert not bridge._is_note_draft_request("笔记功能怎么使用？")
-    assert not bridge._is_note_draft_request("iOS 如何保存图片到相册？")
+    skill = (
+        Path(__file__).resolve().parents[1]
+        / "backend/skill_packs/personal-knowledge-action/SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "name: personal-knowledge-action" in skill
+    assert "signed personal knowledge scope" in skill
+    assert not hasattr(bridge, "_NOTE_DRAFT_REQUEST_RE")
     assert bridge._fallback_note_title("# 超聚变会话总结\n\n正文") == "超聚变会话总结"
     assert bridge._is_revision_request("这版不满意，请重写")
     assert bridge._is_revision_request("语气再正式一点")
@@ -429,14 +432,17 @@ def test_knowledge_action_tools_skip_progressive_discovery(monkeypatch):
     assert agent.valid_tool_names == {
         "knowledge_workspace_read", "knowledge_action_propose",
     }
-    assert bridge._SKILL_CREATE_REQUEST_RE.search("帮我创建一个行程技能")
+    assert not hasattr(bridge, "_SKILL_CREATE_REQUEST_RE")
     assert not bridge._is_revision_request("今天天气怎么样")
 
 
 def test_tenant_skill_manage_permission_enables_tenant_skill_toolset():
     import scripts.hermes_bridge as bridge
 
-    assert "tenant_skills" in bridge._tenant_base_toolsets({"tenant_skill_manage"})
+    assert "tenant_skill_authoring" in bridge._tenant_base_toolsets({"tenant_skill_manage"})
+    assert "tenant_skill_reader" not in bridge._tenant_base_toolsets({"tenant_skill_manage"})
+    assert "tenant_skill_reader" in bridge._tenant_base_toolsets({"skill_load"})
+    assert "tenant_skill_authoring" not in bridge._tenant_base_toolsets({"skill_load"})
     assert "skills" not in bridge._tenant_base_toolsets({"tenant_skill_manage"})
 
 
@@ -580,6 +586,17 @@ def test_note_draft_runs_from_native_hermes_history_without_client_snapshot(
         session_id = "hermes-native-session"
 
         def run_conversation(self, goal, **kwargs):
+            from backend.services.capability_projection import (
+                bind_runtime_capability_selection,
+            )
+
+            bind_runtime_capability_selection(
+                skill_id="personal-knowledge-action",
+                agent_id=None,
+                decision_id="test-native-note",
+                catalog_version="test",
+                policy_version="test",
+            )
             observed["goal"] = goal
             observed["persist_user_message"] = kwargs.get("persist_user_message")
 
@@ -637,8 +654,8 @@ def test_note_draft_runs_from_native_hermes_history_without_client_snapshot(
     while not events.empty():
         emitted.append(events.get_nowait())
     assert observed["client_context_enabled"] is True
-    assert "禁止调用 session_context_read" in observed["goal"]
-    assert "Hermes 原生会话笔记协议" not in observed["persist_user_message"]
+    assert observed["goal"] == "请把本次对话保存为笔记"
+    assert observed["persist_user_message"] is None
     draft_event = next(item for item in emitted if item.get("type") == "note_draft")
     assert draft_event["source_message_ids"] == ["1", "2"]
     assert emitted[-1]["type"] == "done"
@@ -655,6 +672,17 @@ def test_save_request_without_knowledge_action_fails_closed(monkeypatch, tmp_pat
         session_id = "hermes-save-session"
 
         def run_conversation(self, *_args, **_kwargs):
+            from backend.services.capability_projection import (
+                bind_runtime_capability_selection,
+            )
+
+            bind_runtime_capability_selection(
+                skill_id="personal-knowledge-action",
+                agent_id=None,
+                decision_id="test-missing-action",
+                catalog_version="test",
+                policy_version="test",
+            )
             return {"final_response": "已生成保存确认卡。"}
 
         def close(self):
@@ -712,7 +740,7 @@ def test_knowledge_action_context_does_not_depend_on_save_wording(monkeypatch, t
     import scripts.hermes_bridge as bridge
 
     goal = "整理并保存当前获准知识中关于超聚变的核心内容"
-    assert bridge._is_note_draft_request(goal) is False
+    assert not hasattr(bridge, "_is_note_draft_request")
 
     class FakeAgent:
         session_id = "hermes-knowledge-action"

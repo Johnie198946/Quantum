@@ -229,11 +229,21 @@ def test_postprocessing_guard_retains_completed_usage(harness, monkeypatch):
     agent, run, _, _ = harness
     original = agent.run_conversation
     def guarded(*args, **kwargs):
+        from backend.services.capability_projection import (
+            bind_runtime_capability_selection,
+        )
+
         result = original(*args, **kwargs)
+        bind_runtime_capability_selection(
+            skill_id="personal-knowledge-action",
+            agent_id=None,
+            decision_id="test-usage-guard",
+            catalog_version="test",
+            policy_version="test",
+        )
         bridge._client_context_tool_context.value = {}
         return result
     monkeypatch.setattr(agent, "run_conversation", guarded)
-    monkeypatch.setattr(bridge.knowledge, "_is_note_draft_request", lambda goal: True)
     errors = [event for event in run(knowledge_action_enabled=True) if event["type"] == "error"]
     assert errors[-1]["code"] == "knowledge_action_missing"
     assert errors[-1]["usage"]["total_tokens"] == 1060

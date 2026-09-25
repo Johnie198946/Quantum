@@ -1075,7 +1075,10 @@ class TestInFlightUsers(unittest.TestCase):
                 run = store.get_unchecked(response.headers["x-run-id"])
 
         self.assertEqual(response.headers["x-session-id"], "u_durable")
-        self.assertTrue(json.loads(run["execution_payload_json"])["knowledge_action_enabled"])
+        # A client-advertised feature bit is not authorization. Without a
+        # verified client-context or signed user_notes scope, the worker payload
+        # must keep personal-knowledge actions disabled.
+        self.assertFalse(json.loads(run["execution_payload_json"])["knowledge_action_enabled"])
         self.assertNotIn("u_durable", bridge.contracts._in_flight_users)
         self.assertFalse(bridge._is_in_flight("u_durable"))
 

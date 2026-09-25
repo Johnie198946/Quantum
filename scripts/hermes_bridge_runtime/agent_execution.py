@@ -55,6 +55,24 @@ from backend.services.tenant_coder_tools import (
 from scripts.chat_run_store import DurableChatRunStore
 
 
+def _requirements_clarification_protocol_complete(
+    selection: dict[str, Any],
+    protocol_state: dict[str, Any],
+) -> bool:
+    """Validate convergence or an explicit timeout/cancel recovery boundary."""
+    if not (
+        selection.get("validated") is True
+        and selection.get("skill_id") == "requirements-clarification"
+    ):
+        return True
+    attempts = int(protocol_state.get("clarify_attempts") or 0)
+    rounds = int(protocol_state.get("clarify_rounds") or 0)
+    expired = protocol_state.get("clarify_expired") is True
+    return attempts > 0 and (
+        rounds >= _contracts.DRILL_ME_MIN_ROUNDS or expired
+    )
+
+
 def _build_in_process_agent(
     goal: str,
     user_id: str,
@@ -101,7 +119,6 @@ def _build_in_process_agent(
         tier = inference_policy["tier"].upper()
         cfg_model = os.environ.get(f"HERMES_{tier}_CHAT_MODEL", "").strip() or cfg_model
     route_class = triage.get("route_class") if triage else None
-    note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _knowledge._is_note_draft_request(goal)
     if route_class == GENERAL_QA:
         cfg_model = os.environ.get("HERMES_FAST_CHAT_MODEL", "gpt-5.4-nano")
     evidence_requirements = set(
@@ -109,8 +126,7 @@ def _build_in_process_agent(
     )
     agency_business_surface = composition.get("business_surface") == "agency"
     agency_route_enabled = bool(
-        not note_draft_request
-        and (inference_policy is None or inference_policy["allow_subagents"])
+        (inference_policy is None or inference_policy["allow_subagents"])
         and (
             agency_business_surface
             or "delegate_task" in set(agent_config.get("allowed_tools") or [])
@@ -128,6 +144,7 @@ def _build_in_process_agent(
         and allowed_tools & {"knowledge_search", "user_note_search"}
     )
     tenant_skill_enabled = "skill_load" in allowed_tools
+    tenant_skill_authoring_enabled = "tenant_skill_manage" in allowed_tools
     skill_candidates: list[dict[str, Any]] = []
     pinned_skills: set[str] = set()
     agent_id = str(agent_config.get("id") or "")
@@ -142,7 +159,8 @@ def _build_in_process_agent(
     }
     public_knowledge_fallback = knowledge_tool_enabled and _agent_config._knowledge_public_fallback_allowed(goal, agent_config, triage)
     note_search_required = bool(
-        note_draft_request
+        client_context_enabled
+        or knowledge_action_enabled
         or triage is None
         or "user_note_search" in evidence_requirements
     )
@@ -161,8 +179,7 @@ def _build_in_process_agent(
         and "browser_navigate" in allowed_tools
     )
     delegation_tool_enabled = bool(
-        (not note_draft_request)
-        and (inference_policy is None or inference_policy["allow_subagents"])
+        (inference_policy is None or inference_policy["allow_subagents"])
         and "delegate_task" in allowed_tools
     )
     platform_tools = set(_agent_config._get_cached_tools(cfg))
@@ -189,10 +206,15 @@ def _build_in_process_agent(
             toolsets_list.append("knowledge_gateway")
         if note_search_required and "user_notes_gateway" not in toolsets_list:
             toolsets_list.append("user_notes_gateway")
-    if tenant_skill_enabled:
+    if tenant_skill_enabled or tenant_skill_authoring_enabled:
         _knowledge._ensure_tenant_skill_tool_registered()
-        if "tenant_skills" not in toolsets_list:
-            toolsets_list.append("tenant_skills")
+        if tenant_skill_enabled and "tenant_skill_reader" not in toolsets_list:
+            toolsets_list.append("tenant_skill_reader")
+        if (
+            tenant_skill_authoring_enabled
+            and "tenant_skill_authoring" not in toolsets_list
+        ):
+            toolsets_list.append("tenant_skill_authoring")
     if legacy_client_context_enabled:
         _knowledge._ensure_client_context_tools_registered()
         if "client_context" not in toolsets_list:
@@ -210,7 +232,9 @@ def _build_in_process_agent(
         if browser_fallback_requested:
             requested_toolsets.add("browser")
         if tenant_skill_enabled:
-            requested_toolsets.add("tenant_skills")
+            requested_toolsets.add("tenant_skill_reader")
+        if tenant_skill_authoring_enabled:
+            requested_toolsets.add("tenant_skill_authoring")
         if delegation_tool_enabled:
             requested_toolsets.add("delegation")
         if knowledge_tool_enabled:
@@ -232,7 +256,6 @@ def _build_in_process_agent(
     toolsets_list = _agent_config._apply_triage_toolset_policy(
         toolsets_list,
         triage,
-        note_draft_request=note_draft_request,
         public_knowledge_fallback=public_knowledge_fallback,
     )
     fast_general = bool(
@@ -258,12 +281,29 @@ def _build_in_process_agent(
         else _agent_config._get_cached_fallback(cfg)
     )
     session_db = _agent_config._create_sandbox_session_db(sandbox)
-    drill_me_enabled = _agent_config._is_drill_me_goal(goal)
+    drill_me_enabled = False
     clarify_round = 0
 
     def _clarify_cb(question: str, choices=None, multi_select: bool = False) -> str:
         """clarify 回调：注册进 clarify_gateway → 推 clarify 事件 → 阻塞等用户响应。"""
-        nonlocal clarify_round
+        nonlocal clarify_round, drill_me_enabled
+        from backend.services.capability_projection import (
+            get_runtime_capability_selection,
+        )
+
+        selection = get_runtime_capability_selection()
+        drill_me_enabled = bool(
+            selection.get("validated") is True
+            and selection.get("skill_id") == "requirements-clarification"
+        )
+        protocol_state = getattr(
+            _knowledge._client_context_tool_context, "value", None
+        )
+        if isinstance(protocol_state, dict):
+            protocol_state["clarify_attempts"] = int(
+                protocol_state.get("clarify_attempts") or 0
+            ) + 1
+            protocol_state["drill_me_selected"] = drill_me_enabled
         cg = _contracts._get_clarify_gateway()
 
         clarify_id = uuid.uuid4().hex[:10]
@@ -304,6 +344,8 @@ def _build_in_process_agent(
         resp = cg.wait_for_response(clarify_id, timeout=float(_contracts.CLARIFY_TIMEOUT_SECONDS))
         print(f"[bridge] clarify-WAIT-RETURN cid={clarify_id} resp={str(resp)[:40]!r}")
         if resp is None or resp == "":
+            if isinstance(protocol_state, dict):
+                protocol_state["clarify_expired"] = True
             _receipts._qput(stream_q, {
                 "type": "clarify_expired",
                 "clarify_id": clarify_id,
@@ -314,6 +356,8 @@ def _build_in_process_agent(
                 "Make the most reasonable assumption and continue.]"
             )
         clarify_round += 1
+        if isinstance(protocol_state, dict):
+            protocol_state["clarify_rounds"] = clarify_round
         # Feedback：把收敛轮次写入在途状态，便于状态检查与线上诊断。
         with _contracts._stream_runs_guard:
             run_state = _contracts._stream_runs.get(user_id)
@@ -372,10 +416,6 @@ def _build_in_process_agent(
                     "remove": "Quantum 已删除长期记忆",
                 }.get(action, "Quantum 已更新长期记忆"),
             })
-        # 技能创建租户化：skill_manage(action=create) 完成后把新技能迁移到 tenants/<tenant>/
-        # （租户设置页只显示租户专属技能——用户创建的技能自动归租户，不留在 public）
-        if function_name == "skill_manage":
-            _receipts._tenantize_created_skill(function_args, sandbox)
 
     # Hermes multi-session gateways use a ContextVar for request-local cwd.
     # Bind it before AIAgent builds the base prompt and tool/context surfaces.
@@ -540,7 +580,6 @@ def _build_in_process_agent(
             + (_knowledge._KNOWLEDGE_MERGE_DIRECTIVE if knowledge_action_enabled else "")
             + _agent_config._triage_system_directive(
                 triage,
-                note_draft_request=note_draft_request and not knowledge_action_enabled,
             )
             )
         ),
@@ -613,6 +652,11 @@ def _run_agent_sync(
     hermes_home_token: Any = None
     routing_scope_token: Any = None
     try:
+        from backend.services.capability_projection import (
+            clear_runtime_capability_selection,
+        )
+
+        clear_runtime_capability_selection()
         # This SSE request is finite: once ``done`` is emitted there is no
         # Hermes gateway consumer that can re-enter a detached child result.
         # Declaring that capability boundary makes Hermes' native
@@ -653,15 +697,51 @@ def _run_agent_sync(
         authorized_tools = set(
             str(item) for item in (agent_config or {}).get("allowed_tools") or []
         )
+        has_signed_client_context = bool(
+            client_session_context is not None and client_context_claims is not None
+        )
+        has_signed_legacy_notes = bool(
+            knowledge_capability
+            and knowledge_claims is not None
+            and "user_notes" in set(knowledge_claims.get("sources") or [])
+        )
+        personal_knowledge_authorized = bool(
+            knowledge_action_enabled
+            or has_signed_client_context
+            or has_signed_legacy_notes
+        )
+        authorized_skill_ids: list[str] = []
+        if isinstance(sandbox, TenantHermesSandbox):
+            inventory = sorted({
+                str(item.get("name") or "")
+                for item in list_sandbox_skills(sandbox)
+                if str(item.get("name") or "")
+            })
+            if "skill_load" in authorized_tools:
+                authorized_skill_ids = inventory
+            elif (
+                "tenant_skill_manage" in authorized_tools
+                and "skill-authoring" in inventory
+            ):
+                authorized_skill_ids = ["skill-authoring"]
+            if not personal_knowledge_authorized:
+                authorized_skill_ids = [
+                    item for item in authorized_skill_ids
+                    if item != "personal-knowledge-action"
+                ]
+            if "tenant_skill_manage" not in authorized_tools:
+                authorized_skill_ids = [
+                    item for item in authorized_skill_ids
+                    if item != "skill-authoring"
+                ]
+        authorized_skill_ids = [f"skill:{item}" for item in authorized_skill_ids]
         routing_scope_token = set_runtime_routing_scope({
             "tenant_scope": f"tenant:{tenant_namespace}:user:{user_namespace}",
             "policy_version": str(
                 (agent_config or {}).get("routing_policy_version")
                 or "runtime-policy-v1"
             ),
-            "authorized_skill_ids": (
-                None if "skill_load" in authorized_tools else []
-            ),
+            "authorized_skill_ids": authorized_skill_ids,
             "authorized_agent_ids": (
                 None if "delegate_task" in authorized_tools else []
             ),
@@ -692,13 +772,16 @@ def _run_agent_sync(
                 "\n\n【平台记忆回执】该内容已由平台写入当前用户的长期记忆。"
                 "不要再次调用 memory；只需简洁确认。"
             )
-        note_draft_request = not (agent_config or {}).get("knowledge_stage_only") and _knowledge._is_note_draft_request(goal)
         note_context_claims = client_context_claims or knowledge_claims
-        has_client_context = (
-            client_session_context is not None and client_context_claims is not None
+        has_client_context = has_signed_client_context
+        legacy_note_capability_enabled = bool(
+            not knowledge_action_enabled
+            and personal_knowledge_authorized
         )
         if note_context_claims is not None and (
-            has_client_context or note_draft_request or knowledge_action_enabled
+            has_client_context
+            or knowledge_action_enabled
+            or legacy_note_capability_enabled
         ):
             assert note_context_claims is not None
             transcript = (
@@ -706,7 +789,6 @@ def _run_agent_sync(
                 if isinstance(client_session_context, dict)
                 else {}
             )
-            has_recovery_transcript = bool(transcript.get("messages"))
             run_state = _receipts._stream_run_get(user_id) or {}
             _knowledge._client_context_tool_context.value = {
                 "transcript": transcript,
@@ -730,80 +812,26 @@ def _run_agent_sync(
                 "knowledge_workspace_read_completed": False,
                 "emit": lambda event: _receipts._qput(stream_q, event),
             }
-            if (
-                note_draft_request
-                and not knowledge_action_enabled
-                and not hermes_sid
-                and not has_recovery_transcript
-            ):
-                # A brand-new empty session has no native history to summarize.
-                # Explicit recovery transcripts are imported below instead of
-                # being duplicated inside the current user goal.
-                transcript_result = _knowledge._session_context_read_tool({})
-                goal += (
-                    "\n\n【session_context_read 已验证返回；这是本轮唯一权威会话事实】\n"
-                    + transcript_result
-                    + "\n请据此先生成新草稿，再调用 user_note_search 检查同类笔记，最后必须调用"
-                    " note_draft。不要澄清，不要声称已经写入。"
-                )
-            elif (
-                note_draft_request
-                and knowledge_action_enabled
-                and not hermes_sid
-                and not has_recovery_transcript
-            ):
-                transcript_result = _knowledge._session_context_read_tool({})
-                goal += (
-                    "\n\n【知识工作区协议】本客户端支持 knowledge_action_v1。"
-                    "session_context_read 已由平台验证执行，完整结果如下：\n"
-                    + transcript_result
-                    + "\n若是保存为一篇新笔记，直接调用 knowledge_action_propose 生成确认卡；"
-                    "仅在用户要求修改、合并或归档已有笔记时，先调用 knowledge_workspace_read。"
-                    "禁止调用 note_draft，"
-                    "禁止声称已经写入。"
-                )
-                if "仅当我明确要求拆分" in goal:
-                    goal += (
-                        "\n【综合笔记硬约束】本轮必须只提议一篇综合笔记；"
-                        "不得按来源文件数、来源会话数或主题数拆成多篇。"
-                    )
-            elif note_draft_request and not knowledge_action_enabled and hermes_sid:
-                goal += (
-                    "\n\n【Hermes 原生会话笔记协议】当前 Hermes SessionDB 历史已恢复，"
-                    "它是本轮唯一会话事实源；禁止调用 session_context_read。先调用 "
-                    "user_note_search 检查当前用户同类笔记，再调用 note_draft 生成待确认草稿；"
-                    "禁止声称已经写入。"
-                )
-            elif note_draft_request and knowledge_action_enabled and hermes_sid:
-                goal += (
-                    "\n\n【Hermes 原生会话知识操作协议】用户已要求保存当前对话，不要重复确认保存意图；"
-                    "主题或目标存在多个合理选择时仍必须澄清。"
-                    "必须先直接调用 knowledge_workspace_read，再直接调用 "
-                    "knowledge_action_propose 生成待确认操作卡；禁止搜索或描述这两个已提供的工具，"
-                    "禁止调用 note_draft，禁止声称已经写入。"
-                )
-            if _knowledge._is_revision_request(goal):
-                goal += (
-                    "\n\n【修订硬约束】用户正在对上一版提出修改。必须逐项落实本轮反馈，"
-                    "输出一版实质不同的修订稿；禁止复述或原样返回上一版。完成前对比上一版，"
-                    "若核心段落无变化则继续改写。"
-                )
-            if _knowledge._SKILL_CREATE_REQUEST_RE.search(goal):
-                goal += (
-                    "\n\n【租户 Skill 创建协议】完成需求确认后，必须调用 "
-                    "tenant_skill_manage 在当前认证租户沙箱中创建或更新 Skill；"
-                    "禁止调用全局 skill_manage，禁止写宿主机全局 Skill。SKILL.md 必须包含"
-                    "可判断的 Use when 描述、至少两层 skill_path、skill_level、"
-                    "trigger_phrases 和 negative_phrases。工具返回 success=true 后才可称已创建。"
-                )
+        else:
+            # Request-local protocol counters carry no client data or authority.
+            _knowledge._client_context_tool_context.value = {
+                "clarify_attempts": 0,
+                "clarify_rounds": 0,
+                "clarify_expired": False,
+            }
+        if _knowledge._is_revision_request(goal):
+            goal += (
+                "\n\n【修订硬约束】用户正在对上一版提出修改。必须逐项落实本轮反馈，"
+                "输出一版实质不同的修订稿；禁止复述或原样返回上一版。完成前对比上一版，"
+                "若核心段落无变化则继续改写。"
+            )
         agent, session_db, route_context = _build_in_process_agent(
             goal, user_id, hermes_sid, stream_q,
             allow_local_files=allow_local_files,
             agent_config=agent_config,
             knowledge_capability=knowledge_capability,
             client_context_enabled=(
-                client_session_context is not None and client_context_claims is not None
-                or (note_draft_request and knowledge_claims is not None)
+                has_client_context or legacy_note_capability_enabled
             ),
             knowledge_action_enabled=knowledge_action_enabled,
             sandbox=sandbox,
@@ -918,14 +946,36 @@ def _run_agent_sync(
             if result_dict else str(result or "")
         )
         client_tool_context = getattr(_knowledge._client_context_tool_context, "value", None)
+        from backend.services.capability_projection import (
+            get_runtime_capability_selection,
+        )
+
+        selection = get_runtime_capability_selection()
+        if not _requirements_clarification_protocol_complete(
+            selection,
+            client_tool_context if isinstance(client_tool_context, dict) else {},
+        ):
+            raise RuntimeError("requirements_clarification_protocol_missing")
+        personal_knowledge_action = bool(
+            selection.get("validated") is True
+            and selection.get("skill_id") == "personal-knowledge-action"
+        )
+        if personal_knowledge_action and not personal_knowledge_authorized:
+            _receipts._qput(stream_q, {
+                "type": "error",
+                "code": "knowledge_action_unauthorized",
+                "message": "当前客户端未提供经QCP验证的个人知识写入能力。",
+                "usage": result_usage,
+            })
+            return
         if (
             isinstance(client_tool_context, dict)
-            and note_draft_request
-            and knowledge_action_enabled
-            and not client_tool_context.get("knowledge_action_emitted")
+            and personal_knowledge_action
             and not (
-                client_tool_context.get("knowledge_workspace_read_completed")
-                and "没有新增内容" in str(final or "")
+                client_tool_context.get("knowledge_action_emitted")
+                or client_tool_context.get("draft_emitted")
+                or client_tool_context.get("knowledge_workspace_read_completed")
+                or client_tool_context.get("user_note_search_completed")
             )
         ):
             _receipts._qput(stream_q, {
@@ -935,25 +985,6 @@ def _run_agent_sync(
                 "usage": result_usage,
             })
             return
-        if (
-            isinstance(client_tool_context, dict)
-            and _knowledge._is_note_draft_request(goal)
-            and not knowledge_action_enabled
-            and not client_tool_context.get("draft_emitted")
-            and str(final or "").strip()
-        ):
-            source_ids = list(client_tool_context.get("hermes_message_ids") or [])
-            fallback_title = _knowledge._fallback_note_title(str(final))
-            _knowledge._user_note_search_tool({"query": fallback_title, "limit": 5})
-            if not (client_tool_context.get("user_note_search_results") or {}):
-                _knowledge._note_draft_tool(
-                    {
-                        "title": fallback_title,
-                        "markdown": str(final),
-                        "tags": ["会话笔记"],
-                        "source_message_ids": source_ids,
-                    }
-                )
         done_event = {
             "type": "done",
             "session_id": user_id,
@@ -982,6 +1013,14 @@ def _run_agent_sync(
         _knowledge._client_context_tool_context.value = None
         _knowledge._sandbox_tool_context.value = None
         _knowledge._skill_route_context.value = None
+        try:
+            from backend.services.capability_projection import (
+                clear_runtime_capability_selection,
+            )
+
+            clear_runtime_capability_selection()
+        except (ImportError, RuntimeError):
+            pass
         try:
             cache_key = route_context.get("agent_cache_key")
             cache_signature = route_context.get("agent_cache_signature")
