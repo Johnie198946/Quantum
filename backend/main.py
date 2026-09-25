@@ -38,6 +38,7 @@ from backend.api.knowledge_policy import router as knowledge_policy_router
 from backend.api.knowledge_sync import router as knowledge_sync_router
 from backend.api.knowledge_actions import router as knowledge_actions_router
 from backend.api.subscriptions import router as subscriptions_router
+from backend.api.learning import router as learning_router
 from backend.api.knowledge_publication import router as knowledge_publication_router
 from backend.api.knowledge_contribution import router as knowledge_contribution_router
 from backend.api.hot_memory import router as hot_memory_router
@@ -181,6 +182,7 @@ app.include_router(agreement_router)
 # 目录 / 订阅管理 / 当前用户
 app.include_router(catalog_router, dependencies=[Depends(require_current_agreement)])
 app.include_router(subscriptions_router, dependencies=[Depends(require_current_agreement)])
+app.include_router(learning_router, dependencies=[Depends(require_current_agreement)])
 app.include_router(knowledge_publication_router, dependencies=[Depends(require_current_agreement)])
 app.include_router(knowledge_contribution_router, dependencies=[Depends(require_current_agreement)])
 app.include_router(hot_memory_router, dependencies=[Depends(require_current_agreement)])

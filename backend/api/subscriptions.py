@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from markdown_it import MarkdownIt
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
@@ -76,6 +77,9 @@ class BookProgressWrite(BaseModel):
     book_id: str = Field(..., min_length=1, max_length=384)
     progress: float = Field(..., ge=0, le=1)
     content_version: str | None = Field(default=None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    section_id: str | None = Field(default=None, min_length=1, max_length=160)
+    block_index: int | None = Field(default=None, ge=0, le=10_000)
+    character_offset: int | None = Field(default=None, ge=0, le=1_000_000)
 
     @field_validator("content_version", mode="before")
     @classmethod
@@ -436,11 +440,76 @@ def _book_subscription(row: KnowledgeBookSubscription | None, book: dict[str, An
         "edition": (row.edition + int(changed)) if row else int(book.get("edition") or 1),
         "content_version": current_version,
         "progress": 0 if changed or row is None else row.progress,
+        "last_section_id": None if changed or row is None else row.last_section_id,
+        "last_block_index": None if changed or row is None else row.last_block_index,
+        "last_character_offset": None if changed or row is None else row.last_character_offset,
         "legacy_progress": row.legacy_progress if row else None,
         "legacy_last_read_at": row.legacy_last_read_at if row else None,
         "subscribed_at": row.subscribed_at if row else subscribed_at,
         "last_read_at": row.last_read_at if row else subscribed_at,
     }
+
+
+def _learning_resume_points(section: dict[str, Any], *, limit: int = 2) -> list[dict[str, Any]]:
+    """Extract evidence, never synthesize a quote or pad an empty result.
+
+    The reader resolves these excerpts against its rendered blocks and filters
+    beyond the checkpoint before choosing two. Markdown token indices are NOT
+    interchangeable with iOS block indices.
+    """
+    tokens = MarkdownIt().parse(str(section.get("markdown") or ""))
+    candidates = []
+    seen = set()
+    for index, token in enumerate(tokens):
+        if token.type != "inline" or index == 0 or tokens[index - 1].type != "paragraph_open":
+            continue
+        if any(child.type in {"image", "html_inline", "code_inline"} for child in token.children or []):
+            continue
+        paragraph = "".join(
+            child.content if child.type == "text" else " " if child.type in {"softbreak", "hardbreak"} else ""
+            for child in token.children or []
+        ).strip()
+        for match in re.finditer(r"[^。！？.!?]+[。！？.!?](?:[”’\"])?", paragraph):
+            sentence = match.group().strip()
+            if not 12 <= len(sentence) <= 200 or sentence in seen:
+                continue
+            if re.match(r"^(它|这[一个位种些]?|那|因此|所以|此外|然而|总之|其|上述|前者|后者|It\b|This\b|These\b|Therefore\b)", sentence, re.I):
+                continue
+            if re.search(r"巨大.{0,3}影响|意义重大|至关重要|广泛关注|学习目标|连载[：:]", sentence):
+                continue
+            if re.search(r"[$\\]|https?://", sentence):
+                continue
+            if re.search(r"区别|不同于|相比|而非|前提|条件|只有|当且仅当|依赖|取决于|because|unlike|requires", sentence, re.I):
+                kind, score, reason = "connection", 3, "帮助接回概念之间的条件或区别"
+            elif re.search(r"是指|定义|称为|指的是|意味着|表示|means|defined|refers to", sentence, re.I):
+                kind, score, reason = "concept", 3, "恢复本段正在解释的概念"
+            elif re.search(r"通过|使得|可以|能够|必有|等于|满足|用于|allows|enables|consists", sentence, re.I):
+                kind, score, reason = "conclusion", 2, "恢复本段的具体结论或机制"
+            else:
+                continue
+            seen.add(sentence)
+            candidates.append({
+                "title": "上次停留处的核心内容",
+                "detail": sentence,
+                "source_excerpt": sentence,
+                "section_id": section["id"],
+                "kind": kind,
+                "score": score,
+                "selection_reason": reason,
+            })
+    return sorted(candidates, key=lambda point: -point["score"])[:limit]
+
+
+def _resume_section(body: dict[str, Any], checkpoint: dict[str, Any]) -> dict[str, Any] | None:
+    sections = list(body.get("sections") or [])
+    if not sections:
+        return None
+    section_id = checkpoint.get("last_section_id")
+    exact = next((item for item in sections if item.get("id") == section_id), None)
+    if exact is not None:
+        return exact
+    index = min(int(float(checkpoint.get("progress") or 0) * len(sections)), len(sections) - 1)
+    return sections[max(index, 0)]
 
 
 @router.get("/knowledge-books/{book_id}")
@@ -525,6 +594,34 @@ async def my_book_subscriptions(payload=Depends(require_auth)):
     return {"subscriptions": followed + legacy}
 
 
+@router.get("/me/learning-resume")
+async def learning_resume(payload=Depends(require_auth)):
+    subscriptions = (await my_book_subscriptions(payload))["subscriptions"]
+    if not subscriptions:
+        return {"resume": None}
+    checkpoint = max(
+        subscriptions,
+        key=lambda item: item.get("last_read_at") or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    _, body = await _available_book_body(payload, checkpoint["book"]["id"])
+    section = _resume_section(body, checkpoint)
+    if section is None:
+        return {"resume": None}
+    candidates = _learning_resume_points(section, limit=256)
+    return {
+        "resume": {
+            "subscription": checkpoint,
+            "section_id": section["id"],
+            "section_title": section["title"],
+            "block_index": checkpoint.get("last_block_index"),
+            "character_offset": checkpoint.get("last_character_offset"),
+            "key_points": candidates[:2],
+            "candidates": candidates,
+            "content_version": body["content_version"],
+        }
+    }
+
+
 @router.put("/me/book-subscriptions")
 async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_auth)):
     tenant_key, user_id = _reader_identity(payload)
@@ -549,6 +646,9 @@ async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_au
             if row.content_version != current_version:
                 row.edition += 1
                 row.progress = 0
+                row.last_section_id = None
+                row.last_block_index = None
+                row.last_character_offset = None
                 row.content_version = current_version
             row.last_read_at = datetime.now(timezone.utc)
         if book.get("series_id") and await db.get(KnowledgeSeriesSubscription, (tenant_key, user_id, book["series_id"])) is None:
@@ -573,6 +673,9 @@ async def subscribe_book(body: BookSubscriptionWrite, payload=Depends(require_au
             if row.content_version != current_version:
                 row.edition += 1
                 row.progress = 0
+                row.last_section_id = None
+                row.last_block_index = None
+                row.last_character_offset = None
                 row.content_version = current_version
             row.last_read_at = datetime.now(timezone.utc)
             if book.get("series_id") and await db.get(KnowledgeSeriesSubscription, (tenant_key, user_id, book["series_id"])) is None:
@@ -589,6 +692,17 @@ async def update_book_progress(body: BookProgressWrite, payload=Depends(require_
     if body.content_version is not None and body.content_version != reader_body["content_version"]:
         raise _error(409, code="book_edition_changed", message="正文已更新，请刷新后继续阅读",
                      action="refresh_book", retryable=True)
+    if body.section_id is not None and not any(
+        section.get("id") == body.section_id for section in reader_body.get("sections") or []
+    ):
+        raise _error(422, code="book_section_not_found", message="阅读位置不属于当前版本正文",
+                     action="refresh_book", retryable=True)
+    if body.block_index is not None and body.section_id is None:
+        raise _error(422, code="book_section_required", message="段落位置必须绑定正文章节",
+                     action="refresh_book", retryable=False)
+    if body.character_offset is not None and body.block_index is None:
+        raise _error(422, code="book_block_required", message="字符位置必须绑定正文段落",
+                     action="refresh_book", retryable=False)
     async with SessionLocal() as db:
         row = await db.scalar(
             select(KnowledgeBookSubscription).where(
@@ -636,8 +750,14 @@ async def update_book_progress(body: BookProgressWrite, payload=Depends(require_
         if row.content_version != reader_body["content_version"]:
             row.edition += 1
             row.progress = 0
+            row.last_section_id = None
+            row.last_block_index = None
+            row.last_character_offset = None
             row.content_version = reader_body["content_version"]
         row.progress = body.progress
+        row.last_section_id = body.section_id
+        row.last_block_index = body.block_index
+        row.last_character_offset = body.character_offset
         row.last_read_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(row)

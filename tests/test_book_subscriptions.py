@@ -85,7 +85,8 @@ def test_book_subscription_lifecycle_is_user_scoped(book_db):
     other = run(subscriptions.my_book_subscriptions({**AUTH, "user_id": "reader-2"}))
     progressed = run(subscriptions.update_book_progress(
         subscriptions.BookProgressWrite(
-            book_id=BOOK["id"], progress=0.42, content_version=VERSION
+            book_id=BOOK["id"], progress=0.42, content_version=VERSION,
+            section_id="section-1", block_index=2, character_offset=17,
         ), AUTH
     ))
     removed = run(subscriptions.unsubscribe_book(body, AUTH))
@@ -95,8 +96,100 @@ def test_book_subscription_lifecycle_is_user_scoped(book_db):
     assert len(mine["subscriptions"]) == 1
     assert other["subscriptions"] == []
     assert progressed["progress"] == pytest.approx(0.42)
+    assert progressed["last_section_id"] == "section-1"
+    assert progressed["last_block_index"] == 2
+    assert progressed["last_character_offset"] == 17
     assert removed == {"book_id": BOOK["id"], "deleted": True}
     assert run(subscriptions.my_book_subscriptions(AUTH))["subscriptions"] == []
+
+
+def test_learning_resume_returns_exact_section_and_two_dynamic_points(book_db, monkeypatch):
+    body = {
+        **BODY,
+        "sections": [
+            {"id": "section-1", "title": "基础", "level": 1, "markdown": "旧内容"},
+            {
+                "id": "section-2",
+                "title": "极限的判断",
+                "level": 1,
+                "markdown": "## 单调有界\n单调有界的实数数列必有唯一极限。\n\n数列收敛的充分条件是单调并且有界。",
+            },
+        ],
+    }
+
+    async def available_body(_payload, _book_id):
+        return BOOK, body
+
+    monkeypatch.setattr(subscriptions, "_available_book_body", available_body)
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+    run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+        book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+        section_id="section-2", block_index=1, character_offset=6,
+    ), AUTH))
+
+    resume = run(subscriptions.learning_resume(AUTH))["resume"]
+
+    assert resume["section_id"] == "section-2"
+    assert resume["section_title"] == "极限的判断"
+    assert resume["block_index"] == 1
+    assert resume["character_offset"] == 6
+    assert len(resume["key_points"]) == 2
+    assert resume["content_version"] == VERSION
+    assert resume["key_points"][0]["kind"] == "connection"
+    assert all(point["source_excerpt"] == point["detail"] for point in resume["candidates"])
+    assert all(point["section_id"] == "section-2" for point in resume["candidates"])
+    assert run(subscriptions.learning_resume(AUTH))["resume"] == resume
+    assert run(subscriptions.learning_resume({**AUTH, "user_id": "reader-2"}))["resume"] is None
+
+
+def test_resume_selection_rejects_vague_unanchored_and_duplicate_prose():
+    section = {"id": "attention", "markdown": """
+## 注意力的意义
+它之所以产生巨大的影响，是因为它能够改变世界。
+
+注意力机制是指根据输入内容计算各个位置之间的相关性。
+
+注意力机制是指根据输入内容计算各个位置之间的相关性。
+
+自注意力与交叉注意力的区别在于查询和键值的来源不同。
+
+```python
+伪造定义是指藏在代码中的错误内容。
+```
+
+![图片是指不应成为关键点的替代文本。](cover.png)
+"""}
+    points = subscriptions._learning_resume_points(section, limit=256)
+    assert len(points) == 2
+    assert {point["kind"] for point in points} == {"concept", "connection"}
+    assert all(point["source_excerpt"] in section["markdown"] for point in points)
+    assert subscriptions._learning_resume_points({"id": "empty", "title": "空章节", "markdown": "## 标题"}) == []
+
+
+def test_progress_rejects_section_from_another_book_version(book_db):
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+
+    with pytest.raises(HTTPException) as error:
+        run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+            book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+            section_id="missing-section",
+        ), AUTH))
+
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "book_section_not_found"
+
+
+def test_character_checkpoint_requires_block_and_section(book_db):
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+
+    with pytest.raises(HTTPException) as error:
+        run(subscriptions.update_book_progress(subscriptions.BookProgressWrite(
+            book_id=BOOK["id"], progress=0.5, content_version=VERSION,
+            character_offset=12,
+        ), AUTH))
+
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "book_block_required"
 
 
 def test_concurrent_duplicate_puts_are_idempotent(book_db):

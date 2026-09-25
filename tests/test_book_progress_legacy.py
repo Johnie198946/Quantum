@@ -120,6 +120,9 @@ def test_additive_migration_preserves_unversioned_position_idempotently(tmp_path
         assert row['progress'] == row['legacy_progress'] == .7
         assert row['content_version'] == ''
         assert row['legacy_last_read_at'] == row['last_read_at']
+        assert row['last_section_id'] is None
+        assert row['last_block_index'] is None
+        assert row['last_character_offset'] is None
         connection.exec_driver_sql("UPDATE knowledge_book_subscriptions SET content_version = 'a', progress = .1")
         _migrate_book_subscription_version(connection)
         assert connection.exec_driver_sql('SELECT legacy_progress FROM knowledge_book_subscriptions').scalar() == .7

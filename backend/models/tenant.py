@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Index,
     Integer,
     String,
     Text,
@@ -70,6 +71,9 @@ class KnowledgeBookSubscription(Base):
     edition: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     content_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    last_section_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    last_block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_character_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Unknown-version checkpoints must never overwrite a versioned position.
     legacy_progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     legacy_last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -79,6 +83,47 @@ class KnowledgeBookSubscription(Base):
     last_read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class LearningExercise(Base):
+    """Versioned, owner-scoped mixed exercise; answer keys never leave before grading."""
+
+    __tablename__ = "learning_exercises"
+    __table_args__ = (Index("ix_learning_exercises_profile_cursor", "tenant_key", "owner_user_id",
+                            "book_id", "content_version", "status", "updated_at", "id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_key: Mapped[str] = mapped_column(String(64), index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), index=True)
+    book_id: Mapped[str] = mapped_column(String(384), index=True)
+    section_id: Mapped[str] = mapped_column(String(160))
+    content_version: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="generating")
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    questions: Mapped[list] = mapped_column(JSON, default=list)
+    drafts: Mapped[dict] = mapped_column(JSON, default=dict)
+    results: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LearningProfile(Base):
+    """Bounded, source-versioned learning evidence for one reader and book."""
+
+    __tablename__ = "learning_profiles"
+    tenant_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    book_id: Mapped[str] = mapped_column(String(384), primary_key=True)
+    content_version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[list] = mapped_column(JSON, default=list)
+    signals: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_exercise_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_exercise_id: Mapped[str] = mapped_column(String(36), default="")
+    signals_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class KnowledgeSeriesSubscription(Base):

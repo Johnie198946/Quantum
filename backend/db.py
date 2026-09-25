@@ -134,6 +134,9 @@ def _migrate_book_subscription_version(connection) -> None:
         )
     definitions = {
         "series_id": "VARCHAR(96)",
+        "last_section_id": "VARCHAR(160)",
+        "last_block_index": "INTEGER",
+        "last_character_offset": "INTEGER",
         "legacy_progress": "DOUBLE PRECISION" if connection.dialect.name == "postgresql" else "REAL",
         "legacy_last_read_at": "TIMESTAMP WITH TIME ZONE" if connection.dialect.name == "postgresql" else "DATETIME",
     }
