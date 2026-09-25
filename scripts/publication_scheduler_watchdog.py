@@ -191,6 +191,16 @@ def _exclusive_lock(path: Path = LOCK_FILE) -> Iterator[bool]:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
+def _alert_failure() -> None:
+    subprocess.run(
+        ["hermes", "cron", "run", DELIVERY_JOB],
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+
+
 def main() -> int:
     result: dict
     try:
@@ -203,6 +213,11 @@ def main() -> int:
     except Exception:
         result = {"ok": False, "action": "none", "reason": "error"}
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    if not result["ok"] or result.get("reason") == "round_limit":
+        try:
+            _alert_failure()
+        except Exception:
+            pass
     return 0 if result["ok"] else 1
 
 

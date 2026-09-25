@@ -4,6 +4,7 @@ import fcntl
 import importlib.util
 import json
 import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,25 @@ def test_commands_are_read_only_status_and_exact_cron_run(monkeypatch):
     watchdog._run_job(watchdog.REVIEW_JOB)
     assert calls[0][0] == [str(watchdog.STATUS_CLIENT), "--status-only"]
     assert calls[1][0] == ["hermes", "cron", "run", watchdog.REVIEW_JOB]
+
+
+def test_main_alerts_on_error_and_round_limit(monkeypatch, capsys):
+    alerts = []
+    monkeypatch.setattr(watchdog, "_exclusive_lock", lambda: nullcontext(True))
+    monkeypatch.setattr(watchdog, "_alert_failure", lambda: alerts.append("alert"))
+    monkeypatch.setattr(watchdog, "supervise", lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert watchdog.main() == 1
+    assert alerts == ["alert"]
+    assert json.loads(capsys.readouterr().out)["reason"] == "error"
+
+    alerts.clear()
+    monkeypatch.setattr(
+        watchdog,
+        "supervise",
+        lambda _: {"ok": True, "action": "none", "reason": "round_limit", "job_ids": []},
+    )
+    assert watchdog.main() == 0
+    assert alerts == ["alert"]
 
 
 def test_execution_database_is_opened_read_only(tmp_path, monkeypatch):
