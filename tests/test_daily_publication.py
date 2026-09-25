@@ -535,10 +535,11 @@ def test_wiki_provenance_needs_sanitized_receipt_and_live_permission(tmp_path, m
     assert "unauthorized_or_changed_wiki_reference" in item["blocked_reasons"]
 
 
-def test_tutorial_claim_requires_local_execution_receipt(tmp_path):
+@pytest.mark.parametrize("series", ["ai-practice", "ai-toolkit"])
+def test_tutorial_claim_requires_local_execution_receipt(tmp_path, series):
     store = PublicationStore(tmp_path)
-    blocked = stage(store, bundle(series="ai-practice", execution_claim="success"), now=at(3))
-    valid = store.stage(ready(store, bundle(series="ai-practice", body=bundle()["body"] + "ok", execution_claim="failed"), execution=True), now=at(3))
+    blocked = stage(store, bundle(series=series, execution_claim="success"), now=at(3))
+    valid = store.stage(ready(store, bundle(series=series, body=bundle()["body"] + "ok", execution_claim="failed"), execution=True), now=at(3))
     assert blocked["state"] == "blocked" and valid["state"] == "scheduled"
 
 

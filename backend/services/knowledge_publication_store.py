@@ -480,9 +480,10 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         blocked.append("quantumn_commentary_cannot_impersonate_institution")
     if review.get("decision") != "approved" or review.get("content_hash") != review_target_hash or not str(review.get("reviewed_by") or "").startswith("hermes:"):
         blocked.append("review_missing_or_hash_mismatch")
-    if series_id in {"ai-practice", "quantumn-originals"} and claim in {"success", "failed"} and not execution:
+    tutorial_execution_series = {"ai-practice", "ai-toolkit", "quantumn-originals"}
+    if series_id in tutorial_execution_series and claim in {"success", "failed"} and not execution:
         blocked.append("tutorial_execution_evidence_required")
-    if series_id not in {"ai-practice", "quantumn-originals"} and claim != "not_run":
+    if series_id not in tutorial_execution_series and claim != "not_run":
         blocked.append("execution_claim_not_applicable")
     if bundle.get("state", "staged") not in {"draft", "staged", "scheduled"}:
         raise PublicationError("invalid staging state")
