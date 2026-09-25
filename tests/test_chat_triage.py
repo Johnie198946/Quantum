@@ -76,6 +76,15 @@ def test_skill_management_intent_is_not_a_chat_triage_selector():
     assert decision.reason_code != "tenant_skill_management"
 
 
+def test_natural_language_agent_router_is_absent_from_backend_api():
+    from backend.api import chat
+    from backend.services import agent_capabilities
+
+    assert not hasattr(agent_capabilities, "match_explicit_tenant_agent")
+    assert not hasattr(agent_capabilities, "AgentInvocationMatch")
+    assert not hasattr(chat, "_delegation_handoff_goal")
+
+
 def test_business_financial_questions_are_local_first_then_web_when_fresh():
     first = classify_request("华为财报发了，发现他是不是不行了")
     follow_up = classify_request("你知道他今年营收情况吗？")

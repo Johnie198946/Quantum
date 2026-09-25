@@ -59,7 +59,7 @@ def _requirements_clarification_protocol_complete(
     selection: dict[str, Any],
     protocol_state: dict[str, Any],
 ) -> bool:
-    """Validate convergence or an explicit timeout/cancel recovery boundary."""
+    """Validate confirmed convergence; timeout requires a fresh request/JEV turn."""
     if not (
         selection.get("validated") is True
         and selection.get("skill_id") == "requirements-clarification"
@@ -68,9 +68,7 @@ def _requirements_clarification_protocol_complete(
     attempts = int(protocol_state.get("clarify_attempts") or 0)
     rounds = int(protocol_state.get("clarify_rounds") or 0)
     expired = protocol_state.get("clarify_expired") is True
-    return attempts > 0 and (
-        rounds >= _contracts.DRILL_ME_MIN_ROUNDS or expired
-    )
+    return attempts > 0 and not expired and rounds >= _contracts.DRILL_ME_MIN_ROUNDS
 
 
 def _build_in_process_agent(
@@ -353,7 +351,8 @@ def _build_in_process_agent(
             })
             return (
                 f"[user did not respond within {_contracts.CLARIFY_TIMEOUT_SECONDS}s. "
-                "Make the most reasonable assumption and continue.]"
+                "Stop this run without making assumptions. A later request must "
+                "start a fresh JEV selection.]"
             )
         clarify_round += 1
         if isinstance(protocol_state, dict):

@@ -517,26 +517,46 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
     try:
         if action == "delete":
             prior = read_sandbox_skill(sandbox, name)
-            changed = delete_sandbox_skill(sandbox, name)
-            receipt = {
-                "success": changed,
+            digest = (
+                hashlib.sha256(prior.encode("utf-8")).hexdigest()
+                if prior is not None
+                else None
+            )
+            prepared = {
+                "success": False,
+                "phase": "prepared",
                 "action": action,
                 "name": name,
                 "scope": "tenant_private",
                 "decision_id": selection.get("decision_id"),
                 "catalog_version": selection.get("catalog_version"),
                 "policy_version": selection.get("policy_version"),
-                "sha256": (
-                    hashlib.sha256(prior.encode("utf-8")).hexdigest()
-                    if changed and prior is not None
-                    else None
-                ),
+                "sha256": digest,
+            }
+            _append_tenant_skill_audit(sandbox, prepared)
+            changed = delete_sandbox_skill(sandbox, name)
+            receipt = {
+                **prepared,
+                "success": changed,
+                "phase": "committed" if changed else "no_change",
             }
             _append_tenant_skill_audit(sandbox, receipt)
             return json.dumps(receipt, ensure_ascii=False)
         if action not in {"create", "update"}:
             return json.dumps({"success": False, "error": "unsupported_action"})
         content = str((args or {}).get("content") or "")
+        prepared = {
+            "success": False,
+            "phase": "prepared",
+            "action": action,
+            "name": name,
+            "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "scope": "tenant_private",
+            "decision_id": selection.get("decision_id"),
+            "catalog_version": selection.get("catalog_version"),
+            "policy_version": selection.get("policy_version"),
+        }
+        _append_tenant_skill_audit(sandbox, prepared)
         path = write_sandbox_skill(
             sandbox,
             name,
@@ -545,18 +565,14 @@ def _tenant_skill_manage_tool(args: dict[str, Any], **_kwargs) -> str:
         )
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         receipt = {
+            **prepared,
             "success": True,
-            "action": action,
-            "name": name,
+            "phase": "committed",
             "sha256": digest,
-            "scope": "tenant_private",
-            "decision_id": selection.get("decision_id"),
-            "catalog_version": selection.get("catalog_version"),
-            "policy_version": selection.get("policy_version"),
         }
         _append_tenant_skill_audit(sandbox, receipt)
         return json.dumps(receipt, ensure_ascii=False)
-    except (ValueError, FileExistsError) as error:
+    except (ValueError, FileExistsError, OSError) as error:
         return json.dumps(
             {"success": False, "error": str(error)[:300]}, ensure_ascii=False
         )

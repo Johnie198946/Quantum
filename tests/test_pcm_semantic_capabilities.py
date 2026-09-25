@@ -206,7 +206,7 @@ def test_requirements_clarification_protocol_enforces_rounds_and_recovery_bounda
             "clarify_rounds": DRILL_ME_MIN_ROUNDS,
         },
     )
-    assert _requirements_clarification_protocol_complete(
+    assert not _requirements_clarification_protocol_complete(
         selection,
         {
             "clarify_attempts": 1,
@@ -266,7 +266,9 @@ def test_non_delegating_skill_agent_combination_is_rejected_by_jev_validation():
     assert decision.reason_code == "INVALID_OUTPUT"
 
 
-def test_skill_authoring_is_tenant_isolated_audited_and_requires_selection(tmp_path: Path):
+def test_skill_authoring_is_tenant_isolated_audited_and_requires_selection(
+    tmp_path: Path, monkeypatch,
+):
     sandbox = ensure_tenant_sandbox(
         tenant_key="tenant-a", user_id="user-a", root=tmp_path / "sandboxes"
     )
@@ -297,6 +299,27 @@ Return a deterministic checklist.
             catalog_version="test",
             policy_version="test",
         )
+        from scripts.hermes_bridge_runtime import knowledge as knowledge_runtime
+
+        real_append = knowledge_runtime._append_tenant_skill_audit
+
+        def reject_audit(*_args, **_kwargs):
+            raise OSError("audit unavailable")
+
+        monkeypatch.setattr(
+            knowledge_runtime, "_append_tenant_skill_audit", reject_audit
+        )
+        audit_denied = json.loads(bridge._tenant_skill_manage_tool({
+            "action": "create", "name": "audit-denied", "content": content,
+        }))
+        assert audit_denied["success"] is False
+        assert "audit-denied" not in {
+            item["name"] for item in list_sandbox_skills(sandbox)
+        }
+        monkeypatch.setattr(
+            knowledge_runtime, "_append_tenant_skill_audit", real_append
+        )
+
         created = json.loads(bridge._tenant_skill_manage_tool({
             "action": "create", "name": "test-helper", "content": content,
         }))
@@ -310,6 +333,7 @@ Return a deterministic checklist.
             ).read_text(encoding="utf-8").splitlines()
         ]
         assert records[-1]["name"] == "test-helper"
+        assert records[-1]["phase"] == "committed"
         assert records[-1]["decision_id"] == "authoring-test"
         assert records[-1]["policy_version"] == "test"
         assert records[-1]["sha256"] == created["sha256"]
