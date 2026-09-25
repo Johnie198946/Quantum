@@ -804,10 +804,15 @@ class PublicationStore:
                     SELECT MAX(revision) FROM editorial_attempts WHERE issue_id=? AND state='approved'
                 ), 0)""", (issue_id, issue_id)).fetchone()[0]
             if failures >= 4:
+                # Past the normal retry budget, admit only a materially changed
+                # candidate that closes every exact open gap from the latest
+                # terminal review.  This keeps identical retry loops blocked
+                # while allowing reviewer-requested manuscript or asset fixes to
+                # proceed through a new independently reviewed revision.
                 closes_inherited_gaps = (
-                    failures == 4
-                    and current is not None
-                    and normalized["body_hash"] == current["body_hash"]
+                    current is not None
+                    and current["state"] in {"failed", "rejected"}
+                    and input_hash != current["input_hash"]
                     and bool(inherited_open)
                     and all(
                         (replacement := proposed_by_id.get(gap["id"])) is not None

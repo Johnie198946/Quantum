@@ -189,7 +189,7 @@ def test_retry_budget_resets_after_latest_approval_and_stays_issue_scoped(tmp_pa
     assert sum(attempt["issue_id"] == other_attempt["issue_id"] for attempt in attempts) == 1
 
 
-def test_retry_limit_allows_one_same_body_gap_closure_attempt(tmp_path):
+def test_retry_limit_allows_material_gap_closure_after_each_terminal_review(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
     last = None
@@ -213,30 +213,48 @@ def test_retry_limit_allows_one_same_body_gap_closure_attempt(tmp_path):
     assert recovered["revision"] == 5
     assert not [gap for gap in recovered["quality_contract"]["research_gaps"] if gap["state"] == "open"]
 
-    reject(store, closure, recovered)
+    fifth = reject(store, closure, recovered)
     with pytest.raises(PublicationError, match="retry limit"):
         store.prepare_editorial(closure)
 
+    revised = draft(store, closure["body"] + "\n\n根据第五轮审稿补充可追溯证据。")
+    revised["quality_contract"] = copy.deepcopy(closure["quality_contract"])
+    revised["quality_contract"]["research_gaps"] = [
+        {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "第五轮审稿后的新修订逐项关闭最新缺口，并产生不同输入哈希。",
+            "source_urls": ["https://example.org/revision-6"],
+        }
+        for gap in fifth["gaps"] if gap["state"] == "open"
+    ]
+    sixth = store.prepare_editorial(revised)
+    assert sixth["revision"] == 6
+    assert not [gap for gap in sixth["quality_contract"]["research_gaps"] if gap["state"] == "open"]
 
-def test_retry_limit_gap_closure_cannot_change_body(tmp_path):
+
+def test_retry_limit_changed_body_requires_exact_gap_closure(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
     last = None
     for _ in range(4):
         last = reject(store, value, store.prepare_editorial(value))
-    changed = draft(store, "## 变更正文\n\n重试上限后的恢复不得借机替换正文。")
+    changed = draft(store, "## 变更正文\n\n只有同时关闭最新审核缺口，重试上限后的正文修订才可进入下一轮。")
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(changed)
     changed["quality_contract"]["research_gaps"] = [
         {
             "id": gap["id"],
             "question": gap["question"],
             "state": "resolved",
-            "resolution": "即使字段完整也不能在受控缺口恢复轮次中变更已经审核过的正文内容。",
+            "resolution": "修订正文只用于落实最新审核要求，完整保留缺口标识和问题原文。",
             "source_urls": ["https://example.org/source"],
         }
         for gap in last["gaps"] if gap["state"] == "open"
     ]
-    with pytest.raises(PublicationError, match="retry limit"):
-        store.prepare_editorial(changed)
+    recovered = store.prepare_editorial(changed)
+    assert recovered["revision"] == 5
 
 
 def test_gaps_cannot_be_dropped_or_reworded(tmp_path):
