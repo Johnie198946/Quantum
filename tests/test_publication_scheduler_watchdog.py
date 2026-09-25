@@ -50,6 +50,7 @@ def timeline(attempts: dict[str, int]) -> dict[str, list[float]]:
         "171a125ddb63": 1.0,
         watchdog.REVIEW_JOB: 2.0,
         watchdog.RELEASE_JOB: 3.0,
+        watchdog.DELIVERY_JOB: 4.0,
     }
     return {
         job_id: [round_number * 10.0 + phase_offset[job_id] for round_number in range(1, count + 1)]
@@ -74,8 +75,12 @@ def supervise(
 
 
 def test_complete_and_active_execution_never_trigger():
-    result, calls = supervise(summary(), counts())
+    delivered = counts(**{watchdog.DELIVERY_JOB: 1})
+    result, calls = supervise(summary(), delivered)
     assert (result["reason"], calls) == ("complete", [])
+
+    result, calls = supervise(summary(), counts())
+    assert (result["phase"], calls) == ("delivery", [watchdog.DELIVERY_JOB])
 
     result, calls = supervise(
         summary("ai-history"), counts(), [watchdog.REVIEW_JOB]

@@ -23,7 +23,8 @@ AUTHOR_JOBS = {
 }
 REVIEW_JOB = "fbd1cd1217d7"
 RELEASE_JOB = "1ad93e85cec2"
-TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB, RELEASE_JOB)
+DELIVERY_JOB = "b43e1d486861"
+TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB, RELEASE_JOB, DELIVERY_JOB)
 MAX_ROUNDS = 3
 
 
@@ -152,10 +153,13 @@ def supervise(
     if active:
         return {"ok": True, "action": "none", "reason": "active", "job_ids": active}
     if not missing:
-        return {"ok": True, "action": "none", "reason": "complete"}
-    planned = _next_phase(missing, counts, terminal_times)
-    if planned is None:
-        return {"ok": True, "action": "none", "reason": "round_limit", "missing": sorted(missing)}
+        if terminal_times[DELIVERY_JOB]:
+            return {"ok": True, "action": "none", "reason": "complete"}
+        planned = "delivery", 1, [DELIVERY_JOB]
+    else:
+        planned = _next_phase(missing, counts, terminal_times)
+        if planned is None:
+            return {"ok": True, "action": "none", "reason": "round_limit", "missing": sorted(missing)}
     phase, round_number, job_ids = planned
     triggered = []
     for job_id in job_ids:
