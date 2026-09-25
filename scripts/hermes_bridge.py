@@ -105,7 +105,7 @@ app = FastAPI(title="Hermes Bridge v6.0")
 
 
 def _register_routes() -> None:
-    app.add_event_handler("startup", session_runtime._startup)
+    app.on_event("startup")(session_runtime._startup)
     app.add_api_route("/v1/chat/runs/{run_id}", session_runtime.durable_chat_run, methods=["GET"])
     app.add_api_route("/v1/chat/runs/{run_id}/blocks", session_runtime.durable_chat_blocks, methods=["GET"])
     app.add_api_route("/v1/chat/stream", session_runtime.chat_stream, methods=["POST"])

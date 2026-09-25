@@ -25,6 +25,11 @@ os.environ.setdefault("HERMES_BRIDGE_INTERNAL_TOKEN", "test-internal-token")
 
 
 class TestBridgeCLIParms(unittest.TestCase):
+    def test_startup_handler_is_registered(self):
+        from scripts import hermes_bridge as bridge
+
+        self.assertIn(bridge.session_runtime._startup, bridge.app.router.on_startup)
+
     def test_base_toolsets_are_permission_driven_not_goal_driven(self):
         from scripts import hermes_bridge as bridge
 
