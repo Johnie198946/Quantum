@@ -44,12 +44,30 @@ def counts(**changes: int) -> dict[str, int]:
     return value
 
 
-def supervise(value: dict, attempts: dict[str, int], active: list[str] | None = None):
+def timeline(attempts: dict[str, int]) -> dict[str, list[float]]:
+    phase_offset = {
+        "5a3f2a2eb988": 1.0,
+        "171a125ddb63": 1.0,
+        watchdog.REVIEW_JOB: 2.0,
+        watchdog.RELEASE_JOB: 3.0,
+    }
+    return {
+        job_id: [round_number * 10.0 + phase_offset[job_id] for round_number in range(1, count + 1)]
+        for job_id, count in attempts.items()
+    }
+
+
+def supervise(
+    value: dict,
+    attempts: dict[str, int],
+    active: list[str] | None = None,
+    terminal: dict[str, list[float]] | None = None,
+):
     calls = []
     result = watchdog.supervise(
         DAY,
         status=lambda: value,
-        executions=lambda _: (attempts, active or []),
+        executions=lambda _: (attempts, active or [], terminal or timeline(attempts)),
         run_job=lambda job_id: calls.append(job_id),
     )
     return result, calls
@@ -96,6 +114,20 @@ def test_missing_series_selects_its_author_group_and_failed_attempts_count():
     assert calls == ["5a3f2a2eb988"]
 
 
+def test_reviews_before_current_author_do_not_satisfy_review_phase():
+    attempts = counts(**{
+        "5a3f2a2eb988": 1,
+        watchdog.REVIEW_JOB: 3,
+        watchdog.RELEASE_JOB: 1,
+    })
+    terminal = timeline(attempts)
+    terminal[watchdog.REVIEW_JOB] = [1.0, 2.0, 3.0]
+    terminal[watchdog.RELEASE_JOB] = [4.0]
+    terminal["5a3f2a2eb988"] = [5.0]
+    result, calls = supervise(summary("ai-history"), attempts, terminal=terminal)
+    assert (result["phase"], calls) == ("review", [watchdog.REVIEW_JOB])
+
+
 def test_three_round_limit_stops_all_work():
     result, calls = supervise(
         summary(*SERIES), {job_id: 3 for job_id in watchdog.TARGET_JOBS}
@@ -125,7 +157,7 @@ def test_trigger_failure_stops_remaining_author_group():
     result = watchdog.supervise(
         DAY,
         status=lambda: summary(*SERIES),
-        executions=lambda _: (counts(), []),
+        executions=lambda _: (counts(), [], timeline(counts())),
         run_job=fail,
     )
     assert result == {
@@ -155,16 +187,17 @@ def test_execution_database_is_opened_read_only(tmp_path, monkeypatch):
     import sqlite3
     with sqlite3.connect(database) as connection:
         connection.execute(
-            "CREATE TABLE executions (job_id TEXT, status TEXT, claimed_at TEXT)"
+            "CREATE TABLE executions (job_id TEXT, status TEXT, claimed_at TEXT, started_at TEXT, finished_at TEXT)"
         )
-        connection.executemany("INSERT INTO executions VALUES (?,?,?)", [
-            (watchdog.REVIEW_JOB, "running", DAY + "T10:00:00+08:00"),
-            (watchdog.RELEASE_JOB, "failed", DAY + "T09:00:00+08:00"),
-            (watchdog.RELEASE_JOB, "completed", "2026-09-24T12:00:00+08:00"),
+        connection.executemany("INSERT INTO executions VALUES (?,?,?,?,?)", [
+            (watchdog.REVIEW_JOB, "running", DAY + "T10:00:00+08:00", None, None),
+            (watchdog.RELEASE_JOB, "failed", DAY + "T09:00:00+08:00", None, DAY + "T09:01:00+08:00"),
+            (watchdog.RELEASE_JOB, "completed", "2026-09-24T12:00:00+08:00", None, "2026-09-24T12:01:00+08:00"),
         ])
     monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
-    attempts, active = watchdog._executions(DAY)
+    attempts, active, terminal = watchdog._executions(DAY)
     assert attempts[watchdog.RELEASE_JOB] == 1
+    assert len(terminal[watchdog.RELEASE_JOB]) == 1
     assert active == [watchdog.REVIEW_JOB]
 
 

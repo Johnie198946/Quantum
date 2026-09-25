@@ -43,19 +43,26 @@ def _status() -> dict:
     return value
 
 
-def _executions(day: str) -> tuple[dict[str, int], list[str]]:
+def _executions(day: str) -> tuple[dict[str, int], list[str], dict[str, list[float]]]:
     uri = EXECUTIONS_DB.resolve().as_uri() + "?mode=ro"
     with sqlite3.connect(uri, uri=True) as database:
         rows = database.execute(
-            f"SELECT job_id, status, claimed_at FROM executions WHERE job_id IN ({','.join('?' * len(TARGET_JOBS))})",
+            f"SELECT job_id, status, claimed_at, started_at, finished_at FROM executions WHERE job_id IN ({','.join('?' * len(TARGET_JOBS))})",
             TARGET_JOBS,
         ).fetchall()
-    active = sorted(job_id for job_id, status, _ in rows if status in {"claimed", "running"})
+    active = sorted(job_id for job_id, status, *_ in rows if status in {"claimed", "running"})
     counts = {job_id: 0 for job_id in TARGET_JOBS}
-    for job_id, status, claimed_at in rows:
+    terminal_times: dict[str, list[float]] = {job_id: [] for job_id in TARGET_JOBS}
+    for job_id, status, claimed_at, started_at, finished_at in rows:
         if status in {"completed", "failed"} and isinstance(claimed_at, str) and claimed_at[:10] == day:
             counts[job_id] += 1
-    return counts, active
+            event_at = finished_at or started_at or claimed_at
+            terminal_times[job_id].append(
+                datetime.fromisoformat(str(event_at).replace("Z", "+00:00")).timestamp()
+            )
+    for times in terminal_times.values():
+        times.sort()
+    return counts, active, terminal_times
 
 
 def _run_job(job_id: str) -> None:
@@ -94,35 +101,59 @@ def _missing(summary: dict, day: str) -> set[str]:
     return inferred
 
 
-def _next_phase(missing: set[str], counts: dict[str, int]) -> tuple[str, int, list[str]] | None:
+def _next_phase(
+    missing: set[str],
+    counts: dict[str, int],
+    terminal_times: dict[str, list[float]],
+) -> tuple[str, int, list[str]] | None:
     author_jobs = list(dict.fromkeys(AUTHOR_JOBS[series] for series in AUTHOR_JOBS if series in missing))
-    for round_number in range(1, MAX_ROUNDS + 1):
-        due = [job_id for job_id in author_jobs if counts[job_id] < round_number]
-        if due:
-            return "author", round_number, due
-        if counts[REVIEW_JOB] < round_number:
-            return "review", round_number, [REVIEW_JOB]
-        if counts[RELEASE_JOB] < round_number:
-            return "release", round_number, [RELEASE_JOB]
+    last_release = max(terminal_times[RELEASE_JOB], default=float("-inf"))
+    due_authors = [
+        job_id for job_id in author_jobs
+        if not any(event_at > last_release for event_at in terminal_times[job_id])
+    ]
+    if due_authors:
+        eligible = [job_id for job_id in due_authors if counts[job_id] < MAX_ROUNDS]
+        if not eligible:
+            return None
+        round_number = max(counts[job_id] for job_id in eligible) + 1
+        return "author", round_number, eligible
+
+    author_barrier = max(
+        max(event_at for event_at in terminal_times[job_id] if event_at > last_release)
+        for job_id in author_jobs
+    )
+    reviews = [event_at for event_at in terminal_times[REVIEW_JOB] if event_at > author_barrier]
+    round_number = max(counts[job_id] for job_id in author_jobs)
+    if not reviews:
+        return "review", round_number, [REVIEW_JOB]
+    review_barrier = max(reviews)
+    if not any(event_at > review_barrier for event_at in terminal_times[RELEASE_JOB]):
+        return "release", round_number, [RELEASE_JOB]
     return None
 
 
 def supervise(
     day: str,
     status: Callable[[], dict] = _status,
-    executions: Callable[[str], tuple[dict[str, int], list[str]]] = _executions,
+    executions: Callable[[str], tuple[dict[str, int], list[str], dict[str, list[float]]]] = _executions,
     run_job: Callable[[str], None] = _run_job,
 ) -> dict:
     summary = status()
     missing = _missing(summary, day)
-    counts, active = executions(day)
+    counts, active, terminal_times = executions(day)
     if set(counts) != set(TARGET_JOBS) or any(not isinstance(value, int) or value < 0 for value in counts.values()):
         raise ValueError("invalid execution counts")
+    if set(terminal_times) != set(TARGET_JOBS) or any(
+        any(not isinstance(event_at, (int, float)) for event_at in times)
+        for times in terminal_times.values()
+    ):
+        raise ValueError("invalid execution timeline")
     if active:
         return {"ok": True, "action": "none", "reason": "active", "job_ids": active}
     if not missing:
         return {"ok": True, "action": "none", "reason": "complete"}
-    planned = _next_phase(missing, counts)
+    planned = _next_phase(missing, counts, terminal_times)
     if planned is None:
         return {"ok": True, "action": "none", "reason": "round_limit", "missing": sorted(missing)}
     phase, round_number, job_ids = planned
