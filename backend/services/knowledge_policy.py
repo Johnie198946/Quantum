@@ -158,7 +158,6 @@ async def resolve_policy(
     entitled: frozenset[str] = frozenset()
     plan_id = ""
     plan_status = "inactive"
-    entitlement_version = 0
     if snapshot is not None:
         synced_at = _aware(snapshot.synced_at)
         effective_until = _aware(snapshot.effective_until)
@@ -169,7 +168,6 @@ async def resolve_policy(
         )
         plan_id = snapshot.plan_id
         plan_status = snapshot.status
-        entitlement_version = int(snapshot.entitlement_version or 0)
         if not stale and snapshot.status == "active":
             entitled = frozenset(str(x) for x in (snapshot.knowledge_entitlements or []))
 

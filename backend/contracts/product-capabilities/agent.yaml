@@ -1,0 +1,229 @@
+capabilities:
+- id: agent.list
+  version: 1.0.0
+  domain: agent
+  description: List tenant-visible agents.
+  positive_examples:
+  - List tenant-visible agents.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required: []
+    properties:
+      owned_only: &id002
+        type: boolean
+  output_schema:
+    type: object
+    required:
+    - agents
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.list
+  idempotency: none
+  receipt: none
+  result_event: agent.snapshot
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented
+- id: agent.create
+  version: 1.0.0
+  domain: agent
+  description: Create an owned tenant agent.
+  positive_examples:
+  - Create an owned tenant agent.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - base_agent_id
+    properties:
+      base_agent_id: &id001
+        type: string
+      custom_name: *id001
+      private_prompt_delta: *id001
+      subscribed_knowledge_packs: &id003
+        type: array
+      custom_avatar: *id001
+      is_active: *id002
+      allowed_tools: *id003
+      capability_agent_ids: *id003
+      allow_network: *id002
+  output_schema:
+    type: object
+    required:
+    - id
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.create
+  idempotency: required
+  receipt: required
+  result_event: agent.changed
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented
+- id: agent.update
+  version: 1.0.0
+  domain: agent
+  description: Update an owned tenant agent.
+  positive_examples:
+  - Update an owned tenant agent.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - agent_id
+    - base_agent_id
+    properties:
+      agent_id: *id001
+      base_agent_id: *id001
+      custom_name: *id001
+      private_prompt_delta: *id001
+      subscribed_knowledge_packs: *id003
+      custom_avatar: *id001
+      is_active: *id002
+      allowed_tools: *id003
+      capability_agent_ids: *id003
+      allow_network: *id002
+  output_schema:
+    type: object
+    required:
+    - id
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.update
+  idempotency: required
+  receipt: required
+  result_event: agent.changed
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented
+- id: agent.delete
+  version: 1.0.0
+  domain: agent
+  description: Delete an owned tenant agent.
+  positive_examples:
+  - Delete an owned tenant agent.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - agent_id
+    properties:
+      agent_id: *id001
+  output_schema:
+    type: object
+    required:
+    - status
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.delete
+  idempotency: required
+  receipt: required
+  result_event: agent.changed
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented
+- id: agent.evaluate
+  version: 1.0.0
+  domain: agent
+  description: Start an agent evaluation.
+  positive_examples:
+  - Start an agent evaluation.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - agent_id
+    - request_id
+    properties:
+      agent_id: *id001
+      request_id: *id001
+  output_schema:
+    type: object
+    required:
+    - id
+    - status
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.evaluate
+  idempotency: required
+  receipt: required
+  result_event: agent.changed
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented
+- id: agent.evaluation_status
+  version: 1.0.0
+  domain: agent
+  description: Read an owned evaluation.
+  positive_examples:
+  - Read an owned evaluation.
+  negative_examples:
+  - other tenant data
+  input_schema:
+    type: object
+    additionalProperties: false
+    required:
+    - run_id
+    properties:
+      run_id: *id001
+  output_schema:
+    type: object
+    required:
+    - id
+    - status
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: agent-owner
+  handler_binding: agent.evaluation_status
+  idempotency: none
+  receipt: none
+  result_event: agent.snapshot
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_agent_capabilities.py
+  implementation_status: implemented

@@ -151,6 +151,10 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             responseBody = Data(#"{"resume":{"subscription":{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"last_section_id":"section-2","last_block_index":3,"last_character_offset":18,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"},"section_id":"section-2","section_title":"边界条件","block_index":3,"character_offset":18,"key_points":[{"title":"条件一","detail":"先验证输入。"},{"title":"条件二","detail":"再检查结果。"}]}}"#.utf8)
         case (true, "DELETE", "/api/v1/me/book-subscriptions"):
             responseBody = Data(#"{"deleted":true}"#.utf8)
+        case (true, "GET", let imagePath)
+            where imagePath.hasPrefix("/api/v1/knowledge-publications/publication-"):
+            responseHeaders["Content-Type"] = "image/png"
+            responseBody = Data("synthetic-image-bytes".utf8)
         case (true, "PUT", let notePath) where notePath.hasPrefix("/api/v1/me/knowledge-notes/"):
             let body = String(data: requestBody ?? Data(), encoding: .utf8) ?? ""
             let object = (try? JSONSerialization.jsonObject(with: requestBody ?? Data())) as? [String: Any]
@@ -763,6 +767,35 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
+    func testPublicationImageUsesAuthenticatedBoundedRelativePath() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "image-token"
+        )
+        let publicationID = "publication-" + String(repeating: "a", count: 32)
+        let digest = String(repeating: "b", count: 64)
+
+        let data = try await client.fetchPublicationImage(
+            path: "/api/v1/knowledge-publications/\(publicationID)/assets/\(digest)"
+        )
+        XCTAssertEqual(data, Data("synthetic-image-bytes".utf8))
+        let request = try XCTUnwrap(APIContractURLProtocol.requests().first?.request)
+        XCTAssertEqual(request.url?.host, "contract.invalid")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer image-token")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg")
+        do {
+            _ = try await client.fetchPublicationImage(path: "https://evil.invalid/image.png")
+            XCTFail("absolute image URLs must be rejected")
+        } catch {}
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+    }
+
+    @MainActor
     func testLearningResumeDecodesExactSectionAndTwoPoints() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
@@ -1287,6 +1320,21 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         } catch {
             XCTAssertEqual((error as? URLError)?.code, .badServerResponse)
         }
+    }
+
+    func testPublicationReaderBodyDecodesOrderedInlineImageBlocks() throws {
+        let digest = String(repeating: "b", count: 64)
+        let data = Data("""
+        {"book_id":"publication-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","sections":[{"id":"s1","title":"One","level":1,"markdown":"Before image after","blocks":[{"id":"block-1","kind":"text","markdown":"Before"},{"id":"block-2","kind":"image","path":"/api/v1/knowledge-publications/publication-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/assets/\(digest)","alt":"结构示意","caption":"审定图注","width":640,"height":360},{"id":"block-3","kind":"text","markdown":"After"}]}]}
+        """.utf8)
+
+        let body = try decoder().decode(KnowledgeBookBodyDTO.self, from: data)
+        let blocks = try XCTUnwrap(body.sections.first?.blocks)
+        XCTAssertEqual(blocks.map(\.kind), ["text", "image", "text"])
+        XCTAssertEqual(blocks[1].alt, "结构示意")
+        XCTAssertEqual(blocks[1].caption, "审定图注")
+        XCTAssertEqual(blocks[1].width, 640)
+        XCTAssertEqual(blocks[1].height, 360)
     }
 
     func testKnowledgeBookSubscriptionDecodesBookAndProgress() throws {

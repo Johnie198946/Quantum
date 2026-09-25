@@ -20,13 +20,27 @@ from backend.services.document_sources import (
     save_document_source,
     update_document_receipt,
 )
+from backend.services.generated_artifacts import (
+    GeneratedArtifactError,
+    generated_artifact_path,
+    read_generated_artifact,
+)
 from backend.services.knowledge_candidate_ingest import enqueue_and_schedule
 from backend.services.knowledge_contribution import (
     ContributionCandidate,
     enqueue_contribution,
 )
+from backend.services.voice import VoiceService
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+_voice_service: VoiceService | None = None
+
+
+def _get_voice_service() -> VoiceService:
+    global _voice_service
+    if _voice_service is None:
+        _voice_service = VoiceService()
+    return _voice_service
 
 
 def _identity(payload: dict) -> tuple[str, str]:
@@ -166,6 +180,74 @@ async def upload_document(
                 contribution_error=str(exc)[:240],
             )
     return receipt
+
+def _generated_error(exc: GeneratedArtifactError) -> HTTPException:
+    status = 404 if exc.code == "artifact_not_found" else 409
+    return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.get("/generated/{artifact_id}")
+async def get_generated_artifact(artifact_id: str, payload: dict = Depends(require_auth)):
+    try:
+        return read_generated_artifact(*_identity(payload), artifact_id)
+    except GeneratedArtifactError as exc:
+        raise _generated_error(exc) from exc
+
+
+@router.get("/generated/{artifact_id}/download")
+async def download_generated_artifact(artifact_id: str, payload: dict = Depends(require_auth)):
+    try:
+        path, receipt = generated_artifact_path(*_identity(payload), artifact_id)
+    except GeneratedArtifactError as exc:
+        raise _generated_error(exc) from exc
+    return FileResponse(
+        path,
+        media_type=receipt["media_type"],
+        filename=receipt["filename"],
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-SHA256": receipt["content_hash"],
+        },
+    )
+
+
+@router.post("/voice/transcriptions")
+async def transcribe_voice(
+    request: Request,
+    payload: dict = Depends(require_auth),
+):
+    tenant_key, user_id = _identity(payload)
+    if not tenant_key or not user_id:
+        raise HTTPException(status_code=401, detail={"code": "invalid_identity"})
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    formats = {
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/webm": "webm",
+        "audio/m4a": "m4a",
+        "audio/mp4": "m4a",
+    }
+    if content_type not in formats:
+        raise HTTPException(status_code=415, detail={"code": "unsupported_audio_type"})
+    audio = bytearray()
+    async for chunk in request.stream():
+        if len(audio) + len(chunk) > MAX_DOCUMENT_BYTES:
+            raise HTTPException(status_code=413, detail={"code": "audio_too_large"})
+        audio.extend(chunk)
+    if not audio:
+        raise HTTPException(status_code=422, detail={"code": "empty_audio"})
+    try:
+        text = await _get_voice_service().transcribe(bytes(audio), formats[content_type])
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "transcription_unavailable", "message": str(exc)},
+        ) from exc
+    if not text:
+        raise HTTPException(status_code=422, detail={"code": "empty_transcription"})
+    return {"text": text, "language": "zh", "status": "completed"}
+
+
 
 
 @router.get("/{source_id}")

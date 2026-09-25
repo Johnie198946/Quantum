@@ -25,6 +25,16 @@ def _file(value: str) -> tuple[str, Path]:
     return kind, Path(path)
 
 
+def _asset_file(value: str) -> tuple[str, Path]:
+    try:
+        item = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError("invalid asset file JSON") from exc
+    if not isinstance(item, dict) or set(item) != {"url", "path"}:
+        raise argparse.ArgumentTypeError("asset file requires url and path")
+    return str(item["url"]), Path(item["path"])
+
+
 def _cover(store: PublicationStore, path: Path, role: str) -> dict:
     try:
         with Image.open(path) as image:
@@ -49,6 +59,33 @@ def _ingest_covers(store: PublicationStore, bundle: dict, args) -> None:
     bundle["assets"].extend(_cover(store, path, role) for role, path in paths.items() if path)
 
 
+def _ingest_inline_assets(store: PublicationStore, bundle: dict, args) -> None:
+    if not args.asset_file:
+        return
+    incoming = {url for url, _ in args.asset_file}
+    if len(incoming) != len(args.asset_file):
+        raise PublicationError("duplicate inline asset url")
+    bundle["assets"] = [item for item in bundle.get("assets", []) if item.get("url") not in incoming]
+    for url, path in args.asset_file:
+        try:
+            with Image.open(path) as image:
+                image_format, size = image.format, image.size
+                image.verify()
+        except OSError as exc:
+            raise PublicationError("invalid inline image") from exc
+        media_type = {"PNG": "image/png", "JPEG": "image/jpeg"}.get(image_format)
+        if not media_type:
+            raise PublicationError("invalid inline image format")
+        bundle["assets"].append({
+            "url": url,
+            "receipt": store.ingest_file(path, "publication_inline_image"),
+            "status": "verified",
+            "media_type": media_type,
+            "width": size[0],
+            "height": size[1],
+        })
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Operate frozen Quantumn publication editions")
     parser.add_argument("--root", type=Path, help="publication runtime directory")
@@ -61,7 +98,12 @@ def main() -> int:
         command.add_argument("--source-file", action="append", type=_file, default=[])
         command.add_argument("--rights-file", action="append", type=_file, default=[])
         command.add_argument("--execution-file", action="append", type=_file, default=[])
+        command.add_argument("--asset-file", action="append", type=_asset_file, default=[])
         command.add_argument("--proof-file", type=Path)
+        if name == "prepare-editorial":
+            command.add_argument("--review-policy", choices=("story-supervision-v2",))
+            command.add_argument("--shelf-cover-file", type=Path)
+            command.add_argument("--reader-cover-file", type=Path)
         if name == "record-editorial-review":
             command.add_argument("--review-file", type=Path, required=True)
     stage = commands.add_parser("stage")
@@ -72,6 +114,7 @@ def main() -> int:
     stage.add_argument("--review-file", type=Path)
     stage.add_argument("--proof-file", type=Path)
     stage.add_argument("--execution-file", action="append", type=_file, default=[])
+    stage.add_argument("--asset-file", action="append", type=_asset_file, default=[])
     stage.add_argument("--shelf-cover-file", type=Path)
     stage.add_argument("--reader-cover-file", type=Path)
     source_index = commands.add_parser("stage-source-index")
@@ -107,8 +150,13 @@ def main() -> int:
                 receipt = store.ingest_file(args.proof_file, "editorial_proof")
                 bundle["editorial_proof_file"] = f"evidence/{receipt['sha256']}.bin"
                 bundle["editorial_proof_sha256"] = receipt["sha256"]
-            result = (store.prepare_editorial(bundle) if args.command == "prepare-editorial"
+            if args.command == "prepare-editorial":
+                _ingest_covers(store, bundle, args)
+                _ingest_inline_assets(store, bundle, args)
+            result = (store.prepare_editorial(bundle, review_policy=args.review_policy) if args.command == "prepare-editorial"
                       else store.record_editorial_review(bundle, args.review_file))
+            if args.command == "prepare-editorial":
+                result["assets"] = bundle.get("assets", [])
         elif args.command == "stage-source-index":
             bundle, body_file, record_files = load_candidate(args.package)
             bundle["body"] = body_file.read_text(encoding="utf-8")
@@ -146,6 +194,7 @@ def main() -> int:
                 bundle["editorial_proof_file"] = f"evidence/{receipt['sha256']}.bin"
                 bundle["editorial_proof_sha256"] = receipt["sha256"]
             _ingest_covers(store, bundle, args)
+            _ingest_inline_assets(store, bundle, args)
             vault = Path(os.environ.get("AI_LAB_HOME", Path(__file__).resolve().parent.parent / "data" / "vault"))
             result = store.stage(bundle, vault=vault)
         elif args.command == "status":

@@ -1,0 +1,16 @@
+protocol: qcp
+version: 1.0.0
+capabilities: [capabilities.yaml, workflow_lifecycle.yaml, bookshelf.yaml, memory.yaml, profile.yaml, agent.yaml, skill.yaml, project_task.yaml, schedule.yaml, notification.yaml, hermes_session.yaml, client_actions.yaml, generated_artifacts.yaml]
+events: events.yaml
+renderers: renderers.yaml
+bindings: bindings.yaml
+policies: policies.yaml
+consumptions: consumptions.yaml
+ios_scope: ios-scope.yaml
+schemas:
+  capability: capability.schema.json
+  event: event.schema.json
+  renderer: renderer.schema.json
+  binding: binding.schema.json
+  policy: policy.schema.json
+  consumption: consumption.schema.json

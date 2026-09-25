@@ -1,0 +1,153 @@
+bindings:
+  - id: knowledge.search
+    handler: knowledge.search
+  - id: knowledge.read
+    handler: knowledge.read
+  - id: knowledge.create
+    handler: knowledge.create
+  - id: knowledge.update
+    handler: knowledge.update
+  - id: knowledge.merge
+    handler: knowledge.merge
+  - id: knowledge.archive
+    handler: knowledge.archive
+  - id: knowledge.restore
+    handler: knowledge.restore
+  - id: knowledge.navigation
+    handler: client.knowledge.navigation
+  - id: workflow.create
+    handler: workflow.create
+  - id: workflow.open
+    handler: workflow.open
+  - id: workflow.status
+    handler: workflow.status
+  - id: workflow.start
+    handler: workflow.start
+  - id: workflow.approve
+    handler: workflow.approve
+  - id: workflow.revise
+    handler: workflow.revise
+  - id: workflow.cancel
+    handler: workflow.cancel
+  - id: presentation.create_from_document
+    handler: presentation.create_from_document
+  - id: presentation.create_from_text
+    handler: presentation.create_from_text
+  - id: document.word.create_from_text
+    handler: document.word.create_from_text
+  - id: report.research.create_from_text
+    handler: report.research.create_from_text
+  - id: paper.academic.create_from_text
+    handler: paper.academic.create_from_text
+  - id: artifact.open
+    handler: artifact.open
+  - id: artifact.download
+    handler: artifact.download
+  - id: artifact.consume_structured
+    handler: artifact.consume_structured
+  - id: bookshelf.search
+    handler: bookshelf.search
+  - id: bookshelf.subscribe
+    handler: bookshelf.subscribe
+  - id: bookshelf.open
+    handler: bookshelf.open
+  - id: memory.list
+    handler: memory.list
+  - id: memory.create
+    handler: memory.create
+  - id: memory.update
+    handler: memory.update
+  - id: memory.delete
+    handler: memory.delete
+  - id: profile.read
+    handler: profile.read
+  - id: profile.update
+    handler: profile.update
+  - id: agent.list
+    handler: agent.list
+  - id: agent.create
+    handler: agent.create
+  - id: agent.update
+    handler: agent.update
+  - id: agent.delete
+    handler: agent.delete
+  - id: agent.evaluate
+    handler: agent.evaluate
+  - id: agent.evaluation_status
+    handler: agent.evaluation_status
+  - id: skill.list
+    handler: skill.list
+  - id: skill.create
+    handler: skill.create
+  - id: skill.update
+    handler: skill.update
+  - id: skill.delete
+    handler: skill.delete
+  - id: project.list
+    handler: project.list
+  - id: project.create
+    handler: project.create
+  - id: project.open
+    handler: project.open
+  - id: project.update
+    handler: project.update
+  - id: project.delete
+    handler: project.delete
+  - id: task.list
+    handler: task.list
+  - id: task.create
+    handler: task.create
+  - id: task.update
+    handler: task.update
+  - id: task.status
+    handler: task.status
+  - id: task.delete
+    handler: task.delete
+  - id: schedule.list
+    handler: schedule.list
+  - id: schedule.create
+    handler: schedule.create
+  - id: schedule.update
+    handler: schedule.update
+  - id: schedule.delete
+    handler: schedule.delete
+  - id: notification.list
+    handler: notification.list
+  - id: notification.mark_read
+    handler: notification.mark_read
+  - id: notification.preferences.update
+    handler: notification.preferences.update
+  - id: hermes.session.list
+    handler: hermes.session.list
+  - id: hermes.session.open
+    handler: hermes.session.open
+  - id: hermes.session.resume
+    handler: hermes.session.resume
+  - id: hermes.session.delete
+    handler: hermes.session.delete
+  - id: file.pick
+    handler: file.pick
+  - id: photo.capture
+    handler: photo.capture
+  - id: photo.import
+    handler: photo.import
+  - id: voice.record
+    handler: voice.record
+  - id: share.present
+    handler: share.present
+  - id: file.upload
+    handler: file.upload
+  - id: file.download
+    handler: file.download
+  - id: voice.transcribe
+    handler: voice.transcribe
+  - id: office.spreadsheet.create
+    handler: office.spreadsheet.create
+  - id: office.pdf.create
+    handler: office.pdf.create
+  - id: data.analyze
+    handler: data.analyze
+  - id: media.create
+    handler: media.create
+  - id: task.execute
+    handler: task.execute

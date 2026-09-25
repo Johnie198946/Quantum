@@ -388,7 +388,18 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
         if item is None:
             raise _error(404, code="book_not_found", message="这本书已下架或当前无权阅读",
                          action="refresh_catalog", retryable=True)
-        sections = reader_sections(item["body"]) if item.get("artifact_valid") else []
+        image_assets = {
+            asset["url"]: {
+                "path": f"/api/v1/knowledge-publications/{book_id}/assets/{asset['receipt']['sha256']}",
+                "width": asset["width"], "height": asset["height"],
+            }
+            for asset in item["bundle"].get("assets", [])
+            if asset.get("url") and asset.get("status") == "verified"
+        }
+        sections = (
+            reader_sections(item["body"], image_assets=image_assets)
+            if item.get("artifact_valid") else []
+        )
         body = ({
             "book_id": book_id, "title": book["title"], "author": book["author"],
             "content_version": item["content_hash"], "edition": item["edition"],
@@ -521,6 +532,30 @@ async def knowledge_publication_cover(publication_id: str, role: str, payload=De
         raise _error(404, code="cover_not_found", message="封面已下架或当前无权读取",
                      action="refresh_catalog", retryable=True)
     data, media_type = cover
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/knowledge-publications/{publication_id}/assets/{digest}")
+async def knowledge_publication_asset(publication_id: str, digest: str, payload=Depends(require_auth)):
+    if (
+        not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id)
+        or not re.fullmatch(r"[a-f0-9]{64}", digest)
+    ):
+        raise HTTPException(status_code=422, detail="invalid publication asset path")
+    visible = payload.get("visible_categories")
+    asset = (
+        PublicationStore().get_published_asset(
+            publication_id, digest, vault=knowledge._vault()
+        )
+        if visible is None or PUBLICATION_CATEGORY in visible
+        else None
+    )
+    if asset is None:
+        raise _error(
+            404, code="asset_not_found", message="插图已下架或当前无权读取",
+            action="refresh_catalog", retryable=True,
+        )
+    data, media_type = asset
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 

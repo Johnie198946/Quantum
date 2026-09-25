@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.api.auth import require_auth
 from backend.api.tenant import current_tenant
@@ -152,6 +153,10 @@ class WorkflowCreate(BaseModel):
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
     output_kind: Literal["general", "presentation", "document", "html"] = "general"
+    source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
+    presentation_review_gates: list[Literal["outline", "design"]] = Field(
+        default_factory=list, max_length=2
+    )
 
 
 class ClarificationResponse(BaseModel):
@@ -184,6 +189,13 @@ class ReplanRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     comment: str = Field("", max_length=2000)
     request_id: str | None = Field(None, min_length=8, max_length=160)
+    expected_hash: str | None = Field(None, min_length=64, max_length=64)
+    expected_revision: int | None = Field(None, ge=1)
+
+
+class WorkflowCancelRequest(BaseModel):
+    request_id: str = Field(..., min_length=8, max_length=160)
+    expected_updated_at: datetime
 
 
 class OutputApprovalRequest(BaseModel):
@@ -259,6 +271,7 @@ def workflow_out(row: WorkflowDefinition) -> dict[str, Any]:
         "active_plan_id": row.active_plan_id,
         "clarification_session_id": row.clarification_session_id,
         "requirements_snapshot": row.requirements_snapshot or {},
+        "source_client_session_id": row.source_client_session_id,
         "primary_agent_id": row.primary_agent_id,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -701,16 +714,62 @@ async def owned_execution(
     return row
 
 
-@router.post("/workflows", status_code=201)
-async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_auth)):
-    workflow_id = uid("wf")
-    session_id = uid("wfs")
+async def _create_workflow(
+    body: WorkflowCreate,
+    payload: dict,
+    *,
+    workflow_id: str | None = None,
+    qcp_request_hash: str | None = None,
+    requirements_explicit: bool | None = None,
+    requirements_snapshot_overrides: dict[str, Any] | None = None,
+):
+    source_client_session_id = body.source_client_session_id or (
+        (requirements_snapshot_overrides or {}).get("source_client_session_id")
+    )
+    source_client_session_binding_id: str | None = None
+    if source_client_session_id:
+        from backend.services.workflow_session_scope import require_registered_client_session
+
+        binding = await require_registered_client_session(
+            payload, str(source_client_session_id)
+        )
+        source_client_session_id = binding.session_id
+        source_client_session_binding_id = binding.id
+    workflow_id = workflow_id or uid("wf")
+    session_id = "wfs_" + workflow_id.removeprefix("wf_") if qcp_request_hash else uid("wfs")
     async with SessionLocal() as db:
+        if qcp_request_hash:
+            existing = await db.get(WorkflowDefinition, workflow_id)
+            if existing is not None:
+                if (
+                    existing.tenant_key != tenant()
+                    or existing.created_by != current_user(payload)
+                    or (existing.requirements_snapshot or {}).get("qcp_request_hash")
+                    != qcp_request_hash
+                ):
+                    raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
+                clarification = await db.get(
+                    WorkflowClarificationSession, existing.clarification_session_id
+                )
+                return {
+                    "workflow": workflow_out(existing),
+                    "clarification_session": clarification_out(clarification),
+                }
         description = body.description.strip()
         requirements_snapshot: dict[str, Any] = {
             "clarification_mode": body.clarification_mode,
             "output_kind": body.output_kind,
         }
+        if requirements_snapshot_overrides:
+            requirements_snapshot.update(requirements_snapshot_overrides)
+        if source_client_session_id:
+            requirements_snapshot["source_client_session_id"] = source_client_session_id
+        if body.presentation_review_gates:
+            requirements_snapshot["presentation_review_gates"] = list(
+                dict.fromkeys(body.presentation_review_gates)
+            )
+        if qcp_request_hash:
+            requirements_snapshot["qcp_request_hash"] = qcp_request_hash
         if body.output_kind == "presentation":
             requirements_snapshot["scenario_id"] = "presentation-generation"
         elif body.output_kind == "document":
@@ -777,7 +836,11 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
                 description, demand_context
             )[:12_000]
 
-        explicit = requirement_is_explicit(description)
+        explicit = (
+            requirements_explicit
+            if requirements_explicit is not None
+            else requirement_is_explicit(description)
+        )
         row = WorkflowDefinition(
             id=workflow_id,
             tenant_key=tenant(),
@@ -788,6 +851,8 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
             status="clarifying",
             clarification_session_id=session_id,
             requirements_snapshot=requirements_snapshot,
+            source_client_session_binding_id=source_client_session_binding_id,
+            source_client_session_id=source_client_session_id,
         )
         clarification = WorkflowClarificationSession(
             id=session_id,
@@ -877,6 +942,11 @@ async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_
             "workflow": workflow_out(row),
             "clarification_session": clarification_out(clarification),
         }
+
+
+@router.post("/workflows", status_code=201)
+async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_auth)):
+    return await _create_workflow(body, payload)
 
 
 @router.get("/workflows/{workflow_id}/clarification")
@@ -1621,6 +1691,161 @@ async def delete_workflow(
     return Response(status_code=204)
 
 
+def _normalized_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _workflow_cancel_request_hash(
+    workflow_id: str, body: WorkflowCancelRequest
+) -> str:
+    encoded = json.dumps(
+        {
+            "workflow_id": workflow_id,
+            "expected_updated_at": _normalized_timestamp(body.expected_updated_at),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@router.post("/workflows/{workflow_id}/cancel")
+async def cancel_workflow(
+    workflow_id: str,
+    body: WorkflowCancelRequest,
+    payload: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """CAS-bound, idempotent workflow cancellation with a durable receipt."""
+    request_hash = _workflow_cancel_request_hash(workflow_id, body)
+    async with SessionLocal() as db:
+        workflow = await db.scalar(
+            select(WorkflowDefinition)
+            .where(
+                WorkflowDefinition.id == workflow_id,
+                WorkflowDefinition.tenant_key == tenant(),
+                WorkflowDefinition.created_by == current_user(payload),
+            )
+            .with_for_update()
+        )
+        if workflow is None:
+            raise HTTPException(status_code=404, detail="工作流不存在")
+        if workflow.cancel_request_id == body.request_id:
+            if (
+                workflow.cancel_request_hash != request_hash
+                or not workflow.cancellation_receipt
+            ):
+                raise HTTPException(
+                    status_code=409, detail={"code": "idempotency_payload_conflict"}
+                )
+            return dict(workflow.cancellation_receipt)
+        if workflow.archived_at is not None:
+            raise HTTPException(
+                status_code=409, detail={"code": "workflow_already_archived"}
+            )
+        if workflow.updated_at is None or _normalized_timestamp(
+            workflow.updated_at
+        ) != _normalized_timestamp(body.expected_updated_at):
+            raise HTTPException(
+                status_code=412,
+                detail={
+                    "code": "workflow_revision_conflict",
+                    "actual_updated_at": (
+                        workflow.updated_at.isoformat() if workflow.updated_at else None
+                    ),
+                },
+            )
+        active_binding = await db.scalar(
+            select(WorkspaceWorkflowBinding).where(
+                WorkspaceWorkflowBinding.workflow_id == workflow.id,
+                WorkspaceWorkflowBinding.status == "ACTIVE",
+            )
+        )
+        if active_binding is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="workflow_is_bound_to_qws_project_use_change_proposal",
+            )
+
+        executions = list(
+            (
+                await db.execute(
+                    select(WorkflowExecution).where(
+                        WorkflowExecution.workflow_id == workflow.id,
+                        WorkflowExecution.status.in_(
+                            ["queued", "running", "awaiting_approval", "awaiting_review"]
+                        ),
+                    )
+                )
+            ).scalars().all()
+        )
+        for execution in executions:
+            if execution.status == "running":
+                try:
+                    await cancel_remote(execution.id)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail={
+                            "code": "workflow_remote_cancel_failed",
+                            "execution_id": execution.id,
+                        },
+                    ) from exc
+
+        cancelled_at = now()
+        for execution in executions:
+            execution.status = "cancelled"
+            execution.finished_at = cancelled_at
+            execution.lease_owner = None
+            execution.lease_until = None
+        planning_jobs = list(
+            (
+                await db.execute(
+                    select(WorkflowPlanningJob).where(
+                        WorkflowPlanningJob.workflow_id == workflow.id,
+                        WorkflowPlanningJob.status.in_(["queued", "running"]),
+                    )
+                )
+            ).scalars().all()
+        )
+        for job in planning_jobs:
+            job.status = "cancelled"
+            job.lease_owner = None
+            job.lease_until = None
+        session = await db.scalar(
+            select(WorkflowClarificationSession).where(
+                WorkflowClarificationSession.workflow_id == workflow.id
+            )
+        )
+        if session is not None:
+            session.phase = "archived"
+
+        workflow.status = "archived"
+        workflow.archived_at = cancelled_at
+        workflow.updated_at = cancelled_at
+        receipt = {
+            "request_id": body.request_id,
+            "workflow_id": workflow.id,
+            "status": "cancelled",
+            "resource_revision": _normalized_timestamp(cancelled_at),
+            "cancelled_execution_ids": [item.id for item in executions],
+            "cancelled_planning_job_ids": [item.id for item in planning_jobs],
+            "archived_clarification_session_id": session.id if session else None,
+        }
+        workflow.cancel_request_id = body.request_id
+        workflow.cancel_request_hash = request_hash
+        workflow.cancellation_receipt = receipt
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=409, detail={"code": "idempotency_key_conflict"}
+            ) from exc
+        return receipt
+
+
 @router.get("/workflows/{workflow_id}/plan")
 async def get_plan(workflow_id: str, payload: dict = Depends(require_auth)):
     async with SessionLocal() as db:
@@ -2072,6 +2297,23 @@ async def approve_plan(
         plan = await db.get(WorkflowPlanVersion, workflow.active_plan_id)
         if plan is None or plan.validation_errors:
             raise HTTPException(status_code=409, detail="计划校验未通过，不能构建 Agent")
+        if body.expected_hash is not None or body.expected_revision is not None:
+            try:
+                expected_hash, expected_revision = require_compare_and_set_inputs(
+                    expected_hash=body.expected_hash,
+                    expected_revision=body.expected_revision,
+                )
+                current_hash = plan.content_hash or canonical_plan_hash(plan.dsl or {})
+                if (
+                    expected_hash != current_hash
+                    or expected_revision != plan.activation_revision
+                ):
+                    raise PlanContractError("计划已被更新，请刷新后重试")
+            except PlanContractError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "resource_conflict", "message": str(exc)},
+                ) from exc
         existing = (
             await db.execute(
                 select(TenantAgentModel).where(

@@ -5,11 +5,13 @@ Never a production review, publication, credential, or network operation.
 import base64
 import gzip
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shlex
 import sqlite3
 import subprocess
 import sys
+import time
 
 import pytest
 from PIL import Image
@@ -24,6 +26,14 @@ from backend.services.publication_editorial import (
     editorial_metrics,
 )
 from test_publication_editorial import synthetic_brief, synthetic_fixture
+
+
+class NativeDatabases(dict):
+    def __fspath__(self):
+        return str(self["supervision"])
+
+    def read_bytes(self):
+        return self["supervision"].read_bytes()
 
 
 def fixture_bundle():
@@ -152,6 +162,7 @@ def flow(tmp_path, monkeypatch):
             }
         ],
         "execution_files": [],
+        "asset_files": [],
         "review_file": "review.json",
         "proof_file": "proof.json",
         "status": "prepared",
@@ -186,8 +197,9 @@ def flow(tmp_path, monkeypatch):
 
 def native(flow, decision="approved", ended=True):
     local, manifest, remote, _, key, _, _ = flow
-    relay.prepare(manifest, remote)
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     request = relay.review_input(local, remote)
+    request_value = json.loads(request.split("PUBLICATION_REVIEW_REQUEST\n", 1)[1].split("\nEND_PUBLICATION_REVIEW_REQUEST", 1)[0])
     item = json.loads(manifest.read_text())["items"][0]
     c = item["quality_contract"]
     review = {
@@ -195,6 +207,7 @@ def native(flow, decision="approved", ended=True):
         "decision": decision,
         "reviewed_at": "2026-09-08T03:00:00+00:00",
         "editorial_target_hash": c["target_hash"],
+        "publication_material_hash": request_value["publication_material_hash"],
         "revision": c["revision"],
         "reviewer_session": "hermes:reviewer",
         "research_gaps": [],
@@ -235,30 +248,26 @@ def native(flow, decision="approved", ended=True):
         "revision": c["revision"],
         "attempt_id": c["attempt_id"],
         "editorial_target_hash": c["target_hash"],
+        "publication_material_hash": request_value["publication_material_hash"],
         "review_file_hash": relay.sha((local / "review.json").read_bytes()),
         "reviewer_session": "hermes:reviewer",
         "decision": decision,
     }
-    db = local / "TEST-ONLY-state.db"
-    with sqlite3.connect(db) as conn:
+    now = time.time()
+    writer_db = local / "TEST-ONLY-story-state.db"
+    reviewer_db = local / "TEST-ONLY-supervision-state.db"
+    schema = "CREATE TABLE sessions(id TEXT PRIMARY KEY, profile_name TEXT, user_id TEXT, source TEXT, ended_at REAL, end_reason TEXT, started_at REAL); CREATE TABLE messages(id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, tool_calls TEXT, finish_reason TEXT, active INTEGER DEFAULT 1, compacted INTEGER DEFAULT 0);"
+    with sqlite3.connect(writer_db) as conn:
+        conn.executescript(schema)
+        conn.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", ("writer", "story", None, "cron", now, "cron_complete", now - 10))
+    with sqlite3.connect(reviewer_db) as conn:
         conn.executescript(
-            "CREATE TABLE sessions(id TEXT PRIMARY KEY, profile_name TEXT, user_id TEXT, source TEXT, ended_at REAL, end_reason TEXT, started_at REAL); CREATE TABLE messages(id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, tool_calls TEXT, finish_reason TEXT, active INTEGER DEFAULT 1, compacted INTEGER DEFAULT 0);"
+            schema
         )
-        conn.executemany(
-            "INSERT INTO sessions VALUES(?,?,?,?,?,?,?)",
-            [
-                (
-                    s,
-                    "default",
-                    None,
-                    "cron",
-                    20 if ended else None,
-                    "cron_complete" if ended else None,
-                    10,
-                )
-                for s in ("writer", "reviewer")
-            ],
-        )
+        conn.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", (
+            "reviewer", "supervision", None, "cron", now if ended else None,
+            "cron_complete" if ended else None, now - 10,
+        ))
         conn.execute(
             "INSERT INTO messages VALUES(1,'reviewer','user',?,NULL,NULL,1,0)",
             (request,),
@@ -267,12 +276,12 @@ def native(flow, decision="approved", ended=True):
             "INSERT INTO messages VALUES(2,'reviewer','assistant',?,NULL,'stop',1,0)",
             (json.dumps({"publication_review_result": result}),),
         )
-    return db, key
+    return NativeDatabases(story=writer_db, supervision=reviewer_db), key
 
 
 def test_prepare_is_private_intake_and_request_contains_full_material(flow):
     local, manifest, remote, calls, *_ = flow
-    result = relay.prepare(manifest, remote)
+    result = relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     assert result["statuses"] == ["await_review"]
     assert all("stage" not in c and "release-due" not in c for c in calls)
     request = json.loads(
@@ -296,7 +305,63 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         == json.loads((local / frozen).read_text())["source_receipts"]
     )
     assert request["writer_sessions"] == request["quality_contract"]["writer_sessions"]
+    assert request["review_policy"] == request["quality_contract"]["review_policy"] == "story-supervision-v2"
+    assert request["writer_profile"] == "story"
+    assert request["reviewer_profile"] == "supervision"
+    assert request["writer_role"] == "story_author"
+    assert request["reviewer_role"] == "supervision_reviewer"
+    assert request["publication_material_hash"]
     assert not (local / "proof.json").exists()
+
+
+def test_prepare_ingests_manifest_bound_inline_image_bytes(flow):
+    local, manifest, remote, *_ = flow
+    image_url = "https://example.com/figure.png"
+    body_path = local / "body.md"
+    body_path.write_text(body_path.read_text() + f'\n![结构示意]({image_url} "审定图注")\n')
+    body_hash = relay.sha(body_path.read_bytes())
+    bundle = json.loads((local / "bundle.json").read_text())
+    bundle["body_hash"] = body_hash
+    relay.save(local / "bundle.json", bundle)
+    rights = json.loads((local / "rights.json").read_text())
+    rights["content_hashes"] = [body_hash]
+    relay.save(local / "rights.json", rights)
+    image = local / "figure.png"
+    Image.new("RGB", (640, 360), "#335577").save(image)
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    item["body_sha256"] = body_hash
+    item["bundle_sha256"] = relay.sha((local / "bundle.json").read_bytes())
+    item["rights_files"][0]["sha256"] = relay.sha((local / "rights.json").read_bytes())
+    item["asset_files"] = [{"url": image_url, "path": image.name, "sha256": relay.sha(image.read_bytes())}]
+    relay.save(manifest, value)
+
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
+
+    frozen = json.loads(manifest.read_text())["items"][0]["bundle_file"]
+    asset = json.loads((local / frozen).read_text())["assets"][0]
+    assert asset["url"] == image_url
+    assert asset["receipt"]["sha256"] == relay.sha(image.read_bytes())
+    assert (asset["media_type"], asset["width"], asset["height"]) == ("image/png", 640, 360)
+    envelope = json.loads(
+        relay.review_input(local, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0]
+    )
+    assert str(image.resolve()) in envelope["read_only_inputs"]["assets"]
+    assert "visual tools" in envelope["instruction"]
+    assert "not substitutes for visual inspection" in envelope["instruction"]
+
+
+def test_default_prepare_and_review_input_keep_v1_contract(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    request = json.loads(
+        relay.review_input(local, remote)
+        .split("PUBLICATION_REVIEW_REQUEST\n", 1)[1]
+        .split("\nEND_PUBLICATION_REVIEW_REQUEST", 1)[0]
+    )
+    assert request["profile"] == "default"
+    assert "review_policy" not in request["quality_contract"]
+    assert "publication_material_hash" not in request
 
 
 def test_global_review_scan_skips_locally_reviewed_stale_attempt_before_remote_readback(flow, monkeypatch):
@@ -325,7 +390,7 @@ def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
 
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
-    local, manifest, remote, calls, *_ = flow
+    local, manifest, remote, calls, _, store_root, intake = flow
     db, key = native(flow, decision)
     before = relay.sha(db.read_bytes())
     result = relay.finalize(local, remote, db=db, key=key)
@@ -337,6 +402,22 @@ def test_real_native_signature_record_and_readback(flow, decision):
     if decision == "rejected":
         assert "need-primary" in [g["id"] for g in item["receipt"]["gaps"]]
         assert not any("stage" in c for c in calls)
+    record_call = next(call for call in calls if "record-editorial-review" in call)
+    assert remote.operator(*record_call[1:])["state"] == decision
+    with sqlite3.connect(store_root / "publication.sqlite3") as conn:
+        assert conn.execute(
+            "SELECT proof_json FROM editorial_attempts WHERE attempt_id=?",
+            (item["quality_contract"]["attempt_id"],),
+        ).fetchone()[0]
+    proof_index = record_call.index("--proof-file") + 1
+    proof_path = Path(record_call[proof_index].replace(
+        "/app/data/runtime/publication-intake", str(intake)
+    ))
+    tampered = json.loads(proof_path.read_text())
+    tampered["signature"] = "invalid"
+    proof_path.write_text(json.dumps(tampered))
+    with pytest.raises(ValueError, match="remote command failed"):
+        remote.operator(*record_call[1:])
     assert not any("release-due" in c for c in calls)
     assert relay.finalize(local, remote, db=db, key=key) == {"items": []}
     assert "manuscript" not in json.loads((local / "proof.json").read_text())
@@ -379,6 +460,148 @@ def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
     stage_call = next(call for call in calls if "stage" in call)
     assert "--shelf-cover-file" in stage_call
     assert "--reader-cover-file" in stage_call
+
+
+def test_cover_changed_after_review_invalidates_signed_approval(flow):
+    local, manifest, remote, calls, *_ = flow
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    cover = local / "shelf_cover.jpg"
+    Image.new("RGB", (1440, 2560), "#335577").save(cover, format="JPEG")
+    item["shelf_cover_file"] = cover.name
+    item["shelf_cover_sha256"] = relay.sha(cover.read_bytes())
+    relay.save(manifest, value)
+    db, key = native(flow)
+
+    Image.new("RGB", (1440, 2560), "#773355").save(cover, format="JPEG")
+    value = json.loads(manifest.read_text())
+    value["items"][0]["shelf_cover_sha256"] = relay.sha(cover.read_bytes())
+    relay.save(manifest, value)
+
+    with pytest.raises(ValueError, match="signed proof does not bind manifest"):
+        relay.finalize(local, remote, db=db, key=key)
+    assert not any("stage" in call for call in calls)
+
+
+def test_cover_only_change_creates_new_attempt_and_old_proof_is_rejected(flow):
+    import shutil
+
+    local, manifest, remote, _, _, store_root, _ = flow
+    value = json.loads(manifest.read_text())
+    cover = local / "shelf_cover.jpg"
+    Image.new("RGB", (1440, 2560), "#335577").save(cover, format="JPEG")
+    value["items"][0].update(
+        shelf_cover_file=cover.name,
+        shelf_cover_sha256=relay.sha(cover.read_bytes()),
+    )
+    relay.save(manifest, value)
+    db, key = native(flow)
+    relay.finalize(local, remote, db=db, key=key)
+    old = json.loads(manifest.read_text())["items"][0]
+
+    from backend.services.knowledge_publication_store import PublicationStore
+
+    store = PublicationStore(store_root)
+    released = store.release_due(now=datetime(2026, 9, 8, 4, tzinfo=timezone.utc))
+    assert len(released["released"]) == 1
+    old_edition = store.status()[0]
+    old_bundle = old_edition["bundle"]
+
+    next_dir = local / "cover-revision"
+    next_dir.mkdir()
+    for name in ("bundle.json", "body.md", "source.json", "rights.json"):
+        shutil.copyfile(local / name, next_dir / name)
+    changed_cover = next_dir / cover.name
+    Image.new("RGB", (1440, 2560), "#773355").save(changed_cover, format="JPEG")
+    item = {
+        key: value for key, value in old.items()
+        if key not in {"bundle_sha256", "batch", "quality_contract", "receipt", "error"}
+    }
+    item.update(
+        bundle_file="bundle.json", status="prepared",
+        shelf_cover_sha256=relay.sha(changed_cover.read_bytes()),
+    )
+    next_manifest = next_dir / "draft-manifest.json"
+    relay.save(next_manifest, {"version": relay.VERSION, "items": [item]})
+
+    relay.prepare(next_manifest, remote, review_policy="story-supervision-v2")
+    new = json.loads(next_manifest.read_text())["items"][0]
+    assert new["status"] == "await_review"
+    assert new["quality_contract"]["revision"] == old["quality_contract"]["revision"] + 1
+    assert new["quality_contract"]["attempt_id"] != old["quality_contract"]["attempt_id"]
+
+    shutil.copyfile(local / "review.json", next_dir / "review.json")
+    shutil.copyfile(local / "proof.json", next_dir / "proof.json")
+    with pytest.raises(ValueError, match="signed proof does not bind manifest"):
+        relay.finalize(next_dir, remote, db=db, key=key)
+    (next_dir / "review.json").unlink()
+    (next_dir / "proof.json").unlink()
+
+    relay.prepare(next_manifest, remote, review_policy="story-supervision-v2")
+    assert json.loads(next_manifest.read_text())["items"][0]["quality_contract"] == new["quality_contract"]
+    next_flow = (next_dir, next_manifest, *flow[2:])
+    next_db, next_key = native(next_flow)
+    relay.finalize(next_dir, remote, db=next_db, key=next_key)
+    released = store.release_due(now=datetime(2026, 9, 8, 4, tzinfo=timezone.utc))
+    assert len(released["released"]) == 1
+
+    editions = {item["edition_id"]: item for item in store.status()}
+    assert len(editions) == 2
+    assert editions[old_edition["edition_id"]]["state"] == "withdrawn"
+    assert editions[old_edition["edition_id"]]["bundle"] == old_bundle
+    published = store.get_published(old_edition["publication_id"])
+    assert published["edition_id"] != old_edition["edition_id"]
+    assert store.get_published_cover(old_edition["publication_id"], "shelf_cover")[0] == changed_cover.read_bytes()
+
+
+def test_published_v2_body_and_cover_remain_readable_after_review_time(flow):
+    local, manifest, remote, _, _, store_root, _ = flow
+    value = json.loads(manifest.read_text())
+    cover = local / "shelf_cover.jpg"
+    Image.new("RGB", (1440, 2560), "#335577").save(cover, format="JPEG")
+    value["items"][0].update(
+        shelf_cover_file=cover.name,
+        shelf_cover_sha256=relay.sha(cover.read_bytes()),
+    )
+    relay.save(manifest, value)
+    db, key = native(flow)
+    relay.finalize(local, remote, db=db, key=key)
+
+    from backend.services.knowledge_publication_store import PublicationStore
+
+    store = PublicationStore(store_root)
+    assert store.release_due(now=datetime(2026, 9, 8, 4, tzinfo=timezone.utc))["released"]
+    proof = json.loads((local / "proof.json").read_text())
+    assert "approval_expires_at" not in proof
+    publication_id = store.status()[0]["publication_id"]
+    assert store.get_published(publication_id, now=datetime(2027, 9, 8, 4, tzinfo=timezone.utc))
+    assert store.get_published_cover(
+        publication_id, "shelf_cover", now=datetime(2027, 9, 8, 4, tzinfo=timezone.utc)
+    )
+
+
+@pytest.mark.parametrize("decision", ["approved", "rejected"])
+def test_v2_review_without_valid_proof_is_not_recorded(flow, monkeypatch, decision):
+    local, manifest, remote, _, _, _, intake = flow
+    db, key = native(flow, decision)
+    operator = remote.operator
+
+    def tamper(action, *args):
+        if action == "record-editorial-review":
+            proof = Path(args[args.index("--proof-file") + 1].replace(
+                "/app/data/runtime/publication-intake", str(intake)
+            ))
+            value = json.loads(proof.read_text())
+            value["signature"] = "invalid"
+            proof.write_text(json.dumps(value))
+        return operator(action, *args)
+
+    monkeypatch.setattr(remote, "operator", tamper)
+    with pytest.raises(ValueError, match="remote command failed|attempt ID/hash/state readback mismatch"):
+        relay.finalize(local, remote, db=db, key=key)
+    item = json.loads(manifest.read_text())["items"][0]
+    assert item["status"] == "await_review"
+    assert relay.attempt(remote, item["quality_contract"], {"await_review"})["state"] == "await_review"
 
 
 def test_running_native_is_pending_without_upload(flow):

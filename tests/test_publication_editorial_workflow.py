@@ -2,8 +2,10 @@
 import copy
 import hashlib
 import json
+import sqlite3
 import subprocess
 import sys
+import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -12,6 +14,74 @@ import pytest
 from backend.services.knowledge_publication_store import PublicationError, PublicationStore
 from test_daily_publication import add_covers, at, bundle, ready
 from test_publication_editorial import synthetic_brief
+
+
+def head_publication_store():
+    root = Path(__file__).parents[1]
+    source = subprocess.run(
+        ["git", "show", "92d7d273fc94052a696183ebc36dedc8cd7093d4:backend/services/knowledge_publication_store.py"],
+        cwd=root, check=True, capture_output=True, text=True,
+    ).stdout
+    module = types.ModuleType("head_knowledge_publication_store")
+    module.__file__ = str(root / "backend/services/knowledge_publication_store.py")
+    exec(compile(source, module.__file__, "exec"), module.__dict__)
+    return module.PublicationStore
+
+
+@pytest.mark.parametrize("state", ["await_review", "approved"])
+@pytest.mark.parametrize("restored_contract", [False, True])
+def test_head_v1_attempt_remains_idempotent_after_upgrade(tmp_path, state, restored_contract):
+    from publication_editorial_fixture import approve_fixture
+
+    legacy_store = head_publication_store()(tmp_path)
+    value = (draft(legacy_store) if state == "await_review"
+             else ready(legacy_store, bundle(), editorial=False))
+    if state == "approved":
+        approve_fixture(legacy_store, value)
+        contract = value["quality_contract"]
+    else:
+        contract = legacy_store.prepare_editorial(value)["quality_contract"]
+    draft_contract = {key: copy.deepcopy(contract[key]) for key in (
+        "format", "writer_sessions", "learning_objectives", "editorial_brief", "research_gaps",
+    )}
+
+    with sqlite3.connect(tmp_path / "publication.sqlite3") as db:
+        assert db.execute(
+            "SELECT state FROM editorial_attempts WHERE attempt_id=?", (contract["attempt_id"],)
+        ).fetchone()[0] == state
+
+    value["quality_contract"] = contract if restored_contract else draft_contract
+    recovered = PublicationStore(tmp_path).prepare_editorial(value)
+    assert recovered["attempt_id"] == contract["attempt_id"]
+    assert recovered["revision"] == contract["revision"]
+
+
+def test_existing_edition_schema_migrates_without_losing_frozen_rows(tmp_path):
+    db_path = tmp_path / "publication.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("""CREATE TABLE editions (
+          edition_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, issue_id TEXT NOT NULL, issue_key TEXT NOT NULL,
+          series_id TEXT NOT NULL, issue_date TEXT NOT NULL, edition INTEGER NOT NULL, content_hash TEXT NOT NULL,
+          source_snapshot_hash TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, author TEXT NOT NULL,
+          institution TEXT NOT NULL, release_at TEXT NOT NULL, actual_release_at TEXT, state TEXT NOT NULL,
+          body_ref TEXT NOT NULL, bundle_json TEXT NOT NULL, blocked_reasons TEXT NOT NULL, created_at TEXT NOT NULL,
+          withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition), UNIQUE(issue_id, content_hash))""")
+        db.execute(
+            "INSERT INTO editions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("edition-old", "publication-old", "issue-old", "2026-09-08", "series-old", "2026-09-08", 1,
+             "a" * 64, "", "title", "summary", "author", "institution", "2026-09-08T04:00:00+00:00",
+             "2026-09-08T04:00:00+00:00", "published", "artifacts/old.md", "{}", "[]",
+             "2026-09-08T03:00:00+00:00", None),
+        )
+
+    store = PublicationStore(tmp_path)
+    db = store._connect()
+    try:
+        assert db.execute("SELECT edition_id FROM editions").fetchone()[0] == "edition-old"
+        schema = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='editions'").fetchone()[0]
+        assert "UNIQUE(issue_id, content_hash)" not in schema
+    finally:
+        db.close()
 
 
 def draft(store, body=None):

@@ -93,6 +93,21 @@ def add_covers(store: PublicationStore, value: dict, *, shelf_size=(1440, 2560),
     return value
 
 
+def add_inline_image(store: PublicationStore, value: dict, *, url="https://example.com/figure.png") -> dict:
+    path = store.root / "fixture-inputs" / "figure.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (640, 360), "#335577").save(path)
+    value["assets"].append({
+        "url": url,
+        "receipt": store.ingest_file(path, "publication_inline_image"),
+        "status": "verified",
+        "media_type": "image/png",
+        "width": 640,
+        "height": 360,
+    })
+    return value
+
+
 def test_before_noon_invisible_and_exact_noon_releases(monkeypatch, tmp_path):
     monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(tmp_path))
     vault = tmp_path / "vault"
@@ -194,6 +209,65 @@ def test_ai_toolkit_dual_covers_release_and_project_urls(monkeypatch, tmp_path):
             item["publication_id"], "shelf_cover", {**payload, "visible_categories": frozenset()}
         ))
     assert hidden.value.status_code == 404
+
+
+def test_inline_image_projects_in_order_and_serves_only_bound_publication(monkeypatch, tmp_path):
+    runtime, vault = tmp_path / "runtime", tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(runtime))
+    monkeypatch.setenv("AI_LAB_HOME", str(vault))
+    store = PublicationStore(runtime)
+    url = "https://example.com/figure.png"
+    body = bundle()["body"] + f"\n\n图前。\n\n![结构示意]({url} \"审定图注\")\n\n图后。"
+    value = add_inline_image(store, ready(store, bundle(body=body)), url=url)
+    item = store.stage(value, now=at(3))
+    assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+
+    payload = {"tenant_key": "tenant-a", "user_id": "reader", "visible_categories": frozenset({PUBLICATION_CATEGORY})}
+    _, reader = asyncio.run(subscriptions._available_book_body(payload, item["publication_id"]))
+    blocks = [block for section in reader["sections"] for block in section["blocks"]]
+    image_index = next(index for index, block in enumerate(blocks) if block["kind"] == "image")
+    assert [block["kind"] for block in blocks[image_index - 1:image_index + 2]] == ["text", "image", "text"]
+    image = blocks[image_index]
+    assert image["alt"] == "结构示意" and image["caption"] == "审定图注"
+    assert image["path"].endswith(f"/{item['publication_id']}/assets/{value['assets'][0]['receipt']['sha256']}")
+
+    response = asyncio.run(subscriptions.knowledge_publication_asset(
+        item["publication_id"], value["assets"][0]["receipt"]["sha256"], payload
+    ))
+    assert response.media_type == "image/png" and response.body.startswith(b"\x89PNG")
+
+    other = stage(store, bundle(series="ai-practice", body=bundle()["body"] + "\nother"), now=at(3))
+    store.release_due(now=at(4))
+    with pytest.raises(HTTPException) as cross_publication:
+        asyncio.run(subscriptions.knowledge_publication_asset(
+            other["publication_id"], value["assets"][0]["receipt"]["sha256"], payload
+        ))
+    assert cross_publication.value.status_code == 404
+
+    store.withdraw(item["publication_id"], now=at(5))
+    with pytest.raises(HTTPException) as withdrawn:
+        asyncio.run(subscriptions.knowledge_publication_asset(
+            item["publication_id"], value["assets"][0]["receipt"]["sha256"], payload
+        ))
+    assert withdrawn.value.status_code == 404
+
+
+def test_inline_image_contract_rejects_mime_dimensions_and_tampered_bytes(tmp_path):
+    store = PublicationStore(tmp_path)
+    url = "https://example.com/figure.png"
+    body = bundle()["body"] + f"\n\n![图]({url})"
+    wrong = add_inline_image(store, ready(store, bundle(body=body)), url=url)
+    wrong["assets"][0]["media_type"] = "image/jpeg"
+    with pytest.raises(PublicationError, match="inline image bytes, format or dimensions"):
+        store.stage(wrong, now=at(3))
+
+    valid = add_inline_image(store, ready(store, bundle(body=body + "\n\nvalid")), url=url)
+    item = store.stage(valid, now=at(3))
+    store.release_due(now=at(4))
+    receipt = valid["assets"][0]["receipt"]
+    (store.evidence / f"{receipt['sha256']}.bin").write_bytes(b"tampered")
+    assert store.get_published_asset(item["publication_id"], receipt["sha256"], now=at(4)) is None
 
 
 def test_ai_toolkit_missing_cover_is_blocked_and_old_edition_stays_readable(tmp_path):

@@ -26,6 +26,14 @@ def _workflow_plan_hash(context) -> str:
 
 class WorkflowDefinition(Base):
     __tablename__ = "workflows"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key",
+            "created_by",
+            "cancel_request_id",
+            name="uq_workflows_cancel_request_id",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -41,10 +49,19 @@ class WorkflowDefinition(Base):
         String(48), nullable=True, unique=True
     )
     requirements_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_client_session_binding_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    source_client_session_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
     primary_agent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    cancel_request_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    cancel_request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cancellation_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -57,6 +74,29 @@ class WorkflowDefinition(Base):
     )
     executions: Mapped[list["WorkflowExecution"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
+    )
+
+
+class WorkflowClientSessionBinding(Base):
+    """Server-observed ownership binding for a client chat session."""
+
+    __tablename__ = "workflow_client_session_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key", "session_id", name="uq_workflow_client_session_binding"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    last_request_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

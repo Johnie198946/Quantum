@@ -1,0 +1,48 @@
+capabilities:
+  - id: profile.read
+    version: 1.0.0
+    domain: profile
+    description: Read the authenticated user's current profile and tenant projection.
+    positive_examples: ["查看我的个人资料"]
+    negative_examples: ["Read another user's profile"]
+    input_schema: {type: object, properties: {}, additionalProperties: false}
+    output_schema: {type: object, required: [user_id, tenant_key, username]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: profile-owner
+    handler_binding: profile.read
+    idempotency: none
+    receipt: none
+    result_event: profile.snapshot
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_profile_capabilities.py]
+    implementation_status: implemented
+  - id: profile.update
+    version: 1.0.0
+    domain: profile
+    description: Update the authenticated user's display name or avatar after confirmation.
+    positive_examples: ["把我的昵称改为 Johnie"]
+    negative_examples: ["Change another user's profile"]
+    input_schema:
+      type: object
+      properties:
+        username: {type: string, minLength: 1, maxLength: 160}
+        avatar_url: {type: string, minLength: 1, maxLength: 2000}
+      additionalProperties: false
+    output_schema: {type: object, required: [user_id, tenant_key, username]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: profile-owner
+    handler_binding: profile.update
+    idempotency: required
+    receipt: required
+    result_event: profile.changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_profile_capabilities.py]
+    implementation_status: implemented

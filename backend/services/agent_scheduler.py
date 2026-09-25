@@ -113,6 +113,7 @@ async def _run_agent_once(agent_id: str) -> None:
             # 站内通知(无论成败都通知, 失败内容带 ⚠️)
             notif = Notification(
                 tenant_key=agent.tenant_key,
+                user_id=agent.created_by or None,
                 agent_id=agent.id,
                 title=f"{agent.name} · 定时汇报",
                 content=reply[:8000],

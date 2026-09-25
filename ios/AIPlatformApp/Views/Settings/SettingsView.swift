@@ -3638,17 +3638,13 @@ private struct KnowledgeBookReadingView: View {
                     .frame(minHeight: 44, maxHeight: .infinity)
             }
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                ForEach(Array(content.blocks.enumerated()), id: \.offset) { blockIndex, block in
-                    readerBlock(
-                        block,
-                        blockIndex: blockIndex,
-                        sectionIndex: index,
-                        section: section,
-                        bookBody: bookBody,
-                        annotations: sectionAnnotations
-                    )
-                    .id("\(section.id):\(blockIndex)")
-                }
+                publicationSectionBlocks(
+                    section,
+                    fallback: content.blocks,
+                    sectionIndex: index,
+                    bookBody: bookBody,
+                    annotations: sectionAnnotations
+                )
             }
             if let first = sectionAnnotations.first {
                 Button { inspectedAnnotation = first } label: {
@@ -3682,6 +3678,49 @@ private struct KnowledgeBookReadingView: View {
         .onAppear {
             guard section.id != initialSectionID || initialBlockIndex == nil else { return }
             scheduleReadingLocation(sectionIndex: index, blockIndex: 0, characterOffset: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func publicationSectionBlocks(
+        _ section: KnowledgeBookSectionDTO,
+        fallback: [MarkdownBlock],
+        sectionIndex: Int,
+        bookBody: KnowledgeBookBodyDTO,
+        annotations: [ReaderAnnotationEntry]
+    ) -> some View {
+        if let blocks = section.blocks, !blocks.isEmpty {
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { blockIndex, block in
+                if block.kind == "image", let path = block.path {
+                    PublicationInlineImage(block: block, path: path)
+                        .id("\(section.id):\(blockIndex)")
+                } else if block.kind == "text", let markdown = block.markdown {
+                    let parsed = ReadingSectionContent.parse(markdown).blocks
+                    ForEach(Array(parsed.enumerated()), id: \.offset) { _, item in
+                        readerBlock(
+                            item,
+                            blockIndex: blockIndex,
+                            sectionIndex: sectionIndex,
+                            section: section,
+                            bookBody: bookBody,
+                            annotations: annotations
+                        )
+                    }
+                    .id("\(section.id):\(blockIndex)")
+                }
+            }
+        } else {
+            ForEach(Array(fallback.enumerated()), id: \.offset) { blockIndex, block in
+                readerBlock(
+                    block,
+                    blockIndex: blockIndex,
+                    sectionIndex: sectionIndex,
+                    section: section,
+                    bookBody: bookBody,
+                    annotations: annotations
+                )
+                .id("\(section.id):\(blockIndex)")
+            }
         }
     }
 
@@ -3848,6 +3887,65 @@ private struct KnowledgeBookReadingView: View {
         isWritingAnnotation = false
         saveMessage = nil
         onScopeChange(bookBody, section)
+    }
+}
+
+private struct PublicationInlineImage: View {
+    @EnvironmentObject private var api: APIClient
+    let block: KnowledgeBookBlockDTO
+    let path: String
+
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else if failed {
+                    Label("插图暂时无法加载", systemImage: "photo.badge.exclamationmark")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 88)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 88)
+                }
+            }
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .accessibilityLabel(block.alt?.isEmpty == false ? block.alt! : "正文插图")
+
+            if let caption = block.caption, !caption.isEmpty {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                    .accessibilityLabel("图注：\(caption)")
+            }
+        }
+        .task(id: path) {
+            failed = false
+            do {
+                let data = try await api.fetchPublicationImage(path: path)
+                guard !Task.isCancelled, let decoded = UIImage(data: data) else {
+                    failed = !Task.isCancelled
+                    return
+                }
+                image = decoded
+            } catch is CancellationError {
+                return
+            } catch {
+                failed = true
+            }
+        }
+    }
+
+    private var aspectRatio: CGFloat {
+        guard let width = block.width, let height = block.height, height > 0 else { return 16 / 9 }
+        return CGFloat(width) / CGFloat(height)
     }
 }
 

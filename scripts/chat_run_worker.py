@@ -49,6 +49,8 @@ if CLAIM_AFTER is not None and (not math.isfinite(CLAIM_AFTER) or CLAIM_AFTER < 
 _run_context = threading.local()
 _placement_loop = asyncio.new_event_loop()
 _placement_loop_lock = threading.Lock()
+bridge._bridge_async_loop = _placement_loop
+bridge._bridge_async_loop_lock = _placement_loop_lock
 _AUTO_INGEST_RE = re.compile(r"调研|研究|分析|评估|方案|报告|诊断|规划|research|analysis|report|plan", re.I)
 
 
@@ -268,13 +270,18 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
                 "type": "runtime_timing", "phase": "agent_build_start",
                 "prewarm_requested": True,
             })
+            prewarm_options = {
+                "knowledge_action_enabled": bool(
+                    payload.get("knowledge_action_enabled")
+                ),
+            }
+            if payload.get("qcp_enabled"):
+                prewarm_options["qcp_enabled"] = True
             hermes_sid, cache_populated = bridge._prewarm_session_agent(
                 user_key,
                 dict(payload.get("agent_config") or {}),
                 sandbox,
-                knowledge_action_enabled=bool(
-                    payload.get("knowledge_action_enabled")
-                ),
+                **prewarm_options,
             )
             store.append_event(run_id, {
                 "type": "runtime_timing", "phase": "agent_build_end",
@@ -292,7 +299,11 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
             (None if stage_spec else _renew_knowledge_capability(claims)), claims or None,
             payload.get("client_session_context"), client_claims or None, sandbox,
             bool(payload.get("knowledge_action_enabled")),
+            bool(payload.get("qcp_enabled")),
             payload.get("qws_business_context"),
+            str(run.get("request_id") or ""),
+            qws_claims or None,
+            payload.get("client_session_id"),
         )
         snapshot = store.get_unchecked(run_id)
         triage = dict((payload.get("agent_config") or {}).get("triage") or {})

@@ -1,0 +1,102 @@
+capabilities:
+  - id: memory.list
+    version: 1.0.0
+    domain: memory
+    description: List native Hermes memory visible to the authenticated user.
+    positive_examples: ["查看我的长期记忆"]
+    negative_examples: ["Read another user's memory"]
+    input_schema: {type: object, properties: {}, additionalProperties: false}
+    output_schema: {type: object, required: [items]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner]
+    policy_ref: native-memory-owner
+    handler_binding: memory.list
+    idempotency: none
+    receipt: none
+    result_event: memory.snapshot
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_memory_capabilities.py]
+    implementation_status: implemented
+  - id: memory.create
+    version: 1.0.0
+    domain: memory
+    description: Add one bounded native Hermes memory entry after confirmation.
+    positive_examples: ["记住我偏好先给结论"]
+    negative_examples: ["Remember this without asking me"]
+    input_schema:
+      type: object
+      properties:
+        target: {type: string, enum: [user, memory]}
+        content: {type: string, minLength: 1, maxLength: 2200}
+      required: [target, content]
+      additionalProperties: false
+    output_schema: {type: object, required: [items]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner]
+    policy_ref: native-memory-owner
+    handler_binding: memory.create
+    idempotency: required
+    receipt: required
+    result_event: memory.changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_memory_capabilities.py]
+    implementation_status: implemented
+  - id: memory.update
+    version: 1.0.0
+    domain: memory
+    description: Replace one owned native Hermes memory entry after confirmation.
+    positive_examples: ["把这条记忆改成新内容"]
+    negative_examples: ["Blindly replace an unknown memory"]
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: string, minLength: 1, maxLength: 160}
+        content: {type: string, minLength: 1, maxLength: 2200}
+      required: [memory_id, content]
+      additionalProperties: false
+    output_schema: {type: object, required: [items]}
+    effect: write
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_owner, current_memory_exists]
+    policy_ref: native-memory-owner
+    handler_binding: memory.update
+    idempotency: required
+    receipt: required
+    result_event: memory.changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_memory_capabilities.py]
+    implementation_status: implemented
+  - id: memory.delete
+    version: 1.0.0
+    domain: memory
+    description: Delete one owned native Hermes memory entry after confirmation.
+    positive_examples: ["删除这条长期记忆"]
+    negative_examples: ["Delete another user's memory"]
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: string, minLength: 1, maxLength: 160}
+      required: [memory_id]
+      additionalProperties: false
+    output_schema: {type: object, required: [items]}
+    effect: write
+    risk: high
+    confirmation: required
+    preconditions: [authenticated_owner, current_memory_exists]
+    policy_ref: native-memory-owner
+    handler_binding: memory.delete
+    idempotency: required
+    receipt: required
+    result_event: memory.changed
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_memory_capabilities.py]
+    implementation_status: implemented

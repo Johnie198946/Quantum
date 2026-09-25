@@ -29,7 +29,9 @@ import asyncio
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 import contextvars
+import fcntl
 import hashlib
+import inspect
 import ipaddress
 import json
 import os
@@ -43,6 +45,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -120,6 +123,30 @@ except ModuleNotFoundError:  # pragma: no cover - direct ``python scripts/hermes
     from chat_run_store import DurableChatRunStore  # type: ignore[no-redef]  # noqa: E402
 
 app = FastAPI(title="Hermes Bridge v6.0")
+_bridge_async_loop: asyncio.AbstractEventLoop | None = None
+_bridge_async_loop_lock: Any = None
+
+
+def _run_bridge_coroutine(coro, *, timeout: float):
+    """Run DB-backed bridge work on the process-owned asyncio loop."""
+    loop = _bridge_async_loop
+    if loop is None or loop.is_closed():
+        return asyncio.run(coro)
+    if loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            future.cancel()
+            raise
+    lock = _bridge_async_loop_lock
+    if lock is None:
+        return loop.run_until_complete(coro)
+    with lock:
+        return loop.run_until_complete(coro)
+
+
+CAPABILITY_DISPATCH_TIMEOUT_SECONDS = 30
 
 
 def _isolated_agent_context_kwargs() -> dict[str, bool]:
@@ -644,6 +671,7 @@ class GoalRequest(BaseModel):
     goal: str = Field(..., max_length=262_144)
     request_id: str | None = Field(None, min_length=8, max_length=100)
     session_id: str | None = None  # 前端传入的 user_id（用于映射 Hermes 原生 session）
+    client_session_id: str | None = Field(None, min_length=1, max_length=100)
     skill_id: str | None = Field(None, max_length=80)
     # 重新生成语义（2026-08-17 修复）：true 时作废旧 run（interrupt 旧 agent + discard 注册）
     # 再启动全新尝试——对齐 ChatGPT「重新生成」= 上次回答作废重跑，而非被并发防护拒绝
@@ -915,6 +943,71 @@ def _save_state_db_mapping() -> None:
                 raise
         except Exception as error:
             print(f"[bridge] state.db 映射持久化失败: {error}")
+
+
+def _read_string_mapping(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in raw.items()
+        if isinstance(key, str) and isinstance(value, str)
+    }
+
+
+def _write_string_mapping(path: Path, values: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.stem}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(values, ensure_ascii=False, indent=2))
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _sync_session_mappings(
+    *,
+    user_id: str | None = None,
+    hermes_sid: str | None = None,
+    state_db: str | Path | None = None,
+    delete: bool = False,
+) -> None:
+    lock_file = MAPPING_FILE.parent / ".session_mappings.lock"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    with _mapping_lock, lock_file.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        sessions = _read_string_mapping(MAPPING_FILE)
+        state_dbs = _read_string_mapping(STATE_DB_MAPPING_FILE)
+        if user_id is not None:
+            if delete:
+                sessions.pop(user_id, None)
+                state_dbs.pop(user_id, None)
+            else:
+                if not hermes_sid:
+                    raise ValueError("hermes_sid_required")
+                sessions[user_id] = hermes_sid
+                if state_db is not None:
+                    state_dbs[user_id] = str(state_db)
+            _write_string_mapping(STATE_DB_MAPPING_FILE, state_dbs)
+            _write_string_mapping(MAPPING_FILE, sessions)
+        _user_session_map.clear()
+        _user_session_map.update(sessions)
+        _user_state_db_map.clear()
+        _user_state_db_map.update(state_dbs)
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def _load_watermarks() -> None:
@@ -1539,6 +1632,8 @@ _client_context_tool_registration_lock = threading.Lock()
 _client_context_tools_registered = False
 _knowledge_workspace_tool_registration_lock = threading.Lock()
 _knowledge_workspace_tools_registered = False
+_app_capability_tool_registration_lock = threading.Lock()
+_app_capability_tools_registered = False
 _NOTE_DRAFT_REQUEST_RE = re.compile(
     r"(?:总结|整理|保存|入库|记录|生成|完善|补充|修改|更新).{0,40}(?:笔记|note)"
     r"|(?:笔记|note).{0,40}(?:保存|入库|总结|整理|完善|补充|修改|更新)"
@@ -1561,11 +1656,29 @@ _REVISION_REQUEST_RE = re.compile(
 _SKILL_CREATE_REQUEST_RE = re.compile(
     r"(?:创建|新建|生成|做|建).{0,12}(?:技能|skill)", re.IGNORECASE
 )
+_PRESENTATION_CREATE_REQUEST_RE = re.compile(
+    r"(?:(?:创建|生成|制作|做|写|导出).{0,20}(?:pptx?|演示文稿|幻灯片)|"
+    r"(?:create|make|build|generate|export).{0,24}(?:pptx?|presentation|slides?))",
+    re.IGNORECASE,
+)
 
 
 def _is_note_draft_request(goal: str) -> bool:
     value = str(goal or "").strip().lower()
     return value in {"保存", "save"} or bool(_NOTE_DRAFT_REQUEST_RE.search(value))
+
+
+def _presentation_capability_directive(goal: str, qcp_enabled: bool) -> str:
+    if not qcp_enabled or not _PRESENTATION_CREATE_REQUEST_RE.search(str(goal or "")):
+        return ""
+    return (
+        "\n当前请求明确要求创建演示文稿。必须直接调用原生 "
+        "app_presentation_create_from_text 工具生成待确认提案：title 使用用户主题，"
+        "text_material 使用当前请求及会话中与该主题直接相关的材料；不要向用户输出"
+        "‘create a durable proposal’、‘one-time token’或要求用户手工构造提案/令牌。"
+        "工具返回 awaiting_confirmation 后，简短提示用户在 iOS 确认卡中确认，"
+        "不得声称文件已经生成。若缺少主题或实质材料，先只询问缺失信息。"
+    )
 
 
 def _requires_browser_fallback(goal: str) -> bool:
@@ -2529,12 +2642,18 @@ def _knowledge_action_propose_tool(args: dict[str, Any], **_kwargs) -> str:
             "pinned": raw.get("pinned") if isinstance(raw.get("pinned"), bool) else None,
             "link_title": str(raw.get("link_title") or "").strip()[:200] or None,
             "original_content_hash": (
-                notes.get(target_id, {}).get("content_hash") if target_id else None
+                raw.get("original_content_hash")
+                if "original_content_hash" in raw
+                else notes.get(target_id, {}).get("content_hash") if target_id else None
             ),
-            "source_content_hashes": {
-                note_id: notes.get(note_id, {}).get("content_hash")
-                for note_id in source_ids
-            },
+            "source_content_hashes": (
+                raw.get("source_content_hashes")
+                if "source_content_hashes" in raw
+                else {
+                    note_id: notes.get(note_id, {}).get("content_hash")
+                    for note_id in source_ids
+                }
+            ),
         }
         normalized.append(step)
     summary = str((args or {}).get("summary") or "").strip()[:500]
@@ -2657,6 +2776,260 @@ def _ensure_knowledge_workspace_tools_registered() -> None:
             }, handler=lambda args, **kwargs: _knowledge_ui_navigate_tool(args, **kwargs),
         )
         _knowledge_workspace_tools_registered = True
+
+
+def _app_capability_search_tool(args: dict[str, Any], **_kwargs) -> str:
+    from backend.services.capability_catalog import catalog_digest, search_capabilities
+
+    query = str((args or {}).get("query") or "").strip()[:200]
+    limit = max(1, min(10, int((args or {}).get("limit") or 5)))
+    return json.dumps({
+        "success": True, "protocol": "qcp", "catalog_digest": catalog_digest(),
+        "items": search_capabilities(query, limit=limit),
+    }, ensure_ascii=False)
+
+
+def _app_capability_describe_tool(args: dict[str, Any], **_kwargs) -> str:
+    from backend.services.capability_catalog import describe_capability
+
+    capability_id = str((args or {}).get("capability_id") or "").strip()
+    capability = describe_capability(capability_id)
+    return json.dumps(
+        {"success": capability is not None, "capability": capability,
+         **({} if capability is not None else {"error": "capability_not_found"})},
+        ensure_ascii=False,
+    )
+
+
+def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
+    """Route model intent to existing semantic tools; never accepts authority."""
+    from backend.services.capability_catalog import (
+        CapabilityContractError, describe_capability, validate_instance,
+    )
+
+    capability_id = str((args or {}).get("capability_id") or "").strip()
+    data = (args or {}).get("input")
+    capability = describe_capability(capability_id)
+    if capability is None:
+        return json.dumps({"success": False, "error": "capability_not_found"})
+    if capability["implementation_status"] != "implemented":
+        return json.dumps({"success": False, "error": "capability_not_executable"})
+    if not isinstance(data, dict):
+        return json.dumps({"success": False, "error": "input_object_required"})
+    try:
+        validate_instance(data, capability["input_schema"])
+    except CapabilityContractError as exc:
+        return json.dumps({"success": False, "error": "contract_invalid", "detail": str(exc)[:200]})
+    if capability_id == "knowledge.note.search":
+        return _knowledge_workspace_read_tool({"operation": "search", **data})
+    if capability_id == "knowledge.note.read":
+        return _knowledge_workspace_read_tool({"operation": "read", **data})
+    if capability_id == "knowledge.navigation":
+        return _knowledge_ui_navigate_tool(data)
+    kind = {
+        "knowledge.note.create": "create_note",
+        "knowledge.note.update": "update_note",
+        "knowledge.note.merge": "merge_notes",
+        "knowledge.note.archive": "archive_note",
+        "knowledge.note.restore": "restore_note",
+    }.get(capability_id)
+    if kind:
+        target_id = str(data.get("note_id") or data.get("target_note_id") or "")
+        if kind != "create_note":
+            read = json.loads(_knowledge_workspace_read_tool({
+                "operation": "read", "note_id": target_id,
+            }))
+            if not read.get("success"):
+                return json.dumps(read, ensure_ascii=False)
+        step = {
+            "kind": kind,
+            "target_note_id": target_id or None,
+            "source_note_ids": list((data.get("source_versions") or {}).keys()),
+            "markdown": data.get("markdown") or data.get("revised_content"),
+            "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
+            "source_content_hashes": data.get("source_versions"),
+        }
+        return _knowledge_action_propose_tool({
+            "summary": f"执行 {capability_id}", "steps": [step],
+            "suggested_navigation": {
+                "destination": "note" if target_id else "knowledge_home",
+                **({"note_id": target_id} if target_id else {}),
+            },
+        })
+    if capability["confirmation"] == "required":
+        context = getattr(_client_context_tool_context, "value", None)
+        identity = context.get("identity") if isinstance(context, dict) else None
+        request_id = str((context or {}).get("request_id") or "")
+        session_id = str((context or {}).get("client_session_id") or "")
+        if (
+            not isinstance(identity, dict)
+            or not str(identity.get("tenant_key") or "")
+            or not str(identity.get("user_id") or "")
+            or len(request_id) < 8
+            or not session_id
+        ):
+            return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+        assert isinstance(context, dict)
+        input_digest = hashlib.sha256(json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode()).hexdigest()
+        stable_key = "bridge-" + hashlib.sha256(
+            f"{capability_id}:{request_id}:{input_digest}".encode()
+        ).hexdigest()
+        from backend.services.capability_gateway import create_capability_proposal
+        proposal = create_capability_proposal(
+            capability_id,
+            data,
+            payload=dict(identity),
+            session_id=session_id,
+            request_id=request_id,
+            idempotency_key=stable_key,
+            resource_versions=data.get("resource_versions") or {},
+            renderer_version="qcp-ios@1",
+        )
+        try:
+            result = _run_bridge_coroutine(
+                proposal,
+                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
+        except Exception:
+            traceback.print_exc()
+            if inspect.getcoroutinestate(proposal) == inspect.CORO_CREATED:
+                proposal.close()
+            return json.dumps({"success": False, "error": "proposal_persistence_failed"})
+        emit = context.get("emit")
+        if callable(emit):
+            for event in result.get("events") or []:
+                emit(event)
+        return json.dumps(result, ensure_ascii=False)
+    if capability_id not in {
+        "workflow.create", "workflow.open", "workflow.status", "workflow.start",
+        "presentation.create_from_document", "artifact.open", "artifact.download",
+        "artifact.consume_structured",
+    }:
+        return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
+    context = getattr(_client_context_tool_context, "value", None)
+    identity = context.get("identity") if isinstance(context, dict) else None
+    request_id = str((context or {}).get("request_id") or "")
+    if (
+        not isinstance(identity, dict)
+        or not str(identity.get("tenant_key") or "")
+        or not str(identity.get("user_id") or "")
+        or len(request_id) < 8
+    ):
+        return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+    from backend.api.tenant import current_tenant
+    from backend.services.capability_catalog import invoke_capability
+
+    tenant_token = current_tenant.set(str(identity["tenant_key"]))
+    try:
+        input_digest = hashlib.sha256(json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode()).hexdigest()
+        stable_key = (
+            "bridge-" + hashlib.sha256(
+                f"{capability_id}:{request_id}:{input_digest}".encode()
+            ).hexdigest()
+            if capability.get("idempotency") == "required"
+            else None
+        )
+        invocation = invoke_capability(
+            capability_id,
+            data,
+            payload=dict(identity),
+            idempotency_key=stable_key,
+        )
+        try:
+            result = _run_bridge_coroutine(
+                invocation,
+                timeout=CAPABILITY_DISPATCH_TIMEOUT_SECONDS,
+            )
+        except RuntimeError:
+            invocation.close()
+            return json.dumps({"success": False, "error": "async_dispatch_unavailable"})
+        except TimeoutError:
+            return json.dumps({"success": False, "error": "async_dispatch_timeout"})
+        except Exception:
+            return json.dumps({"success": False, "error": "async_dispatch_failed"})
+    finally:
+        current_tenant.reset(tenant_token)
+    emit = context.get("emit")
+    if callable(emit):
+        for event in result.get("events") or []:
+            emit(event)
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _app_capability_native_tool_name(capability_id: str) -> str:
+    """Compile one stable provider-safe Hermes tool name from a QCP id."""
+    normalized = re.sub(r"[^a-z0-9_]+", "_", capability_id.casefold()).strip("_")
+    name = f"app_{normalized}"
+    if not normalized or len(name) > 64:
+        raise ValueError(f"invalid native capability tool name: {capability_id}")
+    return name
+
+
+def _app_capability_native_tool_schema(capability: dict[str, Any]) -> dict[str, Any]:
+    """Compile the governed capability contract into a native Hermes tool."""
+    name = _app_capability_native_tool_name(str(capability["id"]))
+    use_when = "; ".join(str(item) for item in capability.get("positive_examples") or [])
+    exclude_when = "; ".join(str(item) for item in capability.get("negative_examples") or [])
+    description_parts = [str(capability["description"]).strip()]
+    if use_when:
+        description_parts.append(f"Use when: {use_when}")
+    if exclude_when:
+        description_parts.append(f"Do not use when: {exclude_when}")
+    if capability.get("confirmation") == "required":
+        description_parts.append(
+            "This tool only proposes the action; the authenticated app must confirm it."
+        )
+    return {
+        "name": name,
+        "description": " ".join(description_parts),
+        "parameters": json.loads(json.dumps(capability["input_schema"])),
+    }
+
+
+def _app_capability_native_handler(capability_id: str) -> Callable[..., str]:
+    """Bind a native Hermes tool to exactly one immutable capability id."""
+    def handler(args: dict[str, Any], **kwargs) -> str:
+        return _app_capability_invoke_tool(
+            {"capability_id": capability_id, "input": dict(args or {})}, **kwargs
+        )
+
+    return handler
+
+
+def _ensure_app_capability_tools_registered() -> None:
+    global _app_capability_tools_registered
+    if _app_capability_tools_registered:
+        return
+    with _app_capability_tool_registration_lock:
+        if _app_capability_tools_registered:
+            return
+        from backend.services.capability_catalog import load_catalog
+        from tools.registry import registry
+
+        compiled_names: set[str] = set()
+        for capability in load_catalog()["capabilities"]:
+            if capability.get("implementation_status") != "implemented":
+                continue
+            schema = _app_capability_native_tool_schema(capability)
+            name = schema["name"]
+            if name in compiled_names:
+                raise RuntimeError(f"duplicate native capability tool: {name}")
+            compiled_names.add(name)
+            registry.register(
+                name=name,
+                toolset="app_capabilities",
+                schema=schema,
+                handler=_app_capability_native_handler(str(capability["id"])),
+            )
+        _app_capability_tools_registered = True
 
 
 def _ensure_client_context_tools_registered() -> None:
@@ -3892,11 +4265,9 @@ def _update_session_mapping(
     user_id: str, hermes_sid: str, state_db: str | Path | None = None
 ) -> None:
     """Persist user -> Hermes session and its physical state.db binding."""
-    _user_session_map[user_id] = hermes_sid
-    _save_mapping()
-    if state_db is not None:
-        _user_state_db_map[user_id] = str(state_db)
-        _save_state_db_mapping()
+    _sync_session_mappings(
+        user_id=user_id, hermes_sid=hermes_sid, state_db=state_db
+    )
     print(f"[bridge] 会话映射: user={user_id} -> session={hermes_sid}")
 
 
@@ -4257,6 +4628,15 @@ def _durable_status(
     if run is None:
         return None
     run_id = str(run["run_id"])
+    from backend.services.capability_catalog import load_catalog
+    qcp_event_types = {item["id"] for item in load_catalog()["events"]}
+    semantic_events = [
+        event for event in _chat_run_store.events_after(
+            run_id, max(0, offset), tenant_user_hash=owner_hash
+        )
+        if event.get("type") in qcp_event_types
+    ]
+    bounded_semantic_events = semantic_events[:100]
     exact_status = str(run["status"])
     execution_available = _durable_worker_is_live()
     status = (
@@ -4333,6 +4713,11 @@ def _durable_status(
         latest_step = _WORKER_MAINTENANCE["message"]
         clarify = None
     cursor = int(run["event_sequence"])
+    events_next_offset = (
+        int(bounded_semantic_events[-1]["event_sequence"])
+        if len(semantic_events) > len(bounded_semantic_events)
+        else cursor
+    )
     return {
         "status": status,
         "run_status": exact_status,
@@ -4347,6 +4732,8 @@ def _durable_status(
         "clarify": clarify,
         "last_message_id": cursor,
         "event_sequence": cursor,
+        "events_next_offset": events_next_offset,
+        "events": bounded_semantic_events,
         "run_id": run_id,
         "consumed": float(run.get("consumed_at") or 0) > 0,
         **({
@@ -4734,6 +5121,97 @@ async def durable_chat_blocks(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class OwnerSessionRequest(BaseModel):
+    session_key: str
+
+
+def _require_owner_session(
+    body: OwnerSessionRequest,
+    internal_token: str | None,
+    tenant_id: str | None,
+    user_id: str | None,
+) -> tuple[str, TenantHermesSandbox]:
+    _require_internal_strict(internal_token)
+    tenant, user = str(tenant_id or ""), str(user_id or "")
+    if not tenant or not user:
+        raise HTTPException(status_code=403, detail="owner_context_required")
+    prefix = (
+        f"t{hashlib.sha256(tenant.encode()).hexdigest()[:12]}-"
+        f"u{hashlib.sha256(user.encode()).hexdigest()[:12]}-"
+    )
+    session_key = str(body.session_key or "")
+    if not session_key.startswith(prefix) or len(session_key) > 100:
+        raise HTTPException(status_code=403, detail="session_owner_mismatch")
+    return session_key, ensure_tenant_sandbox(tenant_key=tenant, user_id=user)
+
+
+def _owner_session_snapshot(session_key: str, sandbox: TenantHermesSandbox) -> dict[str, Any]:
+    with _mapping_lock:
+        hermes_id = _user_session_map.get(session_key)
+    if not hermes_id:
+        raise HTTPException(status_code=404, detail="hermes_session_not_found")
+    db = _create_sandbox_session_db(sandbox)
+    row = db.get_session(hermes_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="hermes_session_not_found")
+    return {
+        "client_session_key": session_key,
+        "hermes_session_id": hermes_id,
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at") or row.get("last_active_at"),
+        "ended_at": row.get("ended_at"),
+        "end_reason": row.get("end_reason"),
+    }
+
+
+@app.post("/v1/owner-sessions/resolve")
+async def owner_session_resolve(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    return _owner_session_snapshot(key, sandbox)
+
+
+@app.post("/v1/owner-sessions/resume")
+async def owner_session_resume(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    snapshot = _owner_session_snapshot(key, sandbox)
+    db = _create_sandbox_session_db(sandbox)
+    db.reopen_session(snapshot["hermes_session_id"])
+    snapshot["resumed"] = True
+    return snapshot
+
+
+@app.post("/v1/owner-sessions/delete")
+async def owner_session_delete(
+    body: OwnerSessionRequest,
+    x_hermes_internal_token: str | None = Header(None),
+    x_tenant_id: str | None = Header(None),
+    x_user_id: str | None = Header(None),
+):
+    key, sandbox = _require_owner_session(
+        body, x_hermes_internal_token, x_tenant_id, x_user_id
+    )
+    snapshot = _owner_session_snapshot(key, sandbox)
+    db = _create_sandbox_session_db(sandbox)
+    if not db.delete_session(snapshot["hermes_session_id"]):
+        raise HTTPException(status_code=409, detail="hermes_session_delete_failed")
+    _sync_session_mappings(user_id=key, delete=True)
+    return {**snapshot, "deleted": True}
+
+
 @app.post("/v1/chat/stream")
 async def chat_stream(
     body: GoalRequest,
@@ -4796,6 +5274,7 @@ async def chat_stream(
                     "goal": goal,
                     "agent_config": body.agent_config,
                     "knowledge_claims": knowledge_claims,
+                    "client_session_id": body.client_session_id,
                     "client_session_context": body.client_session_context,
                     "client_context_claims": client_context_claims,
                     "qws_business_context": body.qws_business_context,
@@ -4803,6 +5282,7 @@ async def chat_stream(
                     "knowledge_action_enabled": (
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
+                    "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
                     "answer_blocks_v1": "answer_blocks_v1" in set(body.client_capabilities),
                 },
             )
@@ -4903,6 +5383,7 @@ async def chat_stream(
                     agent_config=body.agent_config,
                     knowledge_capability=body.knowledge_capability,
                     knowledge_claims=knowledge_claims,
+                    client_session_id=body.client_session_id,
                     client_session_context=body.client_session_context,
                     client_context_claims=client_context_claims,
                     qws_business_context=body.qws_business_context,
@@ -4910,6 +5391,8 @@ async def chat_stream(
                     knowledge_action_enabled=(
                         "knowledge_action_v1" in set(body.client_capabilities)
                     ),
+                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
+                    trusted_identity_claims=qws_context_claims,
                 ),
                 media_type="text/event-stream",
                 headers={
@@ -5047,6 +5530,7 @@ async def chat_prewarm(
             "knowledge_action_enabled": (
                 "knowledge_action_v1" in set(body.client_capabilities)
             ),
+            "qcp_enabled": "qcp_v1" in set(body.client_capabilities),
         },
     )
     return {"run_id": run["run_id"], "status": run["status"]}
@@ -5208,6 +5692,7 @@ def _prewarm_session_agent(
     sandbox: "TenantHermesSandbox",
     *,
     knowledge_action_enabled: bool = False,
+    qcp_enabled: bool = False,
 ) -> tuple[str, bool]:
     """Build the ordinary fast-lane agent without spending a model turn."""
     hermes_sid = _resolve_hermes_session(user_id)
@@ -5236,6 +5721,7 @@ def _prewarm_session_agent(
             agent_config=agent_config,
             client_context_enabled=False,
             knowledge_action_enabled=knowledge_action_enabled,
+            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
         )
         source = str(route.get("agent_cache_source") or "cold_build")
@@ -6189,7 +6675,9 @@ def _memory_tool_succeeded(result: Any) -> bool:
 def _legacy_client_context_enabled(
     client_context_enabled: bool, knowledge_action_enabled: bool
 ) -> bool:
-    return client_context_enabled and not knowledge_action_enabled
+    # Historical note_draft events remain decodable, but every new write intent
+    # converges on knowledge_action/QCP.
+    return False
 
 
 def _expose_eager_request_tools(agent: Any, toolsets: list[str]) -> None:
@@ -6216,6 +6704,7 @@ def _build_in_process_agent(
     knowledge_capability: str | None = None,
     client_context_enabled: bool = False,
     knowledge_action_enabled: bool = False,
+    qcp_enabled: bool = False,
     sandbox: TenantHermesSandbox | None = None,
     timing_origin: float | None = None,
 ) -> tuple[object, object, dict[str, Any]]:
@@ -6346,10 +6835,14 @@ def _build_in_process_agent(
         _ensure_client_context_tools_registered()
         if "client_context" not in toolsets_list:
             toolsets_list.append("client_context")
-    if knowledge_action_enabled:
+    if knowledge_action_enabled and not qcp_enabled:
         _ensure_knowledge_workspace_tools_registered()
         if "knowledge_workspace" not in toolsets_list:
             toolsets_list.append("knowledge_workspace")
+    if qcp_enabled:
+        _ensure_app_capability_tools_registered()
+        if "app_capabilities" not in toolsets_list:
+            toolsets_list.append("app_capabilities")
     if allowed_tools:
         requested_toolsets = _tenant_base_toolsets(allowed_tools)
         if network_tool_requested:
@@ -6366,8 +6859,10 @@ def _build_in_process_agent(
             requested_toolsets.add("user_notes_gateway")
         if legacy_client_context_enabled:
             requested_toolsets.add("client_context")
-        if knowledge_action_enabled:
+        if knowledge_action_enabled and not qcp_enabled:
             requested_toolsets.add("knowledge_workspace")
+        if qcp_enabled:
+            requested_toolsets.add("app_capabilities")
         if agency_route_enabled:
             requested_toolsets.update(
                 {"agency_agents", "ai_lab"} & platform_tools
@@ -6383,6 +6878,7 @@ def _build_in_process_agent(
         route_class == GENERAL_QA
         and not evidence_requirements
         and not client_context_enabled
+        and not qcp_enabled
         and not tenant_skill_enabled
         and not knowledge_tool_enabled
         and not delegation_tool_enabled
@@ -6553,6 +7049,7 @@ def _build_in_process_agent(
                 "skill_candidates": skill_candidates,
                 "legacy_client_context": legacy_client_context_enabled,
                 "knowledge_action": knowledge_action_enabled,
+                "qcp": qcp_enabled,
                 "fast_general": fast_general,
             },
             ensure_ascii=False,
@@ -6682,6 +7179,7 @@ def _build_in_process_agent(
                 if knowledge_action_enabled else ""
             )
             + (_KNOWLEDGE_MERGE_DIRECTIVE if knowledge_action_enabled else "")
+            + _presentation_capability_directive(goal, qcp_enabled)
             + _triage_system_directive(
                 triage,
                 note_draft_request=note_draft_request and not knowledge_action_enabled,
@@ -6697,7 +7195,7 @@ def _build_in_process_agent(
         # - Hermes 原生 resolve_reasoning_config 处理 DeepSeek 映射；不支持的 Provider 自动忽略
         reasoning_config={"effort": "minimal"},
     )
-    if knowledge_action_enabled:
+    if knowledge_action_enabled or qcp_enabled:
         _expose_eager_request_tools(agent, toolsets_list)
 
     # 支柱二兜底：若模型能力检测不支持 reasoning_effort 字段注入，保留 prompt 级限词约束
@@ -6740,7 +7238,11 @@ def _run_agent_sync(
     client_context_claims: dict[str, Any] | None = None,
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
+    qcp_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
+    trusted_request_id: str | None = None,
+    trusted_identity_claims: dict[str, Any] | None = None,
+    client_session_id: str | None = None,
 ) -> None:
     """Run one Hermes turn, retaining only a bounded session-safe warm agent."""
     timing_origin = time.monotonic()
@@ -6841,10 +7343,11 @@ def _run_agent_sync(
         has_client_context = (
             client_session_context is not None and client_context_claims is not None
         )
-        if note_context_claims is not None and (
-            has_client_context or note_draft_request or knowledge_action_enabled
-        ):
-            assert note_context_claims is not None
+        if (
+            note_context_claims is not None
+            and (has_client_context or note_draft_request or knowledge_action_enabled)
+        ) or (qcp_enabled and trusted_identity_claims is not None):
+            context_claims = note_context_claims or trusted_identity_claims or {}
             transcript = (
                 client_session_context
                 if isinstance(client_session_context, dict)
@@ -6855,17 +7358,30 @@ def _run_agent_sync(
             _client_context_tool_context.value = {
                 "transcript": transcript,
                 "request_id": (
+                    trusted_request_id
+                    or
                     (client_context_claims or {}).get("request_id")
                     or run_state.get("request_id")
                 ),
-                "client_session_id": transcript.get("session_id") or user_id,
+                "client_session_id": client_session_id or transcript.get("session_id") or user_id,
                 "inline_notes": transcript.get("local_notes") or [],
                 "active_document_note_id": transcript.get("active_document_note_id"),
                 "account_scope": (
-                    hashlib.sha256(str(note_context_claims.get("tenant_key") or "").encode()).hexdigest()[:20]
+                    hashlib.sha256(str(context_claims.get("tenant_key") or "").encode()).hexdigest()[:20]
                     + ":"
-                    + hashlib.sha256(str(note_context_claims.get("user_id") or "").encode()).hexdigest()[:20]
+                    + hashlib.sha256(str(context_claims.get("user_id") or "").encode()).hexdigest()[:20]
                 ),
+                "identity": {
+                    "tenant_key": str(context_claims.get("tenant_key") or ""),
+                    "user_id": str(
+                        context_claims.get("user_id")
+                        or context_claims.get("sub")
+                        or ""
+                    ),
+                    "knowledge_policy_version": str(
+                        context_claims.get("knowledge_policy_version") or "unknown"
+                    ),
+                },
                 "hermes_session_id": hermes_sid,
                 "draft_emitted": False,
                 "user_note_search_completed": False,
@@ -6950,6 +7466,7 @@ def _run_agent_sync(
                 or (note_draft_request and knowledge_claims is not None)
             ),
             knowledge_action_enabled=knowledge_action_enabled,
+            qcp_enabled=qcp_enabled,
             sandbox=sandbox,
             timing_origin=timing_origin,
         )
@@ -7171,6 +7688,9 @@ def _sse_from_in_process(
     sandbox: TenantHermesSandbox | None = None,
     knowledge_action_enabled: bool = False,
     qws_business_context: dict[str, Any] | None = None,
+    qcp_enabled: bool = False,
+    trusted_identity_claims: dict[str, Any] | None = None,
+    client_session_id: str | None = None,
 ):
     """SSE 事件生成器：agent 线程事件 → queue → asyncio 逐帧输出（thread-safe）。
 
@@ -7196,12 +7716,22 @@ def _sse_from_in_process(
 
     worker = threading.Thread(
         target=_run_agent_sync,
-        args=(
-            goal, user_id, hermes_sid, stream_q, agent_holder,
-            allow_local_files, agent_config, knowledge_capability, knowledge_claims,
-            client_session_context, client_context_claims, sandbox,
-            knowledge_action_enabled, qws_business_context,
-        ),
+        args=(goal, user_id, hermes_sid, stream_q, agent_holder),
+        kwargs={
+            "allow_local_files": allow_local_files,
+            "agent_config": agent_config,
+            "knowledge_capability": knowledge_capability,
+            "knowledge_claims": knowledge_claims,
+            "client_session_context": client_session_context,
+            "client_context_claims": client_context_claims,
+            "sandbox": sandbox,
+            "knowledge_action_enabled": knowledge_action_enabled,
+            "qws_business_context": qws_business_context,
+            "qcp_enabled": qcp_enabled,
+            "trusted_request_id": request_id,
+            "trusted_identity_claims": trusted_identity_claims,
+            "client_session_id": client_session_id,
+        },
         daemon=True,
         name=f"agent-stream-{user_id[:12]}",
     )
@@ -7217,6 +7747,7 @@ def _sse_from_in_process(
     worker.start()
 
     finished = False
+    confirmation_proposed = False
     try:
         first_delta_recorded = False
         while True:
@@ -7238,6 +7769,15 @@ def _sse_from_in_process(
             if item is None:
                 print(f"[bridge] SSE-BREAK item_none user={user_id}")
                 break
+            if item.get("type") == "capability.proposed":
+                confirmation_proposed = True
+            elif item.get("type") == "error" and confirmation_proposed:
+                item = {
+                    "type": "done",
+                    "session_id": user_id,
+                    "answer": "",
+                    "usage": item.get("usage") or {},
+                }
             # reasoning_callback 按治理要求不外发；首字指标必须记录真正的正文
             # delta，否则旧 first_thought_ms 永远不会产生，无法诊断用户体感。
             if not first_delta_recorded and item.get("type") == "delta":
@@ -7650,16 +8190,22 @@ async def chat(
                     hermes_sid,
                     event_queue,
                     agent_holder,
-                    False,
-                    body.agent_config,
-                    body.knowledge_capability,
-                    knowledge_claims,
-                    body.client_session_context,
-                    client_context_claims,
-                    sandbox,
-                    client_context_claims is not None
-                    and "knowledge_action_v1" in set(body.client_capabilities),
-                    body.qws_business_context,
+                    allow_local_files=False,
+                    agent_config=body.agent_config,
+                    knowledge_capability=body.knowledge_capability,
+                    knowledge_claims=knowledge_claims,
+                    client_session_context=body.client_session_context,
+                    client_context_claims=client_context_claims,
+                    sandbox=sandbox,
+                    knowledge_action_enabled=(
+                        client_context_claims is not None
+                        and "knowledge_action_v1" in set(body.client_capabilities)
+                    ),
+                    qws_business_context=body.qws_business_context,
+                    qcp_enabled="qcp_v1" in set(body.client_capabilities),
+                    trusted_request_id=body.request_id,
+                    trusted_identity_claims=qws_context_claims,
+                    client_session_id=body.client_session_id,
                 )
                 events: list[dict[str, Any]] = []
                 while not event_queue.empty():
@@ -7670,6 +8216,8 @@ async def chat(
                 if error:
                     raise HTTPException(status_code=502, detail=error.get("message") or "Hermes failed")
                 done = next((item for item in reversed(events) if item.get("type") == "done"), {})
+                from backend.services.capability_catalog import load_catalog
+                qcp_event_types = {item["id"] for item in load_catalog()["events"]}
                 return {
                     "reply": str(done.get("answer") or ""),
                     "session_id": user_id,
@@ -7679,7 +8227,7 @@ async def chat(
                     "knowledge_receipt": done.get("knowledge_receipt"),
                     "events": [
                         item for item in events
-                        if item.get("type") in {
+                        if item.get("type") in qcp_event_types or item.get("type") in {
                             "note_draft", "knowledge_action_draft", "knowledge_navigation",
                             "tool_start", "tool_complete", "delegate_receipt", "memory_receipt"
                         }
@@ -8380,23 +8928,109 @@ async def list_skills(
     }
 
 
-@app.delete("/v1/skills/{name}")
-async def delete_skill(
-    name: str,
-    x_knowledge_capability: str = Header(default=""),
-):
-    """Delete only a custom Skill in the signed tenant sandbox."""
+class SkillCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")
+    content: str = Field(..., min_length=1, max_length=200_000)
+
+
+class SkillUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(..., min_length=1, max_length=200_000)
+
+
+def _skill_sandbox(capability: str) -> TenantHermesSandbox:
     try:
-        claims = verify_capability(x_knowledge_capability)
+        claims = verify_capability(capability)
     except KnowledgeScopeDenied as exc:
         raise HTTPException(status_code=403, detail="sandbox_identity_denied") from exc
     if str(claims.get("entry_point") or "") != "skills":
         raise HTTPException(status_code=403, detail="sandbox_identity_denied")
-    sandbox = _tenant_sandbox_from_claims(
+    return _tenant_sandbox_from_claims(
         subject_id=str(claims.get("subject_id") or "skills"),
         knowledge_claims=claims,
         client_claims=None,
     )
+
+
+def _write_skill_and_verify(
+    sandbox: TenantHermesSandbox, *, name: str, content: str, replace: bool
+) -> dict[str, Any]:
+    catalog = _routed_skill_catalog(sandbox)
+    owned = {
+        str(item.get("name")): item
+        for item in catalog
+        if item.get("scope") == "tenant"
+    }
+    if replace and name not in owned:
+        raise HTTPException(status_code=404, detail="tenant_skill_not_found")
+    if not replace and any(item.get("name") == name for item in catalog):
+        raise HTTPException(status_code=409, detail="skill_exists")
+    try:
+        path = write_sandbox_skill(sandbox, name, content, replace=replace)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="skill_exists") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    record = next((
+        item for item in _routed_skill_catalog(sandbox)
+        if item.get("scope") == "tenant" and item.get("name") == name
+    ), None)
+    if (
+        record is None
+        or record.get("sha256") != digest
+        or read_sandbox_skill(sandbox, name) != content
+    ):
+        raise HTTPException(status_code=500, detail="tenant_skill_write_not_verified")
+    return {"name": name, "sha256": digest, "scope": "tenant", "verified": True}
+
+
+@app.post("/v1/skills")
+async def create_skill(
+    body: SkillCreateRequest,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="idempotency_key_required")
+    return _write_skill_and_verify(
+        _skill_sandbox(x_knowledge_capability),
+        name=body.name,
+        content=body.content,
+        replace=False,
+    )
+
+
+@app.put("/v1/skills/{name}")
+async def update_skill(
+    name: str,
+    body: SkillUpdateRequest,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    if not x_idempotency_key.strip() or len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="idempotency_key_required")
+    return _write_skill_and_verify(
+        _skill_sandbox(x_knowledge_capability),
+        name=name,
+        content=body.content,
+        replace=True,
+    )
+
+
+@app.delete("/v1/skills/{name}")
+async def delete_skill(
+    name: str,
+    x_knowledge_capability: str = Header(default=""),
+    x_idempotency_key: str = Header(default=""),
+):
+    """Delete only a custom Skill in the signed tenant sandbox."""
+    if x_idempotency_key and len(x_idempotency_key) > 160:
+        raise HTTPException(status_code=400, detail="invalid_idempotency_key")
+    sandbox = _skill_sandbox(x_knowledge_capability)
     try:
         deleted = delete_sandbox_skill(sandbox, name)
     except ValueError as exc:
@@ -8409,7 +9043,7 @@ async def delete_skill(
         for item in remaining
     ):
         raise HTTPException(status_code=500, detail="tenant_skill_delete_not_verified")
-    return {"deleted": True, "name": name}
+    return {"deleted": True, "name": name, "verified": True}
 
 
 @app.get("/health")

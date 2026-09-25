@@ -59,6 +59,7 @@ from backend.models.workflow import WorkflowDefinition, WorkflowExecution, Workf
 from backend.models.tenant_agent import TenantAgentModel
 from backend.models.resource_catalog import WorkspaceDataset, WorkspaceDatasetVersion
 from backend.services.agent_capabilities import SAFE_GLOBAL_TOOLS
+from backend.services.batch6_refactor_guard import require_batch6_execution_enabled
 from backend.services.resource_planning import (
     build_resource_context_chat_prompt,
     build_resource_monitoring,
@@ -414,6 +415,11 @@ class ExpectedRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class ProjectArchiveProposalRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=8, max_length=100)
+
+
 class TaskArchiveProposalRequest(BaseModel):
     expected_revision: int = Field(ge=0)
     request_id: str = Field(min_length=8, max_length=100)
@@ -424,6 +430,7 @@ class ProjectScheduleProposalRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=8, max_length=100)
     expected_revision: int = Field(ge=0)
     entries: list[dict[str, Any]] = Field(min_length=1, max_length=500)
+    operation: Literal["UPSERT", "CREATE", "UPDATE", "DELETE"] = "UPSERT"
 
 
 class CreateFeedbackBatchRequest(BaseModel):
@@ -1582,6 +1589,35 @@ async def decide_project_change_proposal(
             "intent_hash": project.active_intent_hash,
             "contribution": contribution,
         }
+
+
+@router.post("/projects/{project_id}/archive-proposal", status_code=202)
+async def propose_project_archive(
+    project_id: str,
+    body: ProjectArchiveProposalRequest,
+    payload=Depends(require_auth),
+) -> dict[str, Any]:
+    tenant_key, user_id = _scope(payload)
+    _require_interactive_human(payload)
+    async with SessionLocal() as db:
+        project = await _project_for_owner(db, project_id, tenant_key, user_id)
+        if project.process_revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail={
+                "error": "project_revision_conflict",
+                "server_revision": project.process_revision,
+            })
+        proposal = await _create_project_change_proposal(
+            db,
+            project=project,
+            user_id=user_id,
+            change_kind="PROJECT_ARCHIVE",
+            request_id=body.request_id,
+            proposed_process=deepcopy(project.process_snapshot or {}),
+            project_fields={"status": "deleted"},
+            title="归档项目",
+            operation_name="archive_project",
+        )
+        return {"proposal": _proposal_out(proposal), "project": _project_out(project)}
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -4314,6 +4350,15 @@ async def propose_project_schedule(
                 raise HTTPException(status_code=422, detail="schedule_due_date_precedes_start")
             seen.add(task_id)
             task = by_id[task_id]
+            is_scheduled = bool(task.get("planned_start_at") or task.get("planned_finish_at"))
+            if body.operation == "CREATE" and is_scheduled:
+                raise HTTPException(status_code=409, detail="schedule_already_exists")
+            if body.operation in {"UPDATE", "DELETE"} and not is_scheduled:
+                raise HTTPException(status_code=409, detail="schedule_not_found")
+            if body.operation in {"CREATE", "UPDATE"} and not (start_date and due_date):
+                raise HTTPException(status_code=422, detail="schedule_dates_required")
+            if body.operation == "DELETE" and (start_date is not None or due_date is not None):
+                raise HTTPException(status_code=422, detail="schedule_delete_requires_empty_dates")
             task["start_date"] = task["planned_start_at"] = start_date
             task["due_date"] = task["planned_finish_at"] = due_date
             task["task_revision"] = int(task.get("task_revision") or 1) + 1
@@ -9228,19 +9273,21 @@ async def _run_task_auto_execution(
         )
 
 
-@router.post("/task-conversations/{conversation_id}/auto-execute", status_code=202)
-async def start_task_auto_execution(
-    conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
-    payload=Depends(require_auth),
+async def queue_task_auto_execution(
+    conversation_id: str,
+    body: AutoExecuteTaskRequest,
+    payload: dict[str, Any],
+    authorization: str,
+    *,
+    expected_task_id: str | None = None,
+    expected_intent_hash: str | None = None,
 ) -> dict[str, Any]:
-    tenant_key, user_id = _scope(payload)
-    authorization = request.headers.get("authorization") or ""
+    require_batch6_execution_enabled("qws_auto_execution")
     if not authorization:
         raise HTTPException(status_code=401, detail="authenticated Taskboard write required")
+    tenant_key, user_id = _scope(payload)
     async with SessionLocal() as db:
-        conversation = await _conversation_for_tenant(
-            db, conversation_id, tenant_key, user_id
-        )
+        conversation = await _conversation_for_tenant(db, conversation_id, tenant_key, user_id)
         project = await _project_for_access(
             db, conversation.project_id, tenant_key, user_id, "project:write"
         )
@@ -9255,6 +9302,10 @@ async def start_task_auto_execution(
         canonical_task_id = str(
             (conversation.binding or {}).get("canonical_task_id") or conversation.task_id
         )
+        if expected_task_id is not None and canonical_task_id != expected_task_id:
+            raise HTTPException(status_code=409, detail="task_execution_target_changed")
+        if expected_intent_hash is not None and project.active_intent_hash != expected_intent_hash:
+            raise HTTPException(status_code=409, detail="project_intent_changed")
         canonical_task = next((
             item for item in (project.process_snapshot or {}).get("tasks") or []
             if isinstance(item, dict) and str(item.get("id")) == canonical_task_id
@@ -9282,6 +9333,17 @@ async def start_task_auto_execution(
     _AUTO_EXECUTION_TASKS.add(task)
     task.add_done_callback(_AUTO_EXECUTION_TASKS.discard)
     return {"request_id": body.request_id, "state": "queued"}
+
+
+@router.post("/task-conversations/{conversation_id}/auto-execute", status_code=202)
+async def start_task_auto_execution(
+    conversation_id: str, body: AutoExecuteTaskRequest, request: Request,
+    payload=Depends(require_auth),
+) -> dict[str, Any]:
+    authorization = request.headers.get("authorization") or ""
+    return await queue_task_auto_execution(
+        conversation_id, body, payload, authorization
+    )
 
 
 @router.get("/task-conversations/{conversation_id}/auto-execution")

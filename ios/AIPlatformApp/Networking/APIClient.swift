@@ -418,6 +418,18 @@ public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
     public let title: String
     public let level: Int
     public let markdown: String
+    public var blocks: [KnowledgeBookBlockDTO]? = nil
+}
+
+public struct KnowledgeBookBlockDTO: Codable, Identifiable, Hashable {
+    public let id: String
+    public let kind: String
+    public var markdown: String? = nil
+    public var path: String? = nil
+    public var alt: String? = nil
+    public var caption: String? = nil
+    public var width: Int? = nil
+    public var height: Int? = nil
 }
 
 public struct KnowledgeBookBodyDTO: Codable, Hashable {
@@ -2991,6 +3003,27 @@ public final class APIClient: ObservableObject {
 
     public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
         try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
+    }
+
+    public func fetchPublicationImage(path: String) async throws -> Data {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count == 6,
+              parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
+              parts[3].hasPrefix("publication-"), parts[3].count == 44,
+              parts[3].dropFirst(12).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
+              ((parts[4] == "covers" && ["shelf_cover", "reader_cover"].contains(parts[5]))
+               || (parts[4] == "assets" && parts[5].count == 64
+                   && parts[5].allSatisfy({ $0.isHexDigit && !$0.isUppercase }))),
+              !path.contains("?"), !path.contains("#"),
+              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
+              url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port else {
+            throw APIError.network("无效的出版图片地址")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("image/png, image/jpeg", forHTTPHeaderField: "Accept")
+        applyClientContract(to: &request)
+        return try await perform(request, session: session, canRetry: true)
     }
 
     public func subscribeBook(id: String) async throws -> KnowledgeBookSubscriptionDTO {

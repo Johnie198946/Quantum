@@ -44,6 +44,11 @@ PUBLICATION_COVERS = {
     "reader_cover": {"size": (2560, 1440), "kind": "publication_reader_cover"},
 }
 _COVER_MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg"}
+_INLINE_IMAGE_MAX_BYTES = 10_000_000
+_INLINE_IMAGE_MAX_PIXELS = 32_000_000
+_MARKDOWN_IMAGE = re.compile(
+    r'!\[([^\]\r\n]*)\]\(<?(https?://[^\s)>]+)>?(?:\s+["\']([^"\']*)["\'])?\)'
+)
 
 
 class PublicationError(ValueError):
@@ -374,13 +379,22 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
             cover_roles.add(role)
             normalized_assets.append({**item, "receipt": receipt})
             continue
-        if not isinstance(item, dict) or set(item) != {"url", "receipt", "status"}:
-            raise PublicationError("assets require either a cover role or url, receipt and status")
+        if not isinstance(item, dict) or set(item) != {"url", "receipt", "status", "media_type", "width", "height"}:
+            raise PublicationError("inline assets require url, receipt, status, media_type, width and height")
         status = item.get("status")
         if status not in {"verified", "missing"}:
             raise PublicationError("invalid asset status")
-        normalized_assets.append({"url": _safe_url(item["url"], "asset url"), "receipt": _receipts([item["receipt"]], "asset", 1)[0], "status": status})
+        receipt = _receipts([item["receipt"]], "asset", 1)[0]
+        if (receipt["kind"] != "publication_inline_image"
+                or item.get("media_type") not in _COVER_MEDIA_TYPES.values()
+                or not isinstance(item.get("width"), int) or not 0 < item["width"] <= 8192
+                or not isinstance(item.get("height"), int) or not 0 < item["height"] <= 8192
+                or item["width"] * item["height"] > _INLINE_IMAGE_MAX_PIXELS):
+            raise PublicationError("invalid inline image contract")
+        normalized_assets.append({**item, "url": _safe_url(item["url"], "asset url"), "receipt": receipt})
     declared_assets = {item["url"]: item for item in normalized_assets if "url" in item}
+    if len(declared_assets) != sum("url" in item for item in normalized_assets):
+        raise PublicationError("duplicate inline asset url")
     wiki_refs = bundle.get("wiki_references") or []
     if not isinstance(wiki_refs, list) or len(wiki_refs) > 100:
         raise PublicationError("invalid wiki_references")
@@ -507,7 +521,7 @@ class PublicationStore:
           source_snapshot_hash TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, author TEXT NOT NULL,
           institution TEXT NOT NULL, release_at TEXT NOT NULL, actual_release_at TEXT, state TEXT NOT NULL,
           body_ref TEXT NOT NULL, bundle_json TEXT NOT NULL, blocked_reasons TEXT NOT NULL, created_at TEXT NOT NULL,
-          withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition), UNIQUE(issue_id, content_hash));
+          withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition));
         CREATE INDEX IF NOT EXISTS editions_public ON editions(state, release_at);
         CREATE TABLE IF NOT EXISTS editorial_attempts (
           issue_id TEXT NOT NULL, revision INTEGER NOT NULL, attempt_id TEXT NOT NULL UNIQUE,
@@ -519,8 +533,35 @@ class PublicationStore:
         CREATE TABLE IF NOT EXISTS legacy_published_editions (
           edition_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, bundle_hash TEXT NOT NULL);
         """)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(editions)")}
+        if "issue_key" not in columns:
+            db.execute("ALTER TABLE editions ADD COLUMN issue_key TEXT NOT NULL DEFAULT ''")
+            db.execute("UPDATE editions SET issue_key=issue_date WHERE issue_key='' ")
         db.execute("BEGIN IMMEDIATE")
         try:
+            if not db.execute("SELECT 1 FROM publication_migrations WHERE name='edition-material-revisions-v1'").fetchone():
+                table_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='editions'").fetchone()[0]
+                if "UNIQUE(issue_id, content_hash)" in table_sql:
+                    db.execute("""CREATE TABLE editions_material_revisions (
+                      edition_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, issue_id TEXT NOT NULL, issue_key TEXT NOT NULL,
+                      series_id TEXT NOT NULL, issue_date TEXT NOT NULL, edition INTEGER NOT NULL, content_hash TEXT NOT NULL,
+                      source_snapshot_hash TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, author TEXT NOT NULL,
+                      institution TEXT NOT NULL, release_at TEXT NOT NULL, actual_release_at TEXT, state TEXT NOT NULL,
+                      body_ref TEXT NOT NULL, bundle_json TEXT NOT NULL, blocked_reasons TEXT NOT NULL, created_at TEXT NOT NULL,
+                      withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition))""")
+                    edition_columns = (
+                        "edition_id,publication_id,issue_id,issue_key,series_id,issue_date,edition,content_hash,"
+                        "source_snapshot_hash,title,summary,author,institution,release_at,actual_release_at,state,"
+                        "body_ref,bundle_json,blocked_reasons,created_at,withdrawn_at"
+                    )
+                    db.execute(
+                        f"INSERT INTO editions_material_revisions ({edition_columns}) "
+                        f"SELECT {edition_columns} FROM editions"
+                    )
+                    db.execute("DROP TABLE editions")
+                    db.execute("ALTER TABLE editions_material_revisions RENAME TO editions")
+                    db.execute("CREATE INDEX editions_public ON editions(state, release_at)")
+                db.execute("INSERT INTO publication_migrations VALUES ('edition-material-revisions-v1')")
             if not db.execute("SELECT 1 FROM publication_migrations WHERE name='editorial-v1'").fetchone():
                 for row in db.execute("SELECT edition_id,content_hash,bundle_json FROM editions WHERE state='published'").fetchall():
                     db.execute("INSERT OR IGNORE INTO legacy_published_editions VALUES (?,?,?)",
@@ -531,10 +572,6 @@ class PublicationStore:
             db.rollback()
             db.close()
             raise
-        columns = {row[1] for row in db.execute("PRAGMA table_info(editions)")}
-        if "issue_key" not in columns:
-            db.execute("ALTER TABLE editions ADD COLUMN issue_key TEXT NOT NULL DEFAULT ''")
-            db.execute("UPDATE editions SET issue_key=issue_date WHERE issue_key='' ")
         return db
 
     @staticmethod
@@ -607,6 +644,27 @@ class PublicationStore:
 
     def _cover_assets_valid(self, db: sqlite3.Connection, bundle: dict[str, Any]) -> bool:
         return all(self._cover_asset_valid(db, item) for item in bundle.get("assets", []) if "role" in item)
+
+    def _inline_asset_valid(self, db: sqlite3.Connection, asset: dict[str, Any]) -> bool:
+        receipt = asset.get("receipt")
+        if (asset.get("status") != "verified" or not isinstance(receipt, dict)
+                or receipt.get("kind") != "publication_inline_image" or not self._receipt_valid(db, receipt)):
+            return False
+        row = db.execute("SELECT private_ref,byte_count FROM evidence WHERE artifact_id=?", (receipt["artifact_id"],)).fetchone()
+        if not row or row["byte_count"] > _INLINE_IMAGE_MAX_BYTES:
+            return False
+        try:
+            raw = self._path(row["private_ref"]).read_bytes()
+            with Image.open(io.BytesIO(raw)) as image:
+                actual = (image.format, image.size)
+                image.verify()
+        except (OSError, UnidentifiedImageError):
+            return False
+        expected_format = {value: key for key, value in _COVER_MEDIA_TYPES.items()}.get(asset.get("media_type"))
+        return actual == (expected_format, (asset.get("width"), asset.get("height")))
+
+    def _inline_assets_valid(self, db: sqlite3.Connection, bundle: dict[str, Any]) -> bool:
+        return all(self._inline_asset_valid(db, item) for item in bundle.get("assets", []) if "url" in item)
 
     def _review_receipt_valid(self, db: sqlite3.Connection, bundle: dict[str, Any], content_hash: str) -> bool:
         receipt = bundle.get("review", {}).get("receipt")
@@ -688,6 +746,8 @@ class PublicationStore:
             reasons.append("intake_receipt_missing_or_hash_mismatch")
         if not self._cover_assets_valid(db, bundle):
             reasons.append("cover_asset_invalid")
+        if not self._inline_assets_valid(db, bundle):
+            reasons.append("inline_asset_invalid")
         if not self._review_receipt_valid(db, bundle, row["content_hash"]):
             reasons.append("review_receipt_missing_or_unbound")
         if not self._owner_attestation_valid(db, bundle, row["content_hash"]):
@@ -710,7 +770,7 @@ class PublicationStore:
         value.pop("proof_json", None)
         return value
 
-    def prepare_editorial(self, bundle: dict[str, Any]) -> dict[str, Any]:
+    def prepare_editorial(self, bundle: dict[str, Any], *, review_policy=None) -> dict[str, Any]:
         normalized, _ = validate_bundle(bundle)
         if normalized["content_kind"] != "commentary":
             raise PublicationError("editorial workflow requires commentary")
@@ -721,6 +781,10 @@ class PublicationStore:
         options = {k: draft.get(k) for k in (
             "format", "writer_sessions", "learning_objectives", "editorial_brief", "research_gaps",
         )}
+        if review_policy is not None:
+            options["review_policy"] = review_policy
+        if review_policy not in {None, "story-supervision-v2"}:
+            raise PublicationError("invalid trusted review policy")
         if (not isinstance(options["format"], str) or options["format"] not in {"book", "chapter"}
                 or not isinstance(options["writer_sessions"], list) or not options["writer_sessions"]
                 or any(not isinstance(w, str) or not w.startswith("hermes:") for w in options["writer_sessions"])
@@ -755,8 +819,11 @@ class PublicationStore:
                         raise PublicationError("research gap question cannot be replaced")
                     by_id.setdefault(gap["id"], gap)
             options["research_gaps"] = list(by_id.values())
-            input_hash = _metadata_hash({"body_hash": normalized["body_hash"], "options": options,
-                                         "source_receipts": normalized["source_receipts"]})
+            input_material = {"body_hash": normalized["body_hash"], "options": options,
+                              "source_receipts": normalized["source_receipts"]}
+            if review_policy == "story-supervision-v2":
+                input_material["assets"] = normalized["assets"]
+            input_hash = _metadata_hash(input_material)
             assigned = any(k in draft for k in ("revision", "attempt_id", "issue_id", "target_hash"))
             if current and current["input_hash"] == input_hash and current["state"] in {"await_review", "approved"}:
                 if assigned and draft != json.loads(current["contract_json"]):
@@ -818,7 +885,7 @@ class PublicationStore:
                if frozen else db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? ORDER BY revision DESC LIMIT 1", (issue_id,)).fetchone())
         if not row or contract != json.loads(row["contract_json"]):
             return ["editorial_attempt_not_current"]
-        if row["state"] not in ({"approved"} if require_approved else {"await_review", "approved"}):
+        if row["state"] not in ({"approved"} if require_approved else {"await_review", "approved", "rejected"}):
             return ["editorial_attempt_not_approved"]
         try:
             receipt = bundle["review"]["receipt"]
@@ -840,18 +907,27 @@ class PublicationStore:
                 return ["editorial_proof_hash_mismatch"]
             proof = json.loads(proof_raw)
             from backend.services.publication_review_provenance import verify_review_proof
-            reasons = verify_review_proof(proof, (self.root / "editorial-review-public.pem").read_bytes(),
+            binding_reasons = verify_review_proof(proof, (self.root / "editorial-review-public.pem").read_bytes(),
                 issue_id=issue_id, revision=contract["revision"], attempt_id=contract["attempt_id"],
                 target_hash=contract["target_hash"], review_file_hash=review_hash,
-                reviewer_session=review.get("reviewer_session"), writer_sessions=contract["writer_sessions"])
-            reasons += validate_editorial(bundle["body"], contract, review, bundle["source_receipts"])
+                reviewer_session=review.get("reviewer_session"), writer_sessions=contract["writer_sessions"],
+                required_policy=contract.get("review_policy"),
+                assets=([{"role" if "role" in item else "url": item.get("role", item.get("url")),
+                          "sha256": item["receipt"]["sha256"]} for item in bundle.get("assets", [])]
+                        if contract.get("review_policy") else None))
             if proof.get("decision") != review.get("decision"):
-                reasons.append("editorial_proof_decision_mismatch")
+                binding_reasons.append("editorial_proof_decision_mismatch")
+            if (contract.get("review_policy")
+                    and proof.get("publication_material_hash") != review.get("publication_material_hash")):
+                binding_reasons.append("editorial_review_material_hash")
             if review.get("content_hash") != bundle["body_hash"]:
-                reasons.append("editorial_review_body_hash")
+                binding_reasons.append("editorial_review_body_hash")
+            reasons = binding_reasons + validate_editorial(
+                bundle["body"], contract, review, bundle["source_receipts"]
+            )
             if require_approved and (row["review_hash"] != review_hash or row["proof_json"] != _canonical(proof).decode()):
                 reasons.append("editorial_review_not_recorded")
-            if not reasons and verified is not None:
+            if not binding_reasons and verified is not None:
                 verified["proof_json"] = _canonical(proof).decode()
             return sorted(set(reasons))
         except (OSError, ValueError, TypeError, KeyError, AttributeError, ImportError):
@@ -874,6 +950,11 @@ class PublicationStore:
         contract = normalized.get("quality_contract") or {}
         if editorial_target_hash(normalized["body"], contract, normalized["source_receipts"]) != contract.get("target_hash"):
             raise PublicationError("editorial target mismatch")
+        checked = {**normalized, "review": {
+            "content_hash": review.get("content_hash"), "decision": review.get("decision"),
+            "reviewed_by": review.get("reviewer_session"), "reviewed_at": review.get("reviewed_at"),
+            "receipt": receipt,
+        }}
         _, issue_id, _ = self.ids(normalized["series_id"], normalized["issue_key"], 1)
         db = self._connect()
         try:
@@ -881,7 +962,12 @@ class PublicationStore:
             previous = db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? AND attempt_id=?", (issue_id, contract.get("attempt_id"))).fetchone()
             if previous and previous["state"] in {"approved", "rejected", "failed"}:
                 if previous["review_hash"] == receipt["sha256"] and contract == json.loads(previous["contract_json"]):
-                    if previous["state"] == "approved" and self._editorial_check(db, normalized, frozen=True):
+                    if contract.get("review_policy"):
+                        verified = {}
+                        self._editorial_check(db, checked, require_approved=False, frozen=True, verified=verified)
+                        if previous["proof_json"] != verified.get("proof_json"):
+                            raise PublicationError("recorded review proof no longer valid")
+                    elif previous["state"] == "approved" and self._editorial_check(db, normalized, frozen=True):
                         raise PublicationError("recorded approval proof no longer valid")
                     db.commit()
                     result = self._attempt_record(previous)
@@ -899,7 +985,14 @@ class PublicationStore:
                     or review.get("content_hash") != normalized["body_hash"]):
                 raise PublicationError("review identity or body hash mismatch")
             verified = {}
-            reasons = self._editorial_check(db, normalized, require_approved=False, verified=verified) if review.get("decision") == "approved" else ["review.rejected"]
+            reasons = (self._editorial_check(db, checked, require_approved=False, verified=verified)
+                       if review.get("decision") == "approved" or contract.get("review_policy")
+                       else ["review.rejected"])
+            if contract.get("review_policy") and any(
+                reason.startswith(("provenance.", "editorial_proof_", "editorial_review_"))
+                for reason in reasons
+            ):
+                raise PublicationError("review proof invalid")
             gaps = review.get("research_gaps", [])
             if not isinstance(gaps, list) or any(not isinstance(g, dict) or not isinstance(g.get("id"), str)
                     or not isinstance(g.get("question"), str) or len(g["question"].strip()) < 10 for g in gaps):
@@ -908,7 +1001,7 @@ class PublicationStore:
             gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps,
                 *[{"id": r, "question": "需要补充研究并解决审核失败项：" + r, "state": "open", "resolution": "", "source_urls": []} for r in reasons]]}.values())
             state = "approved" if not reasons else ("rejected" if review.get("decision") in {"reject", "rejected"} else "failed")
-            proof = verified.get("proof_json") if state == "approved" else None
+            proof = verified.get("proof_json") if state in {"approved", "rejected"} else None
             db.execute("UPDATE editorial_attempts SET state=?,gaps_json=?,review_hash=?,proof_json=?,closed_at=? WHERE attempt_id=?",
                 (state, json.dumps(gaps, ensure_ascii=False), receipt["sha256"], proof, _iso(_now()), row["attempt_id"]))
             if reasons:
@@ -931,6 +1024,8 @@ class PublicationStore:
             db.execute("BEGIN IMMEDIATE")
             if not self._cover_assets_valid(db, normalized):
                 raise PublicationError("cover asset bytes, format or dimensions mismatch")
+            if not self._inline_assets_valid(db, normalized):
+                raise PublicationError("inline image bytes, format or dimensions mismatch")
             blocked.extend(self._editorial_check(db, normalized))
             if not self._bundle_receipts_valid(db, normalized):
                 blocked.append("intake_receipt_missing_or_hash_mismatch")
@@ -941,7 +1036,19 @@ class PublicationStore:
             if not self._wiki_valid(normalized, vault):
                 blocked.append("unauthorized_or_changed_wiki_reference")
             _, issue_id, _ = self.ids(normalized["series_id"], normalized["issue_key"], 1)
-            existing = db.execute("SELECT * FROM editions WHERE issue_id=? AND content_hash=?", (issue_id, normalized["body_hash"])).fetchone()
+            candidates = db.execute(
+                "SELECT * FROM editions WHERE issue_id=? AND content_hash=? ORDER BY edition DESC",
+                (issue_id, normalized["body_hash"]),
+            ).fetchall()
+            attempt_id = (normalized.get("quality_contract") or {}).get("attempt_id")
+            existing = next((row for row in candidates
+                             if (json.loads(row["bundle_json"]).get("quality_contract") or {}).get("attempt_id") == attempt_id), None)
+            if existing is None and candidates and (
+                not attempt_id
+                or candidates[0]["state"] not in {"published", "withdrawn"}
+                or not (json.loads(candidates[0]["bundle_json"]).get("quality_contract") or {}).get("attempt_id")
+            ):
+                existing = candidates[0]
             state = "blocked" if blocked else normalized.get("state", "staged")
             payload = json.dumps({key: value for key, value in normalized.items() if key != "body"}, ensure_ascii=False, sort_keys=True)
             if existing:
@@ -1129,6 +1236,33 @@ class PublicationStore:
         finally:
             db.close()
 
+    def get_published_asset(
+        self, publication_id: str, digest: str, *, now: datetime | None = None,
+        vault: Path | None = None,
+    ) -> tuple[bytes, str] | None:
+        if not _HASH.fullmatch(digest) or not self.db_path.exists():
+            return None
+        db, actual = self._connect(), now or _now()
+        try:
+            row = db.execute(
+                "SELECT * FROM editions WHERE state='published' AND publication_id=?", (publication_id,),
+            ).fetchone()
+            if row is None or self._access_reasons(db, row, actual, vault):
+                return None
+            bundle = json.loads(row["bundle_json"])
+            asset = next((item for item in bundle.get("assets", [])
+                          if item.get("url") and item.get("receipt", {}).get("sha256") == digest), None)
+            if not asset or not self._inline_asset_valid(db, asset):
+                return None
+            evidence = db.execute(
+                "SELECT private_ref FROM evidence WHERE artifact_id=?", (asset["receipt"]["artifact_id"],)
+            ).fetchone()
+            return self._path(evidence["private_ref"]).read_bytes(), asset["media_type"]
+        except (KeyError, TypeError, json.JSONDecodeError, OSError):
+            return None
+        finally:
+            db.close()
+
     @staticmethod
     def _public_source_book(source: dict[str, Any], edition: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1251,7 +1385,28 @@ class PublicationStore:
         return value
 
 
-def reader_sections(markdown: str, *, preserve_source_whitespace: bool = False) -> list[dict[str, Any]]:
+def _reader_blocks(markdown: str, image_assets: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    blocks, cursor = [], 0
+    for match in _MARKDOWN_IMAGE.finditer(markdown):
+        asset = image_assets.get(match.group(2))
+        if not asset:
+            continue
+        text = markdown[cursor:match.start()].strip()
+        if text:
+            blocks.append({"kind": "text", "markdown": text})
+        blocks.append({"kind": "image", **asset, "alt": match.group(1),
+                       "caption": match.group(3) or ""})
+        cursor = match.end()
+    tail = markdown[cursor:].strip()
+    if tail:
+        blocks.append({"kind": "text", "markdown": tail})
+    return [{"id": f"block-{index}", **block} for index, block in enumerate(blocks, 1)]
+
+
+def reader_sections(
+    markdown: str, *, preserve_source_whitespace: bool = False,
+    image_assets: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     tokens, headings = _MD.parse(markdown), []
     lines = markdown.splitlines(keepends=preserve_source_whitespace)
     join = "".join if preserve_source_whitespace else "\n".join
@@ -1260,7 +1415,10 @@ def reader_sections(markdown: str, *, preserve_source_whitespace: bool = False) 
             headings.append((token.map[0], token.map[1], int(token.tag[1:]), tokens[index + 1].content))
     if not headings:
         content = markdown if preserve_source_whitespace else markdown.strip()
-        return [{"id": "section-1", "title": "正文", "level": 1, "markdown": content}] if markdown.strip() else []
+        result = [{"id": "section-1", "title": "正文", "level": 1, "markdown": content}] if markdown.strip() else []
+        if image_assets:
+            result[0]["blocks"] = _reader_blocks(content, image_assets)
+        return result
     result = []
     preamble = join(lines[:headings[0][0]])
     if not preserve_source_whitespace:
@@ -1273,4 +1431,7 @@ def reader_sections(markdown: str, *, preserve_source_whitespace: bool = False) 
         if not preserve_source_whitespace:
             content = content.strip()
         result.append({"id": f"section-{len(result) + 1}", "title": title, "level": level, "markdown": content})
+    if image_assets:
+        for section in result:
+            section["blocks"] = _reader_blocks(section["markdown"], image_assets)
     return result
