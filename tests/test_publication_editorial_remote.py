@@ -304,6 +304,9 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         request["source_receipts"]
         == json.loads((local / frozen).read_text())["source_receipts"]
     )
+    frozen_bundle = json.loads((local / frozen).read_text())
+    assert {asset["role"] for asset in frozen_bundle["assets"]} == set(relay.MEDIA_ROLES)
+    assert all(asset["receipt"]["sha256"] for asset in frozen_bundle["assets"])
     assert request["writer_sessions"] == request["quality_contract"]["writer_sessions"]
     assert not (local / "proof.json").exists()
 

@@ -76,8 +76,9 @@ def main() -> int:
         command.add_argument("--rights-file", action="append", type=_file, default=[])
         command.add_argument("--execution-file", action="append", type=_file, default=[])
         command.add_argument("--proof-file", type=Path)
+        command.add_argument("--shelf-cover-file", type=Path)
+        command.add_argument("--reader-cover-file", type=Path)
         command.add_argument("--illustration-file", action="append", type=_illustration_file, default=[])
-        command.set_defaults(shelf_cover_file=None, reader_cover_file=None)
         if name == "record-editorial-review":
             command.add_argument("--review-file", type=Path, required=True)
     stage = commands.add_parser("stage")
