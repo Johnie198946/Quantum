@@ -26,6 +26,9 @@ STATES = ("draft", "staged", "scheduled", "blocked", "published", "withdrawn")
 SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
 UNKNOWN = "unknown"
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+REQUIRED_DAILY_MEDIA = {
+    "shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03",
+}
 
 
 def _args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -127,6 +130,11 @@ def _status(stdout: str, returncode: int, label: str = "status") -> dict:
             or item["edition"] < 1
             or not isinstance(item.get("blocked_reasons", []), list)
             or any(not isinstance(reason, str) or not reason for reason in item.get("blocked_reasons", []))
+            or ("body_available" in item and not isinstance(item["body_available"], bool))
+            or ("media_roles" in item and (
+                not isinstance(item["media_roles"], list)
+                or any(not isinstance(role, str) for role in item["media_roles"])
+            ))
         ):
             raise ValueError(f"{label} returned an invalid item")
         if item["edition_id"] in edition_ids:
@@ -241,13 +249,15 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
     ))
     totals = {state: sum(item["state"] == state for item in items) for state in STATES}
     totals["missing"] = len(missing)
-    published = {
-        series: len({
-            item["publication_id"] for item in items
-            if item.get("state") == "published" and item.get("issue_date") == day and item.get("series_id") == series
-        })
-        for series in daily_series
-    }
+    published = {}
+    for series in daily_series:
+        rows = [item for item in items if item.get("state") == "published"
+                and item.get("issue_date") == day and item.get("series_id") == series]
+        published[series] = {
+            "published": len({item["publication_id"] for item in rows}),
+            "body_available": len(rows) == 1 and rows[0].get("body_available") is True,
+            "media_roles": rows[0].get("media_roles", []) if len(rows) == 1 else [],
+        }
     before_ids = {
         item["publication_id"] for item in (before or {}).get("items", []) if item.get("state") == "published"
     }
@@ -272,7 +282,8 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
         "observed_published_publication_id_delta": sorted(after_ids - before_ids) if before is not None else UNKNOWN,
         "released_edition_ids": UNKNOWN,
         "today": {
-            "date": day, "expected": len(daily_series), "published": sum(published.values()),
+            "date": day, "expected": len(daily_series),
+            "published": sum(item["published"] for item in published.values()),
             "by_series": published,
         },
         "totals": totals,
@@ -283,7 +294,9 @@ def _attention(summary: dict) -> bool:
     day = summary["today"]["date"]
     current_blocked = [item for item in summary["issues"]["blocked"] if item.get("issue_date") == day]
     return bool(current_blocked or summary["issues"]["missing"] or any(
-        count != 1 for count in summary["today"]["by_series"].values()
+        item.get("published") != 1 or item.get("body_available") is not True
+        or set(item.get("media_roles", [])) != REQUIRED_DAILY_MEDIA
+        for item in summary["today"]["by_series"].values()
     ))
 
 

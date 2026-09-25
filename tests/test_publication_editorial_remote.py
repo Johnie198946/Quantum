@@ -156,6 +156,15 @@ def flow(tmp_path, monkeypatch):
         "proof_file": "proof.json",
         "status": "prepared",
     }
+    for role, size in (
+        ("shelf_cover", (1440, 2560)), ("reader_cover", (2560, 1440)),
+        ("illustration_01", (1600, 900)), ("illustration_02", (1600, 900)),
+        ("illustration_03", (1600, 900)),
+    ):
+        path = local / f"{role}.jpg"
+        Image.new("RGB", size, "#335577").save(path, format="JPEG")
+        item[f"{role}_file"] = path.name
+        item[f"{role}_sha256"] = relay.sha(path.read_bytes())
     manifest = local / "issue.manifest.json"
     relay.save(manifest, {"version": relay.VERSION, "items": [item]})
     key = Ed25519PrivateKey.generate()
@@ -361,7 +370,7 @@ def test_approved_finalize_explicitly_promotes_author_draft_to_staged(flow):
     assert len(staged) == 1 and staged[0]["state"] == "staged"
 
 
-def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
+def test_approved_stage_uploads_manifest_bound_daily_media(flow):
     local, manifest, remote, calls, *_ = flow
     value = json.loads(manifest.read_text())
     item = value["items"][0]
@@ -379,6 +388,7 @@ def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
     stage_call = next(call for call in calls if "stage" in call)
     assert "--shelf-cover-file" in stage_call
     assert "--reader-cover-file" in stage_call
+    assert stage_call.count("--illustration-file") == 3
 
 
 def test_running_native_is_pending_without_upload(flow):
@@ -570,7 +580,10 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     old = json.loads(manifest.read_text())["items"][0]
     next_dir = local / "next"
     next_dir.mkdir()
-    for name in ("bundle.json", "body.md", "source.json", "rights.json"):
+    for name in (
+        "bundle.json", "body.md", "source.json", "rights.json", "shelf_cover.jpg",
+        "reader_cover.jpg", "illustration_01.jpg", "illustration_02.jpg", "illustration_03.jpg",
+    ):
         shutil.copyfile(local / name, next_dir / name)
     item = {
         k: v

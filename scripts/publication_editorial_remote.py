@@ -37,9 +37,13 @@ HASH = re.compile(r"[0-9a-f]{64}\Z")
 FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_files",
           "rights_files", "execution_files", "review_file", "proof_file", "status",
           "batch", "quality_contract", "receipt", "error", "shelf_cover_file",
-          "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256"}
+          "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256",
+          "illustration_01_file", "illustration_01_sha256", "illustration_02_file",
+          "illustration_02_sha256", "illustration_03_file", "illustration_03_sha256"}
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
+MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
+DAILY_SERIES = {"ai-history", "ai-practice", "concept-fables", "ai-toolkit"}
 
 
 def sha(raw):
@@ -116,10 +120,10 @@ def load_manifest(path):
             raise ValueError("unknown manifest fields or invalid status")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
                   (item.get("body_file"), item.get("body_sha256"))]
-        for role in ("shelf_cover", "reader_cover"):
+        for role in MEDIA_ROLES:
             name, digest = item.get(f"{role}_file"), item.get(f"{role}_sha256")
             if (name is None) != (digest is None):
-                raise ValueError("cover file and hash must be provided together")
+                raise ValueError(f"{role} file and hash must be provided together")
             if name is not None:
                 inputs.append((name, digest))
         for group in GROUPS:
@@ -136,8 +140,8 @@ def load_manifest(path):
                 digest = item["bundle_sha256"] = sha(read(file))
             if not isinstance(digest, str) or not HASH.fullmatch(digest) or sha(read(file)) != digest:
                 raise ValueError("input hash mismatch or missing hash")
-            if file == path or file in outputs:
-                raise ValueError("input overlaps manifest or another output")
+            if file == path or file in paths or file in outputs:
+                raise ValueError("input overlaps manifest, another input or output")
             paths.add(file)
         for field in ("review_file", "proof_file"):
             output = local_path(path.parent, item.get(field), output=True)
@@ -152,6 +156,8 @@ def load_manifest(path):
         bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
         if bundle.get("body_hash") != item["body_sha256"]:
             raise ValueError("bundle body hash mismatch")
+        if bundle.get("series_id") in DAILY_SERIES and any(item.get(f"{role}_file") is None for role in MEDIA_ROLES):
+            raise ValueError("daily editorial manifest requires all five publication media files and hashes")
         if item["status"] != "prepared" and bundle.get("quality_contract") != item.get("quality_contract"):
             raise ValueError("immutable contract mismatch")
     return path, value
@@ -260,6 +266,11 @@ def arguments(remote, base, item, bundle, review=None, proof=None, *, stage=Fals
             if name:
                 args += [f"--{role.replace('_', '-')}-file",
                          remote.upload(batch, read(local_path(base, name)), ".bin")]
+        for role in ("illustration_01", "illustration_02", "illustration_03"):
+            name = item.get(f"{role}_file")
+            if name:
+                args += ["--illustration-file",
+                         role + "=" + remote.upload(batch, read(local_path(base, name)), ".bin")]
     return args
 
 

@@ -334,7 +334,7 @@ _PUBLIC_BOOK_FIELDS = (
     "source_id", "body_origin", "completeness", "source_classification",
     "readable", "unavailable_reason", "content_version",
     "publication_format", "publication_type_label", "editorial_genre",
-    "shelf_cover_url",
+    "shelf_cover_url", "illustration_urls",
 )
 
 
@@ -399,6 +399,7 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             "source_urls": [ref["url"] for ref in item["bundle"]["references"]],
             **({"reader_cover_url": f"/api/v1/knowledge-publications/{book_id}/covers/reader_cover"}
                if any(asset.get("role") == "reader_cover" for asset in item["bundle"].get("assets", [])) else {}),
+            "illustration_urls": book.get("illustration_urls", []),
         } if sections else None)
     else:
         source_path = str(book["source_path"])
@@ -469,6 +470,22 @@ async def knowledge_publication_cover(publication_id: str, role: str, payload=De
         raise _error(404, code="cover_not_found", message="封面已下架或当前无权读取",
                      action="refresh_catalog", retryable=True)
     data, media_type = cover
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/knowledge-publications/{publication_id}/media/{role}")
+async def knowledge_publication_media(publication_id: str, role: str, payload=Depends(require_auth)):
+    if role not in {f"illustration_{index:02d}" for index in range(1, 4)}:
+        raise HTTPException(status_code=422, detail="unknown publication media role")
+    if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
+        raise HTTPException(status_code=422, detail="invalid publication_id")
+    visible = payload.get("visible_categories")
+    media = (PublicationStore().get_published_media(publication_id, role, vault=knowledge._vault())
+             if visible is None or PUBLICATION_CATEGORY in visible else None)
+    if media is None:
+        raise _error(404, code="media_not_found", message="插图已下架或当前无权读取",
+                     action="refresh_catalog", retryable=True)
+    data, media_type = media
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 

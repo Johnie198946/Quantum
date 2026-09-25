@@ -520,6 +520,22 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             XCTFail("absolute cover URLs must be rejected")
         } catch {}
         XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+
+        _ = try await client.fetchPublicationImage(
+            path: "/api/v1/knowledge-publications/\(publicationID)/media/illustration_01"
+        )
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
+        for unsafe in [
+            "/api/v1/knowledge-publications/\(publicationID)/media/illustration_04",
+            "/api/v1/knowledge-publications/\(publicationID)/media/../evidence",
+            "//evil.invalid/api/v1/knowledge-publications/\(publicationID)/media/illustration_01",
+        ] {
+            do {
+                _ = try await client.fetchPublicationImage(path: unsafe)
+                XCTFail("unsafe publication media URL must be rejected")
+            } catch {}
+        }
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
     }
 
     func testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges() {
@@ -956,7 +972,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testReaderBodySurvivesSubscriptionFailure() async throws {
         let body = try decoder().decode(
             KnowledgeBookBodyDTO.self,
-            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","reader_cover_url":"/api/v1/knowledge-publications/publication-1/covers/reader_cover","sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
+            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","reader_cover_url":"/api/v1/knowledge-publications/publication-1/covers/reader_cover","illustration_urls":["/api/v1/knowledge-publications/publication-1/media/illustration_01"],"sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
         )
 
         let loaded = try await loadKnowledgeBookReaderData(
@@ -966,6 +982,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
         XCTAssertEqual(loaded.body, body)
         XCTAssertEqual(loaded.body.readerCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/reader_cover")
+        XCTAssertEqual(loaded.body.illustrationUrls, ["/api/v1/knowledge-publications/publication-1/media/illustration_01"])
+        XCTAssertEqual(readerIllustrationPaths(afterSectionAt: 0, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []), loaded.body.illustrationUrls)
+        XCTAssertTrue(readerIllustrationPaths(afterSectionAt: 1, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []).isEmpty)
         XCTAssertNil(loaded.subscriptions)
 
         do {

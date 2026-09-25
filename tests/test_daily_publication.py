@@ -71,6 +71,8 @@ def ready(store: PublicationStore, value: dict, *, execution=False, editorial=Tr
         log = inputs / "execution.log"
         log.write_text("synthetic executed fixture", encoding="utf-8")
         value["execution_evidence"] = [store.ingest_file(log, "log")]
+    if value["series_id"] in {"ai-history", "ai-practice", "concept-fables", "ai-toolkit"} and not value.get("assets"):
+        value = add_daily_media(store, value)
     if editorial and value["content_kind"] == "commentary":
         value = approve_fixture(store, value)
     return value
@@ -89,8 +91,72 @@ def add_covers(store: PublicationStore, value: dict, *, shelf_size=(1440, 2560),
         assets.append({"role": role, "receipt": store.ingest_file(path, f"publication_{role}"),
                        "media_type": "image/jpeg" if image_format == "JPEG" else "image/png",
                        "width": size[0], "height": size[1]})
-    value["assets"] = assets
+    value["assets"] = assets + [asset for asset in value.get("assets", [])
+                                if asset.get("role") not in {"shelf_cover", "reader_cover"}]
     return value
+
+
+def add_daily_media(store: PublicationStore, value: dict, *, illustrations=3) -> dict:
+    value["assets"] = [asset for asset in value.get("assets", [])
+                       if not str(asset.get("role", "")).startswith("illustration_")]
+    add_covers(store, value)
+    for index in range(1, illustrations + 1):
+        role = f"illustration_{index:02d}"
+        path = store.root / "fixture-inputs" / f"{role}.png"
+        Image.new("RGB", (1600, 900), "#775533").save(path)
+        value["assets"].append({
+            "role": role,
+            "receipt": store.ingest_file(path, "publication_illustration"),
+            "media_type": "image/png", "width": 1600, "height": 900,
+        })
+    return value
+
+
+@pytest.mark.parametrize("series", ["ai-history", "ai-practice", "concept-fables", "ai-toolkit"])
+@pytest.mark.parametrize("missing", [
+    "shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03",
+])
+def test_all_daily_series_require_covers_and_illustration(tmp_path, series, missing):
+    store = PublicationStore(tmp_path)
+    value = add_daily_media(store, ready(store, bundle(series=series)))
+    value["assets"] = [asset for asset in value["assets"] if asset["role"] != missing]
+    item = store.stage(value, now=at(3))
+    assert item["state"] == "blocked"
+    assert "required_publication_media_missing" in item["blocked_reasons"]
+
+
+@pytest.mark.parametrize("roles", [
+    ["illustration_01"],
+    ["illustration_02"],
+    ["illustration_01", "illustration_03"],
+    ["illustration_01", "illustration_02", "illustration_03", "illustration_04"],
+])
+def test_daily_illustration_roles_are_bounded_and_contiguous(tmp_path, roles):
+    store = PublicationStore(tmp_path)
+    value = add_covers(store, ready(store, bundle()))
+    value["assets"] = [asset for asset in value["assets"]
+                       if not asset["role"].startswith("illustration_")]
+    for role in roles:
+        path = store.root / "fixture-inputs" / f"{role}.png"
+        Image.new("RGB", (1600, 900), "#775533").save(path)
+        value["assets"].append({"role": role, "receipt": store.ingest_file(path, "publication_illustration"),
+                                "media_type": "image/png", "width": 1600, "height": 900})
+    if "illustration_04" in roles:
+        with pytest.raises(PublicationError, match="media role"):
+            store.stage(value, now=at(3))
+    else:
+        assert "required_publication_media_missing" in store.stage(value, now=at(3))["blocked_reasons"]
+
+
+def test_illustration_dimensions_are_strict(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_daily_media(store, ready(store, bundle()))
+    path = store.root / "fixture-inputs" / "wrong-illustration.png"
+    Image.new("RGB", (1599, 900), "#775533").save(path)
+    illustration = next(asset for asset in value["assets"] if asset["role"] == "illustration_01")
+    illustration["receipt"] = store.ingest_file(path, "publication_illustration")
+    with pytest.raises(PublicationError, match="bytes, format or dimensions"):
+        store.stage(value, now=at(3))
 
 
 def test_before_noon_invisible_and_exact_noon_releases(monkeypatch, tmp_path):
@@ -175,15 +241,25 @@ def test_ai_toolkit_dual_covers_release_and_project_urls(monkeypatch, tmp_path):
     monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(runtime))
     monkeypatch.setenv("AI_LAB_HOME", str(vault))
     store = PublicationStore(runtime)
-    value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
+    value = add_daily_media(store, ready(store, bundle(series="ai-toolkit")), illustrations=3)
     item = store.stage(value, now=at(3))
     assert item["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+    status = store.status_report(item["publication_id"], now=at(4))["items"][0]
+    assert status["body_available"] is True
+    assert status["media_roles"] == [
+        "illustration_01", "illustration_02", "illustration_03", "reader_cover", "shelf_cover",
+    ]
     payload = {"tenant_key": "tenant-a", "user_id": "reader", "visible_categories": frozenset({PUBLICATION_CATEGORY})}
     book = asyncio.run(subscriptions._visible_bookshelves(payload))[0]["books"][0]
     _, body = asyncio.run(subscriptions._available_book_body(payload, item["publication_id"]))
     assert book["shelf_cover_url"].endswith(f"/{item['publication_id']}/covers/shelf_cover")
+    assert book["illustration_urls"] == body["illustration_urls"]
     assert body["reader_cover_url"].endswith(f"/{item['publication_id']}/covers/reader_cover")
+    assert body["illustration_urls"] == [
+        f"/api/v1/knowledge-publications/{item['publication_id']}/media/illustration_0{index}"
+        for index in range(1, 4)
+    ]
     response = asyncio.run(subscriptions.knowledge_publication_cover(item["publication_id"], "shelf_cover", payload))
     assert response.media_type == "image/png" and response.body.startswith(b"\x89PNG")
     with pytest.raises(HTTPException) as unknown:
@@ -194,6 +270,18 @@ def test_ai_toolkit_dual_covers_release_and_project_urls(monkeypatch, tmp_path):
             item["publication_id"], "shelf_cover", {**payload, "visible_categories": frozenset()}
         ))
     assert hidden.value.status_code == 404
+    media = asyncio.run(subscriptions.knowledge_publication_media(
+        item["publication_id"], "illustration_01", payload
+    ))
+    assert media.media_type == "image/png" and media.body.startswith(b"\x89PNG")
+    with pytest.raises(HTTPException) as unsafe:
+        asyncio.run(subscriptions.knowledge_publication_media(item["publication_id"], "../evidence", payload))
+    assert unsafe.value.status_code == 422
+    with pytest.raises(HTTPException) as unauthorized:
+        asyncio.run(subscriptions.knowledge_publication_media(
+            item["publication_id"], "illustration_01", {**payload, "visible_categories": frozenset()}
+        ))
+    assert unauthorized.value.status_code == 404
 
 
 def test_ai_toolkit_missing_cover_is_blocked_and_old_edition_stays_readable(tmp_path):
@@ -218,7 +306,7 @@ def test_cover_role_contract_and_image_bytes_are_strict(tmp_path):
     store = PublicationStore(tmp_path)
     value = add_covers(store, ready(store, bundle(series="ai-toolkit")))
     value["assets"][0]["role"] = "other_cover"
-    with pytest.raises(PublicationError, match="cover role"):
+    with pytest.raises(PublicationError, match="media role"):
         store.stage(value, now=at(3))
 
     wrong = add_covers(store, ready(store, bundle(series="ai-toolkit", body=bundle()["body"] + "wrong")))
@@ -250,6 +338,25 @@ def test_cover_tamper_and_withdraw_fail_closed(tmp_path):
     store2.release_due(now=at(4))
     store2.withdraw(item2["publication_id"], now=at(5))
     assert store2.get_published_cover(item2["publication_id"], "shelf_cover", now=at(5)) is None
+
+
+def test_illustration_tamper_and_withdraw_fail_closed(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = add_daily_media(store, ready(store, bundle()))
+    item = store.stage(value, now=at(3))
+    store.release_due(now=at(4))
+    assert store.get_published_media(item["publication_id"], "illustration_01", now=at(4))
+    receipt = next(asset["receipt"] for asset in item["bundle"]["assets"]
+                   if asset["role"] == "illustration_01")
+    (store.evidence / f"{receipt['sha256']}.bin").write_bytes(b"tampered")
+    assert store.get_published_media(item["publication_id"], "illustration_01", now=at(4)) is None
+
+    store2 = PublicationStore(tmp_path / "withdraw-media")
+    value2 = add_daily_media(store2, ready(store2, bundle()))
+    item2 = store2.stage(value2, now=at(3))
+    store2.release_due(now=at(4))
+    store2.withdraw(item2["publication_id"], now=at(5))
+    assert store2.get_published_media(item2["publication_id"], "illustration_01", now=at(5)) is None
 
 
 def test_overdue_unpublished_series_report_actual_state(tmp_path):
@@ -342,6 +449,8 @@ def test_original_collection_has_source_id_perpetual_rights_and_preserves_body(t
                    rights_evidence_status="verified_license", owner_policy_id="", release_at="2026-09-08T12:00:00+08:00")
     item = stage(store, value, now=at(3))
     assert item["issue_key"] == "author-work-pinned-commit"
+    assert "required_publication_media_missing" not in item["blocked_reasons"]
+    assert item["bundle"]["assets"] == []
     store.release_due(now=at(4))
     assert store.published(now=at(4))[0]["body"] == body
 
@@ -407,6 +516,7 @@ def test_partial_body_and_missing_asset_never_publish(tmp_path):
     missing = stage(store, bundle(body=body), now=at(3))
     assert "partial_body_not_publishable" in partial["blocked_reasons"]
     assert "missing_or_unverified_asset" in missing["blocked_reasons"]
+    assert "daily_public_url_image_forbidden" in missing["blocked_reasons"]
 
 
 def test_withdrawal_removes_all_read_search_chat_paths(monkeypatch, tmp_path):

@@ -8,7 +8,11 @@ import sys
 from pathlib import Path
 
 PROJECT = Path("/Users/dengzhaoyu/Projects/quantum-2.0-publication-main")
-STATUS_CLIENT = Path("/Users/dengzhaoyu/.hermes/scripts/publication_release_remote.py")
+STATUS_CLIENT = PROJECT / "scripts/publication_release_remote.py"
+SERIES = ("ai-history", "ai-practice", "concept-fables", "ai-toolkit")
+REQUIRED_MEDIA = {
+    "shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03",
+}
 
 
 def evaluate(summary: dict) -> tuple[dict, int]:
@@ -19,11 +23,20 @@ def evaluate(summary: dict) -> tuple[dict, int]:
     expected = today.get("expected")
     published = today.get("published")
     missing = issues.get("missing") if isinstance(issues.get("missing"), list) else []
+    by_series = today.get("by_series") if isinstance(today.get("by_series"), dict) else {}
+    failures = []
+    for series in SERIES:
+        item = by_series.get(series)
+        roles = set(item.get("media_roles", [])) if isinstance(item, dict) else set()
+        if (not isinstance(item, dict) or item.get("published") != 1
+                or item.get("body_available") is not True or roles != REQUIRED_MEDIA):
+            failures.append(series)
     complete = (
         isinstance(expected, int)
-        and expected > 0
-        and published == expected
+        and expected == len(SERIES)
+        and published == len(SERIES)
         and not missing
+        and not failures
         and not summary.get("global_attention")
     )
     receipt = {
@@ -31,8 +44,13 @@ def evaluate(summary: dict) -> tuple[dict, int]:
         "date": today.get("date"),
         "expected": expected,
         "published": published,
-        "by_series": today.get("by_series", {}),
+        "by_series": by_series,
         "missing": missing,
+        "bot_message": (
+            f"今日四个每日连载均已发布，正文及双封面、三张正文插图校验通过（{today.get('date')}）。"
+            if complete else
+            f"今日连载验收失败，未通过正文或五媒体检查：{', '.join(failures) or '全局状态异常'}；请勿发送完成通知。"
+        ),
     }
     return receipt, 0 if complete else 2
 

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from backend.services.knowledge_publication_store import PublicationError, PublicationStore
+from scripts import publication_editorial_remote as relay
 from test_daily_publication import add_covers, at, bundle, ready
 from test_publication_editorial import synthetic_brief
 
@@ -21,6 +22,77 @@ def draft(store, body=None):
         "learning_objectives": ["仅供合成测试验证契约结构，不代表真实内容质量"],
         "editorial_brief": synthetic_brief(), "research_gaps": []}
     return value
+
+
+def editorial_manifest(tmp_path):
+    body = b"# synthetic body\n"
+    (tmp_path / "body.md").write_bytes(body)
+    (tmp_path / "bundle.json").write_text(json.dumps({
+        "series_id": "ai-history", "body_hash": relay.sha(body),
+    }))
+    item = {
+        "bundle_file": "bundle.json", "body_file": "body.md", "body_sha256": relay.sha(body),
+        "source_files": [], "rights_files": [], "execution_files": [],
+        "review_file": "review.json", "proof_file": "proof.json", "status": "prepared",
+    }
+    for role in ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03"):
+        path = tmp_path / f"{role}.png"
+        path.write_bytes(role.encode())
+        item[f"{role}_file"] = path.name
+        item[f"{role}_sha256"] = relay.sha(path.read_bytes())
+    path = tmp_path / "draft-manifest.json"
+    relay.save(path, {"version": relay.VERSION, "items": [item]})
+    return path
+
+
+@pytest.mark.parametrize("field", [
+    "illustration_01_file", "illustration_02_sha256", "illustration_03_file",
+])
+def test_daily_editorial_manifest_requires_all_illustration_file_hash_pairs(tmp_path, field):
+    path = editorial_manifest(tmp_path)
+    value = json.loads(path.read_text())
+    value["items"][0].pop(field)
+    relay.save(path, value)
+    with pytest.raises(ValueError, match="illustration|media"):
+        relay.load_manifest(path)
+
+
+def test_editorial_manifest_rejects_illustration_hash_and_path_conflicts(tmp_path):
+    path = editorial_manifest(tmp_path)
+    value = json.loads(path.read_text())
+    item = value["items"][0]
+    item["illustration_02_sha256"] = "0" * 64
+    relay.save(path, value)
+    with pytest.raises(ValueError, match="hash"):
+        relay.load_manifest(path)
+
+    path = editorial_manifest(tmp_path)
+    value = json.loads(path.read_text())
+    item = value["items"][0]
+    item["illustration_02_file"] = item["illustration_01_file"]
+    item["illustration_02_sha256"] = item["illustration_01_sha256"]
+    relay.save(path, value)
+    with pytest.raises(ValueError, match="overlap|conflict"):
+        relay.load_manifest(path)
+
+
+def test_remote_arguments_upload_three_manifest_illustrations_only_for_stage(tmp_path):
+    path = editorial_manifest(tmp_path)
+    _, value = relay.load_manifest(path)
+    item = value["items"][0]
+    item["batch"] = "a" * 32
+
+    class Remote:
+        def upload(self, _batch, raw, ext):
+            return f"/remote/{relay.sha(raw)}{ext}"
+
+    bundle_value = json.loads((tmp_path / item["bundle_file"]).read_text())
+    assert "--illustration-file" not in relay.arguments(Remote(), tmp_path, item, bundle_value)
+    args = relay.arguments(Remote(), tmp_path, item, bundle_value, stage=True)
+    indexes = [index for index, value in enumerate(args) if value == "--illustration-file"]
+    assert [args[index + 1].split("=", 1)[0] for index in indexes] == [
+        "illustration_01", "illustration_02", "illustration_03",
+    ]
 
 
 def reject(store, value, attempt):
@@ -52,6 +124,15 @@ def test_prepare_idempotent_transactional_revision_and_revert(tmp_path):
     assert first["attempt_id"] != third["attempt_id"]
 
 
+def test_editorial_approval_does_not_ingest_daily_media(tmp_path):
+    store = PublicationStore(tmp_path)
+    from publication_editorial_fixture import approve_fixture
+    value = approve_fixture(store, ready(store, bundle(), editorial=False), record=False)
+    review_path = store.root / "fixture-inputs" / (value["quality_contract"]["attempt_id"] + ".json")
+    value["assets"] = []
+    assert store.record_editorial_review(value, review_path)["state"] == "approved"
+
+
 def test_rejection_four_times_terminal_and_gaps_persist(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
@@ -66,6 +147,46 @@ def test_rejection_four_times_terminal_and_gaps_persist(tmp_path):
     report = store.status_report()
     assert len(report["editorial_attempts"]) == 4
     assert "mechanism" in {g["id"] for g in report["open_gaps"]}
+
+
+def test_retry_budget_resets_after_latest_approval_and_stays_issue_scoped(tmp_path):
+    from publication_editorial_fixture import approve_fixture
+
+    store = PublicationStore(tmp_path)
+    value = ready(store, bundle(series="concept-fables"), editorial=False)
+    options = {"format": "chapter", "writer_sessions": ["hermes:historical-writer"],
+        "learning_objectives": ["验证批准前历史失败不会耗尽下一审核周期的重试预算"],
+        "editorial_brief": synthetic_brief(), "research_gaps": []}
+    value["quality_contract"] = options
+    for _ in range(4):
+        rejected = reject(store, value, store.prepare_editorial(value))
+
+    approved_options = copy.deepcopy(options)
+    approved_options["research_gaps"] = [{
+        **gap, "state": "resolved", "resolution": "本条合成回归补充了足够长度的机制解释与实例证据，并形成新的已批准审核周期基线。",
+        "source_urls": ["https://example.com/source"],
+    } for gap in rejected["gaps"] if gap["state"] == "open"]
+    approved = approve_fixture(store, value, draft=approved_options)
+    assert approved["quality_contract"]["revision"] == 5
+    assert store.stage(approved, now=at(3))["state"] == "scheduled"
+    assert store.release_due(now=at(4))["released"]
+
+    next_value = ready(store, bundle(series="concept-fables", body=value["body"] + "\n\n新视觉资产版次。"), editorial=False)
+    next_value["quality_contract"] = {**options, "writer_sessions": ["hermes:visual-assets-writer"]}
+    for revision in range(6, 10):
+        attempt = store.prepare_editorial(next_value)
+        assert attempt["revision"] == revision
+        reject(store, next_value, attempt)
+    with pytest.raises(PublicationError, match="retry limit"):
+        store.prepare_editorial(next_value)
+
+    other = ready(store, bundle(series="concept-fables", day="2026-09-09"), editorial=False)
+    other["quality_contract"] = {**options, "writer_sessions": ["hermes:other-issue-writer"]}
+    other_attempt = store.prepare_editorial(other)
+    assert other_attempt["revision"] == 1
+    attempts = store.status_report()["editorial_attempts"]
+    assert sum(attempt["issue_id"] == approved["quality_contract"]["issue_id"] for attempt in attempts) == 9
+    assert sum(attempt["issue_id"] == other_attempt["issue_id"] for attempt in attempts) == 1
 
 
 def test_retry_limit_allows_one_same_body_gap_closure_attempt(tmp_path):
@@ -269,13 +390,17 @@ def test_cli_stage_ingests_named_covers_without_exposing_paths(tmp_path):
         sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path), "stage", str(bundle_path),
         "--shelf-cover-file", str(cover_paths["shelf_cover"]),
         "--reader-cover-file", str(cover_paths["reader_cover"]),
+        *sum((["--illustration-file", f"{role}={cover_paths[role].resolve()}"]
+              for role in ("illustration_01", "illustration_02", "illustration_03")), []),
     ], capture_output=True, text=True)
 
     assert run.returncode == 0, run.stdout + run.stderr
     result = json.loads(run.stdout)["result"]
     assert result["state"] == "scheduled"
     assets = result["bundle"]["assets"]
-    assert {asset["role"] for asset in assets} == {"shelf_cover", "reader_cover"}
+    assert {asset["role"] for asset in assets} == {
+        "shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03",
+    }
     assert all(set(asset) == {"role", "receipt", "media_type", "width", "height"} for asset in assets)
     assert "shelf_cover.png" not in run.stdout and "reader_cover.png" not in run.stdout
 
@@ -346,10 +471,13 @@ def test_terminal_review_cannot_change_decision(tmp_path):
 def test_cli_prepare_record_and_body_hash_guard(tmp_path):
     store = PublicationStore(tmp_path)
     value = draft(store)
+    illustration = (store.root / "fixture-inputs" / "illustration_01.png").resolve()
+    value["assets"] = [asset for asset in value["assets"] if asset["role"] != "illustration_01"]
     path = tmp_path / "bundle.json"
     path.write_text(json.dumps(value))
     command = [sys.executable, "scripts/publication_operator.py", "--root", str(tmp_path)]
-    run = subprocess.run([*command, "prepare-editorial", str(path)], capture_output=True, text=True)
+    run = subprocess.run([*command, "prepare-editorial", str(path),
+                          "--illustration-file", f"illustration_01={illustration}"], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     attempt = json.loads(run.stdout)["result"]
     value["quality_contract"] = attempt["quality_contract"]
@@ -357,7 +485,8 @@ def test_cli_prepare_record_and_body_hash_guard(tmp_path):
     review_path = tmp_path / "reject-cli.json"
     review_path.write_text(json.dumps({"decision": "rejected", "content_hash": value["body_hash"],
         "editorial_target_hash": attempt["target_hash"], "revision": attempt["revision"], "research_gaps": []}))
-    run = subprocess.run([*command, "record-editorial-review", str(path), "--review-file", str(review_path)], capture_output=True, text=True)
+    run = subprocess.run([*command, "record-editorial-review", str(path), "--review-file", str(review_path),
+                          "--illustration-file", f"illustration_01={illustration}"], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert json.loads(run.stdout)["result"]["state"] == "rejected"
     body = tmp_path / "wrong.md"

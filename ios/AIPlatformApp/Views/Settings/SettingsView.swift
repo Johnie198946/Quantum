@@ -2388,6 +2388,11 @@ func loadKnowledgeBookReaderData(
     return KnowledgeBookReaderLoad(body: body, subscriptions: loadedSubscriptions)
 }
 
+func readerIllustrationPaths(afterSectionAt index: Int, sectionCount: Int, paths: [String]) -> [String] {
+    guard sectionCount > 0, index >= 0, index < sectionCount else { return [] }
+    return paths.enumerated().compactMap { min($0.offset, sectionCount - 1) == index ? $0.element : nil }
+}
+
 private struct KnowledgeBookReadingView: View {
     @EnvironmentObject private var api: APIClient
     @State private var bookBody: KnowledgeBookBodyDTO?
@@ -2611,6 +2616,20 @@ private struct KnowledgeBookReadingView: View {
                                 selectedExcerpt = excerpt
                                 selectedSection = section
                                 onScopeChange(bookBody, section)
+                            }
+                            ForEach(readerIllustrationPaths(
+                                afterSectionAt: index,
+                                sectionCount: bookBody.sections.count,
+                                paths: bookBody.illustrationUrls ?? []
+                            ), id: \.self) { path in
+                                PublicationCoverImage(
+                                    path: path,
+                                    accessibilityLabel: "《\(book.title)》正文插图",
+                                    aspectRatio: 16 / 9,
+                                    contentMode: .fit
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .accessibilityIdentifier("publication-reader-illustration.\(path)")
                             }
                         }
                         .id(section.id)
