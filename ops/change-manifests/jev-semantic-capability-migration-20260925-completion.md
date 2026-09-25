@@ -2,7 +2,10 @@
 
 - canonical_task: `hermes-jev-semantic-capability-migration`
 - parent_change: `ops/change-manifests/jev-bridge-latency-precision-refactor-20260925-completion.md`
-- implementation_commit: `68d57c3f810c2ea465325532a12121fc2cd4e6d5`
+- implementation_commits:
+  - `68d57c3f810c2ea465325532a12121fc2cd4e6d5`
+  - `ec2c528` (post-review single-path and protocol corrections)
+  - `27c60c22b894344af601000c7f6cd7088c2f4b3a` (fail-closed Skill audit mutation)
 - status: `COMMITTED_LOCAL_NOT_PUSHED`
 - date: `2026-09-25`
 
@@ -25,6 +28,9 @@
    - personal-knowledge writes retain proposal/confirmation separation, verified identity context, and no-delegation enforcement;
    - Workflow, Session, idempotency, queue, approval, and SSE lifecycle remain outside JEV.
 7. Changed resident candidate selection to rank Skill and Agent cards together and send at most five total candidates to the sole JEV call. The provisioner now writes `shortlist_total: 5` while runtime remains backward-compatible with the former setting.
+8. Removed the backend natural-language tenant-Agent matcher and child-then-main Hermes handoff. `req.agent_id` remains a deterministic authenticated binding, while every request now executes exactly one Hermes path and one JEV semantic decision.
+9. Changed requirements-clarification timeout handling to fail closed. Timeout emits an expiry boundary and cannot satisfy the completion gate; a later request must receive a fresh JEV decision.
+10. Added write-ahead Skill-authoring audit records. Audit availability is proven and fsynced before mutation; successful mutations append a committed receipt, and a commit-receipt failure rolls back the mutation.
 
 ## Verification
 
@@ -40,6 +46,10 @@ Final semantic protocol + Bridge/note suite:
 Final selector/stream focused suites:
 37 passed
 86 passed
+
+Post-review corrective suites:
+80 passed
+324 passed
 ```
 
 ### Static checks
@@ -90,6 +100,9 @@ Review blockers found and fixed:
 2. an unsigned client feature flag could enable knowledge actions on some paths;
 3. downstream Agent suppression rewrote a JEV decision;
 4. the initial candidate bound was five per kind rather than five total.
+5. a backend regex/alias Agent matcher could create a second semantic decision and a child-then-main double Hermes execution;
+6. clarification timeout was treated as successful protocol completion;
+7. tenant Skill mutation occurred before its first durable audit record.
 
 Final convergence review: `无新增实质问题`.
 
