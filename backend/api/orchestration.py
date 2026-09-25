@@ -72,10 +72,12 @@ def _agency_agent_config() -> Dict[str, object]:
         "id": "agency-business-orchestrator",
         "name": "Agency Business Orchestrator",
         "prompt": (
-            "You are running an Agency business runbook. Use the "
-            "agency-agents-router lazily for specialist selection and use the "
-            "AI Lab capability router for execution. Return evidence and artifacts, "
-            "not unsupported completion claims."
+            "You are running an Agency business runbook. Remote semantic JEV is the sole "
+            "Skill/Agent selector and may select at most one independent Agent per turn. "
+            "Do not call Agency search, inspection, or wrapper-delegation tools to reroute. "
+            "Hermes remains the only runtime and executes the validated plan through native "
+            "Skill loading and delegate_task. Return evidence and artifacts, not unsupported "
+            "completion claims."
         ),
         "allowed_tools": [
             "web_search",

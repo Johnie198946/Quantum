@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 try:
-    from .jev_selector import select_route
+    from .jev_selector import select_route, start_resident_warmup
 except ImportError:  # Direct file loading in diagnostics and local tests.
     _JEV_SPEC = importlib.util.spec_from_file_location(
         "ai_lab_capabilities_jev_selector", Path(__file__).with_name("jev_selector.py")
@@ -35,6 +35,7 @@ except ImportError:  # Direct file loading in diagnostics and local tests.
     sys.modules[_JEV_SPEC.name] = _JEV_MODULE
     _JEV_SPEC.loader.exec_module(_JEV_MODULE)
     select_route = _JEV_MODULE.select_route
+    start_resident_warmup = _JEV_MODULE.start_resident_warmup
 
 
 MAX_CANDIDATES = 5
@@ -1640,6 +1641,32 @@ def _pre_tool_call(
         if denial is not None:
             return denial
 
+        # Remote semantic JEV is the sole Skill/Agent selector.  The retained
+        # Agency plugin is an exact catalog loader for an already-validated
+        # child binding; its legacy search/inspect/delegate surfaces must not
+        # form a parallel heuristic router.
+        if effective_tool in {
+            "agency_agents_search",
+            "agency_agents_inspect",
+            "agency_agents_delegate",
+        }:
+            return {
+                "action": "block",
+                "message": (
+                    "JEV is the sole Agent selector. Agency search, inspection, and wrapper "
+                    "delegation are disabled; use the validated JEV plan and native "
+                    "delegate_task. [PARALLEL_AGENT_SELECTOR_FORBIDDEN]"
+                ),
+            }
+        if effective_tool == "agency_agents_load" and local_state.get("is_child") is not True:
+            return {
+                "action": "block",
+                "message": (
+                    "Agency specialist loading is allowed only inside the exact child binding "
+                    "selected by JEV. [PARENT_AGENT_LOAD_FORBIDDEN]"
+                ),
+            }
+
         if local_state.get("is_child") is True:
             if effective_tool == "delegate_task":
                 return {
@@ -2124,6 +2151,8 @@ def install(ctx: Any, deposition: Any = None) -> None:
     # JEV is the sole Skill/Agent semantic selector. Keep Hermes' native
     # tool_search unchanged so no second ranking path can select capabilities.
     _compact_skill_manifest()
+    if os.environ.get("_HERMES_GATEWAY") == "1":
+        start_resident_warmup(_skill_capabilities(), _agency_capabilities())
 
     def pre_llm_with_runtime_skill(user_message: str = "", **kwargs: Any):
         return _pre_llm_with_runtime_skill(ctx, user_message, **kwargs)

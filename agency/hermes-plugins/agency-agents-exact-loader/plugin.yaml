@@ -1,0 +1,5 @@
+name: agency-agents-router
+version: 2.0.0
+description: Exact Agency catalog loader; remote semantic JEV owns all Skill and Agent selection.
+provides_tools:
+  - agency_agents_load

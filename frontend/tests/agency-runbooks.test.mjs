@@ -16,11 +16,13 @@ test("001 business surface publishes twelve unique runbooks", () => {
   }
 });
 
-test("business prompt keeps Agency orchestration above AI Lab capabilities", () => {
+test("business prompt makes remote JEV the sole Agent selector", () => {
   const prompt = buildAgencyPrompt(agencyRunbooks[0], "分析制造企业的停机问题");
   assert.match(prompt, /Agency Agents 业务层/);
   assert.match(prompt, /AI Lab 仅作为能力提供方/);
-  assert.match(prompt, /agency-agents-router/);
+  assert.match(prompt, /远程 semantic JEV/);
+  assert.match(prompt, /最多选择一个独立 Agent/);
+  assert.match(prompt, /不得调用 agency_agents_search/);
   assert.match(prompt, /ai_lab_execute/);
   assert.match(prompt, /分析制造企业的停机问题/);
 });
