@@ -266,14 +266,35 @@ async def export_publication_handoff(db: AsyncSession, schedule_id: str) -> dict
                 select(WorkflowArtifact).where(
                     WorkflowArtifact.execution_id == execution.id,
                     WorkflowArtifact.selected_for_publish.is_(True),
-                    WorkflowArtifact.kind == "final",
+                    WorkflowArtifact.kind.in_(("final", "draft")),
                 )
             )
         ).scalars().all()
     )
     if len(artifacts) != 1:
-        raise PublicationHandoffError("execution must have exactly one selected final artifact")
+        raise PublicationHandoffError("execution must have exactly one selected terminal artifact")
     artifact = artifacts[0]
+    if artifact.kind == "draft":
+        plan = await db.get(WorkflowPlanVersion, schedule.plan_id)
+        node_run = await db.get(WorkflowNodeRun, artifact.node_run_id) if artifact.node_run_id else None
+        dsl = plan.dsl if plan is not None and isinstance(plan.dsl, dict) else {}
+        raw_nodes = dsl.get("nodes")
+        raw_edges = dsl.get("edges")
+        nodes = raw_nodes if isinstance(raw_nodes, list) else []
+        edges = raw_edges if isinstance(raw_edges, list) else []
+        node_ids = {
+            str(node.get("id") or "") for node in nodes if isinstance(node, dict)
+        }
+        nonterminal_ids = {
+            str(edge.get("source") or "") for edge in edges if isinstance(edge, dict)
+        }
+        terminal_ids = node_ids - nonterminal_ids
+        if (
+            node_run is None
+            or node_run.execution_id != execution.id
+            or node_run.node_id not in terminal_ids
+        ):
+            raise PublicationHandoffError("selected draft artifact is not a terminal Workflow result")
     if Path(artifact.relative_path).suffix.lower() != ".json":
         raise PublicationHandoffError("publication workflow artifact must be JSON")
     root = run_root(execution).resolve()

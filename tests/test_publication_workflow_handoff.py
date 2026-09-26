@@ -341,6 +341,18 @@ async def test_export_is_exact_schedule_bound_and_rejects_revocation(handoff_db)
 
 
 @pytest.mark.asyncio
+async def test_export_accepts_selected_terminal_draft_from_llm_final_node(handoff_db):
+    maker, _ = handoff_db
+    async with maker() as db:
+        artifact = await db.get(WorkflowArtifact, "wfa_toolkit")
+        artifact.kind = "draft"
+        await db.commit()
+    value = await exported(maker)
+    assert value["envelope"]["artifact_id"] == "wfa_toolkit"
+    assert base64.b64decode(value["artifact_b64"])
+
+
+@pytest.mark.asyncio
 async def test_export_rejects_artifact_byte_hash_mismatch(handoff_db):
     maker, tmp_path = handoff_db
     async with maker() as db:
