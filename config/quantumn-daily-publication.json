@@ -59,6 +59,17 @@
     "prompt_template": "docs/prompts/quantumn-editorial-v2.md",
     "per_series_max_issue_count": 1
   },
+  "tutorial_supply": {
+    "collection_schedule": "0 1 * * *",
+    "compilation_deadline": "03:00:00",
+    "author_schedule": "5 8,14,18 * * *",
+    "minimum_usable_candidates": 1,
+    "category_coverage_is_optional": true,
+    "all_candidates_must_compile": false,
+    "author_requires_one_selected_candidate_compiled": true,
+    "unselected_candidate_failure_blocks_issue": false,
+    "sequence": ["collect", "deposit", "compile_selected", "author", "review", "finalize", "release", "reader_readback"]
+  },
   "release_job": {
     "schedule": "0 12 * * *",
     "no_agent": true,

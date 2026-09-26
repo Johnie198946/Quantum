@@ -64,3 +64,15 @@ Observed failures:
 - Idempotent production prepare for today's `ai-history` completed successfully in `0.96s`, versus the observed multi-minute chunked path.
 - Today's manifests remain governed by independent review; no review decision or image gate was bypassed.
 - Content-only revision, immutable approval recovery, proof reuse and per-item isolation regressions are included in the focused publication suite; the latest focused run before commit passed `183` tests, Ruff, and `git diff --check`.
+
+## Content/supply contract correction and scheduled smoke acceptance
+
+- Reaffirmed that authors own only manuscript content and genuinely requested source/experiment/visual evidence. Revision/issue/attempt/target identities, hashes, receipts, review linkage, stage/publication identities and execution claims remain deterministic platform fields; missing control metadata is a pipeline defect, not author work.
+- Replaced the tutorial-supply batch-completeness gate with a per-issue sufficiency gate: one verified, authorized, compiled selected candidate can feed one issue. Category coverage is descriptive and optional; unselected candidate failures cannot block the selected candidate.
+- Fixed production timing in config and prompt: 01:00 collection/deposit, selected-candidate compilation by 03:00, first author consumption at 08:05, then independent review, finalize, release and reader readback.
+- Updated Cron `b8c4c5e40bb1` so queued compilation is `WAITING_COMPILATION`, task-level stale/conflicting items are non-blocking, and READY requires exact selected-item compilation readback.
+- Updated Cron `171a125ddb63` to consume one compiled selected candidate and to reject all requests for author-written control-plane fields.
+- Added a temporary no-agent scheduled smoke script. Foreground preflight passed eight isolated control-plane checks in 25.29 seconds. The first native one-shot (`bed3a087bf4f`) correctly exposed scheduler-venv drift (`pytest` absent). After pinning `/usr/local/bin/python3`, the second run produced a valid artifact but the stale Desktop-owned `doc-maker serve` process incorrectly terminalized its ledger row as `unknown`. There were no active executions owned by that process, so it was terminated and its Desktop supervisor respawned PID `76276` with current runtime code. The third native one-shot (`15fcf1f451df`) then completed durably: execution `6415df1e030c4fc399e20f6bdb6bfa3a`, ledger `status=completed`, eight checks passed, exact canonical/installed script SHA `cd50a7fe9f06577e844f0cc2b1345f4fcaf68004c00f5c5805f47741450573f1`, and `production_mutated=false`.
+- All three temporary Cron definitions and the temporary smoke script were removed after preserving execution/output evidence.
+- Post-change focused suite: `114 passed`; Ruff and `git diff --check` passed.
+- The smoke is intentionally non-production and cannot replace a native production publication/readback cycle. Story remains unaccepted because its canonical FileProvider worktree still returns `Interrupted system call`/Git timeout and was not modified.
