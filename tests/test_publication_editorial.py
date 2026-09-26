@@ -67,6 +67,38 @@ def test_complete_synthetic_contract(format):
     assert validate_editorial(*synthetic_fixture(format)) == []
 
 
+def test_legacy_generic_rejection_marker_does_not_block_corrected_revision():
+    body, _, review, receipts = synthetic_fixture("chapter")
+    contract = make_editorial_contract(
+        body,
+        format="chapter",
+        writer_sessions=["hermes:synthetic-writer"],
+        revision=2,
+        previous_body_hash="b" * 64,
+        learning_objectives=["仅供合成测试验证旧控制标记兼容，不代表真实内容质量"],
+        editorial_brief=synthetic_brief(),
+        research_gaps=[
+            {
+                "id": "substantive-gap",
+                "question": "这个合成缺口是否已经由修订正文和原始来源共同解决？",
+                "state": "resolved",
+                "resolution": "合成测试只验证结构；下一轮独立审核仍负责核对实际正文与证据。",
+                "source_urls": ["https://example.com/source"],
+            },
+            {
+                "id": "review.rejected",
+                "question": "需要补充研究并解决审核失败项：review.rejected",
+                "state": "open",
+                "resolution": "",
+                "source_urls": [],
+            },
+        ],
+        source_receipts=receipts,
+    )
+    review.update(editorial_target_hash=contract["target_hash"], revision=2)
+    assert validate_editorial(body, contract, review, receipts) == []
+
+
 def test_standalone_chapter_rejects_visible_number_and_book_requires_sequence():
     body, _, _, receipts = synthetic_fixture("chapter")
     numbered = body.replace("## 合成测试", "## 第1章 合成测试")

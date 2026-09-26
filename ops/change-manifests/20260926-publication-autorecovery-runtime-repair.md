@@ -19,6 +19,8 @@ Observed failures:
 7. `hermes cron run` waits for the whole Agent execution. After a scheduler restart had already terminalized the owner as `unknown`, the CLI could still wait and keep the watchdog lock held, making every native 10-minute recovery tick return `locked`.
 8. Three scheduler-owner exits could exhaust a material claim permanently before a healthy retry window.
 9. The watchdog's 30-second `subprocess.run` timeout killed the still-attached `hermes cron run` process. Long author and prerequisite executions were therefore persisted as `unknown` even though dispatch had initially succeeded.
+10. Rejected-manuscript recovery assigned the content Agent ownership of revision directories, hashes, owner-attestation rebinding, manifest assembly, and server contract fields. This mixed content repair with control-plane repair and made every rejection a bespoke infrastructure intervention.
+11. Rejected reviews with structured gaps also emitted a synthetic open `review.rejected` gap. A correctly repaired revision could close every substantive gap and still be blocked by this historical control marker.
 
 ## Change
 
@@ -36,10 +38,15 @@ Observed failures:
 - Allow six bounded claim attempts and retry persisted-but-unchanged dispatches after 15 minutes, so transient gateway restarts do not permanently dead-letter the day's material.
 - Start `hermes cron run` in a detached process, poll `executions.db` only until a live `claimed`/`running`/`completed` row appears, and leave that process alive to own the full Agent execution. An `unknown` row is no longer accepted as successful dispatch.
 - Add regression tests for stdin upload, timeout classification, and prerequisite-before-author recovery ordering.
+- Add deterministic `publication_editorial_remote.py revise`: the author supplies only a revised body, while the platform derives the isolated revision, current Hermes writer identity, hashes, pending bundle/manifest, owner-attestation rebinding, immutable evidence/media reuse, and authoritative remote prepare fields.
+- Keep `revision`, `issue_id`, `attempt_id`, `target_hash`, `previous_body_hash`, review identity, stage identity, and publication identity server-owned. Content revisions no longer hand-edit or copy these fields.
+- Reuse the prior issue's verified five images for content-only revisions; image generation repeats only when independent review identifies a visual defect or the manuscript's visual thesis changes.
+- Stop adding synthetic `review.rejected` when a rejected review already provides structured substantive gaps. Retain a narrowly matched compatibility rule so already-prepared revision 2 attempts are not forced into a fake content revision solely to remove that legacy marker.
 
 ## Compatibility and rollback
 
 - Remote blob paths, hashes, API payloads, manifest schema, review/finalize semantics, and exact-SHA deployment contracts are unchanged.
+- Initial manuscript packaging remains compatible. The new `revise` action is additive; legacy rejected attempts keep their immutable bytes and are handled by the exact legacy-marker compatibility predicate.
 - The legacy chunk upload handler remains accepted by the remote service code; only this client switches to stdin streaming.
 - Rollback is the previous three scripts. Reinstall matching copies into `~/.hermes/scripts/` and verify SHA-256 equality.
 
@@ -51,3 +58,4 @@ Observed failures:
 - Installed runtime scripts were hash-compared with repository copies.
 - Idempotent production prepare for today's `ai-history` completed successfully in `0.96s`, versus the observed multi-minute chunked path.
 - Today's manifests remain governed by independent review; no review decision or image gate was bypassed.
+- Content-only revision and legacy-marker regressions are included in the focused publication suite; the latest focused run before commit passed `180` tests, Ruff, and `git diff --check`.

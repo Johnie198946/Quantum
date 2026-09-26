@@ -946,8 +946,12 @@ class PublicationStore:
                     or not isinstance(g.get("question"), str) or len(g["question"].strip()) < 10 for g in gaps):
                 raise PublicationError("review research_gaps must be structured objects")
             gaps = [{**g, "state": "open", "resolution": "", "source_urls": []} for g in gaps]
-            gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps,
-                *[{"id": r, "question": "需要补充研究并解决审核失败项：" + r, "state": "open", "resolution": "", "source_urls": []} for r in reasons]]}.values())
+            reason_gaps = [] if gaps and reasons == ["review.rejected"] else [
+                {"id": r, "question": "需要补充研究并解决审核失败项：" + r,
+                 "state": "open", "resolution": "", "source_urls": []}
+                for r in reasons
+            ]
+            gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps, *reason_gaps]}.values())
             state = "approved" if not reasons else ("rejected" if review.get("decision") in {"reject", "rejected"} else "failed")
             proof = verified.get("proof_json") if state == "approved" else None
             db.execute("UPDATE editorial_attempts SET state=?,gaps_json=?,review_hash=?,proof_json=?,closed_at=? WHERE attempt_id=?",

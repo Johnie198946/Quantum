@@ -116,6 +116,9 @@ def flow(tmp_path, monkeypatch):
                 "policy_id": body["owner_policy_id"],
                 "status": "operator_attested",
                 "content_hashes": [body["body_hash"]],
+                "body_sha256": body["body_hash"],
+                "bound_files": ["body.md"],
+                "attested_by": "local_owner_policy",
             }
         )
     )
@@ -364,6 +367,7 @@ def test_real_native_signature_record_and_readback(flow, decision):
     assert item["status"] == expected
     if decision == "rejected":
         assert "need-primary" in [g["id"] for g in item["receipt"]["gaps"]]
+        assert "review.rejected" not in [g["id"] for g in item["receipt"]["gaps"]]
         assert not any("stage" in c for c in calls)
     assert not any("release-due" in c for c in calls)
     assert relay.finalize(local, remote, db=db, key=key) == {"items": []}
@@ -619,6 +623,83 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     )
     assert new["batch"] != old["batch"]
     assert "need-primary" in [g["id"] for g in new["quality_contract"]["research_gaps"]]
+
+
+def test_content_only_revision_builds_and_prepares_all_platform_fields(flow, tmp_path):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+    old = json.loads(manifest.read_text())["items"][0]
+    old_body = (local / "body.md").read_text()
+    revised_body = tmp_path / "revised-body.md"
+    revised_body.write_text(
+        old_body + "\n### 审稿缺口修订\n本段补充一手来源核验方法，并明确由下一轮独立审稿确认是否满足证据要求。\n",
+        encoding="utf-8",
+    )
+
+    revision_manifest = relay.build_revision(
+        manifest, revised_body, writer_session="cron_revision_session"
+    )
+    revision_dir = revision_manifest.parent
+    pending = json.loads(revision_manifest.read_text())["items"][0]
+    bundle = json.loads((revision_dir / pending["bundle_file"]).read_text())
+    rights = json.loads(
+        (revision_dir / pending["rights_files"][0]["path"]).read_text()
+    )
+
+    assert pending["status"] == "prepared"
+    assert pending["body_sha256"] == relay.sha(revised_body.read_bytes())
+    assert pending["bundle_sha256"] == relay.sha(
+        (revision_dir / pending["bundle_file"]).read_bytes()
+    )
+    assert not {"revision", "attempt_id", "issue_id", "target_hash"} & set(
+        bundle["quality_contract"]
+    )
+    assert bundle["quality_contract"]["writer_sessions"][-1] == "hermes:cron_revision_session"
+    assert "need-primary" in {
+        gap["id"] for gap in bundle["quality_contract"]["research_gaps"]
+    }
+    assert all(
+        gap["state"] == "resolved"
+        for gap in bundle["quality_contract"]["research_gaps"]
+    )
+    assert rights["body_sha256"] == pending["body_sha256"]
+    assert rights["content_hashes"] == [pending["body_sha256"]]
+    assert not (revision_dir / pending["review_file"]).exists()
+    assert not (revision_dir / pending["proof_file"]).exists()
+    assert all(
+        pending[f"{role}_sha256"] == old[f"{role}_sha256"]
+        for role in relay.MEDIA_ROLES
+    )
+
+    result = relay.prepare(revision_manifest, remote)
+    assert result["statuses"] == ["await_review"]
+    prepared = json.loads(revision_manifest.read_text())["items"][0]
+    assert prepared["quality_contract"]["revision"] == old["quality_contract"]["revision"] + 1
+    assert prepared["quality_contract"]["previous_body_hash"] == old["body_sha256"]
+
+
+def test_content_only_revision_rejects_unchanged_body(flow):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+
+    with pytest.raises(ValueError, match="materially change"):
+        relay.build_revision(manifest, local / "body.md", writer_session="revision")
+
+
+def test_content_only_revision_rejects_visual_gap(flow, tmp_path):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+    review = json.loads((local / "review.json").read_text())
+    review["research_gaps"][0]["required_evidence"] = "重新生成与正文匹配的封面和插图"
+    relay.save(local / "review.json", review)
+    revised_body = tmp_path / "revised.md"
+    revised_body.write_text((local / "body.md").read_text() + "\n实质修订内容。\n")
+
+    with pytest.raises(ValueError, match="replacement media"):
+        relay.build_revision(manifest, revised_body, writer_session="revision")
 
 
 def test_prepare_wrong_server_target_readback_is_failure(flow, monkeypatch):

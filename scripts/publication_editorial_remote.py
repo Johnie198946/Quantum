@@ -119,6 +119,26 @@ def save(path, value):
         temporary.unlink(missing_ok=True)
 
 
+def write_bytes(path: Path, raw: bytes) -> None:
+    if len(raw) > LIMIT:
+        raise ValueError("file exceeds 2 MiB limit")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if read(path) != raw:
+            raise ValueError("revision output conflict")
+        return
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def load_manifest(path):
     path = Path(path).expanduser().absolute()
     if path.name != "draft-manifest.json" and not path.name.endswith(".manifest.json"):
@@ -177,6 +197,148 @@ def load_manifest(path):
         if item["status"] != "prepared" and bundle.get("quality_contract") != item.get("quality_contract"):
             raise ValueError("immutable contract mismatch")
     return path, value
+
+
+def _writer_session(value: str | None = None) -> str:
+    session = (value or os.environ.get("HERMES_SESSION_ID") or "").strip()
+    if session and not session.startswith("hermes:"):
+        session = "hermes:" + session
+    if not session.startswith("hermes:") or len(session) <= len("hermes:"):
+        raise ValueError("current Hermes writer session unavailable")
+    return session
+
+
+def _copy_revision_input(
+    source_base: Path, target_base: Path, relative: str, *, namespace: str
+) -> str:
+    source = local_path(source_base, relative)
+    suffix = source.suffix.lower()
+    target = target_base / "inputs" / (namespace + "-" + sha(read(source)) + suffix)
+    write_bytes(target, read(source))
+    return str(target.relative_to(target_base))
+
+
+def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str | None = None) -> Path:
+    """Package one rejected manuscript revision from content-only author output.
+
+    The author supplies revised body bytes. Identity, revision, hashes, rights
+    rebinding, immutable evidence/media reuse and fresh review outputs are
+    deterministic platform responsibilities. Server-assigned fields remain
+    absent until ``prepare`` returns the authoritative contract.
+    """
+    prior_manifest, manifest = load_manifest(prior_manifest)
+    if len(manifest["items"]) != 1 or manifest["items"][0]["status"] != "rejected":
+        raise ValueError("revision requires exactly one rejected manifest item")
+    item = manifest["items"][0]
+    prior_base = prior_manifest.parent
+    prior_contract = item.get("quality_contract")
+    if not isinstance(prior_contract, dict) or not isinstance(prior_contract.get("revision"), int):
+        raise ValueError("rejected manifest contract unavailable")
+    review = json.loads(read(local_path(prior_base, item["review_file"])))
+    if (review.get("decision") != "rejected"
+            or review.get("attempt_id") not in {None, prior_contract.get("attempt_id")}
+            or review.get("editorial_target_hash") != prior_contract.get("target_hash")):
+        raise ValueError("rejected review does not bind prior contract")
+    review_gaps = review.get("research_gaps", [])
+    visual_text = json.dumps(review_gaps, ensure_ascii=False).lower()
+    if any(term in visual_text for term in ("封面", "插图", "配图", "视觉", "image asset", "visual asset")):
+        raise ValueError("visual revision requires replacement media, not content-only reuse")
+    body_source = Path(body_file).expanduser().absolute()
+    body_raw = read(body_source)
+    body = body_raw.decode("utf-8")
+    body_hash = sha(body_raw)
+    if body_hash == item["body_sha256"]:
+        raise ValueError("revised body must materially change")
+    revision = prior_contract["revision"] + 1
+    target_base = prior_base / f"revision-{revision}-{body_hash[:12]}"
+    if target_base.is_symlink() or not target_base.resolve().is_relative_to(prior_base.resolve()):
+        raise ValueError("revision directory escapes prior manifest")
+    target_base.mkdir(mode=0o700, parents=False, exist_ok=True)
+    write_bytes(target_base / "body.md", body_raw)
+
+    session = _writer_session(writer_session)
+    writers = list(dict.fromkeys([*prior_contract.get("writer_sessions", []), session]))
+    brief = prior_contract.get("editorial_brief")
+    if not isinstance(brief, dict) or not isinstance(brief.get("evidence_urls"), list) or not brief["evidence_urls"]:
+        raise ValueError("revision source URLs unavailable")
+    gaps = {
+        gap["id"]: dict(gap)
+        for gap in prior_contract.get("research_gaps", [])
+        if isinstance(gap, dict)
+        and isinstance(gap.get("id"), str)
+        and gap.get("id") != "review.rejected"
+    }
+    for gap in review_gaps:
+        if not isinstance(gap, dict) or not isinstance(gap.get("id"), str) or not isinstance(gap.get("question"), str):
+            raise ValueError("invalid rejected review gap")
+        acceptance = str(gap.get("acceptance_criterion") or gap.get("required_evidence") or gap["question"]).strip()
+        gaps[gap["id"]] = {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "Revised manuscript submitted for independent verification against: " + acceptance,
+            "source_urls": list(brief["evidence_urls"]),
+        }
+    if any(gap.get("state") != "resolved" for gap in gaps.values()):
+        raise ValueError("rejected review did not describe every inherited open gap")
+    draft = {key: prior_contract[key] for key in (
+        "format", "learning_objectives", "editorial_brief",
+    )}
+    draft.update(writer_sessions=writers, research_gaps=list(gaps.values()))
+
+    prior_bundle = json.loads(read(local_path(prior_base, item["bundle_file"])))
+    bundle = dict(prior_bundle)
+    bundle.update(
+        body=body,
+        body_hash=body_hash,
+        body_receipt={"artifact_id": f"receipt-publication_body-{body_hash}", "sha256": body_hash,
+                      "kind": "publication_body"},
+        quality_contract=draft,
+        review={"content_hash": "", "decision": "pending", "reviewed_by": "", "reviewed_at": "", "receipt": None},
+        state="draft",
+        assets=[], source_receipts=[], rights_evidence=[], execution_evidence=[],
+        source_snapshot_hash="0" * 64,
+    )
+    title = next((line[3:].strip() for line in body.splitlines() if line.startswith("## ") and line[3:].strip()), None)
+    if title:
+        bundle["title"] = title
+    bundle.pop("editorial_proof_file", None)
+    bundle.pop("editorial_proof_sha256", None)
+
+    new_item = {
+        "bundle_file": "candidate-bundle.json", "bundle_sha256": None,
+        "body_file": "body.md", "body_sha256": body_hash,
+        "source_files": [], "rights_files": [], "execution_files": [],
+        "review_file": "editorial-review.json", "proof_file": "editorial-proof.json",
+        "status": "prepared",
+    }
+    for group in GROUPS:
+        for index, entry in enumerate(item[group]):
+            copied = _copy_revision_input(
+                prior_base, target_base, entry["path"], namespace=f"{group}-{index}"
+            )
+            new_entry = {"kind": entry["kind"], "path": copied, "sha256": sha(read(target_base / copied))}
+            if group == "rights_files" and entry["kind"] == "owner_attestation":
+                attestation = json.loads(read(target_base / copied))
+                if attestation.get("attested_by") != "local_owner_policy":
+                    raise ValueError("owner attestation cannot be deterministically rebound")
+                attestation.update(body_sha256=body_hash, content_hashes=[body_hash], bound_files=["body.md"])
+                rebound = target_base / "inputs" / ("owner-attestation-" + body_hash + ".json")
+                save(rebound, attestation)
+                new_entry.update(path=str(rebound.relative_to(target_base)), sha256=sha(read(rebound)))
+            new_item[group].append(new_entry)
+    for role in MEDIA_ROLES:
+        copied = _copy_revision_input(
+            prior_base, target_base, item[f"{role}_file"], namespace=role
+        )
+        new_item[f"{role}_file"] = copied
+        new_item[f"{role}_sha256"] = sha(read(target_base / copied))
+    save(target_base / "candidate-bundle.json", bundle)
+    new_item["bundle_sha256"] = sha(read(target_base / "candidate-bundle.json"))
+    output = target_base / "draft-manifest.json"
+    save(output, {"version": VERSION, "items": [new_item]})
+    load_manifest(output)
+    return output
 
 
 # Uploaded bytes are immutable and confined to a unique private intake batch.
@@ -514,18 +676,29 @@ def main(argv=None):
     parser.add_argument("--known-hosts-file")
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("prepare").add_argument("--manifest", required=True, type=Path)
+    revise_parser = sub.add_parser("revise")
+    revise_parser.add_argument("--manifest", required=True, type=Path)
+    revise_parser.add_argument("--body-file", required=True, type=Path)
     for name in ("review-input", "finalize"):
         sub.add_parser(name).add_argument("--root", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         remote = Remote(*transport._trust(args))
         # Existing Cron jobs are serial; flock also rejects accidental overlap.
-        directory = args.manifest.expanduser().absolute().parent if args.action == "prepare" else args.root.expanduser().absolute()
+        directory = args.manifest.expanduser().absolute().parent if args.action in {"prepare", "revise"} else args.root.expanduser().absolute()
         lock = directory / ".publication-editorial.lock"
         fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "w") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            result = prepare(args.manifest, remote) if args.action == "prepare" else review_input(args.root, remote) if args.action == "review-input" else finalize(args.root, remote)
+            if args.action == "prepare":
+                result = prepare(args.manifest, remote)
+            elif args.action == "revise":
+                revision_manifest = build_revision(args.manifest, args.body_file)
+                result = prepare(revision_manifest, remote)
+            elif args.action == "review-input":
+                result = review_input(args.root, remote)
+            else:
+                result = finalize(args.root, remote)
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False), end="" if isinstance(result, str) else "\n")
         return 0
     except Exception as exc:

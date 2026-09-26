@@ -288,6 +288,21 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
             if not isinstance(gap, dict):
                 reasons.add("contract.research_gaps")
                 continue
+            if (
+                gap == {
+                    "id": "review.rejected",
+                    "question": "需要补充研究并解决审核失败项：review.rejected",
+                    "state": "open",
+                    "resolution": "",
+                    "source_urls": [],
+                }
+                and revision > 1
+                and len(gaps) > 1
+                and isinstance(contract.get("previous_body_hash"), str)
+            ):
+                # Compatibility for attempts created before structured reviewer
+                # gaps stopped emitting this non-substantive control marker.
+                continue
             gid = gap.get("id")
             if not _text(gid) or gid in gap_ids:
                 reasons.add("contract.research_gaps")
