@@ -29,3 +29,6 @@ policies:
     description: Native actions and their terminal receipts are restricted to the authenticated tenant/user owner and explicit supported action types.
   - id: generated-artifact-owner
     description: Generated artifacts are immutable, hash-addressed, and readable only by their authenticated tenant/user owner.
+  - id: learning-owner
+    description: Learning domain rechecks authenticated tenant/user, live book entitlement,
+      immutable source version and draft revision; Chat reuses the same persisted exercise.

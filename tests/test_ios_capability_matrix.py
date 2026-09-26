@@ -17,7 +17,7 @@ SPEC.loader.exec_module(module)
 def test_ios_scope_is_pcm_manifest_driven_and_has_required_columns():
     result = module.generate()
     assert result["source"] == "backend/contracts/product-capabilities/manifest.yaml#ios_scope"
-    assert result["total"] == 71
+    assert result["total"] == 77
     assert len({row["capability"] for row in result["capabilities"]}) == result["total"]
     for row in result["capabilities"]:
         assert set(result["required_columns"]).issubset(row)
@@ -31,7 +31,7 @@ def test_ios_scope_covers_every_required_product_family():
         "workflow.", "project.", "task.", "document.", "report.", "paper.",
         "presentation.", "office.", "data.", "media.", "hermes.session.",
         "file.", "photo.", "voice.", "share.", "profile.", "notification.",
-        "schedule.",
+        "schedule.", "learning.",
     }
     assert all(any(item.startswith(prefix) for item in ids) for prefix in prefixes)
 
@@ -40,7 +40,7 @@ def test_ios_matrix_truthfully_reports_release_closure():
     result = module.generate()
     assert result["counts"] == {
         "implemented": 67,
-        "partial": 4,
+        "partial": 10,
         "absent": 0,
         "unverified": 0,
     }
@@ -62,6 +62,7 @@ def _renderer_paths():
 
 def _assert_semantic_renderer_coverage(rows, ios, qws):
     ios_expected = {
+        "learning_exercise": "learningExercise",
         "answer": "answer", "knowledge_action": "knowledgeAction",
         "workflow": "workflow", "presentation_review": "presentationReview",
         "bookshelf": "bookshelf", "hermes_session_list": "hermesSessionList",

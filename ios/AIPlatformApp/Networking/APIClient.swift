@@ -953,13 +953,15 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
     /// Local-first notes are signed into the request context so Hermes can
     /// compare notes that have not completed background sync yet.
     public let localNotes: [ChatLocalNoteDTO]
+    public let learningExerciseId: String?
 
-    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = []) {
+    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], learningExerciseId: String? = nil) {
         self.sessionId = sessionId
         self.messages = messages
         self.truncated = truncated
         self.sourceSessions = sourceSessions
         self.localNotes = localNotes
+        self.learningExerciseId = learningExerciseId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -967,6 +969,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         case messages, truncated
         case sourceSessions = "source_sessions"
         case localNotes = "local_notes"
+        case learningExerciseId = "learning_exercise_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -976,6 +979,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
         sourceSessions = try container.decodeIfPresent([ClientSourceSessionDTO].self, forKey: .sourceSessions) ?? []
         localNotes = try container.decodeIfPresent([ChatLocalNoteDTO].self, forKey: .localNotes) ?? []
+        learningExerciseId = try container.decodeIfPresent(String.self, forKey: .learningExerciseId)
     }
 }
 
@@ -2296,6 +2300,7 @@ public final class CapabilityClient {
 public enum QCPRenderingPath: String, Sendable {
     case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview
     case artifact, artifactConsumption, navigation, clientAction, bookshelf
+    case learningExercise
     case hermesSessionList, hermesSessionDetail
     case artifactCard, dataAnalysisCard, imageCard, taskExecutionCard
 }
@@ -2316,6 +2321,7 @@ public enum RendererRegistry {
         "presentation_review": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
         "artifact": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact_consumption": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
+        "learning_exercise": .init(path: .learningExercise, minimumVersion: 1, fallback: .answer),
         "bookshelf": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
         "hermes_session_list": .init(path: .hermesSessionList, minimumVersion: 1, fallback: .answer),
         "hermes_session_detail": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
@@ -2348,6 +2354,8 @@ public enum RendererRegistry {
         "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
         "artifact.generated": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "learning.resume": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "learning.exercise": .init(path: .learningExercise, minimumVersion: 1, fallback: .answer),
         "bookshelf.results": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
         "bookshelf.subscription_changed": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
         "bookshelf.opened": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
@@ -2971,7 +2979,7 @@ public final class APIClient: ObservableObject {
         }
 
         // Generation/grading reuse the existing long-running chat transport, not the 15s CRUD timeout.
-        let isLearningGeneration = method == "POST" && (path == "me/learning-exercises" || path.hasPrefix("me/learning-exercises/"))
+        let isLearningGeneration = method == "POST" && (path == "capabilities/confirm" || path == "me/learning-exercises" || path.hasPrefix("me/learning-exercises/"))
         let requestSession = isLearningGeneration ? chatSession : session
         if isLearningGeneration { request.timeoutInterval = 200 }
         // 仅 GET 幂等请求自动重试；POST/PATCH/DELETE 由 UI 触发手动重试

@@ -519,7 +519,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("工作流已取消")
             return true
         }
-        if path == .confirmation || path == .artifactConsumption {
+        if path == .confirmation || path == .artifactConsumption || path == .learningExercise {
             guard let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
                 return false
             }
@@ -1209,16 +1209,20 @@ public final class TenantSessionCoordinator: ObservableObject {
                 localNoteCharacters += markdown.count
             }
         }
-        let enrichedClientSessionContext = Self.shouldAttachClientSessionContext(
+        let learningExerciseId = messages.filter { $0.sessionId == sid }.flatMap(\.blocks).compactMap {
+            if case .learningExercise(let item) = $0 { return item.id }; return nil
+        }.last
+        let enrichedClientSessionContext = (learningExerciseId != nil || Self.shouldAttachClientSessionContext(
             userText: text,
             hasRecoveryContext: recoveryContext != nil,
             hasLocalNotes: !localNoteSnapshot.isEmpty
-        ) ? ClientSessionContextDTO(
+        )) ? ClientSessionContextDTO(
             sessionId: sid,
             messages: recoveryContext?.messages ?? [],
             truncated: recoveryContext?.truncated ?? false,
             sourceSessions: recoveryContext?.sourceSessions ?? [],
-            localNotes: localNoteSnapshot
+            localNotes: localNoteSnapshot,
+            learningExerciseId: learningExerciseId
         ) : nil
         let userMessage = ChatMessage(
             sessionId: sid, role: .user, content: text, quotedContext: quote
@@ -1508,7 +1512,8 @@ public final class TenantSessionCoordinator: ObservableObject {
             messages: base?.messages ?? [],
             truncated: base?.truncated ?? false,
             sourceSessions: base?.sourceSessions ?? [],
-            localNotes: workspaceNotes
+            localNotes: workspaceNotes,
+            learningExerciseId: base?.learningExerciseId
         )
     }
 
@@ -3601,10 +3606,13 @@ public final class TenantSessionCoordinator: ObservableObject {
                 guard response.status == "completed" else {
                     throw APIError.network(response.error?.message ?? "能力调用失败")
                 }
+                var learningResults: [LearningExerciseBlock] = []
                 var completedWorkflow: WorkflowDTO?
                 var pendingWorkflowId: String?
                 for event in response.events {
                     switch event.type {
+                    case "learning.exercise":
+                        learningResults.append(try Self.decodeCapabilityPayload(event.payload))
                     case "workflow.created", "presentation.created", "document.created":
                         let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
                         completedWorkflow = created.workflow
@@ -3620,6 +3628,11 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
                 }
                 guard let self, self.tenantEpoch == expectedEpoch else { return }
+                if let index = self.messages.firstIndex(where: { $0.id == messageId }) {
+                    for item in learningResults where !self.messages[index].blocks.contains(where: { $0.id == MessageBlock.learningExercise(item).id }) {
+                        self.messages[index].blocks.append(.learningExercise(item))
+                    }
+                }
                 if let completedWorkflow {
                     WorkflowActivityCoordinator.shared.track(completedWorkflow)
                     if let messageIndex = self.messages.firstIndex(where: { $0.id == messageId }),

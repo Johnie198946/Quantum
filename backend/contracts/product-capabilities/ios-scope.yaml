@@ -73,6 +73,12 @@ capabilities:
   - schedule.create
   - schedule.update
   - schedule.delete
+  - learning.resume
+  - learning.exercise.read
+  - learning.exercise.create
+  - learning.exercise.hint
+  - learning.exercise.answer
+  - learning.exercise.submit
 annotations:
   conversation.lifecycle:
     ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
@@ -290,3 +296,21 @@ annotations:
   presentation.create_from_text:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  learning.resume:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  learning.exercise.read:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  learning.exercise.create:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  learning.exercise.hint:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  learning.exercise.answer:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  learning.exercise.submit:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js

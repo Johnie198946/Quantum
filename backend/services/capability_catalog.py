@@ -48,6 +48,7 @@ IMPLEMENTED_HANDLERS = {
     "file.upload", "file.download", "voice.transcribe",
     "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create",
     "task.execute", "conversation.lifecycle",
+    "learning.resume", "learning.exercise.read", "learning.exercise.create", "learning.exercise.hint", "learning.exercise.answer", "learning.exercise.submit",
 }
 
 

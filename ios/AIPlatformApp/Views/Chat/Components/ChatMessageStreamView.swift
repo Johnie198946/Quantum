@@ -1535,6 +1535,7 @@ struct LearningExerciseView: View {
     let sourceTitle: String
     let contextScope: ChatContextScopeDTO
     let dialogue: [MixedExerciseDialogue]
+    let exerciseID: String?
     @State private var exercise: MixedExerciseDTO?
     @State private var answers: [String: MixedExerciseAnswer] = [:]
     @State private var expandedHints: Set<String> = []
@@ -1549,10 +1550,11 @@ struct LearningExerciseView: View {
     @State private var account = KnowledgeNoteStore.shared.accountFingerprint
     @FocusState private var editing: String?
 
-    init(sourceTitle: String, contextScope: ChatContextScopeDTO, dialogue: [MixedExerciseDialogue] = [], exercise: MixedExerciseDTO? = nil) {
+    init(sourceTitle: String, contextScope: ChatContextScopeDTO, dialogue: [MixedExerciseDialogue] = [], exercise: MixedExerciseDTO? = nil, exerciseID: String? = nil) {
         self.sourceTitle = sourceTitle
         self.contextScope = contextScope
         self.dialogue = dialogue
+        self.exerciseID = exerciseID
         _exercise = State(initialValue: exercise)
         _answers = State(initialValue: exercise?.answers ?? [:])
     }
@@ -1850,12 +1852,18 @@ struct LearningExerciseView: View {
         }
         busy = true; defer { busy = false }
         do {
+            if let exerciseID {
+                let item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exerciseID)")
+                guard isCurrentAccount else { return }
+                accept(item, restoreLocal: true)
+                return
+            }
             let latest = try await APIClient.shared.request(MixedExerciseLatest.self, path: "me/learning-exercises",
                 queryItems: [.init(name: "book_id", value: book), .init(name: "section_id", value: section)])
             guard isCurrentAccount else { return }
             if let item = latest.exercise { accept(item, restoreLocal: true) }
         } catch {
-            if isCurrentAccount, let data = UserDefaults.standard.data(forKey: latestCacheKey),
+            if exerciseID == nil, isCurrentAccount, let data = UserDefaults.standard.data(forKey: latestCacheKey),
                let cached = try? JSONDecoder().decode(MixedExerciseDTO.self, from: data) {
                 accept(cached, restoreLocal: true)
             }

@@ -32,7 +32,7 @@ from scripts import hermes_bridge as bridge
 
 def test_catalog_is_complete_unique_and_progressively_disclosed():
     catalog = load_catalog()
-    assert len(catalog["capabilities"]) == 77
+    assert len(catalog["capabilities"]) == 83
     result = search_capabilities("knowledge note", limit=3)
     assert result and "input_schema" not in result[0]
     described = describe_capability(result[0]["id"])
@@ -887,3 +887,16 @@ async def test_knowledge_mutation_receipts_survive_cache_clear_and_are_scoped(tm
     assert archived == archive_replay and archived["status"] == "completed"
     assert restored["status"] == "completed"
     assert restore_conflict["error"]["code"] == "idempotency_conflict"
+
+
+@pytest.mark.parametrize("capability_id,data", [
+    ("learning.exercise.read", {}),
+    ("learning.exercise.answer", {"exercise_id": "00000000-0000-4000-8000-000000000001", "revision": 1, "question_id": "q2", "selected": ["F"]}),
+    ("learning.exercise.hint", {"exercise_id": "00000000-0000-4000-8000-000000000001", "revision": 1, "question_id": "q2"}),
+])
+def test_learning_native_tools_require_trusted_bridge_identity(capability_id, data):
+    bridge._client_context_tool_context.value = None
+    result = json.loads(bridge._app_capability_invoke_tool({"capability_id": capability_id, "input": data}))
+    assert result["error"] == "trusted_invocation_context_required"
+    injected = json.loads(bridge._app_capability_invoke_tool({"capability_id": capability_id, "input": {**data, "tenant_key": "victim", "confirmed": True}}))
+    assert injected["error"] == "contract_invalid"

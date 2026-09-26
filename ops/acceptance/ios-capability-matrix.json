@@ -5349,12 +5349,380 @@
         "version": "1.0.0"
       },
       "status": "implemented"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.resume",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "learning.resume",
+      "handler": "learning.resume",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "resume"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.exercise.read",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "learning.exercise",
+      "handler": "learning.exercise.read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "learning_exercise@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "exercise_id": {
+              "pattern": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+              "type": "string"
+            },
+            "unfinished_only": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "revision",
+            "status",
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.exercise.create",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "learning.exercise",
+      "handler": "learning.exercise.create",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "learning_exercise@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "book_id": {
+              "maxLength": 384,
+              "minLength": 1,
+              "type": "string"
+            },
+            "content_version": {
+              "pattern": "[a-f0-9]{64}",
+              "type": "string"
+            },
+            "minutes": {
+              "maximum": 30,
+              "minimum": 4,
+              "type": "integer"
+            },
+            "section_id": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "revision",
+            "status",
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.exercise.hint",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "learning.exercise",
+      "handler": "learning.exercise.hint",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "learning_exercise@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "exercise_id": {
+              "pattern": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+              "type": "string"
+            },
+            "question_id": {
+              "pattern": "q[1-8]",
+              "type": "string"
+            },
+            "revision": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "exercise_id",
+            "revision",
+            "question_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "revision",
+            "status",
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.exercise.answer",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "learning.exercise",
+      "handler": "learning.exercise.answer",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "learning_exercise@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "exercise_id": {
+              "pattern": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+              "type": "string"
+            },
+            "question_id": {
+              "pattern": "q[1-8]",
+              "type": "string"
+            },
+            "revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "selected": {
+              "items": {
+                "maxLength": 8,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 6,
+              "type": "array"
+            },
+            "text": {
+              "maxLength": 12000,
+              "type": "string"
+            }
+          },
+          "required": [
+            "exercise_id",
+            "revision",
+            "question_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "revision",
+            "status",
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_learning_exercises.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "learning.exercise.submit",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_reader",
+          "current_book_authorization",
+          "owned_exercise_and_revision"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "learning.exercise",
+      "handler": "learning.exercise.submit",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "learning-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "learning_exercise@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "exercise_id": {
+              "pattern": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+              "type": "string"
+            },
+            "revision": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "exercise_id",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "id",
+            "revision",
+            "status",
+            "book_id",
+            "section_id",
+            "content_version"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     }
   ],
   "counts": {
     "absent": 0,
     "implemented": 67,
-    "partial": 4,
+    "partial": 10,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
@@ -5374,5 +5742,5 @@
   ],
   "scope_version": 2,
   "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
-  "total": 71
+  "total": 77
 }
