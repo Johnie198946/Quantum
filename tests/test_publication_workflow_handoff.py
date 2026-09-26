@@ -1176,3 +1176,38 @@ def test_author_input_does_not_reassign_native_content_waiting_for_assets(native
     assert "PUBLICATION_CONTENT_REQUEST" in handoff.author_input("nativejob", "default", remote, now=now)
     handoff.fetch_native("ai-toolkit", day, root)
     assert handoff.author_input("nativejob", "default", remote, now=now) == "NO_NEW_DRAFT"
+
+
+def test_obsolete_workflow_handoff_does_not_block_native_author_or_assets(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+    handoff, root, _, _ = native_author
+    obsolete = root / "00-ai-toolkit-wfa_1547f74992b34cd4ba7b3e51e7a96b46"
+    obsolete.mkdir()
+    state_path = obsolete / "workflow-handoff-state.json"
+    raw = canonical_json({"status": "waiting_assets", "series_id": "ai-toolkit",
+                          "issue_date": "2026-09-26", "artifact_id": "wfa_obsolete"})
+    state_path.write_bytes(raw)
+    class Remote:
+        def operator(self, action):
+            assert action == "status"
+            return {"items": [], "expected_issues": [{"series_id": "ai-toolkit", "issue_date": "2026-09-26",
+                    **publication_slot("ai-toolkit", "2026-09-26", "12:00")}]}
+    packet = handoff.author_input("nativejob", "default", Remote(), now=datetime.fromisoformat("2026-09-26T12:01:00+08:00"))
+    assert "PUBLICATION_CONTENT_REQUEST" in packet
+    native = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    assert json.loads(handoff.assets_input())["publication_asset_request"]["output_directory"] == native["output_directory"]
+    assert state_path.read_bytes() == raw
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "enabled": False})
+    assert handoff.assets_input() == "NO_NEW_DRAFT"
+    assert state_path.read_bytes() == raw
+
+
+def test_current_workflow_route_still_requires_verified_handoff(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    handoff, root, _, _ = native_author
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "workflow_schedule_id": "current_schedule"})
+    target = root / "current-workflow"
+    target.mkdir()
+    (target / "workflow-handoff-state.json").write_bytes(canonical_json({"status": "waiting_assets", "series_id": "ai-toolkit"}))
+    with pytest.raises(ValueError, match="file missing"):
+        handoff.assets_input()

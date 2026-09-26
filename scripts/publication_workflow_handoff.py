@@ -519,6 +519,19 @@ def _native_artifact_path(value: str) -> Path:
 
 
 
+
+def _current_handoff_route(state: dict, path: Path) -> bool:
+    """Historical handoffs cannot claim work after a configured route changes."""
+    from backend.services.knowledge_publication_store import SERIES
+    config = SERIES.get(state.get("series_id"))
+    if not config or not config.get("enabled", True):
+        return False
+    workflow = bool(config.get("workflow_schedule_id") or
+                    (config.get("assets_job_id") and not config.get("author_job_id")))
+    return (not workflow and bool(config.get("author_job_id"))
+            if path.name == "native-content-state.json" else workflow)
+
+
 def author_input(job_id: str, profile: str, remote, *, now: datetime | None = None) -> str:
     """Assign one current-day occurrence from configured jobs and server truth."""
     from backend.services.knowledge_publication_store import SERIES, publication_slot
@@ -548,7 +561,7 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
             continue
     for state_path in [*native_output_root().glob("*/native-content-state.json"), *native_output_root().glob("*/workflow-handoff-state.json")]:
         state = json.loads(editorial.read(state_path))
-        if state.get("status") != "waiting_assets":
+        if state.get("status") != "waiting_assets" or not _current_handoff_route(state, state_path):
             continue
         manifest_path = state_path.parent / "draft-manifest.json"
         if manifest_path.exists():
@@ -597,7 +610,7 @@ def assets_input() -> str:
         if base.is_symlink() or not base.resolve().is_relative_to(root.resolve()):
             raise PublicationHandoffError("asset handoff directory is unsafe")
         state = json.loads(editorial.read(state_path))
-        if state.get("status") != "waiting_assets":
+        if state.get("status") != "waiting_assets" or not _current_handoff_route(state, state_path):
             continue
         manifest_path = base / "draft-manifest.json"
         if manifest_path.exists():

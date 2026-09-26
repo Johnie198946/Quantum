@@ -85,3 +85,5 @@
 ## 最终集成回归（激活前）
 
 基于上游52222059完整运行10个测试文件：396 passed、4 failed、1 Linux-only skipped；4失败均为夹具未指定多时隙/Story审核profile，修正后4用例全部passed。合计400项主回归通过。拒稿修订2与动态主题10项专题回归另行通过。Linux inherited-lock测试在真实服务器隔离临时路径完成6边界case，通过；本地跳过不伪报。Ruff及git diff/check通过。独立原生链路审查3轮收敛、部署脚本审查2轮收敛。
+
+激活前真实目录检查发现9/26旧Workflow waiting_assets残留且无manifest；两本地入口共用当前配置路由过滤，保留旧稿与审计字节，防止迁移后阻塞。17项专项回归通过；实际assets-input只读扫描旧目录返回NO_NEW_DRAFT。运行启动器额外固定并验证profile/HERMES_HOME，6个隔离case通过，二轮复核无新增阻断。
