@@ -17,39 +17,70 @@ public struct ChartCard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            // 标题行
-            HStack(spacing: AppTheme.Spacing.xs) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: block.chartType == .line ? "chart.xyaxis.line" : "chart.bar.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(AppTheme.Icons.interactive)
-                Text(block.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(AppTheme.Colors.textPrimary)
+                    .foregroundStyle(AppTheme.Colors.quantumViolet)
+                    .frame(width: 34, height: 34)
+                    .background(AppTheme.Colors.mistLilac, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("数据观察")
+                        .font(AppTheme.Typography.micro.weight(.bold))
+                        .foregroundStyle(AppTheme.Colors.textTertiary)
+                    Text(block.title)
+                        .font(AppTheme.Typography.cardTitle)
+                        .foregroundColor(AppTheme.Colors.textPrimary)
+                }
                 Spacer()
             }
 
-            // Swift Charts 画布
+            if block.series.count > 1 {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    ForEach(Array(block.series.enumerated()), id: \.element.id) { index, series in
+                        HStack(spacing: 5) {
+                            Circle().fill(seriesColor(index)).frame(width: 7, height: 7)
+                            Text(series.name)
+                                .font(AppTheme.Typography.micro)
+                                .foregroundStyle(AppTheme.Colors.textSecondary)
+                        }
+                    }
+                }
+            }
+
             chartContent
                 .frame(height: 150)
+                .padding(AppTheme.Spacing.sm)
+                .background(Color.white.opacity(0.68), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
-            // 摘要行
             if !block.summary.isEmpty {
-                Text(block.summary)
-                    .font(.system(size: 12))
-                    .foregroundColor(AppTheme.Colors.textSecondary)
-                    .lineSpacing(2)
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(AppTheme.Colors.emberOrange)
+                    Text(block.summary)
+                        .font(AppTheme.Typography.supporting)
+                        .foregroundColor(AppTheme.Colors.textSecondary)
+                        .lineSpacing(2)
+                }
+                .padding(AppTheme.Spacing.md)
+                .background(AppTheme.Colors.bentoAmber.opacity(0.56), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
             }
         }
-        .padding(AppTheme.Spacing.md)
+        .padding(AppTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                .stroke(AppTheme.Colors.border, lineWidth: 0.5)
+        .background(
+            LinearGradient(
+                colors: [AppTheme.Colors.mistSky.opacity(0.72), AppTheme.Colors.cardBackground],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         )
-        .pressBorderGlow(cornerRadius: AppTheme.Radius.md)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                .stroke(Color.white.opacity(0.84), lineWidth: 0.8)
+        )
+        .shadow(color: AppTheme.Colors.primary.opacity(0.08), radius: 16, y: 7)
     }
 
     @ViewBuilder
@@ -76,7 +107,18 @@ public struct ChartCard: View {
                 }
             }
         }
-        .chartYScale(domain: 0...maxValue(block.series) * 1.2)
+        .chartYScale(domain: 0...max(1, maxValue(block.series) * 1.2))
+        .chartYAxis {
+            AxisMarks(position: .leading) { _ in
+                AxisGridLine().foregroundStyle(AppTheme.Colors.border.opacity(0.6))
+                AxisValueLabel().foregroundStyle(AppTheme.Colors.textTertiary)
+            }
+        }
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisValueLabel().foregroundStyle(AppTheme.Colors.textTertiary)
+            }
+        }
     }
 
     /// Quantum Spectrum 序列：Cyan → Blue → Violet（严禁红黄绿警示色）

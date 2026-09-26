@@ -37,6 +37,15 @@
 	<array>
 		<string>alipays</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>用于在你明确确认设备操作后拍摄并附加照片。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>用于连接本机开发服务完成真机端到端验收。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于语音交互输入，将你的语音实时转写为文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -50,8 +59,6 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -67,5 +74,7 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

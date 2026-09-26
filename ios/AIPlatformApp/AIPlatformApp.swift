@@ -19,25 +19,45 @@ public struct AIPlatformApp: App {
     private let showBookshelfPreview: Bool
     private let showKnowledgeHomePreview: Bool
     private let showTabBarPreview: Bool
+    private let prototypePreviewID: String?
+    private let showBatch4Preview: Bool
+    private let showStructuredReviewE2E: Bool
     #endif
 
     public init() {
         let arguments = ProcessInfo.processInfo.arguments
+        let environment = ProcessInfo.processInfo.environment
+        #if DEBUG
+        if environment["AI_LAB_E2E_DISABLE_ANIMATIONS"] == "1" {
+            UIView.setAnimationsEnabled(false)
+        }
+        #endif
         let hasPersistedSession = !(KeychainStore.load() ?? "").isEmpty
 #if DEBUG
-        let hasE2EToken = !(ProcessInfo.processInfo.environment["AI_LAB_E2E_TOKEN"] ?? "").isEmpty
-        showBookshelfPreview = arguments.contains("-bookshelfPreview")
+        let hasE2EToken = !(environment["AI_LAB_E2E_TOKEN"] ?? "").isEmpty
+        showBookshelfPreview = arguments.contains("-bookshelfPreview") || arguments.contains("-bookshelfTab")
         showKnowledgeHomePreview = arguments.contains("-knowledgeHomePreview")
         showTabBarPreview = arguments.contains("-tabBarPreview")
+        prototypePreviewID = arguments.firstIndex(of: "-prototypePreview")
+            .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        showBatch4Preview = arguments.contains("-batch4Preview")
+        showStructuredReviewE2E = arguments.contains("-structuredReviewE2E")
 #else
         let hasE2EToken = false
 #endif
+        let initialTab = arguments.contains("-workflowTab") ? 1
+            : arguments.contains("-knowledgeTab") ? 2
+            : arguments.contains("-settingsTab") ? 3
+            : 0
         let initialState = AppState(
             isLoggedIn: arguments.contains("-autoLogin") || hasPersistedSession || hasE2EToken,
-            activeTab: arguments.contains("-knowledgeTab") ? 2 : 0
+            activeTab: initialTab
         )
 #if DEBUG
         initialState.pendingChatPrompt = ProcessInfo.processInfo.environment["AI_LAB_E2E_PROMPT"]
+        if arguments.contains("-assetLibraryPreview") {
+            initialState.currentProfile.avatarUrl = "avatar_youth_01"
+        }
 #endif
         _appState = StateObject(wrappedValue: initialState)
     }
@@ -46,9 +66,17 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if showBookshelfPreview {
+                if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
+                    LearningExerciseHintPreview()
+                } else if showStructuredReviewE2E {
+                    StructuredReviewE2EHost()
+                } else if showBatch4Preview {
+                    Batch4PreviewHost()
+                } else if let prototypePreviewID {
+                    PrototypeReviewNavigator(initialPageID: prototypePreviewID)
+                } else if showBookshelfPreview {
                     BookshelfPreviewHost()
-                } else if showKnowledgeHomePreview {
+                } else if showKnowledgeHomePreview && !showTabBarPreview {
                     KnowledgeView()
                 } else if showTabBarPreview {
                     MainTabView()
@@ -70,6 +98,100 @@ public struct AIPlatformApp: App {
 }
 
 #if DEBUG
+private struct LearningExerciseHintPreview: View {
+    private let exercise = MixedExerciseDTO(
+        id: "hint-preview", status: "draft", revision: 1, bookId: "hint-preview", sectionId: "chapter",
+        contentVersion: String(repeating: "a", count: 64), bookTitle: "两座码头的金色账簿", sectionTitle: "加权平均",
+        summary: "从两港的数据出发，练习判断总体成功率。", confidence: "low", unavailable: [],
+        evidenceKinds: ["reading"], minutes: 2,
+        questions: [.init(hint: "先分别列出两港的成功次数和总次数，再想想：两个百分比是否代表同样多的样本？",
+                         id: "q1", kind: .judgement,
+                         body: "把一种钟在东港和西港的两个成功率直接相加后除以 2，就一定能得到该钟的总体成功率。",
+                         knowledgePoint: "加权平均与组别权重", difficulty: 1, minutes: 2,
+                         sourceExcerpt: "两港的成功次数与总次数。", options: [.init(id: "T", text: "正确"), .init(id: "F", text: "错误")], isMultiple: false)],
+        answers: [:], results: [], error: nil)
+    var body: some View {
+        LearningExerciseView(sourceTitle: exercise.bookTitle,
+                             contextScope: .init(selectedBookId: exercise.bookId, selectedBookVersion: exercise.contentVersion, selectedBookSectionId: exercise.sectionId),
+                             exercise: exercise)
+    }
+}
+
+private struct PrototypeReviewNavigator: View {
+    private static let pageIDs: [String] = {
+        let v3 = [
+            "v3/01-auth", "v3/02-chat-core", "v3/03-compose-import-voice",
+            "v3/04-clarify-status-cards", "v3/05-rich-content", "v3/06-knowledge-home",
+            "v3/07-note-editor-reader", "v3/08-workflow-plan", "v3/09-workflow-execution",
+            "v3/10-topology-evaluation", "v3/11-settings-agent-memory",
+            "v3/12-subscription-governance", "v3/13-bookshelf-reader"
+        ].flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let v4 = [
+            "v4/01-auth-errors-v4", "v4/02-chat-reasoning-voice-v4",
+            "v4/03-clarify-merge-preview-v4", "v4/04-workflow-simple-plan-v4",
+            "v4/05-workflow-agent-usage-v4", "v4/06-travel-chat-to-workflow-v4",
+            "v4/07-travel-plan-output-v4", "v4/08-reader-question-annotation-v4",
+            "v4/09-agent-chat-creation-v4", "v4/10-agent-knowledge-tools-crud-v4",
+            "v4/11-workflow-canvas-comfy-v4", "v4/12-node-detail-eval-compare-v4",
+            "v4/13-smart-research-ppt-v4"
+        ].flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let v5 = ["v5/01-startup-clean-v5-p01"]
+            + ["v5/02-travel-note-layout-v5", "v5/03-photo-thought-auto-layout-v5"]
+                .flatMap { prefix in (1...4).map { "\(prefix)-p0\($0)" } }
+        let ids = v3 + v4 + v5
+        precondition(ids.count == 113 && Set(ids).count == ids.count)
+        return ids
+    }()
+
+    @State private var pageIndex: Int
+
+    init(initialPageID: String) {
+        _pageIndex = State(initialValue: Self.pageIDs.firstIndex(of: initialPageID) ?? 0)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            V5PrototypePreviewHost(pageID: Self.pageIDs[pageIndex])
+                .id(Self.pageIDs[pageIndex])
+
+            HStack(spacing: 12) {
+                Button {
+                    pageIndex -= 1
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(pageIndex == 0)
+
+                VStack(spacing: 1) {
+                    Text("\(pageIndex + 1) / \(Self.pageIDs.count)")
+                        .font(.caption.weight(.bold))
+                    Text(Self.pageIDs[pageIndex])
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+
+                Button {
+                    pageIndex += 1
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(pageIndex == Self.pageIDs.count - 1)
+            }
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(AppTheme.Colors.border.opacity(0.8)))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+    }
+}
+
 private struct BookshelfPreviewHost: View {
     @State private var showingBookshelf = true
     private let center = ProcessInfo.processInfo.arguments.contains("-bookshelfSourcePreview")
@@ -86,6 +208,102 @@ private struct BookshelfPreviewHost: View {
             }
         } else {
             KnowledgeView()
+        }
+    }
+}
+
+private struct Batch4PreviewHost: View {
+    @State private var descriptionExpanded = false
+    @State private var advancedExpanded = false
+    @State private var feedback = ""
+
+    private let description = AgentDescriptionPresentation(
+        function: "检索、整理、入库并追溯授权知识",
+        suitable: "笔记查询、资料归纳与可追溯知识任务",
+        boundary: "仅访问当前账号范围；未核实内容会标注"
+    )
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    Label("界面验收样例，不会发起任务", systemImage: "hammer")
+                        .font(AppTheme.Typography.micro)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                    AgentDescriptionText(
+                        text: description.full,
+                        name: "知识助手",
+                        isExpanded: $descriptionExpanded
+                    )
+                    .padding(AppTheme.Spacing.md)
+                    .quantumCard()
+                    WorkflowFailureCard(failure: .init(
+                        cause: "网络连接中断，已完成步骤和输入均已保留。",
+                        action: "从失败步骤继续同一任务"
+                    ))
+                    Button("从失败处重试", systemImage: "arrow.clockwise") {
+                        feedback = "已请求重试同一任务"
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
+                    .accessibilityIdentifier("workflow-retry-action")
+                    Button {
+                        advancedExpanded.toggle()
+                    } label: {
+                        HStack {
+                            Text("高级选项")
+                            Spacer()
+                            Image(systemName: advancedExpanded ? "chevron.up" : "chevron.down")
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("workflow-advanced-options")
+                    .accessibilityValue(advancedExpanded ? "已展开" : "已折叠")
+                    if advancedExpanded {
+                        Text("仅在需要调整执行细节时打开")
+                            .accessibilityIdentifier("batch4-advanced-content")
+                    }
+                    ClarifyCard(
+                        block: ClarifyBlock(
+                            question: "当前一步：补充演示用途",
+                            choices: [],
+                            multiSelect: false,
+                            submitLabel: "确认并继续"
+                        ),
+                        onSubmit: { _ in feedback = "已确认并进入下一步" }
+                    )
+                    if !feedback.isEmpty {
+                        Text(feedback).accessibilityIdentifier("batch4-feedback")
+                    }
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("小白体验验收")
+        }
+    }
+}
+
+private struct StructuredReviewE2EHost: View {
+    private let workflowID = ProcessInfo.processInfo.environment["AI_LAB_E2E_WORKFLOW_ID"] ?? ""
+    private let reviewKey = ProcessInfo.processInfo.environment["AI_LAB_E2E_REVIEW_KEY"] ?? "final-draft"
+
+    var body: some View {
+        NavigationStack {
+            StructuredReviewView(
+                workflowId: workflowID,
+                reviewKey: reviewKey,
+                initialDocument: .init(
+                    title: "可编辑全稿预览",
+                    fields: [
+                        .init(id: "title", label: "标题", type: .text, required: true, options: nil),
+                        .init(id: "summary", label: "摘要", type: .textarea, required: true, options: nil),
+                    ],
+                    values: ["title": .string("伊斯坦布尔"), "summary": .string("初稿")]
+                )
+            )
+            .navigationTitle("全稿预览")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -165,7 +383,17 @@ public struct AppRootCoordinatorView: View {
         .task(id: appState.isLoggedIn) {
             if appState.isLoggedIn {
                 await restorePersistedSession()
-                if appState.isLoggedIn { await workflowActivities.bootstrap() }
+                if appState.isLoggedIn,
+                   !appState.currentTenantKey.isEmpty,
+                   !appState.currentUserId.isEmpty {
+                    workflowActivities.activate(
+                        tenantKey: appState.currentTenantKey,
+                        userId: appState.currentUserId
+                    )
+                    await workflowActivities.bootstrap()
+                }
+            } else {
+                workflowActivities.deactivate()
             }
         }
         .onChange(of: scenePhase) { _, phase in

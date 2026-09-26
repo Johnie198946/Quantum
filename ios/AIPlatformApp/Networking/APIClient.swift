@@ -268,6 +268,7 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public let coverTheme: String?
     public let coverVariant: Int?
     public let coverVersion: Int?
+    public var coverAvailable: Bool? = nil
     public let securityLevel: String
     public let knowledgeLevel: String
     public let freshness: String
@@ -297,8 +298,6 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public var sourceClassification: String? = nil
     public var readable: Bool? = nil
     public var unavailableReason: String? = nil
-    public var shelfCoverUrl: String? = nil
-    public var illustrationUrls: [String]? = nil
 
     public var isBodyUnavailable: Bool { readable == false || contentStatus == "metadata_only" }
     public var publicationTypeLabel: String? {
@@ -385,12 +384,122 @@ public struct KnowledgeBookSubscriptionDTO: Codable, Hashable {
     public let edition: Int
     public let contentVersion: String?
     public let progress: Double
+    public var lastSectionId: String? = nil
+    public var lastBlockIndex: Int? = nil
+    public var lastCharacterOffset: Int? = nil
     public let subscribedAt: String
     public let lastReadAt: String
 }
 
 public struct KnowledgeBookSubscriptionsResponse: Codable {
     public let subscriptions: [KnowledgeBookSubscriptionDTO]
+}
+
+public struct LearningResumePointDTO: Codable, Hashable {
+    public let title: String
+    public let detail: String
+    public let sourceExcerpt: String?
+    public var sectionId: String? = nil
+    public var kind: String? = nil
+    public var score: Int? = nil
+    public var selectionReason: String? = nil
+}
+
+struct MixedExerciseDialogue: Codable {
+    let role: String
+    let content: String
+}
+
+struct MixedExerciseCreate: Encodable {
+    let id: String
+    let book_id: String
+    let section_id: String
+    let content_version: String
+    let minutes: Int
+    let dialogue: [MixedExerciseDialogue]
+}
+
+struct MixedExerciseAnswer: Codable, Equatable {
+    var selected: [String] = []
+    var text: String = ""
+    var assisted: Bool = false
+}
+
+struct MixedExerciseSave: Codable {
+    let revision: Int
+    let answers: [String: MixedExerciseAnswer]
+}
+
+struct MixedExerciseQuestion: Codable, Identifiable {
+    var hint: String? = nil
+    let id: String
+    let kind: LearningExerciseKind
+    let body: String
+    let knowledgePoint: String
+    let difficulty: Int
+    let minutes: Int
+    let sourceExcerpt: String
+    let options: [LearningExerciseQuestion.Option]
+    let isMultiple: Bool
+
+    var presentation: LearningExerciseQuestion {
+        .init(kind: kind, body: body, isMultiple: isMultiple, options: options)
+    }
+    func isAnswered(_ answer: MixedExerciseAnswer) -> Bool {
+        if kind == .choice || kind == .judgement { return !answer.selected.isEmpty }
+        return !answer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+struct MixedExerciseResult: Codable {
+    let questionId: String
+    let score: Int
+    let maxScore: Int
+    let confidence: String
+    let referenceAnswer: String
+    let explanation: String
+    let nextStep: String
+    let sourceExcerpt: String
+    let correctIds: [String]
+    let optionExplanations: [String: String]
+    let criterionFeedback: [String]
+}
+
+struct MixedExerciseDTO: Codable, Identifiable {
+    let id: String
+    let status: String
+    let revision: Int
+    let bookId: String
+    let sectionId: String
+    let contentVersion: String
+    let bookTitle: String
+    let sectionTitle: String
+    let summary: String
+    let confidence: String
+    let unavailable: [String]
+    let evidenceKinds: [String]
+    let minutes: Int
+    let questions: [MixedExerciseQuestion]
+    let answers: [String: MixedExerciseAnswer]
+    let results: [MixedExerciseResult]
+    let error: String?
+}
+
+struct MixedExerciseLatest: Decodable { let exercise: MixedExerciseDTO? }
+
+public struct LearningResumeDTO: Codable, Hashable {
+    public let subscription: KnowledgeBookSubscriptionDTO
+    public let sectionId: String
+    public let sectionTitle: String
+    public let blockIndex: Int?
+    public let characterOffset: Int?
+    public let keyPoints: [LearningResumePointDTO]
+    public var candidates: [LearningResumePointDTO]? = nil
+    public var contentVersion: String? = nil
+}
+
+public struct LearningResumeResponse: Codable {
+    public let resume: LearningResumeDTO?
 }
 
 public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
@@ -425,8 +534,6 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var bodyOrigin: String? = nil
     public var completeness: String? = nil
     public var sourceClassification: String? = nil
-    public var readerCoverUrl: String? = nil
-    public var illustrationUrls: [String]? = nil
 }
 
 private struct KnowledgeBookSubscriptionWrite: Encodable {
@@ -443,11 +550,17 @@ private struct KnowledgeBookProgressWrite: Encodable {
     let bookId: String
     let progress: Double
     let contentVersion: String
+    let sectionId: String
+    let blockIndex: Int
+    let characterOffset: Int
 
     private enum CodingKeys: String, CodingKey {
         case bookId = "book_id"
         case progress
         case contentVersion = "content_version"
+        case sectionId = "section_id"
+        case blockIndex = "block_index"
+        case characterOffset = "character_offset"
     }
 }
 
@@ -840,17 +953,13 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
     /// Local-first notes are signed into the request context so Hermes can
     /// compare notes that have not completed background sync yet.
     public let localNotes: [ChatLocalNoteDTO]
-    /// Exact current upload used by attachment follow-ups; this is a note id
-    /// inside `localNotes`, never an arbitrary server path.
-    public let activeDocumentNoteId: String?
 
-    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], activeDocumentNoteId: String? = nil) {
+    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = []) {
         self.sessionId = sessionId
         self.messages = messages
         self.truncated = truncated
         self.sourceSessions = sourceSessions
         self.localNotes = localNotes
-        self.activeDocumentNoteId = activeDocumentNoteId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -858,7 +967,6 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         case messages, truncated
         case sourceSessions = "source_sessions"
         case localNotes = "local_notes"
-        case activeDocumentNoteId = "active_document_note_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -868,7 +976,6 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
         sourceSessions = try container.decodeIfPresent([ClientSourceSessionDTO].self, forKey: .sourceSessions) ?? []
         localNotes = try container.decodeIfPresent([ChatLocalNoteDTO].self, forKey: .localNotes) ?? []
-        activeDocumentNoteId = try container.decodeIfPresent(String.self, forKey: .activeDocumentNoteId)
     }
 }
 
@@ -884,7 +991,7 @@ public struct ChatRequestDTO: Encodable {
     public let clientSessionContext: ClientSessionContextDTO?
     public let clientCapabilities: [String]
 
-    public init(question: String, requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["knowledge_action_v1", "answer_blocks_v1"]) {
+    public init(question: String, requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]) {
         self.question = question
         self.requestId = requestId
         self.sessionId = sessionId
@@ -917,7 +1024,7 @@ public struct ChatPrewarmRequestDTO: Encodable {
     public init(
         sessionId: String,
         agentId: String?,
-        clientCapabilities: [String] = ["knowledge_action_v1", "answer_blocks_v1"]
+        clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
     ) {
         self.sessionId = sessionId
         self.agentId = agentId
@@ -932,7 +1039,7 @@ public struct ChatPrewarmRequestDTO: Encodable {
 }
 
 /// POST /api/chat 响应（snake_case → camelCase 自动转换）
-public struct ChatResponseDTO: Codable {
+public struct ChatResponseDTO: Decodable {
     public let question: String
     public let answer: String
     public let sessionId: String?
@@ -944,8 +1051,9 @@ public struct ChatResponseDTO: Codable {
     public let resolvedAgent: ChatAgentRouteDTO?
     public let delegatedBy: String?
     public let feedbackReceipt: FeedbackReceiptDTO?
+    public let events: [QCPStreamEvent]?
 
-    public init(question: String, answer: String, sessionId: String?, reasoning: [ChatReasoningStepDTO], degraded: Bool? = nil, clarify: ChatClarifyDTO? = nil, resolvedAgent: ChatAgentRouteDTO? = nil, delegatedBy: String? = nil, feedbackReceipt: FeedbackReceiptDTO? = nil) {
+    public init(question: String, answer: String, sessionId: String?, reasoning: [ChatReasoningStepDTO], degraded: Bool? = nil, clarify: ChatClarifyDTO? = nil, resolvedAgent: ChatAgentRouteDTO? = nil, delegatedBy: String? = nil, feedbackReceipt: FeedbackReceiptDTO? = nil, events: [QCPStreamEvent]? = nil) {
         self.question = question
         self.answer = answer
         self.sessionId = sessionId
@@ -955,6 +1063,7 @@ public struct ChatResponseDTO: Codable {
         self.resolvedAgent = resolvedAgent
         self.delegatedBy = delegatedBy
         self.feedbackReceipt = feedbackReceipt
+        self.events = events
     }
 }
 
@@ -1017,7 +1126,7 @@ public extension ChatReasoningStepDTO {
 /// GET /api/chat/status/{session_id} 响应（长任务状态回读 + 断点 0ms 恢复）
 /// 状态机：completed（附 answer + 完整 reasoning）/ running（附 latestStep + 已产生 steps）
 ///        / timeout / not_found
-public struct ChatStatusDTO: Codable {
+public struct ChatStatusDTO: Decodable {
     public let status: String
     public let phase: String?
     public let answer: String?
@@ -1027,6 +1136,10 @@ public struct ChatStatusDTO: Codable {
     /// 是否已消费（completed 且水位线已推进）；consume=1 时后端顺带标记
     public let consumed: Bool?
     public let answerProjection: AnswerBlockPageDTO?
+    public let runId: String?
+    public let eventSequence: Int?
+    public let eventsNextOffset: Int?
+    public let events: [QCPStreamEvent]?
 
     public var loadedAnswer: String? {
         answer ?? answerProjection.map { $0.blocks.map(\.content).joined() }
@@ -1200,6 +1313,9 @@ public struct TenantAgentDTO: Codable, Identifiable, Hashable {
     public let allowedTools: [String]?
     public let capabilityAgentIds: [String]?
     public let allowNetwork: Bool?
+    public let functionDescription: String?
+    public let suitableDescription: String?
+    public let boundaryDescription: String?
 }
 
 public struct AgentEvaluationRunDTO: Codable, Identifiable {
@@ -1295,7 +1411,7 @@ public struct TenantAgentCreateDTO: Encodable {
 
 // MARK: - 可执行工作流 V1
 
-public struct WorkflowDTO: Codable, Identifiable, Hashable {
+public struct WorkflowDTO: Codable, Identifiable, Hashable, @unchecked Sendable {
     public let id: String
     public let title: String
     public let description: String
@@ -1303,6 +1419,7 @@ public struct WorkflowDTO: Codable, Identifiable, Hashable {
     public let status: String
     public let activePlanId: String?
     public let clarificationSessionId: String?
+    public var sourceClientSessionId: String? = nil
     public let primaryAgentId: String?
     public let createdAt: String?
     public let updatedAt: String?
@@ -1313,6 +1430,15 @@ public struct WorkflowDTO: Codable, Identifiable, Hashable {
 public struct WorkflowCreateResponseDTO: Codable {
     public let workflow: WorkflowDTO
     public let clarificationSession: WorkflowClarificationSessionDTO
+}
+
+public struct WorkflowCancellationDTO: Codable, Hashable {
+    public let requestId: String
+    public let workflowId: String
+    public let status: String
+    public let resourceRevision: String
+    public let cancelledExecutionIds: [String]
+    public let cancelledPlanningJobIds: [String]
 }
 
 public struct WorkflowClarificationSessionDTO: Codable, Hashable {
@@ -1681,6 +1807,134 @@ public struct WorkflowArtifactContentDTO: Codable {
     public let content: String
 }
 
+public indirect enum JSONScalar: Codable, Hashable {
+    case string(String)
+    case integer(Int64)
+    case number(Double)
+    case bool(Bool)
+    case array([JSONScalar])
+    case object([String: JSONScalar])
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([JSONScalar].self) { self = .array(value) }
+        else if let value = try? container.decode([String: JSONScalar].self) { self = .object(value) }
+        else { throw DecodingError.typeMismatch(JSONScalar.self, .init(codingPath: decoder.codingPath, debugDescription: "Expected a JSON value")) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .integer(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+public enum StructuredReviewFieldType: String, Codable, Hashable {
+    case text, textarea, choice, number, toggle, list, asset
+    case pageStructure = "page_structure"
+}
+
+public struct StructuredReviewFieldDTO: Codable, Hashable, Identifiable {
+    public let id: String
+    public let label: String
+    public let type: StructuredReviewFieldType
+    public let required: Bool
+    public let options: [String]?
+}
+
+public struct StructuredReviewDocumentDTO: Codable, Hashable {
+    public var title: String
+    public var fields: [StructuredReviewFieldDTO]
+    public var values: [String: JSONScalar]
+}
+
+public struct StructuredReviewRevisionDTO: Codable, Hashable {
+    public let workflowId: String
+    public let reviewKey: String
+    public let schemaId: String
+    public let version: Int
+    public let parentVersion: Int?
+    public let contentHash: String
+    public let document: StructuredReviewDocumentDTO
+    public let action: String
+    public let receiptId: String
+    public let sourceClientSessionId: String?
+    public let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case workflowId = "workflow_id"
+        case reviewKey = "review_key"
+        case schemaId = "schema_id"
+        case version
+        case parentVersion = "parent_version"
+        case contentHash = "content_hash"
+        case document, action
+        case receiptId = "receipt_id"
+        case sourceClientSessionId = "source_client_session_id"
+        case createdAt = "created_at"
+    }
+
+    private enum DecodingKeys: String, CodingKey {
+        case workflowId, reviewKey, schemaId, version, parentVersion, contentHash
+        case document, action, receiptId, sourceClientSessionId, createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        // APIClient applies convertFromSnakeCase before DTO decoding.
+        let container = try decoder.container(keyedBy: DecodingKeys.self)
+        workflowId = try container.decode(String.self, forKey: .workflowId)
+        reviewKey = try container.decode(String.self, forKey: .reviewKey)
+        schemaId = try container.decode(String.self, forKey: .schemaId)
+        version = try container.decode(Int.self, forKey: .version)
+        parentVersion = try container.decodeIfPresent(Int.self, forKey: .parentVersion)
+        contentHash = try container.decode(String.self, forKey: .contentHash)
+        document = try container.decode(StructuredReviewDocumentDTO.self, forKey: .document)
+        action = try container.decode(String.self, forKey: .action)
+        receiptId = try container.decode(String.self, forKey: .receiptId)
+        sourceClientSessionId = try container.decodeIfPresent(String.self, forKey: .sourceClientSessionId)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+}
+
+public struct StructuredReviewWriteDTO: Encodable {
+    public let schemaId: String
+    public let document: StructuredReviewDocumentDTO
+
+    enum CodingKeys: String, CodingKey {
+        case schemaId = "schema_id"
+        case document
+    }
+}
+
+public struct StructuredReviewConflictDTO: Codable, Hashable {
+    public let code: String
+    public let message: String
+    public let remote: StructuredReviewRevisionDTO
+    public let remoteEtag: String
+}
+
+private struct StructuredReviewConflictEnvelope: Decodable {
+    let detail: StructuredReviewConflictDTO
+}
+
+public struct StructuredReviewConflictError: Error, LocalizedError {
+    public let payload: StructuredReviewConflictDTO
+    public var errorDescription: String? { payload.message }
+}
+
 public struct WorkflowEventDTO: Codable, Identifiable {
     public let id: Int
     public let type: String
@@ -1725,12 +1979,462 @@ public struct WorkflowCreateRequestDTO: Encodable {
     public let desiredOutput: String
     public let sourceDocumentId: String?
     public let outputKind: String
+    public var sourceClientSessionId: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case title, description
         case desiredOutput = "desired_output"
         case sourceDocumentId = "source_document_id"
         case outputKind = "output_kind"
+        case sourceClientSessionId = "source_client_session_id"
+    }
+}
+
+public struct PresentationCreateRequestDTO: Encodable {
+    public let sourceDocumentId: String
+    public let title: String
+    public let description: String
+    public var sourceClientSessionId: String? = nil
+    enum CodingKeys: String, CodingKey {
+        case sourceDocumentId = "source_document_id"
+        case title, description
+        case sourceClientSessionId = "source_client_session_id"
+    }
+}
+
+public struct PresentationCreateFromTextRequestDTO: Encodable {
+    public let title: String
+    public let textMaterial: String
+    public let audience: String?
+    public let intendedUse: String?
+    public let layoutStyle: String?
+    public let slideCount: Int?
+    public let clarificationStrategy: String?
+    public var sourceClientSessionId: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case textMaterial = "text_material"
+        case audience
+        case intendedUse = "intended_use"
+        case layoutStyle = "layout_style"
+        case slideCount = "slide_count"
+        case clarificationStrategy = "clarification_strategy"
+        case sourceClientSessionId = "source_client_session_id"
+    }
+}
+
+public struct DocumentCreateFromTextRequestDTO: Encodable {
+    public let title: String
+    public let textMaterial: String
+    public let researchQuestion: String?
+    public let thesis: String?
+    public let audience: String?
+    public let language: String?
+    public let citationStyle: String?
+    public let evidencePolicy: String?
+    public let clarificationStrategy: String?
+    public var sourceClientSessionId: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case title, thesis, audience, language
+        case textMaterial = "text_material"
+        case researchQuestion = "research_question"
+        case citationStyle = "citation_style"
+        case evidencePolicy = "evidence_policy"
+        case clarificationStrategy = "clarification_strategy"
+        case sourceClientSessionId = "source_client_session_id"
+    }
+}
+
+public struct WorkflowStartRequestDTO: Encodable {
+    public let workflowId: String
+    enum CodingKeys: String, CodingKey { case workflowId = "workflow_id" }
+}
+
+public enum QCPCapabilityID {
+    public static let workflowCreate = "workflow.create"
+    public static let presentationCreateFromDocument = "presentation.create_from_document"
+    public static let presentationCreateFromText = "presentation.create_from_text"
+    public static let documentWordCreateFromText = "document.word.create_from_text"
+    public static let researchReportCreateFromText = "report.research.create_from_text"
+    public static let academicPaperCreateFromText = "paper.academic.create_from_text"
+    public static let workflowStart = "workflow.start"
+}
+
+public struct QCPReceiptDTO: Decodable, Sendable, Hashable {
+    public let invocationId: String
+    public let capabilityVersion: String
+    public let status: String
+    public let eventType: String
+}
+
+public struct QCPErrorDTO: Decodable, Sendable, Hashable {
+    public let code: String
+    public let message: String
+}
+
+public struct QCPEventDTO<Payload: Decodable>: Decodable {
+    public let type: String
+    public let version: Int
+    public let payload: Payload
+}
+
+public struct QCPInvokeResponseDTO<Payload: Decodable>: Decodable {
+    public let status: String
+    public let capabilityId: String
+    public let events: [QCPEventDTO<Payload>]
+    public let receipt: QCPReceiptDTO?
+    public let error: QCPErrorDTO?
+}
+
+private struct QCPInvokeRequestDTO<Input: Encodable>: Encodable {
+    let capabilityId: String
+    let input: Input
+    let idempotencyKey: String?
+    enum CodingKeys: String, CodingKey {
+        case capabilityId = "capability_id"
+        case input
+        case idempotencyKey = "idempotency_key"
+    }
+}
+
+private struct QCPProposalRequestDTO<Input: Encodable>: Encodable {
+    let capabilityId: String
+    let input: Input
+    let sessionId: String
+    let requestId: String
+    let idempotencyKey: String?
+    let resourceVersions: [String: String]
+    let rendererVersion: String
+    enum CodingKeys: String, CodingKey {
+        case capabilityId = "capability_id"
+        case input
+        case sessionId = "session_id"
+        case requestId = "request_id"
+        case idempotencyKey = "idempotency_key"
+        case resourceVersions = "resource_versions"
+        case rendererVersion = "renderer_version"
+    }
+}
+
+private struct QCPConfirmRequestDTO: Encodable {
+    let proposalId: String
+    let confirmationToken: String
+    let sessionId: String
+    enum CodingKeys: String, CodingKey {
+        case proposalId = "proposal_id"
+        case confirmationToken = "confirmation_token"
+        case sessionId = "session_id"
+    }
+}
+
+public struct ClientActionPayloadDTO: Codable, Hashable {
+    public let allowedTypes: [String]?
+    public let allowsMultiple: Bool?
+    public let camera: String?
+    public let selectionLimit: Int?
+    public let maxSeconds: Int?
+    public let text: String?
+    public let artifactId: String?
+    public let sourceId: String?
+}
+
+public struct VoiceTranscriptionDTO: Codable, Hashable {
+    public let text: String
+    public let language: String
+    public let status: String
+}
+
+public struct ClientActionDTO: Codable, Identifiable, Hashable {
+    public let actionId: String
+    public let capabilityId: String
+    public let actionType: String
+    public let state: String
+    public let payload: ClientActionPayloadDTO
+    public var id: String { actionId }
+}
+
+private struct ClientActionReceiptRequestDTO: Encodable {
+    let status: String
+    let resultMetadata: [String: String]
+    enum CodingKeys: String, CodingKey {
+        case status
+        case resultMetadata = "result_metadata"
+    }
+}
+
+@MainActor
+public final class CapabilityClient {
+    private let apiClient: APIClient
+
+    public init(apiClient: APIClient? = nil) { self.apiClient = apiClient ?? .shared }
+
+    public func invoke<Input: Encodable, Output: Decodable>(
+        _ capabilityId: String,
+        input: Input,
+        idempotencyKey: String? = nil
+    ) async throws -> QCPInvokeResponseDTO<Output> {
+        return try await apiClient.request(
+            QCPInvokeResponseDTO<Output>.self,
+            path: "capabilities/invoke",
+            method: "POST",
+            body: QCPInvokeRequestDTO(
+                capabilityId: capabilityId,
+                input: input,
+                idempotencyKey: idempotencyKey
+            )
+        )
+    }
+
+    public func propose<Input: Encodable>(
+        _ capabilityId: String,
+        input: Input,
+        sessionId: String,
+        requestId: String,
+        idempotencyKey: String?,
+        resourceVersions: [String: String] = [:]
+    ) async throws -> QCPInvokeResponseDTO<CapabilityProposalBlock> {
+        try await apiClient.request(
+            QCPInvokeResponseDTO<CapabilityProposalBlock>.self,
+            path: "capabilities/proposals",
+            method: "POST",
+            body: QCPProposalRequestDTO(
+                capabilityId: capabilityId,
+                input: input,
+                sessionId: sessionId,
+                requestId: requestId,
+                idempotencyKey: idempotencyKey,
+                resourceVersions: resourceVersions,
+                rendererVersion: "qcp-ios@1"
+            )
+        )
+    }
+
+    public func confirm<Output: Decodable>(
+        proposalId: String,
+        confirmationToken: String,
+        sessionId: String,
+        as outputType: Output.Type = Output.self
+    ) async throws -> QCPInvokeResponseDTO<Output> {
+        try await apiClient.request(
+            QCPInvokeResponseDTO<Output>.self,
+            path: "capabilities/confirm",
+            method: "POST",
+            body: QCPConfirmRequestDTO(
+                proposalId: proposalId,
+                confirmationToken: confirmationToken,
+                sessionId: sessionId
+            )
+        )
+    }
+
+    public func recordClientActionReceipt(
+        actionId: String,
+        status: String,
+        resultMetadata: [String: String] = [:]
+    ) async throws -> ClientActionDTO {
+        try await apiClient.request(
+            ClientActionDTO.self,
+            path: "capabilities/client-actions/\(actionId)/receipt",
+            method: "POST",
+            body: ClientActionReceiptRequestDTO(
+                status: status,
+                resultMetadata: resultMetadata
+            )
+        )
+    }
+}
+
+public enum QCPRenderingPath: String, Sendable {
+    case answer, clarify, confirmation, knowledgeAction, workflow, presentationReview
+    case artifact, artifactConsumption, navigation, clientAction, bookshelf
+    case hermesSessionList, hermesSessionDetail
+    case artifactCard, dataAnalysisCard, imageCard, taskExecutionCard
+}
+
+public struct QCPRendererRoute: Sendable, Equatable {
+    public let path: QCPRenderingPath
+    public let minimumVersion: Int
+    public let fallback: QCPRenderingPath
+}
+
+public enum RendererRegistry {
+    private static let rendererRoutes: [String: QCPRendererRoute] = [
+        "confirmation": .init(path: .confirmation, minimumVersion: 1, fallback: .answer),
+        "answer": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "clarify": .init(path: .clarify, minimumVersion: 1, fallback: .answer),
+        "knowledge_action": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "workflow": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "presentation_review": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "artifact": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "artifact_consumption": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
+        "bookshelf": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "hermes_session_list": .init(path: .hermesSessionList, minimumVersion: 1, fallback: .answer),
+        "hermes_session_detail": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "client_action": .init(path: .clientAction, minimumVersion: 1, fallback: .answer),
+        "artifact_card": .init(path: .artifactCard, minimumVersion: 1, fallback: .answer),
+        "data_analysis_card": .init(path: .dataAnalysisCard, minimumVersion: 1, fallback: .answer),
+        "image_card": .init(path: .imageCard, minimumVersion: 1, fallback: .answer),
+        "task_execution_card": .init(path: .taskExecutionCard, minimumVersion: 1, fallback: .answer),
+    ]
+
+    private static let routes: [String: QCPRendererRoute] = [
+        "capability.proposed": .init(path: .confirmation, minimumVersion: 1, fallback: .answer),
+        "answer_page": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "clarify": .init(path: .clarify, minimumVersion: 1, fallback: .answer),
+        "knowledge.results": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "knowledge.note": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "knowledge.action": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "knowledge_action_draft": .init(path: .knowledgeAction, minimumVersion: 1, fallback: .answer),
+        "knowledge.navigation": .init(path: .navigation, minimumVersion: 1, fallback: .answer),
+        "knowledge_navigation": .init(path: .navigation, minimumVersion: 1, fallback: .answer),
+        "workflow.summary": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.started": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.approved": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.revised": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "workflow.cancelled": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "presentation.created": .init(path: .presentationReview, minimumVersion: 1, fallback: .artifact),
+        "document.created": .init(path: .workflow, minimumVersion: 1, fallback: .answer),
+        "artifact.consumed": .init(path: .artifactConsumption, minimumVersion: 1, fallback: .artifact),
+        "artifact.content": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "artifact.download_ready": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "artifact.generated": .init(path: .artifact, minimumVersion: 1, fallback: .answer),
+        "bookshelf.results": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "bookshelf.subscription_changed": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "bookshelf.opened": .init(path: .bookshelf, minimumVersion: 1, fallback: .answer),
+        "memory.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "memory.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "profile.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "profile.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "agent.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "agent.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "skill.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "skill.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.created": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "project.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "task.execution_queued": .init(path: .taskExecutionCard, minimumVersion: 1, fallback: .answer),
+        "schedule.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "schedule.change_proposed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.snapshot": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "notification.preferences_changed": .init(path: .answer, minimumVersion: 1, fallback: .answer),
+        "hermes.session.listed": .init(path: .hermesSessionList, minimumVersion: 1, fallback: .answer),
+        "hermes.session.opened": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "hermes.session.resumed": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "hermes.session.deleted": .init(path: .hermesSessionDetail, minimumVersion: 1, fallback: .answer),
+        "client.action.requested": .init(path: .clientAction, minimumVersion: 1, fallback: .answer),
+    ]
+
+    public static func route(
+        for eventType: String, renderer: String? = nil,
+        version: Int, rendererVersion: Int? = nil
+    ) -> QCPRenderingPath {
+        guard let eventRoute = routes[eventType], version == eventRoute.minimumVersion else {
+            return routes[eventType]?.fallback ?? .answer
+        }
+        if let renderer {
+            guard accepts(eventType: eventType, renderer: renderer) else { return .answer }
+            guard let route = rendererRoutes[renderer] else { return .answer }
+            return rendererVersion == route.minimumVersion ? route.path : route.fallback
+        }
+        return eventRoute.path
+    }
+
+    public static func route(for event: QCPStreamEvent) -> QCPRenderingPath {
+        route(
+            for: event.type, renderer: event.renderer,
+            version: event.version, rendererVersion: event.rendererVersion
+        )
+    }
+
+    public static func metadata(for eventType: String) -> QCPRendererRoute? {
+        routes[eventType]
+    }
+
+    public static func accepts(eventType: String, renderer: String?) -> Bool {
+        guard let renderer else { return false }
+        guard rendererRoutes[renderer] != nil else { return false }
+        let artifactRenderers: Set<String> = ["artifact_card", "data_analysis_card", "image_card"]
+        if eventType == "artifact.generated" { return artifactRenderers.contains(renderer) }
+        guard let eventRoute = routes[eventType], let rendererRoute = rendererRoutes[renderer] else {
+            return false
+        }
+        return eventRoute.path == rendererRoute.path
+    }
+}
+
+private enum QCPJSONValue: Decodable {
+    case object([String: QCPJSONValue]), array([QCPJSONValue])
+    case string(String), integer(Int64), number(Double), bool(Bool), null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode([String: QCPJSONValue].self) { self = .object(value) }
+        else if let value = try? container.decode([QCPJSONValue].self) { self = .array(value) }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else { self = .string(try container.decode(String.self)) }
+    }
+
+    var foundationValue: Any {
+        switch self {
+        case .object(let value): return value.mapValues(\.foundationValue)
+        case .array(let value): return value.map(\.foundationValue)
+        case .string(let value): return value
+        case .integer(let value): return value
+        case .number(let value): return value
+        case .bool(let value): return value
+        case .null: return NSNull()
+        }
+    }
+}
+
+public struct QCPStreamEvent: Decodable, Sendable {
+    public let type: String
+    public let version: Int
+    public let payload: Data
+    public let renderer: String?
+    public let rendererVersion: Int?
+    public let runId: String?
+    public let eventSequence: Int?
+
+    public init(
+        type: String, version: Int, payload: Data,
+        renderer: String? = nil, rendererVersion: Int? = nil,
+        runId: String? = nil, eventSequence: Int? = nil
+    ) {
+        self.type = type
+        self.version = version
+        self.payload = payload
+        self.renderer = renderer
+        self.rendererVersion = rendererVersion
+        self.runId = runId
+        self.eventSequence = eventSequence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, version, payload, renderer
+        case rendererVersion
+        case runId, eventSequence
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        version = try container.decode(Int.self, forKey: .version)
+        renderer = try container.decodeIfPresent(String.self, forKey: .renderer)
+        rendererVersion = try container.decodeIfPresent(Int.self, forKey: .rendererVersion)
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        eventSequence = try container.decodeIfPresent(Int.self, forKey: .eventSequence)
+        let value = try container.decode(QCPJSONValue.self, forKey: .payload)
+        payload = try JSONSerialization.data(withJSONObject: value.foundationValue)
     }
 }
 
@@ -1909,6 +2613,13 @@ public enum AgreementReplayPolicy {
 
 // MARK: - 轻量网络层
 
+public struct APIResponse<Value> {
+    public let value: Value
+    public let httpResponse: HTTPURLResponse
+
+    public var etag: String? { httpResponse.value(forHTTPHeaderField: "ETag") }
+}
+
 @MainActor
 public final class APIClient: ObservableObject {
     public static let shared = APIClient()
@@ -1939,7 +2650,16 @@ public final class APIClient: ObservableObject {
     )] = [:]
     private var knowledgeNoteSyncHashes: [String: String] = [:]
 
-    public convenience init(baseURL: URL = URL(string: "https://120.24.248.58")!) {
+    public convenience init() {
+        #if DEBUG
+        let override = ProcessInfo.processInfo.environment["AI_LAB_E2E_BASE_URL"].flatMap(URL.init(string:))
+        #else
+        let override: URL? = nil
+        #endif
+        self.init(baseURL: override ?? URL(string: "https://120.24.248.58")!)
+    }
+
+    public convenience init(baseURL: URL) {
         self.init(
             baseURL: baseURL,
             sessionConfiguration: .default,
@@ -2082,14 +2802,14 @@ public final class APIClient: ObservableObject {
     /// 底层请求执行：统一处理 401（不重试→needsReauth）、状态码、离线降级标注与 GET 幂等单次重试。
     /// - Parameter reauthOn401: 401 是否触发全局重登（清 token + needsReauth）。
     ///   主链路请求传 true；辅助/探测请求（如断点状态回读）传 false——失败静默降级，不误踢登录页。
-    private func perform(
+    private func performResponse(
         _ request: URLRequest,
         session: URLSession,
         canRetry: Bool,
         reauthOn401: Bool = true,
         credentialGeneration expectedGeneration: UInt64? = nil,
         anonymous: Bool = false
-    ) async throws -> Data {
+    ) async throws -> APIResponse<Data> {
         let requestGeneration = expectedGeneration ?? credentialGeneration
         guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
         var attempt = 0
@@ -2115,7 +2835,7 @@ public final class APIClient: ObservableObject {
                     throw APIError.fromHTTP(statusCode: http.statusCode, body: data)
                 }
                 isOfflineMode = false
-                return data
+                return APIResponse(value: data, httpResponse: http)
             } catch let urlError as URLError where urlError.code == .cancelled {
                 guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
                 throw urlError  // 请求取消，原样上抛，不误标离线
@@ -2135,6 +2855,20 @@ public final class APIClient: ObservableObject {
         }
     }
 
+    private func perform(
+        _ request: URLRequest,
+        session: URLSession,
+        canRetry: Bool,
+        reauthOn401: Bool = true,
+        credentialGeneration expectedGeneration: UInt64? = nil,
+        anonymous: Bool = false
+    ) async throws -> Data {
+        try await performResponse(
+            request, session: session, canRetry: canRetry, reauthOn401: reauthOn401,
+            credentialGeneration: expectedGeneration, anonymous: anonymous
+        ).value
+    }
+
     /// 发起请求并解码。401 自动清 token + 置 needsReauth；网络异常置 isOfflineMode。
     /// 调用方持有外层 Task 即可实现「请求取消」（URLSession.data(for:) 对 Task 取消敏感）。
     public func request<T: Decodable>(
@@ -2147,6 +2881,24 @@ public final class APIClient: ObservableObject {
         credentialGeneration expectedGeneration: UInt64? = nil,
         anonymous: Bool = false
     ) async throws -> T {
+        try await requestWithResponse(
+            type, path: path, method: method, body: body, queryItems: queryItems,
+            reauthOn401: reauthOn401, credentialGeneration: expectedGeneration,
+            anonymous: anonymous
+        ).value
+    }
+
+    public func requestWithResponse<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        method: String = "GET",
+        body: Encodable? = nil,
+        queryItems: [URLQueryItem] = [],
+        headers: [String: String] = [:],
+        reauthOn401: Bool = true,
+        credentialGeneration expectedGeneration: UInt64? = nil,
+        anonymous: Bool = false
+    ) async throws -> APIResponse<T> {
         let requestGeneration = expectedGeneration ?? credentialGeneration
         guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
         var components = URLComponents(
@@ -2166,15 +2918,20 @@ public final class APIClient: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         applyClientContract(to: &request, includeAuthorization: !anonymous)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
         if let body {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
+        // Generation/grading reuse the existing long-running chat transport, not the 15s CRUD timeout.
+        let isLearningGeneration = method == "POST" && (path == "me/learning-exercises" || path.hasPrefix("me/learning-exercises/"))
+        let requestSession = isLearningGeneration ? chatSession : session
+        if isLearningGeneration { request.timeoutInterval = 200 }
         // 仅 GET 幂等请求自动重试；POST/PATCH/DELETE 由 UI 触发手动重试
-        let data: Data
+        let response: APIResponse<Data>
         do {
-            data = try await perform(
-                request, session: session, canRetry: method == "GET", reauthOn401: reauthOn401,
+            response = try await performResponse(
+                request, session: requestSession, canRetry: method == "GET", reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
         } catch APIError.server(let status, let raw)
@@ -2187,13 +2944,16 @@ public final class APIClient: ObservableObject {
             let accepted = await withCheckedContinuation { agreementWaiters.append($0) }
             guard accepted, anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
             // A protected request is replayed exactly once after explicit acceptance.
-            data = try await perform(
-                request, session: session, canRetry: false, reauthOn401: reauthOn401,
+            response = try await performResponse(
+                request, session: requestSession, canRetry: false, reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
         }
         do {
-            return try decoder.decode(T.self, from: data)
+            return APIResponse(
+                value: try decoder.decode(T.self, from: response.value),
+                httpResponse: response.httpResponse
+            )
         } catch {
             throw APIError.decoding(Self.describeDecodingError(error))
         }
@@ -2317,30 +3077,13 @@ public final class APIClient: ObservableObject {
         return response.subscriptions
     }
 
-    public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
-        try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
+    public func fetchLearningResume() async throws -> LearningResumeDTO? {
+        let response = try await request(LearningResumeResponse.self, path: "me/learning-resume")
+        return response.resume
     }
 
-    public func fetchPublicationImage(path: String) async throws -> Data {
-        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
-        let validAsset = (parts.count == 6 && parts[4] == "covers"
-            && ["shelf_cover", "reader_cover"].contains(parts[5]))
-            || (parts.count == 6 && parts[4] == "media"
-                && ["illustration_01", "illustration_02", "illustration_03"].contains(parts[5]))
-        guard parts.count == 6, parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
-              parts[3].hasPrefix("publication-"), parts[3].count == 44,
-              parts[3].dropFirst(12).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
-              validAsset, path.hasPrefix("/api/v1/"),
-              !path.contains("?") && !path.contains("#"),
-              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
-              url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port else {
-            throw APIError.network("无效的出版媒体地址")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("image/png, image/jpeg", forHTTPHeaderField: "Accept")
-        applyClientContract(to: &request)
-        return try await perform(request, session: session, canRetry: true)
+    public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
+        try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
     }
 
     public func subscribeBook(id: String) async throws -> KnowledgeBookSubscriptionDTO {
@@ -2363,14 +3106,17 @@ public final class APIClient: ObservableObject {
     }
 
     public func updateBookProgress(
-        id: String, progress: Double, contentVersion: String
+        id: String, progress: Double, contentVersion: String, sectionId: String,
+        blockIndex: Int = 0, characterOffset: Int = 0
     ) async throws -> KnowledgeBookSubscriptionDTO {
         try await request(
             KnowledgeBookSubscriptionDTO.self,
             path: "me/book-subscriptions/progress",
             method: "PATCH",
             body: KnowledgeBookProgressWrite(
-                bookId: id, progress: progress, contentVersion: contentVersion
+                bookId: id, progress: progress, contentVersion: contentVersion,
+                sectionId: sectionId, blockIndex: blockIndex,
+                characterOffset: characterOffset
             )
         )
     }
@@ -2572,6 +3318,77 @@ public final class APIClient: ObservableObject {
         try await request(WorkflowDTO.self, path: "workflows/\(encodedPath(id))")
     }
 
+    public func createStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        schemaId: String,
+        document: StructuredReviewDocumentDTO
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        try await requestWithResponse(
+            StructuredReviewRevisionDTO.self,
+            path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))",
+            method: "POST",
+            body: StructuredReviewWriteDTO(schemaId: schemaId, document: document)
+        )
+    }
+
+    public func fetchStructuredReview(
+        workflowId: String,
+        reviewKey: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        try await requestWithResponse(
+            StructuredReviewRevisionDTO.self,
+            path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))"
+        )
+    }
+
+    public func saveStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        schemaId: String,
+        document: StructuredReviewDocumentDTO,
+        etag: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        do {
+            return try await requestWithResponse(
+                StructuredReviewRevisionDTO.self,
+                path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))",
+                method: "PUT",
+                body: StructuredReviewWriteDTO(schemaId: schemaId, document: document),
+                headers: ["If-Match": etag]
+            )
+        } catch APIError.server(412, let raw) {
+            throw try structuredReviewConflict(from: raw)
+        }
+    }
+
+    public func undoStructuredReview(
+        workflowId: String,
+        reviewKey: String,
+        etag: String
+    ) async throws -> APIResponse<StructuredReviewRevisionDTO> {
+        do {
+            return try await requestWithResponse(
+                StructuredReviewRevisionDTO.self,
+                path: "workflows/\(encodedPath(workflowId))/structured-reviews/\(encodedPath(reviewKey))/undo",
+                method: "POST",
+                headers: ["If-Match": etag]
+            )
+        } catch APIError.server(412, let raw) {
+            throw try structuredReviewConflict(from: raw)
+        }
+    }
+
+    private func structuredReviewConflict(from raw: String) throws -> StructuredReviewConflictError {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let data = raw.data(using: .utf8),
+              let conflict = try? decoder.decode(StructuredReviewConflictEnvelope.self, from: data).detail else {
+            throw APIError.server(412, raw)
+        }
+        return StructuredReviewConflictError(payload: conflict)
+    }
+
     public func deleteWorkflow(id: String) async throws {
         let url = baseURL
             .appendingPathComponent("api/v1/workflows")
@@ -2588,20 +3405,41 @@ public final class APIClient: ObservableObject {
         description: String,
         desiredOutput: String,
         sourceDocumentId: String? = nil,
-        outputKind: String = "general"
+        outputKind: String = "general",
+        sourceClientSessionId: String
     ) async throws -> WorkflowCreateResponseDTO {
-        try await request(
-            WorkflowCreateResponseDTO.self,
-            path: "workflows",
-            method: "POST",
-            body: WorkflowCreateRequestDTO(
-                title: title,
-                description: description,
-                desiredOutput: desiredOutput,
-                sourceDocumentId: sourceDocumentId,
-                outputKind: outputKind
-            )
+        guard !sourceClientSessionId.isEmpty else {
+            throw APIError.network("当前对话会话不可用，无法创建工作流")
+        }
+        let key = UUID().uuidString
+        let requestId = UUID().uuidString
+        let client = CapabilityClient(apiClient: self)
+        let input = WorkflowCreateRequestDTO(
+            title: title, description: description, desiredOutput: desiredOutput,
+            sourceDocumentId: sourceDocumentId, outputKind: outputKind,
+            sourceClientSessionId: sourceClientSessionId
         )
+        let proposal = try await client.propose(
+            QCPCapabilityID.workflowCreate,
+            input: input,
+            sessionId: sourceClientSessionId,
+            requestId: requestId,
+            idempotencyKey: key
+        )
+        guard proposal.status == "awaiting_confirmation",
+              let confirmation = proposal.events.first?.payload,
+              let token = confirmation.confirmationToken else {
+            throw APIError.network(proposal.error?.message ?? "能力提案失败")
+        }
+        let response: QCPInvokeResponseDTO<WorkflowCreateResponseDTO> = try await client.confirm(
+            proposalId: confirmation.id,
+            confirmationToken: token,
+            sessionId: sourceClientSessionId
+        )
+        guard response.status == "completed", let output = response.events.first?.payload,
+              response.receipt != nil
+        else { throw APIError.network(response.error?.message ?? "能力调用失败") }
+        return output
     }
 
     public func fetchWorkflowClarification(
@@ -2613,17 +3451,23 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func fetchActiveWorkflowActivities() async throws -> [WorkflowActiveActivityDTO] {
+    public func fetchActiveWorkflowActivities(
+        clientSessionId: String
+    ) async throws -> [WorkflowActiveActivityDTO] {
         try await request(
             [WorkflowActiveActivityDTO].self,
-            path: "workflow-activities/active"
+            path: "workflow-activities/active",
+            queryItems: [URLQueryItem(name: "source_client_session_id", value: clientSessionId)]
         )
     }
 
-    public func fetchActiveWorkflowExecutions() async throws -> [WorkflowActiveExecutionDTO] {
+    public func fetchActiveWorkflowExecutions(
+        clientSessionId: String
+    ) async throws -> [WorkflowActiveExecutionDTO] {
         try await request(
             [WorkflowActiveExecutionDTO].self,
-            path: "workflow-executions/active"
+            path: "workflow-executions/active",
+            queryItems: [URLQueryItem(name: "source_client_session_id", value: clientSessionId)]
         )
     }
 
@@ -2840,6 +3684,17 @@ public final class APIClient: ObservableObject {
         return try decoder.decode(DocumentReceiptDTO.self, from: response)
     }
 
+    public func transcribeVoice(data: Data, contentType: String) async throws -> VoiceTranscriptionDTO {
+        let url = baseURL.appendingPathComponent("api/v1/documents/voice/transcriptions")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        applyClientContract(to: &request)
+        let response = try await perform(request, session: session, canRetry: false)
+        return try decoder.decode(VoiceTranscriptionDTO.self, from: response)
+    }
+
     public func fetchDocument(sourceId: String) async throws -> DocumentReceiptDTO {
         try await request(
             DocumentReceiptDTO.self,
@@ -2854,6 +3709,12 @@ public final class APIClient: ObservableObject {
         let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard actual == expectedHash.lowercased() else { throw APIError.network("文件完整性校验失败") }
         return data
+    }
+
+    public func fetchKnowledgeBookCover(id: String) async throws -> Data {
+        let url = baseURL.appendingPathComponent("api/v1/knowledge-books/\(encodedPath(id))/cover")
+        var request = URLRequest(url: url); request.httpMethod = "GET"; request.setValue("image/*", forHTTPHeaderField: "Accept"); applyClientContract(to: &request)
+        return try await perform(request, session: session, canRetry: true)
     }
 
     public func fetchAuthenticatedText(path: String) async throws -> String {
@@ -3044,11 +3905,11 @@ public final class APIClient: ObservableObject {
 
     public func archiveKnowledgeNote(
         id: String,
-        mergedIntoNoteId: String,
+        mergedIntoNoteId: String?,
         expectedContentHash: String? = nil
     ) async throws {
         struct Body: Encodable {
-            let mergedIntoNoteId: String
+            let mergedIntoNoteId: String?
             let expectedContentHash: String?
             enum CodingKeys: String, CodingKey {
                 case mergedIntoNoteId = "merged_into_note_id"
@@ -3271,6 +4132,7 @@ public final class APIClient: ObservableObject {
         case knowledgeActionDraft(KnowledgeActionBlock)
         case knowledgeNavigation(KnowledgeNavigationTarget)
         case answerPage(AnswerBlockPageDTO)
+        case capability(QCPStreamEvent)
         case done(sessionId: String?, answer: String?)
         case error(code: String, message: String)
 
@@ -3432,7 +4294,24 @@ public final class APIClient: ObservableObject {
                     message: json["message"] as? String ?? ""
                 )
             default:
-                return nil
+                guard let version = json["version"] as? Int else { return nil }
+                guard let renderer = json["renderer"] as? String,
+                      let rendererVersion = json["renderer_version"] as? Int else { return nil }
+                guard RendererRegistry.metadata(for: type) != nil,
+                      RendererRegistry.accepts(eventType: type, renderer: renderer),
+                      let payload = json["payload"],
+                      JSONSerialization.isValidJSONObject(payload),
+                      let data = try? JSONSerialization.data(withJSONObject: payload)
+                else { return nil }
+                return .capability(QCPStreamEvent(
+                    type: type,
+                    version: version,
+                    payload: data,
+                    renderer: renderer,
+                    rendererVersion: rendererVersion,
+                    runId: json["run_id"] as? String,
+                    eventSequence: json["event_sequence"] as? Int
+                ))
             }
         }
     }
@@ -3512,7 +4391,9 @@ public final class APIClient: ObservableObject {
                             if let data = payload.data(using: .utf8),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                                let event = StreamEvent.parse(json) {
-                                if let runId = json["run_id"] as? String, !runId.isEmpty {
+                                if case .capability = event {
+                                    // Capability blocks checkpoint themselves before advancing.
+                                } else if let runId = json["run_id"] as? String, !runId.isEmpty {
                                     continuation.yield(.runCursor(
                                         runId: runId,
                                         eventSequence: json["event_sequence"] as? Int ?? 0
@@ -3527,7 +4408,9 @@ public final class APIClient: ObservableObject {
                                let data = buffer.dropFirst(6).data(using: .utf8),
                                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                                let event = StreamEvent.parse(json) {
-                                if let runId = json["run_id"] as? String, !runId.isEmpty {
+                                if case .capability = event {
+                                    // Capability blocks checkpoint themselves before advancing.
+                                } else if let runId = json["run_id"] as? String, !runId.isEmpty {
                                     continuation.yield(.runCursor(
                                         runId: runId,
                                         eventSequence: json["event_sequence"] as? Int ?? 0
@@ -3669,7 +4552,8 @@ public final class APIClient: ObservableObject {
     public func fetchChatStatus(
         sessionId: String,
         consume: Bool = false,
-        agentId: String? = nil
+        agentId: String? = nil,
+        offset: Int = 0
     ) async throws -> ChatStatusDTO {
         var url = baseURL
             .appendingPathComponent("api/chat/status")
@@ -3678,6 +4562,7 @@ public final class APIClient: ObservableObject {
         var items: [URLQueryItem] = [URLQueryItem(name: "answer_blocks_v1", value: "true")]
         if consume { items.append(URLQueryItem(name: "consume", value: "1")) }
         if let agentId { items.append(URLQueryItem(name: "agent_id", value: agentId)) }
+        if offset > 0 { items.append(URLQueryItem(name: "offset", value: String(offset))) }
         comps?.queryItems = items
         if let u = comps?.url { url = u }
         var request = URLRequest(url: url)

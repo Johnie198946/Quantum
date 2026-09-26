@@ -8,6 +8,33 @@ import UIKit
 import Security
 @testable import AIPlatformApp
 
+extension XCTestCase {
+    @MainActor
+    func makeSessionManager(store: ChatHistoryStore) -> SessionManager {
+        let manager = SessionManager(store: store)
+        addTeardownBlock { try await manager.shutdown(closeStore: true) }
+        return manager
+    }
+
+    @MainActor
+    func consumeExpectedPersistenceMutationFailure(
+        _ manager: SessionManager,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        do {
+            try await manager.shutdown()
+            XCTFail("shutdown must expose the queued persistence mutation failure", file: file, line: line)
+        } catch {
+            XCTAssertEqual(
+                error as? SessionManager.ShutdownError,
+                .persistenceMutationFailed,
+                file: file, line: line
+            )
+        }
+        manager.acknowledgeFailedPersistenceMutations()
+    }
+}
+
 private final class LockedErrorBox: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [Error] = []
@@ -63,13 +90,50 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         let responseBody: Data
         var responseStatus = 200
         var responseError: URLError?
+        var responseHeaders = ["Content-Type": "application/json"]
         switch (isContractOrigin, method, path) {
+        case (true, "GET", let reviewPath) where reviewPath.contains("/structured-reviews/final-draft"):
+            if reviewPath.contains("missing-review") {
+                responseStatus = 404
+                responseBody = Data(#"{"detail":"结构化审核不存在"}"#.utf8)
+            } else {
+                responseHeaders["ETag"] = #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#
+                responseBody = Self.structuredReviewResponse(version: 1, action: "create", title: "最终文稿")
+            }
+        case (true, "POST", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft"):
+            responseStatus = 201
+            responseHeaders["ETag"] = #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#
+            responseBody = Self.structuredReviewResponse(version: 1, action: "create", title: "最终文稿")
+        case (true, "PUT", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft"):
+            if request.value(forHTTPHeaderField: "If-Match") == #""stale""# {
+                responseStatus = 412
+                responseBody = Data(#"{"detail":{"code":"structured_review_conflict","message":"审核内容已更新，请合并后重试","remote":{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":2,"parent_version":1,"content_hash":"bbbbbbbb","document":{"title":"远端文稿","fields":[{"id":"title","label":"标题","type":"text","required":true}],"values":{"title":"远端值"}},"action":"save","receipt_id":"receipt-2","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"},"remote_etag":"\"sr:final-draft:2:bbbbbbbb\""}}"#.utf8)
+            } else {
+                responseHeaders["ETag"] = #""sr:final-draft:2:bbbbbbbbbbbbbbbb""#
+                responseBody = Self.structuredReviewResponse(version: 2, action: "save", title: "最终文稿")
+            }
+        case (true, "POST", let reviewPath) where reviewPath.hasSuffix("/structured-reviews/final-draft/undo"):
+            responseHeaders["ETag"] = #""sr:final-draft:3:cccccccccccccccc""#
+            responseBody = Self.structuredReviewResponse(version: 3, action: "undo", title: "最终文稿")
         case (true, "GET", "/api/v1/auth/capabilities"):
             // TEST FIXTURE: delayed public success exposes credential-generation races.
             responseBody = Data(#"{"phone":{"enabled":true},"oauth":{"wechat":{"enabled":false},"alipay":{"enabled":true}}}"#.utf8)
         case (true, "GET", "/api/v1/workflow-activities/active"):
             responseStatus = 401
             responseBody = Data(#"{"detail":"test fixture unauthorized"}"#.utf8)
+        case (true, "POST", "/api/v1/capabilities/proposals"):
+            let delayed = String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true
+            let proposalId = delayed ? "delayed-proposal-123456" : "stable-proposal-123456"
+            let title = delayed ? "Delayed" : "QCP"
+            responseBody = Data("{\"status\":\"awaiting_confirmation\",\"capability_id\":\"workflow.create\",\"events\":[{\"type\":\"capability.proposed\",\"version\":1,\"payload\":{\"proposal_id\":\"\(proposalId)\",\"confirmation_token\":\"confirmation-token-abcdefghijklmnopqrstuvwxyz\",\"capability_id\":\"workflow.create\",\"input\":{\"title\":\"\(title)\",\"description\":\"Create workflow\"},\"summary\":\"Create\",\"risk\":\"medium\",\"state\":\"awaiting_confirmation\"}}],\"receipt\":null,\"error\":null}".utf8)
+        case (true, "POST", "/api/v1/capabilities/confirm"):
+            if String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-proposal") == true {
+                responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"workflow":{"id":"tenant-a-workflow","title":"Delayed","description":"delayed-switch","desired_output":"report","status":"clarifying","active_plan_id":null,"clarification_session_id":"clarification-1","primary_agent_id":null,"created_at":null,"updated_at":null,"latest_execution":null},"clarification_session":{"id":"clarification-1","workflow_id":"tenant-a-workflow","phase":"clarifying","round_number":1,"last_event_seq":1}}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
+            } else {
+                responseBody = Data(#"{"status":"completed","capability_id":"workflow.create","events":[{"type":"workflow.created","version":1,"payload":{"value":"ok"}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"workflow.created"},"error":null}"#.utf8)
+            }
+        case (true, "POST", "/api/v1/capabilities/invoke"):
+            responseBody = Data(#"{"status":"completed","capability_id":"knowledge.note.search","events":[{"type":"knowledge.results","version":1,"payload":{"value":"ok"}}],"receipt":{"invocation_id":"qcp-read","capability_version":"1.0.0","status":"completed","event_type":"knowledge.results"},"error":null}"#.utf8)
         case (true, "GET", "/api/v1/legal/agreement"):
             responseBody = Data(#"{"version":"2026-09-06","title":"服务协议","updated_at":"2026-09-06T00:00:00Z","sections":[{"id":"service","title":"用户服务协议","clauses":["服务条款"]},{"id":"privacy","title":"隐私保护条款","clauses":["隐私条款"]},{"id":"knowledge-contribution","title":"知识共建协议","clauses":["共建条款"]}]}"#.utf8)
         case (true, "PUT", "/api/v1/me/agreement-acceptance"):
@@ -83,10 +147,10 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         case (true, "PUT", "/api/v1/me/book-subscriptions"),
              (true, "PATCH", "/api/v1/me/book-subscriptions/progress"):
             responseBody = Self.subscriptionResponse
+        case (true, "GET", "/api/v1/me/learning-resume"):
+            responseBody = Data(#"{"resume":{"subscription":{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"last_section_id":"section-2","last_block_index":3,"last_character_offset":18,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"},"section_id":"section-2","section_title":"边界条件","block_index":3,"character_offset":18,"key_points":[{"title":"条件一","detail":"先验证输入。","source_excerpt":"先验证输入。"},{"title":"条件二","detail":"再检查结果。","source_excerpt":"再检查结果。"}]}}"#.utf8)
         case (true, "DELETE", "/api/v1/me/book-subscriptions"):
             responseBody = Data(#"{"deleted":true}"#.utf8)
-        case (true, "GET", let coverPath) where coverPath.hasPrefix("/api/v1/knowledge-publications/publication-"):
-            responseBody = Data("synthetic-image-bytes".utf8)
         case (true, "PUT", let notePath) where notePath.hasPrefix("/api/v1/me/knowledge-notes/"):
             let body = String(data: requestBody ?? Data(), encoding: .utf8) ?? ""
             let object = (try? JSONSerialization.jsonObject(with: requestBody ?? Data())) as? [String: Any]
@@ -102,7 +166,7 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             url: request.url!,
             statusCode: isAllowed ? responseStatus : 418,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         let deliver = { [self] in
             if let responseError {
@@ -113,7 +177,9 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didLoad: responseBody)
             client?.urlProtocolDidFinishLoading(self)
         }
-        if path == "/api/v1/auth/capabilities" || path.hasPrefix("/api/v1/me/knowledge-notes/") {
+        if path == "/api/v1/auth/capabilities"
+            || path.hasPrefix("/api/v1/me/knowledge-notes/")
+            || String(data: requestBody ?? Data(), encoding: .utf8)?.contains("delayed-switch") == true {
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.1, execute: deliver)
         } else {
             deliver()
@@ -138,9 +204,208 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static let subscriptionResponse = Data(#"{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"}"#.utf8)
+
+    private static func structuredReviewResponse(version: Int, action: String, title: String) -> Data {
+        Data("""
+        {"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v2","version":\(version),"parent_version":\(version == 1 ? "null" : String(version - 1)),"content_hash":"hash-\(version)","document":{"title":"\(title)","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"notes","label":"审核意见","type":"textarea","required":false},{"id":"decision","label":"审核结论","type":"choice","required":true,"options":["需要修改","可以确认"]},{"id":"score","label":"评分","type":"number","required":false},{"id":"checked","label":"已检查成果预览","type":"toggle","required":true},{"id":"agenda","label":"要点列表","type":"list","required":true},{"id":"pages","label":"页面结构","type":"page_structure","required":true},{"id":"hero","label":"主视觉素材","type":"asset","required":true}],"values":{"title":"\(title)","notes":"逐项核对来源与版式","decision":"可以确认","score":5,"checked":true,"agenda":["背景","方案"],"pages":[{"id":"slide-1","title":"封面","summary":"主题视觉"}],"hero":{"id":"asset-1","name":"主视觉","url":"https://example.invalid/hero.jpg"}}},"action":"\(action)","receipt_id":"receipt-\(version)","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}
+        """.utf8)
+    }
 }
 
 final class WorkflowLifecycleDTOTests: XCTestCase {
+    func testStructuredReviewDTOsPreserveMixedScalarValues() throws {
+        let payload = Data(#"{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":2,"parent_version":1,"content_hash":"hash","document":{"title":"最终文稿","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"sequence","label":"序号","type":"number","required":false},{"id":"score","label":"评分","type":"number","required":false},{"id":"approved","label":"确认","type":"toggle","required":false},{"id":"notes","label":"备注","type":"textarea","required":false}],"values":{"title":"真实标题","sequence":9007199254740991,"score":4.5,"approved":true,"notes":null}},"action":"save","receipt_id":"receipt-2","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let revision = try decoder.decode(StructuredReviewRevisionDTO.self, from: payload)
+
+        XCTAssertEqual(revision.document.values["title"], .string("真实标题"))
+        XCTAssertEqual(revision.document.values["sequence"], .integer(9_007_199_254_740_991))
+        XCTAssertEqual(revision.document.values["score"], .number(4.5))
+        XCTAssertEqual(revision.document.values["approved"], .bool(true))
+        XCTAssertEqual(revision.document.values["notes"], .null)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(revision.document)) as? [String: Any]
+        let values = try XCTUnwrap(encoded?["values"] as? [String: Any])
+        XCTAssertEqual(values["title"] as? String, "真实标题")
+        XCTAssertEqual(values["sequence"] as? Int64, 9_007_199_254_740_991)
+        XCTAssertEqual(values["score"] as? Double, 4.5)
+        XCTAssertEqual(values["approved"] as? Bool, true)
+        XCTAssertTrue(values["notes"] is NSNull)
+    }
+
+    func testStructuredReviewDTOsPreserveListsPageStructureAndAssets() throws {
+        let payload = Data(#"{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v2","version":3,"parent_version":2,"content_hash":"hash","document":{"title":"完整全稿","fields":[{"id":"agenda","label":"要点列表","type":"list","required":true},{"id":"pages","label":"页面结构","type":"page_structure","required":true},{"id":"hero","label":"主视觉素材","type":"asset","required":true}],"values":{"agenda":["背景","方案"],"pages":[{"id":"slide-1","title":"封面","summary":"主题视觉"},{"id":"slide-2","title":"路线","summary":"地理路线图"}],"hero":{"id":"asset-1","name":"博斯普鲁斯海峡","url":"https://example.invalid/hero.jpg","source_url":"https://example.invalid/source","mime_type":"image/jpeg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"action":"save","receipt_id":"receipt-3","source_client_session_id":"session-a","created_at":"2026-09-17T00:00:00Z"}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        let revision = try decoder.decode(StructuredReviewRevisionDTO.self, from: payload)
+
+        XCTAssertEqual(revision.document.fields.map(\.type), [.list, .pageStructure, .asset])
+        XCTAssertEqual(revision.document.values["agenda"], .array([.string("背景"), .string("方案")]))
+        XCTAssertEqual(
+            revision.document.values["pages"],
+            .array([
+                .object(["id": .string("slide-1"), "title": .string("封面"), "summary": .string("主题视觉")]),
+                .object(["id": .string("slide-2"), "title": .string("路线"), "summary": .string("地理路线图")]),
+            ])
+        )
+        guard case .object(let asset) = revision.document.values["hero"] else {
+            return XCTFail("Expected asset object")
+        }
+        XCTAssertEqual(asset["name"], .string("博斯普鲁斯海峡"))
+        XCTAssertEqual(asset["mime_type"], .string("image/jpeg"))
+        XCTAssertEqual(asset["sha256"], .string(String(repeating: "a", count: 64)))
+        let encoded = try JSONEncoder().encode(revision.document)
+        let roundTrip = try decoder.decode(StructuredReviewDocumentDTO.self, from: encoded)
+        XCTAssertEqual(roundTrip, revision.document)
+    }
+
+    @MainActor
+    func testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let document = StructuredReviewDocumentDTO(
+            title: "最终文稿",
+            fields: [.init(id: "title", label: "标题", type: .text, required: true, options: nil)],
+            values: ["title": .string("本地值")]
+        )
+
+        let created = try await client.createStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", document: document
+        )
+        let fetched = try await client.fetchStructuredReview(workflowId: "workflow-1", reviewKey: "final-draft")
+        let saved = try await client.saveStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", document: document,
+            etag: try XCTUnwrap(created.etag)
+        )
+        _ = try await client.undoStructuredReview(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            etag: try XCTUnwrap(saved.etag)
+        )
+        do {
+            _ = try await client.saveStructuredReview(
+                workflowId: "workflow-1", reviewKey: "final-draft",
+                schemaId: "workflow.structured-review.v1", document: document,
+                etag: #""stale""#
+            )
+            XCTFail("Expected a typed 412 conflict")
+        } catch let error as StructuredReviewConflictError {
+            let conflict = error.payload
+            XCTAssertEqual(conflict.code, "structured_review_conflict")
+            XCTAssertEqual(conflict.remote.version, 2)
+            XCTAssertEqual(conflict.remote.document.values["title"], .string("远端值"))
+            XCTAssertEqual(conflict.remoteEtag, #""sr:final-draft:2:bbbbbbbb""#)
+        }
+
+        XCTAssertEqual(created.etag, #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#)
+        XCTAssertEqual(fetched.etag, #""sr:final-draft:1:aaaaaaaaaaaaaaaa""#)
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.httpMethod }, ["POST", "GET", "PUT", "POST", "PUT"])
+        XCTAssertEqual(requests[2].request.value(forHTTPHeaderField: "If-Match"), created.etag)
+        XCTAssertEqual(requests[3].request.value(forHTTPHeaderField: "If-Match"), saved.etag)
+        XCTAssertEqual(requests[4].request.value(forHTTPHeaderField: "If-Match"), #""stale""#)
+    }
+
+    @MainActor
+    func testStructuredReviewViewModelCreatesOnlyAfterServerNotFound() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let seed = StructuredReviewDocumentDTO(
+            title: "来自成果标题",
+            fields: [.init(id: "title", label: "标题", type: .text, required: true, options: nil)],
+            values: ["title": .string("来自成果标题")]
+        )
+        let model = StructuredReviewViewModel(
+            workflowId: "missing-review", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", initialDocument: seed,
+            apiClient: client
+        )
+
+        await model.load()
+
+        XCTAssertEqual(model.revision?.version, 1)
+        XCTAssertNil(model.errorMessage)
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.httpMethod }, ["GET", "POST"])
+        let createBody = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(requests.last?.body)) as? [String: Any]
+        )
+        let createdDocument = try XCTUnwrap(createBody["document"] as? [String: Any])
+        XCTAssertEqual(createdDocument["title"] as? String, "来自成果标题")
+    }
+
+    @MainActor
+    func testStructuredReviewRendersAllSchemaFieldTypesOnSimulator() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "token"
+        )
+        let seed = StructuredReviewDocumentDTO(title: "占位", fields: [], values: [:])
+        let model = StructuredReviewViewModel(
+            workflowId: "workflow-1", reviewKey: "final-draft",
+            schemaId: "workflow.structured-review.v1", initialDocument: seed,
+            apiClient: client
+        )
+        await model.load()
+
+        XCTAssertEqual(
+            Set(model.document.fields.map(\.type)),
+            Set([.text, .textarea, .choice, .number, .toggle, .list, .pageStructure, .asset])
+        )
+        XCTAssertEqual(model.revision?.version, 1)
+        XCTAssertNil(model.errorMessage)
+
+        let size = CGSize(width: 393, height: 844)
+        let controller = UIHostingController(
+            rootView: ScrollView {
+                StructuredReviewView(model: model)
+                    .padding(16)
+            }
+            .frame(width: size.width, height: size.height)
+            .background(AppTheme.Colors.background)
+        )
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<3 {
+            await Task.yield()
+            controller.view.layoutIfNeeded()
+        }
+
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            window.layer.render(in: context.cgContext)
+        }
+        let png = try XCTUnwrap(image.pngData())
+        XCTAssertGreaterThan(png.count, 20_000, "结构化审核页未形成有效模拟器渲染")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Structured-review-all-schema-fields"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testDocumentContributionStatusMapsToVisibleTransferState() {
         XCTAssertEqual(AttachmentTransferState.documentStatus("queued"), .compiling)
         XCTAssertEqual(AttachmentTransferState.documentStatus("privacy_reviewing"), .compiling)
@@ -455,7 +720,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
         let subscription = try await client.subscribeBook(id: "kn-1")
         let progress = try await client.updateBookProgress(
-            id: "kn-1", progress: 0.42, contentVersion: contentVersion
+            id: "kn-1", progress: 0.42, contentVersion: contentVersion,
+            sectionId: "section-2", blockIndex: 3, characterOffset: 18
         )
         try await client.unsubscribeBook(id: "kn-1")
 
@@ -487,14 +753,17 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(Set(bodies[0].keys), Set(["book_id", "edition"]))
         XCTAssertEqual(bodies[0]["book_id"] as? String, "kn-1")
         XCTAssertEqual(bodies[0]["edition"] as? Int, 1)
-        XCTAssertEqual(Set(bodies[1].keys), Set(["book_id", "progress", "content_version"]))
+        XCTAssertEqual(Set(bodies[1].keys), Set(["book_id", "progress", "content_version", "section_id", "block_index", "character_offset"]))
         XCTAssertEqual(bodies[1]["content_version"] as? String, contentVersion)
+        XCTAssertEqual(bodies[1]["section_id"] as? String, "section-2")
+        XCTAssertEqual(bodies[1]["block_index"] as? Int, 3)
+        XCTAssertEqual(bodies[1]["character_offset"] as? Int, 18)
         XCTAssertEqual(try XCTUnwrap(bodies[1]["progress"] as? Double), 0.42, accuracy: 0.001)
         XCTAssertEqual(bodies[2]["book_id"] as? String, "kn-1")
     }
 
     @MainActor
-    func testPublicationCoverUsesAuthenticatedRelativeAPIPath() async throws {
+    func testLearningResumeDecodesExactSectionAndTwoPoints() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
         let configuration = URLSessionConfiguration.ephemeral
@@ -502,40 +771,196 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let client = APIClient(
             baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
             sessionConfiguration: configuration,
-            inMemoryToken: "cover-token"
-        )
-        let publicationID = "publication-" + String(repeating: "a", count: 32)
-
-        let data = try await client.fetchPublicationImage(
-            path: "/api/v1/knowledge-publications/\(publicationID)/covers/shelf_cover"
+            inMemoryToken: "[REDACTED]"
         )
 
-        XCTAssertEqual(data, Data("synthetic-image-bytes".utf8))
-        let request = try XCTUnwrap(APIContractURLProtocol.requests().first?.request)
-        XCTAssertEqual(request.url?.host, "contract.invalid")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer cover-token")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg")
-        do {
-            _ = try await client.fetchPublicationImage(path: "https://evil.invalid/cover.png")
-            XCTFail("absolute cover URLs must be rejected")
-        } catch {}
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+        let fetched = try await client.fetchLearningResume()
+        let resume = try XCTUnwrap(fetched)
 
-        _ = try await client.fetchPublicationImage(
-            path: "/api/v1/knowledge-publications/\(publicationID)/media/illustration_01"
-        )
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
-        for unsafe in [
-            "/api/v1/knowledge-publications/\(publicationID)/media/illustration_04",
-            "/api/v1/knowledge-publications/\(publicationID)/media/../evidence",
-            "//evil.invalid/api/v1/knowledge-publications/\(publicationID)/media/illustration_01",
-        ] {
-            do {
-                _ = try await client.fetchPublicationImage(path: unsafe)
-                XCTFail("unsafe publication media URL must be rejected")
-            } catch {}
+        XCTAssertEqual(resume.sectionId, "section-2")
+        XCTAssertEqual(resume.subscription.lastSectionId, "section-2")
+        XCTAssertEqual(resume.blockIndex, 3)
+        XCTAssertEqual(resume.characterOffset, 18)
+        XCTAssertEqual(resume.keyPoints.map(\.title), ["条件一", "条件二"])
+        XCTAssertEqual(resume.keyPoints.map(\.sourceExcerpt), ["先验证输入。", "再检查结果。"])
+        let welcome = LearningWelcomeView(resume: resume, resumeStatus: "正在读取上次进度…", onAction: nil)
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains(resume.subscription.book.title))
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains(resume.sectionTitle))
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains("百分之\(Int(resume.subscription.progress * 100))"))
+        for status in ["正在读取上次进度…", "还没有阅读记录", "暂时无法读取进度，点击重试"] {
+            XCTAssertEqual(LearningWelcomeView(resume: nil, resumeStatus: status, onAction: nil).learningAccessibilityLabel, "继续学，\(status)")
         }
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
+        let heroRenderer = ImageRenderer(content: welcome.learningHero.frame(width: 350))
+        heroRenderer.scale = 2
+        let hero = XCTAttachment(image: try XCTUnwrap(heroRenderer.uiImage))
+        hero.name = "home-real-reading-resume"
+        hero.lifetime = .keepAlways
+        add(hero)
+
+        let first = LearningResumePointDTO(title: "概念", detail: "注意力机制是指计算输入位置之间的相关性。", sourceExcerpt: "注意力机制是指计算输入位置之间的相关性。", kind: "concept", score: 3)
+        let second = LearningResumePointDTO(title: "联系", detail: "交叉注意力与自注意力的区别在于输入来源。", sourceExcerpt: "交叉注意力与自注意力的区别在于输入来源。", kind: "connection", score: 3)
+        let future = LearningResumePointDTO(title: "未读", detail: "未来章节是指尚未阅读的后续内容。", sourceExcerpt: "未来章节是指尚未阅读的后续内容。", kind: "concept", score: 3)
+        let section = KnowledgeBookSectionDTO(id: "section-2", title: "注意力", level: 1, markdown: "\(second.detail)\n\n\(first.detail)\n\n\(future.detail)")
+        let checkpoint = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 1, characterOffset: (first.detail as NSString).length,
+            keyPoints: [future, first, second], candidates: [future, first, first, second])
+        let version = try XCTUnwrap(resume.subscription.contentVersion)
+        XCTAssertEqual(checkpoint.visiblePoints(in: section, contentVersion: version), [first, second])
+        XCTAssertEqual(checkpoint.visiblePoints(in: section, contentVersion: "changed-version"), [])
+        let partial = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 0, characterOffset: 2, keyPoints: [second])
+        XCTAssertEqual(partial.visiblePoints(in: section, contentVersion: version), [])
+
+        // Production Build49 returns title/detail without source_excerpt or kind.
+        let legacyFirst = LearningResumePointDTO(title: "旧概念", detail: first.detail, sourceExcerpt: nil)
+        let legacySecond = LearningResumePointDTO(title: "旧联系", detail: second.detail, sourceExcerpt: nil)
+        let fabricated = LearningResumePointDTO(title: "占位", detail: "继续理解本节中的核心概念与推理关系。", sourceExcerpt: nil)
+        let legacy = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 1, characterOffset: (first.detail as NSString).length,
+            keyPoints: [fabricated, legacyFirst, legacySecond, future])
+        XCTAssertEqual(legacy.visiblePoints(in: section, contentVersion: version), [legacyFirst, legacySecond])
+        XCTAssertEqual(legacy.visiblePoints(in: section, contentVersion: "changed-version"), [])
+        var modernMissingEvidence = legacy
+        modernMissingEvidence.candidates = [legacyFirst, legacySecond]
+        XCTAssertEqual(modernMissingEvidence.visiblePoints(in: section, contentVersion: version), [])
+    }
+
+    @MainActor
+    func testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText() throws {
+        let original = "第一句。\n\n\n\n原文例子：\t {not json}  👨‍👩‍👧‍👦"
+        XCTAssertEqual(LearningConversationRecap.excerpt(original), "第一句。 原文例子： {not json} 👨‍👩‍👧‍👦")
+        XCTAssertTrue(original.contains("\n\n\n\n"))
+        XCTAssertEqual(LearningConversationRecap.excerpt(" \n\t"), "")
+        XCTAssertEqual(LearningConversationRecap.excerpt(String(repeating: "字", count: 181)), String(repeating: "字", count: 180) + "…")
+        for width in [320.0, 390.0] {
+            let preview = LearningConversationRecap(
+                question: "请结合我当前阅读位置和已有学习记忆，解释“载荷定位常被一句找到第一个左花括号草草带过”。这个规则为什么重要？",
+                answer: "从一段混有说明文字的响应中提取 JSON 时，不能简单地把第一个左花括号当成 JSON 的起点。\n\n\n\n原文被截断的完整例子是：\n\n格式说明 {not json}。",
+                sectionTitle: "载荷定位：支持前后缀，但不吞掉歧义",
+                onContinue: {}, onSource: {}
+            ).padding(16).frame(width: width).background(Color.white)
+            let renderer = ImageRenderer(content: preview)
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertLessThan(image.size.height, 600, "预览不应被历史回答的空行撑成长页")
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Learning-recap-\(Int(width))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    func testLearningRecapUsesStructuredSavedPreview() throws {
+        XCTAssertTrue(LearningRecapPrompt.isRecap(LearningRecapPrompt.question))
+        XCTAssertFalse(LearningRecapPrompt.isRecap("举个例子"))
+        XCTAssertLessThan(LearningRecapPrompt.question.count, 200)
+        XCTAssertTrue(LearningRecapPrompt.instruction.contains("不超过 220 个汉字"))
+        let answer = """
+        ## 一句话抓住
+        数据不完整时先确认响应是否结束。
+
+        ## 记住这三点
+        - 概念：未结束不等于错误。
+        - 条件或机制：确认完成信号再解析。
+        - 易错处：不要凭缺失的括号猜测真实值。
+
+        ## 一个贴近大学生活的例子
+        作业系统记录还在上传时，先等待完成提示。
+        """
+        XCTAssertTrue(ReadingCardDeck.answerBlocks(from: answer).contains {
+            if case .heading = $0 { return true }; return false
+        })
+        for width in [320.0, 390.0] {
+            let card = LearningConversationRecap(
+                question: LearningRecapPrompt.question, answer: answer,
+                sectionTitle: "第 3 章", onContinue: {}, onSource: {}, isRecap: true
+            )
+            .padding(16).frame(width: width).background(Color.white)
+            let renderer = ImageRenderer(content: card)
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertGreaterThan(image.size.height, 180)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Learning-persistent-recap-\(Int(width))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    func testLearningExerciseTypesSelectionAndRichQuestionRendering() async throws {
+        let incomplete = AsyncThrowingStream<APIClient.StreamEvent, Error> { continuation in
+            continuation.yield(.delta("不完整的评阅")); continuation.finish()
+        }
+        do { _ = try await collectChatAnswer(from: incomplete); XCTFail("未完成流不得作为完成评阅保存") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("未完整")) }
+        let complete = AsyncThrowingStream<APIClient.StreamEvent, Error> { continuation in
+            continuation.yield(.done(sessionId: nil, answer: "完整评阅")); continuation.finish()
+        }
+        let collected = try await collectChatAnswer(from: complete)
+        XCTAssertEqual(collected, "完整评阅")
+        let body = "## 已知条件\n\n\n| 灯塔 | 甲刻度 | 乙刻度 |\n| --- | --- | --- |\n| 甲塔 | 7 | 3 |\n| 乙塔 | 6 | 5 |\n\n## 作答要求\n\n1. 写出合并后的刻度。\n2. 解释重复合并的结果。"
+        XCTAssertTrue(MarkdownBlockParser.shared.parse(body).contains { if case .table = $0 { return true }; return false })
+        let questions = LearningExerciseKind.allCases.enumerated().map { index, kind in
+            MixedExerciseQuestion(hint: index == 0 ? "先观察同一份状态重复合并后的变化。" : nil, id: "q\(index + 1)", kind: kind,
+                body: kind == .judgement ? "重复合并相同状态不会改变结果。" : (kind == .choice ? "以下哪项符合合并规则？" : body),
+                knowledgePoint: "幂等合并", difficulty: 1, minutes: 2, sourceExcerpt: "合并时对每个分量取最大值。",
+                options: kind == .judgement ? [.init(id: "T", text: "正确"), .init(id: "F", text: "错误")] :
+                    (kind == .choice ? [.init(id: "A", text: "直接覆盖"), .init(id: "B", text: "分量取最大值")] : []),
+                isMultiple: false)
+        }
+        XCTAssertEqual(questions[0].presentation.selecting("B", from: ["A"]), ["B"])
+        XCTAssertEqual(questions[1].presentation.selecting("F", from: ["T"]), ["F"])
+        XCTAssertTrue(questions[1].isAnswered(.init(selected: ["T"])))
+        XCTAssertFalse(questions[2].isAnswered(.init(text: " \n ")))
+        let multi = LearningExerciseQuestion(kind: .choice, body: "", isMultiple: true, options: questions[0].options)
+        XCTAssertEqual(multi.selecting("B", from: ["A"]), ["A", "B"])
+        XCTAssertEqual(multi.selecting("A", from: ["A", "B"]), ["B"])
+        let exercise = MixedExerciseDTO(
+            id: UUID().uuidString, status: "draft", revision: 1, bookId: "book", sectionId: "chapter",
+            contentVersion: String(repeating: "a", count: 64), bookTitle: "群岛灯塔的潮汐日志", sectionTitle: "幂等性",
+            summary: "你反复询问旧抄本如何合并。本组先检查概念，再通过解答与解释确认推理。尚无可靠成绩，因此从基础诊断开始。",
+            confidence: "low", unavailable: [], evidenceKinds: ["reading", "saved_dialogue", "scored_attempts"],
+            minutes: 8, questions: questions, answers: [:], results: [], error: nil)
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let payload = try encoder.encode(exercise)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoded = try decoder.decode(MixedExerciseDTO.self, from: payload)
+        XCTAssertEqual(Set(decoded.questions.map(\.kind)), Set(LearningExerciseKind.allCases))
+        XCTAssertEqual(decoded.questions[0].hint, questions[0].hint)
+        XCTAssertNil(decoded.questions[1].hint)
+        XCTAssertTrue(decoded.results.isEmpty)
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("correct_ids"))
+        let draft = MixedExerciseSave(revision: 1, answers: ["q1": .init(selected: ["B"]), "q3": .init(text: "先取最大值。\n重复合并保持不变。", assisted: true)])
+        XCTAssertEqual(try JSONDecoder().decode(MixedExerciseSave.self, from: JSONEncoder().encode(draft)).answers, draft.answers)
+        let size = CGSize(width: 390, height: 844)
+        let host = UIHostingController(rootView: LearningExerciseView(
+            sourceTitle: exercise.bookTitle, contextScope: .init(selectedBookId: "book", selectedBookVersion: exercise.contentVersion, selectedBookSectionId: "chapter"),
+            exercise: decoded))
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<3 { await Task.yield(); host.view.layoutIfNeeded() }
+        let screen = UIGraphicsImageRenderer(size: size).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+        let fullPage = XCTAttachment(image: screen)
+        fullPage.name = "mixed-exercise-single-page"
+        fullPage.lifetime = .keepAlways
+        add(fullPage)
+        func scrollViews(in view: UIView) -> [UIScrollView] {
+            (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+        }
+        let scroll = try XCTUnwrap(scrollViews(in: host.view).max { $0.contentSize.height < $1.contentSize.height })
+        XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height * 2)
+        for (name, fraction) in [("mixed-judgement-and-solution", CGFloat(0.4)), ("mixed-response", CGFloat(1))] {
+            scroll.setContentOffset(CGPoint(x: 0, y: (scroll.contentSize.height - scroll.bounds.height) * fraction), animated: false)
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(size: size).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
     }
 
     func testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges() {
@@ -549,6 +974,40 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             selectedVersion: "service-v1", currentVersion: "service-v2"
         ))
         XCTAssertFalse(LoginConsentPolicy.isAccepted(selectedVersion: nil, currentVersion: "service-v1"))
+    }
+
+    @MainActor
+    func testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload() throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")), sessionConfiguration: config, inMemoryToken: "fixture")
+        let store = KnowledgeNoteStore.shared
+        let tenant = "reader-test-\(UUID())"
+        store.activate(tenantKey: tenant, userId: "reader")
+        var ids: [String] = []
+        defer {
+            store.activate(tenantKey: tenant, userId: "reader")
+            ids.forEach { store.moveToTrash(id: $0) }
+            store.deactivate()
+        }
+        let longAnswer = String(repeating: "完整答案，不截断。\n\n", count: 350).trimmingCharacters(in: .whitespacesAndNewlines)
+        for index in 1...3 {
+            let entry = try XCTUnwrap(ReaderAnnotationEntry.save(
+                quote: "同一段原文", detail: "我的问题\n第\(index)次追问\n\nAI 回答摘要\n\(longAnswer)",
+                bookID: "book", bookTitle: "测试书", sectionID: "section", sectionTitle: "测试章",
+                citation: "fixture", contentVersion: String(repeating: "a", count: 64), sessionID: "saved-session", api: api
+            ))
+            ids.append(entry.id)
+        }
+        store.reload()
+        let restored = store.notes.compactMap(ReaderAnnotationEntry.init(note:))
+        XCTAssertEqual(restored.count, 3)
+        XCTAssertTrue(restored.allSatisfy { $0.questionTurn?.answer == longAnswer && $0.questionTurn?.sessionID == "saved-session" })
+        XCTAssertEqual(Set(restored.compactMap { $0.questionTurn?.question }), ["第1次追问", "第2次追问", "第3次追问"])
+        store.activate(tenantKey: tenant, userId: "other-reader")
+        XCTAssertTrue(store.notes.isEmpty)
     }
 
     @MainActor
@@ -915,11 +1374,60 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(shelf.books.first?.coverVariant, 3)
         XCTAssertEqual(shelf.books.first?.author, "Anthropic")
         XCTAssertEqual(shelf.books.first?.authorSource, "raw")
-        XCTAssertNil(shelf.books.first?.shelfCoverUrl)
+    }
+
+    func testComponentAssetLibraryUsesExistingBookAndNoteMetadata() {
+        XCTAssertEqual(
+            ContentAssetLibrary.bookCoverName(theme: "strategic-signal", title: "战略信号手册"),
+            "book_cover_history"
+        )
+        XCTAssertEqual(
+            ContentAssetLibrary.journalCoverName(tags: ["travel"], title: "京都路线"),
+            "journal_cover_travel"
+        )
+        XCTAssertEqual(ContentAssetLibrary.contentIconName(for: "整理这篇文章"), "content_icon_reading")
+        XCTAssertNotEqual(
+            ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 0),
+            ContentAssetLibrary.bookCoverName(theme: "product", title: "产品手册", variant: 1)
+        )
+
+        let first = ContentAssetLibrary.bookCoverIdentity(
+            theme: "technology", title: "AI 实践", seed: "book-a", variant: nil
+        )
+        XCTAssertEqual(
+            first,
+            ContentAssetLibrary.bookCoverIdentity(
+                theme: "technology", title: "AI 实践", seed: "book-a", variant: nil
+            )
+        )
+        XCTAssertNotEqual(
+            first,
+            ContentAssetLibrary.bookCoverIdentity(
+                theme: "technology", title: "AI 实践", seed: "book-b", variant: nil
+            )
+        )
+        XCTAssertEqual(
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-9e5e04c6c07dc21ce840680202c9e15a"),
+            "book_publication_receipt"
+        )
+        XCTAssertNotEqual(
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-e7cb8f3397988e37367ecbeeaf754e20"),
+            ContentAssetLibrary.publicationCoverAssetName(for: "publication-e1e02beb258aa637301e7f757a954674")
+        )
+    }
+
+    func testTravelPlanDocumentDecodesSideRouteArtifactContent() throws {
+        let content = #"{"destination":"日本 · 京都","date_range":"4月12日 – 4月16日","budget":"约 ¥8,000/人","companions":2,"style":"人文 · 美食","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"清水寺","latitude":34.9949,"longitude":135.7850}]}"#
+
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+
+        XCTAssertEqual(plan.destination, "日本 · 京都")
+        XCTAssertEqual(plan.dateRange, "4月12日 – 4月16日")
+        XCTAssertEqual(plan.stops.map(\.name), ["京都站", "清水寺"])
     }
 
     func testDailyPublicationDTOFieldsDecode() throws {
-        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full","shelf_cover_url":"/api/v1/knowledge-publications/publication-1/covers/shelf_cover"}"#.utf8)
+        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","cover_available":true,"security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
         let book = try decoder().decode(KnowledgeBookDTO.self, from: data)
         XCTAssertEqual(book.seriesId, "ai-history")
         XCTAssertEqual(book.issueDate, "2026-09-08")
@@ -927,8 +1435,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(book.sourceUrls, ["https://example.com/source"])
         XCTAssertEqual(book.publicationFormat, "chapter")
         XCTAssertEqual(book.editorialGenre, "popular_science")
+        XCTAssertEqual(book.coverAvailable, true)
         XCTAssertEqual(book.publicationTypeLabel, "科普 · 连载章节")
-        XCTAssertEqual(book.shelfCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/shelf_cover")
     }
 
     func testPublicationFormatLabelsDoNotInferFromCompleteness() throws {
@@ -972,7 +1480,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testReaderBodySurvivesSubscriptionFailure() async throws {
         let body = try decoder().decode(
             KnowledgeBookBodyDTO.self,
-            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","reader_cover_url":"/api/v1/knowledge-publications/publication-1/covers/reader_cover","illustration_urls":["/api/v1/knowledge-publications/publication-1/media/illustration_01"],"sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
+            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
         )
 
         let loaded = try await loadKnowledgeBookReaderData(
@@ -981,10 +1489,6 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
 
         XCTAssertEqual(loaded.body, body)
-        XCTAssertEqual(loaded.body.readerCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/reader_cover")
-        XCTAssertEqual(loaded.body.illustrationUrls, ["/api/v1/knowledge-publications/publication-1/media/illustration_01"])
-        XCTAssertEqual(readerIllustrationPaths(afterSectionAt: 0, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []), loaded.body.illustrationUrls)
-        XCTAssertTrue(readerIllustrationPaths(afterSectionAt: 1, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []).isEmpty)
         XCTAssertNil(loaded.subscriptions)
 
         do {
@@ -1074,13 +1578,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                 messages: [ClientSessionMessageDTO(
                     id: "m1", role: "user", content: "超聚变是一家公司"
                 )],
-                truncated: false,
-                localNotes: [ChatLocalNoteDTO(
-                    id: "uploaded-pptx",
-                    title: "季度复盘.pptx",
-                    markdown: "# 第三季度复盘"
-                )],
-                activeDocumentNoteId: "uploaded-pptx"
+                truncated: false
             )
         )
         let object = try XCTUnwrap(
@@ -1088,9 +1586,12 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
         let context = try XCTUnwrap(object["client_session_context"] as? [String: Any])
         XCTAssertEqual(context["session_id"] as? String, "session-1")
-        XCTAssertEqual(context["active_document_note_id"] as? String, "uploaded-pptx")
         XCTAssertNil(object["tenant_key"])
         XCTAssertNil(object["user_id"])
+        XCTAssertEqual(
+            object["client_capabilities"] as? [String],
+            ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
+        )
     }
 
     func testChatPrewarmRequestUsesServerSessionContract() throws {
@@ -1104,7 +1605,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(object["agent_id"] as? String, "main_agent")
         XCTAssertEqual(
             object["client_capabilities"] as? [String],
-            ["knowledge_action_v1", "answer_blocks_v1"]
+            ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]
         )
     }
 
@@ -1238,6 +1739,101 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(blocks[3], .divider)
     }
 
+    func testReadingQuickActionsRenderVisualsWithoutCodeCards() {
+        XCTAssertNotEqual(ReadingQuickAction.example.prompt, ReadingQuickAction.simplify.prompt)
+        XCTAssertTrue(ReadingQuickAction.example.prompt.contains("Markdown 三列表格"))
+        XCTAssertTrue(ReadingQuickAction.simplify.prompt.contains("```comic"))
+
+        let blocks = MarkdownBlockParser.shared.parse("""
+        ```json
+        {"title":"读懂编号","panels":[{"scene":"先看到一半","dialogue":"别猜","symbol":"questionmark.circle.fill"},{"scene":"等待全文","dialogue":"再看看","symbol":"lightbulb.fill"},{"scene":"核对结果","dialogue":"这才确定","symbol":"checkmark.seal.fill"}]}
+        ```
+        ![示意图](https://example.com/figure.png)
+        ```swift
+        let value = 1
+        ```
+        """)
+        XCTAssertTrue(blocks.contains { if case .comic(_, let panels) = $0 { return panels.count == 3 }; return false })
+        XCTAssertTrue(blocks.contains { if case .image(let url, _) = $0 { return url.hasPrefix("https://") }; return false })
+        XCTAssertTrue(blocks.contains { if case .codeBlock(let language, _) = $0 { return language == "swift" }; return false })
+    }
+
+    func testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections() {
+        let blocks = ReadingCardDeck.answerBlocks(from: """
+        1.「一句话看懂」：客服是帮助用户解决问题的人或服务环节。
+
+
+        2.「校园例子」：
+
+        同学向校园服务台反馈问题。
+
+        3.「对照表」：
+        | 原文线索 | 校园对应 |
+        | --- | --- |
+        | 客服 | 服务台 |
+        """)
+        XCTAssertEqual(Array(blocks.prefix(5)), [
+            .heading(level: 2, text: "一句话看懂"),
+            .paragraph("客服是帮助用户解决问题的人或服务环节。"),
+            .heading(level: 2, text: "校园例子"),
+            .paragraph("同学向校园服务台反馈问题。"),
+            .heading(level: 2, text: "对照表")
+        ])
+        guard blocks.count == 6, case .table(let table) = blocks[5] else {
+            return XCTFail("对照表应保留为表格组件")
+        }
+        XCTAssertEqual(table.headers, ["原文线索", "校园对应"])
+        XCTAssertEqual(table.rows, [["客服", "服务台"]])
+        XCTAssertEqual(ReadingCardDeck.pages(from: blocks).count, 4)
+        XCTAssertEqual(ReadingCardDeck.answerBlocks(from: "```json\n{\"panels\":", isStreaming: true), [])
+    }
+
+    @MainActor
+    func testReadingAnswerDeckWrapsAtLargeTextSize() {
+        let blocks = ReadingCardDeck.answerBlocks(from: """
+        1.「一句话看懂」：客服是帮助用户解决问题的人或服务环节。
+
+        2.「校园例子」：同学向校园服务台反馈宿舍网络故障。
+        """)
+        for width in [CGFloat(320), CGFloat(390)] {
+            let host = UIHostingController(rootView: ReadingCardDeck(blocks: blocks)
+                .environment(\.dynamicTypeSize, .accessibility3)
+                .frame(width: width))
+            let size = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+            XCTAssertGreaterThan(size.height, 100)
+            XCTAssertLessThan(size.height, 1_000)
+        }
+    }
+
+    func testReadingSelectionQuestionPrioritizesSelectedWord() {
+        let question = ReadingQuickAction.focusedQuestion(ReadingQuickAction.example.prompt, excerpt: "客服")
+        XCTAssertTrue(question.contains("用户选中：「客服」"))
+        XCTAssertTrue(question.contains("先直接解释选中内容"))
+        XCTAssertTrue(question.contains("不要用概述整段替代选词解释"))
+    }
+
+    @MainActor
+    func testAnnotatedReadingTextFillsAvailableWidth() {
+        let root = HStack(alignment: .top, spacing: 8) {
+            Rectangle().frame(width: 3)
+            SelectableReadingText(
+                markdown: String(repeating: "客服摘要要变成工单，", count: 16),
+                onSelection: { _ in }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "bubble.left.fill").frame(width: 30)
+        }
+        .frame(width: 340)
+        let host = UIHostingController(rootView: root)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 340, height: 800))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        let textView = findScrollViews(in: host.view).compactMap { $0 as? UITextView }.first
+        XCTAssertNotNil(textView)
+        XCTAssertGreaterThan(textView?.bounds.width ?? 0, 280)
+    }
+
     func testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers() {
         let interrupted = MarkdownBlockParser.shared.parse("""
         # 第一段
@@ -1295,6 +1891,15 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
 
     func testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary() {
         XCTAssertEqual(ChatMessageStreamView.historyPositionAnchor, .top)
+        XCTAssertTrue(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: false, userHasTakenScrollControl: false
+        ))
+        XCTAssertFalse(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: false, userHasTakenScrollControl: true
+        ))
+        XCTAssertFalse(ChatMessageStreamView.shouldRestoreHistoryPosition(
+            hasStoredPosition: true, userHasTakenScrollControl: false
+        ))
         XCTAssertTrue(ChatMessageStreamView.shouldArmOlderHistoryPull(
             translationHeight: 13, isGenerating: false
         ))
@@ -1770,6 +2375,97 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(response.feedbackReceipt?.revocable == true)
     }
 
+    func testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions() {
+        XCTAssertEqual(PresentationProductStep.labels, ["需求确认", "全稿预览", "下载"])
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "queued"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "running"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "awaiting_approval"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "awaiting_review"), 1)
+        XCTAssertEqual(PresentationProductStep.currentIndex(executionStatus: "completed"), 2)
+    }
+
+    func testStructuredReviewRestoresLastSavedAssetValue() {
+        let saved = StructuredReviewDocumentDTO(
+            title: "审核",
+            fields: [StructuredReviewFieldDTO(id: "hero", label: "封面素材", type: .asset, required: false, options: nil)],
+            values: ["hero": .object(["name": .string("原素材"), "url": .string("https://example.invalid/original.jpg")])]
+        )
+        XCTAssertEqual(
+            StructuredReviewValueRestorer.value(fieldID: "hero", from: saved),
+            .object(["name": .string("原素材"), "url": .string("https://example.invalid/original.jpg")])
+        )
+    }
+
+    func testDocumentCapabilityProposalAndRendererRouteDecode() throws {
+        let data = Data(#"{"proposal_id":"proposal-doc","capability_id":"paper.academic.create_from_text","input":{"title":"Evidence paper","text_material":"Verified evidence","thesis":"Evidence supports the claim","language":"en","citation_style":"apa7","review_mode":"outline_content_final"},"summary":"Create paper","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        let decoder = JSONDecoder()
+        let proposal = try decoder.decode(CapabilityProposalBlock.self, from: data)
+
+        XCTAssertEqual(proposal.capabilityId, QCPCapabilityID.academicPaperCreateFromText)
+        XCTAssertEqual(proposal.input.textMaterial, "Verified evidence")
+        XCTAssertEqual(proposal.input.thesis, "Evidence supports the claim")
+        XCTAssertEqual(proposal.input.citationStyle, "apa7")
+        XCTAssertEqual(
+            RendererRegistry.route(for: "document.created", version: 1),
+            .workflow
+        )
+    }
+
+    @MainActor
+    func testNonStreamingChatDecodesAndDispatchesQCPEvents() throws {
+        let data = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"renderer":"confirmation","renderer_version":1,"payload":{"proposal_id":"proposal-1","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"创建工作流","risk":"medium","state":"awaiting_confirmation"}},{"type":"artifact.consumed","version":1,"renderer":"artifact_consumption","renderer_version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}}]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ChatResponseDTO.self, from: data)
+        XCTAssertEqual(response.events?.map(\.type), ["capability.proposed", "artifact.consumed"])
+        XCTAssertEqual(response.events?.first?.renderer, "confirmation")
+        XCTAssertEqual(response.events?.first?.rendererVersion, 1)
+        let artifactEvent = try XCTUnwrap(response.events?.last)
+        XCTAssertEqual(artifactEvent.renderer, "artifact_consumption")
+        XCTAssertEqual(artifactEvent.rendererVersion, 1)
+        XCTAssertEqual(
+            RendererRegistry.route(for: artifactEvent.type, version: artifactEvent.version),
+            .artifactConsumption
+        )
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        manager.setMessages([
+            ChatMessage(
+                id: "output", sessionId: sessionID, role: .assistant,
+                content: "", pending: true
+            )
+        ], for: sessionID)
+        manager.applyResponse(sessionId: sessionID, requestId: "output", response: response)
+        let proposal = manager.messages(for: sessionID).first(where: { $0.id == "output" })?.blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }.first
+        XCTAssertEqual(proposal?.id, "proposal-1")
+        let consumption = manager.messages(for: sessionID).first(where: { $0.id == "output" })?.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first
+        XCTAssertEqual(consumption?.receiptId, "acr-1")
+        XCTAssertEqual(consumption?.structuredPreview, #"{"value":"ok"}"#)
+
+        let malformedData = Data(#"{"question":"q","answer":"a","session_id":"s","reasoning":[],"events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"forged","capability_id":"workflow.create","input":{"title":"QCP"},"summary":"伪造确认","risk":"medium","state":"awaiting_confirmation"}}]}"#.utf8)
+        let malformed = try decoder.decode(ChatResponseDTO.self, from: malformedData)
+        manager.applyResponse(sessionId: sessionID, requestId: "malformed", response: malformed)
+        XCTAssertFalse(manager.messages(for: sessionID).contains { message in
+            message.blocks.contains {
+                if case .capabilityProposal = $0 { return message.id == "malformed" }
+                return false
+            }
+        })
+    }
+
     func testFeedbackReceiptSSEEventDecodes() throws {
         let event = try XCTUnwrap(APIClient.StreamEvent.parse([
             "type": "feedback_receipt",
@@ -1901,6 +2597,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             {
               "status":"running","phase":"clarify","answer":"",
               "reasoning":[],"latest_step":"等待用户确认","consumed":false,
+              "run_id":"run-2","event_sequence":12,"events_next_offset":11,
+              "events":[{"type":"artifact.consumed","version":1,"run_id":"run-2","event_sequence":11,"payload":{"receipt":{"receipt_id":"acr-status"}}}],
               "clarify":{
                 "clarify_id":"cid-2","request_id":"request-2",
                 "question":"选择目标","choices":["A","B"],
@@ -1914,6 +2612,10 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(status.clarify?.clarifyId, "cid-2")
         XCTAssertEqual(status.clarify?.requestId, "request-2")
         XCTAssertEqual(status.clarify?.expiresInSeconds, 88)
+        XCTAssertEqual(status.runId, "run-2")
+        XCTAssertEqual(status.eventsNextOffset, 11)
+        XCTAssertEqual(status.events?.first?.type, "artifact.consumed")
+        XCTAssertEqual(status.events?.first?.eventSequence, 11)
     }
 
     func testRunningChatStatusNeverAllowsRegenerate() {
@@ -1924,9 +2626,26 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(TenantSessionCoordinator.statusAllowsRegenerate("not_found"))
     }
 
+    @MainActor
+    func testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority() {
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "网络不可用: Policy changed; create a new proposal"
+        ))
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "确认凭证已失效，请重新生成提案"
+        ))
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "confirmation_token_expired"
+        ))
+        XCTAssertFalse(TenantSessionCoordinator.requiresFreshCapabilityProposal(
+            errorMessage: "服务端正在更新或繁忙，请稍后重试（503）"
+        ))
+        XCTAssertFalse(TenantSessionCoordinator.requiresFreshCapabilityProposal(errorMessage: nil))
+    }
+
     func testChatHistoryStorePagesOneThousandMessagesWithinBudgets() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy")
@@ -1976,11 +2695,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionOrganizationLifecycleAndSourceContextAreRecoverable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let first = manager.createSession()
         manager.setMessages([
             ChatMessage(id: "m1", sessionId: first, role: .user, content: "项目预算是两万元")
@@ -2008,7 +2727,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         manager.setLifecycle(.active, for: first)
         XCTAssertTrue(manager.sortedSessionIDs(status: .active).contains(first))
 
-        let restored = SessionManager(
+        let restored = makeSessionManager(
             store: try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
         )
         XCTAssertNotNil(restored.sessionOrganizedAt[first])
@@ -2020,7 +2739,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let messages = (0..<30).map {
             PersistedMessage(ChatMessage(id: "legacy-\($0)", sessionId: "legacy", role: $0.isMultiple(of: 2) ? .user : .assistant, content: "历史 \($0)"))
         }
@@ -2048,7 +2767,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let source = legacy.appendingPathComponent("broken.json")
         try Data("not-json".utf8).write(to: source)
 
@@ -2061,7 +2780,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let legacy = root.appendingPathComponent("Sessions")
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let duplicated = ChatMessage(id: "same-id", sessionId: "rollback", role: .assistant, content: "重复")
         let record = SessionRecord(
             id: "rollback", title: "应回滚", updatedAt: Date(),
@@ -2080,14 +2799,14 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(databaseURL: root.appendingPathComponent("history.sqlite"), legacyDirectory: root.appendingPathComponent("legacy"))
         let sessionId = "metadata-only"
         _ = try store.upsert((0..<100).map {
             ChatMessage(id: "cold-\($0)", sessionId: sessionId, role: .assistant, content: "消息 \($0)")
         }, sessionId: sessionId)
 
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         XCTAssertEqual(manager.messageCount(for: sessionId), 100)
         XCTAssertTrue(manager.sessions.isEmpty)
         XCTAssertLessThanOrEqual(manager.latestPage(for: sessionId).messages.count, ChatHistoryStore.pageMessageLimit)
@@ -2097,13 +2816,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCoordinatorReplacesVisibleHistoryPages() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(databaseURL: root.appendingPathComponent("history.sqlite"), legacyDirectory: root.appendingPathComponent("legacy"))
         let sessionId = "paging-ui"
         _ = try store.upsert((0..<60).map {
             ChatMessage(id: "page-\($0)", sessionId: sessionId, role: .assistant, content: "消息 \($0)")
         }, sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let coordinator = TenantSessionCoordinator(sessionManager: manager)
 
         XCTAssertEqual(coordinator.messages.last?.id, "page-59")
@@ -2127,12 +2846,12 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerPersistsMessagesOffMainActorInOrder() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let first = ChatMessage(
             id: "assistant", sessionId: sessionId, role: .assistant,
@@ -2155,15 +2874,213 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionManagerPersistsRunCursorOnlyChanges() async throws {
+    func testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let legacyURL = root.appendingPathComponent("legacy")
+        let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
+        var reopened: ChatHistoryStore?
+        defer {
+            try? reopened?.close()
+            try? store.close()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let manager = makeSessionManager(store: store)
+        let sessionId = manager.createSession()
+        manager.setMessages([
+            ChatMessage(id: "durable", sessionId: sessionId, role: .user, content: "persist me")
+        ], for: sessionId)
+
+        try await manager.shutdown(closeStore: true)
+
+        XCTAssertThrowsError(try store.summaries()) { error in
+            let error = error as NSError
+            XCTAssertEqual(error.domain, "ChatHistoryStore")
+            XCTAssertEqual(error.code, Int(SQLITE_MISUSE))
+            XCTAssertTrue(error.localizedDescription.contains("database is closed"))
+        }
+        XCTAssertThrowsError(try store.migrateLegacySessions())
+        reopened = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: legacyURL,
+            performLegacyMigration: false
+        )
+        XCTAssertEqual(try reopened?.message(sessionId: sessionId, id: "durable")?.content, "persist me")
+
+        let failedDatabaseURL = root.appendingPathComponent("failed.sqlite")
+        let failedStore = try ChatHistoryStore(
+            databaseURL: failedDatabaseURL,
+            legacyDirectory: root.appendingPathComponent("failed-legacy")
+        )
+        defer { try? failedStore.close() }
+        let failedManager = SessionManager(store: failedStore)
+        let failedSessionId = failedManager.createSession()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(failedDatabaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+
+        failedManager.setMessages([
+            ChatMessage(id: "dropped", sessionId: failedSessionId, role: .user, content: "must fail")
+        ], for: failedSessionId)
+
+        do {
+            try await failedManager.shutdown()
+            XCTFail("shutdown must not report success after an exhausted persistence batch")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceBatchExhausted)
+        }
+        failedManager.activateAccount(
+            tenantKey: "tenant-\(UUID().uuidString)",
+            userId: "user-\(UUID().uuidString)"
+        )
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        try await failedManager.retryFailedPersistence()
+        XCTAssertEqual(
+            try failedStore.message(sessionId: failedSessionId, id: "dropped")?.content,
+            "must fail"
+        )
+    }
+
+    @MainActor
+    func testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
+        let manager = makeSessionManager(store: store)
+        let sessionId = manager.createSession()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+
+        manager.setMessages([
+            ChatMessage(id: "private", sessionId: sessionId, role: .user, content: "must stay deleted")
+        ], for: sessionId)
+        await manager.flushPendingPersistence()
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+
+        manager.clearSession(sessionId)
+        await manager.flushPendingPersistence()
+        try await manager.retryFailedPersistence()
+
+        XCTAssertNil(try store.message(sessionId: sessionId, id: "private"))
+        XCTAssertEqual(manager.pendingPersistenceSnapshotCountForTesting, 0)
+    }
+
+    @MainActor
+    func testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let bootstrap = try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("bootstrap.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        let manager = SessionManager(store: bootstrap)
+        let tenantA = "tenant-\(UUID().uuidString)"
+        let userA = "user-\(UUID().uuidString)"
+        manager.activateAccount(tenantKey: tenantA, userId: userA)
+        let fingerprintA = manager.activeAccountFingerprint
+        let accountRoot = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ChatHistory/accounts")
+        let databaseURL = accountRoot.appendingPathComponent(fingerprintA).appendingPathComponent("history.sqlite")
+        addTeardownBlock {
+            try? await manager.shutdown(closeStore: true)
+            try? FileManager.default.removeItem(at: accountRoot.appendingPathComponent(fingerprintA))
+        }
+        let sessionId = manager.createSession()
+        // Raise the per-session epoch before exhausting a write so A→B→A cannot
+        // accidentally pass only because both epochs start at zero.
+        for index in 0..<3 {
+            manager.truncateMessages(from: "missing-\(index)", sessionId: sessionId)
+        }
+        await manager.flushPendingPersistence()
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+        manager.setMessages([
+            ChatMessage(id: "round-trip-private", sessionId: sessionId, role: .user, content: "must stay deleted")
+        ], for: sessionId)
+        await manager.flushPendingPersistence()
+
+        let tenantB = "tenant-\(UUID().uuidString)"
+        let userB = "user-\(UUID().uuidString)"
+        manager.activateAccount(tenantKey: tenantB, userId: userB)
+        let fingerprintB = manager.activeAccountFingerprint
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: accountRoot.appendingPathComponent(fingerprintB))
+        }
+        manager.activateAccount(tenantKey: tenantA, userId: userA)
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        manager.clearSession(sessionId)
+        await manager.flushPendingPersistence()
+        try await manager.retryFailedPersistence()
+
+        let verifier = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("verify-legacy"),
+            performLegacyMigration: false
+        )
+        defer { try? verifier.close() }
+        XCTAssertNil(try verifier.message(sessionId: sessionId, id: "round-trip-private"))
+    }
+
+    @MainActor
+    func testShutdownFailsAfterQueuedTruncationCannotReachSQLite() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let store = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        defer { try? store.close() }
         let manager = SessionManager(store: store)
+        let sessionId = manager.createSession()
+        let message = ChatMessage(
+            id: "truncate-me", sessionId: sessionId, role: .user, content: "durable"
+        )
+        manager.setMessages([message], for: sessionId)
+        await manager.flushPendingPersistence()
+
+        var lockDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
+        defer { sqlite3_close(lockDatabase) }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+        manager.truncateMessages(from: message.id, sessionId: sessionId)
+
+        do {
+            try await manager.shutdown()
+            XCTFail("shutdown must fail after a queued truncation cannot reach SQLite")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceMutationFailed)
+        }
+        XCTAssertEqual(sqlite3_exec(lockDatabase, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        XCTAssertNotNil(try store.message(sessionId: sessionId, id: message.id))
+        do {
+            try await manager.shutdown()
+            XCTFail("a second shutdown must remain blocked until the user acknowledges the failed mutation")
+        } catch {
+            XCTAssertEqual(error as? SessionManager.ShutdownError, .persistenceMutationFailed)
+        }
+        manager.acknowledgeFailedPersistenceMutations()
+    }
+
+    @MainActor
+    func testSessionManagerPersistsRunCursorOnlyChanges() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("history.sqlite")
+        let store = try ChatHistoryStore(
+            databaseURL: databaseURL,
+            legacyDirectory: root.appendingPathComponent("legacy")
+        )
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var pending = ChatMessage(
             id: "cursor-message", sessionId: sessionId, role: .assistant,
@@ -2197,13 +3114,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAccountTransitionsRetainQueuedWritesUntilDurable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2324,13 +3241,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2364,13 +3281,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFailedClearAndDeleteRestoreDurableProjection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let cleared = manager.createSession()
         let deleted = manager.createSession()
         let survivor = manager.createSession()
@@ -2403,18 +3320,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(sqlite3_exec(lockDatabase, "COMMIT", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(try store.count(cleared), 1)
         XCTAssertEqual(try store.count(deleted), 30)
+        await consumeExpectedPersistenceMutationFailure(manager)
     }
 
     @MainActor
     func testFailedClearMergesMessagesSentWhileMutationWasBlocked() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let oldMessage = ChatMessage(
             id: "before-clear", sessionId: sessionId,
@@ -2450,18 +3368,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(try store.count(sessionId), 2)
         XCTAssertNotNil(try store.message(sessionId: sessionId, id: oldMessage.id))
         XCTAssertNotNil(try store.message(sessionId: sessionId, id: newMessage.id))
+        await consumeExpectedPersistenceMutationFailure(manager)
     }
 
     @MainActor
     func testClearAndDeleteIgnoreOlderPersistenceCompletions() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
 
         let cleared = manager.createSession()
         var lockDatabase: OpaquePointer?
@@ -2495,7 +3414,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-history-concurrent-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy", isDirectory: true),
@@ -2559,7 +3478,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-checkpoint-leave-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
@@ -2572,7 +3491,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             role: .user, content: "继续执行"
         )
         try store.upsert([user], sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let otherSessionId = manager.createSession()
         manager.switchTo(sessionId)
         let coordinator = TenantSessionCoordinator(sessionManager: manager)
@@ -2621,7 +3540,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-ordered-writes-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
@@ -2635,7 +3554,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             content: "", isStreaming: true, pending: true
         )
         try store.upsert([user, pending], sessionId: sessionId)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
 
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2682,13 +3601,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
 
         var lockDatabase: OpaquePointer?
@@ -2714,13 +3633,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-coalesced-stream-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var streaming = ChatMessage(
             id: "streaming", sessionId: sessionId, role: .assistant,
@@ -2767,13 +3686,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2805,13 +3724,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("chat-metadata-failure-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let source = ChatMessage(
             id: "source", sessionId: parent, role: .assistant,
@@ -2853,13 +3772,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let topics = try (0..<4).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -2891,13 +3810,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let store = try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
         let topics = try (0..<4).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -2926,18 +3845,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(manager.topicSessions[topics[3].sessionId]?.state, .active)
         XCTAssertNil(try store.summary(sessionId: topics[0].sessionId))
         XCTAssertEqual(try store.summary(sessionId: topics[3].sessionId)?.topic?.state, .active)
+        try await manager.shutdown()
     }
 
     @MainActor
     func testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let oldDatabaseURL = root.appendingPathComponent("old-history.sqlite")
         let oldStore = try ChatHistoryStore(
             databaseURL: oldDatabaseURL,
             legacyDirectory: root.appendingPathComponent("legacy")
         )
-        let manager = SessionManager(store: oldStore)
+        let manager = makeSessionManager(store: oldStore)
         let oldSession = manager.createSession()
         var lockDatabase: OpaquePointer?
         XCTAssertEqual(sqlite3_open(oldDatabaseURL.path, &lockDatabase), SQLITE_OK)
@@ -2954,7 +3874,10 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
         let accountDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("ChatHistory/accounts/\(manager.activeAccountFingerprint)")
-        defer { try? FileManager.default.removeItem(at: accountDirectory) }
+        addTeardownBlock {
+            try await manager.shutdown(closeStore: true)
+            try? FileManager.default.removeItem(at: accountDirectory)
+        }
         let parent = manager.createSession()
         let topics = try (0..<5).map { index in
             try XCTUnwrap(manager.startTopic(
@@ -2998,11 +3921,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testTopicSessionsCapQueuePromoteAndPersistMetadata() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let parent = manager.createSession()
 
         let topics = try (0..<4).map { index in
@@ -3021,7 +3944,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(manager.topicSessions[topics[0].sessionId]?.state, .ended)
         XCTAssertEqual(manager.topicSessions[topics[3].sessionId]?.state, .active)
 
-        let restored = SessionManager(
+        let restored = makeSessionManager(
             store: try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
         )
         XCTAssertEqual(restored.topicSessions[topics[0].sessionId]?.state, .ended)
@@ -3074,6 +3997,23 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testLoginInputPolicyKeepsOnlyBoundedDigits() {
         XCTAssertEqual(LoginInputPolicy.digits("138 0013-8000 extra", limit: 11), "13800138000")
         XCTAssertEqual(LoginInputPolicy.digits("24681099", limit: 6), "246810")
+    }
+
+    func testInboxImageDownsamplingBoundsDecodedPixels() throws {
+        #if canImport(UIKit)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 200)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+        }
+        let output = try XCTUnwrap(
+            InboxFileManager.shared.downsampleImage(
+                data: try XCTUnwrap(image.pngData()),
+                maxDimension: 100
+            )
+        )
+        let result = try XCTUnwrap(UIImage(data: output))
+        XCTAssertLessThanOrEqual(max(result.size.width, result.size.height), 100)
+        #endif
     }
 
     func testAuthentication401PreservesBackendReason() {
@@ -3191,11 +4131,11 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
         let legacyURL = root.appendingPathComponent("legacy")
         let store = try ChatHistoryStore(databaseURL: databaseURL, legacyDirectory: legacyURL)
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         let projection = [
             ChatMessage(id: "user", sessionId: sessionId, role: .user, content: "长任务"),
@@ -3228,7 +4168,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     func testCompletedLongAnswerUsesBoundedSemanticPreview() {
-        let first = String(repeating: "甲", count: 800)
+        let first = String(repeating: "甲", count: 500)
         let second = String(repeating: "乙", count: 4_000)
         let content = first + "\n\n" + second
         let preview = LongMessagePresentation.collapsedPreview(content)
@@ -3350,13 +4290,13 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
         )
-        let manager = SessionManager(store: store)
+        let manager = makeSessionManager(store: store)
         let sessionId = manager.createSession()
         manager.setMessages([
             ChatMessage(
@@ -3411,8 +4351,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testInterruptionKeepsExistingPartialContentAndRunCursor() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3469,8 +4409,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testByteLimitedAnswerPagesCanExceedBlockLimitCeiling() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3515,8 +4455,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3579,8 +4519,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerRefreshesStaleStreamingCursorAfterCompletion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3628,8 +4568,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerCancellationRetainsLastCommittedPage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3681,8 +4621,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testFullAnswerRejectsNoProgressAndNonAdvancingCursor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3857,8 +4797,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3911,8 +4851,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testLateDurableCallbackCannotCrossAccountBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3958,9 +4898,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let databaseURL = root.appendingPathComponent("history.sqlite")
-        let manager = SessionManager(store: try ChatHistoryStore(
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -3986,7 +4926,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         ], for: sessionId)
         await manager.flushPendingPersistence()
 
-        let restoredManager = SessionManager(store: try ChatHistoryStore(
+        let restoredManager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: databaseURL,
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4044,8 +4984,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4114,8 +5054,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testCompletedWhileAwayUpdatesOriginalStoredMessage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4141,16 +5081,25 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let coordinator = TenantSessionCoordinator(
             sessionManager: manager,
             hasAuthenticatedSession: { true },
-            fetchChatStatus: { sessionId, consume, _ in
+            fetchChatStatus: { sessionId, consume, _, offset in
                 XCTAssertEqual(sessionId, runSession)
-                XCTAssertTrue(consume)
-                stored.fulfill()
+                XCTAssertEqual(offset, consume ? 9 : (offset == 5 ? 5 : 8))
+                if !consume && offset == 5 { stored.fulfill() }
+                let isFirstPage = offset == 5
                 return ChatStatusDTO(
                     status: "completed", phase: nil, answer: "离开期间完成的正文",
                     reasoning: [ChatReasoningStepDTO(
                         type: "tool_call", title: "检索完成", detail: "8 个来源", status: "done"
                     )],
-                    latestStep: nil, clarify: nil, consumed: true, answerProjection: nil
+                    latestStep: nil, clarify: nil, consumed: consume, answerProjection: nil,
+                    runId: "run-away", eventSequence: 9,
+                    eventsNextOffset: isFirstPage ? 8 : 9,
+                    events: isFirstPage ? [QCPStreamEvent(
+                        type: "artifact.consumed", version: 1,
+                        payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-away","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
+                        renderer: "artifact_consumption", rendererVersion: 1,
+                        runId: "run-away", eventSequence: 8
+                    )] : []
                 )
             }
         )
@@ -4163,7 +5112,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         await fulfillment(of: [stored], timeout: 1)
         for _ in 0..<100 {
             if coordinator.backgroundMonitorCountForTesting == 0 { break }
-            await Task.yield()
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertEqual(coordinator.backgroundMonitorCountForTesting, 0)
         await manager.flushPendingPersistence()
@@ -4174,6 +5123,16 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(completed.runId, "run-away")
         XCTAssertEqual(completed.content, "离开期间完成的正文")
         XCTAssertFalse(completed.pending)
+        XCTAssertEqual(completed.lastEventSequence, 9)
+        XCTAssertTrue(completed.blocks.contains {
+            if case .artifactConsumption(let receipt) = $0 {
+                return receipt.receiptId == "acr-away"
+            }
+            return false
+        })
+        XCTAssertFalse(manager.messages(for: otherSession).contains {
+            $0.blocks.contains { if case .artifactConsumption = $0 { return true }; return false }
+        })
         guard case .reasoning(let steps) = try XCTUnwrap(completed.blocks.first) else {
             XCTFail("completed status must preserve the visible tool timeline")
             return
@@ -4184,8 +5143,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testRepeatedForegroundReconcileStartsOneDurableGET() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4211,7 +5170,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
                 started.fulfill()
                 return try await withCheckedThrowingContinuation { continuation = $0 }
             },
-            fetchChatStatus: { _, _, _ in
+            fetchChatStatus: { _, _, _, _ in
                 legacyStatusGETs += 1
                 throw APIError.network("offline")
             }
@@ -4259,8 +5218,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testExplicitStopAndRealFailureAreNotAutomaticallyResumed() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4340,8 +5299,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     @MainActor
     func testLateDurableCallbackCannotCrossSessionBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4449,8 +5408,8 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
 
     func testLegacyClarifyContinuationCanFetchRemainingAnswer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -4498,5 +5457,1060 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertEqual(coordinator.messages[1].runId, "durable-run")
         XCTAssertFalse(coordinator.messages[1].answerHasMore)
         XCTAssertNil(coordinator.messages[1].answerNextCursor)
+    }
+
+    @MainActor
+    func testCapabilityClientUsesAuthenticatedQCPEnvelope() async throws {
+        struct Input: Encodable { let title: String }
+        struct Output: Decodable { let value: String }
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        let response: QCPInvokeResponseDTO<Output> = try await CapabilityClient(apiClient: api).confirm(
+            proposalId: "stable-proposal-123456",
+            confirmationToken: "confirmation-token-abcdefghijklmnopqrstuvwxyz",
+            sessionId: "session-contract"
+        )
+
+        XCTAssertEqual(response.events.first?.payload.value, "ok")
+        XCTAssertEqual(response.receipt?.eventType, "workflow.created")
+        let captured = try XCTUnwrap(APIContractURLProtocol.requests().last)
+        XCTAssertEqual(captured.request.url?.path, "/api/v1/capabilities/confirm")
+        XCTAssertEqual(captured.request.value(forHTTPHeaderField: "Authorization"), "Bearer [REDACTED]")
+        let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
+        )
+        XCTAssertEqual(body["proposal_id"] as? String, "stable-proposal-123456")
+        XCTAssertEqual(body["confirmation_token"] as? String, "confirmation-token-abcdefghijklmnopqrstuvwxyz")
+        XCTAssertEqual(body["session_id"] as? String, "session-contract")
+        XCTAssertNil(body["confirmed"])
+    }
+
+    @MainActor
+    func testDirectWorkflowCreationEncodesActiveClientSession() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        _ = try await api.createWorkflow(
+            title: "Delayed",
+            description: "delayed-switch",
+            desiredOutput: "report",
+            sourceClientSessionId: "session-direct"
+        )
+
+        let captured = try XCTUnwrap(
+            APIContractURLProtocol.requests().first(where: {
+                $0.request.url?.path == "/api/v1/capabilities/proposals"
+            })
+        )
+        let envelope = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try XCTUnwrap(captured.body)) as? [String: Any]
+        )
+        let input = try XCTUnwrap(envelope["input"] as? [String: Any])
+        XCTAssertEqual(input["source_client_session_id"] as? String, "session-direct")
+        XCTAssertEqual(APIContractURLProtocol.requests().map(\.request.url?.path), [
+            "/api/v1/capabilities/proposals", "/api/v1/capabilities/confirm"
+        ])
+    }
+
+    @MainActor
+    func testDirectWorkflowCreationFailsClosedWithoutClientSession() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+            sessionConfiguration: configuration,
+            inMemoryToken: "[REDACTED]"
+        )
+
+        do {
+            _ = try await api.createWorkflow(
+                title: "Blocked",
+                description: "No active session",
+                desiredOutput: "report",
+                sourceClientSessionId: ""
+            )
+            XCTFail("Expected missing client session to fail closed")
+        } catch { }
+
+        XCTAssertTrue(APIContractURLProtocol.requests().isEmpty)
+    }
+
+    @MainActor
+    func testInterruptedCapabilityProposalDropsOneTimeTokenAndFailsClosed() async throws {
+        let proposalData = Data(#"{"proposal_id":"stable-proposal-1","confirmation_token":"confirmation-token-abcdefghijklmnopqrstuvwxyz","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"applying"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: proposalData)
+        XCTAssertNotNil(proposal.confirmationToken)
+        let message = ChatMessage(
+            id: "message-1", sessionId: "session-1", role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal)]
+        )
+        let persisted = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        )
+        guard case .capabilityProposal(let restored) = try XCTUnwrap(
+            persisted.toChatMessage(sessionId: "session-1").blocks.first
+        ) else { return XCTFail("expected restored proposal") }
+        XCTAssertEqual(restored.state, .failed)
+        XCTAssertNil(restored.confirmationToken)
+        XCTAssertEqual(restored.idempotencyKey, "stable-proposal-1")
+        XCTAssertEqual(restored.errorMessage, "确认凭证已失效，请重新发起操作")
+    }
+
+    func testPersistedMessageRoundTripsEveryProposalAndDecodesLegacySingular() throws {
+        func proposal(_ id: String) throws -> CapabilityProposalBlock {
+            try JSONDecoder().decode(
+                CapabilityProposalBlock.self,
+                from: Data("""
+                {"proposal_id":"\(id)","capability_id":"workflow.create","input":{"title":"QCP","description":"Create workflow"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}
+                """.utf8)
+            )
+        }
+        let first = try proposal("proposal-1")
+        let second = try proposal("proposal-2")
+        let message = ChatMessage(
+            id: "message-1", sessionId: "session-1", role: .assistant, content: "",
+            blocks: [.capabilityProposal(first), .capabilityProposal(second)]
+        )
+        let decoded = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        )
+        let restored = decoded.toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(restored.map(\.id), ["proposal-1", "proposal-2"])
+
+        var legacy = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(PersistedMessage(message)))
+                as? [String: Any]
+        )
+        legacy["capabilityProposal"] = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(first)
+        )
+        let overlapRestored = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy)
+        ).toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(overlapRestored.map(\.id), ["proposal-1", "proposal-2"])
+
+        legacy.removeValue(forKey: "capabilityProposals")
+        let legacyRestored = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy)
+        ).toChatMessage(sessionId: "session-1").blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(legacyRestored.map(\.id), ["proposal-1"])
+    }
+
+    @MainActor
+    func testFailedCapabilityProposalWithoutTokenFailsClosedAndCanDiscard() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        func proposal(_ id: String, _ state: String) throws -> CapabilityProposalBlock {
+            try JSONDecoder().decode(CapabilityProposalBlock.self, from: Data(
+                """
+                {"proposal_id":"\(id)","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"\(state)"}
+                """.utf8
+            ))
+        }
+        manager.setMessages([ChatMessage(
+            id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",
+            blocks: [
+                .capabilityProposal(try proposal("retry-key", "failed")),
+                .capabilityProposal(try proposal("discard-key", "failed")),
+                .capabilityProposal(try proposal("done-key", "completed")),
+            ]
+        )], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let appState = AppState(activeTab: 0)
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager, appState: appState,
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
+            ))
+        )
+
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "retry-key", verb: "confirm"
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "discard-key", verb: "discard"
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: "done-key", verb: "confirm"
+        )
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let proposals = coordinator.messages[0].blocks.compactMap {
+            if case .capabilityProposal(let value) = $0 { return value }
+            return nil
+        }
+        XCTAssertEqual(proposals.first { $0.id == "retry-key" }?.state, .failed)
+        XCTAssertEqual(proposals.first { $0.id == "discard-key" }?.state, .discarded)
+        XCTAssertEqual(proposals.first { $0.id == "done-key" }?.state, .completed)
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertEqual(appState.activeTab, 0)
+        XCTAssertTrue(APIContractURLProtocol.requests().isEmpty)
+    }
+
+    @MainActor
+    func testCapabilityCompletionAfterTenantSwitchHasNoSideEffects() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        let proposal = try JSONDecoder().decode(
+            CapabilityProposalBlock.self,
+            from: Data(#"{"proposal_id":"tenant-a-proposal","confirmation_token":"tenant-a-token","capability_id":"workflow.create","input":{"title":"Delayed","description":"delayed-switch"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        )
+        manager.setMessages([ChatMessage(
+            id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal)]
+        )], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let appState = AppState()
+        appState.pendingWorkflowId = nil
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager, appState: appState,
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "[REDACTED]"
+            ))
+        )
+        coordinator.handleCapabilityProposal(
+            messageId: "proposal-message", proposalId: proposal.id, verb: "confirm"
+        )
+        while APIContractURLProtocol.requests().isEmpty { await Task.yield() }
+        manager.activateAccount(tenantKey: "tenant-b", userId: "user-b")
+        coordinator.synchronizeLocalAccount()
+        try await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertTrue(coordinator.messages.isEmpty)
+    }
+
+    func testCapabilityWorkflowCreatedPayloadDecodesProductionSnakeCase() throws {
+        let payload = try JSONDecoder().decode(JSONScalar.self, from: Data(#"""
+        {
+          "workflow": {
+            "id": "wf-production",
+            "title": "Production",
+            "description": "Create workflow",
+            "desired_output": "presentation",
+            "status": "clarifying",
+            "active_plan_id": null,
+            "clarification_session_id": "wfs-production",
+            "source_client_session_id": "client-session",
+            "primary_agent_id": null,
+            "created_at": "2026-09-17T13:05:18Z",
+            "updated_at": "2026-09-17T13:05:18Z"
+          },
+          "clarification_session": {
+            "id": "wfs-production",
+            "workflow_id": "wf-production",
+            "phase": "clarifying",
+            "round_number": 1,
+            "last_event_seq": 2
+          }
+        }
+        """#.utf8))
+        let created: WorkflowCreateResponseDTO = try TenantSessionCoordinator.decodeCapabilityPayload(payload)
+        XCTAssertEqual(created.workflow.id, "wf-production")
+        XCTAssertEqual(created.workflow.desiredOutput, "presentation")
+        XCTAssertEqual(created.workflow.clarificationSessionId, "wfs-production")
+        XCTAssertEqual(created.clarificationSession.workflowId, "wf-production")
+        XCTAssertEqual(created.clarificationSession.lastEventSeq, 2)
+    }
+
+    @MainActor
+    func testRendererRegistryCoversSemanticPathsAndVersionFallbacks() async throws {
+        XCTAssertEqual(RendererRegistry.route(for: "answer_page", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "clarify", version: 1), .clarify)
+        XCTAssertEqual(RendererRegistry.route(for: "knowledge.action", version: 1), .knowledgeAction)
+        XCTAssertEqual(RendererRegistry.route(for: "capability.proposed", version: 1), .confirmation)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.created", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.approved", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.revised", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.cancelled", version: 1), .workflow)
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.generated", version: 1), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "task.execution_queued", version: 1), .taskExecutionCard)
+        XCTAssertFalse(RendererRegistry.accepts(
+            eventType: "artifact.generated", renderer: "task_execution_card"
+        ))
+        XCTAssertFalse(RendererRegistry.accepts(
+            eventType: "task.execution_queued", renderer: "image_card"
+        ))
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 1), .artifactConsumption)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.consumed", version: 0), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "knowledge.navigation", version: 1), .navigation)
+        XCTAssertEqual(RendererRegistry.route(for: "skill.snapshot", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "skill.changed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "project.change_proposed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "project.change_proposed", version: 0), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "task.change_proposed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.change_proposed", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "schedule.snapshot", version: 0), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "notification.snapshot", version: 1), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "hermes.session.listed", version: 1), .hermesSessionList)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "artifact_card", version: 1, rendererVersion: 1
+        ), .artifactCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "data_analysis_card", version: 1, rendererVersion: 1
+        ), .dataAnalysisCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "image_card", version: 1, rendererVersion: 1
+        ), .imageCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "task.execution_queued", renderer: "task_execution_card", version: 1, rendererVersion: 1
+        ), .taskExecutionCard)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "client.action.requested", renderer: "client_action", version: 2, rendererVersion: 1
+        ), .answer)
+        XCTAssertEqual(RendererRegistry.route(
+            for: "artifact.generated", renderer: "wrong_renderer", version: 1, rendererVersion: 1
+        ), .answer)
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 0), .artifact)
+        XCTAssertEqual(RendererRegistry.route(for: "unknown.event", version: 99), .answer)
+
+        let event = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "workflow.created", "version": 1,
+            "renderer": "workflow", "renderer_version": 1,
+            "payload": ["workflow": ["id": "wf-1"]],
+        ]))
+        guard case .capability(let capability) = event else {
+            return XCTFail("Expected semantic capability event")
+        }
+        XCTAssertEqual(capability.type, "workflow.created")
+        XCTAssertEqual(capability.renderer, "workflow")
+        XCTAssertEqual(RendererRegistry.route(for: capability), .workflow)
+
+        let proposalEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "capability.proposed", "version": 1,
+            "renderer": "confirmation", "renderer_version": 1,
+            "payload": [
+                "proposal_id": "proposal-1", "capability_id": "workflow.create",
+                "input": ["title": "QCP", "description": "Create a workflow"],
+                "summary": "Create workflow", "risk": "medium",
+                "state": "awaiting_confirmation",
+            ],
+        ]))
+        guard case .capability(let rawProposal) = proposalEvent else {
+            return XCTFail("Expected capability proposal event")
+        }
+        let proposal = try JSONDecoder().decode(
+            CapabilityProposalBlock.self, from: rawProposal.payload
+        )
+        XCTAssertEqual(proposal.capabilityId, "workflow.create")
+        XCTAssertEqual(proposal.input.title, "QCP")
+        XCTAssertEqual(proposal.state, .awaitingConfirmation)
+
+        let consumedEvent = try XCTUnwrap(APIClient.StreamEvent.parse([
+            "type": "artifact.consumed", "version": 1,
+            "renderer": "artifact_consumption", "renderer_version": 1,
+            "run_id": "run-1", "event_sequence": 8,
+            "payload": [
+                "structured_payload": ["value": "ok"],
+                "receipt": [
+                    "receipt_id": "acr-1", "artifact_id": "artifact-1",
+                    "artifact_content_hash": String(repeating: "a", count: 64),
+                    "schema_version": "schema-v1", "consumed_at": "2026-09-14T08:00:00Z",
+                    "status": "completed",
+                ],
+            ],
+        ]))
+        guard case .capability(let consumed) = consumedEvent else {
+            return XCTFail("Expected artifact consumption event")
+        }
+        XCTAssertEqual(consumed.type, "artifact.consumed")
+        XCTAssertEqual(consumed.runId, "run-1")
+        XCTAssertEqual(consumed.eventSequence, 8)
+        XCTAssertEqual(
+            RendererRegistry.metadata(for: consumed.type)?.path, .artifactConsumption
+        )
+        XCTAssertEqual(RendererRegistry.metadata(for: consumed.type)?.fallback, .artifact)
+
+        var message = ChatMessage(role: .assistant, content: "")
+        XCTAssertNotNil(message.appendCapabilityBlock(from: consumed))
+        XCTAssertNil(message.appendCapabilityBlock(from: consumed))
+        let receipt = try XCTUnwrap(message.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first)
+        XCTAssertEqual(receipt.receiptId, "acr-1")
+        XCTAssertLessThanOrEqual(receipt.structuredPreview.count, ArtifactConsumptionBlock.previewLimit)
+
+        let cancellationPayload = Data(#"{"request_id":"cancel-1","workflow_id":"wf-1","status":"cancelled","resource_revision":"2026-09-18T09:01:00Z","cancelled_execution_ids":["exec-1"],"cancelled_planning_job_ids":[]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let cancellation = try decoder.decode(WorkflowCancellationDTO.self, from: cancellationPayload)
+        XCTAssertEqual(cancellation.cancelledExecutionIds, ["exec-1"])
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        manager.setMessages([
+            ChatMessage(id: "output", sessionId: sessionId, role: .assistant, content: "")
+        ], for: sessionId)
+        let coordinator = TenantSessionCoordinator(sessionManager: manager)
+        let cancellationConsumed = await coordinator.dispatchCapabilityEvent(
+            QCPStreamEvent(
+                type: "workflow.cancelled", version: 1, payload: cancellationPayload,
+                renderer: "workflow", rendererVersion: 1
+            ),
+            outputMessageId: "output"
+        )
+        XCTAssertTrue(cancellationConsumed)
+        XCTAssertEqual(coordinator.toastMessage, "工作流已取消")
+    }
+
+    func testArtifactConsumptionPersistsRoundTripAndBoundsPreview() throws {
+        let receipt = ArtifactConsumptionBlock(
+            receiptId: "acr-roundtrip", artifactId: "artifact-1",
+            artifactContentHash: String(repeating: "b", count: 64),
+            schemaVersion: "schema-v1", consumedAt: "2026-09-14T08:00:00Z",
+            status: "completed", structuredPreview: String(repeating: "x", count: 2_000)
+        )
+        let message = ChatMessage(
+            id: "receipt-message", sessionId: "session-1", role: .assistant,
+            content: "", blocks: [.artifactConsumption(receipt)]
+        )
+
+        let decoded = try JSONDecoder().decode(
+            PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message))
+        ).toChatMessage(sessionId: "session-1")
+        let restored = try XCTUnwrap(decoded.blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first)
+        XCTAssertEqual(restored.receiptId, "acr-roundtrip")
+        XCTAssertEqual(restored.structuredPreview.count, ArtifactConsumptionBlock.previewLimit)
+
+        let legacy = try JSONDecoder().decode(
+            PersistedMessage.self,
+            from: Data(#"{"id":"legacy","role":"assistant","content":"old","createdAt":0,"pending":false,"degraded":false,"isDemoSample":false}"#.utf8)
+        )
+        XCTAssertFalse(legacy.toChatMessage(sessionId: "session-1").blocks.contains {
+            if case .artifactConsumption = $0 { return true }
+            return false
+        })
+    }
+
+    func testArtifactConsumptionQCPEnvelopeDecodesWithDurableReceiptInPayload() throws {
+        struct Consumption: Decodable {
+            struct DurableReceipt: Decodable { let receiptId: String }
+            let structuredPayload: [String: String]
+            let receipt: DurableReceipt
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(
+            QCPInvokeResponseDTO<Consumption>.self,
+            from: Data(#"{"status":"completed","capability_id":"artifact.consume_structured","events":[{"type":"artifact.consumed","version":1,"payload":{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1"}}}],"receipt":{"invocation_id":"qcp-1","capability_version":"1.0.0","status":"completed","event_type":"artifact.consumed"},"error":null}"#.utf8)
+        )
+
+        XCTAssertEqual(response.receipt?.invocationId, "qcp-1")
+        XCTAssertEqual(response.receipt?.eventType, "artifact.consumed")
+        XCTAssertEqual(response.events.first?.payload.structuredPayload["value"], "ok")
+        XCTAssertEqual(response.events.first?.payload.receipt.receiptId, "acr-1")
+    }
+
+    @MainActor
+    func testCreatedWorkflowOpenAtomicallyRestoresOwnerAndSessionScope() throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.deactivate()
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.currentTenantKey = "atomic-tenant"
+        appState.currentUserId = "atomic-user"
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-atomic","title":"Atomic","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":"clarification-atomic","sourceClientSessionId":"session-atomic","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        appState.openWorkflow(workflow)
+
+        XCTAssertEqual(coordinator.currentScope?.ownerIdentity, "atomic-tenant\u{0}atomic-user")
+        XCTAssertEqual(coordinator.currentScope?.clientSessionId, "session-atomic")
+        XCTAssertEqual(coordinator.workflows[workflow.id], workflow)
+        XCTAssertEqual(appState.pendingWorkflowId, workflow.id)
+        XCTAssertEqual(appState.activeTab, 1)
+    }
+
+    @MainActor
+    func testPendingWorkflowPresentBeforeConsumerMountsOpensAndClears() async throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "deep-link-tenant", userId: "deep-link-user")
+        coordinator.selectClientSession("session-first-mount")
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-first-mount")
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-first-mount","title":"First","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-first-mount","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let resolved = await appState.resolvePendingWorkflow { id in
+            XCTAssertEqual(id, workflow.id)
+            return workflow
+        }
+
+        XCTAssertEqual(resolved, workflow)
+        XCTAssertEqual(appState.activeTab, 1)
+        XCTAssertNil(appState.pendingWorkflowId)
+    }
+
+    @MainActor
+    func testPendingWorkflowFetchFailureKeepsRequestForRetry() async {
+        enum ExpectedFailure: Error { case unavailable }
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "retry-tenant", userId: "retry-user")
+        coordinator.selectClientSession("session-retry")
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-retry")
+
+        let resolved = await appState.resolvePendingWorkflow { _ in
+            throw ExpectedFailure.unavailable
+        }
+
+        XCTAssertNil(resolved)
+        XCTAssertEqual(appState.pendingWorkflowId, "workflow-retry")
+        XCTAssertEqual(appState.activeTab, 1)
+    }
+
+    @MainActor
+    func testPendingWorkflowRejectsForeignClientSessionBeforeNavigation() async throws {
+        let coordinator = WorkflowActivityCoordinator.shared
+        coordinator.activate(tenantKey: "foreign-link-tenant", userId: "foreign-link-user")
+        coordinator.selectClientSession("session-a")
+        defer { coordinator.deactivate() }
+        let appState = AppState(activeTab: 0)
+        appState.openWorkflow("workflow-session-b")
+        let foreign = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-session-b","title":"Foreign","description":"","desiredOutput":"pptx","status":"running","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let resolved = await appState.resolvePendingWorkflow { _ in foreign }
+
+        XCTAssertNil(resolved)
+        XCTAssertNil(appState.pendingWorkflowId)
+        XCTAssertEqual(appState.pendingWorkflowScopeError, "此工作流不属于当前对话会话，已阻止打开。")
+    }
+
+    func testAgentDescriptionContractAndCollapseBoundary() {
+        let presentation = AgentDescriptionPresentation(
+            function: "检索并总结资料",
+            suitable: "需要来源追溯的研究任务",
+            boundary: "只访问授权数据，结论需人工确认"
+        )
+        XCTAssertEqual(
+            presentation.full,
+            "功能：检索并总结资料。适合：需要来源追溯的研究任务。边界：只访问授权数据，结论需人工确认。"
+        )
+        XCTAssertLessThanOrEqual(presentation.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertTrue(presentation.isCollapsible)
+
+        let bounded = AgentDescriptionPresentation(
+            function: String(repeating: "功能", count: 80),
+            suitable: String(repeating: "适合", count: 80),
+            boundary: String(repeating: "边界", count: 80)
+        )
+        XCTAssertLessThanOrEqual(bounded.full.count, AgentDescriptionPresentation.maximumLength)
+        XCTAssertFalse(bounded.full.contains("目标明确的相关任务"))
+    }
+
+    func testWorkflowFailurePresentationShowsReportedCauseAndExplicitRetry() throws {
+        let execution = try JSONDecoder().decode(
+            WorkflowExecutionDTO.self,
+            from: Data(#"{"id":"execution-failed","workflowId":"workflow","planId":"plan","status":"failed","progress":45,"tokenBudget":100,"tokenUsed":10,"inputTokens":null,"outputTokens":null,"reasoningTokens":null,"cacheReadTokens":null,"cacheWriteTokens":null,"apiCalls":null,"estimatedCostUsd":null,"modelUsed":null,"providerUsed":null,"routeReason":null,"hermesSessionId":null,"artifactCount":0,"errorMessage":"素材下载校验失败","startedAt":null,"finishedAt":null,"createdAt":null,"nodes":[]}"#.utf8)
+        )
+        let failure = try XCTUnwrap(WorkflowFailurePresentation.make(execution: execution))
+        XCTAssertEqual(failure.cause, "素材下载校验失败")
+        XCTAssertEqual(failure.action, "从失败步骤继续同一任务")
+    }
+
+    func testWorkflowPreviewEntryKeepsQCPRendererAndArtifactVersionContract() throws {
+        XCTAssertEqual(RendererRegistry.route(for: "presentation.created", version: 1), .presentationReview)
+        XCTAssertEqual(RendererRegistry.route(for: "artifact.content", version: 1), .artifact)
+
+        let artifact = try JSONDecoder().decode(
+            WorkflowArtifactDTO.self,
+            from: Data(#"{"id":"deck","kind":"presentation","title":"Deck","relativePath":"deck.pptx","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sourceUrl":null,"sourceKind":null,"selectedForPublish":false,"publishedPath":null,"extension":"pptx","mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","metadata":{"renderType":"presentation","approvalGate":"final","artifactVersion":3,"previewStatus":"ready","previewArtifactId":"deck-preview","previewContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","previewError":null,"parentArtifactId":null,"parentContentHash":null,"sampleArtifactId":null,"sampleContentHash":null}}"#.utf8)
+        )
+
+        XCTAssertEqual(artifact.metadata.artifactVersion, 3)
+        XCTAssertEqual(artifact.metadata.previewArtifactId, "deck-preview")
+        XCTAssertNotNil(artifact.metadata.previewContentHash)
+    }
+
+    func testWorkflowDetailKeepsBuildingAgentVisibleAndRejectsStaleRegression() {
+        XCTAssertTrue(
+            WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                status: "building_agent",
+                hasExecution: false
+            )
+        )
+        XCTAssertFalse(
+            WorkflowDetailTransitionPolicy.showsLifecycleSession(
+                status: "building_agent",
+                hasExecution: true
+            )
+        )
+        XCTAssertFalse(
+            WorkflowDetailTransitionPolicy.accepts(
+                remoteStatus: "building_agent",
+                over: "agent_ready"
+            )
+        )
+        XCTAssertTrue(
+            WorkflowDetailTransitionPolicy.accepts(
+                remoteStatus: "agent_ready",
+                over: "building_agent"
+            )
+        )
+    }
+
+    @MainActor
+    func testWorkflowActivityOwnerSwitchClearsPreviousUsersProjection() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-user-a","title":"Private A","description":"","desiredOutput":"pptx","status":"clarifying","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        coordinator.track(workflow)
+        XCTAssertEqual(coordinator.workflows[workflow.id], workflow)
+        let ownerA = try XCTUnwrap(coordinator.currentScope)
+
+        coordinator.activate(tenantKey: "tenant-b", userId: "user-b")
+        coordinator.selectClientSession("session-b")
+        let ownerB = try XCTUnwrap(coordinator.currentScope)
+
+        XCTAssertGreaterThan(ownerB.generation, ownerA.generation)
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.executions.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
+        XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+        coordinator.deactivate()
+        coordinator.track(workflow)
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+    }
+
+    @MainActor
+    func testWorkflowActivityProjectionIsBoundToOriginatingChatSession() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let workflowA = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-a","title":"A","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let workflowB = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-b","title":"B","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let legacy = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-legacy","title":"Legacy","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        func execution(_ id: String, workflowId: String) throws -> WorkflowExecutionDTO {
+            try JSONDecoder().decode(
+                WorkflowExecutionDTO.self,
+                from: Data("{\"id\":\"\(id)\",\"workflowId\":\"\(workflowId)\",\"planId\":\"plan\",\"status\":\"failed\",\"progress\":50,\"tokenBudget\":100,\"tokenUsed\":10,\"inputTokens\":null,\"outputTokens\":null,\"reasoningTokens\":null,\"cacheReadTokens\":null,\"cacheWriteTokens\":null,\"apiCalls\":null,\"estimatedCostUsd\":null,\"modelUsed\":null,\"providerUsed\":null,\"routeReason\":null,\"hermesSessionId\":null,\"artifactCount\":0,\"errorMessage\":\"retry\",\"startedAt\":null,\"finishedAt\":null,\"createdAt\":null,\"nodes\":[]}".utf8)
+            )
+        }
+        coordinator.trackExecution(try execution("execution-a", workflowId: workflowA.id), workflow: workflowA)
+        coordinator.trackExecution(try execution("execution-b", workflowId: workflowB.id), workflow: workflowB)
+        coordinator.trackExecution(try execution("execution-legacy", workflowId: legacy.id), workflow: legacy)
+
+        XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowA.id])
+        coordinator.selectClientSession("session-b")
+        coordinator.trackExecution(try execution("execution-b", workflowId: workflowB.id), workflow: workflowB)
+        XCTAssertEqual(coordinator.visibleExecutionActivities.map(\.workflow.id), [workflowB.id])
+        coordinator.selectClientSession(nil)
+        XCTAssertTrue(coordinator.visibleExecutionActivities.isEmpty)
+    }
+
+    func testReadingDeckUsesHeadingsWithoutSplittingContinuousProse() {
+        let pages = ReadingCardDeck.pages(from: [
+            .paragraph("引言"),
+            .paragraph("背景"),
+            .heading(level: 2, text: "第一部分"),
+            .paragraph("要点一"),
+            .paragraph("要点二"),
+            .paragraph("要点三"),
+            .paragraph("要点四"),
+            .paragraph("要点五")
+        ])
+
+        XCTAssertEqual(pages.count, 2)
+        XCTAssertEqual(pages.first?.count, 2)
+        XCTAssertEqual(pages.dropFirst().first?.first, .heading(level: 2, text: "第一部分"))
+        XCTAssertEqual(pages.last?.count, 6)
+
+        let stableBlocks = LongAnswerSheet.coalescedBlocks(content: "", serverBlocks: [
+            .init(blockIndex: 0, kind: "markdown", content: "第一段"),
+            .init(blockIndex: 1, kind: "markdown", content: "第二段"),
+            .init(blockIndex: 2, kind: "code", content: "print(1)")
+        ])
+        XCTAssertEqual(stableBlocks.count, 2)
+        XCTAssertEqual(stableBlocks.first?.content, "第一段\n\n第二段")
+    }
+
+    func testMarkdownFormulaBecomesDedicatedReadingCard() {
+        let blocks = MarkdownBlockParser.shared.parse("""
+        先看这个结论。
+
+        $$
+        x_n \\to a
+        $$
+
+        ## 为什么成立
+        因为误差可以被控制。
+        """)
+
+        XCTAssertEqual(blocks, [
+            .paragraph("先看这个结论。"),
+            .formula("x_n \\to a"),
+            .heading(level: 2, text: "为什么成立"),
+            .paragraph("因为误差可以被控制。")
+        ])
+        XCTAssertEqual(ReadingCardDeck.pages(from: blocks).map(\.count), [1, 1, 2])
+        XCTAssertEqual(MarkdownBlockParser.shared.parse("```latex\nE = mc^2\n```"), [.formula("E = mc^2")])
+        XCTAssertEqual(
+            MathFormulaPresentation.displayText("E = \\sum_{i=1}^{n} P_i \\times h_i \\times \\alpha_i"),
+            "E = ∑ᵢ₌₁ⁿ Pᵢ × hᵢ × αᵢ"
+        )
+        XCTAssertEqual(
+            MathFormulaPresentation.displayText("P = \\eta \\cdot A \\cdot G"),
+            "P = η · A · G"
+        )
+        XCTAssertEqual(MathFormulaPresentation.displayText("\\frac{\\epsilon}{2}"), "ε⁄2")
+    }
+
+    func testBookReaderSeparatesStructuredIntroAndRichBlocks() {
+        let content = ReadingSectionContent.parse("""
+        连载：趣味AI落地经历**学习目标：**读完本文，读者应能把整理文件改写成可复现任务。
+
+        | 目录 | 用途 |
+        | --- | --- |
+        | inbox/ | 原始输入 |
+
+        $$
+        H(x) = \\sum_{i=1}^{n} x_i
+        $$
+
+        ```python
+        from pathlib import Path
+        ```
+        """)
+
+        XCTAssertEqual(content.series, "趣味AI落地经历")
+        XCTAssertEqual(content.learningObjective, "读完本文，读者应能把整理文件改写成可复现任务。")
+        XCTAssertEqual(content.blocks.count, 3)
+        if case .table = content.blocks[0] {} else { XCTFail("Expected a table") }
+        XCTAssertEqual(content.blocks[1], .formula("H(x) = \\sum_{i=1}^{n} x_i"))
+        XCTAssertEqual(content.blocks[2], .codeBlock(language: "python", code: "from pathlib import Path"))
+        let blocks = MarkdownBlockParser.shared.parse("""
+        ## 背景
+
+        先说明前提。**它之所以产生巨大的影响**，是因为注意力机制允许并行建模。
+        """)
+
+        XCTAssertEqual(
+            ReadingResumeTarget.find("它之所以产生巨大的影响", in: blocks),
+            .init(blockIndex: 1, characterOffset: 6)
+        )
+        XCTAssertNil(ReadingResumeTarget.find("重复原文", in: [.paragraph("重复原文"), .paragraph("重复原文")]))
+        XCTAssertNil(ReadingResumeTarget.find("重复", in: [.paragraph("重复与重复")]))
+        XCTAssertEqual(ReadingResumeTarget.find("定位", in: [.paragraph("😀**定位**")]), .init(blockIndex: 0, characterOffset: 2))
+        let math = "条件 $x^2$ 成立，接着推导。"
+        let rendered = String(ReadingResumeTarget.attributedText(math).characters)
+        XCTAssertEqual(ReadingResumeTarget.find("接着推导", in: [.paragraph(math)])?.characterOffset,
+                       (rendered as NSString).range(of: "接着推导").location)
+    }
+
+    func testLearningPlanParserRequiresThreeRowsAndTwentyFiveMinutes() throws {
+        let plan = try XCTUnwrap(LearningPlanResponse.parse("""
+        2|回顾柯西列|用自己的话复述定义
+        15|继续阅读|回到定理证明的断点
+        8|做一道理解题|检验完备性条件
+        """))
+
+        XCTAssertEqual(plan.items.map(\.minutes), [2, 15, 8])
+        XCTAssertEqual(plan.items.map(\.title), ["回顾柯西列", "继续阅读", "做一道理解题"])
+        XCTAssertNil(LearningPlanResponse.parse("10|阅读|继续\n10|练习|答题\n4|复盘|总结"))
+    }
+
+    func testMarkdownChartCanBeSharedByChatAndNotes() throws {
+        let block = try XCTUnwrap(MarkdownBlockParser.chart(
+            language: "chart",
+            code: #"{"title":"学习进度","type":"bar","points":[{"label":"周一","value":30}]}"#
+        ))
+        guard case .chart(let chart) = block else {
+            return XCTFail("Expected a chart block")
+        }
+        XCTAssertEqual(chart.title, "学习进度")
+        XCTAssertEqual(chart.chartType, .bar)
+        XCTAssertEqual(chart.series.first?.points.first?.value, 30)
+    }
+
+    func testInlineMathPresentationKeepsProseAndConvertsDelimitedMath() {
+        XCTAssertEqual(
+            InlineMathPresentation.segments(in: "功率 $P = \\eta \\cdot A$，且 \\(x_i^2\\) 收敛。"),
+            [
+                .init(text: "功率 ", isMath: false),
+                .init(text: "P = \\eta \\cdot A", isMath: true),
+                .init(text: "，且 ", isMath: false),
+                .init(text: "x_i^2", isMath: true),
+                .init(text: " 收敛。", isMath: false),
+            ]
+        )
+        XCTAssertEqual(MathFormulaPresentation.displayText("P = \\eta \\cdot A"), "P = η · A")
+    }
+
+    func testNoteInlineAnnotationKeepsOriginalTextAndHidesStoredMetadata() {
+        let extracted = NoteInlineAnnotation.extract(from: """
+        阅读让生活更丰富。
+
+        <!-- quantum-annotation:annotation-1 -->
+        > [!quote] 选文
+        > 阅读让生活更丰富。
+
+        > [!note] 我的批注
+        > 这句话提醒我把阅读和日常联系起来。
+        <!-- /quantum-annotation -->
+        """)
+
+        XCTAssertTrue(extracted.body.contains("阅读让生活更丰富。"))
+        XCTAssertFalse(extracted.body.contains("我的批注"))
+        XCTAssertEqual(extracted.annotations, [
+            .init(
+                id: "annotation-1",
+                quote: "阅读让生活更丰富。",
+                detail: "这句话提醒我把阅读和日常联系起来。"
+            )
+        ])
+    }
+
+    func testBookAnnotationParsesQuoteAndStudentNoteMetadata() throws {
+        let note = KnowledgeNote(
+            id: "annotation-1",
+            title: "示例批注",
+            body: """
+            > [!quote] 书籍摘录
+            > 阳光很好，树叶在风里沙沙地响。
+
+            > [!note] 我的批注
+            > 这里的听觉描写让画面更安静。
+
+            ---
+            书籍标题：我与地坛
+            章节标题：秋天的怀念
+            来源书籍 ID：`book-1`
+            来源章节 ID：`section-3`
+            """,
+            tags: ["阅读批注", "quantum-books"],
+            aliases: [],
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2),
+            isPinned: false,
+            fileURL: URL(fileURLWithPath: "/tmp/annotation-1.md"),
+            outgoingLinks: []
+        )
+
+        let entry = try XCTUnwrap(ReaderAnnotationEntry(note: note))
+        XCTAssertEqual(entry.bookID, "book-1")
+        XCTAssertEqual(entry.sectionID, "section-3")
+        XCTAssertEqual(entry.sectionTitle, "秋天的怀念")
+        XCTAssertEqual(entry.quote, "阳光很好，树叶在风里沙沙地响。")
+        XCTAssertEqual(entry.detail, "这里的听觉描写让画面更安静。")
+        XCTAssertEqual(entry.kind, "笔记")
+
+        var questionNote = note
+        questionNote.body = questionNote.body.replacingOccurrences(
+            of: "这里的听觉描写让画面更安静。",
+            with: "我的问题\n> 这句话表达了怎样的情感？\n> \n> AI 回答摘要\n> 以自然描写呈现宁静温暖的氛围。"
+        )
+        let questionEntry = try XCTUnwrap(ReaderAnnotationEntry(note: questionNote))
+        XCTAssertEqual(questionEntry.kind, "问答")
+        XCTAssertEqual(questionEntry.questionTurn?.question, "这句话表达了怎样的情感？")
+        XCTAssertEqual(questionEntry.questionTurn?.answer, "以自然描写呈现宁静温暖的氛围。")
+        let longAnswer = String(repeating: "完整回答，保留段落。\n\n", count: 350).trimmingCharacters(in: .whitespacesAndNewlines)
+        questionNote.body = questionNote.body.replacingOccurrences(
+            of: "以自然描写呈现宁静温暖的氛围。", with: longAnswer.replacingOccurrences(of: "\n", with: "\n> ")
+        )
+        XCTAssertEqual(ReaderAnnotationEntry(note: questionNote)?.questionTurn?.answer, longAnswer)
+    }
+
+    @MainActor
+    func testReadingCharacterRestoresAfterLayoutWithoutTimers() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let scroll = UIScrollView(frame: window.bounds)
+        controller.view.addSubview(scroll)
+        scroll.contentSize = CGSize(width: 390, height: 3000)
+        let text = ReadingPositionTextView(frame: CGRect(x: 20, y: 200, width: 350, height: 1800))
+        text.isScrollEnabled = false
+        text.text = String(repeating: "精确定位到段落字符。\n", count: 70)
+        text.font = .systemFont(ofSize: 18)
+        text.restoreCharacterOffset = 200
+        scroll.addSubview(text)
+        text.layoutIfNeeded()
+        text.restoreIfNeeded()
+        XCTAssertGreaterThan(scroll.contentOffset.y, 200)
+        let restored = scroll.contentOffset
+        text.restoreIfNeeded()
+        XCTAssertEqual(scroll.contentOffset, restored)
+    }
+
+    func testReadingLanguagePresentationSwitchesEnglishActions() {
+        XCTAssertTrue(ReadingLanguagePresentation.isEnglish("What does this theorem mean in practice?"))
+        XCTAssertFalse(ReadingLanguagePresentation.isEnglish("这个定理在实际中是什么意思？"))
+    }
+
+    func testInlineWorkflowAndKnowledgeCardsPersistAcrossHistory() throws {
+        let workflow = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"workflow-card","title":"期末复习计划","description":"按章节整理重点","desiredOutput":"复习提纲","status":"planning","activePlanId":null,"clarificationSessionId":null,"primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+        let target = KnowledgeNavigationTarget(destination: "knowledge_home", noteId: nil, query: "相关书籍")
+        var message = ChatMessage(id: "inline-cards", sessionId: "session", role: .assistant, content: "")
+        message.blocks = [.workflow(workflow), .knowledgeNavigation(target)]
+
+        let restored = try JSONDecoder().decode(
+            PersistedMessage.self,
+            from: JSONEncoder().encode(PersistedMessage(message))
+        ).toChatMessage(sessionId: "session")
+
+        XCTAssertEqual(restored.blocks, message.blocks)
+    }
+
+    @MainActor
+    func testDelayedGenerationCannotMutateReplacementSession() async throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let generationA = try XCTUnwrap(coordinator.currentScope)
+        let delayed = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"delayed-a","title":"Delayed","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-a","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        let delayedResponse = Task { @MainActor in
+            coordinator.track(delayed, in: generationA)
+        }
+        coordinator.selectClientSession("session-b")
+        let generationB = try XCTUnwrap(coordinator.currentScope)
+        XCTAssertGreaterThan(generationB.generation, generationA.generation)
+
+        await delayedResponse.value
+
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
+    }
+
+    @MainActor
+    func testCrossSessionWorkflowIsRejectedBeforeTracking() throws {
+        let coordinator = WorkflowActivityCoordinator()
+        coordinator.activate(tenantKey: "tenant-a", userId: "user-a")
+        coordinator.selectClientSession("session-a")
+        let foreign = try JSONDecoder().decode(
+            WorkflowDTO.self,
+            from: Data(#"{"id":"foreign","title":"Foreign","description":"","desiredOutput":"pptx","status":"ready","activePlanId":null,"clarificationSessionId":null,"sourceClientSessionId":"session-b","primaryAgentId":null,"createdAt":null,"updatedAt":null,"latestExecution":null,"agent":null}"#.utf8)
+        )
+
+        coordinator.track(foreign)
+
+        XCTAssertTrue(coordinator.workflows.isEmpty)
+        XCTAssertTrue(coordinator.visibleActivities.isEmpty)
+    }
+
+    func testClientActionRendererAndTypedPayloadDecode() throws {
+        XCTAssertEqual(
+            RendererRegistry.route(for: "client.action.requested", version: 1),
+            .clientAction
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let action = try decoder.decode(
+            ClientActionDTO.self,
+            from: Data(
+                #"{"action_id":"ca-1","capability_id":"file.pick","action_type":"file_picker","state":"PENDING","payload":{"allowed_types":["public.pdf"],"allows_multiple":true,"source_id":"src-12345678"}}"#.utf8
+            )
+        )
+        XCTAssertEqual(action.actionId, "ca-1")
+        XCTAssertEqual(action.payload.allowedTypes, ["public.pdf"])
+        XCTAssertEqual(action.payload.allowsMultiple, true)
+        XCTAssertEqual(action.payload.sourceId, "src-12345678")
+    }
+
+    func testHomeActionsExposeTheThreeBackendFacingIntents() {
+        XCTAssertEqual(ChatHomeAction.all.map(\.title), ["继续学", "继续做", "帮我清理"])
+        XCTAssertTrue(ChatHomeAction.all[0].prompt.contains("上次停下的位置"))
+        XCTAssertTrue(ChatHomeAction.all[1].prompt.contains("尚未完成"))
+        XCTAssertTrue(ChatHomeAction.all[2].prompt.contains("必须先让我确认"))
+    }
+
+    func testMarkdownVisualStyleFindsRichEditingSpans() {
+        let spans = MarkdownVisualStyle.spans(
+            in: "## 学习计划\n这是 **重点**。\n> 一段批注\n[[相关笔记]]\n```\nlet value = 1\n```"
+        )
+        XCTAssertTrue(spans.contains { $0.kind == .heading(2) })
+        XCTAssertTrue(spans.contains { $0.kind == .strong })
+        XCTAssertTrue(spans.contains { $0.kind == .quote })
+        XCTAssertTrue(spans.contains { $0.kind == .link })
+        XCTAssertTrue(spans.contains { $0.kind == .code })
     }
 }

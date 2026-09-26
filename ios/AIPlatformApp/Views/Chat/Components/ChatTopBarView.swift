@@ -11,6 +11,7 @@ import SwiftUI
 public struct ChatTopBarView: View {
     public let isGenerating: Bool
     public let title: String
+    public let onWorkbenchTap: (() -> Void)?
     public let onTitleTap: () -> Void
     public let onNewSession: () -> Void
     public let onHistoryTap: () -> Void
@@ -19,6 +20,7 @@ public struct ChatTopBarView: View {
     public init(
         isGenerating: Bool,
         title: String,
+        onWorkbenchTap: (() -> Void)? = nil,
         onTitleTap: @escaping () -> Void,
         onNewSession: @escaping () -> Void,
         onHistoryTap: @escaping () -> Void,
@@ -26,6 +28,7 @@ public struct ChatTopBarView: View {
     ) {
         self.isGenerating = isGenerating
         self.title = title
+        self.onWorkbenchTap = onWorkbenchTap
         self.onTitleTap = onTitleTap
         self.onNewSession = onNewSession
         self.onHistoryTap = onHistoryTap
@@ -34,36 +37,33 @@ public struct ChatTopBarView: View {
 
     public var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            QuantumAvatarView(size: 36)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Button(action: onTitleTap) {
-                    HStack(spacing: 6) {
-                        Text(title.isEmpty ? "新会话" : title)
-                            .font(AppTheme.Typography.cardTitle)
-                            .foregroundColor(AppTheme.Colors.textPrimary)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(AppTheme.Icons.tertiary)
-                    }
+            if let onWorkbenchTap {
+                Button(action: onWorkbenchTap) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .minimumTouchTarget()
                 }
                 .buttonStyle(SoftButtonStyle())
+                .accessibilityLabel("返回学习工作台")
+                .accessibilityIdentifier("chat-back-to-workbench")
+            } else {
+                Color.clear.frame(width: 44, height: 44)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            Button(action: onNewSession) {
-                Image(systemName: "square.and.pencil")
-                    .font(.body.weight(.semibold))
-                        .foregroundColor(AppTheme.Icons.primary)
-                    .minimumTouchTarget()
+            Button(action: onTitleTap) {
+                Text(title.isEmpty ? "新对话" : title)
+                    .font(AppTheme.Typography.cardTitle)
+                    .foregroundColor(AppTheme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(SoftButtonStyle())
-            .accessibilityLabel("新建会话")
 
             Menu {
+                Button(action: onNewSession) {
+                    Label("新建会话", systemImage: "square.and.pencil")
+                }
                 Button(action: onHistoryTap) {
                     Label("会话历史", systemImage: "clock.arrow.circlepath")
                 }
@@ -79,14 +79,9 @@ public struct ChatTopBarView: View {
             .buttonStyle(SoftButtonStyle())
             .accessibilityLabel("更多会话操作")
         }
-        .padding(.horizontal, AppTheme.Metrics.contentGutter)
-        .padding(.vertical, 10)
-        .background(.thinMaterial)
-        .background(AppTheme.Colors.cardBackground.opacity(0.90))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.Colors.border.opacity(0.72))
-                .frame(height: 0.5)
-        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .frame(minHeight: 52)
+        .background(Color(hex: "FCFBF7").opacity(0.97))
+        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
     }
 }

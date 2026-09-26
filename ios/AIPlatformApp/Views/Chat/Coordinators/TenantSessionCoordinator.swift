@@ -26,6 +26,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var thinkingDetail: String? = nil
     @Published public var liveProgress: String? = nil
     @Published public var toastMessage: String? = nil
+    @Published public private(set) var persistenceFailureMessage: String? = nil
+    @Published public private(set) var persistenceFailureCanRetry: Bool = true
+    @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
     @Published public private(set) var hasNewerMessages: Bool = false
@@ -76,10 +79,11 @@ public final class TenantSessionCoordinator: ObservableObject {
     private var loadedAccountFingerprint: String? = nil
     private let hasAuthenticatedSession: @MainActor () -> Bool
     private let fetchDurableChatRunRequest: @MainActor (String, Int) async throws -> DurableChatReplayDTO
-    private let fetchChatStatusRequest: @MainActor (String, Bool, String?) async throws -> ChatStatusDTO
+    private let fetchChatStatusRequest: @MainActor (String, Bool, String?, Int) async throws -> ChatStatusDTO
     private let fetchAnswerBlocksRequest: @MainActor (String, String?, Int) async throws -> AnswerBlockPageDTO
     private let cancelRunRequest: @MainActor (String, String?) async throws -> Void
     private let recoverySleep: @MainActor (UInt64) async -> Void
+    private let capabilityClient: CapabilityClient
 
     public init(
         sessionManager: SessionManager? = nil,
@@ -90,8 +94,10 @@ public final class TenantSessionCoordinator: ObservableObject {
         fetchDurableChatRun: @escaping @MainActor (String, Int) async throws -> DurableChatReplayDTO = {
             try await APIClient.shared.fetchDurableChatRun(runId: $0, after: $1)
         },
-        fetchChatStatus: @escaping @MainActor (String, Bool, String?) async throws -> ChatStatusDTO = {
-            try await APIClient.shared.fetchChatStatus(sessionId: $0, consume: $1, agentId: $2)
+        fetchChatStatus: @escaping @MainActor (String, Bool, String?, Int) async throws -> ChatStatusDTO = {
+            try await APIClient.shared.fetchChatStatus(
+                sessionId: $0, consume: $1, agentId: $2, offset: $3
+            )
         },
         fetchAnswerBlocks: @escaping @MainActor (String, String?, Int) async throws -> AnswerBlockPageDTO = {
             try await APIClient.shared.fetchAnswerBlocks(runId: $0, cursor: $1, maxBlocks: $2)
@@ -99,6 +105,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         cancelRun: @escaping @MainActor (String, String?) async throws -> Void = {
             try await APIClient.shared.cancelStream(sessionId: $0, agentId: $1)
         },
+        capabilityClient: CapabilityClient? = nil,
         recoverySleep: @escaping @MainActor (UInt64) async -> Void = {
             try? await Task.sleep(nanoseconds: $0)
         }
@@ -110,6 +117,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         self.fetchChatStatusRequest = fetchChatStatus
         self.fetchAnswerBlocksRequest = fetchAnswerBlocks
         self.cancelRunRequest = cancelRun
+        self.capabilityClient = capabilityClient ?? CapabilityClient()
         self.recoverySleep = recoverySleep
         restoreActiveSession()
         loadedAccountFingerprint = self.sessionManager.activeAccountFingerprint
@@ -176,6 +184,16 @@ public final class TenantSessionCoordinator: ObservableObject {
             onKnowledgeAction: { [weak self] actionId, verb in
                 self?.handleKnowledgeAction(messageId: message?.id, actionId: actionId, verb: verb)
             },
+            onCapabilityProposal: { [weak self] proposalId, verb in
+                self?.handleCapabilityProposal(messageId: message?.id, proposalId: proposalId, verb: verb)
+            },
+            onWorkflowOpen: { [weak self] workflowId in
+                self?.appState?.openWorkflow(workflowId)
+            },
+            onKnowledgeNavigation: { [weak self] target in
+                self?.appState?.pendingKnowledgeNavigation = target
+                self?.appState?.activeTab = 2
+            },
             onLoadAnswerBlocks: { [weak self] messageId in
                 self?.loadNextAnswerBlocks(messageId: messageId)
             },
@@ -197,6 +215,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func prewarmActiveSessionIfNeeded() {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["AI_LAB_E2E_DISABLE_PREWARM"] == "1" { return }
+#endif
         let sid = sessionManager.activeSessionID()
         guard hasAuthenticatedSession(), messages.isEmpty,
               prewarmedSessionIDs.insert(sid).inserted else { return }
@@ -297,11 +318,33 @@ public final class TenantSessionCoordinator: ObservableObject {
                   self.sessionManager.activeAccountFingerprint == accountFingerprint,
                   self.sessionManager.activeSessionID() == sid else { return }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                var statusOffset = self.statusEventCursor(
+                    sessionId: sid, outputMessageId: outputId
+                )
+                var status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId, statusOffset
+                )
                 guard self.tenantEpoch == taskEpoch,
                       self.sessionManager.activeAccountFingerprint == accountFingerprint,
                       self.sessionManager.activeSessionID() == sid else { return }
                 if status.status == "completed" {
+                    while !(await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: outputId,
+                        agentId: agentId
+                    )) {
+                        let nextOffset = self.statusEventCursor(
+                            sessionId: sid, outputMessageId: outputId
+                        )
+                        guard nextOffset > statusOffset else { return }
+                        statusOffset = nextOffset
+                        status = try await self.fetchChatStatusRequest(
+                            sid, false, agentId, statusOffset
+                        )
+                        guard self.tenantEpoch == taskEpoch,
+                              self.sessionManager.activeAccountFingerprint == accountFingerprint,
+                              self.sessionManager.activeSessionID() == sid,
+                              status.status == "completed" else { return }
+                    }
                     self.confirmedRunningMessageIDs.remove(outputId)
                     self.applyRecoveredAnswer(
                         status.loadedAnswer,
@@ -338,6 +381,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     return
                 }
                 if Self.terminalStatusMessage(status.status) != nil {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: outputId,
+                        agentId: agentId
+                    ) else { return }
                     self.applyTerminalStatus(status.status, outputMessageId: outputId)
                 }
             } catch {
@@ -373,23 +420,33 @@ public final class TenantSessionCoordinator: ObservableObject {
                     guard self.tenantEpoch == taskEpoch,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint,
                           self.sessionManager.activeSessionID() == sessionId,
-                          let index = self.messages.firstIndex(where: { $0.id == outputMessageId })
+                          let initialIndex = self.messages.firstIndex(where: { $0.id == outputMessageId })
                     else { return }
                     consecutiveFailures = 0
-                    cursor = max(cursor, replay.run.eventSequence)
-                    self.messages[index].runId = runId
-                    self.messages[index].lastEventSequence = cursor
+                    self.messages[initialIndex].runId = runId
                     for event in replay.events {
                         if case .knowledgeActionDraft(let action) = event,
-                           !self.messages[index].blocks.contains(where: {
+                           let eventIndex = self.messages.firstIndex(where: { $0.id == outputMessageId }),
+                           !self.messages[eventIndex].blocks.contains(where: {
                                if case .knowledgeAction(let existing) = $0 {
                                    return existing.id == action.id
                                }
                                return false
                            }) {
-                            self.messages[index].blocks.append(.knowledgeAction(action))
+                            self.messages[eventIndex].blocks.append(.knowledgeAction(action))
+                        } else if case .capability(let capabilityEvent) = event {
+                            guard await self.dispatchCapabilityEvent(
+                                capabilityEvent, outputMessageId: outputMessageId
+                            ) else { throw APIError.decoding("artifact consumption receipt") }
                         }
                     }
+                    guard self.tenantEpoch == taskEpoch,
+                          self.sessionManager.activeAccountFingerprint == accountFingerprint,
+                          self.sessionManager.activeSessionID() == sessionId,
+                          let index = self.messages.firstIndex(where: { $0.id == outputMessageId })
+                    else { return }
+                    cursor = max(cursor, replay.run.eventSequence)
+                    self.messages[index].lastEventSequence = cursor
                     let status = replay.run.status
                     if let page = replay.run.answerProjection, !page.blocks.isEmpty {
                         self.applyAnswerPage(page, messageIndex: index, replace: true)
@@ -445,6 +502,161 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
+    func dispatchCapabilityEvent(
+        _ event: QCPStreamEvent, outputMessageId: String
+    ) async -> Bool {
+        guard RendererRegistry.accepts(eventType: event.type, renderer: event.renderer) else {
+            return false
+        }
+        let path = RendererRegistry.route(for: event)
+        if event.type == "workflow.cancelled" {
+            guard path == .workflow else { return false }
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let cancellation = try? decoder.decode(
+                WorkflowCancellationDTO.self, from: event.payload
+            ), cancellation.status == "cancelled" else { return false }
+            showToast("工作流已取消")
+            return true
+        }
+        if path == .confirmation || path == .artifactConsumption {
+            guard let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
+                return false
+            }
+            let validConsumption = path != .artifactConsumption
+                || ArtifactConsumptionBlock(event: event) != nil
+            guard validConsumption else { return false }
+            if let appended = messages[index].appendCapabilityBlock(from: event),
+               case .capabilityProposal = appended {
+                messages[index].pending = false
+            }
+            if path == .artifactConsumption {
+                return await sessionManager.checkpointRunProjection(
+                    messages, for: messages[index].sessionId
+                )
+            }
+        } else if path == .workflow || path == .presentationReview {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let workflow: WorkflowDTO?
+            if let created = try? decoder.decode(
+                WorkflowCreateResponseDTO.self, from: event.payload
+            ) {
+                workflow = created.workflow
+            } else {
+                workflow = try? decoder.decode(WorkflowDTO.self, from: event.payload)
+            }
+            guard let workflow,
+                  let sourceSessionId = messages.first(where: { $0.id == outputMessageId })?.sessionId,
+                  sessionManager.activeSessionID() == sourceSessionId,
+                  workflow.sourceClientSessionId == sourceSessionId else {
+                return false
+            }
+            WorkflowActivityCoordinator.shared.track(workflow)
+            if let index = messages.firstIndex(where: { $0.id == outputMessageId }),
+               !messages[index].blocks.contains(where: { $0.id == "workflow_\(workflow.id)" }) {
+                messages[index].blocks.append(.workflow(workflow))
+                commitSession()
+            }
+            // Re-assert owner + session and track the workflow atomically before
+            // switching tabs. A late account restore must not leave the task UI
+            // with a nil owner/session scope.
+            appState?.openWorkflow(workflow)
+        } else if path == .artifact || path == .artifactCard
+                    || path == .dataAnalysisCard || path == .imageCard {
+            showToast("工作流工件已就绪")
+        } else if path == .taskExecutionCard {
+            showToast("任务执行已排队")
+        } else if path == .clientAction {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let action = try? decoder.decode(ClientActionDTO.self, from: event.payload),
+                  action.state == "PENDING" else {
+                return false
+            }
+            pendingClientAction = action
+        } else if path == .bookshelf {
+            showToast("书架状态已更新")
+        } else if path == .hermesSessionList || path == .hermesSessionDetail {
+            showToast("Hermes 会话状态已更新")
+        } else if path == .knowledgeAction {
+            showToast("知识操作已更新")
+        }
+        return true
+    }
+
+    public func completeClientAction(
+        _ action: ClientActionDTO,
+        status: String,
+        metadata: [String: String] = [:]
+    ) {
+        guard pendingClientAction?.actionId == action.actionId else { return }
+        pendingClientAction = nil
+        Task { [weak self] in
+            do {
+                _ = try await CapabilityClient().recordClientActionReceipt(
+                    actionId: action.actionId,
+                    status: status,
+                    resultMetadata: metadata
+                )
+                self?.showToast(status == "SUCCEEDED" ? "设备操作已完成" : "设备操作已取消")
+            } catch {
+                self?.showToast("设备操作回执失败")
+            }
+        }
+    }
+
+    private func statusEventCursor(sessionId: String, outputMessageId: String) -> Int {
+        if sessionManager.activeSessionID() == sessionId,
+           let message = messages.first(where: { $0.id == outputMessageId }) {
+            return message.lastEventSequence
+        }
+        return sessionManager.messages(for: sessionId)
+            .first(where: { $0.id == outputMessageId })?.lastEventSequence ?? 0
+    }
+
+    private func checkpointStatusEvents(
+        _ status: ChatStatusDTO, sessionId: String, outputMessageId: String,
+        agentId: String?
+    ) async -> Bool {
+        let events = status.events ?? []
+        let cursor = status.eventsNextOffset
+            ?? events.compactMap(\.eventSequence).max()
+            ?? status.eventSequence
+            ?? statusEventCursor(sessionId: sessionId, outputMessageId: outputMessageId)
+        guard sessionManager.activeSessionID() == sessionId else {
+            let checkpointed = await sessionManager.checkpointStatusEvents(
+                events, runId: status.runId, cursor: cursor,
+                sessionId: sessionId, messageId: outputMessageId
+            )
+            if checkpointed, cursor < (status.eventSequence ?? cursor) { return false }
+            if checkpointed, status.status == "completed" {
+                _ = try? await fetchChatStatusRequest(sessionId, true, agentId, cursor)
+            }
+            return checkpointed
+        }
+        guard messages.contains(where: { $0.id == outputMessageId }) else { return false }
+        for event in events {
+            guard await dispatchCapabilityEvent(event, outputMessageId: outputMessageId) else {
+                return false
+            }
+        }
+        guard await sessionManager.checkpointRunProjection(messages, for: sessionId),
+              let index = messages.firstIndex(where: { $0.id == outputMessageId }) else {
+            return false
+        }
+        messages[index].runId = status.runId ?? messages[index].runId
+        messages[index].lastEventSequence = max(messages[index].lastEventSequence, cursor)
+        guard await sessionManager.checkpointRunProjection(messages, for: sessionId) else {
+            return false
+        }
+        if cursor < (status.eventSequence ?? cursor) { return false }
+        if status.status == "completed" {
+            _ = try? await fetchChatStatusRequest(sessionId, true, agentId, cursor)
+        }
+        return true
+    }
+
     /// 冷启动/回前台时以服务端为准恢复 Clarify；不启动新推理。
     public func reconcileRestoredClarify() {
         guard let idx = messages.lastIndex(where: {
@@ -471,7 +683,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 return
             }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 guard let currentIdx = self.messages.firstIndex(where: { $0.id == messageId }) else { return }
                 if let pending = status.clarify, pending.clarifyId == block.clarifyId {
                     if let blockIdx = self.messages[currentIdx].blocks.firstIndex(where: {
@@ -486,6 +701,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         self.commitSession()
                     }
                 } else if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.appendCompletedAnswer(status.loadedAnswer, sessionId: sid)
                     self.setClarifyState(messageIndex: currentIdx, state: .expired)
                     self.commitSession()
@@ -678,6 +897,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     public func prepareForBackground() {
         guard let req = inflight else {
             commitSession()
+            validatePersistenceForBackground()
             tenantEpoch += 1
             stopStatusPolling()
             reconcilingMessageIDs.removeAll()
@@ -687,6 +907,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let outputId = outputMessageId(for: req)
         drainDeltaBuffer(messageId: outputId)
         commitSession()
+        validatePersistenceForBackground()
         if checkpointingRequestId == req.id || awaitingRunAcceptanceRequestId == req.id {
             // The Bridge has not accepted this Run yet. Keep the checkpoint task
             // alive; once durable local state exists it will submit the same request
@@ -703,6 +924,55 @@ public final class TenantSessionCoordinator: ObservableObject {
         confirmedRunningMessageIDs.removeAll()
         isGenerating = false
         inflight = nil
+    }
+
+    private func validatePersistenceForBackground() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureCanRetry = true
+                    persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+                }
+            } catch {
+                persistenceFailureCanRetry = true
+                persistenceFailureMessage = "部分本地消息未能安全保存。请保持应用打开并重试；确认前不会把本次保存视为成功。"
+            }
+        }
+    }
+
+    public func acknowledgePersistenceFailure() {
+        if !persistenceFailureCanRetry {
+            sessionManager.acknowledgeFailedPersistenceMutations()
+        }
+        persistenceFailureMessage = nil
+        persistenceFailureCanRetry = true
+    }
+
+    public func retryPersistenceFailure() {
+        guard persistenceFailureCanRetry else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await sessionManager.shutdown()
+                persistenceFailureMessage = nil
+                persistenceFailureCanRetry = true
+            } catch let failure as SessionManager.ShutdownError {
+                if failure == .persistenceMutationFailed {
+                    persistenceFailureCanRetry = false
+                    persistenceFailureMessage = "清空、删除或截断操作未能持久化。请重新执行原操作；本次操作不会被误报为成功。"
+                } else {
+                    persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+                }
+            } catch {
+                persistenceFailureMessage = "本地消息仍未保存成功。请保持应用打开，稍后再次重试。"
+            }
+        }
     }
 
     public func cancelAllTasksAndAnimations() {
@@ -760,12 +1030,19 @@ public final class TenantSessionCoordinator: ObservableObject {
                   self.sessionManager.activeAccountFingerprint == accountFingerprint {
                 do {
                     let status = try await self.fetchChatStatusRequest(
-                        req.sessionId, true, req.agentId
+                        req.sessionId, false, req.agentId,
+                        self.statusEventCursor(
+                            sessionId: req.sessionId, outputMessageId: outputMessageId
+                        )
                     )
                     guard !Task.isCancelled,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint
                     else { return }
                     if status.status == "completed" {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputMessageId, agentId: req.agentId
+                        ) else { continue }
                         self.sessionManager.applyCompletedStatus(
                             sessionId: req.sessionId,
                             requestId: outputMessageId,
@@ -787,6 +1064,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         return
                     }
                     if let terminalText = Self.terminalStatusMessage(status.status) {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputMessageId, agentId: req.agentId
+                        ) else { continue }
                         self.sessionManager.applyDegraded(
                             sessionId: req.sessionId,
                             requestId: outputMessageId,
@@ -901,12 +1182,6 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("最多排队 3 条，请等待")
             return
         }
-        let requestedOutputKind = Self.explicitOutputKind(text)
-        if requestedOutputKind != nil && isGenerating {
-            showToast("当前回答完成后再创建文档任务")
-            return
-        }
-
         // Hermes SessionDB is the sole conversation runtime. Attach auxiliary
         // client context only for recovery, explicit local notes, or a knowledge
         // mutation; an empty envelope would disable Hermes' fast general lane.
@@ -915,35 +1190,9 @@ public final class TenantSessionCoordinator: ObservableObject {
         var localNoteSnapshot: [ChatLocalNoteDTO] = []
         var localNoteCharacters = 0
         // Ordinary web/general questions must not upload every local note. Only
-        // explicit local/combined knowledge requests or sessions with uploaded
-        // attachments receive a bounded snapshot.
-        let sessionAttachmentNoteIds: Set<String>
-        if let activeAttachmentId = latestReadyDocumentSourceId() {
-            // The most recently ready upload is the active document for this
-            // chat. Bind auto-mode context to that exact private note/source.
-            sessionAttachmentNoteIds = [activeAttachmentId]
-        } else {
-            sessionAttachmentNoteIds = []
-        }
-        if contextScope.mode == .localOnly || contextScope.mode == .combined || !sessionAttachmentNoteIds.isEmpty {
-            let allNotes = KnowledgeNoteStore.shared.notes + KnowledgeNoteStore.shared.archivedNotes
-            let candidateNotes: [KnowledgeNote]
-            if contextScope.mode == .localOnly || contextScope.mode == .combined {
-                candidateNotes = allNotes.sorted { a, b in
-                    let aIsAttachment = sessionAttachmentNoteIds.contains(a.id)
-                    let bIsAttachment = sessionAttachmentNoteIds.contains(b.id)
-                    if aIsAttachment && !bIsAttachment { return true }
-                    if !aIsAttachment && bIsAttachment { return false }
-                    return a.updatedAt > b.updatedAt
-                }
-            } else {
-                // Auto mode must not leak unrelated local notes: attach only the
-                // documents already visible in this chat session.
-                candidateNotes = allNotes
-                    .filter { sessionAttachmentNoteIds.contains($0.id) }
-                    .sorted { $0.updatedAt > $1.updatedAt }
-            }
-            for note in candidateNotes.prefix(12) {
+        // explicit local/combined knowledge requests receive a bounded snapshot.
+        if contextScope.mode == .localOnly || contextScope.mode == .combined {
+            for note in (KnowledgeNoteStore.shared.notes + KnowledgeNoteStore.shared.archivedNotes).prefix(12) {
                 let markdown = String(KnowledgeNoteStore.shared.markdown(for: note).prefix(8_000))
                 guard localNoteCharacters + markdown.count <= 40_000 else { break }
                 localNoteSnapshot.append(ChatLocalNoteDTO(
@@ -969,8 +1218,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             messages: recoveryContext?.messages ?? [],
             truncated: recoveryContext?.truncated ?? false,
             sourceSessions: recoveryContext?.sourceSessions ?? [],
-            localNotes: localNoteSnapshot,
-            activeDocumentNoteId: sessionAttachmentNoteIds.first
+            localNotes: localNoteSnapshot
         ) : nil
         let userMessage = ChatMessage(
             sessionId: sid, role: .user, content: text, quotedContext: quote
@@ -978,18 +1226,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         messages.append(userMessage)
         inputText = ""
         quotedContext = nil
-        if let outputKind = requestedOutputKind {
-            commitSession()
-            let refersToUpload = ["这份文档", "这个文件", "该文件", "附件", "上传的", "刚才的文档"]
-                .contains(where: text.contains)
-            let sourceId = refersToUpload ? latestReadyDocumentSourceId() : nil
-            createOutputWorkflowFromChat(
-                text: text,
-                outputKind: outputKind,
-                sourceDocumentId: sourceId
-            )
-            return
-        }
         if isGenerating && !regenerate {
             // Queued messages do not have a Run identity yet; persist them through
             // the normal ordered writer until the queue starts execution.
@@ -1192,83 +1428,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         return hasKnowledgeObject && hasMutation
     }
 
-    static func explicitOutputKind(_ text: String) -> String? {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let isQuestion = ["如何", "怎么", "教程", "解释", "what is", "how to"]
-            .contains(where: value.contains)
-        guard !isQuestion,
-              ["帮我", "请", "生成", "制作", "做一份", "写一份", "create", "make"]
-                .contains(where: value.contains) else { return nil }
-        if ["ppt", "pptx", "演示文稿", "幻灯片"].contains(where: value.contains) {
-            return "presentation"
-        }
-        if ["word", "docx", "word文档", "word 文档"].contains(where: value.contains) {
-            return "document"
-        }
-        if ["html", "网页工具", "web 工具", "web tool", "互动网页"].contains(where: value.contains) {
-            return "html"
-        }
-        return nil
-    }
-
-    private func latestReadyDocumentSourceId() -> String? {
-        for message in messages.reversed() {
-            for block in message.blocks.reversed() {
-                if case .attachment(let attachment) = block,
-                   attachment.state == .ready,
-                   let noteId = attachment.noteId,
-                   !noteId.isEmpty {
-                    return noteId
-                }
-            }
-        }
-        return nil
-    }
-
-    private func createOutputWorkflowFromChat(
-        text: String,
-        outputKind: String,
-        sourceDocumentId: String?
-    ) {
-        isGenerating = true
-        let outputName = outputKind == "presentation" ? "PPTX" : outputKind == "html" ? "HTML 工具" : "Word 文档"
-        let pending = ChatMessage(
-            role: .assistant,
-            content: "正在创建 \(outputName) 任务…",
-            pending: true
-        )
-        messages.append(pending)
-        commitSession()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.finishGeneration() }
-            do {
-                let created = try await APIClient.shared.createWorkflow(
-                    title: String(text.prefix(48)),
-                    description: text,
-                    desiredOutput: outputKind == "presentation"
-                        ? "可编辑 PPTX 与渲染预览"
-                        : outputKind == "html" ? "自包含交互式 HTML 工具" : "可编辑 Word 文档 DOCX",
-                    sourceDocumentId: sourceDocumentId,
-                    outputKind: outputKind
-                )
-                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
-                    self.messages[index].content = "已创建 \(outputName) 任务。接下来会先确认用途、结构和内容要求，再生成大纲与成品；文件和知识库只在你明确提供或选择时作为素材。"
-                    self.messages[index].pending = false
-                }
-                WorkflowActivityCoordinator.shared.track(created.workflow)
-                self.appState?.pendingWorkflowId = created.workflow.id
-                self.commitSession()
-            } catch {
-                if let index = self.messages.firstIndex(where: { $0.id == pending.id }) {
-                    self.messages[index].content = "\(outputName) 任务创建失败：\(error.localizedDescription)"
-                    self.messages[index].pending = false
-                    self.messages[index].degraded = true
-                }
-                self.commitSession()
-            }
-        }
-    }
 
     static func shouldAttachClientSessionContext(
         userText: String,
@@ -1689,6 +1848,15 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
 
                 case .knowledgeNavigation(let target):
+                    if let idx = messages.firstIndex(where: { $0.id == outputId }),
+                       !messages[idx].blocks.contains(where: {
+                           if case .knowledgeNavigation(let existing) = $0 { return existing == target }
+                           return false
+                       }) {
+                        messages[idx].blocks.append(.knowledgeNavigation(target))
+                        messages[idx].pending = false
+                        commitSession()
+                    }
                     appState?.pendingKnowledgeNavigation = target
                     appState?.activeTab = 2
 
@@ -1698,6 +1866,18 @@ public final class TenantSessionCoordinator: ObservableObject {
                         applyAnswerPage(page, messageIndex: idx, replace: true)
                         messages[idx].pending = page.status != "completed"
                         messages[idx].isStreaming = page.status != "completed"
+                    }
+
+                case .capability(let event):
+                    if await dispatchCapabilityEvent(event, outputMessageId: outputId),
+                       let runId = event.runId, !runId.isEmpty,
+                       let eventSequence = event.eventSequence,
+                       let idx = messages.firstIndex(where: { $0.id == outputId }) {
+                        messages[idx].runId = runId
+                        messages[idx].lastEventSequence = max(
+                            messages[idx].lastEventSequence, eventSequence
+                        )
+                        commitSession()
                     }
 
                 case .done(_, let answer):
@@ -1713,8 +1893,15 @@ public final class TenantSessionCoordinator: ObservableObject {
                         // transport fragment. Reconcile once with the durable answer
                         // projection before persisting completion.
                         if let status = try? await fetchChatStatusRequest(
-                            req.sessionId, false, req.agentId
-                        ), status.status == "completed" {
+                            req.sessionId, false, req.agentId,
+                            statusEventCursor(
+                                sessionId: req.sessionId, outputMessageId: outputId
+                            )
+                        ), status.status == "completed",
+                           await checkpointStatusEvents(
+                            status, sessionId: req.sessionId,
+                            outputMessageId: outputId, agentId: req.agentId
+                           ) {
                             applyRecoveredAnswer(
                                 status.loadedAnswer,
                                 answerProjection: status.answerProjection,
@@ -1793,8 +1980,17 @@ public final class TenantSessionCoordinator: ObservableObject {
             return true
         }
         do {
-            let status = try await fetchChatStatusRequest(req.sessionId, true, req.agentId)
+            let status = try await fetchChatStatusRequest(
+                req.sessionId, false, req.agentId,
+                statusEventCursor(
+                    sessionId: req.sessionId, outputMessageId: outputMessageId
+                )
+            )
             if status.status == "completed" {
+                guard await checkpointStatusEvents(
+                    status, sessionId: req.sessionId,
+                    outputMessageId: outputMessageId, agentId: req.agentId
+                ) else { return true }
                 if sessionManager.activeSessionID() == req.sessionId {
                     applyRecoveredAnswer(
                         status.loadedAnswer,
@@ -1841,6 +2037,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 return true
             }
             if let terminalText = Self.terminalStatusMessage(status.status) {
+                guard await checkpointStatusEvents(
+                    status, sessionId: req.sessionId,
+                    outputMessageId: outputMessageId, agentId: req.agentId
+                ) else { return true }
                 if sessionManager.activeSessionID() == req.sessionId {
                     applyTerminalStatus(status.status, outputMessageId: outputMessageId)
                 } else {
@@ -2215,9 +2415,16 @@ public final class TenantSessionCoordinator: ObservableObject {
         setClarifyState(messageIndex: idx, state: .reconciling, selection: selection)
         commitSession()
         do {
-            let status = try await fetchChatStatusRequest(sessionId, true, agentId)
+            let status = try await fetchChatStatusRequest(
+                sessionId, false, agentId,
+                statusEventCursor(sessionId: sessionId, outputMessageId: messageId)
+            )
             print("[Clarify] reconcile clarify=\(local.clarifyId ?? "legacy") phase=\(status.phase ?? status.status)")
             if status.status == "completed" {
+                guard await checkpointStatusEvents(
+                    status, sessionId: sessionId, outputMessageId: messageId,
+                    agentId: agentId
+                ) else { return }
                 markClarifySubmitted(messageIndex: idx, selection: selection)
                 appendCompletedAnswer(status.loadedAnswer, sessionId: sessionId)
                 commitSession()
@@ -2301,12 +2508,21 @@ public final class TenantSessionCoordinator: ObservableObject {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { return }
                 do {
-                    let status = try await self.fetchChatStatusRequest(sessionId, true, agentId)
+                    let status = try await self.fetchChatStatusRequest(
+                        sessionId, false, agentId,
+                        self.statusEventCursor(
+                            sessionId: sessionId, outputMessageId: outputMessageId
+                        )
+                    )
                     guard self.tenantEpoch == taskEpoch,
                           self.sessionManager.activeAccountFingerprint == accountFingerprint,
                           self.sessionManager.activeSessionID() == sessionId
                     else { return }
                     if status.status == "completed" {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: sessionId,
+                            outputMessageId: outputMessageId, agentId: agentId
+                        ) else { continue }
                         self.applyRecoveredAnswer(
                             status.loadedAnswer,
                             answerProjection: status.answerProjection,
@@ -2352,6 +2568,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                         return
                     }
                     if ["timeout", "not_found", "failed", "cancelled"].contains(status.status) {
+                        guard await self.checkpointStatusEvents(
+                            status, sessionId: sessionId,
+                            outputMessageId: outputMessageId, agentId: agentId
+                        ) else { continue }
                         if let idx = self.messages.firstIndex(where: { $0.id == outputMessageId }) {
                             let cancelled = status.status == "cancelled"
                             self.messages[idx].role = cancelled ? .assistant : .interrupted
@@ -2417,8 +2637,15 @@ public final class TenantSessionCoordinator: ObservableObject {
         clarifySubmissionTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.appendCompletedAnswer(status.loadedAnswer, sessionId: sid)
                     self.commitSession()
                     self.finishGeneration()
@@ -2698,7 +2925,12 @@ public final class TenantSessionCoordinator: ObservableObject {
                       self.inflight?.id == req.id,
                       self.inflight?.phase == .thinking else { return }
                 do {
-                    let status = try await self.fetchChatStatusRequest(sid, false, req.agentId)
+                    let status = try await self.fetchChatStatusRequest(
+                        sid, false, req.agentId,
+                        self.statusEventCursor(
+                            sessionId: sid, outputMessageId: self.outputMessageId(for: req)
+                        )
+                    )
                     if status.status == "running" {
                         self.liveProgress = status.latestStep
                     }
@@ -2887,9 +3119,16 @@ public final class TenantSessionCoordinator: ObservableObject {
                 }
             }
             do {
-                let status = try await self.fetchChatStatusRequest(sid, true, agentId)
+                let status = try await self.fetchChatStatusRequest(
+                    sid, false, agentId,
+                    self.statusEventCursor(sessionId: sid, outputMessageId: messageId)
+                )
                 guard !Task.isCancelled else { return }
                 if status.status == "completed" {
+                    guard await self.checkpointStatusEvents(
+                        status, sessionId: sid, outputMessageId: messageId,
+                        agentId: agentId
+                    ) else { return }
                     self.applyRecoveredAnswer(
                         status.loadedAnswer,
                         answerProjection: status.answerProjection,
@@ -2982,6 +3221,10 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     private func applyCompletedStatus(req: InFlightRequest, status: ChatStatusDTO) async {
         guard inflight?.id == req.id else { return }
+        guard await checkpointStatusEvents(
+            status, sessionId: req.sessionId,
+            outputMessageId: req.id, agentId: req.agentId
+        ) else { return }
         guard req.sessionId == sessionManager.activeSessionID() else {
             sessionManager.applyCompletedStatus(
                 sessionId: req.sessionId, requestId: req.id,
@@ -3300,6 +3543,161 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
+    public func handleCapabilityProposal(messageId: String?, proposalId: String, verb: String) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              }), case .capabilityProposal(var proposal) = messages[messageIndex].blocks[blockIndex],
+              proposal.state == .awaitingConfirmation || proposal.state == .failed
+        else { return }
+        if verb == "discard" {
+            proposal.state = .discarded
+            messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+            commitSession()
+            return
+        }
+        guard verb == "confirm" else { return }
+        let requiresFreshProposal = proposal.state == .failed
+            && Self.requiresFreshCapabilityProposal(errorMessage: proposal.errorMessage)
+        proposal.state = .applying
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+        commitSession()
+        let expectedEpoch = tenantEpoch
+        let capabilityClient = capabilityClient
+        let sourceClientSessionId = messages[messageIndex].sessionId
+        Task { [weak self] in
+            do {
+                if requiresFreshProposal {
+                    let response = try await capabilityClient.propose(
+                        proposal.capabilityId,
+                        input: proposal.input,
+                        sessionId: sourceClientSessionId,
+                        requestId: UUID().uuidString,
+                        idempotencyKey: UUID().uuidString
+                    )
+                    guard response.status == "awaiting_confirmation",
+                          let refreshed = response.events.first(where: { $0.type == "capability.proposed" })?.payload
+                    else {
+                        throw APIError.network(response.error?.message ?? "未能生成新的确认提案")
+                    }
+                    guard let self, self.tenantEpoch == expectedEpoch else { return }
+                    self.replaceCapabilityProposal(
+                        messageId: messageId,
+                        proposalId: proposalId,
+                        with: refreshed
+                    )
+                    self.showToast("策略已更新，请确认新的提案")
+                    return
+                }
+                guard let confirmationToken = proposal.confirmationToken, !confirmationToken.isEmpty else {
+                    throw APIError.network("确认凭证已失效，请重新发起操作")
+                }
+                let response: QCPInvokeResponseDTO<JSONScalar> = try await capabilityClient.confirm(
+                    proposalId: proposal.id,
+                    confirmationToken: confirmationToken,
+                    sessionId: sourceClientSessionId
+                )
+                guard response.status == "completed" else {
+                    throw APIError.network(response.error?.message ?? "能力调用失败")
+                }
+                var completedWorkflow: WorkflowDTO?
+                var pendingWorkflowId: String?
+                for event in response.events {
+                    switch event.type {
+                    case "workflow.created", "presentation.created", "document.created":
+                        let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
+                        completedWorkflow = created.workflow
+                        pendingWorkflowId = created.workflow.id
+                    case "workflow.started":
+                        _ = try? Self.decodeCapabilityPayload(
+                            event.payload, as: WorkflowExecutionDTO.self
+                        )
+                        pendingWorkflowId = proposal.input.workflowId
+                    default:
+                        // Event type and renderer registry, not capability ID, own UI routing.
+                        _ = RendererRegistry.route(for: event.type, version: event.version)
+                    }
+                }
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                if let completedWorkflow {
+                    WorkflowActivityCoordinator.shared.track(completedWorkflow)
+                    if let messageIndex = self.messages.firstIndex(where: { $0.id == messageId }),
+                       !self.messages[messageIndex].blocks.contains(where: { $0.id == "workflow_\(completedWorkflow.id)" }) {
+                        self.messages[messageIndex].blocks.append(.workflow(completedWorkflow))
+                    }
+                }
+                if let pendingWorkflowId {
+                    self.appState?.openWorkflow(pendingWorkflowId)
+                }
+                self.updateCapabilityProposal(
+                    messageId: messageId, proposalId: proposalId,
+                    state: .completed, error: nil
+                )
+                self.showToast("操作已确认并执行")
+            } catch {
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                self.updateCapabilityProposal(
+                    messageId: messageId, proposalId: proposalId,
+                    state: .failed, error: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    static func decodeCapabilityPayload<T: Decodable>(
+        _ payload: JSONScalar, as type: T.Type = T.self
+    ) throws -> T {
+        let data = try JSONEncoder().encode(payload)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(T.self, from: data)
+    }
+
+    static func requiresFreshCapabilityProposal(errorMessage: String?) -> Bool {
+        guard let errorMessage else { return false }
+        let normalized = errorMessage.lowercased()
+        return normalized.contains("policy changed")
+            || normalized.contains("create a new proposal")
+            || normalized.contains("proposal expired")
+            || normalized.contains("confirmation token expired")
+            || normalized.contains("confirmation_token_expired")
+            || normalized.contains("确认凭证已失效")
+            || normalized.contains("重新生成提案")
+            || normalized.contains("新提案")
+    }
+
+    private func replaceCapabilityProposal(
+        messageId: String?,
+        proposalId: String,
+        with refreshed: CapabilityProposalBlock
+    ) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              })
+        else { return }
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(refreshed)
+        commitSession()
+    }
+
+    private func updateCapabilityProposal(
+        messageId: String?, proposalId: String,
+        state: CapabilityProposalState, error: String?
+    ) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              }), case .capabilityProposal(var proposal) = messages[messageIndex].blocks[blockIndex]
+        else { return }
+        proposal.state = state
+        proposal.errorMessage = error
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+        commitSession()
+    }
+
     public func applyOrganizationDisposition(_ status: SessionLifecycleStatus?) {
         let sources = pendingOrganizationDisposition
         pendingOrganizationDisposition = []
@@ -3351,22 +3749,12 @@ public final class TenantSessionCoordinator: ObservableObject {
             do {
                 guard sizeBytes <= InboxFileManager.maxFileSizeBytes else { throw APIError.network("文档超过 25 MB 上限") }
                 let ext = url.pathExtension.lowercased()
-                guard ["pdf", "docx", "pptx"].contains(ext) else { throw APIError.network("仅支持 PDF、DOCX 或 PPTX 文档") }
+                guard ["pdf", "docx"].contains(ext) else { throw APIError.network("仅支持 PDF 或 DOCX；旧版 .doc 暂不支持") }
                 if let preview = await InboxFileManager.shared.thumbnailData(at: url) {
                     updateAttachmentPreview(messageId: msg.id, attachmentId: attachment.id, data: preview)
                 }
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                let mime: String
-                switch ext {
-                case "pdf":
-                    mime = "application/pdf"
-                case "docx":
-                    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                case "pptx":
-                    mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                default:
-                    mime = "application/octet-stream"
-                }
+                let mime = ext == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 let receipt = try await APIClient.shared.uploadDocument(data: data, filename: name, contentType: mime)
                 updateAttachment(messageId: msg.id, attachmentId: attachment.id, receipt: receipt)
                 guard receipt.status == "ready" else { return }

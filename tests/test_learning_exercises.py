@@ -27,7 +27,7 @@ def generated():
     for index, kind in enumerate(["choice", "judgement", "solution", "response"]):
         objective = kind in {"choice", "judgement"}
         ids = ["T", "F"] if kind == "judgement" else ["A", "B"]
-        qs.append(dict(id=f"q{index+1}", kind=kind, body=f"问题{index+1}：如何合并？", knowledge_point="幂等合并", difficulty=1, minutes=2,
+        qs.append(dict(id=f"q{index+1}", kind=kind, body=f"问题{index+1}：如何合并？", knowledge_point="幂等合并", hint="先把同一份状态合并两次，观察哪些数值不应再变化。", difficulty=1, minutes=2,
                        source_excerpt="合并计数器时，对每个分量取最大值。", options=[dict(id=k, text=("正确" if k == "T" else "错误") if kind == "judgement" else k) for k in ids] if objective else [],
                        correct_ids=[ids[0]] if objective else [], reference_answer="分量取最大值。", explanation="重复取最大值不会改变结果，因此该操作具有幂等性。",
                        option_explanations={k: "取最大值满足幂等性，覆盖会丢失数据。" for k in ids} if objective else {},
@@ -93,6 +93,7 @@ def test_mixed_set_private_keys_drafts_grading_and_idempotency(env):
     request = create()
     first = run(learning.create_exercise(request, AUTH))
     assert {q["kind"] for q in first["questions"]} == learning.KINDS
+    assert all(q["hint"] for q in first["questions"])
     assert first["confidence"] == "low"
     assert "saved_dialogue" in first["evidence_kinds"] and "memory" in first["evidence_kinds"]
     assert not any(k in json.dumps(first) for k in ["correct_ids", "reference_answer", "rubric", "option_explanations"])
@@ -429,3 +430,25 @@ def test_app_registers_the_client_learning_routes():
     assert ("/api/v1/me/learning-resume", "GET") in routes
     assert ("/api/v1/me/learning-exercises", "GET") in routes
     assert ("/api/v1/me/learning-exercises", "POST") in routes
+
+
+def test_hints_required_for_new_questions_and_optional_for_old_rows(env):
+    from pydantic import ValidationError
+    question = generated()["questions"][0]
+    for invalid in ("", " " * 3, "字" * 241):
+        with pytest.raises(ValidationError):
+            learning.Question.model_validate({**question, "hint": invalid})
+    del question["hint"]
+    with pytest.raises(ValidationError):
+        learning.Question.model_validate(question)
+    req = create()
+    run(learning.create_exercise(req, AUTH))
+    async def legacy():
+        async with env() as db:
+            row = await db.get(LearningExercise, str(req.id))
+            row.questions = [{k: v for k, v in q.items() if k != "hint"} for q in row.questions]
+            await db.commit()
+    run(legacy())
+    restored = run(learning.get_exercise(req.id, AUTH))
+    assert all(q["hint"] == "" for q in restored["questions"])
+    assert run(learning.submit_exercise(req.id, answers(restored["revision"]), AUTH))["status"] == "graded"

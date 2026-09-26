@@ -8,6 +8,54 @@
 import SwiftUI
 import UIKit
 
+struct AgentDescriptionPresentation: Equatable {
+    static let maximumLength = 100
+
+    let full: String
+
+    init(function: String?, suitable: String?, boundary: String?) {
+        func normalized(_ raw: String?, fallback: String) -> String {
+            let value = (raw ?? "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            return String((value.isEmpty ? fallback : value).prefix(29))
+        }
+        let functionValue = normalized(function, fallback: "能力清单暂不可用")
+        let suitableValue = normalized(suitable, fallback: "请刷新后查看适用任务")
+        let boundaryValue = normalized(boundary, fallback: "未取得能力边界，暂不执行")
+        full = "功能：\(functionValue)。适合：\(suitableValue)。边界：\(boundaryValue)。"
+    }
+
+    var isCollapsible: Bool { full.count > 34 }
+}
+
+struct AgentDescriptionText: View {
+    let text: String
+    let name: String
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(AppTheme.Colors.textSecondary)
+                .lineSpacing(1)
+                .lineLimit(isExpanded ? nil : 2)
+                .accessibilityIdentifier("agent-description-\(name)")
+            Button(isExpanded ? "收起描述" : "展开描述") {
+                withAnimation(AppTheme.Motion.quick) { isExpanded.toggle() }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.Colors.quantumBlue)
+            .frame(minHeight: AppTheme.Metrics.minimumTouchTarget, alignment: .leading)
+            .accessibilityIdentifier("agent-description-toggle")
+            .accessibilityValue(isExpanded ? "已展开" : "已折叠两行")
+        }
+    }
+}
+
 public struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var api: APIClient
@@ -20,6 +68,8 @@ public struct SettingsView: View {
     @State private var skillPendingDeletion: TenantSkillDTO?
     @State private var isDeletingSkill = false
     @State private var skillDeletionFeedback: SkillDeletionFeedback?
+    @State private var expandedAgentIDs: Set<String> = []
+    @State private var selectedAgent: TenantAgentDTO?
 
     public init() {}
 
@@ -35,18 +85,22 @@ public struct SettingsView: View {
                             .padding(.horizontal, AppTheme.Metrics.contentGutter)
                             .padding(.top, AppTheme.Spacing.lg)
 
-                        TokenSummaryCard()
-                            .padding(.horizontal, AppTheme.Metrics.contentGutter)
-
                         // 1. 用户与租户身份卡（点击编辑）
                         tenantProfileCard
+                            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+
+                        TokenSummaryCard()
                             .padding(.horizontal, AppTheme.Metrics.contentGutter)
 
                         // 2. Hermes 原生长期记忆
                         memoryCenterEntryCard
                             .padding(.horizontal, AppTheme.Metrics.contentGutter)
 
-                        // 3. 知识订阅与套餐
+                        // 3. 对话式创建智能体
+                        agentCreatorEntryCard
+                            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+
+                        // 4. 知识订阅与套餐
                         subscriptionEntryCard
                             .padding(.horizontal, AppTheme.Metrics.contentGutter)
 
@@ -70,6 +124,14 @@ public struct SettingsView: View {
             .sheet(isPresented: $showingProfileEdit) {
                 ProfileEditSheet()
             }
+            .sheet(item: $selectedAgent) { agent in
+                TenantAgentManagementView(agent: agent) { updated in
+                    if let index = cloudAgents.firstIndex(where: { $0.id == updated.id }) {
+                        cloudAgents[index] = updated
+                    }
+                    selectedAgent = nil
+                }
+            }
             .task {
                 // 云端真实数据（非演示）：智能体 + 技能，拓扑/设置同源消费
                 if let list = try? await APIClient.shared.fetchTenantAgents(ownedOnly: true) {
@@ -79,6 +141,13 @@ public struct SettingsView: View {
                     cloudSkills = skills
                 }
                 subscriptionSummary = try? await api.fetchSubscriptionCenter()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .tenantAgentsDidUpdate)) { _ in
+                Task {
+                    if let list = try? await APIClient.shared.fetchTenantAgents(ownedOnly: true) {
+                        cloudAgents = list
+                    }
+                }
             }
             .confirmationDialog(
                 "删除技能「\(skillPendingDeletion?.name ?? "")」？",
@@ -120,10 +189,10 @@ public struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("知识订阅与套餐")
+                    Text("我的知识计划")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(AppTheme.Colors.textPrimary)
-                    Text(subscriptionSummary?.subscription?.planName ?? "查看可用套餐与知识权益")
+                    Text(subscriptionSummary?.subscription?.planName ?? "看看适合自己的阅读与学习权益")
                         .font(AppTheme.Typography.supporting)
                         .foregroundColor(AppTheme.Colors.textSecondary)
                     if let count = subscriptionSummary?.pendingCount, count > 0 {
@@ -151,6 +220,38 @@ public struct SettingsView: View {
         .accessibilityLabel("知识订阅与套餐，\(subscriptionSummary?.subscription?.planName ?? "未选择套餐")")
     }
 
+    private var agentCreatorEntryCard: some View {
+        NavigationLink {
+            AgentCreatorView()
+        } label: {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "cpu.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 48, height: 48)
+                    .background(AppTheme.Colors.actionGradient, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("创建专属学习搭子")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                    Text("从学习目标出发，定制它的能力与边界")
+                        .font(AppTheme.Typography.supporting)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppTheme.Icons.tertiary)
+            }
+            .padding(AppTheme.Spacing.lg)
+            .frame(minHeight: 88)
+            .quantumCard()
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("创建专属学习搭子")
+    }
+
     private var memoryCenterEntryCard: some View {
         NavigationLink {
             MemoryCenterView()
@@ -164,10 +265,10 @@ public struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("记忆中心")
+                    Text("Quantum 记得的我")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(AppTheme.Colors.textPrimary)
-                    Text("查看和管理 Hermes 对你的长期理解")
+                    Text("查看和管理长期偏好与学习习惯")
                         .font(AppTheme.Typography.supporting)
                         .foregroundStyle(AppTheme.Colors.textSecondary)
                 }
@@ -182,16 +283,16 @@ public struct SettingsView: View {
             .quantumCard()
         }
         .buttonStyle(SoftButtonStyle())
-        .accessibilityLabel("记忆中心，查看和管理 Hermes 对你的长期理解")
+        .accessibilityLabel("查看和管理长期偏好与学习习惯")
     }
 
     private var settingsOverviewHeader: some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Overview")
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                Text("我的日常")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(AppTheme.Colors.textPrimary)
-                Text("账户、用量与工作空间")
+                Text("学习、收藏，还有你的 Quantum")
                     .font(AppTheme.Typography.supporting)
                     .foregroundColor(AppTheme.Colors.textSecondary)
             }
@@ -219,72 +320,54 @@ public struct SettingsView: View {
             #endif
             showingProfileEdit = true
         }) {
-            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-                // Avatar（SF Symbol 头像）
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.Colors.selectionTint)
-                        .frame(width: 56, height: 56)
-                    Image(systemName: appState.currentProfile.avatarUrl ?? "person.crop.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundColor(AppTheme.Icons.intelligence)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("PROFILE · TENANT WORKSPACE")
-                        .font(AppTheme.Typography.micro)
-                        .tracking(0.7)
-                        .foregroundColor(AppTheme.Icons.interactive)
-
+            ZStack(alignment: .leading) {
+                Image("knowledge_home_hero")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 174)
+                    .clipped()
+                LinearGradient(
+                    colors: [Color.black.opacity(0.04), Color(hex: "254144").opacity(0.66)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    HStack {
+                        UserAvatarView(value: appState.currentProfile.avatarUrl, size: 52)
+                            .background(.ultraThinMaterial, in: Circle())
+                        Spacer()
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    Spacer()
                     HStack(spacing: 6) {
                         Text(appState.currentProfile.name)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(AppTheme.Colors.textPrimary)
-
+                            .font(.title3.weight(.bold))
                         if appState.currentProfile.isVipLane {
-                            HStack(spacing: 2) {
-                                Image(systemName: "crown.fill")
-                                    .font(.system(size: 10))
-                                Text("VIP")
-                                    .font(.system(size: 10, weight: .black))
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .foregroundColor(AppTheme.Colors.securityYellow)
-                            .background(AppTheme.Colors.onSemantic.opacity(0.9))
-                            .clipShape(Capsule())
+                            Label("VIP", systemImage: "crown.fill")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .frame(height: 24)
+                                .background(.ultraThinMaterial, in: Capsule())
                         }
                     }
-
-                    Text("普通用户")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppTheme.Colors.textSecondary)
-
-                    Text("个人工作空间")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(AppTheme.Colors.statusCompleted)
+                    Text("个人工作空间 · 今天也继续成长")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.82))
                 }
-
-                Spacer()
-
-                Image(systemName: "pencil")
-                    .font(.system(size: 13))
-                    .foregroundColor(AppTheme.Icons.tertiary)
+                .foregroundStyle(.white)
+                .padding(AppTheme.Spacing.lg)
             }
-            .padding(AppTheme.Spacing.xl)
-            .background(
-                LinearGradient(
-                    colors: [AppTheme.Colors.cardBackground, AppTheme.Colors.surfaceTint],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+            .frame(height: 174)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                    .stroke(AppTheme.Colors.border.opacity(0.75), lineWidth: 0.75)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.76), lineWidth: 0.8)
             }
-            .shadow(color: Color(hex: "3D437E").opacity(0.08), radius: 18, y: 7)
+            .shadow(color: Color(hex: "385A58").opacity(0.13), radius: 20, y: 8)
         }
         .buttonStyle(SoftButtonStyle())
     }
@@ -295,10 +378,16 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             artifactHeader(icon: "sparkles", title: "我创建的智能体", accent: AppTheme.Colors.quantumViolet)
             let rows = cloudAgents.map { agent in
-                AgentRowData(
+                let description = AgentDescriptionPresentation(
+                    function: agent.functionDescription,
+                    suitable: agent.suitableDescription,
+                    boundary: agent.boundaryDescription
+                )
+                return AgentRowData(
                     id: agent.id,
                     name: agent.customName ?? agent.baseAgentId,
-                    responsibility: agent.privatePromptDelta.isEmpty ? "基于基线 \(agent.baseAgentId) 的租户私有切片" : agent.privatePromptDelta,
+                    responsibility: description.full,
+                    collapsedResponsibility: description.isCollapsible ? description.full : nil,
                     createdAt: agent.createdAt ?? "",
                     accent: AppTheme.Colors.quantumViolet
                 )
@@ -310,15 +399,24 @@ public struct SettingsView: View {
                     artifactRow(
                         name: row.name,
                         responsibility: row.responsibility,
+                        collapsedResponsibility: row.collapsedResponsibility,
                         createdAt: row.createdAt,
                         accent: AppTheme.Colors.quantumViolet,
+                        isExpanded: row.collapsedResponsibility == nil ? nil : Binding(
+                            get: { expandedAgentIDs.contains(row.id) },
+                            set: { expanded in
+                                if expanded { expandedAgentIDs.insert(row.id) }
+                                else { expandedAgentIDs.remove(row.id) }
+                            }
+                        ),
                         onDelete: {
                             Task {
                                 if (try? await APIClient.shared.deleteTenantAgent(id: row.id)) != nil {
                                     cloudAgents.removeAll { $0.id == row.id }
                                 }
                             }
-                        }
+                        },
+                        onOpen: { selectedAgent = cloudAgents.first(where: { $0.id == row.id }) }
                     )
                 }
             }
@@ -336,6 +434,7 @@ public struct SettingsView: View {
         let id: String
         let name: String
         let responsibility: String
+        let collapsedResponsibility: String?
         let createdAt: String
         let accent: Color
     }
@@ -391,10 +490,13 @@ public struct SettingsView: View {
     private func artifactRow(
         name: String,
         responsibility: String,
+        collapsedResponsibility: String? = nil,
         createdAt: String,
         accent: Color,
+        isExpanded: Binding<Bool>? = nil,
         deleteDisabled: Bool = false,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        onOpen: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -406,6 +508,16 @@ public struct SettingsView: View {
                     .foregroundColor(AppTheme.Colors.textPrimary)
                     .lineLimit(1)
                 Spacer()
+                if let onOpen {
+                    Button(action: onOpen) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppTheme.Icons.interactive)
+                            .minimumTouchTarget()
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .accessibilityLabel("管理 \(name)")
+                }
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 12))
@@ -416,10 +528,13 @@ public struct SettingsView: View {
                 .disabled(deleteDisabled)
                 .accessibilityLabel("删除 \(name)")
             }
-            Text(responsibility)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.Colors.textSecondary)
-                .lineSpacing(1)
+            if let isExpanded {
+                AgentDescriptionText(text: responsibility, name: name, isExpanded: isExpanded)
+            } else {
+                Text(responsibility)
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.Colors.textSecondary)
+            }
             if !createdAt.isEmpty {
                 Text("创建于 \(createdAt)")
                     .font(.system(size: 11))
@@ -501,7 +616,197 @@ public struct SettingsView: View {
     }
 }
 
+private struct TenantAgentManagementView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let agent: TenantAgentDTO
+    let onSaved: (TenantAgentDTO) -> Void
+
+    @State private var name: String
+    @State private var prompt: String
+    @State private var knowledgePacks: String
+    @State private var isActive: Bool
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(agent: TenantAgentDTO, onSaved: @escaping (TenantAgentDTO) -> Void) {
+        self.agent = agent
+        self.onSaved = onSaved
+        _name = State(initialValue: agent.customName ?? agent.baseAgentId)
+        _prompt = State(initialValue: agent.privatePromptDelta)
+        _knowledgePacks = State(initialValue: agent.subscribedKnowledgePacks.joined(separator: "，"))
+        _isActive = State(initialValue: agent.isActive)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: AppTheme.Spacing.md) {
+                        Image(systemName: "cpu")
+                            .font(.title2)
+                            .foregroundStyle(AppTheme.Colors.quantumViolet)
+                            .frame(width: 52, height: 52)
+                            .background(AppTheme.Colors.mistLilac, in: RoundedRectangle(cornerRadius: 15))
+                        VStack(alignment: .leading) {
+                            Text(name).font(AppTheme.Typography.cardTitle)
+                            Text(agent.baseAgentId).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                        }
+                    }
+                }
+
+                Section("基本配置") {
+                    TextField("智能体名称", text: $name)
+                    TextField("它应该怎样工作", text: $prompt, axis: .vertical).lineLimit(4...8)
+                    Toggle("启用智能体", isOn: $isActive)
+                }
+
+                Section("知识访问") {
+                    TextField("知识包 ID，用逗号分隔", text: $knowledgePacks, axis: .vertical)
+                    if agent.subscribedKnowledgePacks.isEmpty {
+                        Label("尚未授权知识包", systemImage: "books.vertical")
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                    }
+                }
+
+                Section("工具能力") {
+                    if let tools = agent.allowedTools, !tools.isEmpty {
+                        ForEach(tools, id: \.self) { tool in
+                            HStack {
+                                Image(systemName: "wrench.and.screwdriver")
+                                Text(tool)
+                                Spacer()
+                                Text("已授权").foregroundStyle(AppTheme.Colors.statusCompleted)
+                            }
+                        }
+                    } else {
+                        Label("未配置额外工具", systemImage: "wrench.and.screwdriver")
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                    }
+                    Text("当前后端仅提供工具授权读取；不会伪造增删保存成功。")
+                        .font(AppTheme.Typography.micro)
+                        .foregroundStyle(AppTheme.Colors.textTertiary)
+                }
+
+                Section {
+                    Button("在 Chat 预览能力", systemImage: "bubble.left.and.bubble.right") {
+                        dismiss()
+                        appState.openChat(
+                            agentId: agent.id,
+                            agentName: name,
+                            prompt: "请简短介绍你的能力、可访问知识与工具边界"
+                        )
+                    }
+                }
+
+                if let errorMessage {
+                    Section { Label(errorMessage, systemImage: "exclamationmark.triangle.fill").foregroundStyle(AppTheme.Colors.statusError) }
+                }
+            }
+            .navigationTitle("配置智能体")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSaving ? "保存中…" : "保存") { save() }.disabled(isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        isSaving = true
+        errorMessage = nil
+        let packs = knowledgePacks
+            .components(separatedBy: CharacterSet(charactersIn: ",，\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        Task {
+            do {
+                let updated = try await APIClient.shared.updateTenantAgent(
+                    id: agent.id,
+                    body: TenantAgentCreateDTO(
+                        baseAgentId: agent.baseAgentId,
+                        customName: name,
+                        privatePromptDelta: prompt,
+                        subscribedKnowledgePacks: packs,
+                        customAvatar: agent.customAvatar,
+                        isActive: isActive
+                    )
+                )
+                NotificationCenter.default.post(name: .tenantAgentsDidUpdate, object: nil)
+                onSaved(updated)
+            } catch {
+                errorMessage = error.localizedDescription
+                isSaving = false
+            }
+        }
+    }
+}
+
 // MARK: - Knowledge subscription center
+
+private enum BookshelfScope: String, CaseIterable, Identifiable {
+    case reading = "在读"
+    case saved = "收藏"
+    case finished = "已读"
+
+    var id: String { rawValue }
+}
+
+private enum BookshelfTopic: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case literature = "文学"
+    case mathematics = "数学"
+    case ai = "AI"
+    case psychology = "心理"
+    case english = "英语"
+    case travel = "旅行"
+
+    var id: String { rawValue }
+}
+
+private enum BookshelfSortOrder: String, CaseIterable, Identifiable {
+    case recent = "最近阅读"
+    case added = "最近加入"
+    case title = "书名"
+    case progress = "阅读进度"
+
+    var id: String { rawValue }
+}
+
+private enum BookshelfContentKind: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case book = "图书"
+    case note = "笔记"
+    case article = "文章"
+
+    var id: String { rawValue }
+}
+
+private struct KnowledgeBookCover: View {
+    @EnvironmentObject private var api: APIClient
+    let title: String
+    let author: String
+    let seed: String
+    let theme: String?
+    let variant: Int?
+    let coverAvailable: Bool
+    let width: CGFloat
+    @State private var image: UIImage?
+
+    var body: some View {
+        IllustratedBookCover(
+            title: title, author: author, theme: theme, variant: variant,
+            seed: seed, width: width, image: image
+        )
+        .task(id: "\(seed):\(coverAvailable)") {
+            guard coverAvailable, image == nil,
+                  let data = try? await api.fetchKnowledgeBookCover(id: seed) else { return }
+            image = UIImage(data: data)
+        }
+    }
+}
 
 public struct SubscriptionCenterView: View {
     @EnvironmentObject private var api: APIClient
@@ -511,6 +816,7 @@ public struct SubscriptionCenterView: View {
     private let highlightedEntitlementKey: String?
     private let previewCenter: SubscriptionCenterResponse?
     private let onBack: (() -> Void)?
+    private let showsBackButton: Bool
 
     @State private var center: SubscriptionCenterResponse?
     @State private var knowledgeAccess: KnowledgeAccessResponse?
@@ -527,8 +833,16 @@ public struct SubscriptionCenterView: View {
     @State private var selectedPackIDs: Set<String> = []
     @State private var selectedShelfID: String?
     @State private var bookshelfQuery = ""
+    @State private var bookshelfScope: BookshelfScope = .reading
+    @State private var allBooksScope: BookshelfScope?
+    @State private var bookshelfTopic: BookshelfTopic = .all
+    @State private var bookshelfSortOrder: BookshelfSortOrder = .recent
+    @State private var bookshelfContentKind: BookshelfContentKind = .all
+    @State private var showsAllBooks = false
+    @State private var showsBookshelfFilters = false
     @State private var inspectedBook: KnowledgeBookDTO?
     @State private var subscribedBookIDs: Set<String> = []
+    @State private var bookSubscriptions: [KnowledgeBookSubscriptionDTO] = []
     @State private var subscriptionBusyBookID: String?
     @State private var inspectedPack: KnowledgePackDTO?
     @State private var booksRevealed = false
@@ -537,27 +851,30 @@ public struct SubscriptionCenterView: View {
     @State private var publicationSecurity = "green"
     @State private var publicationEntitlement = ""
     @State private var publicationOwner = ""
+    @FocusState private var isBookshelfSearchFocused: Bool
     @Namespace private var bookshelfTransition
 
     public init(
         highlightedEntitlementKey: String? = nil,
         previewCenter: SubscriptionCenterResponse? = nil,
-        onBack: (() -> Void)? = nil
+        onBack: (() -> Void)? = nil,
+        showsBackButton: Bool = true
     ) {
         self.highlightedEntitlementKey = highlightedEntitlementKey
         self.previewCenter = previewCenter
         self.onBack = onBack
+        self.showsBackButton = showsBackButton
         _center = State(initialValue: previewCenter)
         _bookshelves = State(initialValue: previewCenter?.bookshelves ?? [])
         _isLoading = State(initialValue: previewCenter == nil)
         _selectedShelfID = State(initialValue: ProcessInfo.processInfo.arguments.contains("-bookshelfDetailPreview") ? previewCenter?.bookshelves?.first?.id : nil)
         _inspectedBook = State(initialValue: ProcessInfo.processInfo.arguments.contains("-bookshelfBookPreview") ? previewCenter?.bookshelves?.first?.books.first : nil)
-        _subscribedBookIDs = State(initialValue: ProcessInfo.processInfo.arguments.contains("-bookshelfSubscribedPreview") ? Set(previewCenter?.bookshelves?.first?.books.prefix(1).map(\.id) ?? []) : [])
+        _subscribedBookIDs = State(initialValue: ProcessInfo.processInfo.arguments.contains("-bookshelfSubscribedPreview") ? Set(previewCenter?.bookshelves?.first?.books.prefix(2).map(\.id) ?? []) : [])
     }
 
     public var body: some View {
         ZStack {
-            QuantumMistBackground()
+            Color(hex: "FFFCF6").ignoresSafeArea()
 
             if isLoading, bookshelves.isEmpty {
                 ProgressView("正在整理书架…")
@@ -566,9 +883,14 @@ public struct SubscriptionCenterView: View {
                       let shelf = bookshelves.first(where: { $0.id == selectedShelfID }) {
                 bookshelfDetail(shelf)
                     .transition(.opacity)
+            } else if showsAllBooks, !bookshelves.isEmpty {
+                allBooksPage(bookshelves)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if !bookshelves.isEmpty {
                 bookshelfCollections(bookshelves)
                     .transition(.opacity)
+            } else if !bookSubscriptions.isEmpty {
+                subscribedBooksFallback
             } else if let errorMessage {
                 inlineError(errorMessage)
                     .padding(AppTheme.Metrics.contentGutter)
@@ -594,13 +916,25 @@ public struct SubscriptionCenterView: View {
                 .allowsHitTesting(false)
             }
         }
-        .navigationTitle("知识书架")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if selectedShelfID != nil {
+                if showsAllBooks {
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
+                            showsAllBooks = false
+                            bookshelfQuery = ""
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("返回书架")
+                } else if selectedShelfID != nil {
                     Button {
                         withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.86)) {
                             selectedShelfID = nil
@@ -610,25 +944,35 @@ public struct SubscriptionCenterView: View {
                         Image(systemName: "chevron.left")
                             .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("返回分类")
-                } else {
+                } else if showsBackButton {
                     Button {
                         if let onBack { onBack() } else { dismiss() }
                     } label: {
                         Image(systemName: "chevron.left")
                             .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("返回知识")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { Task { await loadBookshelves() } } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 44, height: 44)
+                if showsAllBooks {
+                    Button("管理") { showsBookshelfFilters = true }
+                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.primary)
+                        .accessibilityIdentifier("publication-bookshelf-manage")
+                } else if selectedShelfID != nil {
+                    Button { Task { await loadBookshelves() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoading)
+                    .accessibilityLabel("刷新知识书架")
+                    .accessibilityIdentifier("publication-bookshelf-refresh")
                 }
-                .disabled(isLoading)
-                .accessibilityLabel("刷新知识书架")
-                .accessibilityIdentifier("publication-bookshelf-refresh")
             }
         }
         .task {
@@ -646,6 +990,11 @@ public struct SubscriptionCenterView: View {
         .sheet(item: $inspectedCandidate) { candidate in
             publicationApprovalSheet(candidate)
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showsBookshelfFilters) {
+            bookshelfFilterSheet
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .task {
@@ -688,47 +1037,698 @@ public struct SubscriptionCenterView: View {
     }
 
     private func bookshelfCollections(_ allShelves: [KnowledgeBookshelfDTO]) -> some View {
-        let shelves = allShelves.filter { shelf in
-            bookshelfQuery.isEmpty || shelf.title.localizedStandardContains(bookshelfQuery)
-                || shelf.books.contains { $0.title.localizedStandardContains(bookshelfQuery) || $0.author.localizedStandardContains(bookshelfQuery) }
-        }
-        return ScrollView {
-            LazyVStack(spacing: AppTheme.Spacing.lg) {
-                bookshelfSearch(placeholder: "搜索分类或作者")
-                ForEach(publicCollections) { collection in
-                    publicRoster(collection)
+        let allBooks = uniqueBooks(in: allShelves)
+        let progressByBookID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
+        let matchingBooks = filterBooks(allBooks, progressByBookID: progressByBookID)
+        let scopedBooks = books(for: bookshelfScope, in: matchingBooks, progressByBookID: progressByBookID)
+        let recentBooks = recentBooks(from: allBooks)
+        return ZStack(alignment: .top) {
+            Image("home_attention_botanical")
+                .resizable()
+                .scaledToFill()
+                .frame(height: 210)
+                .clipped()
+                .overlay {
+                    LinearGradient(
+                        colors: [Color(hex: "FFFCF6").opacity(0.08), Color(hex: "FFFCF6")],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 }
-                ForEach(ownerPrivateCollections) { collection in
-                    ownerPrivateRoster(collection)
-                }
-                HStack {
-                    Text("全部收藏")
-                        .font(AppTheme.Typography.micro.weight(.semibold))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                    Spacer()
-                    Text("\(shelves.count) 个分类")
-                        .font(AppTheme.Typography.micro)
-                        .foregroundStyle(AppTheme.Colors.textTertiary)
-                }
-                if shelves.isEmpty {
-                    ContentUnavailableView("没有匹配的书", systemImage: "books.vertical", description: Text("试试其他书名、作者或分类。"))
-                        .frame(minHeight: 300)
-                } else {
-                    ForEach(Array(shelves.enumerated()), id: \.element.id) { index, shelf in
-                        bookshelfCollectionCard(shelf)
-                            .opacity(booksRevealed ? 1 : 0)
-                            .offset(y: booksRevealed ? 0 : 22)
-                            .animation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.86).delay(Double(index) * 0.06), value: booksRevealed)
+                .accessibilityHidden(true)
+            ScrollView {
+                LazyVStack(spacing: AppTheme.Spacing.lg) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("书架")
+                            .font(.system(size: 38, weight: .bold, design: .serif))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                        Text("阅读，让更好的自己发生")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .italic()
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                            .rotationEffect(.degrees(-4))
+                            .padding(.leading, 104)
+                            .padding(.top, -8)
                     }
+                    Spacer()
+                    Button {
+                        isBookshelfSearchFocused = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.82), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("搜索书籍")
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.82), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("添加书籍")
+                }
+
+                bookshelfSearch(placeholder: "搜索书名、作者或关键词")
+                bookshelfScopeTabs(allBooks, progressByBookID: progressByBookID)
+
+                if !bookshelfQuery.isEmpty {
+                    bookSearchResults(matchingBooks)
+                } else {
+                    recentReadingSection(
+                        scopedBooks.isEmpty ? recentBooks : Array(scopedBooks.prefix(4)),
+                        progressByBookID: progressByBookID
+                    )
+                    bookshelfListSection(allShelves)
+                    topicDiscoverySection(allBooks, progressByBookID: progressByBookID)
                 }
                 if let errorMessage { inlineError(errorMessage) }
+                }
+                .padding(.horizontal, AppTheme.Metrics.contentGutter)
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.xxxl)
+            }
+            .refreshable { await loadBookshelves() }
+            .accessibilityIdentifier("publication-bookshelf-container")
+        }
+    }
+
+    private func uniqueBooks(in shelves: [KnowledgeBookshelfDTO]) -> [KnowledgeBookDTO] {
+        var seen: Set<String> = []
+        return shelves.flatMap(\.books).filter { seen.insert($0.id).inserted }
+    }
+
+    private func recentBooks(from books: [KnowledgeBookDTO]) -> [KnowledgeBookDTO] {
+        let byID = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
+        let recent = bookSubscriptions.sorted { $0.lastReadAt > $1.lastReadAt }.compactMap { byID[$0.book.id] }
+        return recent.isEmpty ? Array(books.prefix(4)) : recent
+    }
+
+    private func books(
+        for scope: BookshelfScope,
+        in allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> [KnowledgeBookDTO] {
+        let owned = allBooks.filter { subscribedBookIDs.contains($0.id) }
+        let candidates = owned.isEmpty && scope == .reading ? Array(allBooks.prefix(4)) : owned
+        return candidates.filter { book in
+            let progress = progressByBookID[book.id] ?? 0
+            switch scope {
+            case .reading: return progress < 0.98
+            case .saved: return true
+            case .finished: return progress >= 0.98
+            }
+        }
+    }
+
+    private func filterBooks(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> [KnowledgeBookDTO] {
+        let lastReadByID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.lastReadAt) })
+        let subscribedByID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.subscribedAt) })
+        return books.filter { book in
+            let matchesQuery = bookshelfQuery.isEmpty
+                || book.title.localizedStandardContains(bookshelfQuery)
+                || book.author.localizedStandardContains(bookshelfQuery)
+                || book.summary.localizedStandardContains(bookshelfQuery)
+            let matchesTopic = bookshelfTopic == .all || topic(for: book) == bookshelfTopic
+            let matchesKind: Bool
+            switch bookshelfContentKind {
+            case .all: matchesKind = true
+            case .book: matchesKind = book.publicationFormat == "book" || book.publicationFormat == "chapter"
+            case .note: matchesKind = book.publicationFormat == nil
+            case .article: matchesKind = book.publicationFormat == "article" || book.publicationFormat == "source"
+            }
+            return matchesQuery && matchesTopic && matchesKind
+        }
+        .sorted { left, right in
+            switch bookshelfSortOrder {
+            case .recent: return lastReadByID[left.id, default: ""] > lastReadByID[right.id, default: ""]
+            case .added: return subscribedByID[left.id, default: ""] > subscribedByID[right.id, default: ""]
+            case .title: return left.title.localizedStandardCompare(right.title) == .orderedAscending
+            case .progress: return progressByBookID[left.id, default: 0] > progressByBookID[right.id, default: 0]
+            }
+        }
+    }
+
+    private func topic(for book: KnowledgeBookDTO) -> BookshelfTopic {
+        let value = "\(book.coverTheme ?? "") \(book.title) \(book.summary)".lowercased()
+        if ["math", "数学", "代数", "分析", "定理"].contains(where: value.contains) { return .mathematics }
+        if ["ai", "人工智能", "技术", "模型", "agent"].contains(where: value.contains) { return .ai }
+        if ["psychology", "心理", "成长", "习惯"].contains(where: value.contains) { return .psychology }
+        if ["english", "英语", "英文"].contains(where: value.contains) { return .english }
+        if ["travel", "旅行", "京都", "城市"].contains(where: value.contains) { return .travel }
+        return .literature
+    }
+
+    private func bookshelfScopeTabs(
+        _ allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            ForEach(BookshelfScope.allCases) { scope in
+                let count = books(for: scope, in: allBooks, progressByBookID: progressByBookID).count
+                Button {
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { bookshelfScope = scope }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(scope.rawValue)
+                        Text("\(count)").font(.caption2.weight(.bold))
+                    }
+                    .font(.subheadline.weight(bookshelfScope == scope ? .bold : .medium))
+                    .foregroundStyle(bookshelfScope == scope ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(
+                        bookshelfScope == scope ? AppTheme.Colors.mistMint.opacity(0.82) : Color.white.opacity(0.7),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("bookshelf-scope.\(scope.rawValue)")
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.54), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
+    @ViewBuilder
+    private func recentReadingSection(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        if !books.isEmpty {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                HStack {
+                    Text("最近阅读")
+                        .font(.system(.title3, design: .serif, weight: .bold))
+                    Spacer()
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        Text("查看全部 \(uniqueBooks(in: bookshelves).count)  ›")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.primary)
+                            .padding(.horizontal, AppTheme.Spacing.md)
+                            .frame(minHeight: 38)
+                            .background(Color.white.opacity(0.82), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("publication-bookshelf-view-all")
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: AppTheme.Spacing.md) {
+                        ForEach(books) { book in
+                            recentBookCard(book, progress: progressByBookID[book.id, default: 0])
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private func recentBookCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            HStack(spacing: AppTheme.Spacing.md) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 78
+                )
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Text(book.title)
+                        .font(AppTheme.Typography.cardTitle)
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .lineLimit(2)
+                    Text(book.author)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .lineLimit(1)
+                    ProgressView(value: min(max(progress, 0), 1))
+                        .tint(AppTheme.Colors.statusCompleted)
+                    Text(progress > 0 ? "继续阅读 · \(Int(progress * 100))%" : "开始阅读")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppTheme.Colors.onPrimary)
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .frame(minHeight: 34)
+                        .background(AppTheme.Colors.textPrimary, in: Capsule())
+                }
+                .frame(width: 122, alignment: .leading)
+            }
+            .padding(AppTheme.Spacing.md)
+            .frame(width: 232, height: 142)
+            .background(AppTheme.Colors.cardBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(Color.white.opacity(0.86), lineWidth: 1) }
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("继续阅读《\(book.title)》")
+    }
+
+    private func bookshelfListSection(_ shelves: [KnowledgeBookshelfDTO]) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                Text("我的书单")
+                    .font(.system(.title3, design: .serif, weight: .bold))
+                Spacer()
+                Button("查看更多  ›") {
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: AppTheme.Spacing.md) {
+                    ForEach(shelves.filter { !$0.isSourceShelf }.prefix(6)) { shelf in
+                        Button {
+                            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
+                                selectedShelfID = shelf.id
+                                bookshelfQuery = ""
+                            }
+                        } label: {
+                            ZStack(alignment: .bottomTrailing) {
+                                Image(shelfArtwork(shelf))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 92, height: 74)
+                                    .offset(x: 26, y: 16)
+                                    .opacity(0.72)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(shelf.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                                    Text("\(shelf.bookCount) 本").font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .padding(AppTheme.Spacing.md)
+                            .frame(width: 132, height: 126, alignment: .leading)
+                            .background(shelfTint(shelf), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                        }
+                        .buttonStyle(SoftButtonStyle())
+                        .accessibilityLabel("打开书单 \(shelf.title)，\(shelf.bookCount) 本")
+                    }
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                    } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus").font(.title2)
+                            Text("新建书单").font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .frame(width: 112, height: 126)
+                        .background(Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                                .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("打开全部书籍选择内容")
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func topicDiscoverySection(
+        _ books: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        let visible = filterBooks(books, progressByBookID: progressByBookID)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Text("按主题找书")
+                .font(.system(.title3, design: .serif, weight: .bold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    ForEach(BookshelfTopic.allCases) { topic in
+                        Button {
+                            withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { bookshelfTopic = topic }
+                        } label: {
+                            Text(topic.rawValue)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(bookshelfTopic == topic ? .white : AppTheme.Colors.textSecondary)
+                                .padding(.horizontal, AppTheme.Spacing.md)
+                                .frame(minHeight: 36)
+                                .background(
+                                    bookshelfTopic == topic ? AppTheme.Colors.textPrimary : Color.white.opacity(0.76),
+                                    in: Capsule()
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppTheme.Spacing.lg) {
+                ForEach(visible.prefix(8)) { book in
+                    topicBookCard(book, progress: progressByBookID[book.id, default: 0])
+                }
+            }
+        }
+    }
+
+    private func topicBookCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            HStack(spacing: 9) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 62
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(book.title).font(.caption.weight(.bold)).lineLimit(2)
+                    Text(book.author).font(.caption2).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(1)
+                    if progress > 0 {
+                        ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
+                    } else {
+                        Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(AppTheme.Colors.statusCompleted)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(8)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("打开《\(book.title)》")
+    }
+
+    private func bookshelfGridCard(_ book: KnowledgeBookDTO, progress: Double) -> some View {
+        Button { inspectedBook = book } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                bookCover(
+                    title: book.title, author: book.author, seed: book.id,
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 116
+                )
+                .frame(maxWidth: .infinity)
+                Text(book.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .lineLimit(2)
+                Text(book.author)
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                    .lineLimit(1)
+                if progress > 0 {
+                    ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
+                } else {
+                    Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.primary)
+                }
+            }
+            .padding(AppTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 228, alignment: .topLeading)
+            .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityLabel("打开《\(book.title)》")
+    }
+
+    private func shelfIcon(_ shelf: KnowledgeBookshelfDTO) -> String {
+        let value = "\(shelf.id) \(shelf.title)".lowercased()
+        if value.contains("math") || value.contains("数学") { return "function" }
+        if value.contains("ai") || value.contains("技术") { return "cpu" }
+        if value.contains("strategy") || value.contains("战略") { return "scope" }
+        if value.contains("method") || value.contains("方法") { return "list.clipboard" }
+        return "books.vertical.fill"
+    }
+
+    private func shelfTint(_ shelf: KnowledgeBookshelfDTO) -> Color {
+        let value = shelf.id.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % 4 }
+        switch value {
+        case 0: return AppTheme.Colors.mistMint.opacity(0.82)
+        case 1: return AppTheme.Colors.mistRose.opacity(0.78)
+        case 2: return AppTheme.Colors.mistLilac.opacity(0.82)
+        default: return AppTheme.Colors.mistSky.opacity(0.82)
+        }
+    }
+
+    private func shelfArtwork(_ shelf: KnowledgeBookshelfDTO) -> String {
+        let value = "\(shelf.id) \(shelf.title)".lowercased()
+        if value.contains("strategy") || value.contains("战略") { return "home_attention_botanical" }
+        if value.contains("method") || value.contains("方法") { return "home_continue_work_art" }
+        return "home_work_books"
+    }
+
+    private func allBooksPage(_ shelves: [KnowledgeBookshelfDTO]) -> some View {
+        let allBooks = uniqueBooks(in: shelves)
+        let progressByBookID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
+        let filtered = filterBooks(allBooks, progressByBookID: progressByBookID)
+        let visible = allBooksScope.map { books(for: $0, in: filtered, progressByBookID: progressByBookID) } ?? filtered
+        return ScrollView {
+            LazyVStack(spacing: AppTheme.Spacing.lg) {
+                Text("全部书籍")
+                    .font(.system(.title2, design: .serif, weight: .bold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .frame(maxWidth: .infinity)
+                bookshelfSearch(placeholder: "搜索书名、作者或关键词")
+                allBooksStatusTabs(allBooks, progressByBookID: progressByBookID)
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    filterMenuButton(bookshelfSortOrder.rawValue, icon: "arrow.up.arrow.down")
+                    filterMenuButton(bookshelfContentKind == .all ? "分类" : bookshelfContentKind.rawValue, icon: "square.grid.2x2")
+                    filterMenuButton(bookshelfTopic == .all ? "标签" : bookshelfTopic.rawValue, icon: "tag")
+                    Spacer(minLength: 0)
+                }
+
+                if visible.isEmpty {
+                    ContentUnavailableView("没有匹配的书", systemImage: "books.vertical", description: Text("调整筛选条件或搜索其他关键词。"))
+                        .frame(minHeight: 320)
+                } else {
+                    ForEach(BookshelfTopic.allCases.filter { $0 != .all }) { topic in
+                        let group = visible.filter { self.topic(for: $0) == topic }
+                        if !group.isEmpty {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                                HStack {
+                                    Text(topicSectionTitle(topic))
+                                        .font(.system(.title3, design: .serif, weight: .bold))
+                                    Text("\(group.count) 本")
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                                    Spacer()
+                                }
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppTheme.Spacing.lg) {
+                                    ForEach(group) { book in
+                                        bookshelfGridCard(book, progress: progressByBookID[book.id, default: 0])
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .padding(.horizontal, AppTheme.Metrics.contentGutter)
             .padding(.top, AppTheme.Spacing.sm)
             .padding(.bottom, AppTheme.Spacing.xxxl)
         }
         .refreshable { await loadBookshelves() }
-        .accessibilityIdentifier("publication-bookshelf-container")
+        .accessibilityIdentifier("publication-bookshelf-all-books")
+    }
+
+    private func allBooksStatusTabs(
+        _ allBooks: [KnowledgeBookDTO],
+        progressByBookID: [String: Double]
+    ) -> some View {
+        HStack(spacing: 3) {
+            allBooksStatusButton("全部", count: allBooks.count, scope: nil)
+            ForEach(BookshelfScope.allCases) { scope in
+                allBooksStatusButton(
+                    scope.rawValue,
+                    count: books(for: scope, in: allBooks, progressByBookID: progressByBookID).count,
+                    scope: scope
+                )
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
+    private func allBooksStatusButton(_ label: String, count: Int, scope: BookshelfScope?) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { allBooksScope = scope }
+        } label: {
+            Text("\(label) \(count)")
+                .font(.caption.weight(allBooksScope == scope ? .bold : .medium))
+                .foregroundStyle(allBooksScope == scope ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(
+                    allBooksScope == scope ? AppTheme.Colors.mistMint.opacity(0.9) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func filterMenuButton(_ title: String, icon: String) -> some View {
+        Button { showsBookshelfFilters = true } label: {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .frame(minHeight: 38)
+                .background(Color.white.opacity(0.78), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func topicSectionTitle(_ topic: BookshelfTopic) -> String {
+        switch topic {
+        case .literature: return "文学与随笔"
+        case .mathematics: return "数学与专业学习"
+        case .ai: return "AI 与技术"
+        case .psychology: return "心理与成长"
+        case .english: return "英语阅读"
+        case .travel: return "旅行与城市"
+        case .all: return "全部书籍"
+        }
+    }
+
+    private var bookshelfFilterSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+                    filterSectionTitle("阅读状态")
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        filterChip("全部", selected: allBooksScope == nil) { allBooksScope = nil }
+                        ForEach(BookshelfScope.allCases) { scope in
+                            filterChip(scope.rawValue, selected: allBooksScope == scope) { allBooksScope = scope }
+                        }
+                    }
+
+                    filterSectionTitle("内容类型")
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        ForEach(BookshelfContentKind.allCases) { kind in
+                            filterChip(kind.rawValue, selected: bookshelfContentKind == kind) { bookshelfContentKind = kind }
+                        }
+                    }
+
+                    filterSectionTitle("排序方式")
+                    VStack(spacing: 0) {
+                        ForEach(BookshelfSortOrder.allCases) { order in
+                            Button { bookshelfSortOrder = order } label: {
+                                HStack {
+                                    Image(systemName: bookshelfSortOrder == order ? "largecircle.fill.circle" : "circle")
+                                        .foregroundStyle(bookshelfSortOrder == order ? AppTheme.Colors.primary : AppTheme.Colors.textTertiary)
+                                    Text(order.rawValue)
+                                    Spacer()
+                                }
+                                .foregroundStyle(AppTheme.Colors.textPrimary)
+                                .frame(minHeight: 48)
+                            }
+                            .buttonStyle(.plain)
+                            if order != BookshelfSortOrder.allCases.last { Divider() }
+                        }
+                    }
+
+                    filterSectionTitle("标签")
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 76))], alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        ForEach(BookshelfTopic.allCases) { topic in
+                            filterChip(topic.rawValue, selected: bookshelfTopic == topic) { bookshelfTopic = topic }
+                        }
+                    }
+                }
+                .padding(AppTheme.Spacing.xl)
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Button("重置") {
+                        allBooksScope = nil
+                        bookshelfContentKind = .all
+                        bookshelfTopic = .all
+                        bookshelfSortOrder = .recent
+                    }
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(AppTheme.Colors.secondaryBackground, in: Capsule())
+                    Button("查看 \(filteredBookCount) 本书") { showsBookshelfFilters = false }
+                        .foregroundStyle(AppTheme.Colors.onPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(AppTheme.Colors.textPrimary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(AppTheme.Spacing.lg)
+                .background(.ultraThinMaterial)
+            }
+            .navigationTitle("筛选与排序")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showsBookshelfFilters = false } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("关闭筛选")
+                }
+            }
+        }
+    }
+
+    private var filteredBookCount: Int {
+        let progress = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
+        let filtered = filterBooks(uniqueBooks(in: bookshelves), progressByBookID: progress)
+        return allBooksScope.map { books(for: $0, in: filtered, progressByBookID: progress).count } ?? filtered.count
+    }
+
+    private func filterSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(AppTheme.Typography.cardTitle)
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+    }
+
+    private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(selected ? .bold : .medium))
+                .foregroundStyle(selected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(selected ? AppTheme.Colors.mistMint : AppTheme.Colors.secondaryBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func bookSearchResults(_ books: [KnowledgeBookDTO]) -> some View {
+        if books.isEmpty {
+            ContentUnavailableView("没有匹配的书", systemImage: "books.vertical", description: Text("试试其他书名、作者或关键词。"))
+                .frame(minHeight: 220)
+        } else {
+            LazyVStack(spacing: AppTheme.Spacing.sm) {
+                ForEach(books) { book in
+                    Button { inspectedBook = book } label: {
+                        HStack(spacing: AppTheme.Spacing.md) {
+                            bookCover(
+                                title: book.title, author: book.author, seed: book.id,
+                                theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 58
+                            )
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(book.title)
+                                    .font(.headline)
+                                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                                Text(book.author)
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                                Text(book.publicationTypeLabel ?? book.knowledgeLevel)
+                                    .font(.caption2)
+                                    .foregroundStyle(AppTheme.Colors.textTertiary)
+                            }
+                            Spacer()
+                            Image(systemName: subscribedBookIDs.contains(book.id) ? "heart.fill" : "heart")
+                                .foregroundStyle(subscribedBookIDs.contains(book.id) ? Color.pink : AppTheme.Colors.textTertiary)
+                                .frame(width: 44, height: 44)
+                        }
+                        .padding(AppTheme.Spacing.md)
+                        .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                }
+            }
+        }
     }
 
     private func bookshelfSearch(placeholder: String) -> some View {
@@ -738,6 +1738,7 @@ public struct SubscriptionCenterView: View {
             TextField(placeholder, text: $bookshelfQuery)
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
+                .focused($isBookshelfSearchFocused)
             if !bookshelfQuery.isEmpty {
                 Button { bookshelfQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -746,10 +1747,6 @@ public struct SubscriptionCenterView: View {
                 }
                 .accessibilityLabel("清除搜索")
             }
-            Image(systemName: "slider.horizontal.3")
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-                .frame(width: 28)
-                .accessibilityHidden(true)
         }
         .font(AppTheme.Typography.supporting)
         .padding(.leading, AppTheme.Spacing.md)
@@ -887,7 +1884,7 @@ public struct SubscriptionCenterView: View {
                 ZStack(alignment: .bottom) {
                     HStack(alignment: .bottom, spacing: -12) {
                         ForEach(Array(shelf.books.prefix(3).enumerated()), id: \.element.id) { index, book in
-                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, width: 82)
+                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 82)
                                 .rotationEffect(.degrees(Double(index - 1) * 5))
                                 .zIndex(Double(index == 1 ? 2 : index))
                                 .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
@@ -939,7 +1936,7 @@ public struct SubscriptionCenterView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .center, spacing: AppTheme.Spacing.xl) {
                         ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
                             Button { inspectedBook = book } label: {
-                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, width: 140)
+                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 140)
                                     .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
                                     .opacity(booksRevealed ? 1 : 0)
                                     .offset(y: booksRevealed ? (index.isMultiple(of: 2) ? 0 : 36) : 54)
@@ -984,41 +1981,11 @@ public struct SubscriptionCenterView: View {
         seed: String,
         theme: String? = nil,
         variant: Int? = nil,
+        coverAvailable: Bool? = nil,
         width: CGFloat = 112
     ) -> some View {
-        let resolvedVariant = variant ?? stableCoverVariant(seed)
-        let colors = coverColors(theme: theme, variant: resolvedVariant)
-        return ZStack {
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                .opacity(0.34)
-            Color.white.opacity(0.34)
-            coverArtwork(resolvedVariant)
-                .foregroundStyle(AppTheme.Colors.primary.opacity(0.10))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
-                Rectangle()
-                    .fill(AppTheme.Colors.primary.opacity(0.16))
-                    .frame(height: 4)
-                Text(title)
-                    .font((width < 100 ? Font.caption : Font.headline).weight(.bold))
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                    .lineLimit(4)
-                    .minimumScaleFactor(0.76)
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.top, AppTheme.Spacing.md)
-                Spacer(minLength: AppTheme.Spacing.sm)
-                Text(author)
-                    .font((width < 100 ? Font.system(size: 8) : Font.caption2).weight(.semibold))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-                    .lineLimit(2)
-                    .padding(AppTheme.Spacing.sm)
-            }
-        }
-        .frame(width: width, height: width * 1.41, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-        .overlay(alignment: .leading) { Rectangle().fill(AppTheme.Colors.primary.opacity(0.12)).frame(width: 7) }
-        .overlay { RoundedRectangle(cornerRadius: 5).stroke(AppTheme.Colors.primary.opacity(0.08), lineWidth: 0.75) }
-        .shadow(color: AppTheme.Colors.primary.opacity(0.10), radius: 12, x: 3, y: 8)
+        KnowledgeBookCover(title: title, author: author, seed: seed, theme: theme, variant: variant,
+                           coverAvailable: coverAvailable == true, width: width)
     }
 
     private var shelfPlank: some View {
@@ -1026,58 +1993,6 @@ public struct SubscriptionCenterView: View {
             .fill(AppTheme.Colors.border.opacity(0.72))
             .frame(height: 5)
             .shadow(color: AppTheme.Colors.primary.opacity(0.06), radius: 5, y: 3)
-    }
-
-    @ViewBuilder
-    private func coverArtwork(_ variant: Int) -> some View {
-        switch variant % 6 {
-        case 0:
-            Circle().stroke(lineWidth: 16).frame(width: 104, height: 104).offset(x: 35, y: -28)
-        case 1:
-            RoundedRectangle(cornerRadius: 12).stroke(lineWidth: 12)
-                .frame(width: 92, height: 92).rotationEffect(.degrees(28)).offset(x: 34, y: -30)
-        case 2:
-            VStack(spacing: 10) {
-                ForEach(0..<5, id: \.self) { _ in Capsule().frame(width: 92, height: 5) }
-            }
-            .rotationEffect(.degrees(-24))
-            .offset(x: 36, y: -26)
-        case 3:
-            ZStack {
-                Circle().stroke(lineWidth: 8).frame(width: 76, height: 76)
-                Circle().stroke(lineWidth: 5).frame(width: 42, height: 42)
-            }
-            .offset(x: 38, y: -32)
-        case 4:
-            RoundedRectangle(cornerRadius: 4).stroke(lineWidth: 9)
-                .frame(width: 68, height: 110).rotationEffect(.degrees(42)).offset(x: 45, y: -34)
-        default:
-            HStack(spacing: 9) {
-                ForEach(0..<5, id: \.self) { _ in Capsule().frame(width: 5, height: 112) }
-            }
-            .rotationEffect(.degrees(18))
-            .offset(x: 40, y: -25)
-        }
-    }
-
-    private func stableCoverVariant(_ seed: String) -> Int {
-        let hash = seed.utf8.reduce(UInt64(14_695_981_039_346_656_037)) {
-            ($0 ^ UInt64($1)) &* 1_099_511_628_211
-        }
-        return Int(hash % 6)
-    }
-
-    private func coverColors(theme: String?, variant: Int) -> [Color] {
-        let pair: [Color]
-        switch theme {
-        case "product": pair = [AppTheme.Colors.interactiveBlue, AppTheme.Colors.quantumCyan]
-        case "methodology": pair = [AppTheme.Colors.interactiveViolet, AppTheme.Colors.quantumViolet]
-        case "strategic-signal": pair = [AppTheme.Colors.emberOrange, AppTheme.Colors.interactiveViolet]
-        case "customer": pair = [AppTheme.Colors.statusCompleted, AppTheme.Colors.quantumBlue]
-        case "competitor", "competitor-topic": pair = [AppTheme.Colors.emberInk, AppTheme.Colors.emberOrange]
-        default: pair = [AppTheme.Colors.primary, AppTheme.Icons.intelligence]
-        }
-        return variant.isMultiple(of: 2) ? pair : Array(pair.reversed())
     }
 
     private func knowledgeBookDetail(_ book: KnowledgeBookDTO) -> some View {
@@ -1900,18 +2815,67 @@ public struct SubscriptionCenterView: View {
     private func loadBookshelves() async {
         isLoading = true
         errorMessage = nil
+        if let subscriptions = try? await api.fetchBookSubscriptions() {
+            bookSubscriptions = subscriptions
+            subscribedBookIDs = Set(subscriptions.map(\.book.id))
+        }
         do {
             let response = try await api.fetchKnowledgeBookshelves()
-            bookshelves = response.bookshelves
+            if response.bookshelves.isEmpty {
+                if let fallback = try? await api.fetchSubscriptionCenter(),
+                   let recovered = fallback.bookshelves, !recovered.isEmpty {
+                    bookshelves = recovered
+                    errorMessage = "图书目录暂未返回，正在显示订阅中心的书目；可下拉重试。"
+                } else {
+                    errorMessage = "图书目录暂未返回书籍。这不代表你的藏书被删除，请稍后重试。"
+                }
+            } else {
+                bookshelves = response.bookshelves
+            }
             publicCollections = response.publicCollections ?? []
             ownerPrivateCollections = response.ownerPrivateCollections ?? []
-            if let subscriptions = try? await api.fetchBookSubscriptions() {
-                subscribedBookIDs = Set(subscriptions.map(\.book.id))
-            }
         } catch {
             errorMessage = actionableMessage(for: error)
         }
         isLoading = false
+    }
+
+    private var subscribedBooksFallback: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                Text("我的藏书")
+                    .font(.title2.bold())
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                Text("全部图书目录暂未加载；已收藏的书仍可从这里打开。")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                ForEach(bookSubscriptions, id: \.book.id) { item in
+                    Button { inspectedBook = item.book } label: {
+                        HStack(spacing: AppTheme.Spacing.md) {
+                            KnowledgeBookCover(
+                                title: item.book.title, author: item.book.author,
+                                seed: item.book.id, theme: item.book.coverTheme,
+                                variant: item.book.coverVariant,
+                                coverAvailable: false, width: 56
+                            )
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.book.title).font(.headline).lineLimit(2)
+                                Text(item.book.author).font(.caption)
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                        }
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .frame(minHeight: 72)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let errorMessage { inlineError(errorMessage) }
+            }
+            .padding(AppTheme.Metrics.contentGutter)
+        }
+        .refreshable { await loadBookshelves() }
     }
 
     private func toggleBookSubscription(_ book: KnowledgeBookDTO) async {
@@ -1922,9 +2886,12 @@ public struct SubscriptionCenterView: View {
             if subscribedBookIDs.contains(book.id) {
                 try await api.unsubscribeBook(id: book.id)
                 subscribedBookIDs.remove(book.id)
+                bookSubscriptions.removeAll { $0.book.id == book.id }
             } else {
-                _ = try await api.subscribeBook(id: book.id)
+                let subscription = try await api.subscribeBook(id: book.id)
                 subscribedBookIDs.insert(book.id)
+                bookSubscriptions.removeAll { $0.book.id == book.id }
+                bookSubscriptions.append(subscription)
             }
         } catch {
             if case APIError.server(404, _) = error {
@@ -2079,13 +3046,42 @@ struct KnowledgeBookReaderView: View {
     let isBusy: Bool
     let onToggleSubscription: () -> Void
     var onSaveExcerpt: (() -> Void)? = nil
+    var startsInReading = false
+    var initialSectionID: String? = nil
+    var initialBlockIndex: Int? = nil
+    var initialCharacterOffset: Int? = nil
     let onDismiss: () -> Void
 
     @State private var appeared = false
-    @State private var showingReading = ProcessInfo.processInfo.arguments.contains("-bookReadingPreview")
+    @State private var showingReading: Bool
     @State private var selectedBookVersion: String?
     @State private var selectedBookSectionID: String?
     @State private var selectedBookSectionTitle: String?
+
+    init(
+        book: KnowledgeBookDTO,
+        isSubscribed: Bool,
+        isBusy: Bool,
+        onToggleSubscription: @escaping () -> Void,
+        onSaveExcerpt: (() -> Void)? = nil,
+        startsInReading: Bool = false,
+        initialSectionID: String? = nil,
+        initialBlockIndex: Int? = nil,
+        initialCharacterOffset: Int? = nil,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.book = book
+        self.isSubscribed = isSubscribed
+        self.isBusy = isBusy
+        self.onToggleSubscription = onToggleSubscription
+        self.onSaveExcerpt = onSaveExcerpt
+        self.startsInReading = startsInReading
+        self.initialSectionID = initialSectionID
+        self.initialBlockIndex = initialBlockIndex
+        self.initialCharacterOffset = initialCharacterOffset
+        self.onDismiss = onDismiss
+        _showingReading = State(initialValue: startsInReading || ProcessInfo.processInfo.arguments.contains("-bookReadingPreview"))
+    }
 
     var body: some View {
         NavigationStack {
@@ -2287,6 +3283,9 @@ struct KnowledgeBookReaderView: View {
         .fullScreenCover(isPresented: $showingReading) {
             KnowledgeBookReadingView(
                 book: book,
+                initialSectionID: initialSectionID,
+                initialBlockIndex: initialBlockIndex,
+                initialCharacterOffset: initialCharacterOffset,
                 onScopeChange: { body, section in
                     selectedBookVersion = body.contentVersion
                     selectedBookSectionID = section.id
@@ -2322,44 +3321,13 @@ struct KnowledgeBookReaderView: View {
     }
 
     private var editorialCover: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(LinearGradient(
-                    colors: [AppTheme.Colors.selectionTint, AppTheme.Colors.surfaceTint],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
-            Circle()
-                .stroke(AppTheme.Colors.primary.opacity(0.12), lineWidth: 18)
-                .frame(width: 126, height: 126)
-                .offset(x: 76, y: -34)
-            Rectangle()
-                .fill(AppTheme.Colors.primary.opacity(0.16))
-                .frame(width: 9)
-            VStack(alignment: .leading) {
-                Text(book.title)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                    .lineLimit(4)
-                Spacer()
-                Text(book.author)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-                    .lineLimit(2)
-            }
-            .padding(18)
-            PublicationCoverImage(
-                path: book.shelfCoverUrl,
-                accessibilityLabel: "《\(book.title)》封面",
-                aspectRatio: 9 / 16,
-                contentMode: .fill
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        }
-        .frame(width: 176, height: 248)
-        .shadow(color: AppTheme.Colors.primary.opacity(0.10), radius: 22, x: 8, y: 16)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("《\(book.title)》，作者 \(book.author)")
+        IllustratedBookCover(
+            title: book.title,
+            author: book.author,
+            theme: book.coverTheme,
+            variant: book.coverVariant,
+            width: 176
+        )
     }
 
     private func readerPill(_ text: String, icon: String) -> some View {
@@ -2388,13 +3356,9 @@ func loadKnowledgeBookReaderData(
     return KnowledgeBookReaderLoad(body: body, subscriptions: loadedSubscriptions)
 }
 
-func readerIllustrationPaths(afterSectionAt index: Int, sectionCount: Int, paths: [String]) -> [String] {
-    guard sectionCount > 0, index >= 0, index < sectionCount else { return [] }
-    return paths.enumerated().compactMap { min($0.offset, sectionCount - 1) == index ? $0.element : nil }
-}
-
 private struct KnowledgeBookReadingView: View {
     @EnvironmentObject private var api: APIClient
+    @ObservedObject private var noteStore = KnowledgeNoteStore.shared
     @State private var bookBody: KnowledgeBookBodyDTO?
     @State private var isLoading = true
     @State private var loadError: String?
@@ -2402,12 +3366,30 @@ private struct KnowledgeBookReadingView: View {
     @State private var progress = 0.0
     @State private var originalProgress = 0.0
     @State private var lastSentProgress = 0.0
+    @State private var lastSentSectionID: String?
+    @State private var lastSentBlockIndex: Int?
+    @State private var lastSentCharacterOffset: Int?
     @State private var hasProgressBaseline = false
     @State private var pendingProgressIndex: Int?
+    @State private var pendingBlockIndex = 0
+    @State private var pendingCharacterOffset = 0
+    @State private var locationSaveTask: Task<Void, Never>?
+    @State private var restoreSectionReady = false
+    @State private var restoreBlockReady = false
     @State private var selectedExcerpt = ""
     @State private var selectedSection: KnowledgeBookSectionDTO?
+    @State private var annotationDraft = ""
+    @State private var isWritingAnnotation = false
     @State private var saveMessage: String?
+    @State private var showingQuestion = false
+    @State private var showingAnnotations = false
+    @State private var inspectedAnnotation: ReaderAnnotationEntry?
+    @State private var questionInitialTurns: [ReaderQuestionTurn] = []
+    @StateObject private var questionState = ReadingSelectionQuestionState()
     let book: KnowledgeBookDTO
+    let initialSectionID: String?
+    let initialBlockIndex: Int?
+    let initialCharacterOffset: Int?
     let onScopeChange: (KnowledgeBookBodyDTO, KnowledgeBookSectionDTO) -> Void
     let onDismiss: () -> Void
 
@@ -2424,6 +3406,10 @@ private struct KnowledgeBookReadingView: View {
                 bookBody = loaded.body
                 progressError = "正文已加载，但阅读进度暂时无法同步。"
                 isLoading = false
+                if ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview") {
+                    selectedExcerpt = "\"task_id\": \"T-10"
+                    selectedSection = loaded.body.sections.first
+                }
                 return
             }
             #endif
@@ -2433,6 +3419,13 @@ private struct KnowledgeBookReadingView: View {
             )
             guard !Task.isCancelled, account == KnowledgeNoteStore.shared.accountFingerprint else { return }
             bookBody = loaded.body
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-readingSelectionLiveAcceptance"),
+               let customerServiceSection = loaded.body.sections.first(where: { $0.markdown.contains("客服") }) {
+                selectedExcerpt = "客服"
+                selectedSection = customerServiceSection
+            }
+            #endif
             if let subscriptions = loaded.subscriptions {
                 hasProgressBaseline = true
                 progressError = nil
@@ -2442,10 +3435,16 @@ private struct KnowledgeBookReadingView: View {
                     progress = subscription.progress
                     originalProgress = subscription.progress
                     lastSentProgress = subscription.progress
+                    lastSentSectionID = subscription.lastSectionId
+                    lastSentBlockIndex = subscription.lastBlockIndex
+                    lastSentCharacterOffset = subscription.lastCharacterOffset
                 } else {
                     progress = 0
                     originalProgress = 0
                     lastSentProgress = 0
+                    lastSentSectionID = nil
+                    lastSentBlockIndex = nil
+                    lastSentCharacterOffset = nil
                 }
             } else {
                 progressError = "正文已加载，但阅读进度暂时无法同步。"
@@ -2459,24 +3458,62 @@ private struct KnowledgeBookReadingView: View {
     }
 
     @MainActor
-    private func recordReading(sectionIndex: Int) async {
+    private func recordReading(
+        sectionIndex: Int,
+        blockIndex: Int,
+        characterOffset: Int
+    ) async {
         guard let bookBody, hasProgressBaseline else { return }
         let account = KnowledgeNoteStore.shared.accountFingerprint
+        let sectionID = bookBody.sections[sectionIndex].id
         let next = Double(sectionIndex + 1) / Double(bookBody.sections.count)
-        guard next > lastSentProgress else { return }
-        progress = next
+        guard next > lastSentProgress
+                || sectionID != lastSentSectionID
+                || blockIndex != lastSentBlockIndex
+                || characterOffset != lastSentCharacterOffset else { return }
+        let completedProgress = max(next, lastSentProgress)
+        progress = completedProgress
         do {
             _ = try await api.updateBookProgress(
-                id: book.id, progress: next, contentVersion: bookBody.contentVersion
+                id: book.id, progress: completedProgress, contentVersion: bookBody.contentVersion,
+                sectionId: sectionID, blockIndex: blockIndex,
+                characterOffset: characterOffset
             )
             guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
-            lastSentProgress = next
+            lastSentProgress = completedProgress
+            lastSentSectionID = sectionID
+            lastSentBlockIndex = blockIndex
+            lastSentCharacterOffset = characterOffset
             pendingProgressIndex = nil
             progressError = nil
         } catch {
             guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
             pendingProgressIndex = sectionIndex
+            pendingBlockIndex = blockIndex
+            pendingCharacterOffset = characterOffset
             progressError = "阅读进度未同步，点按重试。"
+        }
+    }
+
+    @MainActor
+    private func scheduleReadingLocation(
+        sectionIndex: Int,
+        blockIndex: Int,
+        characterOffset: Int
+    ) {
+        locationSaveTask?.cancel()
+        pendingProgressIndex = sectionIndex
+        pendingBlockIndex = blockIndex
+        pendingCharacterOffset = characterOffset
+        let account = KnowledgeNoteStore.shared.accountFingerprint
+        locationSaveTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, account == KnowledgeNoteStore.shared.accountFingerprint else { return }
+            await recordReading(
+                sectionIndex: sectionIndex,
+                blockIndex: blockIndex,
+                characterOffset: characterOffset
+            )
         }
     }
 
@@ -2485,40 +3522,68 @@ private struct KnowledgeBookReadingView: View {
         guard let bookBody, let section = selectedSection else { return }
         let excerpt = String(selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
         guard !excerpt.isEmpty else { return }
-        let noteBody = """
-        > [!quote] 书籍摘录
-        > 《\(bookBody.title)》 · \(bookBody.author)
-        > 章节：\(section.title) · 版本：\(bookBody.contentVersion) · 第 \(bookBody.edition) 版
+        persistExcerpt(
+            excerpt,
+            detail: annotationDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+            section: section,
+            bookBody: bookBody
+        )
+    }
 
-        \(excerpt)
+    @MainActor
+    private func saveQuestionAnswer(_ question: String, answer: String, sessionID: String?) -> Bool {
+        guard let bookBody, let section = selectedSection else { return false }
+        let excerpt = String(selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
+        guard !excerpt.isEmpty else { return false }
+        let detail = "我的问题\n\(question)\n\nAI 回答摘要\n\(answer)"
+        return persistExcerpt(excerpt, detail: detail, section: section, bookBody: bookBody, keepsSelection: true, sessionID: sessionID)
+    }
 
-        ---
-        来源书籍 ID：`\(bookBody.bookId)`
-        来源章节 ID：`\(section.id)`
-        引用：`\(bookBody.citation)`
-        """
-        guard let note = KnowledgeNoteStore.shared.createNote(
-            title: "\(bookBody.title)｜\(section.title)摘录",
-            body: noteBody,
-            tags: ["书籍摘录", "quantum-books"]
-        ) else { return }
-        let account = KnowledgeNoteStore.shared.accountFingerprint
-        let markdown = KnowledgeNoteStore.shared.markdown(for: note)
-        let credentialGeneration = api.currentCredentialGeneration()
-        Task {
-            guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
-            _ = try? await api.syncKnowledgeNote(
-                id: note.id, markdown: markdown, updatedAt: note.updatedAt,
-                credentialGeneration: credentialGeneration
-            )
+    @MainActor
+    @discardableResult
+    private func persistExcerpt(
+        _ excerpt: String,
+        detail: String,
+        section: KnowledgeBookSectionDTO,
+        bookBody: KnowledgeBookBodyDTO,
+        keepsSelection: Bool = false,
+        sessionID: String? = nil
+    ) -> Bool {
+        let isEnglish = ReadingLanguagePresentation.isEnglish(excerpt)
+        guard ReaderAnnotationEntry.save(
+            quote: excerpt,
+            detail: detail,
+            bookID: bookBody.bookId,
+            bookTitle: bookBody.title,
+            sectionID: section.id,
+            sectionTitle: section.title,
+            citation: bookBody.citation,
+            contentVersion: bookBody.contentVersion,
+            sessionID: sessionID,
+            api: api
+        ) != nil else { return false }
+        saveMessage = isEnglish ? "Saved to your notes" : "已保存到当前账号的笔记"
+        annotationDraft = ""
+        isWritingAnnotation = false
+        if !keepsSelection {
+            selectedExcerpt = ""
+            selectedSection = nil
         }
-        saveMessage = "已保存到当前账号的笔记"
+        return true
     }
 
     @ToolbarContentBuilder
     private func readerToolbar(bookBody: KnowledgeBookBodyDTO?, proxy: ScrollViewProxy) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button(action: onDismiss) {
+            Button {
+                Task {
+                    locationSaveTask?.cancel()
+                    if let index = pendingProgressIndex {
+                        await recordReading(sectionIndex: index, blockIndex: pendingBlockIndex, characterOffset: pendingCharacterOffset)
+                    }
+                    onDismiss()
+                }
+            } label: {
                 Image(systemName: "chevron.left")
                     .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.34), in: Circle())
@@ -2526,12 +3591,19 @@ private struct KnowledgeBookReadingView: View {
             .accessibilityLabel("返回书籍概述")
         }
         if let bookBody {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showingAnnotations = true } label: {
+                    Image(systemName: "bookmark")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("查看我的批注")
                 Menu {
                     ForEach(bookBody.sections) { section in
                         Button(section.title) {
                             onScopeChange(bookBody, section)
-                            withAnimation { proxy.scrollTo(section.id, anchor: .top) }
+                            withAnimation {
+                                proxy.scrollTo(section.id, anchor: .top)
+                            }
                         }
                         .accessibilityIdentifier("publication-reader-nav.\(section.id)")
                     }
@@ -2558,18 +3630,6 @@ private struct KnowledgeBookReadingView: View {
                 .font(.system(.title3, design: .serif))
                 .foregroundStyle(Color.brown.opacity(0.78))
                 .padding(.top, 12)
-
-            if let readerCoverUrl = bookBody?.readerCoverUrl {
-                PublicationCoverImage(
-                    path: readerCoverUrl,
-                    accessibilityLabel: "《\(book.title)》阅读页封面",
-                    aspectRatio: 16 / 9,
-                    contentMode: .fit
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.top, 24)
-                .accessibilityIdentifier("publication-reader-cover.\(book.id)")
-            }
 
             HStack(spacing: 12) {
                 Rectangle().frame(width: 54, height: 1)
@@ -2598,7 +3658,15 @@ private struct KnowledgeBookReadingView: View {
                     .accessibilityIdentifier("publication-reader-progress.\(book.id)")
                 if let progressError {
                     if let index = pendingProgressIndex {
-                        Button(progressError) { Task { await recordReading(sectionIndex: index) } }
+                        Button(progressError) {
+                            Task {
+                                await recordReading(
+                                    sectionIndex: index,
+                                    blockIndex: pendingBlockIndex,
+                                    characterOffset: pendingCharacterOffset
+                                )
+                            }
+                        }
                             .padding(.top, 12)
                     } else {
                         Label(progressError, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
@@ -2607,33 +3675,9 @@ private struct KnowledgeBookReadingView: View {
                             .accessibilityIdentifier("publication-reader-progress-warning.\(book.id)")
                     }
                 }
-                LazyVStack(alignment: .leading, spacing: 36) {
+                LazyVStack(alignment: .leading, spacing: 44) {
                     ForEach(Array(bookBody.sections.enumerated()), id: \.element.id) { index, section in
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(section.title)
-                                .font(.system(section.level == 1 ? .title2 : .title3, design: .serif, weight: .semibold))
-                            SelectableBookText(markdown: section.markdown) { excerpt in
-                                selectedExcerpt = excerpt
-                                selectedSection = section
-                                onScopeChange(bookBody, section)
-                            }
-                            ForEach(readerIllustrationPaths(
-                                afterSectionAt: index,
-                                sectionCount: bookBody.sections.count,
-                                paths: bookBody.illustrationUrls ?? []
-                            ), id: \.self) { path in
-                                PublicationCoverImage(
-                                    path: path,
-                                    accessibilityLabel: "《\(book.title)》正文插图",
-                                    aspectRatio: 16 / 9,
-                                    contentMode: .fit
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .accessibilityIdentifier("publication-reader-illustration.\(path)")
-                            }
-                        }
-                        .id(section.id)
-                        .onAppear { Task { await recordReading(sectionIndex: index) } }
+                        readingSection(section, index: index, bookBody: bookBody)
                     }
                 }
                 .padding(.top, 22)
@@ -2644,11 +3688,6 @@ private struct KnowledgeBookReadingView: View {
                         .joined(separator: "\n").prefix(1_000)
                 ))
                 .accessibilityIdentifier("publication-reader-content.\(book.id)")
-                if !selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button("将所选文字摘录到笔记", action: saveExcerpt)
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 28)
-                }
                 if let saveMessage {
                     Text(saveMessage).font(.footnote).foregroundStyle(Color.green)
                 }
@@ -2660,6 +3699,164 @@ private struct KnowledgeBookReadingView: View {
         .padding(.top, 42)
     }
 
+    private func readingSection(
+        _ section: KnowledgeBookSectionDTO,
+        index: Int,
+        bookBody: KnowledgeBookBodyDTO
+    ) -> some View {
+        let sectionAnnotations = annotations(for: section)
+        let content = ReadingSectionContent.parse(section.markdown)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            ReadingSectionIllustration(
+                index: index,
+                title: section.title,
+                text: section.markdown
+            )
+            if let objective = content.learningObjective {
+                ReadingStructuredInfoCard(series: content.series, learningObjective: objective)
+            }
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            if !sectionAnnotations.isEmpty {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AppTheme.Colors.quantumBlue)
+                    .frame(width: 3)
+                    .frame(minHeight: 44, maxHeight: .infinity)
+            }
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                ForEach(Array(content.blocks.enumerated()), id: \.offset) { blockIndex, block in
+                    readerBlock(
+                        block,
+                        blockIndex: blockIndex,
+                        sectionIndex: index,
+                        section: section,
+                        bookBody: bookBody,
+                        annotations: sectionAnnotations
+                    )
+                    .id("\(section.id):\(blockIndex)")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let first = sectionAnnotations.first {
+                Button { inspectedAnnotation = first } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bubble.left.fill")
+                            .font(.title3)
+                            .foregroundStyle(AppTheme.Colors.quantumBlue)
+                        Text("\(sectionAnnotations.count)")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .offset(x: 2, y: 2)
+                    }
+                    .frame(width: 30, height: 30)
+                }
+                .buttonStyle(SoftButtonStyle())
+                .accessibilityLabel("查看本章批注，共 \(sectionAnnotations.count) 条")
+            }
+            }
+            if index < bookBody.sections.count - 1 {
+                HStack(spacing: 12) {
+                    Rectangle().frame(height: 1)
+                    Image(systemName: "leaf")
+                    Rectangle().frame(height: 1)
+                }
+                .foregroundStyle(Color.brown.opacity(0.24))
+                .padding(.vertical, AppTheme.Spacing.md)
+                .accessibilityHidden(true)
+            }
+        }
+        .id(section.id)
+        .onAppear {
+            if section.id == initialSectionID { restoreSectionReady = true }
+        }
+    }
+
+    @ViewBuilder
+    private func readerBlock(
+        _ block: MarkdownBlock,
+        blockIndex: Int,
+        sectionIndex: Int,
+        section: KnowledgeBookSectionDTO,
+        bookBody: KnowledgeBookBodyDTO,
+        annotations: [ReaderAnnotationEntry]
+    ) -> some View {
+        switch block {
+        case .paragraph(let text), .quote(let text):
+            SelectableReadingText(
+                markdown: text,
+                textColor: UIColor(Color(red: 0.23, green: 0.17, blue: 0.11)),
+                highlights: annotations.map { .init(id: $0.id, quote: $0.quote) },
+                onAnnotationTap: { id in
+                    inspectedAnnotation = annotations.first { $0.id == id }
+                },
+                onAskSelection: { excerpt in
+                    prepareSelection(excerpt, section: section, bookBody: bookBody)
+                    openQuestion()
+                },
+                onHighlightSelection: { excerpt in
+                    persistExcerpt(excerpt, detail: "", section: section, bookBody: bookBody)
+                },
+                onAnnotateSelection: { excerpt in
+                    prepareSelection(excerpt, section: section, bookBody: bookBody)
+                    isWritingAnnotation = true
+                },
+                resumeCharacterOffset: restoreBlockReady && section.id == initialSectionID && blockIndex == initialBlockIndex
+                    ? initialCharacterOffset
+                    : nil,
+                onVisibleCharacter: { characterOffset in
+                    guard initialBlockIndex == nil || restoreBlockReady else { return }
+                    scheduleReadingLocation(
+                        sectionIndex: sectionIndex,
+                        blockIndex: blockIndex,
+                        characterOffset: characterOffset
+                    )
+                }
+            ) { excerpt in
+                prepareSelection(excerpt, section: section, bookBody: bookBody)
+            }
+        default:
+            MarkdownBlockCard(block: block)
+        }
+    }
+
+    @ViewBuilder
+    private var selectionDock: some View {
+        #if DEBUG
+        if (ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview")
+            || ProcessInfo.processInfo.arguments.contains("-readingSelectionLiveAcceptance")), selectedSection != nil {
+            Button("选词提问") { openQuestion() }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(.regularMaterial)
+                .accessibilityIdentifier("publication-reader-ask-selection.\(book.id)")
+        }
+        #endif
+        if bookBody != nil,
+           isWritingAnnotation,
+           !selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            ReaderSelectionActionDock(
+                excerpt: selectedExcerpt,
+                isEnglish: usesEnglishUI,
+                annotationDraft: $annotationDraft,
+                isWritingAnnotation: $isWritingAnnotation,
+                onClose: {
+                    selectedExcerpt = ""
+                    selectedSection = nil
+                    annotationDraft = ""
+                    isWritingAnnotation = false
+                },
+                onAsk: openQuestion,
+                onSave: saveExcerpt
+            )
+        }
+    }
+
+    private var usesEnglishUI: Bool {
+        let source = bookBody.map {
+            ([book.title, book.author] + $0.sections.prefix(2).flatMap { [$0.title, $0.markdown] })
+                .joined(separator: "\n")
+        } ?? "\(book.title) \(book.author)"
+        return ReadingLanguagePresentation.isEnglish(source)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
@@ -2667,6 +3864,7 @@ private struct KnowledgeBookReadingView: View {
                 readerPage
             }
             .accessibilityIdentifier("publication-reader-body.\(book.id)")
+            .safeAreaPadding(.top, 104)
             .foregroundStyle(Color(red: 0.23, green: 0.17, blue: 0.11))
             .background(
                 ZStack {
@@ -2680,61 +3878,2362 @@ private struct KnowledgeBookReadingView: View {
                 }
                 .ignoresSafeArea()
             )
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .bottom) { selectionDock }
+            .toolbarBackground(Color(red: 0.96, green: 0.91, blue: 0.79), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 readerToolbar(bookBody: bookBody, proxy: proxy)
             }
+            .sheet(isPresented: $showingQuestion) {
+                if let bookBody, let selectedSection {
+                    ReadingSelectionQuestionSheet(
+                        state: questionState,
+                        excerpt: selectedExcerpt,
+                        book: book,
+                        bookBody: bookBody,
+                        section: selectedSection,
+                        onSaveAnswer: { question, answer, sessionID in
+                            saveQuestionAnswer(question, answer: answer, sessionID: sessionID)
+                        }
+                    )
+                    .presentationDetents([.fraction(0.94), .large])
+                    .presentationDragIndicator(.hidden)
+                    .presentationCornerRadius(30)
+                }
+            }
+            .sheet(isPresented: $showingAnnotations) {
+                ReaderAnnotationCenterView(bookID: book.id, bookTitle: book.title) { entry in
+                    showingAnnotations = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        resumeQuestion(from: entry)
+                    }
+                }
+            }
+            .sheet(item: $inspectedAnnotation) { entry in
+                ReaderAnnotationDetailSheet(entry: entry) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        resumeQuestion(from: entry)
+                    }
+                }
+            }
             .task(id: book.id) { await loadBody() }
+            .task(id: "\(bookBody?.contentVersion ?? ""): \(restoreSectionReady)") {
+                guard let initialSectionID, bookBody != nil else { return }
+                await Task.yield()
+                if restoreSectionReady, let initialBlockIndex {
+                    proxy.scrollTo("\(initialSectionID):\(initialBlockIndex)", anchor: .top)
+                    // Arm character restoration only after coarse block scrolling.
+                    // Otherwise SwiftUI can overwrite the UITextView's precise offset.
+                    restoreBlockReady = true
+                } else {
+                    proxy.scrollTo(initialSectionID, anchor: .top)
+                }
+            }
             }
         }
     }
+
+    private func annotations(for section: KnowledgeBookSectionDTO) -> [ReaderAnnotationEntry] {
+        noteStore.notes.compactMap(ReaderAnnotationEntry.init(note:)).filter {
+            $0.bookID == book.id && $0.sectionID == section.id
+                && ($0.contentVersion == nil || $0.contentVersion == bookBody?.contentVersion)
+        }
+    }
+
+    private func prepareSelection(
+        _ excerpt: String,
+        section: KnowledgeBookSectionDTO,
+        bookBody: KnowledgeBookBodyDTO
+    ) {
+        selectedExcerpt = excerpt
+        selectedSection = section
+        annotationDraft = ""
+        isWritingAnnotation = false
+        saveMessage = nil
+        questionInitialTurns = annotations(for: section).filter { $0.quote == excerpt }
+            .reversed().compactMap(\.questionTurn)
+        onScopeChange(bookBody, section)
+    }
+
+    private func openQuestion() {
+        questionState.reset(initialTurns: questionInitialTurns)
+        showingQuestion = true
+    }
+
+    private func resumeQuestion(from entry: ReaderAnnotationEntry) {
+        guard let bookBody,
+              let section = bookBody.sections.first(where: { $0.id == entry.sectionID }) else { return }
+        selectedExcerpt = entry.quote
+        selectedSection = section
+        questionInitialTurns = annotations(for: section)
+            .filter { $0.quote == entry.quote }
+            .reversed()
+            .compactMap(\.questionTurn)
+        openQuestion()
+    }
 }
 
-private struct SelectableBookText: UIViewRepresentable {
+private struct ReadingStructuredInfoCard: View {
+    let series: String?
+    let learningObjective: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            if let series {
+                Label(series, systemImage: "books.vertical.fill")
+                    .font(AppTheme.Typography.label)
+                    .foregroundStyle(AppTheme.Colors.primary)
+            }
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                Image(systemName: "target")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.emberOrange)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("学习目标")
+                        .font(.system(.headline, design: .serif, weight: .semibold))
+                    MarkdownText(
+                        learningObjective,
+                        font: .system(size: 16, weight: .regular, design: .serif),
+                        color: AppTheme.Colors.textPrimary
+                    )
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppTheme.Colors.mistMint.opacity(0.9), Color.white.opacity(0.58)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.84), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(series.map { "连载，\($0)。" } ?? "")学习目标，\(learningObjective)")
+    }
+}
+
+private struct ReadingSectionIllustration: View {
+    let index: Int
+    let title: String
+    let text: String
+
+    private var key: String { "\(title) \(text.prefix(320))".lowercased() }
+    private var isEnglish: Bool { ReadingLanguagePresentation.isEnglish("\(title) \(text.prefix(800))") }
+    private func matches(_ terms: [String]) -> Bool { terms.contains { key.contains($0) } }
+
+    private var symbol: String {
+        if matches(["数学", "证明", "公式", "定理", "math", "proof", "equation", "theorem"]) { return "function" }
+        if matches(["科学", "研究", "技术", "science", "research", "technology", " ai "]) { return "atom" }
+        if matches(["旅行", "城市", "路线", "travel", "journey", "city"]) { return "map.fill" }
+        if matches(["历史", "年代", "history", "century"]) { return "clock.arrow.circlepath" }
+        if matches(["文学", "故事", "诗", "literature", "story", "poem"]) { return "text.book.closed.fill" }
+        return "leaf.fill"
+    }
+
+    private var colors: [Color] {
+        switch symbol {
+        case "function": return [AppTheme.Colors.mistSky, AppTheme.Colors.quantumViolet.opacity(0.32)]
+        case "atom": return [AppTheme.Colors.mistMint, AppTheme.Colors.mistSky]
+        case "map.fill": return [AppTheme.Colors.bentoAmber, AppTheme.Colors.mistRose]
+        case "clock.arrow.circlepath": return [AppTheme.Colors.mistRose, AppTheme.Colors.bentoAmber.opacity(0.82)]
+        default: return [AppTheme.Colors.mistMint, AppTheme.Colors.bentoAmber.opacity(0.72)]
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(isEnglish ? "CHAPTER \(String(format: "%02d", index + 1))" : "章节 \(String(format: "%02d", index + 1))")
+                    .font(AppTheme.Typography.micro.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                Text(title)
+                    .font(.system(.title3, design: .serif, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(AppTheme.Colors.textPrimary.opacity(0.74))
+                .frame(width: 68, height: 68)
+                .background(Color.white.opacity(0.44), in: Circle())
+        }
+        .padding(AppTheme.Spacing.xl)
+        .frame(minHeight: 128)
+        .background {
+            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color.white.opacity(0.34))
+                        .frame(width: 168, height: 168)
+                        .offset(x: 116, y: -52)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().stroke(Color.white.opacity(0.5), lineWidth: 1)
+                        .frame(width: 86, height: 86)
+                        .offset(x: 72, y: 54)
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isEnglish ? "Chapter illustration, \(title)" : "章节插图，\(title)")
+    }
+}
+
+struct ReadingTextHighlight: Hashable {
+    let id: String
+    let quote: String
+}
+
+final class ReadingPositionTextView: UITextView {
+    var onVisibleCharacter: (Int) -> Void = { _ in }
+    var restoreCharacterOffset: Int?
+    private weak var outerScrollView: UIScrollView?
+    private var contentOffsetObservation: NSKeyValueObservation?
+    private var contentSizeObservation: NSKeyValueObservation?
+    private var restoredOffset: Int?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        contentOffsetObservation?.invalidate()
+        contentSizeObservation?.invalidate()
+        outerScrollView = nil
+        var ancestor = superview
+        while let view = ancestor, outerScrollView == nil {
+            outerScrollView = view as? UIScrollView
+            ancestor = view.superview
+        }
+        guard let outerScrollView else { return }
+        contentOffsetObservation = outerScrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                self?.restoreIfNeeded()
+                self?.reportVisibleCharacter()
+            }
+        }
+        contentSizeObservation = outerScrollView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.restoreIfNeeded() }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreIfNeeded()
+            self?.reportVisibleCharacter()
+        }
+    }
+
+    deinit {
+        contentOffsetObservation?.invalidate()
+        contentSizeObservation?.invalidate()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        DispatchQueue.main.async { [weak self] in self?.restoreIfNeeded() }
+    }
+
+    func restoreIfNeeded() {
+        guard let outerScrollView, let requested = restoreCharacterOffset,
+              requested != restoredOffset, textStorage.length > 0,
+              bounds.width > 0, bounds.height > 0, window != nil else { return }
+        guard !outerScrollView.isTracking, !outerScrollView.isDragging, !outerScrollView.isDecelerating else {
+            restoredOffset = requested
+            return
+        }
+        guard convert(bounds, to: outerScrollView).intersects(outerScrollView.bounds) else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let offset = min(max(requested, 0), textStorage.length - 1)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: offset, length: 1),
+            actualCharacterRange: nil
+        )
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        rect.origin.x += textContainerInset.left
+        rect.origin.y += textContainerInset.top
+        let target = convert(rect, to: outerScrollView)
+        let minimum = -outerScrollView.adjustedContentInset.top
+        let maximum = max(
+            minimum,
+            outerScrollView.contentSize.height - outerScrollView.bounds.height
+                + outerScrollView.adjustedContentInset.bottom
+        )
+        // Mark before scrolling: contentOffset observation must not re-enter restoration.
+        restoredOffset = requested
+        outerScrollView.setContentOffset(
+            CGPoint(x: outerScrollView.contentOffset.x, y: min(max(target.minY - outerScrollView.adjustedContentInset.top - 120, minimum), maximum)),
+            animated: false
+        )
+    }
+
+    private func reportVisibleCharacter() {
+        guard let outerScrollView, window != nil, textStorage.length > 0 else { return }
+        let readingLine = CGPoint(
+            x: outerScrollView.bounds.midX,
+            y: outerScrollView.bounds.minY + outerScrollView.adjustedContentInset.top + 120
+        )
+        let local = convert(readingLine, from: outerScrollView)
+        guard local.y >= bounds.minY, local.y <= bounds.maxY else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let textPoint = CGPoint(
+            x: min(max(local.x - textContainerInset.left, 0), textContainer.size.width),
+            y: max(local.y - textContainerInset.top, 0)
+        )
+        let glyph = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+        onVisibleCharacter(min(layoutManager.characterIndexForGlyph(at: glyph), textStorage.length - 1))
+    }
+}
+
+struct ReaderSelectionActionDock: View {
+    let excerpt: String
+    let isEnglish: Bool
+    @Binding var annotationDraft: String
+    @Binding var isWritingAnnotation: Bool
+    let onClose: () -> Void
+    let onAsk: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Capsule()
+                .fill(AppTheme.Colors.border.opacity(0.7))
+                .frame(width: 38, height: 4)
+                .frame(maxWidth: .infinity)
+
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AppTheme.Colors.emberOrange)
+                    .frame(width: 4, height: 48)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isEnglish ? "SELECTED PASSAGE" : "已选择这段文字")
+                        .font(AppTheme.Typography.micro.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(AppTheme.Colors.emberOrange)
+                    Text(excerpt)
+                        .font(.system(.subheadline, design: .serif, weight: .medium))
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 0)
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 32, height: 32)
+                        .background(AppTheme.Colors.surfaceTint, in: Circle())
+                }
+                .buttonStyle(SoftButtonStyle())
+                .accessibilityLabel(isEnglish ? "Close text actions" : "关闭选字操作")
+            }
+
+            if isWritingAnnotation {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Label(isEnglish ? "My margin note" : "我的页边批注", systemImage: "pencil.line")
+                        .font(AppTheme.Typography.label)
+                        .foregroundStyle(AppTheme.Colors.emberOrange)
+                    TextField(isEnglish ? "Write what this passage makes you think…" : "像写读书笔记一样，记下你的想法…", text: $annotationDraft, axis: .vertical)
+                        .lineLimit(3...6)
+                        .padding(AppTheme.Spacing.md)
+                        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(AppTheme.Colors.mistRose)
+                                .frame(width: 3)
+                                .padding(.vertical, 8)
+                        }
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Button(isEnglish ? "Cancel" : "取消") { isWritingAnnotation = false }
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .background(AppTheme.Colors.surfaceTint, in: Capsule())
+                        Button(action: onSave) {
+                            Label(isEnglish ? "Save annotation" : "保存批注", systemImage: "bookmark.fill")
+                                .frame(maxWidth: .infinity, minHeight: 46)
+                                .foregroundStyle(AppTheme.Colors.textPrimary)
+                                .background(AppTheme.Colors.mistMint, in: Capsule())
+                        }
+                        .disabled(annotationDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                }
+            } else {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    actionTile(
+                        isEnglish ? "Ask Quantum" : "问 Quantum",
+                        subtitle: isEnglish ? "Explain in this page" : "在本页内解释",
+                        icon: "bubble.left.and.text.bubble.right.fill",
+                        color: AppTheme.Colors.mistMint,
+                        action: onAsk
+                    )
+                    actionTile(
+                        isEnglish ? "Add a note" : "写批注",
+                        subtitle: isEnglish ? "Mark it like a student" : "留下划线与页签",
+                        icon: "pencil.line",
+                        color: AppTheme.Colors.mistSky,
+                        action: { isWritingAnnotation = true }
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, AppTheme.Spacing.lg)
+        .padding(.top, AppTheme.Spacing.sm)
+        .padding(.bottom, AppTheme.Spacing.lg)
+        .background(.regularMaterial)
+        .background(Color.white.opacity(0.72))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
+        .overlay(alignment: .top) { Divider().opacity(0.45) }
+        .shadow(color: Color.black.opacity(0.09), radius: 18, y: -3)
+    }
+
+    private func actionTile(
+        _ title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.72), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(AppTheme.Typography.label)
+                    Text(subtitle)
+                        .font(AppTheme.Typography.micro)
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(AppTheme.Colors.textPrimary)
+            .padding(.horizontal, AppTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(color, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        }
+        .buttonStyle(SoftButtonStyle())
+    }
+}
+
+struct SelectableReadingText: UIViewRepresentable {
     let markdown: String
+    var textColor = UIColor.label
+    var highlights: [ReadingTextHighlight] = []
+    var onAnnotationTap: (String) -> Void = { _ in }
+    var onAskSelection: (String) -> Void = { _ in }
+    var onHighlightSelection: (String) -> Void = { _ in }
+    var onAnnotateSelection: (String) -> Void = { _ in }
+    var resumeCharacterOffset: Int?
+    var onVisibleCharacter: (Int) -> Void = { _ in }
     let onSelection: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onSelection: onSelection) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onSelection: onSelection,
+            onAnnotationTap: onAnnotationTap,
+            onAskSelection: onAskSelection,
+            onHighlightSelection: onHighlightSelection,
+            onAnnotateSelection: onAnnotateSelection
+        )
+    }
 
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+    func makeUIView(context: Context) -> ReadingPositionTextView {
+        let view = ReadingPositionTextView()
         view.isEditable = false
         view.isScrollEnabled = false
         view.backgroundColor = .clear
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.adjustsFontForContentSizeCategory = true
+        view.isSelectable = true
+        view.tintColor = UIColor(AppTheme.Colors.quantumBlue)
         view.delegate = context.coordinator
         return view
     }
 
-    func updateUIView(_ view: UITextView, context: Context) {
-        guard context.coordinator.source != markdown else { return }
+    func updateUIView(_ view: ReadingPositionTextView, context: Context) {
+        context.coordinator.onSelection = onSelection
+        context.coordinator.onAnnotationTap = onAnnotationTap
+        context.coordinator.onAskSelection = onAskSelection
+        context.coordinator.onHighlightSelection = onHighlightSelection
+        context.coordinator.onAnnotateSelection = onAnnotateSelection
+        view.onVisibleCharacter = onVisibleCharacter
+        view.restoreCharacterOffset = resumeCharacterOffset
+        let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|") + ":\(resumeCharacterOffset ?? -1)"
+        guard context.coordinator.source != markdown || context.coordinator.highlightSignature != signature else {
+            DispatchQueue.main.async { view.restoreIfNeeded() }
+            return
+        }
         context.coordinator.source = markdown
-        let attributed = (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
+        context.coordinator.highlightSignature = signature
+        let attributed = ReadingResumeTarget.attributedText(markdown)
         view.attributedText = NSAttributedString(attributed)
         view.font = UIFont.preferredFont(forTextStyle: .body)
-        view.textColor = UIColor(Color(red: 0.23, green: 0.17, blue: 0.11))
+        view.textColor = textColor
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 7
+        paragraph.paragraphSpacing = 14
+        paragraph.lineBreakMode = .byWordWrapping
+        view.textStorage.addAttribute(
+            .paragraphStyle,
+            value: paragraph,
+            range: NSRange(location: 0, length: view.textStorage.length)
+        )
+        let source = view.textStorage.string as NSString
+        for highlight in highlights {
+            let renderedQuote = InlineMathPresentation.segments(in: highlight.quote)
+                .map { $0.isMath ? MathFormulaPresentation.displayText($0.text) : $0.text }
+                .joined()
+            var searchRange = NSRange(location: 0, length: source.length)
+            while searchRange.length > 0 {
+                let range = source.range(of: renderedQuote, options: [], range: searchRange)
+                guard range.location != NSNotFound else { break }
+                guard let annotationURL = URL(string: "quantum-annotation://\(highlight.id)") else { break }
+                view.textStorage.addAttributes([
+                    .backgroundColor: UIColor(AppTheme.Colors.mistSky).withAlphaComponent(0.82),
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .underlineColor: UIColor(AppTheme.Colors.quantumBlue).withAlphaComponent(0.82),
+                    .link: annotationURL
+                ], range: range)
+                let next = NSMaxRange(range)
+                searchRange = NSRange(location: next, length: source.length - next)
+            }
+        }
+        if let offset = resumeCharacterOffset, view.textStorage.length > 0 {
+            let location = min(max(offset, 0), view.textStorage.length - 1)
+            view.textStorage.addAttributes([
+                .backgroundColor: UIColor(AppTheme.Colors.bentoAmber).withAlphaComponent(0.9),
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .underlineColor: UIColor(AppTheme.Colors.emberOrange)
+            ], range: (view.textStorage.string as NSString).rangeOfComposedCharacterSequence(at: location))
+            view.accessibilityValue = "已定位到上次阅读字符 \(location + 1)"
+        }
+        view.accessibilityHint = "Long press to select text. Tap an underlined passage to read its note."
+        DispatchQueue.main.async {
+            view.restoreIfNeeded()
+        }
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ReadingPositionTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let fitting = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: fitting.height)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var source = ""
-        let onSelection: (String) -> Void
-        init(onSelection: @escaping (String) -> Void) { self.onSelection = onSelection }
+        var highlightSignature = ""
+        var onSelection: (String) -> Void
+        var onAnnotationTap: (String) -> Void
+        var onAskSelection: (String) -> Void
+        var onHighlightSelection: (String) -> Void
+        var onAnnotateSelection: (String) -> Void
+
+        init(
+            onSelection: @escaping (String) -> Void,
+            onAnnotationTap: @escaping (String) -> Void,
+            onAskSelection: @escaping (String) -> Void,
+            onHighlightSelection: @escaping (String) -> Void,
+            onAnnotateSelection: @escaping (String) -> Void
+        ) {
+            self.onSelection = onSelection
+            self.onAnnotationTap = onAnnotationTap
+            self.onAskSelection = onAskSelection
+            self.onHighlightSelection = onHighlightSelection
+            self.onAnnotateSelection = onAnnotateSelection
+        }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard textView.selectedRange.length > 0 else { return }
             onSelection((textView.text as NSString).substring(with: textView.selectedRange))
         }
+
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard range.length > 0 else { return UIMenu(children: suggestedActions) }
+            let excerpt = (textView.text as NSString).substring(with: range)
+            let isEnglish = ReadingLanguagePresentation.isEnglish(excerpt)
+            return UIMenu(children: [
+                UIAction(title: isEnglish ? "Ask" : "提问", image: UIImage(systemName: "sparkles")) { [weak self] _ in
+                    self?.onAskSelection(excerpt)
+                },
+                UIAction(title: isEnglish ? "Highlight" : "高亮", image: UIImage(systemName: "highlighter")) { [weak self] _ in
+                    self?.onHighlightSelection(excerpt)
+                },
+                UIAction(title: isEnglish ? "Annotate" : "批注", image: UIImage(systemName: "note.text")) { [weak self] _ in
+                    self?.onAnnotateSelection(excerpt)
+                },
+                UIAction(title: isEnglish ? "Copy" : "复制", image: UIImage(systemName: "doc.on.doc")) { _ in
+                    UIPasteboard.general.string = excerpt
+                }
+            ])
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldInteractWith URL: URL,
+            in characterRange: NSRange,
+            interaction: UITextItemInteraction
+        ) -> Bool {
+            guard URL.scheme == "quantum-annotation", let id = URL.host else { return true }
+            onAnnotationTap(id)
+            return false
+        }
+    }
+}
+
+private enum ReadingSelectionPalette {
+    static let ink = Color(red: 0.09, green: 0.16, blue: 0.27)
+    static let muted = Color(red: 0.42, green: 0.50, blue: 0.62)
+    static let paper = Color(red: 1.0, green: 0.997, blue: 0.987)
+    static let mint = Color(red: 0.89, green: 0.98, blue: 0.96)
+    static let lavender = Color(red: 0.95, green: 0.94, blue: 1.0)
+    static let violet = Color(red: 0.45, green: 0.36, blue: 0.87)
+}
+
+enum ReadingQuickAction: Equatable {
+    case example, simplify
+
+    static func focusedQuestion(_ question: String, excerpt: String) -> String {
+        let selection = String(excerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000))
+        return """
+        这是阅读选词提问。用户选中：「\(selection)」。
+        请先直接解释选中内容在当前句子中的含义；章节正文只用于判断语境，不要用概述整段替代选词解释。若选中的是短词，请先说明这个词，再围绕它回应下面的请求。
+        用户请求：\(question)
+        """
+    }
+
+    var title: String {
+        switch self {
+        case .example: "举个例子"
+        case .simplify: "再讲简单点"
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .example:
+            """
+            请只根据我选中的原文，用大学生熟悉的一个具体场景举例。输出顺序固定：
+            1.「一句话看懂」：不超过 40 字。
+            2.「校园例子」：写清人物、发生了什么、为什么对应原文；明确区分例子与原文事实。
+            3.「对照表」：用 Markdown 三列表格，表头为「原文线索｜例子里的对应物｜读懂后的含义」，至少两行。
+            4. 只有原文确有可核对的数值或趋势时，才追加 ```chart 代码围栏，内容必须是 JSON：{"title":"...","type":"bar","points":[{"label":"...","value":1}],"summary":"..."}。没有数值就不要编造图表。
+            不要补全原文缺失的信息，不要编造图片网址或数据来源。最后留一个供我自测的小问题。
+            """
+        case .simplify:
+            """
+            请把我选中的原文讲给第一次接触它的大学生听，不改变事实含义。输出顺序固定：
+            1.「大白话」：两句话以内，避开术语；原文不完整时明确说尚不能确定。
+            2. 用一个 ```comic 代码围栏给出三格漫画式图解，内容是 JSON：{"title":"短标题","panels":[{"scene":"第一格画面","dialogue":"一句短台词","symbol":"questionmark.circle.fill"},{"scene":"第二格画面","dialogue":"一句短台词","symbol":"lightbulb.fill"},{"scene":"第三格画面","dialogue":"一句短台词","symbol":"checkmark.seal.fill"}]}。三格依次是困惑、类比、理解；画面与台词都要根据原文重新写，不能照抄示例文案。
+            3.「记住这一句」：不超过 25 字。
+            漫画是解释性示意，不是原文事实；不要编造统计、图片网址或缺失的上下文。
+            """
+        }
+    }
+}
+
+@MainActor
+private final class ReadingSelectionQuestionState: ObservableObject {
+    @Published var sessionID: String?
+    @Published var draft = ""
+    @Published var submittedQuestion: String?
+    @Published var streamedAnswer = ""
+    @Published var isAsking = false
+    @Published var statusText = ""
+    @Published var activitySteps: [String] = []
+    @Published var reasoningSteps: [ReasoningStep] = []
+    @Published var errorMessage: String?
+    @Published var noteMessage: String?
+    @Published var activeQuickAction: ReadingQuickAction?
+    @Published var turns: [ReaderQuestionTurn] = []
+    @Published var lastSavedAnswer = ""
+    @Published var accountFingerprint = KnowledgeNoteStore.shared.accountFingerprint
+
+    func reset(initialTurns: [ReaderQuestionTurn]) {
+        sessionID = initialTurns.last?.sessionID
+        draft = ""
+        submittedQuestion = nil
+        streamedAnswer = ""
+        isAsking = false
+        statusText = ""
+        activitySteps = []
+        reasoningSteps = []
+        errorMessage = nil
+        noteMessage = nil
+        activeQuickAction = nil
+        turns = initialTurns
+        lastSavedAnswer = ""
+        accountFingerprint = KnowledgeNoteStore.shared.accountFingerprint
+    }
+}
+
+private struct ReadingSelectionQuestionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var api: APIClient
+    @ObservedObject var state: ReadingSelectionQuestionState
+    @FocusState private var inputFocused: Bool
+
+    private var sessionID: String? { get { state.sessionID } nonmutating set { state.sessionID = newValue } }
+    private var draft: String { get { state.draft } nonmutating set { state.draft = newValue } }
+    private var submittedQuestion: String? { get { state.submittedQuestion } nonmutating set { state.submittedQuestion = newValue } }
+    private var streamedAnswer: String { get { state.streamedAnswer } nonmutating set { state.streamedAnswer = newValue } }
+    private var isAsking: Bool { get { state.isAsking } nonmutating set { state.isAsking = newValue } }
+    private var statusText: String { get { state.statusText } nonmutating set { state.statusText = newValue } }
+    private var activitySteps: [String] { get { state.activitySteps } nonmutating set { state.activitySteps = newValue } }
+    private var reasoningSteps: [ReasoningStep] { get { state.reasoningSteps } nonmutating set { state.reasoningSteps = newValue } }
+    private var errorMessage: String? { get { state.errorMessage } nonmutating set { state.errorMessage = newValue } }
+    private var noteMessage: String? { get { state.noteMessage } nonmutating set { state.noteMessage = newValue } }
+    private var activeQuickAction: ReadingQuickAction? { get { state.activeQuickAction } nonmutating set { state.activeQuickAction = newValue } }
+    private var turns: [ReaderQuestionTurn] { get { state.turns } nonmutating set { state.turns = newValue } }
+    private var lastSavedAnswer: String { get { state.lastSavedAnswer } nonmutating set { state.lastSavedAnswer = newValue } }
+    private var accountFingerprint: String { state.accountFingerprint }
+
+    let excerpt: String
+    let book: KnowledgeBookDTO
+    let bookBody: KnowledgeBookBodyDTO
+    let section: KnowledgeBookSectionDTO
+    let onSaveAnswer: (String, String, String?) -> Bool
+
+    private var isPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview")
+        #else
+        false
+        #endif
+    }
+
+    private var isStreamPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-readingSelectionStreamPreview")
+        #else
+        false
+        #endif
+    }
+
+    private var question: String? {
+        submittedQuestion ?? (isPreview && !isStreamPreview ? "这里的 T-10 表示什么？" : nil)
+    }
+
+    private var answerText: String {
+        if !streamedAnswer.isEmpty || !isPreview || isStreamPreview { return streamedAnswer }
+        return """
+                T-10 可能只是任务编号的开头，==现在还不能确定==它的完整值。
+
+                这段内容可以这样理解：
+
+                - `task_id` 是字段名。
+                - `T-10` 是目前读到的值。
+                - 缺少结束引号，JSON 可能尚未传完。
+
+                【一个小提醒】真实编号可能是 T-105、T-109，直接补全可能会改错原意。
+                """
+    }
+
+    private var blocks: [MarkdownBlock] {
+        ReadingCardDeck.answerBlocks(from: answerText, isStreaming: isAsking)
+    }
+
+    private func scrollID(for block: MarkdownBlock, at index: Int) -> String {
+        if case .table = block { return "reading-example-table-\(index)" }
+        return block.id
+    }
+
+    var bodyView: some View {
+        VStack(spacing: 0) {
+            Capsule().fill(ReadingSelectionPalette.muted.opacity(0.35))
+                .frame(width: 36, height: 5).padding(.top, 12)
+
+            ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    selectedQuote.padding(.top, 22)
+
+                    ForEach(turns) { turn in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(turn.question).font(.system(size: 16, weight: .semibold))
+                            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: turn.answer))
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.top, 14)
+                    }
+
+                    if let question {
+                        Text("我的问题")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(ReadingSelectionPalette.muted)
+                            .padding(.top, 22)
+                        Text(question)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(ReadingSelectionPalette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 6)
+                        Rectangle().fill(ReadingSelectionPalette.ink.opacity(0.10))
+                            .frame(height: 1).padding(.vertical, 20)
+                        answerContent
+                    } else {
+                        Text("选好文字，问你想问的")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(ReadingSelectionPalette.ink)
+                            .padding(.top, 26)
+                        Text("可以从一句话开始，再慢慢聊深一点。")
+                            .font(.system(size: 15))
+                            .foregroundStyle(ReadingSelectionPalette.muted)
+                            .padding(.top, 8)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 22)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("reading-selection-question-scroll")
+            .onChange(of: isAsking) { wasAsking, nowAsking in
+                guard wasAsking, !nowAsking, activeQuickAction != nil else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        scrollProxy.scrollTo("reading-answer-summary", anchor: .top)
+                    }
+                }
+            }
+            }
+        }
+        .background {
+            ReadingSelectionPalette.paper
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(ReadingSelectionPalette.lavender.opacity(0.75))
+                        .frame(width: 250, height: 250)
+                        .blur(radius: 48).offset(x: 110, y: -90)
+                }
+                .ignoresSafeArea()
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+    }
+
+    var body: some View { bodyView }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image("quantum_logo_icon")
+                .resizable().scaledToFit()
+                .frame(width: 32, height: 32)
+                .padding(.top, 9)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("一起读懂")
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                Text("针对选中的内容，聊深一点")
+                    .font(.system(size: 13))
+                    .foregroundStyle(ReadingSelectionPalette.muted)
+            }
+            Spacer(minLength: 0)
+            Image("reading_open_book")
+                .resizable().scaledToFit()
+                .frame(width: 72, height: 58)
+                .accessibilityHidden(true)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.72), in: Circle())
+            }
+            .accessibilityLabel("关闭选词提问")
+        }
+        .padding(.top, 22)
+    }
+
+    private var selectedQuote: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("选中内容")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ReadingSelectionPalette.muted)
+            HStack(alignment: .top, spacing: 10) {
+                Text(String(excerpt.prefix(4_000)))
+                    .font(.system(size: 16, design: .monospaced))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    UIPasteboard.general.string = excerpt
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("复制选中内容")
+            }
+        }
+        .padding(16)
+        .background(ReadingSelectionPalette.lavender, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(.white, lineWidth: 1))
+    }
+
+    private var answerContent: some View {
+        let displayedBlocks = blocks
+        let summaryIndex = displayedBlocks.firstIndex { if case .paragraph = $0 { true } else { false } }
+        let summaryHeadingIndex = summaryIndex.flatMap { index -> Int? in
+            guard index > 0, case .heading = displayedBlocks[index - 1] else { return nil }
+            return index - 1
+        }
+        let summaryTitle = summaryHeadingIndex.flatMap { index -> String? in
+            guard case .heading(_, let title) = displayedBlocks[index] else { return nil }
+            return title
+        } ?? "先说结论"
+        return VStack(alignment: .leading, spacing: 14) {
+            Label("AI 解读", systemImage: "sparkles")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(ReadingSelectionPalette.ink)
+
+            if isAsking || !activitySteps.isEmpty || !reasoningSteps.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ReasoningStatusStrip(
+                        title: isAsking ? (statusText.isEmpty ? "正在帮你读懂…" : statusText) : "解读过程",
+                        isStreaming: isAsking
+                    )
+                    if !reasoningSteps.isEmpty {
+                        ReasoningCard(steps: reasoningSteps, isStreaming: isAsking)
+                    } else if !activitySteps.isEmpty {
+                        DisclosureGroup("查看过程摘要") {
+                            ForEach(Array(activitySteps.enumerated()), id: \.offset) { _, step in
+                                Text("• \(step)")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(ReadingSelectionPalette.muted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(ReadingSelectionPalette.ink)
+                    }
+                }
+            }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.red)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .accessibilityIdentifier("reading-selection-question-error")
+            }
+
+            if let summaryIndex {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(summaryTitle, systemImage: "lightbulb.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(AppTheme.Colors.interactiveBlue)
+                    if case .paragraph(let text) = displayedBlocks[summaryIndex] {
+                        MarkdownText(text, font: .system(size: 17, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(5)
+                    }
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ReadingSelectionPalette.mint, in: RoundedRectangle(cornerRadius: 18))
+                .id("reading-answer-summary")
+            }
+
+            ForEach(Array(displayedBlocks.enumerated()).filter { $0.offset != summaryIndex && $0.offset != summaryHeadingIndex }, id: \.offset) { index, block in
+                MarkdownBlockCard(block: block)
+                    .id(scrollID(for: block, at: index))
+            }
+
+            if !answerText.isEmpty && !isAsking {
+                HStack(spacing: 24) {
+                    Button {
+                        UIPasteboard.general.string = answerText
+                    } label: { Label("复制回答", systemImage: "doc.on.doc").fixedSize(horizontal: true, vertical: false) }
+                    Button(action: saveAnswer) {
+                        Label("记到笔记", systemImage: "book.closed").fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ReadingSelectionPalette.muted)
+                .frame(minHeight: 44)
+            }
+            if let noteMessage {
+                Text(noteMessage).font(.system(size: 12)).foregroundStyle(ReadingSelectionPalette.violet)
+            }
+        }
+    }
+
+    private var composer: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button { send(ReadingQuickAction.example.prompt, displayQuestion: ReadingQuickAction.example.title, action: .example) } label: {
+                    Label("举个例子", systemImage: "text.bubble")
+                        .frame(minHeight: 38)
+                }
+                .background(ReadingSelectionPalette.mint, in: Capsule())
+                Button { send(ReadingQuickAction.simplify.prompt, displayQuestion: ReadingQuickAction.simplify.title, action: .simplify) } label: {
+                    Label("再讲简单点", systemImage: "lightbulb")
+                        .frame(minHeight: 38)
+                }
+                .background(ReadingSelectionPalette.lavender, in: Capsule())
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(ReadingSelectionPalette.ink)
+            .buttonStyle(.plain)
+            .disabled(isAsking)
+
+            HStack(spacing: 10) {
+                TextField("继续问问 Quantum…", text: $state.draft, axis: .vertical)
+                    .font(.system(size: 16))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .lineLimit(1...3)
+                    .focused($inputFocused)
+                    .submitLabel(.send)
+                    .onSubmit(sendDraft)
+                    .accessibilityIdentifier("reading-selection-question-input")
+                Button(action: sendDraft) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(ReadingSelectionPalette.ink, in: Circle())
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAsking)
+                .accessibilityLabel("发送选词问题")
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 7)
+            .frame(minHeight: 58)
+            .background(.white.opacity(0.88), in: Capsule())
+            .overlay(Capsule().stroke(.white, lineWidth: 1))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 7)
+        .background(.ultraThinMaterial)
+    }
+
+    private func sendDraft() {
+        send(draft)
+    }
+
+    private func dismissKeyboard() {
+        inputFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    private func send(_ text: String, displayQuestion: String? = nil, action: ReadingQuickAction? = nil) {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isAsking else { return }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            errorMessage = "账号已切换，请重新打开阅读问答。"
+            return
+        }
+        guard noteMessage != "保存失败，请重试" else { return }
+        if let submittedQuestion, !streamedAnswer.isEmpty, errorMessage == nil {
+            var turn = ReaderQuestionTurn(question: submittedQuestion, answer: streamedAnswer)
+            turn.sessionID = sessionID
+            turns.append(turn)
+        }
+        inputFocused = false
+        submittedQuestion = displayQuestion ?? prompt
+        activeQuickAction = action
+        streamedAnswer = ""
+        errorMessage = nil
+        activitySteps = []
+        reasoningSteps = []
+        statusText = "正在阅读选中的内容…"
+        noteMessage = nil
+        isAsking = true
+        draft = ""
+        Task { await submit(prompt) }
+    }
+
+    @MainActor
+    private func submit(_ prompt: String) async {
+        defer { isAsking = false }
+        var completed = false
+        let stream: AsyncThrowingStream<APIClient.StreamEvent, Error>
+        if isStreamPreview {
+            stream = AsyncThrowingStream { continuation in
+                continuation.yield(.status(phase: "reasoning", detail: "正在分析选中的内容"))
+                continuation.yield(.toolStart(id: "preview", tool: "reader", label: "核对上下文"))
+                let preview: String
+                if prompt == ReadingQuickAction.example.prompt {
+                    preview = """
+                    ## 一句话看懂
+                    T-10 是目前看到的任务编号片段，完整值还不能确定。
+
+                    ## 校园例子
+                    小组文档传到一半，只看到编号开头，不能替队友补完。
+
+                    ## 对照表
+                    | 原文线索 | 例子里的对应物 | 读懂后的含义 |
+                    | --- | --- | --- |
+                    | task_id | 文档编号字段 | 表示字段名 |
+                    | T-10 | 传到一半的编号 | 暂不能认定完整编号 |
+                    """
+                } else if prompt == ReadingQuickAction.simplify.prompt {
+                    preview = """
+                    ## 大白话
+                    现在只看到编号的开头，还不知道后面有没有内容。
+
+                    ```json
+                    {"title":"编号没传完","panels":[{"scene":"同学收到半张便签","dialogue":"只看到 T-10？","symbol":"questionmark.circle.fill"},{"scene":"等队友把便签传完","dialogue":"别急着替他补字。","symbol":"lightbulb.fill"},{"scene":"核对完整编号","dialogue":"看完才能确认。","symbol":"checkmark.seal.fill"}]}
+                    ```
+
+                    ## 记住这一句
+                    没看全，就先别猜。
+                    """
+                } else {
+                    preview = "这是从阅读上下文生成的回答。"
+                }
+                if ProcessInfo.processInfo.arguments.contains("-readingSelectionShortDeltaPreview") {
+                    continuation.yield(.delta("1"))
+                    continuation.yield(.answerPage(AnswerBlockPageDTO(
+                        messageId: "reading-preview", revision: 1, status: "completed",
+                        blocks: [AnswerBlockDTO(blockIndex: 0, kind: "markdown", content: preview)],
+                        bytes: preview.utf8.count, loadedBlockCount: 1, availableBlockCount: 1,
+                        hasMore: false, nextCursor: nil
+                    )))
+                    continuation.yield(.done(sessionId: "reading-preview-session", answer: "1"))
+                    continuation.finish()
+                } else if ProcessInfo.processInfo.arguments.contains("-readingSelectionFinalReplacementPreview") {
+                    continuation.yield(.delta(preview))
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        continuation.yield(.answerPage(AnswerBlockPageDTO(
+                            messageId: "reading-preview", revision: 1, status: "completed",
+                            blocks: [AnswerBlockDTO(blockIndex: 0, kind: "markdown", content: "摘要")],
+                            bytes: 6, loadedBlockCount: 1, availableBlockCount: 1,
+                            hasMore: false, nextCursor: nil
+                        )))
+                        continuation.yield(.done(sessionId: "reading-preview-session", answer: "  \n"))
+                        continuation.finish()
+                    }
+                } else {
+                    continuation.yield(.delta(preview))
+                    continuation.yield(.done(sessionId: "reading-preview-session", answer: nil))
+                    continuation.finish()
+                }
+            }
+        } else {
+            stream = api.chatStream(
+                question: ReadingQuickAction.focusedQuestion(prompt, excerpt: excerpt),
+                sessionId: sessionID,
+                quotedContext: nil,
+                contextScope: ChatContextScopeDTO(
+                    mode: .platformOnly,
+                    selectedBookId: book.id,
+                    selectedBookVersion: bookBody.contentVersion,
+                    selectedBookSectionId: section.id
+                )
+            )
+        }
+        do {
+            for try await event in stream {
+                switch event {
+                case .status(_, let detail):
+                    if !detail.isEmpty { recordActivity(detail) }
+                case .toolStart(_, _, let label):
+                    if !label.isEmpty { recordActivity(label) }
+                case .thought:
+                    recordActivity("正在整理思路")
+                case .delta(let text):
+                    streamedAnswer += text
+                case .answerPage(let page):
+                    let content = page.blocks.map(\.content).joined(separator: "\n\n")
+                    if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       content.count > streamedAnswer.count {
+                        streamedAnswer = content
+                    }
+                case .clarify(let question, let choices, _, _, _, _, _):
+                    streamedAnswer = (["## \(question)"] + choices.map { "- \($0)" }).joined(separator: "\n")
+                case .done(let id, let answer):
+                    completed = true
+                    sessionID = id ?? sessionID
+                    if let answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       answer.count > streamedAnswer.count {
+                        streamedAnswer = answer
+                    }
+                    statusText = "解读完成"
+                case .error(_, let message):
+                    errorMessage = message.isEmpty ? "这次提问没有完成，请重试。" : message
+                    return
+                default:
+                    break
+                }
+            }
+            if let sessionID, !isStreamPreview,
+               let status = try? await api.fetchChatStatus(sessionId: sessionID) {
+                reasoningSteps = status.reasoning?.map { $0.toReasoningStep() } ?? []
+                if let loaded = status.loadedAnswer, loaded.count > streamedAnswer.count {
+                    streamedAnswer = loaded
+                }
+            }
+            if streamedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errorMessage = "没有收到回答，请重试。"
+            } else if completed, !isStreamPreview, !isPreview {
+                saveAnswer()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func recordActivity(_ detail: String) {
+        statusText = detail
+        if activitySteps.last != detail { activitySteps.append(detail) }
+    }
+
+    private func saveAnswer() {
+        guard let question, !answerText.isEmpty else { return }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            noteMessage = "账号已切换，请重新打开阅读问答。"
+            return
+        }
+        guard answerText != lastSavedAnswer else { return }
+        guard onSaveAnswer(question, answerText, sessionID) else {
+            noteMessage = "保存失败，请重试"
+            return
+        }
+        lastSavedAnswer = answerText
+        noteMessage = "已保存到笔记"
+    }
+}
+
+enum ReadingLanguagePresentation {
+    static func isEnglish(_ text: String) -> Bool {
+        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard !letters.isEmpty else { return false }
+        return letters.filter { $0.isASCII }.count * 5 >= letters.count * 4
+    }
+}
+
+struct ReaderQuestionTurn: Identifiable, Hashable {
+    let id: String
+    let question: String
+    let answer: String
+    var sessionID: String? = nil
+
+    init(id: String = UUID().uuidString, question: String, answer: String) {
+        self.id = id
+        self.question = question
+        self.answer = answer
+    }
+}
+
+struct ReaderQuestionSheet: View {
+    let excerpt: String
+    let sourceTitle: String
+    let sourceSubtitle: String
+    let sheetTitle: String?
+    let onSaveAnswer: ((String, String, String?) -> Bool)?
+    let automaticallySaveAnswer: Bool
+    let submitsOnAppear: Bool
+    let ask: (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
+    @Environment(\.dismiss) private var dismiss
+    @State private var question = ""
+    @State private var lastQuestion = ""
+    @State private var answer = ""
+    @State private var sessionID: String?
+    @State private var errorMessage: String?
+    @State private var isAsking = false
+    @State private var statusText = ""
+    @State private var turns: [ReaderQuestionTurn]
+    @State private var accountFingerprint: String
+    @State private var answerNeedsSave = false
+    @State private var showsFullExcerpt = false
+    @FocusState private var isQuestionFocused: Bool
+
+    private var isEnglish: Bool { ReadingLanguagePresentation.isEnglish(excerpt) }
+    private var suggestions: [String] {
+        isEnglish
+            ? ["What does this passage mean?", "How does it connect to this chapter?", "Can you give a real-world example?"]
+            : ["这段话是什么意思？", "它和本章主题有什么关系？", "能举一个现实例子吗？"]
+    }
+
+    init(
+        excerpt: String,
+        sourceTitle: String = "当前阅读",
+        sourceSubtitle: String = "已基于选中文字",
+        sheetTitle: String? = nil,
+        initialQuestion: String = "",
+        initialTurns: [ReaderQuestionTurn] = [],
+        submitsOnAppear: Bool = false,
+        automaticallySaveAnswer: Bool = false,
+        onSaveAnswer: ((String, String, String?) -> Bool)? = nil,
+        ask: @escaping (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
+    ) {
+        self.excerpt = excerpt
+        self.sourceTitle = sourceTitle
+        self.sourceSubtitle = sourceSubtitle
+        self.sheetTitle = sheetTitle
+        self.submitsOnAppear = submitsOnAppear
+        self.automaticallySaveAnswer = automaticallySaveAnswer
+        self.onSaveAnswer = onSaveAnswer
+        self.ask = ask
+        _question = State(initialValue: initialQuestion)
+        _turns = State(initialValue: initialTurns)
+        _sessionID = State(initialValue: initialTurns.last?.sessionID)
+        _accountFingerprint = State(initialValue: KnowledgeNoteStore.shared.accountFingerprint)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                Capsule()
+                    .fill(AppTheme.Colors.border)
+                    .frame(width: 38, height: 5)
+                    .frame(maxWidth: .infinity)
+
+                HStack {
+                    Text(sheetTitle ?? (isEnglish ? "Ask Quantum" : "向 Quantum 提问"))
+                        .font(.system(size: 22, weight: .semibold))
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                            .background(AppTheme.Colors.surfaceTint, in: Circle())
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .accessibilityLabel(isEnglish ? "Close" : "关闭")
+                }
+
+                Text("“\(excerpt)”")
+                    .font(.system(.body, design: .serif, weight: .medium))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .lineSpacing(5)
+                    .lineLimit(showsFullExcerpt ? nil : 3)
+                    .padding(AppTheme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.Colors.mistSky.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                if excerpt.count > 180 {
+                    Button(showsFullExcerpt ? "收起原文" : "展开原文") { showsFullExcerpt.toggle() }
+                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.quantumBlue)
+                        .frame(minHeight: 44)
+                }
+
+                ForEach(turns) { turn in
+                    conversationTurn(turn)
+                }
+
+                if isAsking || !answer.isEmpty { answerCard }
+
+                questionComposer
+
+                if answer.isEmpty && !isAsking {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            ForEach(suggestions, id: \.self) { suggestion in
+                                Button(suggestion) { question = suggestion }
+                                    .font(AppTheme.Typography.micro.weight(.semibold))
+                                    .buttonStyle(.bordered)
+                                    .tint(AppTheme.Colors.quantumBlue)
+                            }
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.circle")
+                        .font(AppTheme.Typography.supporting)
+                        .foregroundStyle(AppTheme.Colors.statusError)
+                        .padding(AppTheme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppTheme.Colors.dangerSurface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    if answerNeedsSave {
+                        Button("重试保存回答") {
+                            guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else { return }
+                            if onSaveAnswer?(lastQuestion, answer, sessionID) == true {
+                                answerNeedsSave = false
+                                self.errorMessage = nil
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                }
+            }
+            .padding(.horizontal, AppTheme.Metrics.contentGutter)
+            .padding(.top, AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.xl)
+            .contentShape(Rectangle())
+            .onTapGesture { isQuestionFocused = false }
+        }
+        .accessibilityIdentifier("reader-question-sheet")
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color(hex: "FFFEFB").ignoresSafeArea())
+        .presentationDetents([.fraction(0.72), .large])
+        .presentationDragIndicator(.hidden)
+        .task {
+            if submitsOnAppear, lastQuestion.isEmpty { await submit() }
+        }
+    }
+
+    private var questionComposer: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            TextField(isEnglish ? "Ask a follow-up…" : "继续问这段内容…", text: $question, axis: .vertical)
+                .lineLimit(2...5)
+                .focused($isQuestionFocused)
+                .accessibilityIdentifier("reader-question-input")
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.top, AppTheme.Spacing.md)
+            HStack {
+                Spacer()
+                Text("\(question.count)/200")
+                    .font(AppTheme.Typography.micro)
+                    .foregroundStyle(AppTheme.Colors.textTertiary)
+                Button { Task { await submit() } } label: {
+                    Image(systemName: isAsking ? "hourglass" : "arrow.up")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 44, height: 44)
+                        .background(AppTheme.Colors.quantumBlue, in: Circle())
+                }
+                .buttonStyle(SoftButtonStyle())
+                .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAsking || question.count > 200)
+                .accessibilityLabel(isEnglish ? "Send question" : "发送问题")
+                .accessibilityIdentifier("reader-question-send")
+            }
+            .padding(.horizontal, AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.sm)
+        }
+        .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.72)) }
+    }
+
+    private var answerCard: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                QuantumAvatarView(size: 30)
+                Text(isEnglish ? "Quantum AI" : "AI 回答")
+                    .font(AppTheme.Typography.cardTitle)
+                Spacer()
+                if isAsking { ProgressView().tint(AppTheme.Colors.quantumBlue) }
+            }
+            if !statusText.isEmpty {
+                Text(statusText).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: answer, isStreaming: isAsking))
+                .textSelection(.enabled)
+
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image("book_cover_literature").resizable().scaledToFill().frame(width: 42, height: 52).clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(sourceTitle).font(AppTheme.Typography.label).lineLimit(1)
+                    Text(sourceSubtitle).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.right.square").foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            .padding(AppTheme.Spacing.sm)
+            .background(AppTheme.Colors.surfaceTint.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+
+            if !answer.isEmpty, let onSaveAnswer, !automaticallySaveAnswer {
+                Button {
+                    guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+                        errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
+                        return
+                    }
+                    if onSaveAnswer(lastQuestion, answer, sessionID) { dismiss() }
+                    else { errorMessage = "保存失败，回答仍保留在这里，请重试。" }
+                } label: {
+                    Label(isEnglish ? "Save as annotation" : "作为批注保存", systemImage: "bookmark")
+                        .font(AppTheme.Typography.label)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.bordered)
+                .tint(AppTheme.Colors.quantumBlue)
+            }
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.5)) }
+    }
+
+    private func conversationTurn(_ turn: ReaderQuestionTurn) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Text(isEnglish ? "You" : "我的问题")
+                .font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.textTertiary)
+            Text(turn.question).font(AppTheme.Typography.body)
+            Text(isEnglish ? "Quantum AI" : "AI 回答")
+                .font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.textTertiary)
+                .padding(.top, AppTheme.Spacing.xs)
+            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: turn.answer))
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(AppTheme.Colors.surfaceTint.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
+    @MainActor
+    private func submit() async {
+        let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !isAsking else { return }
+        guard !answerNeedsSave else {
+            errorMessage = "请先重试保存上一条回答，再继续追问。"
+            return
+        }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
+            return
+        }
+        if !answer.isEmpty, !lastQuestion.isEmpty, errorMessage == nil {
+            turns.append(.init(question: lastQuestion, answer: answer))
+        }
+        isQuestionFocused = false
+        lastQuestion = value
+        isAsking = true
+        answer = ""
+        statusText = isEnglish ? "Reading the selected context…" : "正在阅读选中的上下文…"
+        errorMessage = nil
+        defer { isAsking = false }
+        do {
+            var completed = false
+            let request = sessionID == nil && !turns.isEmpty
+                ? (turns.map { "我的问题：\($0.question)\nAI 回答：\($0.answer)" }
+                    + ["我的追问：\(value)"]).joined(separator: "\n\n")
+                : value
+            let stream = try await ask(request, sessionID)
+            for try await event in stream {
+                guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else { return }
+                switch event {
+                case .delta(let text):
+                    answer += text
+                    statusText = isEnglish ? "Writing the report…" : "正在整理成阅读报告…"
+                case .status(_, let detail):
+                    if !detail.isEmpty { statusText = detail }
+                case .toolStart(_, _, let label):
+                    if !label.isEmpty { statusText = label }
+                case .answerPage(let page):
+                    let pageText = page.blocks.map(\.content).joined(separator: "\n\n")
+                    if !pageText.isEmpty { answer = pageText }
+                case .clarify(let prompt, let choices, _, _, _, _, _):
+                    answer = (["## \(prompt)"] + choices.map { "- \($0)" }).joined(separator: "\n")
+                case .done(let id, let finalAnswer):
+                    completed = true
+                    sessionID = id ?? sessionID
+                    if let finalAnswer, !finalAnswer.isEmpty { answer = finalAnswer }
+                    statusText = isEnglish ? "Report ready" : "解读完成"
+                case .error(_, let message):
+                    errorMessage = message.isEmpty ? (isEnglish ? "The question could not be completed." : "这次提问没有完成，请重试。") : message
+                    return
+                default:
+                    break
+                }
+            }
+            if !completed {
+                errorMessage = "回答传输尚未完成，请重试。"
+            } else if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errorMessage = isEnglish ? "No answer was returned. Please try again." : "没有收到回答，请重试。"
+            } else if automaticallySaveAnswer {
+                if onSaveAnswer?(lastQuestion, answer, sessionID) != true {
+                    answerNeedsSave = true
+                    errorMessage = "回答未能保存，请先复制回答，避免关闭后丢失。"
+                }
+            }
+            question = ""
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct ReaderAnnotationEntry: Identifiable {
+    let id: String
+    let kind: String
+    let quote: String
+    let detail: String
+    let date: String
+    let bookID: String
+    let sectionID: String
+    let sectionTitle: String
+    var contentVersion: String? = nil
+    var sessionID: String? = nil
+
+    init(
+        id: String, kind: String, quote: String, detail: String, date: String,
+        bookID: String = "", sectionID: String = "", sectionTitle: String = "未分章"
+    ) {
+        self.id = id
+        self.kind = kind
+        self.quote = quote
+        self.detail = detail
+        self.date = date
+        self.bookID = bookID
+        self.sectionID = sectionID
+        self.sectionTitle = sectionTitle
+    }
+
+    init?(note: KnowledgeNote) {
+        guard note.tags.contains("书籍摘录") || note.tags.contains("阅读批注") else { return nil }
+        let lines = note.body.components(separatedBy: .newlines)
+        guard let bookID = Self.metadata("来源书籍 ID：", in: lines),
+              let sectionID = Self.metadata("来源章节 ID：", in: lines),
+              let quoteIndex = lines.firstIndex(where: { $0.hasPrefix("> [!quote]") })
+        else { return nil }
+        let noteIndex = lines.firstIndex(where: { $0.hasPrefix("> [!note]") })
+        let dividerIndex = lines.firstIndex(of: "---") ?? lines.endIndex
+        let quoteEnd = noteIndex ?? dividerIndex
+        let quote = Self.calloutContent(lines[(quoteIndex + 1)..<quoteEnd], excludingMetadata: true)
+        guard !quote.isEmpty else { return nil }
+        let detail = noteIndex.map {
+            Self.calloutContent(lines[($0 + 1)..<dividerIndex], excludingMetadata: false)
+        } ?? ""
+        let sectionTitle = Self.metadata("章节标题：", in: lines)
+            ?? lines.compactMap { line -> String? in
+                let value = line.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "> ", with: "")
+                guard value.hasPrefix("章节：") else { return nil }
+                return value.dropFirst(3).components(separatedBy: " · ").first
+            }.first
+            ?? "未分章"
+        self.init(
+            id: note.id,
+            kind: detail.isEmpty ? "高亮" : (detail.contains("AI 回答摘要") || detail.contains("AI answer") ? "问答" : "笔记"),
+            quote: quote,
+            detail: detail,
+            date: note.updatedAt.formatted(date: .abbreviated, time: .shortened),
+            bookID: bookID,
+            sectionID: sectionID,
+            sectionTitle: sectionTitle
+        )
+        contentVersion = Self.metadata("正文版本：", in: lines)
+        sessionID = Self.metadata("问答会话 ID：", in: lines)
+    }
+
+    private static func metadata(_ prefix: String, in lines: [String]) -> String? {
+        guard let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix(prefix) }) else { return nil }
+        return line.trimmingCharacters(in: .whitespaces)
+            .dropFirst(prefix.count)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " `"))
+    }
+
+    private static func calloutContent(_ lines: ArraySlice<String>, excludingMetadata: Bool) -> String {
+        lines.compactMap { raw -> String? in
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return nil }
+            let value = trimmed == ">" ? "" : trimmed.hasPrefix("> ") ? String(trimmed.dropFirst(2)) : trimmed
+            if excludingMetadata && (value.hasPrefix("《") || value.hasPrefix("章节：")) { return nil }
+            return value
+        }.joined(separator: "\n")
+    }
+}
+
+extension ReaderAnnotationEntry {
+    var questionTurn: ReaderQuestionTurn? {
+        guard let questionRange = detail.range(of: "我的问题"),
+              let answerRange = detail.range(of: "AI 回答摘要"),
+              questionRange.upperBound <= answerRange.lowerBound else { return nil }
+        func clean(_ value: Substring) -> String {
+            String(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let question = clean(detail[questionRange.upperBound..<answerRange.lowerBound])
+        let answer = clean(detail[answerRange.upperBound...])
+        guard !question.isEmpty, !answer.isEmpty else { return nil }
+        var turn = ReaderQuestionTurn(id: id, question: question, answer: answer)
+        turn.sessionID = sessionID
+        return turn
+    }
+}
+
+extension ReaderAnnotationEntry {
+    @MainActor
+    @discardableResult
+    static func save(
+        quote: String,
+        detail: String,
+        bookID: String,
+        bookTitle: String,
+        sectionID: String,
+        sectionTitle: String,
+        citation: String,
+        contentVersion: String? = nil,
+        sessionID: String? = nil,
+        api: APIClient
+    ) -> ReaderAnnotationEntry? {
+        let isEnglish = ReadingLanguagePresentation.isEnglish(quote)
+        let quoteTitle = isEnglish ? "Book excerpt" : "书籍摘录"
+        let annotationTitle = isEnglish ? "My annotation" : "我的批注"
+        let noteBody = """
+        > [!quote] \(quoteTitle)
+        > \(quote.replacingOccurrences(of: "\n", with: "\n> "))
+
+        \(detail.isEmpty ? "" : "> [!note] \(annotationTitle)\n> \(detail.replacingOccurrences(of: "\n", with: "\n> "))")
+
+        ---
+        书籍标题：\(bookTitle)
+        章节标题：\(sectionTitle)
+        来源书籍 ID：`\(bookID)`
+        来源章节 ID：`\(sectionID)`
+        \(contentVersion.map { "正文版本：`\($0)`" } ?? "")
+        \(sessionID.map { "问答会话 ID：`\($0)`" } ?? "")
+        引用：`\(citation)`
+        """
+        guard let note = KnowledgeNoteStore.shared.createNote(
+            title: isEnglish ? "\(bookTitle) | \(sectionTitle) excerpt" : "\(bookTitle)｜\(sectionTitle)摘录",
+            body: noteBody,
+            tags: ["阅读批注", "quantum-books"]
+        ) else { return nil }
+        let account = KnowledgeNoteStore.shared.accountFingerprint
+        let markdown = KnowledgeNoteStore.shared.markdown(for: note)
+        let credentialGeneration = api.currentCredentialGeneration()
+        Task {
+            guard account == KnowledgeNoteStore.shared.accountFingerprint else { return }
+            _ = try? await api.syncKnowledgeNote(
+                id: note.id, markdown: markdown, updatedAt: note.updatedAt,
+                credentialGeneration: credentialGeneration
+            )
+        }
+        return ReaderAnnotationEntry(note: note)
+    }
+}
+
+struct ReaderAnnotationCenterView: View {
+    private enum Filter: String, CaseIterable, Identifiable {
+        case all = "全部"
+        case highlight = "高亮"
+        case note = "笔记"
+        case question = "问答"
+        var id: Self { self }
+    }
+
+    let bookID: String
+    let bookTitle: String
+    let previewEntries: [ReaderAnnotationEntry]?
+    let onContinueQuestion: ((ReaderAnnotationEntry) -> Void)?
+    @ObservedObject private var store = KnowledgeNoteStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    init(
+        bookID: String = "",
+        bookTitle: String,
+        previewEntries: [ReaderAnnotationEntry]? = nil,
+        onContinueQuestion: ((ReaderAnnotationEntry) -> Void)? = nil
+    ) {
+        self.bookID = bookID
+        self.bookTitle = bookTitle
+        self.previewEntries = previewEntries
+        self.onContinueQuestion = onContinueQuestion
+    }
+
+    private var entries: [ReaderAnnotationEntry] {
+        if let previewEntries { return previewEntries }
+        return store.notes.compactMap(ReaderAnnotationEntry.init(note:)).filter { $0.bookID == bookID }
+    }
+
+    @State private var inspectedEntry: ReaderAnnotationEntry?
+    @State private var filter: Filter = .all
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            ForEach(Filter.allCases) { item in
+                                Button {
+                                    filter = item
+                                } label: {
+                                    Text("\(item.rawValue) (\(count(for: item)))")
+                                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                                        .foregroundStyle(filter == item ? AppTheme.Colors.quantumBlue : AppTheme.Colors.textSecondary)
+                                        .padding(.horizontal, AppTheme.Spacing.md)
+                                        .frame(minHeight: 38)
+                                        .background(filter == item ? AppTheme.Colors.mistSky : AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(filter == item ? .isSelected : [])
+                            }
+                        }
+                    }
+                    if filteredEntries.isEmpty {
+                        ContentUnavailableView("还没有批注", systemImage: "bookmark", description: Text("在阅读器中选中文字即可提问或保存。"))
+                    } else {
+                        ForEach(groupedSections, id: \.0) { group in
+                            annotationSection(group.0, entries: group.1)
+                        }
+                    }
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+            .navigationTitle("我的批注")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("返回") { dismiss() } }
+            }
+            .sheet(item: $inspectedEntry) { entry in
+                ReaderAnnotationDetailSheet(entry: entry, onContinueQuestion: onContinueQuestion.map { callback in
+                    { callback(entry) }
+                })
+            }
+        }
+    }
+
+    private var groupedSections: [(String, [ReaderAnnotationEntry])] {
+        Dictionary(grouping: filteredEntries, by: \.sectionTitle)
+            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+
+    private var filteredEntries: [ReaderAnnotationEntry] {
+        switch filter {
+        case .all: entries
+        case .highlight: entries.filter { $0.kind == "高亮" }
+        case .note: entries.filter { $0.kind == "笔记" || $0.kind == "批注" }
+        case .question: entries.filter { $0.kind == "问答" }
+        }
+    }
+
+    private func count(for filter: Filter) -> Int {
+        switch filter {
+        case .all: entries.count
+        case .highlight: entries.filter { $0.kind == "高亮" }.count
+        case .note: entries.filter { $0.kind == "笔记" || $0.kind == "批注" }.count
+        case .question: entries.filter { $0.kind == "问答" }.count
+        }
+    }
+
+    private func annotationSection(_ title: String, entries: [ReaderAnnotationEntry]) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Text("\(title)  (\(entries.count))")
+                .font(.headline.weight(.semibold))
+            ForEach(entries) { entry in
+                Button { inspectedEntry = entry } label: {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                    Image(systemName: icon(for: entry.kind))
+                        .font(.headline)
+                        .foregroundStyle(color(for: entry.kind))
+                        .frame(width: 42, height: 42)
+                        .background(color(for: entry.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(entry.quote)
+                            .font(.system(.subheadline, design: .serif, weight: .medium))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .lineLimit(3)
+                        if !entry.detail.isEmpty {
+                            Label(entry.detail, systemImage: "pencil.line")
+                                .font(AppTheme.Typography.supporting)
+                                .foregroundStyle(AppTheme.Colors.textSecondary)
+                                .lineLimit(3)
+                        }
+                        Text("\(entry.kind) · \(entry.date)").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary)
+                    }
+                    Spacer(); Image(systemName: "ellipsis").font(.caption).foregroundStyle(AppTheme.Colors.textTertiary)
+                    }
+                    .padding(AppTheme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                    .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.55)) }
+                }
+                .buttonStyle(SoftButtonStyle())
+            }
+        }
+    }
+
+    private func icon(for kind: String) -> String {
+        kind == "高亮" ? "bookmark.fill" : kind == "问答" ? "bubble.left.and.text.bubble.right.fill" : "doc.text.fill"
+    }
+
+    private func color(for kind: String) -> Color {
+        kind == "高亮" ? AppTheme.Colors.emberOrange : AppTheme.Colors.quantumBlue
+    }
+}
+
+struct ReaderAnnotationDetailSheet: View {
+    let entry: ReaderAnnotationEntry
+    var onContinueQuestion: (() -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                    HStack {
+                        Label("我的批注", systemImage: "bookmark.fill")
+                            .font(AppTheme.Typography.cardTitle)
+                            .foregroundStyle(AppTheme.Colors.quantumBlue)
+                        Spacer()
+                        Text(entry.date).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary)
+                    }
+                    Text("“\(entry.quote)”")
+                        .font(.system(.body, design: .serif, weight: .medium))
+                        .padding(AppTheme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppTheme.Colors.mistSky.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    if let question = questionText {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                            Text("我的问题").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary)
+                            Text(question).font(AppTheme.Typography.body)
+                            Text("AI 回答摘要").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary).padding(.top, AppTheme.Spacing.sm)
+                            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: answerText ?? ""))
+                        }
+                    } else if !entry.detail.isEmpty {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                            Text("我的想法").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary)
+                            Text(entry.detail).font(.system(.body, design: .serif)).lineSpacing(5)
+                        }
+                    }
+                    Label(entry.sectionTitle, systemImage: "book.closed.fill")
+                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                        .padding(AppTheme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    if entry.questionTurn != nil, let onContinueQuestion {
+                        Button {
+                            dismiss()
+                            onContinueQuestion()
+                        } label: {
+                            Label("继续围绕这段提问", systemImage: "bubble.left.and.text.bubble.right")
+                                .font(AppTheme.Typography.label)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppTheme.Colors.quantumBlue)
+                    }
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+            .background(AppTheme.Colors.background.ignoresSafeArea())
+            .navigationTitle("读书批注")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var questionText: String? {
+        splitDetail.0
+    }
+
+    private var answerText: String? {
+        splitDetail.1
+    }
+
+    private var splitDetail: (String?, String?) {
+        guard let questionRange = entry.detail.range(of: "我的问题"),
+              let answerRange = entry.detail.range(of: "AI 回答摘要") else { return (nil, nil) }
+        let question = entry.detail[questionRange.upperBound..<answerRange.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer = entry.detail[answerRange.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (question.isEmpty ? nil : question, answer.isEmpty ? nil : answer)
     }
 }
 
 #if DEBUG
+struct ReaderAnnotationPrototypeHost: View {
+    let pageID: String
+    @State private var showingQuestion = false
+
+    var body: some View {
+        if pageID.hasSuffix("p04") {
+            ReaderAnnotationCenterView(bookTitle: "我与地坛", previewEntries: Self.entries)
+        } else {
+            ReaderPrototypePage(stage: pageID.hasSuffix("p03") ? .saved : pageID.hasSuffix("p01") ? .selected : .plain)
+                .sheet(isPresented: $showingQuestion) {
+                    ReaderQuestionSheet(excerpt: "阳光很好，树叶在风里沙沙地响。") { question, _ in
+                        AsyncThrowingStream { continuation in
+                            continuation.yield(.delta("这句话通过声音和光线写出了宁静的瞬间。\(question)"))
+                            continuation.yield(.done(sessionId: "reader-fixture", answer: nil))
+                            continuation.finish()
+                        }
+                    }
+                }
+                .onAppear { showingQuestion = pageID.hasSuffix("p02") }
+        }
+    }
+
+    private static let entries = [
+        ReaderAnnotationEntry(id: "a1", kind: "问答", quote: "阳光很好，树叶在风里沙沙地响。", detail: "这句话表达了怎样的情感？", date: "9月12日"),
+        ReaderAnnotationEntry(id: "a2", kind: "高亮", quote: "北海的菊花开了，我们去看看吧。", detail: "", date: "9月10日"),
+        ReaderAnnotationEntry(id: "a3", kind: "笔记", quote: "母爱的表达", detail: "母亲的沉默更有力量。", date: "9月10日"),
+        ReaderAnnotationEntry(id: "a4", kind: "问答", quote: "城市与人的关系", detail: "如何理解城市对于个体的意义？", date: "9月3日"),
+        ReaderAnnotationEntry(id: "a5", kind: "高亮", quote: "城墙在夜色中安静地延伸。", detail: "", date: "9月3日"),
+        ReaderAnnotationEntry(id: "a6", kind: "笔记", quote: "自由与孤独", detail: "书中反复出现的孤独，是否也是一种自由？", date: "9月1日"),
+    ]
+}
+
+private struct ReaderPrototypePage: View {
+    enum Stage { case plain, selected, saved }
+    let stage: Stage
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        paragraph("母亲喜欢花，可自从我的腿瘫痪后，她侍弄的那些花都死了。")
+                        paragraph("那年秋天，母亲推着我去地坛。")
+                        ZStack(alignment: .topLeading) {
+                            Text("阳光很好，树叶在风里沙沙地响。")
+                                .font(.system(size: 20, design: .serif)).lineSpacing(12)
+                                .padding(.vertical, 5)
+                                .background(stage == .plain ? Color.clear : AppTheme.Colors.quantumBlue.opacity(0.18))
+                            if stage == .selected {
+                                HStack(spacing: 0) {
+                                    action("提问", "sparkles")
+                                    action("高亮", "highlighter")
+                                    action("批注", "note.text")
+                                    action("复制", "doc.on.doc")
+                                }
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+                                .shadow(radius: 9, y: 4)
+                                .offset(x: 4, y: -50)
+                            }
+                        }
+                        paragraph("她忽然对我说：“北海的菊花开了，我们去看看吧。”")
+                        paragraph("我摇摇头。她沉默了一会儿，又说：“不，我推你去。”")
+                        paragraph("那天的阳光，至今仍在我心里。")
+                        if stage == .saved {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                                Label("我的批注 · 9月12日", systemImage: "bookmark.fill")
+                                    .font(.caption.weight(.semibold)).foregroundStyle(AppTheme.Colors.quantumBlue)
+                                Text("“阳光很好，树叶在风里沙沙地响。”").font(.system(.body, design: .serif))
+                                Text("我的问题：这句话表达了怎样的情感？").font(AppTheme.Typography.supporting)
+                                Text("AI 回答摘要：以自然描写呈现宁静温暖的氛围，体现作者在困境中仍感受到生活的美好。")
+                                    .font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
+                            .padding(AppTheme.Spacing.md)
+                            .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+                        }
+                    }
+                    .padding(.horizontal, 34).padding(.top, 44)
+                }
+                VStack(spacing: 8) {
+                    HStack { Text("68 / 245"); Spacer(); Text("28%") }.font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                    ProgressView(value: 0.28)
+                    HStack { Label("目录", systemImage: "list.bullet"); Spacer(); Text("上一章"); Text("下一章  ›") }.font(AppTheme.Typography.supporting)
+                }
+                .padding(AppTheme.Metrics.contentGutter).background(.ultraThinMaterial)
+            }
+            .navigationTitle("我与地坛")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack { Button("字体") {}; Image(systemName: "bookmark"); Image(systemName: "ellipsis") }
+                }
+            }
+        }
+        .background(Color(red: 0.99, green: 0.98, blue: 0.95))
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text).font(.system(size: 20, design: .serif)).lineSpacing(12)
+    }
+
+    private func action(_ title: String, _ icon: String) -> some View {
+        Button(action: {}) { VStack(spacing: 3) { Image(systemName: icon); Text(title).font(.caption) }.frame(width: 70, height: 52) }
+            .buttonStyle(.plain)
+    }
+}
+
+struct V4AgentManagementPrototypeHost: View {
+    let pageID: String
+
+    var body: some View {
+        if pageID.hasSuffix("p02") {
+            AgentKnowledgePreview()
+        } else if pageID.hasSuffix("p03") {
+            AgentToolsPreview()
+        } else if pageID.hasSuffix("p04") {
+            AgentToolDetailPreview()
+        } else {
+            AgentOverviewPreview()
+        }
+    }
+}
+
+private struct AgentOverviewPreview: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    HStack(spacing: AppTheme.Spacing.md) {
+                        Image(systemName: "book.fill").font(.largeTitle).foregroundStyle(.white)
+                            .frame(width: 68, height: 68).background(AppTheme.Colors.quantumGradient, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                        VStack(alignment: .leading) { Text("文献助手").font(AppTheme.Typography.screenTitle); Label("已启用", systemImage: "circle.fill").font(.caption).foregroundStyle(AppTheme.Colors.statusCompleted) }
+                        Spacer(); Menu { Button("编辑") {}; Button("复制") {}; Button("删除", role: .destructive) {} } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).background(AppTheme.Colors.surfaceTint, in: Circle()) }
+                    }
+                    Text("检索、阅读与综述学术文献").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
+                    HStack { tab("概览", true); tab("知识", false); tab("工具", false) }
+                    Text("帮助你高效检索、阅读和整理学术文献，生成结构化的综述与笔记。")
+                        .font(AppTheme.Typography.body).foregroundStyle(AppTheme.Colors.textSecondary)
+                    info("clock", "创建时间", "2024年12月9日")
+                    info("person", "创建者", "我")
+                    info("chart.bar", "使用次数", "427 次（近 30 天）")
+                    info("tag", "适用场景", "课程学习、论文写作、科研探索")
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        Text("快速操作").font(.headline)
+                        Button("▶  开始对话") {}.buttonStyle(QuantumPrimaryButtonStyle())
+                        Button("在新窗口打开", systemImage: "book") {}.buttonStyle(.bordered).frame(maxWidth: .infinity)
+                    }
+                    Button("删除智能体", systemImage: "trash", role: .destructive) {}
+                        .buttonStyle(.bordered).tint(.red).frame(maxWidth: .infinity)
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+        }
+    }
+
+    private func tab(_ title: String, _ active: Bool) -> some View {
+        Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(active ? AppTheme.Colors.quantumBlue : AppTheme.Colors.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 42).overlay(alignment: .bottom) { if active { Rectangle().fill(AppTheme.Colors.quantumBlue).frame(height: 2) } }
+    }
+
+    private func info(_ icon: String, _ title: String, _ value: String) -> some View {
+        HStack { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive).frame(width: 26); Text(title).foregroundStyle(AppTheme.Colors.textSecondary); Spacer(); Text(value) }.font(AppTheme.Typography.supporting)
+    }
+}
+
+private struct AgentKnowledgePreview: View {
+    private let sources = [
+        ("doc.text.fill", "我的笔记", "12 篇笔记 · 个人", "全部可用"),
+        ("book.fill", "机器学习（第2版）", "书籍 · 高等教育出版社", "仅检索"),
+        ("doc.fill", "课程资料", "8 个文件 · 个人", "摘要可用"),
+        ("globe", "学术网页", "3 个网站", "仅检索"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    HStack { Image(systemName: "magnifyingglass"); Text("搜索知识来源").foregroundStyle(AppTheme.Colors.textTertiary); Spacer() }
+                        .padding(AppTheme.Spacing.md).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                    HStack { ForEach(["全部", "笔记", "书籍", "文件", "网页"], id: \.self) { item in Text(item).font(AppTheme.Typography.micro).frame(maxWidth: .infinity, minHeight: 32).background(item == "全部" ? AppTheme.Colors.mistSky : AppTheme.Colors.surfaceTint, in: Capsule()) } }
+                    Text("已添加的知识来源（4）").font(.headline)
+                    ForEach(sources, id: \.1) { source in
+                        HStack(spacing: AppTheme.Spacing.md) {
+                            Image(systemName: source.0).foregroundStyle(AppTheme.Icons.interactive).frame(width: 40, height: 40).background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                            VStack(alignment: .leading) { Text(source.1).font(.subheadline.weight(.semibold)); Text(source.2).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }
+                            Spacer(); Text(source.3).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.statusCompleted); Image(systemName: "ellipsis")
+                        }
+                        .padding(AppTheme.Spacing.md).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)).overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+                    }
+                    Button("添加知识来源", systemImage: "plus") {}.buttonStyle(.bordered).frame(maxWidth: .infinity)
+                    VStack(spacing: AppTheme.Spacing.sm) { Image(systemName: "book.closed").font(.largeTitle).foregroundStyle(AppTheme.Colors.textTertiary); Text("还没有知识来源").font(.headline); Text("添加笔记、书籍、文件或网页\n让智能体基于你的知识提供更好的回答").multilineTextAlignment(.center).font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary); Button("添加第一个来源") {}.buttonStyle(.borderedProminent) }
+                        .frame(maxWidth: .infinity).padding(AppTheme.Spacing.xl).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+            .navigationTitle("知识管理").navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button(action: {}) { Image(systemName: "plus") } }
+        }
+    }
+}
+
+private struct AgentToolsPreview: View {
+    @State private var enabled: Set<String> = ["网页搜索", "地图查询", "图像生成", "PDF 导出"]
+    private let tools = [
+        ("magnifyingglass", "网页搜索", "在互联网上检索最新信息", AppTheme.Colors.quantumBlue),
+        ("map.fill", "地图查询", "查询地点、路线与周边信息", AppTheme.Colors.statusCompleted),
+        ("photo.fill", "图像生成", "根据描述生成图片", AppTheme.Colors.quantumViolet),
+        ("doc.fill", "PDF 导出", "将内容导出为 PDF", AppTheme.Colors.statusError),
+        ("rectangle.stack.fill", "PPT 生成", "生成演示文稿大纲与幻灯片", AppTheme.Colors.emberOrange),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    Text("内置工具").font(.headline)
+                    Text("启用合适的工具，扩展智能体的能力。")
+                        .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
+                    ForEach(tools, id: \.1) { tool in
+                        VStack(spacing: AppTheme.Spacing.sm) {
+                            HStack(spacing: AppTheme.Spacing.md) {
+                                Image(systemName: tool.0).foregroundStyle(tool.3).frame(width: 44, height: 44).background(tool.3.opacity(0.1), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                                VStack(alignment: .leading) { Text(tool.1).font(.subheadline.weight(.semibold)); Text(tool.2).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }
+                                Spacer(); Toggle("", isOn: Binding(get: { enabled.contains(tool.1) }, set: { value in if value { enabled.insert(tool.1) } else { enabled.remove(tool.1) } })).labelsHidden()
+                            }
+                            HStack { Text("权限：经确认"); Text("范围：学术相关"); Spacer(); Button("▶ 测试") {} }.font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
+                        }
+                        .padding(AppTheme.Spacing.md).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)).overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+                    }
+                }
+                .padding(AppTheme.Metrics.contentGutter)
+            }
+            .navigationTitle("工具能力").navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("管理") {} }
+        }
+    }
+}
+
+private struct AgentToolDetailPreview: View {
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        HStack(spacing: AppTheme.Spacing.md) { Image(systemName: "magnifyingglass").font(.title).foregroundStyle(AppTheme.Icons.interactive).frame(width: 54, height: 54).background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)); VStack(alignment: .leading) { Text("网页搜索").font(.headline); Label("已启用", systemImage: "circle.fill").font(.caption).foregroundStyle(AppTheme.Colors.statusCompleted); Text("在互联网上检索最新信息").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Button("编辑") {} }
+                        detail("权限级别", "自动使用")
+                        detail("使用范围", "学术相关")
+                        detail("使用上限", "每日最多 50 次")
+                        Text("最近使用").font(.headline)
+                        recent("为什么量子计算重要？", "今天 14:20 · 已完成")
+                        recent("检索最新的 AI 教育应用案例", "12月9日 10:36 · 已完成")
+                        recent("搜索相关论文与数据", "12月8日 21:17 · 失败")
+                        HStack { Button("替换工具", systemImage: "arrow.triangle.2.circlepath") {}; Button("停用工具", systemImage: "nosign") {} }.buttonStyle(.bordered)
+                        Button("删除工具", systemImage: "trash", role: .destructive) {}.buttonStyle(.bordered).tint(.red).frame(maxWidth: .infinity)
+                    }
+                    .padding(AppTheme.Metrics.contentGutter).padding(.bottom, 180)
+                }
+                .navigationTitle("工具详情").navigationBarTitleDisplayMode(.inline)
+            }
+            VStack(spacing: AppTheme.Spacing.md) {
+                Text("确认删除此工具？").font(.headline)
+                Text("删除后将无法恢复，历史使用记录也会被移除。").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
+                HStack { Button("取消") {}; Button("删除", role: .destructive) {}.buttonStyle(.borderedProminent).tint(.red) }.frame(maxWidth: .infinity)
+            }
+            .padding(AppTheme.Spacing.lg).frame(maxWidth: .infinity).background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24)).shadow(radius: 20)
+        }
+    }
+
+    private func detail(_ title: String, _ value: String) -> some View { HStack { Text(title); Spacer(); Text(value).foregroundStyle(AppTheme.Colors.textSecondary); Image(systemName: "chevron.right") }.font(AppTheme.Typography.supporting).padding(.vertical, 6) }
+    private func recent(_ title: String, _ status: String) -> some View { HStack { VStack(alignment: .leading) { Text(title).font(.subheadline); Text(status).font(AppTheme.Typography.micro).foregroundStyle(status.contains("失败") ? AppTheme.Colors.statusError : AppTheme.Colors.statusCompleted) }; Spacer(); Image(systemName: "chevron.right") }.padding(.vertical, 5) }
+}
+
+struct V3SettingsMemoryPrototypeHost: View {
+    let pageID: String
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                QuantumMistBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        if page == 1 { profile }
+                        else if page == 2 { agentBuilder }
+                        else if page == 3 { memoryCenter }
+                        else { memoryDetail }
+                    }
+                    .padding(AppTheme.Metrics.contentGutter)
+                    .padding(.bottom, 48)
+                }
+            }
+            .navigationTitle(page == 1 ? "我的" : (page == 2 ? "创建智能体" : (page == 3 ? "记忆中心" : "记忆详情")))
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder private var profile: some View {
+        HStack(spacing: 16) { Circle().fill(AppTheme.Colors.quantumGradient).frame(width: 82, height: 82).overlay { Image(systemName: "person.fill").font(.largeTitle).foregroundStyle(.white) }; VStack(alignment: .leading, spacing: 5) { Text("林小满").font(AppTheme.Typography.sectionTitle); Text("保持好奇，持续学习").foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Image(systemName: "chevron.right") }
+        HStack { Image(systemName: "crown.fill").foregroundStyle(AppTheme.Colors.statusWarning); VStack(alignment: .leading) { Text("Quantum Pro").font(AppTheme.Typography.cardTitle); Text("2025年12月12日到期").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Button("管理") {}.buttonStyle(.bordered) }.padding().background(AppTheme.Colors.mistLilac, in: RoundedRectangle(cornerRadius: 16))
+        Text("本月使用").font(AppTheme.Typography.cardTitle); HStack(alignment: .bottom, spacing: 8) { Text("320 / 1,000").font(.title2); Spacer(); ForEach([9, 14, 12, 18, 22, 30, 25, 38, 47, 64, 49, 72, 58, 85], id: \.self) { value in Capsule().fill(AppTheme.Colors.quantumGradient).frame(width: 9, height: CGFloat(value)) } }.padding().quantumCard()
+        VStack(spacing: 0) { settingRow("偏好设置", "slider.horizontal.3"); Divider(); settingRow("隐私与数据", "shield"); Divider(); settingRow("帮助与反馈", "questionmark.circle"); Divider(); settingRow("退出登录", "rectangle.portrait.and.arrow.right", AppTheme.Colors.statusError) }.quantumCard()
+    }
+
+    @ViewBuilder private var agentBuilder: some View {
+        HStack(spacing: 0) { ForEach(Array(["基本信息", "个性设定", "知识与工具", "完成"].enumerated()), id: \.offset) { index, title in VStack { Text("\(index + 1)").foregroundStyle(index == 0 ? .white : AppTheme.Colors.textSecondary).frame(width: 28, height: 28).background(index == 0 ? AppTheme.Colors.quantumBlue : AppTheme.Colors.surfaceTint, in: Circle()); Text(title).font(AppTheme.Typography.micro) }.frame(maxWidth: .infinity) } }
+        Text("1. 它的目的是什么？").font(AppTheme.Typography.cardTitle); Text("帮助我整理课程资料，生成复习笔记…").foregroundStyle(AppTheme.Colors.textTertiary).padding().frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading).quantumCard()
+        Text("2. 个性与语气").font(AppTheme.Typography.cardTitle); LazyVGrid(columns: [.init(.adaptive(minimum: 96))], spacing: 8) { ForEach(["专业严谨", "友好耐心", "简洁高效", "启发思考", "根据我的风格", "自定义"], id: \.self) { value in Text(value).font(AppTheme.Typography.micro).padding(.horizontal, 13).padding(.vertical, 9).background(value == "专业严谨" ? AppTheme.Colors.selectionTint : AppTheme.Colors.surfaceTint, in: Capsule()).overlay { Capsule().stroke(value == "专业严谨" ? AppTheme.Icons.interactive : .clear) } } }
+        Text("3. 知识访问").font(AppTheme.Typography.cardTitle); HStack { knowledge("我的笔记", "已选择 12 项", "folder.fill"); knowledge("我的书架", "已选择 3 本", "books.vertical.fill"); knowledge("课程资料", "已选择", "leaf.fill") }
+        Text("4. 工具能力").font(AppTheme.Typography.cardTitle); VStack(spacing: 0) { tool("网页搜索", "获取最新信息", true); Divider(); tool("内容总结", "整理与提炼", true); Divider(); tool("生成笔记", "创建结构化笔记", true) }.quantumCard()
+        Text("5. 图标与颜色").font(AppTheme.Typography.cardTitle); HStack { ForEach([Color.blue, .purple, .green, .cyan, .orange], id: \.description) { color in Circle().fill(color.opacity(0.65)).frame(width: 48, height: 48) }; Circle().stroke(AppTheme.Colors.border).frame(width: 48, height: 48).overlay { Image(systemName: "plus") } }
+        Button("保存智能体") {}.buttonStyle(QuantumPrimaryButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var memoryCenter: some View {
+        TextField("搜索记忆…", text: .constant("")).textFieldStyle(.roundedBorder)
+        ScrollView(.horizontal, showsIndicators: false) { HStack { chip("全部"); chip("笔记"); chip("书籍"); chip("对话"); chip("网页") } }
+        ScrollView(.horizontal, showsIndicators: false) { HStack { chip("全部时间"); chip("近7天"); chip("近30天"); chip("近一年") } }
+        Text("今天").font(AppTheme.Typography.cardTitle)
+        memory("我更喜欢图像化的学习方式", "来自 对话 · 14:20", "bubble.left.fill", true)
+        memory("期末准备：高数重点", "来自 笔记 · 10:36", "doc.text.fill", false)
+        Text("本周").font(AppTheme.Typography.cardTitle)
+        memory("想去日本交换学习", "来自 对话 · 12月10日", "bubble.left.fill", false)
+        memory("对人工智能与教育的思考", "来自 网页 · 12月9日", "link", true)
+        memory("喜欢安静的图书馆", "来自 笔记 · 12月8日", "leaf.fill", false)
+        Text("更早").font(AppTheme.Typography.cardTitle)
+        memory("TED：如何保持好奇心", "来自 书籍 · 11月28日", "books.vertical.fill", false)
+    }
+
+    @ViewBuilder private var memoryDetail: some View {
+        HStack { Image(systemName: "leaf.fill").foregroundStyle(AppTheme.Colors.statusCompleted).frame(width: 54, height: 54).background(AppTheme.Colors.mistMint, in: RoundedRectangle(cornerRadius: 12)); VStack(alignment: .leading) { Text("对人工智能与教育的思考").font(AppTheme.Typography.label); Text("来自 网页 · 2024年12月9日 14:20").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Image(systemName: "pin.fill").foregroundStyle(AppTheme.Colors.statusWarning) }
+        Text("“技术的意义不在于替代人，\n而在于让更多人有机会成为更好的自己。”").font(.system(size: 21, design: .serif)).lineSpacing(8).padding().frame(maxWidth: .infinity).background(AppTheme.Colors.warningSurface, in: RoundedRectangle(cornerRadius: 14))
+        HStack { Image(systemName: "link"); VStack(alignment: .leading) { Text("原始来源").font(AppTheme.Typography.micro); Text("AI 与教育的未来").font(AppTheme.Typography.label); Text("www.example.com").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Image(systemName: "arrow.up.forward.app") }.padding().quantumCard()
+        status("同步失败", "网络延迟，请检查网络后重试。")
+        Text("管理").font(AppTheme.Typography.cardTitle); HStack { Button("编辑", systemImage: "pencil") {}; Button("取消置顶", systemImage: "pin.slash") {}; Button("删除", systemImage: "trash", role: .destructive) {} }.buttonStyle(.bordered)
+        VStack(spacing: 12) { Text("确认删除此记忆？").font(AppTheme.Typography.cardTitle); Text("删除后将无法恢复，该记忆不会再用于智能体回答或个性化推荐。").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary).multilineTextAlignment(.center); HStack { Button("取消") {}; Button("删除", role: .destructive) {}.buttonStyle(.borderedProminent).tint(.red) } }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        HStack { Image(systemName: "party.popper.fill").foregroundStyle(AppTheme.Colors.quantumViolet); VStack(alignment: .leading) { Text("智能体创建成功！").font(AppTheme.Typography.label); Text("你的专属学习伙伴已就绪").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Button("开始对话") {}.buttonStyle(.borderedProminent) }.padding().background(AppTheme.Colors.mistLilac, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var page: Int { Int(pageID.suffix(2)) ?? 1 }
+    private func settingRow(_ title: String, _ icon: String, _ color: Color = AppTheme.Colors.textPrimary) -> some View { HStack { Image(systemName: icon).foregroundStyle(color).frame(width: 28); Text(title).foregroundStyle(color); Spacer(); Image(systemName: "chevron.right") }.padding() }
+    private func knowledge(_ title: String, _ detail: String, _ icon: String) -> some View { VStack(spacing: 6) { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive); Text(title).font(AppTheme.Typography.micro); Text(detail).font(.system(size: 9)).foregroundStyle(AppTheme.Colors.textSecondary) }.frame(maxWidth: .infinity, minHeight: 78).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 10)) }
+    private func tool(_ title: String, _ detail: String, _ enabled: Bool) -> some View { HStack { Image(systemName: "sparkles").foregroundStyle(AppTheme.Icons.interactive); VStack(alignment: .leading) { Text(title).font(AppTheme.Typography.label); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Toggle("", isOn: .constant(enabled)).labelsHidden() }.padding() }
+    private func chip(_ title: String) -> some View { Text(title).font(AppTheme.Typography.micro).padding(.horizontal, 13).padding(.vertical, 8).background(AppTheme.Colors.surfaceTint, in: Capsule()) }
+    private func memory(_ title: String, _ detail: String, _ icon: String, _ pinned: Bool) -> some View { HStack { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive).frame(width: 44, height: 44).background(AppTheme.Colors.selectionTint, in: RoundedRectangle(cornerRadius: 10)); VStack(alignment: .leading) { Text(title).font(AppTheme.Typography.label); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); if pinned { Image(systemName: "pin.fill").foregroundStyle(AppTheme.Colors.quantumBlue) }; Image(systemName: "ellipsis") }.padding().quantumCard() }
+    private func status(_ title: String, _ detail: String) -> some View { HStack { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(AppTheme.Colors.statusError); VStack(alignment: .leading) { Text(title).font(AppTheme.Typography.label); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Button("重试") {} }.padding().background(AppTheme.Colors.dangerSurface, in: RoundedRectangle(cornerRadius: 12)) }
+}
+
+struct V3SubscriptionPrototypeHost: View {
+    let pageID: String
+
+    var body: some View {
+        NavigationStack {
+            ZStack { QuantumMistBackground(); ScrollView { VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) { if page == 1 { benefits } else if page == 2 { plans } else if page == 3 { application } else { governance } }.padding(AppTheme.Metrics.contentGutter).padding(.bottom, 50) } }
+            .navigationTitle(page == 1 ? "我的权益" : (page == 2 ? "选择适合你的方案" : (page == 3 ? "申请进度" : "机构管理")))
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder private var benefits: some View {
+        VStack(alignment: .leading, spacing: 9) { HStack { Text("教育版").font(AppTheme.Typography.sectionTitle); Text("在用中").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.statusCompleted).padding(6).background(AppTheme.Colors.successSurface, in: Capsule()) }; Text("面向认证的在校学生").foregroundStyle(AppTheme.Colors.textSecondary); Text("2024年9月1日 – 2025年8月31日").font(AppTheme.Typography.micro).padding(8).background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 8)); Text("还有 312 天到期").font(AppTheme.Typography.micro) }.padding().frame(maxWidth: .infinity, alignment: .leading).background(LinearGradient(colors: [AppTheme.Colors.mistMint, AppTheme.Colors.mistSky], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 18))
+        Text("包含的功能").font(AppTheme.Typography.cardTitle); HStack { feature("笔记", "无限创建", "note.text"); feature("AI 助理", "每月 500 次", "sparkles"); feature("云同步", "多设备同步", "icloud.and.arrow.up"); feature("书籍与阅读", "精品书库", "books.vertical") }
+        Text("本月剩余配额").font(AppTheme.Typography.cardTitle); VStack(alignment: .leading, spacing: 8) { HStack { Text("AI 助理使用"); Spacer(); Text("320 / 500") }; ProgressView(value: 0.64).tint(AppTheme.Colors.quantumGradient) }.padding().quantumCard()
+        setting("同步购买", "恢复已购项目", "arrow.triangle.2.circlepath"); setting("兑换代码", "输入优惠码或学校发放的代码", "plus.app")
+    }
+
+    @ViewBuilder private var plans: some View {
+        Text("为不同的学习阶段，提供合适的支持。").foregroundStyle(AppTheme.Colors.textSecondary)
+        planCard("免费版", "¥0", "永久免费", ["最多 50 条笔记", "基础阅读功能", "1GB 云存储"], false)
+        planCard("教育版", "¥0", "完成认证", ["无限笔记与书架", "每月 500 次 AI 助理", "20GB 云存储", "精品学术书库"], true)
+        planCard("专业版", "¥68/月", "或 ¥648/年", ["更高的 AI 配额", "100GB 云存储", "高级功能与优先支持"], false)
+        Button("申请教育版") {}.buttonStyle(QuantumPrimaryButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
+        Button("已有代码？立即兑换") {}.frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var application: some View {
+        HStack { Image(systemName: "graduationcap.fill").font(.largeTitle).foregroundStyle(AppTheme.Colors.quantumBlue).frame(width: 64, height: 64).background(AppTheme.Colors.selectionTint, in: Circle()); VStack(alignment: .leading) { Text("教育版申请").font(AppTheme.Typography.sectionTitle); Text("提交于 2024年9月12日").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) } }.padding().quantumCard()
+        ForEach(Array([("已提交", "我们已收到你的申请", true), ("学校审核中", "由你所在学校的管理员进行审核", true), ("审核通过", "通过后将自动升级权益", false), ("审核未通过", "可根据反馈补充信息并重新提交", false)].enumerated()), id: \.offset) { index, item in HStack(alignment: .top, spacing: 13) { Image(systemName: index == 0 ? "checkmark.circle.fill" : (index == 1 ? "circle.inset.filled" : "circle")).foregroundStyle(item.2 ? AppTheme.Icons.interactive : AppTheme.Icons.tertiary); VStack(alignment: .leading) { Text(item.0).font(AppTheme.Typography.label); Text(item.1).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary); if index == 1 { Text("预计 1–3 个工作日").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary) } } }.padding(.vertical, 8) }
+        HStack { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(AppTheme.Colors.statusWarning); VStack(alignment: .leading) { Text("需要补充信息").font(AppTheme.Typography.label); Text("请上传有效的学生证或在读证明，以便我们继续审核。").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Image(systemName: "chevron.right") }.padding().background(AppTheme.Colors.warningSurface, in: RoundedRectangle(cornerRadius: 14))
+        Button("补充材料") {}.buttonStyle(QuantumPrimaryButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var governance: some View {
+        Picker("", selection: .constant(0)) { Text("待审核").tag(0); Text("方案管理").tag(1) }.pickerStyle(.segmented)
+        TextField("搜索姓名、学号或邮箱", text: .constant("")).textFieldStyle(.roundedBorder)
+        ScrollView(.horizontal, showsIndicators: false) { HStack { chip("全部 12"); chip("学生认证 9"); chip("教师 2"); chip("机构 1") } }
+        ForEach([("陈同学", "chen@example.edu.cn", "计算机科学 · 大三", "1天前"), ("林同学", "lin@example.edu.cn", "新闻传播 · 大二", "2天前"), ("王同学", "wang@example.edu.cn", "经济学 · 大一", "3天前")], id: \.0) { item in VStack(spacing: 10) { HStack { Circle().fill(AppTheme.Colors.selectionTint).frame(width: 52, height: 52).overlay { Text(String(item.0.prefix(1))).font(AppTheme.Typography.cardTitle) }; VStack(alignment: .leading) { Text(item.0).font(AppTheme.Typography.label); Text(item.1).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary); Text(item.2).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary) }; Spacer(); Text(item.3).font(AppTheme.Typography.micro) }; HStack { Spacer(); Button("拒绝") {}.buttonStyle(.bordered); Button("通过") {}.buttonStyle(.borderedProminent) } }.padding().quantumCard() }
+    }
+
+    private var page: Int { Int(pageID.suffix(2)) ?? 1 }
+    private func feature(_ title: String, _ detail: String, _ icon: String) -> some View { VStack(spacing: 7) { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive); Text(title).font(AppTheme.Typography.micro); Text(detail).font(.system(size: 8)).foregroundStyle(AppTheme.Colors.textSecondary) }.frame(maxWidth: .infinity, minHeight: 88).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 10)).overlay { RoundedRectangle(cornerRadius: 10).stroke(AppTheme.Colors.border) } }
+    private func setting(_ title: String, _ detail: String, _ icon: String) -> some View { HStack { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive); VStack(alignment: .leading) { Text(title).font(AppTheme.Typography.label); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Image(systemName: "chevron.right") }.padding().quantumCard() }
+    private func planCard(_ title: String, _ price: String, _ detail: String, _ features: [String], _ selected: Bool) -> some View { VStack(alignment: .leading, spacing: 11) { HStack { Image(systemName: selected ? "graduationcap.fill" : "leaf.fill").font(.title2).foregroundStyle(selected ? AppTheme.Colors.quantumViolet : AppTheme.Colors.statusCompleted); VStack(alignment: .leading) { Text(title).font(AppTheme.Typography.sectionTitle); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }; Spacer(); Text(price).font(.title2.bold()); Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? AppTheme.Icons.interactive : AppTheme.Icons.tertiary) }; ForEach(features, id: \.self) { Label($0, systemImage: "checkmark").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.statusCompleted) } }.padding().background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 16)).overlay { RoundedRectangle(cornerRadius: 16).stroke(selected ? AppTheme.Icons.interactive : AppTheme.Colors.border, lineWidth: selected ? 2 : 1) } }
+    private func chip(_ title: String) -> some View { Text(title).font(AppTheme.Typography.micro).padding(.horizontal, 12).padding(.vertical, 8).background(AppTheme.Colors.surfaceTint, in: Capsule()) }
+}
+
 extension SubscriptionCenterResponse {
     static var bookshelfPreview: Self {
         func book(

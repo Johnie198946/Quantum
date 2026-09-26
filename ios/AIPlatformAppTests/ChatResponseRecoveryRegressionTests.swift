@@ -44,8 +44,8 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
 
     func testCompletedDurableRunRestoresSameRunAnswer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -88,8 +88,8 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
 
     func testDurableReplayRestoresKnowledgeActionCard() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -143,10 +143,164 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
         XCTAssertEqual(recovered?.transientCapability, "capability")
     }
 
+    func testDurableReplayDispatchesCapabilityEventsBeforeAdvancingCursor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        manager.setMessages([
+            ChatMessage(sessionId: sessionID, role: .user, content: "消费工件"),
+            ChatMessage(
+                id: "output", sessionId: sessionID, role: .assistant,
+                content: "", runId: "run-consume", lastEventSequence: 3
+            )
+        ], for: sessionID)
+        let fetched = expectation(description: "artifact event replayed")
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager,
+            hasAuthenticatedSession: { true },
+            fetchDurableChatRun: { _, after in
+                XCTAssertEqual(after, 3)
+                fetched.fulfill()
+                return DurableChatReplayDTO(
+                    run: DurableChatRunDTO(
+                        runId: "run-consume", status: "completed", eventSequence: 4,
+                        partialAnswer: nil, finalAnswer: "已消费",
+                        queuePosition: 0, attempt: 1, errorCode: "",
+                        answerProjection: nil
+                    ),
+                    droppedEventCount: 0,
+                    events: [
+                        .capability(QCPStreamEvent(
+                            type: "artifact.consumed", version: 1,
+                            payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-1","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
+                            renderer: "artifact_consumption", rendererVersion: 1
+                        )),
+                        .capability(QCPStreamEvent(
+                            type: "workflow.cancelled", version: 1,
+                            payload: Data(#"{"request_id":"cancel-1","workflow_id":"wf-1","status":"cancelled","resource_revision":"2026-09-18T09:01:00Z","cancelled_execution_ids":[],"cancelled_planning_job_ids":[]}"#.utf8),
+                            renderer: "workflow", rendererVersion: 1
+                        )),
+                    ]
+                )
+            }
+        )
+
+        coordinator.reconcileActiveRun()
+        await fulfillment(of: [fetched], timeout: 1)
+        for _ in 0..<100 where coordinator.messages[1].lastEventSequence < 4 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        let receipt = coordinator.messages[1].blocks.compactMap {
+            if case .artifactConsumption(let value) = $0 { return value }
+            return nil
+        }.first
+        XCTAssertEqual(receipt?.receiptId, "acr-1")
+        XCTAssertEqual(coordinator.toastMessage, "工作流已取消")
+        XCTAssertEqual(coordinator.messages[1].lastEventSequence, 4)
+        let persisted = try XCTUnwrap(manager.storedMessage(id: "output", sessionId: sessionID))
+        XCTAssertTrue(persisted.blocks.contains {
+            if case .artifactConsumption(let value) = $0 { return value.receiptId == "acr-1" }
+            return false
+        })
+    }
+
+    func testInvalidStatusArtifactReceiptDoesNotAdvanceCursorOrSettle() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        manager.setMessages([
+            ChatMessage(
+                id: "output", sessionId: sessionID, role: .assistant,
+                content: "", pending: true, runId: "run-invalid", lastEventSequence: 2
+            )
+        ], for: sessionID)
+        await manager.flushPendingPersistence()
+
+        let checkpointed = await manager.checkpointStatusEvents(
+            [QCPStreamEvent(
+                type: "artifact.consumed", version: 1,
+                payload: Data(#"{"receipt":{"receipt_id":"missing-required-fields"}}"#.utf8),
+                renderer: "artifact_consumption", rendererVersion: 1,
+                runId: "run-invalid", eventSequence: 3
+            )],
+            runId: "run-invalid", cursor: 3,
+            sessionId: sessionID, messageId: "output"
+        )
+
+        XCTAssertFalse(checkpointed)
+        let persisted = try XCTUnwrap(manager.storedMessage(id: "output", sessionId: sessionID))
+        XCTAssertEqual(persisted.lastEventSequence, 2)
+        XCTAssertTrue(persisted.pending)
+        XCTAssertFalse(persisted.blocks.contains {
+            if case .artifactConsumption = $0 { return true }; return false
+        })
+    }
+
+    func testInvalidBackgroundWorkflowCancellationDoesNotAdvanceCursor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        manager.setMessages([
+            ChatMessage(
+                id: "output", sessionId: sessionID, role: .assistant,
+                content: "", pending: true, runId: "run-cancel", lastEventSequence: 2
+            )
+        ], for: sessionID)
+        await manager.flushPendingPersistence()
+
+        let checkpointed = await manager.checkpointStatusEvents(
+            [QCPStreamEvent(
+                type: "workflow.cancelled", version: 1,
+                payload: Data(#"{"request_id":"cancel-1","workflow_id":"wf-1","status":"completed","resource_revision":"2026-09-18T09:01:00Z","cancelled_execution_ids":[],"cancelled_planning_job_ids":[]}"#.utf8),
+                renderer: "workflow", rendererVersion: 1,
+                runId: "run-cancel", eventSequence: 3
+            )],
+            runId: "run-cancel", cursor: 3,
+            sessionId: sessionID, messageId: "output"
+        )
+
+        XCTAssertFalse(checkpointed)
+        let persisted = try XCTUnwrap(manager.storedMessage(id: "output", sessionId: sessionID))
+        XCTAssertEqual(persisted.lastEventSequence, 2)
+        XCTAssertTrue(persisted.pending)
+
+        let unsupportedVersion = await manager.checkpointStatusEvents(
+            [QCPStreamEvent(
+                type: "workflow.cancelled", version: 2,
+                payload: Data(#"{"request_id":"cancel-2","workflow_id":"wf-1","status":"cancelled","resource_revision":"2026-09-18T09:02:00Z","cancelled_execution_ids":[],"cancelled_planning_job_ids":[]}"#.utf8),
+                renderer: "workflow", rendererVersion: 2,
+                runId: "run-cancel", eventSequence: 3
+            )],
+            runId: "run-cancel", cursor: 3,
+            sessionId: sessionID, messageId: "output"
+        )
+        XCTAssertFalse(unsupportedVersion)
+        XCTAssertEqual(
+            manager.storedMessage(id: "output", sessionId: sessionID)?.lastEventSequence,
+            2
+        )
+    }
+
     func testCompletedDurableRunFallsBackToFinalAnswerWhenProjectionIsEmpty() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -190,10 +344,10 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
         XCTAssertFalse(coordinator.messages[1].degraded)
     }
 
-    func testStatusRecoveredAnswerKeepsRunIdForFullAnswerPagination() async throws {
+    func testPreFirstSSEFrameCrashStatusRecoveryPersistsArtifactBeforeCursor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -210,11 +364,20 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
         let coordinator = TenantSessionCoordinator(
             sessionManager: manager,
             hasAuthenticatedSession: { true },
-            fetchChatStatus: { _, _, _ in
-                ChatStatusDTO(
+            fetchChatStatus: { _, consume, _, offset in
+                XCTAssertEqual(offset, consume ? 8 : (offset == 0 ? 0 : 7))
+                let isFirstPage = offset == 0
+                return ChatStatusDTO(
                     status: "completed", phase: nil, answer: nil, reasoning: nil,
-                    latestStep: nil, clarify: nil, consumed: true,
-                    answerProjection: recoveredPage
+                    latestStep: nil, clarify: nil, consumed: consume,
+                    answerProjection: recoveredPage, runId: "run-recovered",
+                    eventSequence: 8, eventsNextOffset: isFirstPage ? 7 : 8,
+                    events: isFirstPage ? [QCPStreamEvent(
+                        type: "artifact.consumed", version: 1,
+                        payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-before-frame","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
+                        renderer: "artifact_consumption", rendererVersion: 1,
+                        runId: "run-recovered", eventSequence: 7
+                    )] : []
                 )
             },
             fetchAnswerBlocks: { runId, cursor, _ in
@@ -230,15 +393,27 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
         )
 
         coordinator.reconcileActiveRun()
-        for _ in 0..<20 where coordinator.messages[1].content.isEmpty { await Task.yield() }
+        for _ in 0..<100 where coordinator.messages[1].lastEventSequence < 8
+            || coordinator.messages[1].content.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         let fullAnswer = try await coordinator.fetchFullAnswer(messageId: "output")
         XCTAssertEqual(fullAnswer, "第一页第二页")
+        XCTAssertEqual(coordinator.messages[1].lastEventSequence, 8)
+        XCTAssertTrue(coordinator.messages[1].blocks.contains {
+            if case .artifactConsumption(let receipt) = $0 {
+                return receipt.receiptId == "acr-before-frame"
+            }
+            return false
+        })
+        let persisted = try XCTUnwrap(manager.storedMessage(id: "output", sessionId: sessionID))
+        XCTAssertEqual(persisted.lastEventSequence, 8)
     }
 
     func testApplyCompletedStatusPreservesKnowledgeActionWhenAnswerIsEmpty() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -270,8 +445,8 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
 
     func testTrueEmptyCompletedRunBecomesAccurateTerminalFailure() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
@@ -375,8 +550,8 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
 
     func testLegacyClarifyContinuationCanFetchRemainingAnswer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let manager = SessionManager(store: try ChatHistoryStore(
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
             databaseURL: root.appendingPathComponent("history.sqlite"),
             legacyDirectory: root.appendingPathComponent("legacy"),
             performLegacyMigration: false
