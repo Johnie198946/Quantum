@@ -354,6 +354,23 @@ def test_global_review_scan_isolates_invalid_pending_manifest(flow):
     assert envelope["manifest"] == str(manifest)
 
 
+def test_global_finalize_isolates_invalid_pending_manifest(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    poisoned = local.parent / "00-poisoned-finalize" / "draft-manifest.json"
+    poisoned.parent.mkdir()
+    poisoned.write_text(
+        json.dumps({"version": relay.VERSION, "items": [{"status": "await_review"}]}),
+        encoding="utf-8",
+    )
+    db, key = native(flow)
+
+    result = relay.finalize(local.parent, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    assert json.loads(manifest.read_text())["items"][0]["status"] == "staged"
+
+
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
     local, manifest, remote, calls, *_ = flow

@@ -21,6 +21,7 @@ Observed failures:
 9. The watchdog's 30-second `subprocess.run` timeout killed the still-attached `hermes cron run` process. Long author and prerequisite executions were therefore persisted as `unknown` even though dispatch had initially succeeded.
 10. Rejected-manuscript recovery assigned the content Agent ownership of revision directories, hashes, owner-attestation rebinding, manifest assembly, and server contract fields. This mixed content repair with control-plane repair and made every rejection a bespoke infrastructure intervention.
 11. Rejected reviews with structured gaps also emitted a synthetic open `review.rejected` gap. A correctly repaired revision could close every substantive gap and still be blocked by this historical control marker.
+12. The shared finalizer loaded every historical manifest before filtering actionable states, so one malformed or incomplete historical item could block a valid approved sibling from staging.
 
 ## Change
 
@@ -42,6 +43,7 @@ Observed failures:
 - Keep `revision`, `issue_id`, `attempt_id`, `target_hash`, `previous_body_hash`, review identity, stage identity, and publication identity server-owned. Content revisions no longer hand-edit or copy these fields.
 - Reuse the prior issue's verified five images for content-only revisions; image generation repeats only when independent review identifies a visual defect or the manuscript's visual thesis changes.
 - Stop adding synthetic `review.rejected` when a rejected review already provides structured substantive gaps. Retain a narrowly matched compatibility rule so already-prepared revision 2 attempts are not forced into a fake content revision solely to remove that legacy marker.
+- Make the shared finalizer filter for `await_review` before strict manifest loading and isolate invalid pending histories, matching the reviewer selector's per-item failure boundary. One broken book can no longer block a valid approved sibling.
 
 ## Compatibility and rollback
 
@@ -58,4 +60,4 @@ Observed failures:
 - Installed runtime scripts were hash-compared with repository copies.
 - Idempotent production prepare for today's `ai-history` completed successfully in `0.96s`, versus the observed multi-minute chunked path.
 - Today's manifests remain governed by independent review; no review decision or image gate was bypassed.
-- Content-only revision and legacy-marker regressions are included in the focused publication suite; the latest focused run before commit passed `180` tests, Ruff, and `git diff --check`.
+- Content-only revision and legacy-marker regressions are included in the focused publication suite; the latest focused run before commit passed `181` tests, Ruff, and `git diff --check`.

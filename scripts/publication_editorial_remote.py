@@ -598,11 +598,23 @@ def native_running(db, review):
 
 def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes/config/publication-editorial-private.pem"), attest=native_attest):
     results = []
+    invalid_pending: list[tuple[str, str]] = []
     for path in manifests(root):
-        path, value = load_manifest(path)
+        try:
+            raw_manifest = json.loads(read(path))
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid manifest JSON") from exc
+        if not any(
+            isinstance(item, dict) and item.get("status") == "await_review"
+            for item in raw_manifest.get("items", [])
+        ):
+            continue
+        try:
+            path, value = load_manifest(path)
+        except ValueError as exc:
+            invalid_pending.append((str(path), str(exc)))
+            continue
         for item in value["items"]:
-            if item["status"] == "blocked":
-                raise ValueError("blocked editorial item requires operator repair")
             if item["status"] != "await_review":
                 continue
             review_path = local_path(path.parent, item["review_file"], output=True)
@@ -667,6 +679,10 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                 item["error"] = str(exc)
                 save(path, value)
                 raise
+    if invalid_pending and not results:
+        if len(invalid_pending) == 1:
+            raise ValueError("invalid pending editorial manifest: " + invalid_pending[0][1])
+        raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
     return {"items": results}
 
 
