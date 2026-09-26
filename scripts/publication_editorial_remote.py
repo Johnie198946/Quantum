@@ -646,8 +646,8 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                     raise ValueError("proof output conflict")
                 save(proof_path, proof)
                 bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
-                current = attempt(remote, c, {"await_review", "approved", "rejected"})
-                if current["state"] == "await_review":
+                current = attempt(remote, c, {"await_review", "approved", "rejected", "failed"})
+                if current["state"] in {"await_review", "failed"}:
                     remote.operator("record-editorial-review", *arguments(remote, path.parent, item, bundle, raw, proof))
                 receipt = attempt(remote, c, {review["decision"]})
                 if receipt.get("review_hash") != sha(raw):

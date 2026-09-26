@@ -848,7 +848,10 @@ class PublicationStore:
         finally:
             db.close()
 
-    def _editorial_check(self, db, bundle, *, require_approved=True, frozen=False, verified=None):
+    def _editorial_check(
+        self, db, bundle, *, require_approved=True, frozen=False,
+        verified=None, allow_failed_revalidation=False,
+    ):
         if bundle.get("content_kind") != "commentary":
             return []
         contract = bundle.get("quality_contract")
@@ -859,7 +862,10 @@ class PublicationStore:
                if frozen else db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? ORDER BY revision DESC LIMIT 1", (issue_id,)).fetchone())
         if not row or contract != json.loads(row["contract_json"]):
             return ["editorial_attempt_not_current"]
-        if row["state"] not in ({"approved"} if require_approved else {"await_review", "approved"}):
+        allowed_states = {"approved"} if require_approved else {"await_review", "approved"}
+        if allow_failed_revalidation:
+            allowed_states.add("failed")
+        if row["state"] not in allowed_states:
             return ["editorial_attempt_not_approved"]
         try:
             receipt = bundle["review"]["receipt"]
@@ -922,6 +928,28 @@ class PublicationStore:
             previous = db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? AND attempt_id=?", (issue_id, contract.get("attempt_id"))).fetchone()
             if previous and previous["state"] in {"approved", "rejected", "failed"}:
                 if previous["review_hash"] == receipt["sha256"] and contract == json.loads(previous["contract_json"]):
+                    if previous["state"] == "failed" and review.get("decision") == "approved":
+                        # Deterministically recover approvals that failed only
+                        # because an older validator rejected immutable control
+                        # metadata. Content, contract and review bytes must be
+                        # identical, and the complete current gate must pass.
+                        verified: dict[str, Any] = {}
+                        if not self._editorial_check(
+                            db, normalized, require_approved=False, verified=verified,
+                            allow_failed_revalidation=True,
+                        ):
+                            healed_gaps = [
+                                gap for gap in contract.get("research_gaps", [])
+                                if gap.get("id") != "review.rejected"
+                            ]
+                            db.execute(
+                                "UPDATE editorial_attempts SET state='approved',gaps_json=?,proof_json=?,closed_at=? WHERE attempt_id=?",
+                                (json.dumps(healed_gaps, ensure_ascii=False), verified["proof_json"], _iso(_now()), previous["attempt_id"]),
+                            )
+                            previous = db.execute(
+                                "SELECT * FROM editorial_attempts WHERE attempt_id=?",
+                                (previous["attempt_id"],),
+                            ).fetchone()
                     if previous["state"] == "approved" and self._editorial_check(db, normalized, frozen=True):
                         raise PublicationError("recorded approval proof no longer valid")
                     db.commit()

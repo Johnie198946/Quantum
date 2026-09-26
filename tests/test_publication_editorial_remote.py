@@ -371,6 +371,37 @@ def test_global_finalize_isolates_invalid_pending_manifest(flow):
     assert json.loads(manifest.read_text())["items"][0]["status"] == "staged"
 
 
+def test_finalize_revalidates_immutable_legacy_failed_approval(flow):
+    local, manifest, remote, _, _, store, _ = flow
+    relay.prepare(manifest, remote)
+    db, key = native(flow)
+    item = json.loads(manifest.read_text())["items"][0]
+    review_hash = relay.sha((local / item["review_file"]).read_bytes())
+    with sqlite3.connect(store / "publication.sqlite3") as connection:
+        connection.execute(
+            "UPDATE editorial_attempts SET state='failed',review_hash=?,gaps_json=?,closed_at=? WHERE attempt_id=?",
+            (
+                review_hash,
+                json.dumps([
+                    {"id": "legacy.control", "question": "旧验证器控制面失败标记，不代表正文缺口。",
+                     "state": "open", "resolution": "", "source_urls": []}
+                ]),
+                "2026-09-08T01:00:00+00:00",
+                item["quality_contract"]["attempt_id"],
+            ),
+        )
+
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    with sqlite3.connect(store / "publication.sqlite3") as connection:
+        state = connection.execute(
+            "SELECT state FROM editorial_attempts WHERE attempt_id=?",
+            (item["quality_contract"]["attempt_id"],),
+        ).fetchone()[0]
+    assert state == "approved"
+
+
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
     local, manifest, remote, calls, *_ = flow
