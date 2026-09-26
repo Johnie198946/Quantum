@@ -15,6 +15,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -26,6 +27,8 @@ STATUS_CLIENT = Path(__file__).with_name("publication_release_remote.py")
 EDITORIAL_CLIENT = Path(__file__).with_name("publication_editorial_remote.py")
 OUTPUT_ROOT = Path.home() / ".hermes/outputs/quantumn-editorial-v2"
 EXECUTIONS_DB = Path.home() / ".hermes/cron/executions.db"
+DISPATCH_CONFIRM_SECONDS = 30.0
+DISPATCH_POLL_SECONDS = 0.25
 RECOVERY_DB = Path.home() / ".hermes/cron/publication-recovery.db"
 LOCK_FILE = Path.home() / ".hermes/cron/publication-scheduler-watchdog.lock"
 AUTHOR_JOBS = {
@@ -499,30 +502,43 @@ def _run_action(action: Action) -> None:
 def _dispatch_job(job_id: str) -> None:
     started = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
     command = ["hermes", "cron", "run", job_id]
-    try:
-        completed = subprocess.run(
-            command, text=True, capture_output=True, timeout=30,
-            check=False, env=_default_env(),
-        )
-    except subprocess.TimeoutExpired:
-        completed = None
+    # `hermes cron run` remains attached for the full Agent execution. Killing
+    # it at the dispatch-confirmation deadline also kills the execution owner
+    # and leaves an `unknown` row. Detach it, then return only after the native
+    # execution ledger proves that the scheduler accepted a live execution.
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+        env=_default_env(),
+    )
     uri = EXECUTIONS_DB.expanduser().resolve().as_uri() + "?mode=ro"
-    try:
-        with sqlite3.connect(uri, uri=True) as connection:
-            row = connection.execute(
-                "SELECT status FROM executions WHERE job_id=? AND started_at>=? "
-                "ORDER BY started_at DESC LIMIT 1",
-                (job_id, started),
-            ).fetchone()
-    except sqlite3.Error as exc:
-        raise ActionFailure("dispatch_readback_failed") from exc
-    if row and row[0] in {"claimed", "running", "completed", "unknown"}:
-        return
-    if completed is None:
-        raise ActionFailure("action_timeout")
-    if completed.returncode:
-        raise ActionFailure("action_exit_nonzero")
-    raise ActionFailure("dispatch_not_persisted")
+    deadline = time.monotonic() + DISPATCH_CONFIRM_SECONDS
+    while True:
+        try:
+            with sqlite3.connect(uri, uri=True) as connection:
+                row = connection.execute(
+                    "SELECT status FROM executions WHERE job_id=? AND started_at>=? "
+                    "ORDER BY started_at DESC LIMIT 1",
+                    (job_id, started),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            process.terminate()
+            raise ActionFailure("dispatch_readback_failed") from exc
+        if row and row[0] in {"claimed", "running", "completed"}:
+            return
+        returncode = process.poll()
+        if returncode is not None:
+            if returncode:
+                raise ActionFailure("action_exit_nonzero")
+            raise ActionFailure("dispatch_not_persisted")
+        if time.monotonic() >= deadline:
+            process.terminate()
+            raise ActionFailure("action_timeout")
+        time.sleep(DISPATCH_POLL_SECONDS)
 
 
 def supervise(

@@ -379,7 +379,7 @@ def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     assert all(not any("release" in word for word in command) for command, _ in calls)
 
 
-def test_dispatch_timeout_reconciles_persisted_execution(tmp_path, monkeypatch):
+def test_detached_dispatch_returns_after_persisted_live_execution(tmp_path, monkeypatch):
     database = tmp_path / "executions.db"
     with sqlite3.connect(database) as db:
         db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
@@ -388,13 +388,14 @@ def test_dispatch_timeout_reconciles_persisted_execution(tmp_path, monkeypatch):
             ("dispatch-1", watchdog.REVIEW_JOB, "running", "9999-01-01T00:00:00+08:00"),
         )
     monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
-    monkeypatch.setattr(
-        watchdog.subprocess,
-        "run",
-        lambda command, **kwargs: (_ for _ in ()).throw(
-            subprocess.TimeoutExpired(command, kwargs.get("timeout", 30))
-        ),
-    )
+    class Process:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            raise AssertionError("persisted owner must not be terminated")
+
+    monkeypatch.setattr(watchdog.subprocess, "Popen", lambda command, **kwargs: Process())
     watchdog._dispatch_job(watchdog.REVIEW_JOB)
 
 
@@ -403,11 +404,36 @@ def test_zero_exit_without_persisted_execution_fails_closed(tmp_path, monkeypatc
     with sqlite3.connect(database) as db:
         db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
     monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
-    monkeypatch.setattr(
-        watchdog.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "", ""),
-    )
+    class Process:
+        def poll(self):
+            return 0
+
+        def terminate(self):
+            raise AssertionError("exited process need not be terminated")
+
+    monkeypatch.setattr(watchdog.subprocess, "Popen", lambda command, **kwargs: Process())
+    with pytest.raises(watchdog.ActionFailure, match="dispatch_not_persisted"):
+        watchdog._dispatch_job(watchdog.REVIEW_JOB)
+
+
+def test_unknown_execution_is_not_accepted_as_dispatch_success(tmp_path, monkeypatch):
+    database = tmp_path / "executions.db"
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
+        db.execute(
+            "INSERT INTO executions VALUES (?,?,?,?)",
+            ("dispatch-unknown", watchdog.REVIEW_JOB, "unknown", "9999-01-01T00:00:00+08:00"),
+        )
+    monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
+
+    class Process:
+        def poll(self):
+            return 0
+
+        def terminate(self):
+            raise AssertionError("exited process need not be terminated")
+
+    monkeypatch.setattr(watchdog.subprocess, "Popen", lambda command, **kwargs: Process())
     with pytest.raises(watchdog.ActionFailure, match="dispatch_not_persisted"):
         watchdog._dispatch_job(watchdog.REVIEW_JOB)
 
@@ -460,13 +486,33 @@ def test_regular_revision_precedes_toolkit_prerequisite_retry(tmp_path):
 def test_toolkit_blocked_prerequisite_recovers_supply_before_author(tmp_path, monkeypatch):
     barrier = watchdog.Barrier("ai-toolkit", "f" * 64)
     calls = []
+    database = tmp_path / "executions.db"
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
+        db.execute(
+            "INSERT INTO executions VALUES (?,?,?,?)",
+            ("dispatch-prerequisite", watchdog.PREREQUISITE_JOB, "running", "9999-01-01T00:00:00+08:00"),
+        )
+
     def fake_run(command, **kwargs):
-        calls.append(command)
         if command[0] == "ps":
             return subprocess.CompletedProcess(command, 0, "Thu Sep 25 09:00:00 2026\n", "")
-        return subprocess.CompletedProcess(command, 0, "", "")
+        raise AssertionError(command)
 
+    class Process:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            raise AssertionError("persisted owner must not be terminated")
+
+    def fake_popen(command, **kwargs):
+        calls.append(command)
+        return Process()
+
+    monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
     monkeypatch.setattr(watchdog.subprocess, "run", fake_run)
+    monkeypatch.setattr(watchdog.subprocess, "Popen", fake_popen)
     result = watchdog.supervise(
         DAY,
         status=lambda: summary("ai-toolkit"),
