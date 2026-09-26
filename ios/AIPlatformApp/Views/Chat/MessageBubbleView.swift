@@ -33,7 +33,7 @@ enum LongMessagePresentation {
     static let longAnswerCharacterThreshold = 4_000
     static let streamingCharacterLimit = 2_400
     static let streamingExpansionStep = 2_400
-    static let collapsedCharacterLimit = 800
+    static let collapsedCharacterLimit = 640
 
     static func isLong(_ text: String, limit: Int = longAnswerCharacterThreshold) -> Bool {
         guard limit >= 0 else { return true }

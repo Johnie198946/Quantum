@@ -100,7 +100,7 @@ def _baseline(agent_id: str) -> EffectiveAgent:
     )
 
 
-async def resolve_agent(
+async def resolve_agent_capability(
     db: AsyncSession,
     *,
     agent_id: str | None,
@@ -180,4 +180,20 @@ async def resolve_agent(
         allow_network=bool(manifest.get("allow_network", True)),
         max_concurrent_children=min(3, max(0, int(delegation.get("max_concurrent_children", 3)))),
         max_spawn_depth=min(1, max(0, int(delegation.get("max_spawn_depth", 1)))),
+    )
+
+
+async def resolve_agent(
+    db: AsyncSession,
+    *,
+    agent_id: str | None,
+    tenant_id: str,
+    owner_user_id: str,
+) -> EffectiveAgent:
+    """Compatibility entry point for the server-owned capability resolver."""
+    return await resolve_agent_capability(
+        db,
+        agent_id=agent_id,
+        tenant_id=tenant_id,
+        owner_user_id=owner_user_id,
     )

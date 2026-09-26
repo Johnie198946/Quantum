@@ -889,6 +889,8 @@ public struct SubscriptionCenterView: View {
             } else if !bookshelves.isEmpty {
                 bookshelfCollections(bookshelves)
                     .transition(.opacity)
+            } else if !bookSubscriptions.isEmpty {
+                subscribedBooksFallback
             } else if let errorMessage {
                 inlineError(errorMessage)
                     .padding(AppTheme.Metrics.contentGutter)
@@ -2813,19 +2815,67 @@ public struct SubscriptionCenterView: View {
     private func loadBookshelves() async {
         isLoading = true
         errorMessage = nil
+        if let subscriptions = try? await api.fetchBookSubscriptions() {
+            bookSubscriptions = subscriptions
+            subscribedBookIDs = Set(subscriptions.map(\.book.id))
+        }
         do {
             let response = try await api.fetchKnowledgeBookshelves()
-            bookshelves = response.bookshelves
+            if response.bookshelves.isEmpty {
+                if let fallback = try? await api.fetchSubscriptionCenter(),
+                   let recovered = fallback.bookshelves, !recovered.isEmpty {
+                    bookshelves = recovered
+                    errorMessage = "图书目录暂未返回，正在显示订阅中心的书目；可下拉重试。"
+                } else {
+                    errorMessage = "图书目录暂未返回书籍。这不代表你的藏书被删除，请稍后重试。"
+                }
+            } else {
+                bookshelves = response.bookshelves
+            }
             publicCollections = response.publicCollections ?? []
             ownerPrivateCollections = response.ownerPrivateCollections ?? []
-            if let subscriptions = try? await api.fetchBookSubscriptions() {
-                bookSubscriptions = subscriptions
-                subscribedBookIDs = Set(subscriptions.map(\.book.id))
-            }
         } catch {
             errorMessage = actionableMessage(for: error)
         }
         isLoading = false
+    }
+
+    private var subscribedBooksFallback: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                Text("我的藏书")
+                    .font(.title2.bold())
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                Text("全部图书目录暂未加载；已收藏的书仍可从这里打开。")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                ForEach(bookSubscriptions, id: \.book.id) { item in
+                    Button { inspectedBook = item.book } label: {
+                        HStack(spacing: AppTheme.Spacing.md) {
+                            KnowledgeBookCover(
+                                title: item.book.title, author: item.book.author,
+                                seed: item.book.id, theme: item.book.coverTheme,
+                                variant: item.book.coverVariant,
+                                coverAvailable: false, width: 56
+                            )
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.book.title).font(.headline).lineLimit(2)
+                                Text(item.book.author).font(.caption)
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                        }
+                        .foregroundStyle(AppTheme.Colors.textPrimary)
+                        .frame(minHeight: 72)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let errorMessage { inlineError(errorMessage) }
+            }
+            .padding(AppTheme.Metrics.contentGutter)
+        }
+        .refreshable { await loadBookshelves() }
     }
 
     private func toggleBookSubscription(_ book: KnowledgeBookDTO) async {
@@ -3306,11 +3356,6 @@ func loadKnowledgeBookReaderData(
     return KnowledgeBookReaderLoad(body: body, subscriptions: loadedSubscriptions)
 }
 
-func readerIllustrationPaths(afterSectionAt index: Int, sectionCount: Int, paths: [String]) -> [String] {
-    guard sectionCount > 0, index >= 0, index < sectionCount else { return [] }
-    return paths.enumerated().compactMap { min($0.offset, sectionCount - 1) == index ? $0.element : nil }
-}
-
 private struct KnowledgeBookReadingView: View {
     @EnvironmentObject private var api: APIClient
     @ObservedObject private var noteStore = KnowledgeNoteStore.shared
@@ -3329,6 +3374,8 @@ private struct KnowledgeBookReadingView: View {
     @State private var pendingBlockIndex = 0
     @State private var pendingCharacterOffset = 0
     @State private var locationSaveTask: Task<Void, Never>?
+    @State private var restoreSectionReady = false
+    @State private var restoreBlockReady = false
     @State private var selectedExcerpt = ""
     @State private var selectedSection: KnowledgeBookSectionDTO?
     @State private var annotationDraft = ""
@@ -3337,6 +3384,8 @@ private struct KnowledgeBookReadingView: View {
     @State private var showingQuestion = false
     @State private var showingAnnotations = false
     @State private var inspectedAnnotation: ReaderAnnotationEntry?
+    @State private var questionInitialTurns: [ReaderQuestionTurn] = []
+    @StateObject private var questionState = ReadingSelectionQuestionState()
     let book: KnowledgeBookDTO
     let initialSectionID: String?
     let initialBlockIndex: Int?
@@ -3357,6 +3406,10 @@ private struct KnowledgeBookReadingView: View {
                 bookBody = loaded.body
                 progressError = "正文已加载，但阅读进度暂时无法同步。"
                 isLoading = false
+                if ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview") {
+                    selectedExcerpt = "\"task_id\": \"T-10"
+                    selectedSection = loaded.body.sections.first
+                }
                 return
             }
             #endif
@@ -3366,6 +3419,13 @@ private struct KnowledgeBookReadingView: View {
             )
             guard !Task.isCancelled, account == KnowledgeNoteStore.shared.accountFingerprint else { return }
             bookBody = loaded.body
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-readingSelectionLiveAcceptance"),
+               let customerServiceSection = loaded.body.sections.first(where: { $0.markdown.contains("客服") }) {
+                selectedExcerpt = "客服"
+                selectedSection = customerServiceSection
+            }
+            #endif
             if let subscriptions = loaded.subscriptions {
                 hasProgressBaseline = true
                 progressError = nil
@@ -3442,9 +3502,13 @@ private struct KnowledgeBookReadingView: View {
         characterOffset: Int
     ) {
         locationSaveTask?.cancel()
+        pendingProgressIndex = sectionIndex
+        pendingBlockIndex = blockIndex
+        pendingCharacterOffset = characterOffset
+        let account = KnowledgeNoteStore.shared.accountFingerprint
         locationSaveTask = Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, account == KnowledgeNoteStore.shared.accountFingerprint else { return }
             await recordReading(
                 sectionIndex: sectionIndex,
                 blockIndex: blockIndex,
@@ -3467,21 +3531,24 @@ private struct KnowledgeBookReadingView: View {
     }
 
     @MainActor
-    private func saveQuestionAnswer(_ question: String, answer: String) {
-        guard let bookBody, let section = selectedSection else { return }
+    private func saveQuestionAnswer(_ question: String, answer: String, sessionID: String?) -> Bool {
+        guard let bookBody, let section = selectedSection else { return false }
         let excerpt = String(selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
-        guard !excerpt.isEmpty else { return }
-        let detail = "我的问题\n\(question)\n\nAI 回答摘要\n\(String(answer.prefix(2_000)))"
-        persistExcerpt(excerpt, detail: detail, section: section, bookBody: bookBody)
+        guard !excerpt.isEmpty else { return false }
+        let detail = "我的问题\n\(question)\n\nAI 回答摘要\n\(answer)"
+        return persistExcerpt(excerpt, detail: detail, section: section, bookBody: bookBody, keepsSelection: true, sessionID: sessionID)
     }
 
     @MainActor
+    @discardableResult
     private func persistExcerpt(
         _ excerpt: String,
         detail: String,
         section: KnowledgeBookSectionDTO,
-        bookBody: KnowledgeBookBodyDTO
-    ) {
+        bookBody: KnowledgeBookBodyDTO,
+        keepsSelection: Bool = false,
+        sessionID: String? = nil
+    ) -> Bool {
         let isEnglish = ReadingLanguagePresentation.isEnglish(excerpt)
         guard ReaderAnnotationEntry.save(
             quote: excerpt,
@@ -3491,19 +3558,32 @@ private struct KnowledgeBookReadingView: View {
             sectionID: section.id,
             sectionTitle: section.title,
             citation: bookBody.citation,
+            contentVersion: bookBody.contentVersion,
+            sessionID: sessionID,
             api: api
-        ) != nil else { return }
+        ) != nil else { return false }
         saveMessage = isEnglish ? "Saved to your notes" : "已保存到当前账号的笔记"
         annotationDraft = ""
         isWritingAnnotation = false
-        selectedExcerpt = ""
-        selectedSection = nil
+        if !keepsSelection {
+            selectedExcerpt = ""
+            selectedSection = nil
+        }
+        return true
     }
 
     @ToolbarContentBuilder
     private func readerToolbar(bookBody: KnowledgeBookBodyDTO?, proxy: ScrollViewProxy) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button(action: onDismiss) {
+            Button {
+                Task {
+                    locationSaveTask?.cancel()
+                    if let index = pendingProgressIndex {
+                        await recordReading(sectionIndex: index, blockIndex: pendingBlockIndex, characterOffset: pendingCharacterOffset)
+                    }
+                    onDismiss()
+                }
+            } label: {
                 Image(systemName: "chevron.left")
                     .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.34), in: Circle())
@@ -3522,7 +3602,7 @@ private struct KnowledgeBookReadingView: View {
                         Button(section.title) {
                             onScopeChange(bookBody, section)
                             withAnimation {
-                                proxy.scrollTo(section.id, anchor: UnitPoint(x: 0.5, y: 0.33))
+                                proxy.scrollTo(section.id, anchor: .top)
                             }
                         }
                         .accessibilityIdentifier("publication-reader-nav.\(section.id)")
@@ -3642,15 +3722,20 @@ private struct KnowledgeBookReadingView: View {
                     .frame(width: 3)
                     .frame(minHeight: 44, maxHeight: .infinity)
             }
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                publicationSectionBlocks(
-                    section,
-                    fallback: content.blocks,
-                    sectionIndex: index,
-                    bookBody: bookBody,
-                    annotations: sectionAnnotations
-                )
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                ForEach(Array(content.blocks.enumerated()), id: \.offset) { blockIndex, block in
+                    readerBlock(
+                        block,
+                        blockIndex: blockIndex,
+                        sectionIndex: index,
+                        section: section,
+                        bookBody: bookBody,
+                        annotations: sectionAnnotations
+                    )
+                    .id("\(section.id):\(blockIndex)")
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let first = sectionAnnotations.first {
                 Button { inspectedAnnotation = first } label: {
                     ZStack(alignment: .topTrailing) {
@@ -3668,21 +3753,6 @@ private struct KnowledgeBookReadingView: View {
                 .accessibilityLabel("查看本章批注，共 \(sectionAnnotations.count) 条")
             }
             }
-                            ForEach(readerIllustrationPaths(
-                                afterSectionAt: index,
-                                sectionCount: bookBody.sections.count,
-                                paths: bookBody.illustrationUrls ?? []
-                            ), id: \.self) { path in
-                                PublicationInlineImage(
-                                    block: KnowledgeBookBlockDTO(
-                                        id: path, kind: "image", path: path,
-                                        alt: "《\(book.title)》正文插图", width: 1600, height: 900
-                                    ),
-                                    path: path
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .accessibilityIdentifier("publication-reader-illustration.\(path)")
-                            }
             if index < bookBody.sections.count - 1 {
                 HStack(spacing: 12) {
                     Rectangle().frame(height: 1)
@@ -3696,51 +3766,7 @@ private struct KnowledgeBookReadingView: View {
         }
         .id(section.id)
         .onAppear {
-            guard section.id != initialSectionID || initialBlockIndex == nil else { return }
-            scheduleReadingLocation(sectionIndex: index, blockIndex: 0, characterOffset: 0)
-        }
-    }
-
-    @ViewBuilder
-    private func publicationSectionBlocks(
-        _ section: KnowledgeBookSectionDTO,
-        fallback: [MarkdownBlock],
-        sectionIndex: Int,
-        bookBody: KnowledgeBookBodyDTO,
-        annotations: [ReaderAnnotationEntry]
-    ) -> some View {
-        if let blocks = section.blocks, !blocks.isEmpty {
-            ForEach(Array(blocks.enumerated()), id: \.element.id) { blockIndex, block in
-                if block.kind == "image", let path = block.path {
-                    PublicationInlineImage(block: block, path: path)
-                        .id("\(section.id):\(blockIndex)")
-                } else if block.kind == "text", let markdown = block.markdown {
-                    let parsed = ReadingSectionContent.parse(markdown).blocks
-                    ForEach(Array(parsed.enumerated()), id: \.offset) { _, item in
-                        readerBlock(
-                            item,
-                            blockIndex: blockIndex,
-                            sectionIndex: sectionIndex,
-                            section: section,
-                            bookBody: bookBody,
-                            annotations: annotations
-                        )
-                    }
-                    .id("\(section.id):\(blockIndex)")
-                }
-            }
-        } else {
-            ForEach(Array(fallback.enumerated()), id: \.offset) { blockIndex, block in
-                readerBlock(
-                    block,
-                    blockIndex: blockIndex,
-                    sectionIndex: sectionIndex,
-                    section: section,
-                    bookBody: bookBody,
-                    annotations: annotations
-                )
-                .id("\(section.id):\(blockIndex)")
-            }
+            if section.id == initialSectionID { restoreSectionReady = true }
         }
     }
 
@@ -3754,7 +3780,7 @@ private struct KnowledgeBookReadingView: View {
         annotations: [ReaderAnnotationEntry]
     ) -> some View {
         switch block {
-        case .paragraph(let text):
+        case .paragraph(let text), .quote(let text):
             SelectableReadingText(
                 markdown: text,
                 textColor: UIColor(Color(red: 0.23, green: 0.17, blue: 0.11)),
@@ -3764,7 +3790,7 @@ private struct KnowledgeBookReadingView: View {
                 },
                 onAskSelection: { excerpt in
                     prepareSelection(excerpt, section: section, bookBody: bookBody)
-                    showingQuestion = true
+                    openQuestion()
                 },
                 onHighlightSelection: { excerpt in
                     persistExcerpt(excerpt, detail: "", section: section, bookBody: bookBody)
@@ -3773,10 +3799,11 @@ private struct KnowledgeBookReadingView: View {
                     prepareSelection(excerpt, section: section, bookBody: bookBody)
                     isWritingAnnotation = true
                 },
-                resumeCharacterOffset: section.id == initialSectionID && blockIndex == initialBlockIndex
+                resumeCharacterOffset: restoreBlockReady && section.id == initialSectionID && blockIndex == initialBlockIndex
                     ? initialCharacterOffset
                     : nil,
                 onVisibleCharacter: { characterOffset in
+                    guard initialBlockIndex == nil || restoreBlockReady else { return }
                     scheduleReadingLocation(
                         sectionIndex: sectionIndex,
                         blockIndex: blockIndex,
@@ -3793,6 +3820,15 @@ private struct KnowledgeBookReadingView: View {
 
     @ViewBuilder
     private var selectionDock: some View {
+        #if DEBUG
+        if (ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview")
+            || ProcessInfo.processInfo.arguments.contains("-readingSelectionLiveAcceptance")), selectedSection != nil {
+            Button("选词提问") { openQuestion() }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(.regularMaterial)
+                .accessibilityIdentifier("publication-reader-ask-selection.\(book.id)")
+        }
+        #endif
         if bookBody != nil,
            isWritingAnnotation,
            !selectedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -3807,7 +3843,7 @@ private struct KnowledgeBookReadingView: View {
                     annotationDraft = ""
                     isWritingAnnotation = false
                 },
-                onAsk: { showingQuestion = true },
+                onAsk: openQuestion,
                 onSave: saveExcerpt
             )
         }
@@ -3849,43 +3885,50 @@ private struct KnowledgeBookReadingView: View {
                 readerToolbar(bookBody: bookBody, proxy: proxy)
             }
             .sheet(isPresented: $showingQuestion) {
-                ReaderQuestionSheet(
-                    excerpt: selectedExcerpt,
-                    sourceTitle: bookBody?.title ?? book.title,
-                    sourceSubtitle: selectedSection.map { "\($0.title) · \(book.author)" } ?? book.author,
-                    onSaveAnswer: { question, answer in saveQuestionAnswer(question, answer: answer) }
-                ) { question, sessionID in
-                    guard let bookBody, let selectedSection else {
-                        throw NSError(domain: "ReaderQuestion", code: 1, userInfo: [NSLocalizedDescriptionKey: "阅读上下文已失效，请重新选择文字。"])
-                    }
-                    return api.chatStream(
-                        question: question,
-                        sessionId: sessionID,
-                        quotedContext: String(selectedExcerpt.prefix(2_000)),
-                        contextScope: ChatContextScopeDTO(
-                            mode: .platformOnly,
-                            selectedBookId: book.id,
-                            selectedBookVersion: bookBody.contentVersion,
-                            selectedBookSectionId: selectedSection.id
-                        )
+                if let bookBody, let selectedSection {
+                    ReadingSelectionQuestionSheet(
+                        state: questionState,
+                        excerpt: selectedExcerpt,
+                        book: book,
+                        bookBody: bookBody,
+                        section: selectedSection,
+                        onSaveAnswer: { question, answer, sessionID in
+                            saveQuestionAnswer(question, answer: answer, sessionID: sessionID)
+                        }
                     )
+                    .presentationDetents([.fraction(0.94), .large])
+                    .presentationDragIndicator(.hidden)
+                    .presentationCornerRadius(30)
                 }
             }
             .sheet(isPresented: $showingAnnotations) {
-                ReaderAnnotationCenterView(bookID: book.id, bookTitle: book.title)
+                ReaderAnnotationCenterView(bookID: book.id, bookTitle: book.title) { entry in
+                    showingAnnotations = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        resumeQuestion(from: entry)
+                    }
+                }
             }
-            .sheet(item: $inspectedAnnotation) { ReaderAnnotationDetailSheet(entry: $0) }
+            .sheet(item: $inspectedAnnotation) { entry in
+                ReaderAnnotationDetailSheet(entry: entry) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        resumeQuestion(from: entry)
+                    }
+                }
+            }
             .task(id: book.id) { await loadBody() }
-            .task(id: bookBody?.contentVersion) {
+            .task(id: "\(bookBody?.contentVersion ?? ""): \(restoreSectionReady)") {
                 guard let initialSectionID, bookBody != nil else { return }
                 await Task.yield()
-                if let initialBlockIndex {
+                if restoreSectionReady, let initialBlockIndex {
                     proxy.scrollTo("\(initialSectionID):\(initialBlockIndex)", anchor: .top)
+                    // Arm character restoration only after coarse block scrolling.
+                    // Otherwise SwiftUI can overwrite the UITextView's precise offset.
+                    restoreBlockReady = true
                 } else {
                     proxy.scrollTo(initialSectionID, anchor: .top)
                 }
             }
-            .onDisappear { locationSaveTask?.cancel() }
             }
         }
     }
@@ -3893,6 +3936,7 @@ private struct KnowledgeBookReadingView: View {
     private func annotations(for section: KnowledgeBookSectionDTO) -> [ReaderAnnotationEntry] {
         noteStore.notes.compactMap(ReaderAnnotationEntry.init(note:)).filter {
             $0.bookID == book.id && $0.sectionID == section.id
+                && ($0.contentVersion == nil || $0.contentVersion == bookBody?.contentVersion)
         }
     }
 
@@ -3906,66 +3950,26 @@ private struct KnowledgeBookReadingView: View {
         annotationDraft = ""
         isWritingAnnotation = false
         saveMessage = nil
+        questionInitialTurns = annotations(for: section).filter { $0.quote == excerpt }
+            .reversed().compactMap(\.questionTurn)
         onScopeChange(bookBody, section)
     }
-}
 
-private struct PublicationInlineImage: View {
-    @EnvironmentObject private var api: APIClient
-    let block: KnowledgeBookBlockDTO
-    let path: String
-
-    @State private var image: UIImage?
-    @State private var failed = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Group {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else if failed {
-                    Label("插图暂时无法加载", systemImage: "photo.badge.exclamationmark")
-                        .font(.footnote)
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 88)
-                } else {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, minHeight: 88)
-                }
-            }
-            .aspectRatio(aspectRatio, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .accessibilityLabel(block.alt?.isEmpty == false ? block.alt! : "正文插图")
-
-            if let caption = block.caption, !caption.isEmpty {
-                Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-                    .accessibilityLabel("图注：\(caption)")
-            }
-        }
-        .task(id: path) {
-            failed = false
-            do {
-                let data = try await api.fetchPublicationImage(path: path)
-                guard !Task.isCancelled, let decoded = UIImage(data: data) else {
-                    failed = !Task.isCancelled
-                    return
-                }
-                image = decoded
-            } catch is CancellationError {
-                return
-            } catch {
-                failed = true
-            }
-        }
+    private func openQuestion() {
+        questionState.reset(initialTurns: questionInitialTurns)
+        showingQuestion = true
     }
 
-    private var aspectRatio: CGFloat {
-        guard let width = block.width, let height = block.height, height > 0 else { return 16 / 9 }
-        return CGFloat(width) / CGFloat(height)
+    private func resumeQuestion(from entry: ReaderAnnotationEntry) {
+        guard let bookBody,
+              let section = bookBody.sections.first(where: { $0.id == entry.sectionID }) else { return }
+        selectedExcerpt = entry.quote
+        selectedSection = section
+        questionInitialTurns = annotations(for: section)
+            .filter { $0.quote == entry.quote }
+            .reversed()
+            .compactMap(\.questionTurn)
+        openQuestion()
     }
 }
 
@@ -4048,37 +4052,40 @@ private struct ReadingSectionIllustration: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle()
-                .fill(Color.white.opacity(0.34))
-                .frame(width: 168, height: 168)
-                .offset(x: 116, y: -52)
-            Circle()
-                .stroke(Color.white.opacity(0.5), lineWidth: 1)
-                .frame(width: 86, height: 86)
-                .offset(x: 72, y: 54)
-            HStack(spacing: AppTheme.Spacing.lg) {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(isEnglish ? "CHAPTER \(String(format: "%02d", index + 1))" : "章节 \(String(format: "%02d", index + 1))")
-                        .font(AppTheme.Typography.micro.weight(.bold))
-                        .tracking(1.2)
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                    Text(title)
-                        .font(.system(.title3, design: .serif, weight: .semibold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: symbol)
-                    .font(.system(size: 34, weight: .medium))
-                    .foregroundStyle(AppTheme.Colors.textPrimary.opacity(0.74))
-                    .frame(width: 68, height: 68)
-                    .background(Color.white.opacity(0.44), in: Circle())
+        HStack(spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(isEnglish ? "CHAPTER \(String(format: "%02d", index + 1))" : "章节 \(String(format: "%02d", index + 1))")
+                    .font(AppTheme.Typography.micro.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                Text(title)
+                    .font(.system(.title3, design: .serif, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             }
-            .padding(AppTheme.Spacing.xl)
+            Spacer(minLength: 0)
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(AppTheme.Colors.textPrimary.opacity(0.74))
+                .frame(width: 68, height: 68)
+                .background(Color.white.opacity(0.44), in: Circle())
         }
-        .frame(height: 128)
+        .padding(AppTheme.Spacing.xl)
+        .frame(minHeight: 128)
+        .background {
+            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color.white.opacity(0.34))
+                        .frame(width: 168, height: 168)
+                        .offset(x: 116, y: -52)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().stroke(Color.white.opacity(0.5), lineWidth: 1)
+                        .frame(width: 86, height: 86)
+                        .offset(x: 72, y: 54)
+                }
+        }
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
@@ -4099,11 +4106,14 @@ final class ReadingPositionTextView: UITextView {
     var restoreCharacterOffset: Int?
     private weak var outerScrollView: UIScrollView?
     private var contentOffsetObservation: NSKeyValueObservation?
+    private var contentSizeObservation: NSKeyValueObservation?
     private var restoredOffset: Int?
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         contentOffsetObservation?.invalidate()
+        contentSizeObservation?.invalidate()
+        outerScrollView = nil
         var ancestor = superview
         while let view = ancestor, outerScrollView == nil {
             outerScrollView = view as? UIScrollView
@@ -4111,7 +4121,13 @@ final class ReadingPositionTextView: UITextView {
         }
         guard let outerScrollView else { return }
         contentOffsetObservation = outerScrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.reportVisibleCharacter() }
+            DispatchQueue.main.async {
+                self?.restoreIfNeeded()
+                self?.reportVisibleCharacter()
+            }
+        }
+        contentSizeObservation = outerScrollView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.restoreIfNeeded() }
         }
         DispatchQueue.main.async { [weak self] in
             self?.restoreIfNeeded()
@@ -4121,11 +4137,23 @@ final class ReadingPositionTextView: UITextView {
 
     deinit {
         contentOffsetObservation?.invalidate()
+        contentSizeObservation?.invalidate()
     }
 
-    func restoreIfNeeded(force: Bool = false) {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        DispatchQueue.main.async { [weak self] in self?.restoreIfNeeded() }
+    }
+
+    func restoreIfNeeded() {
         guard let outerScrollView, let requested = restoreCharacterOffset,
-              (force || requested != restoredOffset), textStorage.length > 0 else { return }
+              requested != restoredOffset, textStorage.length > 0,
+              bounds.width > 0, bounds.height > 0, window != nil else { return }
+        guard !outerScrollView.isTracking, !outerScrollView.isDragging, !outerScrollView.isDecelerating else {
+            restoredOffset = requested
+            return
+        }
+        guard convert(bounds, to: outerScrollView).intersects(outerScrollView.bounds) else { return }
         layoutManager.ensureLayout(for: textContainer)
         let offset = min(max(requested, 0), textStorage.length - 1)
         let glyphRange = layoutManager.glyphRange(
@@ -4142,11 +4170,12 @@ final class ReadingPositionTextView: UITextView {
             outerScrollView.contentSize.height - outerScrollView.bounds.height
                 + outerScrollView.adjustedContentInset.bottom
         )
+        // Mark before scrolling: contentOffset observation must not re-enter restoration.
+        restoredOffset = requested
         outerScrollView.setContentOffset(
-            CGPoint(x: outerScrollView.contentOffset.x, y: min(max(target.minY - 120, minimum), maximum)),
+            CGPoint(x: outerScrollView.contentOffset.x, y: min(max(target.minY - outerScrollView.adjustedContentInset.top - 120, minimum), maximum)),
             animated: false
         )
-        restoredOffset = requested
     }
 
     private func reportVisibleCharacter() {
@@ -4341,17 +4370,14 @@ struct SelectableReadingText: UIViewRepresentable {
         context.coordinator.onAnnotateSelection = onAnnotateSelection
         view.onVisibleCharacter = onVisibleCharacter
         view.restoreCharacterOffset = resumeCharacterOffset
-        let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|")
+        let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|") + ":\(resumeCharacterOffset ?? -1)"
         guard context.coordinator.source != markdown || context.coordinator.highlightSignature != signature else {
             DispatchQueue.main.async { view.restoreIfNeeded() }
             return
         }
         context.coordinator.source = markdown
         context.coordinator.highlightSignature = signature
-        let renderedMarkdown = InlineMathPresentation.segments(in: markdown)
-            .map { $0.isMath ? MathFormulaPresentation.displayText($0.text) : $0.text }
-            .joined()
-        let attributed = (try? AttributedString(markdown: renderedMarkdown)) ?? AttributedString(renderedMarkdown)
+        let attributed = ReadingResumeTarget.attributedText(markdown)
         view.attributedText = NSAttributedString(attributed)
         view.font = UIFont.preferredFont(forTextStyle: .body)
         view.textColor = textColor
@@ -4384,18 +4410,25 @@ struct SelectableReadingText: UIViewRepresentable {
                 searchRange = NSRange(location: next, length: source.length - next)
             }
         }
+        if let offset = resumeCharacterOffset, view.textStorage.length > 0 {
+            let location = min(max(offset, 0), view.textStorage.length - 1)
+            view.textStorage.addAttributes([
+                .backgroundColor: UIColor(AppTheme.Colors.bentoAmber).withAlphaComponent(0.9),
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .underlineColor: UIColor(AppTheme.Colors.emberOrange)
+            ], range: (view.textStorage.string as NSString).rangeOfComposedCharacterSequence(at: location))
+            view.accessibilityValue = "已定位到上次阅读字符 \(location + 1)"
+        }
         view.accessibilityHint = "Long press to select text. Tap an underlined passage to read its note."
         DispatchQueue.main.async {
             view.restoreIfNeeded()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                view.restoreIfNeeded(force: true)
-            }
         }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ReadingPositionTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let fitting = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: fitting.height)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -4463,6 +4496,627 @@ struct SelectableReadingText: UIViewRepresentable {
     }
 }
 
+private enum ReadingSelectionPalette {
+    static let ink = Color(red: 0.09, green: 0.16, blue: 0.27)
+    static let muted = Color(red: 0.42, green: 0.50, blue: 0.62)
+    static let paper = Color(red: 1.0, green: 0.997, blue: 0.987)
+    static let mint = Color(red: 0.89, green: 0.98, blue: 0.96)
+    static let lavender = Color(red: 0.95, green: 0.94, blue: 1.0)
+    static let violet = Color(red: 0.45, green: 0.36, blue: 0.87)
+}
+
+enum ReadingQuickAction: Equatable {
+    case example, simplify
+
+    static func focusedQuestion(_ question: String, excerpt: String) -> String {
+        let selection = String(excerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000))
+        return """
+        这是阅读选词提问。用户选中：「\(selection)」。
+        请先直接解释选中内容在当前句子中的含义；章节正文只用于判断语境，不要用概述整段替代选词解释。若选中的是短词，请先说明这个词，再围绕它回应下面的请求。
+        用户请求：\(question)
+        """
+    }
+
+    var title: String {
+        switch self {
+        case .example: "举个例子"
+        case .simplify: "再讲简单点"
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .example:
+            """
+            请只根据我选中的原文，用大学生熟悉的一个具体场景举例。输出顺序固定：
+            1.「一句话看懂」：不超过 40 字。
+            2.「校园例子」：写清人物、发生了什么、为什么对应原文；明确区分例子与原文事实。
+            3.「对照表」：用 Markdown 三列表格，表头为「原文线索｜例子里的对应物｜读懂后的含义」，至少两行。
+            4. 只有原文确有可核对的数值或趋势时，才追加 ```chart 代码围栏，内容必须是 JSON：{"title":"...","type":"bar","points":[{"label":"...","value":1}],"summary":"..."}。没有数值就不要编造图表。
+            不要补全原文缺失的信息，不要编造图片网址或数据来源。最后留一个供我自测的小问题。
+            """
+        case .simplify:
+            """
+            请把我选中的原文讲给第一次接触它的大学生听，不改变事实含义。输出顺序固定：
+            1.「大白话」：两句话以内，避开术语；原文不完整时明确说尚不能确定。
+            2. 用一个 ```comic 代码围栏给出三格漫画式图解，内容是 JSON：{"title":"短标题","panels":[{"scene":"第一格画面","dialogue":"一句短台词","symbol":"questionmark.circle.fill"},{"scene":"第二格画面","dialogue":"一句短台词","symbol":"lightbulb.fill"},{"scene":"第三格画面","dialogue":"一句短台词","symbol":"checkmark.seal.fill"}]}。三格依次是困惑、类比、理解；画面与台词都要根据原文重新写，不能照抄示例文案。
+            3.「记住这一句」：不超过 25 字。
+            漫画是解释性示意，不是原文事实；不要编造统计、图片网址或缺失的上下文。
+            """
+        }
+    }
+}
+
+@MainActor
+private final class ReadingSelectionQuestionState: ObservableObject {
+    @Published var sessionID: String?
+    @Published var draft = ""
+    @Published var submittedQuestion: String?
+    @Published var streamedAnswer = ""
+    @Published var isAsking = false
+    @Published var statusText = ""
+    @Published var activitySteps: [String] = []
+    @Published var reasoningSteps: [ReasoningStep] = []
+    @Published var errorMessage: String?
+    @Published var noteMessage: String?
+    @Published var activeQuickAction: ReadingQuickAction?
+    @Published var turns: [ReaderQuestionTurn] = []
+    @Published var lastSavedAnswer = ""
+    @Published var accountFingerprint = KnowledgeNoteStore.shared.accountFingerprint
+
+    func reset(initialTurns: [ReaderQuestionTurn]) {
+        sessionID = initialTurns.last?.sessionID
+        draft = ""
+        submittedQuestion = nil
+        streamedAnswer = ""
+        isAsking = false
+        statusText = ""
+        activitySteps = []
+        reasoningSteps = []
+        errorMessage = nil
+        noteMessage = nil
+        activeQuickAction = nil
+        turns = initialTurns
+        lastSavedAnswer = ""
+        accountFingerprint = KnowledgeNoteStore.shared.accountFingerprint
+    }
+}
+
+private struct ReadingSelectionQuestionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var api: APIClient
+    @ObservedObject var state: ReadingSelectionQuestionState
+    @FocusState private var inputFocused: Bool
+
+    private var sessionID: String? { get { state.sessionID } nonmutating set { state.sessionID = newValue } }
+    private var draft: String { get { state.draft } nonmutating set { state.draft = newValue } }
+    private var submittedQuestion: String? { get { state.submittedQuestion } nonmutating set { state.submittedQuestion = newValue } }
+    private var streamedAnswer: String { get { state.streamedAnswer } nonmutating set { state.streamedAnswer = newValue } }
+    private var isAsking: Bool { get { state.isAsking } nonmutating set { state.isAsking = newValue } }
+    private var statusText: String { get { state.statusText } nonmutating set { state.statusText = newValue } }
+    private var activitySteps: [String] { get { state.activitySteps } nonmutating set { state.activitySteps = newValue } }
+    private var reasoningSteps: [ReasoningStep] { get { state.reasoningSteps } nonmutating set { state.reasoningSteps = newValue } }
+    private var errorMessage: String? { get { state.errorMessage } nonmutating set { state.errorMessage = newValue } }
+    private var noteMessage: String? { get { state.noteMessage } nonmutating set { state.noteMessage = newValue } }
+    private var activeQuickAction: ReadingQuickAction? { get { state.activeQuickAction } nonmutating set { state.activeQuickAction = newValue } }
+    private var turns: [ReaderQuestionTurn] { get { state.turns } nonmutating set { state.turns = newValue } }
+    private var lastSavedAnswer: String { get { state.lastSavedAnswer } nonmutating set { state.lastSavedAnswer = newValue } }
+    private var accountFingerprint: String { state.accountFingerprint }
+
+    let excerpt: String
+    let book: KnowledgeBookDTO
+    let bookBody: KnowledgeBookBodyDTO
+    let section: KnowledgeBookSectionDTO
+    let onSaveAnswer: (String, String, String?) -> Bool
+
+    private var isPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-readingSelectionPreview")
+        #else
+        false
+        #endif
+    }
+
+    private var isStreamPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-readingSelectionStreamPreview")
+        #else
+        false
+        #endif
+    }
+
+    private var question: String? {
+        submittedQuestion ?? (isPreview && !isStreamPreview ? "这里的 T-10 表示什么？" : nil)
+    }
+
+    private var answerText: String {
+        if !streamedAnswer.isEmpty || !isPreview || isStreamPreview { return streamedAnswer }
+        return """
+                T-10 可能只是任务编号的开头，==现在还不能确定==它的完整值。
+
+                这段内容可以这样理解：
+
+                - `task_id` 是字段名。
+                - `T-10` 是目前读到的值。
+                - 缺少结束引号，JSON 可能尚未传完。
+
+                【一个小提醒】真实编号可能是 T-105、T-109，直接补全可能会改错原意。
+                """
+    }
+
+    private var blocks: [MarkdownBlock] {
+        ReadingCardDeck.answerBlocks(from: answerText, isStreaming: isAsking)
+    }
+
+    private func scrollID(for block: MarkdownBlock, at index: Int) -> String {
+        if case .table = block { return "reading-example-table-\(index)" }
+        return block.id
+    }
+
+    var bodyView: some View {
+        VStack(spacing: 0) {
+            Capsule().fill(ReadingSelectionPalette.muted.opacity(0.35))
+                .frame(width: 36, height: 5).padding(.top, 12)
+
+            ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    selectedQuote.padding(.top, 22)
+
+                    ForEach(turns) { turn in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(turn.question).font(.system(size: 16, weight: .semibold))
+                            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: turn.answer))
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.top, 14)
+                    }
+
+                    if let question {
+                        Text("我的问题")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(ReadingSelectionPalette.muted)
+                            .padding(.top, 22)
+                        Text(question)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(ReadingSelectionPalette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 6)
+                        Rectangle().fill(ReadingSelectionPalette.ink.opacity(0.10))
+                            .frame(height: 1).padding(.vertical, 20)
+                        answerContent
+                    } else {
+                        Text("选好文字，问你想问的")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(ReadingSelectionPalette.ink)
+                            .padding(.top, 26)
+                        Text("可以从一句话开始，再慢慢聊深一点。")
+                            .font(.system(size: 15))
+                            .foregroundStyle(ReadingSelectionPalette.muted)
+                            .padding(.top, 8)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 22)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("reading-selection-question-scroll")
+            .onChange(of: isAsking) { wasAsking, nowAsking in
+                guard wasAsking, !nowAsking, activeQuickAction != nil else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        scrollProxy.scrollTo("reading-answer-summary", anchor: .top)
+                    }
+                }
+            }
+            }
+        }
+        .background {
+            ReadingSelectionPalette.paper
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(ReadingSelectionPalette.lavender.opacity(0.75))
+                        .frame(width: 250, height: 250)
+                        .blur(radius: 48).offset(x: 110, y: -90)
+                }
+                .ignoresSafeArea()
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+    }
+
+    var body: some View { bodyView }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image("quantum_logo_icon")
+                .resizable().scaledToFit()
+                .frame(width: 32, height: 32)
+                .padding(.top, 9)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("一起读懂")
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                Text("针对选中的内容，聊深一点")
+                    .font(.system(size: 13))
+                    .foregroundStyle(ReadingSelectionPalette.muted)
+            }
+            Spacer(minLength: 0)
+            Image("reading_open_book")
+                .resizable().scaledToFit()
+                .frame(width: 72, height: 58)
+                .accessibilityHidden(true)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.72), in: Circle())
+            }
+            .accessibilityLabel("关闭选词提问")
+        }
+        .padding(.top, 22)
+    }
+
+    private var selectedQuote: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("选中内容")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ReadingSelectionPalette.muted)
+            HStack(alignment: .top, spacing: 10) {
+                Text(String(excerpt.prefix(4_000)))
+                    .font(.system(size: 16, design: .monospaced))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    UIPasteboard.general.string = excerpt
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("复制选中内容")
+            }
+        }
+        .padding(16)
+        .background(ReadingSelectionPalette.lavender, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous).stroke(.white, lineWidth: 1))
+    }
+
+    private var answerContent: some View {
+        let displayedBlocks = blocks
+        let summaryIndex = displayedBlocks.firstIndex { if case .paragraph = $0 { true } else { false } }
+        let summaryHeadingIndex = summaryIndex.flatMap { index -> Int? in
+            guard index > 0, case .heading = displayedBlocks[index - 1] else { return nil }
+            return index - 1
+        }
+        let summaryTitle = summaryHeadingIndex.flatMap { index -> String? in
+            guard case .heading(_, let title) = displayedBlocks[index] else { return nil }
+            return title
+        } ?? "先说结论"
+        return VStack(alignment: .leading, spacing: 14) {
+            Label("AI 解读", systemImage: "sparkles")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(ReadingSelectionPalette.ink)
+
+            if isAsking || !activitySteps.isEmpty || !reasoningSteps.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ReasoningStatusStrip(
+                        title: isAsking ? (statusText.isEmpty ? "正在帮你读懂…" : statusText) : "解读过程",
+                        isStreaming: isAsking
+                    )
+                    if !reasoningSteps.isEmpty {
+                        ReasoningCard(steps: reasoningSteps, isStreaming: isAsking)
+                    } else if !activitySteps.isEmpty {
+                        DisclosureGroup("查看过程摘要") {
+                            ForEach(Array(activitySteps.enumerated()), id: \.offset) { _, step in
+                                Text("• \(step)")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(ReadingSelectionPalette.muted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(ReadingSelectionPalette.ink)
+                    }
+                }
+            }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.red)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .accessibilityIdentifier("reading-selection-question-error")
+            }
+
+            if let summaryIndex {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(summaryTitle, systemImage: "lightbulb.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(AppTheme.Colors.interactiveBlue)
+                    if case .paragraph(let text) = displayedBlocks[summaryIndex] {
+                        MarkdownText(text, font: .system(size: 17, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(5)
+                    }
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ReadingSelectionPalette.mint, in: RoundedRectangle(cornerRadius: 18))
+                .id("reading-answer-summary")
+            }
+
+            ForEach(Array(displayedBlocks.enumerated()).filter { $0.offset != summaryIndex && $0.offset != summaryHeadingIndex }, id: \.offset) { index, block in
+                MarkdownBlockCard(block: block)
+                    .id(scrollID(for: block, at: index))
+            }
+
+            if !answerText.isEmpty && !isAsking {
+                HStack(spacing: 24) {
+                    Button {
+                        UIPasteboard.general.string = answerText
+                    } label: { Label("复制回答", systemImage: "doc.on.doc").fixedSize(horizontal: true, vertical: false) }
+                    Button(action: saveAnswer) {
+                        Label("记到笔记", systemImage: "book.closed").fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ReadingSelectionPalette.muted)
+                .frame(minHeight: 44)
+            }
+            if let noteMessage {
+                Text(noteMessage).font(.system(size: 12)).foregroundStyle(ReadingSelectionPalette.violet)
+            }
+        }
+    }
+
+    private var composer: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button { send(ReadingQuickAction.example.prompt, displayQuestion: ReadingQuickAction.example.title, action: .example) } label: {
+                    Label("举个例子", systemImage: "text.bubble")
+                        .frame(minHeight: 38)
+                }
+                .background(ReadingSelectionPalette.mint, in: Capsule())
+                Button { send(ReadingQuickAction.simplify.prompt, displayQuestion: ReadingQuickAction.simplify.title, action: .simplify) } label: {
+                    Label("再讲简单点", systemImage: "lightbulb")
+                        .frame(minHeight: 38)
+                }
+                .background(ReadingSelectionPalette.lavender, in: Capsule())
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(ReadingSelectionPalette.ink)
+            .buttonStyle(.plain)
+            .disabled(isAsking)
+
+            HStack(spacing: 10) {
+                TextField("继续问问 Quantum…", text: $state.draft, axis: .vertical)
+                    .font(.system(size: 16))
+                    .foregroundStyle(ReadingSelectionPalette.ink)
+                    .lineLimit(1...3)
+                    .focused($inputFocused)
+                    .submitLabel(.send)
+                    .onSubmit(sendDraft)
+                    .accessibilityIdentifier("reading-selection-question-input")
+                Button(action: sendDraft) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(ReadingSelectionPalette.ink, in: Circle())
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAsking)
+                .accessibilityLabel("发送选词问题")
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 7)
+            .frame(minHeight: 58)
+            .background(.white.opacity(0.88), in: Capsule())
+            .overlay(Capsule().stroke(.white, lineWidth: 1))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 7)
+        .background(.ultraThinMaterial)
+    }
+
+    private func sendDraft() {
+        send(draft)
+    }
+
+    private func dismissKeyboard() {
+        inputFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    private func send(_ text: String, displayQuestion: String? = nil, action: ReadingQuickAction? = nil) {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isAsking else { return }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            errorMessage = "账号已切换，请重新打开阅读问答。"
+            return
+        }
+        guard noteMessage != "保存失败，请重试" else { return }
+        if let submittedQuestion, !streamedAnswer.isEmpty, errorMessage == nil {
+            var turn = ReaderQuestionTurn(question: submittedQuestion, answer: streamedAnswer)
+            turn.sessionID = sessionID
+            turns.append(turn)
+        }
+        inputFocused = false
+        submittedQuestion = displayQuestion ?? prompt
+        activeQuickAction = action
+        streamedAnswer = ""
+        errorMessage = nil
+        activitySteps = []
+        reasoningSteps = []
+        statusText = "正在阅读选中的内容…"
+        noteMessage = nil
+        isAsking = true
+        draft = ""
+        Task { await submit(prompt) }
+    }
+
+    @MainActor
+    private func submit(_ prompt: String) async {
+        defer { isAsking = false }
+        var completed = false
+        let stream: AsyncThrowingStream<APIClient.StreamEvent, Error>
+        if isStreamPreview {
+            stream = AsyncThrowingStream { continuation in
+                continuation.yield(.status(phase: "reasoning", detail: "正在分析选中的内容"))
+                continuation.yield(.toolStart(id: "preview", tool: "reader", label: "核对上下文"))
+                let preview: String
+                if prompt == ReadingQuickAction.example.prompt {
+                    preview = """
+                    ## 一句话看懂
+                    T-10 是目前看到的任务编号片段，完整值还不能确定。
+
+                    ## 校园例子
+                    小组文档传到一半，只看到编号开头，不能替队友补完。
+
+                    ## 对照表
+                    | 原文线索 | 例子里的对应物 | 读懂后的含义 |
+                    | --- | --- | --- |
+                    | task_id | 文档编号字段 | 表示字段名 |
+                    | T-10 | 传到一半的编号 | 暂不能认定完整编号 |
+                    """
+                } else if prompt == ReadingQuickAction.simplify.prompt {
+                    preview = """
+                    ## 大白话
+                    现在只看到编号的开头，还不知道后面有没有内容。
+
+                    ```json
+                    {"title":"编号没传完","panels":[{"scene":"同学收到半张便签","dialogue":"只看到 T-10？","symbol":"questionmark.circle.fill"},{"scene":"等队友把便签传完","dialogue":"别急着替他补字。","symbol":"lightbulb.fill"},{"scene":"核对完整编号","dialogue":"看完才能确认。","symbol":"checkmark.seal.fill"}]}
+                    ```
+
+                    ## 记住这一句
+                    没看全，就先别猜。
+                    """
+                } else {
+                    preview = "这是从阅读上下文生成的回答。"
+                }
+                if ProcessInfo.processInfo.arguments.contains("-readingSelectionShortDeltaPreview") {
+                    continuation.yield(.delta("1"))
+                    continuation.yield(.answerPage(AnswerBlockPageDTO(
+                        messageId: "reading-preview", revision: 1, status: "completed",
+                        blocks: [AnswerBlockDTO(blockIndex: 0, kind: "markdown", content: preview)],
+                        bytes: preview.utf8.count, loadedBlockCount: 1, availableBlockCount: 1,
+                        hasMore: false, nextCursor: nil
+                    )))
+                    continuation.yield(.done(sessionId: "reading-preview-session", answer: "1"))
+                    continuation.finish()
+                } else if ProcessInfo.processInfo.arguments.contains("-readingSelectionFinalReplacementPreview") {
+                    continuation.yield(.delta(preview))
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        continuation.yield(.answerPage(AnswerBlockPageDTO(
+                            messageId: "reading-preview", revision: 1, status: "completed",
+                            blocks: [AnswerBlockDTO(blockIndex: 0, kind: "markdown", content: "摘要")],
+                            bytes: 6, loadedBlockCount: 1, availableBlockCount: 1,
+                            hasMore: false, nextCursor: nil
+                        )))
+                        continuation.yield(.done(sessionId: "reading-preview-session", answer: "  \n"))
+                        continuation.finish()
+                    }
+                } else {
+                    continuation.yield(.delta(preview))
+                    continuation.yield(.done(sessionId: "reading-preview-session", answer: nil))
+                    continuation.finish()
+                }
+            }
+        } else {
+            stream = api.chatStream(
+                question: ReadingQuickAction.focusedQuestion(prompt, excerpt: excerpt),
+                sessionId: sessionID,
+                quotedContext: nil,
+                contextScope: ChatContextScopeDTO(
+                    mode: .platformOnly,
+                    selectedBookId: book.id,
+                    selectedBookVersion: bookBody.contentVersion,
+                    selectedBookSectionId: section.id
+                )
+            )
+        }
+        do {
+            for try await event in stream {
+                switch event {
+                case .status(_, let detail):
+                    if !detail.isEmpty { recordActivity(detail) }
+                case .toolStart(_, _, let label):
+                    if !label.isEmpty { recordActivity(label) }
+                case .thought:
+                    recordActivity("正在整理思路")
+                case .delta(let text):
+                    streamedAnswer += text
+                case .answerPage(let page):
+                    let content = page.blocks.map(\.content).joined(separator: "\n\n")
+                    if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       content.count > streamedAnswer.count {
+                        streamedAnswer = content
+                    }
+                case .clarify(let question, let choices, _, _, _, _, _):
+                    streamedAnswer = (["## \(question)"] + choices.map { "- \($0)" }).joined(separator: "\n")
+                case .done(let id, let answer):
+                    completed = true
+                    sessionID = id ?? sessionID
+                    if let answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       answer.count > streamedAnswer.count {
+                        streamedAnswer = answer
+                    }
+                    statusText = "解读完成"
+                case .error(_, let message):
+                    errorMessage = message.isEmpty ? "这次提问没有完成，请重试。" : message
+                    return
+                default:
+                    break
+                }
+            }
+            if let sessionID, !isStreamPreview,
+               let status = try? await api.fetchChatStatus(sessionId: sessionID) {
+                reasoningSteps = status.reasoning?.map { $0.toReasoningStep() } ?? []
+                if let loaded = status.loadedAnswer, loaded.count > streamedAnswer.count {
+                    streamedAnswer = loaded
+                }
+            }
+            if streamedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errorMessage = "没有收到回答，请重试。"
+            } else if completed, !isStreamPreview, !isPreview {
+                saveAnswer()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func recordActivity(_ detail: String) {
+        statusText = detail
+        if activitySteps.last != detail { activitySteps.append(detail) }
+    }
+
+    private func saveAnswer() {
+        guard let question, !answerText.isEmpty else { return }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            noteMessage = "账号已切换，请重新打开阅读问答。"
+            return
+        }
+        guard answerText != lastSavedAnswer else { return }
+        guard onSaveAnswer(question, answerText, sessionID) else {
+            noteMessage = "保存失败，请重试"
+            return
+        }
+        lastSavedAnswer = answerText
+        noteMessage = "已保存到笔记"
+    }
+}
+
 enum ReadingLanguagePresentation {
     static func isEnglish(_ text: String) -> Bool {
         let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
@@ -4471,11 +5125,25 @@ enum ReadingLanguagePresentation {
     }
 }
 
+struct ReaderQuestionTurn: Identifiable, Hashable {
+    let id: String
+    let question: String
+    let answer: String
+    var sessionID: String? = nil
+
+    init(id: String = UUID().uuidString, question: String, answer: String) {
+        self.id = id
+        self.question = question
+        self.answer = answer
+    }
+}
+
 struct ReaderQuestionSheet: View {
     let excerpt: String
     let sourceTitle: String
     let sourceSubtitle: String
-    let onSaveAnswer: ((String, String) -> Void)?
+    let sheetTitle: String?
+    let onSaveAnswer: ((String, String, String?) -> Bool)?
     let automaticallySaveAnswer: Bool
     let submitsOnAppear: Bool
     let ask: (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
@@ -4487,7 +5155,10 @@ struct ReaderQuestionSheet: View {
     @State private var errorMessage: String?
     @State private var isAsking = false
     @State private var statusText = ""
-    @State private var autoSavedAnswer = ""
+    @State private var turns: [ReaderQuestionTurn]
+    @State private var accountFingerprint: String
+    @State private var answerNeedsSave = false
+    @State private var showsFullExcerpt = false
     @FocusState private var isQuestionFocused: Bool
 
     private var isEnglish: Bool { ReadingLanguagePresentation.isEnglish(excerpt) }
@@ -4501,20 +5172,26 @@ struct ReaderQuestionSheet: View {
         excerpt: String,
         sourceTitle: String = "当前阅读",
         sourceSubtitle: String = "已基于选中文字",
+        sheetTitle: String? = nil,
         initialQuestion: String = "",
+        initialTurns: [ReaderQuestionTurn] = [],
         submitsOnAppear: Bool = false,
         automaticallySaveAnswer: Bool = false,
-        onSaveAnswer: ((String, String) -> Void)? = nil,
+        onSaveAnswer: ((String, String, String?) -> Bool)? = nil,
         ask: @escaping (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
     ) {
         self.excerpt = excerpt
         self.sourceTitle = sourceTitle
         self.sourceSubtitle = sourceSubtitle
+        self.sheetTitle = sheetTitle
         self.submitsOnAppear = submitsOnAppear
         self.automaticallySaveAnswer = automaticallySaveAnswer
         self.onSaveAnswer = onSaveAnswer
         self.ask = ask
         _question = State(initialValue: initialQuestion)
+        _turns = State(initialValue: initialTurns)
+        _sessionID = State(initialValue: initialTurns.last?.sessionID)
+        _accountFingerprint = State(initialValue: KnowledgeNoteStore.shared.accountFingerprint)
     }
 
     var body: some View {
@@ -4526,7 +5203,7 @@ struct ReaderQuestionSheet: View {
                     .frame(maxWidth: .infinity)
 
                 HStack {
-                    Text(isEnglish ? "Ask Quantum" : "向 Quantum 提问")
+                    Text(sheetTitle ?? (isEnglish ? "Ask Quantum" : "向 Quantum 提问"))
                         .font(.system(size: 22, weight: .semibold))
                     Spacer()
                     Button { dismiss() } label: {
@@ -4543,9 +5220,22 @@ struct ReaderQuestionSheet: View {
                     .font(.system(.body, design: .serif, weight: .medium))
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                     .lineSpacing(5)
+                    .lineLimit(showsFullExcerpt ? nil : 3)
                     .padding(AppTheme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(AppTheme.Colors.mistSky.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                if excerpt.count > 180 {
+                    Button(showsFullExcerpt ? "收起原文" : "展开原文") { showsFullExcerpt.toggle() }
+                        .font(AppTheme.Typography.supporting.weight(.semibold))
+                        .foregroundStyle(AppTheme.Colors.quantumBlue)
+                        .frame(minHeight: 44)
+                }
+
+                ForEach(turns) { turn in
+                    conversationTurn(turn)
+                }
+
+                if isAsking || !answer.isEmpty { answerCard }
 
                 questionComposer
 
@@ -4562,8 +5252,6 @@ struct ReaderQuestionSheet: View {
                     }
                 }
 
-                if isAsking || !answer.isEmpty { answerCard }
-
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.circle")
                         .font(AppTheme.Typography.supporting)
@@ -4571,6 +5259,16 @@ struct ReaderQuestionSheet: View {
                         .padding(AppTheme.Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(AppTheme.Colors.dangerSurface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    if answerNeedsSave {
+                        Button("重试保存回答") {
+                            guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else { return }
+                            if onSaveAnswer?(lastQuestion, answer, sessionID) == true {
+                                answerNeedsSave = false
+                                self.errorMessage = nil
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
                 }
             }
             .padding(.horizontal, AppTheme.Metrics.contentGutter)
@@ -4633,10 +5331,7 @@ struct ReaderQuestionSheet: View {
             if !statusText.isEmpty {
                 Text(statusText).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
             }
-            MarkdownText(String(answer.suffix(4_000)))
-                .font(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.textPrimary)
-                .lineSpacing(6)
+            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: answer, isStreaming: isAsking))
                 .textSelection(.enabled)
 
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -4654,8 +5349,12 @@ struct ReaderQuestionSheet: View {
 
             if !answer.isEmpty, let onSaveAnswer, !automaticallySaveAnswer {
                 Button {
-                    onSaveAnswer(lastQuestion, answer)
-                    dismiss()
+                    guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+                        errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
+                        return
+                    }
+                    if onSaveAnswer(lastQuestion, answer, sessionID) { dismiss() }
+                    else { errorMessage = "保存失败，回答仍保留在这里，请重试。" }
                 } label: {
                     Label(isEnglish ? "Save as annotation" : "作为批注保存", systemImage: "bookmark")
                         .font(AppTheme.Typography.label)
@@ -4670,10 +5369,37 @@ struct ReaderQuestionSheet: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border.opacity(0.5)) }
     }
 
+    private func conversationTurn(_ turn: ReaderQuestionTurn) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Text(isEnglish ? "You" : "我的问题")
+                .font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.textTertiary)
+            Text(turn.question).font(AppTheme.Typography.body)
+            Text(isEnglish ? "Quantum AI" : "AI 回答")
+                .font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.textTertiary)
+                .padding(.top, AppTheme.Spacing.xs)
+            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: turn.answer))
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(AppTheme.Colors.surfaceTint.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+    }
+
     @MainActor
     private func submit() async {
         let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
+        guard !value.isEmpty, !isAsking else { return }
+        guard !answerNeedsSave else {
+            errorMessage = "请先重试保存上一条回答，再继续追问。"
+            return
+        }
+        guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
+            errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
+            return
+        }
+        if !answer.isEmpty, !lastQuestion.isEmpty, errorMessage == nil {
+            turns.append(.init(question: lastQuestion, answer: answer))
+        }
         isQuestionFocused = false
         lastQuestion = value
         isAsking = true
@@ -4682,8 +5408,14 @@ struct ReaderQuestionSheet: View {
         errorMessage = nil
         defer { isAsking = false }
         do {
-            let stream = try await ask(value, sessionID)
+            var completed = false
+            let request = sessionID == nil && !turns.isEmpty
+                ? (turns.map { "我的问题：\($0.question)\nAI 回答：\($0.answer)" }
+                    + ["我的追问：\(value)"]).joined(separator: "\n\n")
+                : value
+            let stream = try await ask(request, sessionID)
             for try await event in stream {
+                guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else { return }
                 switch event {
                 case .delta(let text):
                     answer += text
@@ -4698,6 +5430,7 @@ struct ReaderQuestionSheet: View {
                 case .clarify(let prompt, let choices, _, _, _, _, _):
                     answer = (["## \(prompt)"] + choices.map { "- \($0)" }).joined(separator: "\n")
                 case .done(let id, let finalAnswer):
+                    completed = true
                     sessionID = id ?? sessionID
                     if let finalAnswer, !finalAnswer.isEmpty { answer = finalAnswer }
                     statusText = isEnglish ? "Report ready" : "解读完成"
@@ -4708,12 +5441,17 @@ struct ReaderQuestionSheet: View {
                     break
                 }
             }
-            if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !completed {
+                errorMessage = "回答传输尚未完成，请重试。"
+            } else if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errorMessage = isEnglish ? "No answer was returned. Please try again." : "没有收到回答，请重试。"
-            } else if automaticallySaveAnswer, answer != autoSavedAnswer {
-                onSaveAnswer?(lastQuestion, answer)
-                autoSavedAnswer = answer
+            } else if automaticallySaveAnswer {
+                if onSaveAnswer?(lastQuestion, answer, sessionID) != true {
+                    answerNeedsSave = true
+                    errorMessage = "回答未能保存，请先复制回答，避免关闭后丢失。"
+                }
             }
+            question = ""
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -4729,6 +5467,8 @@ struct ReaderAnnotationEntry: Identifiable {
     let bookID: String
     let sectionID: String
     let sectionTitle: String
+    var contentVersion: String? = nil
+    var sessionID: String? = nil
 
     init(
         id: String, kind: String, quote: String, detail: String, date: String,
@@ -4776,6 +5516,8 @@ struct ReaderAnnotationEntry: Identifiable {
             sectionID: sectionID,
             sectionTitle: sectionTitle
         )
+        contentVersion = Self.metadata("正文版本：", in: lines)
+        sessionID = Self.metadata("问答会话 ID：", in: lines)
     }
 
     private static func metadata(_ prefix: String, in lines: [String]) -> String? {
@@ -4788,11 +5530,28 @@ struct ReaderAnnotationEntry: Identifiable {
     private static func calloutContent(_ lines: ArraySlice<String>, excludingMetadata: Bool) -> String {
         lines.compactMap { raw -> String? in
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("> [!") else { return nil }
-            let value = trimmed.hasPrefix("> ") ? String(trimmed.dropFirst(2)) : trimmed
+            guard !trimmed.isEmpty else { return nil }
+            let value = trimmed == ">" ? "" : trimmed.hasPrefix("> ") ? String(trimmed.dropFirst(2)) : trimmed
             if excludingMetadata && (value.hasPrefix("《") || value.hasPrefix("章节：")) { return nil }
             return value
         }.joined(separator: "\n")
+    }
+}
+
+extension ReaderAnnotationEntry {
+    var questionTurn: ReaderQuestionTurn? {
+        guard let questionRange = detail.range(of: "我的问题"),
+              let answerRange = detail.range(of: "AI 回答摘要"),
+              questionRange.upperBound <= answerRange.lowerBound else { return nil }
+        func clean(_ value: Substring) -> String {
+            String(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let question = clean(detail[questionRange.upperBound..<answerRange.lowerBound])
+        let answer = clean(detail[answerRange.upperBound...])
+        guard !question.isEmpty, !answer.isEmpty else { return nil }
+        var turn = ReaderQuestionTurn(id: id, question: question, answer: answer)
+        turn.sessionID = sessionID
+        return turn
     }
 }
 
@@ -4807,6 +5566,8 @@ extension ReaderAnnotationEntry {
         sectionID: String,
         sectionTitle: String,
         citation: String,
+        contentVersion: String? = nil,
+        sessionID: String? = nil,
         api: APIClient
     ) -> ReaderAnnotationEntry? {
         let isEnglish = ReadingLanguagePresentation.isEnglish(quote)
@@ -4823,6 +5584,8 @@ extension ReaderAnnotationEntry {
         章节标题：\(sectionTitle)
         来源书籍 ID：`\(bookID)`
         来源章节 ID：`\(sectionID)`
+        \(contentVersion.map { "正文版本：`\($0)`" } ?? "")
+        \(sessionID.map { "问答会话 ID：`\($0)`" } ?? "")
         引用：`\(citation)`
         """
         guard let note = KnowledgeNoteStore.shared.createNote(
@@ -4856,13 +5619,20 @@ struct ReaderAnnotationCenterView: View {
     let bookID: String
     let bookTitle: String
     let previewEntries: [ReaderAnnotationEntry]?
+    let onContinueQuestion: ((ReaderAnnotationEntry) -> Void)?
     @ObservedObject private var store = KnowledgeNoteStore.shared
     @Environment(\.dismiss) private var dismiss
 
-    init(bookID: String = "", bookTitle: String, previewEntries: [ReaderAnnotationEntry]? = nil) {
+    init(
+        bookID: String = "",
+        bookTitle: String,
+        previewEntries: [ReaderAnnotationEntry]? = nil,
+        onContinueQuestion: ((ReaderAnnotationEntry) -> Void)? = nil
+    ) {
         self.bookID = bookID
         self.bookTitle = bookTitle
         self.previewEntries = previewEntries
+        self.onContinueQuestion = onContinueQuestion
     }
 
     private var entries: [ReaderAnnotationEntry] {
@@ -4910,7 +5680,11 @@ struct ReaderAnnotationCenterView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("返回") { dismiss() } }
             }
-            .sheet(item: $inspectedEntry) { ReaderAnnotationDetailSheet(entry: $0) }
+            .sheet(item: $inspectedEntry) { entry in
+                ReaderAnnotationDetailSheet(entry: entry, onContinueQuestion: onContinueQuestion.map { callback in
+                    { callback(entry) }
+                })
+            }
         }
     }
 
@@ -4985,6 +5759,7 @@ struct ReaderAnnotationCenterView: View {
 
 struct ReaderAnnotationDetailSheet: View {
     let entry: ReaderAnnotationEntry
+    var onContinueQuestion: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -5008,9 +5783,7 @@ struct ReaderAnnotationDetailSheet: View {
                             Text("我的问题").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary)
                             Text(question).font(AppTheme.Typography.body)
                             Text("AI 回答摘要").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textTertiary).padding(.top, AppTheme.Spacing.sm)
-                            MarkdownText(answerText ?? "")
-                                .font(AppTheme.Typography.body)
-                                .lineSpacing(5)
+                            ReadingCardDeck(blocks: ReadingCardDeck.answerBlocks(from: answerText ?? ""))
                         }
                     } else if !entry.detail.isEmpty {
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
@@ -5024,6 +5797,18 @@ struct ReaderAnnotationDetailSheet: View {
                         .padding(AppTheme.Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    if entry.questionTurn != nil, let onContinueQuestion {
+                        Button {
+                            dismiss()
+                            onContinueQuestion()
+                        } label: {
+                            Label("继续围绕这段提问", systemImage: "bubble.left.and.text.bubble.right")
+                                .font(AppTheme.Typography.label)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppTheme.Colors.quantumBlue)
+                    }
                 }
                 .padding(AppTheme.Metrics.contentGutter)
             }
@@ -5065,10 +5850,10 @@ struct ReaderAnnotationPrototypeHost: View {
         } else {
             ReaderPrototypePage(stage: pageID.hasSuffix("p03") ? .saved : pageID.hasSuffix("p01") ? .selected : .plain)
                 .sheet(isPresented: $showingQuestion) {
-                    ReaderQuestionSheet(excerpt: "阳光很好，树叶在风里沙沙地响。") { _, _ in
+                    ReaderQuestionSheet(excerpt: "阳光很好，树叶在风里沙沙地响。") { question, _ in
                         AsyncThrowingStream { continuation in
-                            continuation.yield(.delta("这句话通过声音和光线写出了宁静的瞬间。"))
-                            continuation.yield(.done(sessionId: nil, answer: nil))
+                            continuation.yield(.delta("这句话通过声音和光线写出了宁静的瞬间。\(question)"))
+                            continuation.yield(.done(sessionId: "reader-fixture", answer: nil))
                             continuation.finish()
                         }
                     }

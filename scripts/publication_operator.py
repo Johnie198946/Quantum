@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -18,6 +19,62 @@ from backend.services.knowledge_publication_store import (
     PUBLICATION_MEDIA, PublicationError, PublicationStore, receipt_set_hash,
 )
 from backend.services.follow_builders_publication import load_candidate
+from backend.services.publication_workflow_handoff import (
+    PublicationHandoffError,
+    acknowledge_publication_handoff,
+    export_publication_handoff,
+    request_publication_revision,
+)
+
+
+def _handoff_schedule_id() -> str:
+    value = os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", "")
+    if not value or len(value) > 48:
+        raise PublicationHandoffError("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID is required")
+    return value
+
+
+async def _export_handoff() -> dict:
+    from backend.db import SessionLocal
+
+    async with SessionLocal() as db:
+        return await export_publication_handoff(db, _handoff_schedule_id())
+
+
+async def _ack_handoff(store: PublicationStore, args) -> dict:
+    from backend.db import SessionLocal
+
+    bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+    async with SessionLocal() as db:
+        result = await acknowledge_publication_handoff(
+            db,
+            store,
+            _handoff_schedule_id(),
+            execution_id=args.execution_id,
+            artifact_id=args.artifact_id,
+            artifact_hash=args.artifact_sha256,
+            envelope_hash=args.envelope_sha256,
+            attempt_id=args.attempt_id,
+            bundle=bundle,
+        )
+        await db.commit()
+        return result
+
+
+async def _request_handoff_revision(store: PublicationStore, args) -> dict:
+    from backend.db import SessionLocal
+
+    envelope = json.loads(args.envelope.read_text(encoding="utf-8"))
+    bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+    review_raw = args.review_file.read_bytes()
+    async with SessionLocal() as db:
+        result = await request_publication_revision(
+            db, store, _handoff_schedule_id(), envelope=envelope,
+            envelope_hash=args.envelope_sha256, attempt_id=args.attempt_id,
+            bundle=bundle, review_raw=review_raw,
+        )
+        await db.commit()
+        return result
 
 
 def _file(value: str) -> tuple[str, Path]:
@@ -139,6 +196,20 @@ def main() -> int:
     status = commands.add_parser("status")
     status.add_argument("--publication-id")
     commands.add_parser("release-due")
+    commands.add_parser("export-workflow-handoff")
+    acknowledge = commands.add_parser("acknowledge-workflow-handoff")
+    acknowledge.add_argument("--bundle", required=True, type=Path)
+    acknowledge.add_argument("--execution-id", required=True)
+    acknowledge.add_argument("--artifact-id", required=True)
+    acknowledge.add_argument("--artifact-sha256", required=True)
+    acknowledge.add_argument("--envelope-sha256", required=True)
+    acknowledge.add_argument("--attempt-id", required=True)
+    revision = commands.add_parser("request-workflow-revision")
+    revision.add_argument("--envelope", required=True, type=Path)
+    revision.add_argument("--envelope-sha256", required=True)
+    revision.add_argument("--bundle", required=True, type=Path)
+    revision.add_argument("--review-file", required=True, type=Path)
+    revision.add_argument("--attempt-id", required=True)
     withdraw = commands.add_parser("withdraw")
     withdraw.add_argument("publication_id")
     args = parser.parse_args()
@@ -212,13 +283,25 @@ def main() -> int:
             _ingest_inline_assets(store, bundle, args)
             vault = Path(os.environ.get("AI_LAB_HOME", Path(__file__).resolve().parent.parent / "data" / "vault"))
             result = store.stage(bundle, vault=vault)
+        elif args.command == "export-workflow-handoff":
+            result = asyncio.run(_export_handoff())
+        elif args.command == "acknowledge-workflow-handoff":
+            result = asyncio.run(_ack_handoff(store, args))
+        elif args.command == "request-workflow-revision":
+            result = asyncio.run(_request_handoff_revision(store, args))
         elif args.command == "status":
             result = store.status_report(args.publication_id)
         elif args.command == "release-due":
             result = store.release_due()
         else:
             result = store.withdraw(args.publication_id)
-    except (OSError, UnicodeError, json.JSONDecodeError, PublicationError) as exc:
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        PublicationError,
+        PublicationHandoffError,
+    ) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2
     print(json.dumps({"ok": True, "result": result}, ensure_ascii=False, sort_keys=True))

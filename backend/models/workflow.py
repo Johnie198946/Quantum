@@ -10,10 +10,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +94,64 @@ class WorkflowClientSessionBinding(Base):
     owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     last_request_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WorkflowSchedule(Base):
+    """Server-owned, immutable-plan binding for recurring workflow triggers."""
+
+    __tablename__ = "workflow_schedules"
+    __table_args__ = (
+        Index(
+            "uq_workflow_schedule_expression_active",
+            "tenant_key", "workflow_id", "cron_expression", "timezone",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    tenant_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_plan_versions.id"), nullable=False, index=True
+    )
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    activation_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    cron_expression: Mapped[str] = mapped_column(String(120), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_execution_id: Mapped[str | None] = mapped_column(
+        ForeignKey("workflow_executions.id"), nullable=True
+    )
+    last_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contract_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    contract_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    handler_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    handler_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -244,6 +304,22 @@ class WorkflowPlanVersion(Base):
 
 class WorkflowExecution(Base):
     __tablename__ = "workflow_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_key", "idempotency_key", name="uq_workflow_execution_tenant_request"
+        ),
+        Index(
+            "uq_workflow_active_execution",
+            "workflow_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('queued','running','awaiting_approval','awaiting_review')"
+            ),
+            sqlite_where=text(
+                "status IN ('queued','running','awaiting_approval','awaiting_review')"
+            ),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     workflow_id: Mapped[str] = mapped_column(
@@ -267,7 +343,11 @@ class WorkflowExecution(Base):
     model_used: Mapped[str] = mapped_column(String(120), default="")
     provider_used: Mapped[str] = mapped_column(String(80), default="")
     route_reason: Mapped[str] = mapped_column(String(500), default="")
-    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    trigger_schedule_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     hermes_session_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     bridge_event_seq: Mapped[int] = mapped_column(Integer, default=0)
     artifact_count: Mapped[int] = mapped_column(Integer, default=0)

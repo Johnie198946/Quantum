@@ -100,7 +100,10 @@ def test_release_uses_secure_fixed_contract_and_reports_new_and_today_counts(mon
     assert summary["released_edition_ids"] == [history["edition_id"], practice["edition_id"]]
     assert summary["today"] == {
         "date": DAY, "expected": 2, "published": 2,
-        "by_series": {"ai-history": 1, "ai-practice": 1},
+        "by_series": {
+            "ai-history": {"published": 1, "body_available": False, "media_roles": []},
+            "ai-practice": {"published": 1, "body_available": False, "media_roles": []},
+        },
     }
     assert summary["totals"] == {
         "blocked": 0, "draft": 0, "missing": 0, "published": 3,
@@ -405,7 +408,9 @@ def test_series_observability_is_discovered_from_status_not_a_global_constant():
     ]})
     assert summary["today"] == {
         "date": DAY, "expected": 1, "published": 0,
-        "by_series": {"future-series": 0},
+        "by_series": {
+            "future-series": {"published": 0, "body_available": False, "media_roles": []},
+        },
     }
 
 

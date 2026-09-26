@@ -166,6 +166,63 @@ def test_resume_selection_rejects_vague_unanchored_and_duplicate_prose():
     assert subscriptions._learning_resume_points({"id": "empty", "title": "空章节", "markdown": "## 标题"}) == []
 
 
+def test_resume_reads_only_latest_owned_checkpoint_without_building_catalog(book_db, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    async def seed():
+        async with subscriptions.SessionLocal() as db:
+            for book_id, user_id, age in [("older", "reader-1", 2), ("last-read", "reader-1", 1), ("foreign", "reader-2", 0)]:
+                db.add(KnowledgeBookSubscription(
+                    tenant_key=AUTH["tenant_key"], owner_user_id=user_id, book_id=book_id,
+                    series_id="series", content_version=VERSION, progress=0.5,
+                    last_section_id="section-1", last_block_index=2, last_character_offset=7,
+                    last_read_at=datetime.now(timezone.utc) - timedelta(days=age),
+                ))
+            await db.commit()
+    run(seed())
+    reads = []
+
+    def forbidden_catalog(*args, **kwargs):
+        raise AssertionError("resume must not enumerate the whole bookshelf")
+
+    async def body(payload, book_id):
+        assert payload == AUTH
+        reads.append(book_id)
+        return {**BOOK, "id": book_id}, BODY
+
+    monkeypatch.setattr(subscriptions, "bookshelf_catalog", forbidden_catalog)
+    monkeypatch.setattr(subscriptions, "_available_book_body", body)
+    resume = run(subscriptions.learning_resume(AUTH))["resume"]
+    assert reads == ["last-read"]
+    assert resume["subscription"]["book"]["id"] == "last-read"
+    assert resume["block_index"] == 2 and resume["character_offset"] == 7
+    assert run(subscriptions.learning_resume({**AUTH, "user_id": "no-history"}))["resume"] is None
+    assert run(subscriptions.learning_resume({**AUTH, "tenant_key": "other"}))["resume"] is None
+    assert reads == ["last-read"]
+
+    async def revoked(payload, book_id):
+        reads.append(book_id)
+        if book_id == "last-read":
+            raise HTTPException(404, "withdrawn or no longer authorized")
+        return {**BOOK, "id": book_id}, {**BODY, "content_version": "b" * 64}
+
+    reads.clear()
+    monkeypatch.setattr(subscriptions, "_available_book_body", revoked)
+    resume = run(subscriptions.learning_resume(AUTH))["resume"]
+    assert reads == ["last-read", "older"]
+    assert resume["subscription"]["book"]["id"] == "older"
+    assert resume["subscription"]["progress"] == 0
+    assert resume["block_index"] is None and resume["character_offset"] is None
+    assert resume["content_version"] == "b" * 64
+
+    async def unavailable(payload, book_id):
+        raise HTTPException(503, "source temporarily unavailable")
+    monkeypatch.setattr(subscriptions, "_available_book_body", unavailable)
+    with pytest.raises(HTTPException) as error:
+        run(subscriptions.learning_resume(AUTH))
+    assert error.value.status_code == 503
+
+
 def test_progress_rejects_section_from_another_book_version(book_db):
     run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
 

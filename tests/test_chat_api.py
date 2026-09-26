@@ -324,6 +324,17 @@ class TestChatAPIEndpoint(unittest.TestCase):
         self.assertEqual(r.status_code, 502)
         self.assertIn("Hermes 调用失败", r.json()["detail"])
 
+    def test_chat_preserves_bridge_error_instead_of_returning_it_as_model_text(self):
+        from fastapi import HTTPException
+
+        with patch("backend.api.chat.match_identity_rule", return_value=None), \
+             patch("backend.api.chat._check_cached_answer", return_value=None), \
+             patch("backend.api.chat._call_hermes", side_effect=HTTPException(502, "Hermes 服务请求失败（HTTP 422）")):
+            r = self.request("POST", "/api/chat", json={"question": "生成混合练习"})
+
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(r.json()["detail"], "Hermes 服务请求失败（HTTP 422）")
+
 
 if __name__ == "__main__":
     unittest.main()

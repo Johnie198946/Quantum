@@ -11,6 +11,11 @@ import SwiftUI
 
 public struct ChatMessageStreamView: View {
     static let historyPositionAnchor = UnitPoint.top
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var noteStore = KnowledgeNoteStore.shared
+    @State private var homeResume: LearningResumeDTO?
+    @State private var homeResumeStatus = "正在读取上次进度…"
+    public let homeRefreshID: Int
 
     @ObservedObject public var coordinator: TenantSessionCoordinator
     public let onBackgroundTap: () -> Void
@@ -27,12 +32,14 @@ public struct ChatMessageStreamView: View {
         coordinator: TenantSessionCoordinator,
         onBackgroundTap: @escaping () -> Void = {},
         onStartTopic: ((ChatMessage) -> Void)? = nil,
-        onWelcomeAction: ((ChatHomeAction) -> Void)? = nil
+        onWelcomeAction: ((ChatHomeAction) -> Void)? = nil,
+        homeRefreshID: Int = 0
     ) {
         self.coordinator = coordinator
         self.onBackgroundTap = onBackgroundTap
         self.onStartTopic = onStartTopic
         self.onWelcomeAction = onWelcomeAction
+        self.homeRefreshID = homeRefreshID
     }
 
     public var body: some View {
@@ -48,9 +55,28 @@ public struct ChatMessageStreamView: View {
                 }
 
                 if coordinator.messages.isEmpty && coordinator.pendingQueue.isEmpty {
-                    ChatWelcomeView(onAction: onWelcomeAction)
+                    LearningWelcomeView(resume: homeResume, resumeStatus: homeResumeStatus, onAction: onWelcomeAction)
                         .frame(minHeight: 540)
                         .transition(.opacity)
+                        .task(id: "\(noteStore.accountFingerprint)|\(homeRefreshID)|\(scenePhase)") {
+                            let account = noteStore.accountFingerprint
+                            homeResume = nil
+                            homeResumeStatus = "正在读取上次进度…"
+                            guard scenePhase == .active else { return }
+                            guard account != "unconfigured" else {
+                                homeResumeStatus = "登录后同步阅读进度"
+                                return
+                            }
+                            do {
+                                let result = try await APIClient.shared.fetchLearningResume()
+                                guard !Task.isCancelled, account == noteStore.accountFingerprint else { return }
+                                homeResume = result
+                                homeResumeStatus = "还没有阅读记录"
+                            } catch {
+                                guard !Task.isCancelled, account == noteStore.accountFingerprint else { return }
+                                homeResumeStatus = "暂时无法读取进度，点击重试"
+                            }
+                        }
                 }
 
                 ForEach(coordinator.messages) { message in
@@ -410,10 +436,17 @@ public struct ChatHomeAction: Identifiable, Hashable {
     )
 }
 
-private struct ChatWelcomeView: View {
+struct LearningWelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
+    let resume: LearningResumeDTO?
+    let resumeStatus: String
     let onAction: ((ChatHomeAction) -> Void)?
+
+    private var progress: Double { min(max(resume?.subscription.progress ?? 0, 0), 1) }
+    var learningAccessibilityLabel: String {
+        resume.map { "继续学，\($0.subscription.book.title)，\($0.sectionTitle)，已读百分之\(Int(progress * 100))" } ?? "继续学，\(resumeStatus)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -444,7 +477,7 @@ private struct ChatWelcomeView: View {
         .accessibilityLabel("下午好，今天想从哪里继续？")
     }
 
-    private var learningHero: some View {
+    var learningHero: some View {
         Button { onAction?(ChatHomeAction.all[0]) } label: {
             ZStack(alignment: .leading) {
             Image("home_learning_hero")
@@ -463,15 +496,17 @@ private struct ChatWelcomeView: View {
                             .frame(width: 38, height: 38)
                             .background(Color.white.opacity(0.66), in: Circle())
                     }
-                    Text("数学分析 · 第 3 章")
+                    Text(resume?.subscription.book.title ?? resumeStatus)
                         .font(.system(size: 17, weight: .semibold))
-                    Spacer()
-                    Text("上次读到 68%")
-                        .font(.subheadline)
-                        .foregroundStyle(HomePalette.secondary)
-                    HStack(spacing: 10) {
-                        ProgressView(value: 0.68).tint(HomePalette.green).frame(width: 128)
-                        Text("68%").font(.caption.weight(.semibold)).foregroundStyle(HomePalette.secondary)
+                        .lineLimit(2)
+                    if let resume {
+                        Text(resume.sectionTitle)
+                            .font(.caption).foregroundStyle(HomePalette.secondary).lineLimit(1)
+                        HStack(spacing: 10) {
+                            ProgressView(value: progress).tint(HomePalette.green).frame(width: 128)
+                            Text("已读 \(Int(progress * 100))%")
+                                .font(.caption.weight(.semibold)).foregroundStyle(HomePalette.secondary)
+                        }
                     }
                     HomePrimaryLabel("继续阅读", width: 132)
                 }
@@ -488,7 +523,7 @@ private struct ChatWelcomeView: View {
                 .stroke(Color.white.opacity(0.72), lineWidth: 1)
         }
         .shadow(color: HomePalette.shadow, radius: 18, y: 8)
-        .accessibilityLabel("继续学，数学分析第三章，上次读到百分之六十八")
+        .accessibilityLabel(learningAccessibilityLabel)
     }
 
     private func compactAction(_ action: ChatHomeAction, tint: Color, icon: String) -> some View {
@@ -510,7 +545,7 @@ private struct ChatWelcomeView: View {
                     Text(action.title).font(.system(size: 19, weight: .bold, design: .serif))
                     Image(systemName: "chevron.right").font(.caption.weight(.bold))
                 }
-                Text(action.id == "continue-doing" ? "毕业论文资料整理" : "12 条待整理内容")
+                Text(action.id == "continue-doing" ? "毕业论文资料整理" : "查看整理建议")
                     .font(.subheadline.weight(.medium))
                 Text(action.id == "continue-doing" ? "3 个步骤待完成" : "对话 · 笔记 · 待办")
                     .font(.caption).foregroundStyle(HomePalette.secondary)
@@ -593,34 +628,29 @@ struct LearningPlanItem: Identifiable, Equatable {
 
 struct LearningPlanResponse: Equatable {
     let items: [LearningPlanItem]
-    let keyExcerpt: String
 
     static let fallback = LearningPlanResponse(
         items: [
-            .init(minutes: 2, title: "回顾上次重点", detail: "快速过一遍核心概念，建立连贯性。"),
+            .init(minutes: 2, title: "回顾要点", detail: "用三条要点找回概念、条件和易错处。"),
             .init(minutes: 15, title: "继续阅读", detail: "从上次停下的位置继续，逐步理解关键步骤。"),
             .init(minutes: 8, title: "做一道理解题", detail: "巩固所学，检验掌握程度。"),
-        ],
-        keyExcerpt: ""
+        ]
     )
 
     static func parse(_ text: String) -> LearningPlanResponse? {
         var items: [LearningPlanItem] = []
-        var key = ""
         for rawLine in text.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "-*` "))
             let parts = line.split(separator: "|", maxSplits: 2).map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            if parts.count == 2, parts[0].uppercased() == "KEY" {
-                key = parts[1]
-            } else if parts.count == 3, let minutes = Int(parts[0]), minutes > 0 {
+            if parts.count == 3, let minutes = Int(parts[0]), minutes > 0 {
                 items.append(.init(minutes: minutes, title: parts[1], detail: parts[2]))
             }
         }
         guard items.count == 3, items.map(\.minutes).reduce(0, +) == 25 else { return nil }
-        return LearningPlanResponse(items: items, keyExcerpt: key)
+        return LearningPlanResponse(items: items)
     }
 }
 
@@ -629,6 +659,30 @@ private struct LearningQuestion: Identifiable {
     let title: String
     let excerpt: String
     let question: String
+    var previousTurns: [ReaderQuestionTurn] = []
+    var submitsOnAppear = true
+    var sectionID: String? = nil
+    var sheetTitle: String? = nil
+}
+
+enum LearningRecapPrompt {
+    static let prefix = "回顾要点："
+    static let question = "回顾要点：用三条话帮我找回上次阅读的核心意思、条件和易错处。"
+    static let instruction = """
+    回顾要点：请只依据引用的上次阅读内容，帮我深入浅出地整理，不要照抄段落，也不要扩写无关背景。
+    严格按以下结构回答，总共不超过 220 个汉字：
+    ## 一句话抓住
+    用不超过 30 字说明核心意思。
+    ## 记住这三点
+    - 概念：一句话。
+    - 条件或机制：一句话。
+    - 易错处：一句话。
+    ## 一个贴近大学生活的例子
+    用不超过 50 字解释如何应用；若原文不足以支持例子，请明确说明，不编造事实。
+    不粘贴原文，不输出代码或 JSON，除非我随后明确要求。
+    """
+
+    static func isRecap(_ question: String) -> Bool { question.hasPrefix(prefix) }
 }
 
 struct HomeJourneyView: View {
@@ -639,6 +693,10 @@ struct HomeJourneyView: View {
     @State private var bookBody: KnowledgeBookBodyDTO?
     @State private var learningResume: LearningResumeDTO?
     @State private var selectedBook: KnowledgeBookDTO?
+    @State private var readingTargetBlockIndex: Int?
+    @State private var readingTargetCharacterOffset: Int?
+    @State private var readingTargetSectionID: String?
+    @State private var sourceNotice: String?
     @State private var learningQuestion: LearningQuestion?
     @State private var inspectedLearningAnnotation: ReaderAnnotationEntry?
     @State private var learningAnnotationChoices: [ReaderAnnotationEntry] = []
@@ -697,22 +755,41 @@ struct HomeJourneyView: View {
                 excerpt: item.excerpt,
                 sourceTitle: currentTitle,
                 sourceSubtitle: "继续学 · \(item.title)",
+                sheetTitle: item.sheetTitle,
                 initialQuestion: item.question,
-                submitsOnAppear: true,
+                initialTurns: item.previousTurns,
+                submitsOnAppear: item.submitsOnAppear,
                 automaticallySaveAnswer: true,
-                onSaveAnswer: { question, answer in
-                    saveLearningAnnotation(item: item, question: question, answer: answer)
+                onSaveAnswer: { question, answer, sessionID in
+                    saveLearningAnnotation(item: item, question: question, answer: answer, sessionID: sessionID)
                 }
             ) { question, sessionID in
                 APIClient.shared.chatStream(
-                    question: question,
+                    question: LearningRecapPrompt.isRecap(question) ? LearningRecapPrompt.instruction : question,
                     sessionId: sessionID,
                     quotedContext: item.excerpt,
-                    contextScope: learningContextScope
+                    contextScope: ChatContextScopeDTO(
+                        mode: .platformOnly, selectedBookId: subscription?.book.id,
+                        selectedBookVersion: bookBody?.contentVersion,
+                        selectedBookSectionId: item.sectionID ?? currentSection?.id
+                    )
                 )
             }
         }
-        .sheet(item: $inspectedLearningAnnotation) { ReaderAnnotationDetailSheet(entry: $0) }
+        .sheet(item: $inspectedLearningAnnotation) { entry in
+            ReaderAnnotationDetailSheet(entry: entry) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    let annotations = learningAnnotations(for: entry.quote)
+                    learningQuestion = LearningQuestion(
+                        title: entry.sectionTitle,
+                        excerpt: entry.quote,
+                        question: "",
+                        previousTurns: annotations.reversed().compactMap(\.questionTurn),
+                        submitsOnAppear: false
+                    )
+                }
+            }
+        }
         .confirmationDialog("选择批注", isPresented: $showingLearningAnnotationChoices, titleVisibility: .visible) {
             ForEach(learningAnnotationChoices) { annotation in
                 Button("\(annotation.date) · \(annotation.kind)") {
@@ -723,19 +800,14 @@ struct HomeJourneyView: View {
         .fullScreenCover(isPresented: $showingExercise) {
             LearningExerciseView(
                 sourceTitle: currentTitle,
-                sourceExcerpt: lastReadingExcerpt,
                 contextScope: learningContextScope,
-                onSave: { question, answer, feedback in
-                    saveLearningAnnotation(
-                        item: LearningQuestion(title: "理解题", excerpt: question, question: answer),
-                        question: answer,
-                        answer: feedback
-                    )
-                }
+                dialogue: recentLearningDialogue
             )
         }
         .sheet(isPresented: $showAttentionManagement) { AttentionManagementSheet() }
-        .fullScreenCover(item: $selectedBook) { book in
+        .fullScreenCover(item: $selectedBook, onDismiss: {
+            Task { await loadReadingResume() }
+        }) { book in
             KnowledgeBookReaderView(
                 book: book,
                 isSubscribed: true,
@@ -743,9 +815,9 @@ struct HomeJourneyView: View {
                 onToggleSubscription: { Task { await toggleSubscription(book) } },
                 onSaveExcerpt: nil,
                 startsInReading: true,
-                initialSectionID: currentSection?.id,
-                initialBlockIndex: learningResume?.blockIndex,
-                initialCharacterOffset: learningResume?.characterOffset,
+                initialSectionID: readingTargetSectionID ?? currentSection?.id,
+                initialBlockIndex: readingTargetBlockIndex ?? learningResume?.blockIndex,
+                initialCharacterOffset: readingTargetCharacterOffset ?? learningResume?.characterOffset,
                 onDismiss: { selectedBook = nil }
             )
             .environmentObject(APIClient.shared)
@@ -787,24 +859,56 @@ struct HomeJourneyView: View {
         Group {
             HeroStrip(title: currentTitle, subtitle: subscription == nil ? "上次学习 · 昨天 22:14" : "上次学习 · 已同步", progress: currentProgress)
             PaperCard {
-                SectionHeading(icon: "lightbulb.fill", tint: HomePalette.blue, title: "先帮你找回思路", subtitle: "根据你上次的学习内容，整理了这些关键点：")
-                ForEach(Array((learningResume?.keyPoints ?? []).prefix(2).enumerated()), id: \.offset) { index, point in
+                SectionHeading(
+                    icon: "lightbulb.fill",
+                    tint: HomePalette.blue,
+                    title: "先帮你找回思路",
+                    subtitle: "回顾重点，接着上次的问题继续。"
+                )
+                ForEach(Array(resumePoints.prefix(latestLearningQuestion == nil ? 2 : 1).enumerated()), id: \.offset) { index, point in
                     learningPoint(
                         number: index + 1,
                         color: index == 0 ? HomePalette.blue : HomePalette.green,
-                        title: point.title,
-                        detail: point.detail
+                        point: point
                     )
                 }
-                NumberedPoint(
-                    number: 3,
-                    color: Color(hex: "7367EF"),
-                    title: "你停在：\(currentSection?.title ?? learningResume?.sectionTitle ?? "尚未记录阅读位置")",
-                    detail: "回到上次记录的章节位置继续阅读。",
-                    annotationCount: 0,
-                    onTap: openCurrentReading,
-                    onAnnotationTap: nil
-                )
+                if let entry = latestLearningQuestion, let turn = entry.questionTurn {
+                    LearningConversationRecap(
+                        question: turn.question,
+                        answer: turn.answer,
+                        sectionTitle: entry.sectionTitle,
+                        onContinue: { openSavedQuestion(entry) },
+                        onSource: { openSource(entry.quote, sectionID: entry.sectionID) }
+                    )
+                }
+                if resumePoints.isEmpty && latestLearningQuestion == nil {
+                    Text("暂未找到能核对原文出处的已读关键点。你仍可从下方停留处继续阅读，已保存的批注不会因此删除。")
+                        .font(.caption).foregroundStyle(HomePalette.secondary)
+                }
+                if let sourceNotice {
+                    Label(sourceNotice, systemImage: "info.circle")
+                        .font(.caption).foregroundStyle(HomePalette.ink.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Divider().overlay(HomePalette.ink.opacity(0.06))
+                Button(action: openCurrentReading) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "book.closed").font(.title3)
+                            .foregroundStyle(HomePalette.blue)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("从上次停留处继续").font(.subheadline.weight(.semibold))
+                            Text(currentSection?.title ?? learningResume?.sectionTitle ?? "尚未记录阅读位置")
+                                .font(.caption).foregroundStyle(HomePalette.ink.opacity(0.7)).lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.right").foregroundStyle(HomePalette.blue)
+                    }
+                    .foregroundStyle(HomePalette.ink)
+                    .padding(.vertical, 8).frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("打开书籍，返回已记录的段落和字符")
             }
             PaperCard(tint: HomePalette.mint) {
                 HStack(alignment: .top) {
@@ -820,15 +924,26 @@ struct HomeJourneyView: View {
                 }
                 ForEach(Array(learningPlan.items.enumerated()), id: \.element.id) { index, item in
                     TimelinePoint(
-                        done: index == 0,
-                        active: index == 1,
+                        done: index == 0 && latestLearningRecap != nil,
+                        active: index == (latestLearningRecap == nil ? 0 : 1),
                         isLast: index == learningPlan.items.count - 1,
-                        title: "\(item.minutes) 分钟 · \(item.title)",
+                        title: "\(item.minutes) 分钟 · \(index == 0 ? "回顾要点" : item.title)",
                         detail: item.detail,
                         onTap: { handlePlanItem(item, index: index) }
                     )
+                    if index == 0, let entry = latestLearningRecap, let turn = entry.questionTurn {
+                        LearningConversationRecap(
+                            question: turn.question,
+                            answer: turn.answer,
+                            sectionTitle: entry.sectionTitle,
+                            onContinue: { openSavedQuestion(entry) },
+                            onSource: { openSource(entry.quote, sectionID: entry.sectionID) },
+                            isRecap: true
+                        )
+                        .padding(12)
+                        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 16))
+                    }
                 }
-                NotebookExcerptCard(excerpt: lastReadingExcerpt, keyText: learningPlan.keyExcerpt)
             }
             if let learningPlanNotice {
                 Label(learningPlanNotice, systemImage: "info.circle")
@@ -1048,6 +1163,20 @@ struct HomeJourneyView: View {
         )
     }
 
+    private var recentLearningDialogue: [MixedExerciseDialogue] {
+        // Current account's active recent sessions only; never inspect another account's store.
+        let manager = sessionManager
+        let relevant = manager.sortedSessionIDs().prefix(8).flatMap { id -> [ChatMessage] in
+            let messages = manager.messages(for: id)
+            guard manager.title(for: id).contains(currentTitle) || messages.contains(where: { message in
+                message.content.contains(currentTitle) || (currentSection.map { section in !section.title.isEmpty && message.content.contains(section.title) } ?? false)
+            }) else { return [] }
+            return Array(messages.suffix(12))
+        }
+        return relevant.filter { !$0.pending && ($0.role == .user || $0.role == .assistant) && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .prefix(12).map { .init(role: $0.role == .user ? "user" : "assistant", content: String($0.content.prefix(1500))) }
+    }
+
     private var lastReadingExcerpt: String {
         guard let section = currentSection else {
             return "暂无可恢复的阅读片段。"
@@ -1064,24 +1193,88 @@ struct HomeJourneyView: View {
     }
 
     @ViewBuilder
-    private func learningPoint(number: Int, color: Color, title: String, detail: String) -> some View {
-        let excerpt = "\(title)\n\(detail)"
+    private func learningPoint(number: Int, color: Color, point: LearningResumePointDTO) -> some View {
+        let excerpt = point.sourceExcerpt ?? point.detail
         let annotations = learningAnnotations(for: excerpt)
         NumberedPoint(
             number: number,
             color: color,
-            title: title,
-            detail: detail,
+            title: number == 1 ? "上次停留处的核心内容" : "接着读需要记住",
+            detail: point.detail,
+            sourceText: "原文 · \(currentSection?.title ?? "当前章节") · 查看出处",
             annotationCount: annotations.count,
             onTap: {
-                learningQuestion = LearningQuestion(
-                    title: title,
-                    excerpt: excerpt,
-                    question: "请结合我当前阅读位置和已有学习记忆，解释“\(title)”；说明它为什么重要，并给一个能检查我是否理解的例子。"
-                )
+                if annotations.isEmpty {
+                    learningQuestion = LearningQuestion(
+                        title: point.title,
+                        excerpt: excerpt,
+                        question: "",
+                        submitsOnAppear: false
+                    )
+                } else {
+                    learningQuestion = LearningQuestion(
+                        title: point.title,
+                        excerpt: excerpt,
+                        question: "",
+                        previousTurns: annotations.reversed().compactMap(\.questionTurn),
+                        submitsOnAppear: false
+                    )
+                }
             },
+            onSourceTap: { openPointSource(point) },
             onAnnotationTap: annotations.isEmpty ? nil : { openLearningAnnotations(annotations) }
         )
+    }
+
+    private func openPointSource(_ point: LearningResumePointDTO) {
+        openSource(point.sourceExcerpt ?? point.detail, sectionID: point.sectionId ?? currentSection?.id)
+    }
+
+    private var resumePoints: [LearningResumePointDTO] {
+        guard let currentSection, let bookBody else { return [] }
+        return learningResume?.visiblePoints(in: currentSection, contentVersion: bookBody.contentVersion) ?? []
+    }
+
+    private var latestLearningQuestion: ReaderAnnotationEntry? {
+        noteStore.notes.compactMap(ReaderAnnotationEntry.init(note:)).first {
+            $0.bookID == subscription?.book.id && $0.sectionID == currentSection?.id && $0.questionTurn != nil
+                && ($0.contentVersion == nil || $0.contentVersion == bookBody?.contentVersion)
+                && !LearningRecapPrompt.isRecap($0.questionTurn?.question ?? "")
+        }
+    }
+
+    private var latestLearningRecap: ReaderAnnotationEntry? {
+        noteStore.notes.compactMap(ReaderAnnotationEntry.init(note:)).first {
+            $0.bookID == (subscription?.book.id ?? "workbench-learning")
+                && $0.sectionID == (currentSection?.id ?? "learning-workbench")
+                && ($0.contentVersion == nil || $0.contentVersion == bookBody?.contentVersion)
+                && LearningRecapPrompt.isRecap($0.questionTurn?.question ?? "")
+        }
+    }
+
+    private func openSavedQuestion(_ entry: ReaderAnnotationEntry) {
+        learningQuestion = LearningQuestion(
+            title: "上次的问题", excerpt: entry.quote, question: "",
+            previousTurns: learningAnnotations(for: entry.quote).reversed().compactMap(\.questionTurn),
+            submitsOnAppear: false, sectionID: entry.sectionID,
+            sheetTitle: LearningRecapPrompt.isRecap(entry.questionTurn?.question ?? "") ? "回顾要点" : nil
+        )
+    }
+
+    private func openSource(_ source: String, sectionID: String?) {
+        guard let book = subscription?.book, let bookBody,
+              bookBody.contentVersion == subscription?.contentVersion,
+              let section = bookBody.sections.first(where: { $0.id == sectionID }),
+              let target = ReadingResumeTarget.find(source, in: ReadingSectionContent.parse(section.markdown).blocks)
+        else {
+            sourceNotice = "未能唯一定位这段原文。请从上次停留处阅读，历史问答仍可查看。"
+            return
+        }
+        sourceNotice = nil
+        readingTargetSectionID = section.id
+        readingTargetBlockIndex = target.blockIndex
+        readingTargetCharacterOffset = target.characterOffset
+        selectedBook = book
     }
 
     private func openLearningAnnotations(_ annotations: [ReaderAnnotationEntry]) {
@@ -1095,24 +1288,32 @@ struct HomeJourneyView: View {
     private func learningAnnotations(for excerpt: String) -> [ReaderAnnotationEntry] {
         noteStore.notes.compactMap(ReaderAnnotationEntry.init(note:)).filter {
             $0.bookID == (subscription?.book.id ?? "workbench-learning") && $0.quote == excerpt
+                && $0.sectionID == currentSection?.id
+                && ($0.contentVersion == nil || $0.contentVersion == bookBody?.contentVersion)
         }
     }
 
-    private func saveLearningAnnotation(item: LearningQuestion, question: String, answer: String) {
-        let section = currentSection
-        _ = ReaderAnnotationEntry.save(
+    @discardableResult
+    private func saveLearningAnnotation(item: LearningQuestion, question: String, answer: String, sessionID: String? = nil) -> Bool {
+        let section = bookBody?.sections.first(where: { $0.id == item.sectionID }) ?? currentSection
+        return ReaderAnnotationEntry.save(
             quote: item.excerpt,
-            detail: "我的问题\n\(question)\n\nAI 回答摘要\n\(String(answer.prefix(2_000)))",
+            detail: "我的问题\n\(question)\n\nAI 回答摘要\n\(answer)",
             bookID: subscription?.book.id ?? "workbench-learning",
             bookTitle: subscription?.book.title ?? currentTitle,
             sectionID: section?.id ?? "learning-workbench",
             sectionTitle: section?.title ?? "继续学",
             citation: bookBody?.citation ?? "quantum://learning-workbench",
+            contentVersion: bookBody?.contentVersion,
+            sessionID: sessionID,
             api: APIClient.shared
-        )
+        ) != nil
     }
 
     private func openCurrentReading() {
+        readingTargetSectionID = currentSection?.id
+        readingTargetBlockIndex = learningResume?.blockIndex
+        readingTargetCharacterOffset = learningResume?.characterOffset
         if let book = subscription?.book { selectedBook = book }
         else {
             learningQuestion = LearningQuestion(
@@ -1124,16 +1325,20 @@ struct HomeJourneyView: View {
     }
 
     private func handlePlanItem(_ item: LearningPlanItem, index: Int) {
-        if index == 1 {
+        if index == 0 {
+            if let recap = latestLearningRecap { openSavedQuestion(recap); return }
+            guard currentSection != nil else {
+                learningPlanNotice = "还没有可核对的上次阅读内容，请先从书架打开一本书。"
+                return
+            }
+            learningQuestion = LearningQuestion(
+                title: "回顾要点", excerpt: lastReadingExcerpt,
+                question: LearningRecapPrompt.question, sheetTitle: "回顾要点"
+            )
+        } else if index == 1 {
             openCurrentReading()
         } else if index == 2 {
             showingExercise = true
-        } else {
-            learningQuestion = LearningQuestion(
-                title: item.title,
-                excerpt: lastReadingExcerpt,
-                question: "请带我完成“\(item.title)”：\(item.detail) 请直接给出适合我当前水平的讲解。"
-            )
         }
     }
 
@@ -1146,11 +1351,10 @@ struct HomeJourneyView: View {
         let memories = (try? await APIClient.shared.fetchHermesMemory().items.map(\.content).joined(separator: "\n")) ?? ""
         let prompt = """
         请基于我的长期记忆、兴趣、能力水平和当前阅读位置，定制一个总计 25 分钟的学习计划。第二项必须是继续阅读；第三项必须是理解题。
-        只输出四行，不要 Markdown：
+        只输出三行，不要 Markdown。第一项标题固定为“回顾要点”，说明控制在一句话：
         分钟|标题|一句具体说明
         分钟|标题|一句具体说明
         分钟|标题|一句具体说明
-        KEY|从引用原文中原样摘取最关键的一句话
         """
         do {
             let stream = APIClient.shared.chatStream(
@@ -1186,15 +1390,23 @@ struct HomeJourneyView: View {
 
     @MainActor private func loadData() async {
         guard action.id != "help-me-clean" else { return }
-        async let fetchedResume = try? APIClient.shared.fetchLearningResume()
         async let fetchedNotes = try? APIClient.shared.fetchKnowledgeNotes(includeArchived: true)
-        learningResume = await fetchedResume
-        subscription = learningResume?.subscription
+        await loadReadingResume()
         notes = await fetchedNotes?.items ?? []
-        if let book = subscription?.book {
-            bookBody = try? await APIClient.shared.fetchKnowledgeBookBody(id: book.id)
-        }
         if action.id == "continue-learning" { await resetLearningPlan() }
+    }
+
+    @MainActor private func loadReadingResume() async {
+        let account = noteStore.accountFingerprint
+        let resume = try? await APIClient.shared.fetchLearningResume()
+        let body: KnowledgeBookBodyDTO?
+        if let book = resume?.subscription.book {
+            body = try? await APIClient.shared.fetchKnowledgeBookBody(id: book.id)
+        } else { body = nil }
+        guard account == noteStore.accountFingerprint else { return }
+        learningResume = resume
+        subscription = resume?.subscription
+        bookBody = body
     }
 
     @MainActor private func toggleSubscription(_ book: KnowledgeBookDTO) async {
@@ -1211,10 +1423,11 @@ struct HomeJourneyView: View {
     }
 }
 
-private func collectChatAnswer(
+func collectChatAnswer(
     from stream: AsyncThrowingStream<APIClient.StreamEvent, Error>
 ) async throws -> String {
     var answer = ""
+    var completed = false
     for try await event in stream {
         switch event {
         case .delta(let text): answer += text
@@ -1222,6 +1435,7 @@ private func collectChatAnswer(
             let value = page.blocks.map(\.content).joined(separator: "\n\n")
             if !value.isEmpty { answer = value }
         case .done(_, let finalAnswer):
+            completed = true
             if let finalAnswer, !finalAnswer.isEmpty { answer = finalAnswer }
         case .error(_, let message):
             throw NSError(
@@ -1232,93 +1446,488 @@ private func collectChatAnswer(
         default: break
         }
     }
-    guard !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-        throw NSError(domain: "LearningWorkbench", code: 2, userInfo: [NSLocalizedDescriptionKey: "AI 没有返回内容。"])
+    guard completed, !Task.isCancelled, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        throw NSError(domain: "LearningWorkbench", code: 2, userInfo: [NSLocalizedDescriptionKey: "AI 未完整返回内容，请重试。"])
     }
     return answer
 }
 
-private struct LearningExerciseView: View {
+enum LearningExerciseKind: String, Codable, CaseIterable {
+    case choice, judgement, solution, response
+    var title: String {
+        switch self { case .choice: return "选择题"; case .judgement: return "判断题"; case .solution: return "解答题"; case .response: return "问答题" }
+    }
+    var guidance: String {
+        switch self {
+        case .choice: return "辨别选项，检验概念理解。"
+        case .judgement: return "判断陈述是否成立。"
+        case .solution: return "写出推理步骤、计算过程和最终结论。"
+        case .response: return "用自己的话回答，并说明理由或举例。"
+        }
+    }
+}
+
+struct LearningExerciseQuestion: Codable {
+    struct Option: Codable, Identifiable {
+        let id: String
+        let text: String
+    }
+    let kind: LearningExerciseKind
+    let body: String
+    let isMultiple: Bool
+    let options: [Option]
+
+
+    func selecting(_ id: String, from current: Set<String>) -> Set<String> {
+        guard options.contains(where: { $0.id == id }) else { return current }
+        if !isMultiple { return [id] }
+        return current.contains(id) ? current.subtracting([id]) : current.union([id])
+    }
+
+}
+
+struct LearningExerciseMarkdown: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(MarkdownBlockParser.shared.parse(text).enumerated()), id: \.offset) { _, block in
+                MarkdownBlockCard(block: block)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct LearningExerciseChoices: View {
+    let question: LearningExerciseQuestion
+    @Binding var selected: Set<String>
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(question.kind == .judgement ? "判断陈述是否成立" : (question.isMultiple ? "多选 · 选择所有符合的选项" : "单选 · 选择一个最合适的答案"))
+                .font(.subheadline).foregroundStyle(HomePalette.secondary)
+            ForEach(question.options) { option in
+                Button { selected = question.selecting(option.id, from: selected) } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(option.id).font(.subheadline.weight(.semibold))
+                            .frame(width: 28, height: 28)
+                            .background(HomePalette.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                        MarkdownText(option.text, font: .body, color: HomePalette.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: selected.contains(option.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(selected.contains(option.id) ? HomePalette.blue : HomePalette.secondary)
+                    }
+                    .foregroundStyle(HomePalette.ink).padding(14).frame(minHeight: 52)
+                    .background(selected.contains(option.id) ? HomePalette.blue.opacity(0.08) : Color.white, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay { RoundedRectangle(cornerRadius: 14).stroke(selected.contains(option.id) ? HomePalette.blue : HomePalette.ink.opacity(0.12), lineWidth: 1) }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(option.id)，\(option.text)")
+                .accessibilityAddTraits(selected.contains(option.id) ? .isSelected : [])
+            }
+        }
+    }
+}
+
+struct LearningExerciseView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var noteStore = KnowledgeNoteStore.shared
     let sourceTitle: String
-    let sourceExcerpt: String
     let contextScope: ChatContextScopeDTO
-    let onSave: (String, String, String) -> Void
-    @State private var question = ""
-    @State private var answer = ""
-    @State private var feedback = ""
-    @State private var isLoading = true
+    let dialogue: [MixedExerciseDialogue]
+    @State private var exercise: MixedExerciseDTO?
+    @State private var answers: [String: MixedExerciseAnswer] = [:]
+    @State private var expandedHints: Set<String> = []
+    @State private var busy = false
+    @State private var dirty = false
+    @State private var conflict = false
     @State private var errorMessage: String?
+    @State private var confirmClose = false
+    @State private var confirmNew = false
+    @State private var confirmConflict = false
+    @State private var createID = UUID().uuidString
+    @State private var account = KnowledgeNoteStore.shared.accountFingerprint
+    @FocusState private var editing: String?
+
+    init(sourceTitle: String, contextScope: ChatContextScopeDTO, dialogue: [MixedExerciseDialogue] = [], exercise: MixedExerciseDTO? = nil) {
+        self.sourceTitle = sourceTitle
+        self.contextScope = contextScope
+        self.dialogue = dialogue
+        _exercise = State(initialValue: exercise)
+        _answers = State(initialValue: exercise?.answers ?? [:])
+    }
+
+    private var completedCount: Int { exercise?.questions.filter { $0.isAnswered(answers[$0.id] ?? .init()) }.count ?? 0 }
+    private var canSubmit: Bool {
+        guard let exercise else { return false }
+        return exercise.status == "draft" && !exercise.questions.isEmpty && completedCount == exercise.questions.count && !conflict && !busy
+    }
+    private var cacheKey: String { "learning-draft|\(account)|\(exercise?.id ?? "")" }
+    private var latestCacheKey: String { "learning-latest|\(account)|\(contextScope.selectedBookId ?? "")|\(contextScope.selectedBookSectionId ?? "")|\(contextScope.selectedBookVersion ?? "")" }
+    private var isCurrentAccount: Bool { account == noteStore.accountFingerprint }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("理解练习").font(.system(size: 30, weight: .bold, design: .serif)).foregroundStyle(HomePalette.ink)
-                    Text(sourceTitle).font(.subheadline).foregroundStyle(HomePalette.secondary)
-                    PaperCard {
-                        Label("题目", systemImage: "doc.text").font(.headline).foregroundStyle(HomePalette.blue)
-                        if isLoading && question.isEmpty { ProgressView("正在按你的当前水平出题…") }
-                        else { MarkdownText(question).font(.body).foregroundStyle(HomePalette.ink) }
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("答题区").font(.headline).foregroundStyle(HomePalette.ink)
-                        TextEditor(text: $answer)
-                            .frame(minHeight: 180)
-                            .padding(10)
-                            .scrollContentBackground(.hidden)
-                            .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
-                            .overlay { RoundedRectangle(cornerRadius: 18).stroke(Color(hex: "C9D8E8")) }
-                    }
-                    if !feedback.isEmpty {
-                        PaperCard(tint: Color(hex: "F2F7FF")) {
-                            Label("AI 批改", systemImage: "checkmark.seal.fill").font(.headline).foregroundStyle(HomePalette.blue)
-                            MarkdownText(feedback).font(.body).foregroundStyle(HomePalette.ink)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    exerciseContent
+                }
+                .onChange(of: expandedHints) { previous, current in
+                    if let id = current.subtracting(previous).first {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            proxy.scrollTo("exercise-hint-panel-\(id)", anchor: .bottom)
                         }
                     }
-                    if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(.red) }
-                    Button { Task { await submit() } } label: {
-                        Text(feedback.isEmpty ? "提交答案" : "已保存为批注")
-                            .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 50)
-                            .background(HomePalette.ink, in: Capsule())
-                    }
-                    .disabled(question.isEmpty || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading || !feedback.isEmpty)
                 }
-                .padding(20)
+                .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    exerciseFooter(proxy)
+                }
             }
-            .background(QuantumMistBackground())
+            .background(Color(hex: "F6F7F5"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarBackground(Color(hex: "F6F7F5"), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar).tint(HomePalette.ink)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .principal) { Text("混合练习").font(.headline).foregroundStyle(HomePalette.ink) }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") { if dirty { confirmClose = true } else { dismiss() } }.disabled(busy)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if exercise?.status == "draft" {
+                        Button("同步草稿") { Task { await syncDraft() } }.disabled(busy || !dirty || conflict)
+                    }
+                }
+                ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成输入") { editing = nil } }
             }
-            .task { await loadQuestion() }
+            .task { if exercise == nil { await restore() } }
+            .onChange(of: answers) { _, _ in persistLocalDraft() }
+            .onChange(of: noteStore.accountFingerprint) { _, _ in
+                exercise = nil; answers = [:]; dismiss()
+            }
+            .interactiveDismissDisabled(busy || dirty)
+            .confirmationDialog("本机草稿已保存，是否同步后关闭？", isPresented: $confirmClose, titleVisibility: .visible) {
+                Button("同步并关闭") { Task { if await syncDraft() { dismiss() } } }
+                Button("仅保留本机草稿并关闭") { dismiss() }
+                Button("继续作答", role: .cancel) {}
+            }
+            .confirmationDialog("生成新的混合练习？本组评阅仍保留在学习记录中。", isPresented: $confirmNew, titleVisibility: .visible) {
+                Button("生成新题组") { createID = UUID().uuidString; Task { await generate() } }
+            }
+            .confirmationDialog("服务器草稿已更新，请明确选择要保留的版本。", isPresented: $confirmConflict, titleVisibility: .visible) {
+                Button("保留本机作答，允许覆盖服务器草稿") { conflict = false; dirty = true; persistLocalDraft() }
+                Button("采用服务器草稿", role: .destructive) {
+                    answers = exercise?.answers ?? [:]; conflict = false; dirty = false
+                    persistLocalDraft()
+                }
+            }
         }
     }
 
-    @MainActor
-    private func loadQuestion() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            question = try await collectChatAnswer(from: APIClient.shared.chatStream(
-                question: "请根据引用内容和我的能力水平出一道 8 分钟可完成的理解题。只输出题目、已知条件和作答要求，不要给答案。",
-                quotedContext: sourceExcerpt,
-                contextScope: contextScope
-            ))
-        } catch { errorMessage = error.localizedDescription }
+    private var exerciseContent: some View {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text(sourceTitle).font(.headline).foregroundStyle(HomePalette.ink).lineLimit(2)
+                        if let exercise {
+                            assessment(exercise)
+                            if exercise.status == "generating" || exercise.status == "grading" {
+                                ProgressView(exercise.status == "generating" ? "正在综合学习记录生成题组…" : "作答已保存，正在逐题评阅…")
+                            }
+                            ForEach(Array(exercise.questions.enumerated()), id: \.element.id) { index, question in
+                                questionCard(question, number: index + 1, result: exercise.results.first { $0.questionId == question.id })
+                                    .id(question.id)
+                            }
+                            if exercise.status == "graded" {
+                                Label("题组、作答与评阅已保存到学习记录", systemImage: "checkmark.seal")
+                                    .font(.subheadline).foregroundStyle(HomePalette.ink)
+                            }
+                        } else {
+                            PaperCard(tint: .white) {
+                                Text("根据你的学习情况，安排一组混合练习").font(.title3.weight(.semibold))
+                                Text("选择 · 判断 · 解答 · 问答").font(.subheadline.weight(.medium))
+                                Text("综合相关沟通、记忆、阅读位置和历史作答；记录不足时先做诊断，不预设你的能力。")
+                                    .font(.subheadline).foregroundStyle(HomePalette.secondary)
+                            }
+                        }
+                        if conflict {
+                            Button("处理草稿冲突：选择本机或服务器版本") { confirmConflict = true }
+                                .font(.subheadline).frame(minHeight: 44)
+                        }
+                        if let message = errorMessage ?? exercise?.error {
+                            Label(message, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.red)
+                        }
+                    }.padding(20)
     }
 
-    @MainActor
-    private func submit() async {
-        isLoading = true
-        defer { isLoading = false }
+    private func exerciseFooter(_ proxy: ScrollViewProxy) -> some View {
+                    VStack(spacing: 8) {
+                        if let exercise, !exercise.questions.isEmpty {
+                            HStack {
+                                Text(exercise.status == "graded" ? "逐题解析已展开" : "已作答 \(completedCount) / \(exercise.questions.count)")
+                                Spacer()
+                                if exercise.status == "draft",
+                                   let next = exercise.questions.first(where: { !$0.isAnswered(answers[$0.id] ?? .init()) }) {
+                                    Button("下一道未答") { editing = nil; withAnimation { proxy.scrollTo(next.id, anchor: .top) } }
+                                }
+                            }.font(.caption).frame(minHeight: 32)
+                        }
+                        Button {
+                            editing = nil
+                            if exercise?.status == "graded" { confirmNew = true }
+                            else { Task { await primaryAction() } }
+                        } label: {
+                            HStack { if busy { ProgressView().tint(.white) }; Text(primaryTitle).font(.headline) }
+                                .foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 50)
+                                .background(HomePalette.ink, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .disabled(busy || conflict || (exercise?.status == "draft" && !canSubmit))
+                        .opacity(busy || conflict || (exercise?.status == "draft" && !canSubmit) ? 0.5 : 1)
+                        if dirty { Text("本机草稿已保存 · 尚未同步").font(.caption).foregroundStyle(HomePalette.secondary) }
+                    }.padding(.horizontal, 20).padding(.vertical, 12).background(Color(hex: "F6F7F5"))
+    }
+
+    private var primaryTitle: String {
+        if busy { return "处理中…" }
+        switch exercise?.status {
+        case "draft": return "提交整组答案"
+        case "graded": return "根据本次表现，再练一组"
+        case "grading": return "刷新 / 恢复评阅"
+        case "failed", "generating": return "重试 / 恢复出题"
+        default: return "生成适合我的混合练习"
+        }
+    }
+
+    private func assessment(_ item: MixedExerciseDTO) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("为什么给你这组题").font(.subheadline.weight(.semibold))
+            Text(item.summary).font(.subheadline).foregroundStyle(HomePalette.ink)
+            Text("\(item.questions.count) 题 · 约 \(item.minutes) 分钟 · \(item.confidence == "low" ? "诊断阶段，评估依据有限" : "基于近期学习证据")")
+                .font(.caption).foregroundStyle(HomePalette.secondary)
+            let labels = ["reading": "阅读", "memory": "记忆", "saved_dialogue": "已存问答", "client_dialogue": "近期沟通", "scored_attempts": "练习记录"]
+            Text("参考来源：" + item.evidenceKinds.compactMap { labels[$0] }.joined(separator: "、"))
+                .font(.caption).foregroundStyle(HomePalette.secondary)
+            ForEach(item.unavailable, id: \.self) { Text($0).font(.caption).foregroundStyle(HomePalette.secondary) }
+        }
+    }
+
+    private func answerBinding(_ id: String) -> Binding<MixedExerciseAnswer> {
+        Binding(get: { answers[id] ?? .init() }, set: { answers[id] = $0; dirty = true })
+    }
+
+    private func questionCard(_ q: MixedExerciseQuestion, number: Int, result: MixedExerciseResult?) -> some View {
+        PaperCard(tint: .white) {
+            HStack {
+                Text("\(number) · \(q.kind.title)").font(.subheadline.weight(.semibold)).foregroundStyle(HomePalette.blue)
+                Spacer()
+                Text(["", "基础", "应用", "迁移"][min(3, max(1, q.difficulty))]).font(.caption).foregroundStyle(HomePalette.secondary)
+            }
+            Text(q.knowledgePoint).font(.caption).foregroundStyle(HomePalette.secondary)
+            LearningExerciseMarkdown(text: q.body)
+            Divider()
+            Text("你的作答").font(.subheadline.weight(.semibold))
+            Group {
+                if q.kind == .choice || q.kind == .judgement {
+                    LearningExerciseChoices(question: q.presentation, selected: Binding(
+                        get: { Set(answers[q.id]?.selected ?? []) },
+                        set: { var value = answers[q.id] ?? .init(); value.selected = $0.sorted(); answers[q.id] = value; dirty = true }
+                    ))
+                } else {
+                    Text(q.kind.guidance).font(.caption).foregroundStyle(HomePalette.secondary)
+                    TextEditor(text: answerBinding(q.id).text)
+                        .font(.body).frame(minHeight: q.kind == .solution ? 160 : 120)
+                        .focused($editing, equals: q.id).scrollContentBackground(.hidden)
+                        .padding(8).background(HomePalette.blue.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityLabel("第 \(number) 题作答")
+                }
+            }.disabled(busy || exercise?.status != "draft" || conflict)
+            if let hint = q.hint, !hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        if expandedHints.contains(q.id) {
+                            expandedHints.remove(q.id)
+                        } else {
+                            expandedHints.insert(q.id)
+                            if exercise?.status == "draft" {
+                                var answer = answers[q.id] ?? .init()
+                                answer.assisted = true
+                                answers[q.id] = answer
+                                dirty = true
+                                persistLocalDraft()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lightbulb")
+                            Text(expandedHints.contains(q.id) ? "换个角度想想" : (answers[q.id]?.assisted == true ? "再看提示" : "给我一点提示"))
+                            Spacer(minLength: 8)
+                            Image(systemName: expandedHints.contains(q.id) ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(HomePalette.ink)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy || conflict || !["draft", "graded"].contains(exercise?.status ?? ""))
+                    .accessibilityIdentifier("exercise-hint-\(q.id)")
+                    .accessibilityLabel("第 \(number) 题：\(expandedHints.contains(q.id) ? "收起提示" : "查看提示")")
+                    .accessibilityValue(expandedHints.contains(q.id) ? "已展开" : "已收起")
+                    .accessibilityHint(exercise?.status == "draft" ? "查看解题思路，会记录为借助提示完成，不影响本题评分" : "复习本题思路，不改变已提交的作答记录")
+                    if expandedHints.contains(q.id) {
+                        LearningExerciseMarkdown(text: hint)
+                        Text("先试着往下做，答案不用急。")
+                            .font(.caption).foregroundStyle(HomePalette.ink.opacity(0.75))
+                    }
+                    Text(answers[q.id]?.assisted == true
+                         ? "已看提示 · 本题正常评分，不计入独立掌握度"
+                         : (exercise?.status == "graded" ? "复习解题思路 · 已提交的作答记录保持不变" : "给你一个切入点，不直接揭晓答案"))
+                        .font(.caption).foregroundStyle(HomePalette.ink.opacity(0.75))
+                }
+                .padding(12)
+                .background(HomePalette.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .id("exercise-hint-panel-\(q.id)")
+            }
+            if let result {
+                Divider()
+                HStack {
+                    Label("解析与指导", systemImage: "text.badge.checkmark").font(.headline)
+                    Spacer()
+                    Text("\(result.score) / \(result.maxScore)").font(.headline.monospacedDigit())
+                }.foregroundStyle(HomePalette.ink)
+                Text(q.kind == .choice || q.kind == .judgement ? "依据本题答案规则判定" : "AI 分项评阅，供学习参考")
+                    .font(.caption).foregroundStyle(HomePalette.secondary)
+                if result.confidence == "low" {
+                    Text("本题评分把握不足，暂不计入能力评估。").font(.caption).foregroundStyle(.orange)
+                }
+                Text("参考答案").font(.subheadline.weight(.semibold))
+                LearningExerciseMarkdown(text: result.referenceAnswer)
+                Text("为什么这样答").font(.subheadline.weight(.semibold))
+                LearningExerciseMarkdown(text: result.explanation)
+                ForEach(q.options) { option in
+                    if let reason = result.optionExplanations[option.id] {
+                        Text("\(option.id) · \(result.correctIds.contains(option.id) ? "正确项" : "不成立")：\(reason)")
+                            .font(.subheadline).foregroundStyle(HomePalette.ink)
+                    }
+                }
+                ForEach(Array(result.criterionFeedback.enumerated()), id: \.offset) { _, line in
+                    Text(line).font(.subheadline).foregroundStyle(HomePalette.ink)
+                }
+                Label(result.nextStep, systemImage: "arrow.turn.down.right")
+                    .font(.subheadline).foregroundStyle(HomePalette.blue)
+                DisclosureGroup("原文依据 · \(exercise?.sectionTitle ?? "")") {
+                    LearningExerciseMarkdown(text: result.sourceExcerpt)
+                }.font(.caption)
+            }
+        }
+    }
+
+    private func persistLocalDraft() {
+        guard isCurrentAccount, !conflict, let exercise, exercise.status == "draft" else { return }
         do {
-            feedback = try await collectChatAnswer(from: APIClient.shared.chatStream(
-                question: "请批改我的答案。先给结论，再指出正确步骤、遗漏和一个最小改进建议。\n\n题目：\(question)\n\n我的答案：\(answer)",
-                quotedContext: sourceExcerpt,
-                contextScope: contextScope
-            ))
-            onSave(question, answer, feedback)
-        } catch { errorMessage = error.localizedDescription }
+            let draft = MixedExerciseSave(revision: exercise.revision, answers: answers)
+            UserDefaults.standard.set(try JSONEncoder().encode(draft), forKey: cacheKey)
+        } catch { errorMessage = "本机草稿保存失败，请先同步草稿再关闭。" }
+    }
+
+    @MainActor private func accept(_ item: MixedExerciseDTO, restoreLocal: Bool = false) {
+        guard isCurrentAccount else { return }
+        if exercise?.id != item.id { expandedHints.removeAll() }
+        exercise = item; answers = item.answers; dirty = false; conflict = false
+        if let data = try? JSONEncoder().encode(item) { UserDefaults.standard.set(data, forKey: latestCacheKey) }
+        if restoreLocal, item.status == "draft",
+           let data = UserDefaults.standard.data(forKey: cacheKey),
+           let draft = try? JSONDecoder().decode(MixedExerciseSave.self, from: data),
+           draft.answers != item.answers {
+            answers = draft.answers; dirty = true; conflict = draft.revision != item.revision
+        }
+        if item.status == "graded" { UserDefaults.standard.removeObject(forKey: cacheKey) }
+    }
+
+    @MainActor private func restore() async {
+        guard isCurrentAccount, let book = contextScope.selectedBookId, let section = contextScope.selectedBookSectionId else {
+            errorMessage = "请先打开书籍，记录学习位置。"; return
+        }
+        busy = true; defer { busy = false }
+        do {
+            let latest = try await APIClient.shared.request(MixedExerciseLatest.self, path: "me/learning-exercises",
+                queryItems: [.init(name: "book_id", value: book), .init(name: "section_id", value: section)])
+            guard isCurrentAccount else { return }
+            if let item = latest.exercise { accept(item, restoreLocal: true) }
+        } catch {
+            if isCurrentAccount, let data = UserDefaults.standard.data(forKey: latestCacheKey),
+               let cached = try? JSONDecoder().decode(MixedExerciseDTO.self, from: data) {
+                accept(cached, restoreLocal: true)
+            }
+            errorMessage = "暂时无法同步学习记录；如有本机草稿已恢复。\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor private func generate() async {
+        guard isCurrentAccount, let book = contextScope.selectedBookId,
+              let section = contextScope.selectedBookSectionId, let version = contextScope.selectedBookVersion else {
+            errorMessage = "缺少书籍版本或学习位置，请重新打开书籍。"; return
+        }
+        busy = true; errorMessage = nil; defer { busy = false }
+        do {
+            let item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises", method: "POST",
+                body: MixedExerciseCreate(id: createID, book_id: book, section_id: section, content_version: version, minutes: 8, dialogue: dialogue))
+            accept(item)
+        } catch {
+            errorMessage = "出题尚未完成：\(error.localizedDescription)"
+            // If response was lost, recover the durable server row rather than creating another set.
+            await restore()
+        }
+    }
+
+    @MainActor @discardableResult private func syncDraft() async -> Bool {
+        guard isCurrentAccount, let exercise, exercise.status == "draft", !conflict else { return false }
+        busy = true; errorMessage = nil; defer { busy = false }
+        do {
+            let item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)/draft", method: "PUT",
+                body: MixedExerciseSave(revision: exercise.revision, answers: answers))
+            accept(item); persistLocalDraft(); return true
+        } catch {
+            errorMessage = "同步失败，本机作答仍保留。\(error.localizedDescription)"
+            if let item = try? await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)") {
+                accept(item, restoreLocal: true)
+            }
+            return false
+        }
+    }
+
+    @MainActor private func primaryAction() async {
+        guard !busy, isCurrentAccount else { return }
+        guard let exercise else { await generate(); return }
+        busy = true; errorMessage = nil; defer { busy = false }
+        do {
+            let item: MixedExerciseDTO
+            switch exercise.status {
+            case "draft":
+                guard canSubmitIgnoringBusy else { return }
+                item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)/submit", method: "POST",
+                    body: MixedExerciseSave(revision: exercise.revision, answers: answers))
+            case "failed", "generating":
+                item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)/retry", method: "POST")
+            case "grading":
+                item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)/submit", method: "POST",
+                    body: MixedExerciseSave(revision: exercise.revision, answers: exercise.answers))
+            default:
+                item = try await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)")
+            }
+            accept(item, restoreLocal: item.status == "draft")
+        } catch {
+            errorMessage = "处理未完成，草稿仍保留：\(error.localizedDescription)"
+            // Refresh revision after a failed grading request, without discarding local answers.
+            if let item = try? await APIClient.shared.request(MixedExerciseDTO.self, path: "me/learning-exercises/\(exercise.id)") {
+                accept(item, restoreLocal: true)
+            }
+        }
+    }
+
+    private var canSubmitIgnoringBusy: Bool {
+        guard let exercise else { return false }
+        return !exercise.questions.isEmpty && completedCount == exercise.questions.count && !conflict
     }
 }
 
@@ -1349,10 +1958,86 @@ private struct SectionHeading: View {
     var body: some View { HStack(alignment: .top, spacing: 12) { Image(systemName: icon).font(.title2).foregroundStyle(tint).frame(width: 42, height: 42).background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 13)); VStack(alignment: .leading, spacing: 3) { Text(title).font(.system(size: 21, weight: .bold, design: .serif)).foregroundStyle(HomePalette.ink); Text(subtitle).font(.subheadline).foregroundStyle(HomePalette.secondary) } } }
 }
 
+struct LearningConversationRecap: View {
+    let question: String
+    let answer: String
+    let sectionTitle: String
+    let onContinue: () -> Void
+    let onSource: () -> Void
+    var isRecap = false
+
+    // Preview only: saved questions and answers are never rewritten.
+    static func excerpt(_ value: String) -> String {
+        let compact = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return String(compact.prefix(180)) + (compact.count > 180 ? "…" : "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(isRecap ? "回顾要点 · 已保存" : "上次的疑问 · 已保存",
+                  systemImage: isRecap ? "checkmark.seal.fill" : "bubble.left.and.bubble.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(HomePalette.ink.opacity(0.7))
+            if isRecap {
+                let blocks = ReadingCardDeck.answerBlocks(from: answer)
+                if blocks.contains(where: { if case .heading = $0 { return true }; return false }) {
+                    ReadingCardDeck(blocks: Array(blocks.prefix(7)))
+                } else {
+                    Text(verbatim: Self.excerpt(answer))
+                        .font(.subheadline).foregroundStyle(HomePalette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text(verbatim: Self.excerpt(question))
+                    .font(.headline).foregroundStyle(HomePalette.ink)
+                    .lineLimit(3).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("上次 AI 回答 · 节选")
+                        .font(.caption.weight(.semibold)).foregroundStyle(HomePalette.ink.opacity(0.7))
+                    Text(verbatim: Self.excerpt(answer))
+                        .font(.subheadline).foregroundStyle(HomePalette.ink.opacity(0.85))
+                        .lineLimit(3).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(HomePalette.blue.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+            }
+            Button(action: onContinue) {
+                HStack {
+                    Text(isRecap ? "查看完整回顾 · 继续提问" : "查看完整问答 · 继续追问")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Image(systemName: "arrow.up.right")
+                }
+                .foregroundStyle(HomePalette.ink)
+                .padding(.horizontal, 12).padding(.vertical, 10).frame(minHeight: 44)
+                .background(HomePalette.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            Button(action: onSource) {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: "text.quote")
+                    Text("原文 · \(sectionTitle)").lineLimit(2)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                }
+                .font(.caption).foregroundStyle(HomePalette.ink.opacity(0.7))
+                .frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("查看原文：\(sectionTitle)")
+        }
+        .padding(.top, 4)
+    }
+}
+
 private struct NumberedPoint: View {
     let number: Int; let color: Color; let title: String; let detail: String
+    var sourceText: String? = nil
     let annotationCount: Int
     let onTap: () -> Void
+    var onSourceTap: (() -> Void)? = nil
     let onAnnotationTap: (() -> Void)?
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1361,13 +2046,29 @@ private struct NumberedPoint: View {
                     Text("\(number)").font(.headline).foregroundStyle(color).frame(width: 32, height: 32).background(color.opacity(0.12), in: Circle())
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title).font(.subheadline.weight(.bold)).foregroundStyle(HomePalette.ink)
-                        Text(detail).font(.caption).foregroundStyle(HomePalette.secondary)
+                        Text(verbatim: LearningConversationRecap.excerpt(detail))
+                            .font(.subheadline).foregroundStyle(HomePalette.ink.opacity(0.8))
+                            .lineLimit(4).lineSpacing(3)
+                        if let sourceText {
+                            Label(sourceText, systemImage: "text.quote")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(HomePalette.blue)
+                                .padding(.top, 3)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if let onSourceTap {
+                Button(action: onSourceTap) {
+                    Image(systemName: "book.pages")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(SoftButtonStyle())
+                .accessibilityLabel("回到这段原文")
+            }
             if annotationCount > 0, let onAnnotationTap {
                 Button(action: onAnnotationTap) {
                     ZStack(alignment: .topTrailing) {
@@ -1404,40 +2105,6 @@ private struct TimelinePoint: View {
             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(HomePalette.secondary)
         }.contentShape(Rectangle()) }
         .buttonStyle(.plain)
-    }
-}
-
-private struct NotebookExcerptCard: View {
-    let excerpt: String
-    let keyText: String
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("上次阅读的内容", systemImage: "book")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color(hex: "E98B57"))
-                Text(excerpt)
-                    .font(.system(size: 15, weight: .regular, design: .serif))
-                    .lineLimit(8)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
-                if !keyText.isEmpty {
-                    Text("关键句：\(keyText)").font(.caption.weight(.semibold)).foregroundStyle(Color(hex: "F0715C"))
-                }
-            }
-            .font(.subheadline).foregroundStyle(HomePalette.secondary)
-            .padding(.leading, 22).padding(16)
-            Text("这里是关键  ↙")
-                .font(.system(size: 13, weight: .medium, design: .rounded)).italic()
-                .foregroundStyle(Color(hex: "F0715C")).rotationEffect(.degrees(-7))
-                .padding(.top, 82).padding(.trailing, 12)
-            VStack(spacing: 15) {
-                ForEach(0..<6, id: \.self) { _ in Circle().fill(Color(hex: "DCE9E5")).frame(width: 8, height: 8) }
-            }.padding(.top, 20).padding(.leading, 8).frame(maxWidth: .infinity, alignment: .leading)
-            Rectangle().fill(Color(hex: "F5DAB8").opacity(0.72)).frame(width: 62, height: 20)
-                .rotationEffect(.degrees(12)).offset(x: 7, y: -5)
-        }
-        .background(Color(hex: "FFFDF8"), in: RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).stroke(Color.white, lineWidth: 1) }
     }
 }
 
@@ -1811,7 +2478,7 @@ private struct CleanupWorkspaceView: View {
             }.disabled(item.completed || reviewLocked)
                 .accessibilityLabel("\(selected.contains(item.id) ? "取消选择" : "选择")\(item.title)")
             VStack(alignment: .leading, spacing: 5) {
-                Text(item.title).font(.headline)
+                Text(item.title).font(.headline).lineLimit(3)
                 Text(item.reason).font(.caption).foregroundStyle(HomePalette.secondary)
                 if let outcome = item.outcome { Text(outcome).font(.caption).foregroundStyle(item.completed ? HomePalette.green : HomePalette.coral) }
                 Button("查看内容与差异") { selected.insert(item.id); reviewing = true }.font(.caption)
@@ -1921,7 +2588,7 @@ private struct CleanupWorkspaceView: View {
             let target = pair[0], source = pair[1]
             mergeIDs.formUnion(pair.map(\.id))
             result.append(.init(id: "merge:\(target.id):\(source.id)", domain: 2, section: "建议合并",
-                title: "\(target.title) / \(source.title)", reason: "标题相同，仅作为候选。先核对差异；保留第一条，来源归档。",
+                title: "\(target.title)（2 篇同名笔记）", reason: "标题相同，仅作为候选。先核对差异；保留第一条，来源归档。",
                 capability: "knowledge.note.merge", input: ["target_note_id": .string(target.id), "target_base_hash": .string(notes.contentHash(for: target)), "source_versions": .object([source.id: .string(notes.contentHash(for: source))])],
                 localNotes: pair.map(noteSnapshot), before: pair.map { "# \($0.title)\n\n\($0.body)" }.joined(separator: "\n\n---\n\n"),
                 after: "# \(target.title)\n\n\(target.body)\n\n## 合并来源：\(source.title)\n\n\(source.body)", resourceIDs: Set(pair.map { "note:\($0.id)" })))

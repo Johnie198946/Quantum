@@ -66,7 +66,9 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if showStructuredReviewE2E {
+                if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
+                    LearningExerciseHintPreview()
+                } else if showStructuredReviewE2E {
                     StructuredReviewE2EHost()
                 } else if showBatch4Preview {
                     Batch4PreviewHost()
@@ -96,6 +98,25 @@ public struct AIPlatformApp: App {
 }
 
 #if DEBUG
+private struct LearningExerciseHintPreview: View {
+    private let exercise = MixedExerciseDTO(
+        id: "hint-preview", status: "draft", revision: 1, bookId: "hint-preview", sectionId: "chapter",
+        contentVersion: String(repeating: "a", count: 64), bookTitle: "两座码头的金色账簿", sectionTitle: "加权平均",
+        summary: "从两港的数据出发，练习判断总体成功率。", confidence: "low", unavailable: [],
+        evidenceKinds: ["reading"], minutes: 2,
+        questions: [.init(hint: "先分别列出两港的成功次数和总次数，再想想：两个百分比是否代表同样多的样本？",
+                         id: "q1", kind: .judgement,
+                         body: "把一种钟在东港和西港的两个成功率直接相加后除以 2，就一定能得到该钟的总体成功率。",
+                         knowledgePoint: "加权平均与组别权重", difficulty: 1, minutes: 2,
+                         sourceExcerpt: "两港的成功次数与总次数。", options: [.init(id: "T", text: "正确"), .init(id: "F", text: "错误")], isMultiple: false)],
+        answers: [:], results: [], error: nil)
+    var body: some View {
+        LearningExerciseView(sourceTitle: exercise.bookTitle,
+                             contextScope: .init(selectedBookId: exercise.bookId, selectedBookVersion: exercise.contentVersion, selectedBookSectionId: exercise.sectionId),
+                             exercise: exercise)
+    }
+}
+
 private struct PrototypeReviewNavigator: View {
     private static let pageIDs: [String] = {
         let v3 = [

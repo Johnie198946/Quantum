@@ -76,18 +76,28 @@ def _trust(args: argparse.Namespace) -> tuple[str, str]:
     )
 
 
-def _ssh(identity: str, known_hosts: str, command: str) -> subprocess.CompletedProcess[str]:
+def _ssh(
+    identity: str,
+    known_hosts: str,
+    command: str,
+    *,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             "ssh", "-F", "/dev/null",
             "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes",
+            "-o", "ConnectTimeout=15",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ServerAliveCountMax=2",
             "-o", "StrictHostKeyChecking=yes",
             "-o", f"UserKnownHostsFile={known_hosts}",
             "-i", identity,
             "--", TARGET, command,
         ],
         text=True,
+        input=input_text,
         capture_output=True,
         timeout=120,
         check=False,

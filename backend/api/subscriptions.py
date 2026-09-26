@@ -631,30 +631,40 @@ async def my_book_subscriptions(payload=Depends(require_auth)):
 
 @router.get("/me/learning-resume")
 async def learning_resume(payload=Depends(require_auth)):
-    subscriptions = (await my_book_subscriptions(payload))["subscriptions"]
-    if not subscriptions:
-        return {"resume": None}
-    checkpoint = max(
-        subscriptions,
-        key=lambda item: item.get("last_read_at") or datetime.min.replace(tzinfo=timezone.utc),
-    )
-    _, body = await _available_book_body(payload, checkpoint["book"]["id"])
-    section = _resume_section(body, checkpoint)
-    if section is None:
-        return {"resume": None}
-    candidates = _learning_resume_points(section, limit=256)
-    return {
-        "resume": {
-            "subscription": checkpoint,
-            "section_id": section["id"],
-            "section_title": section["title"],
-            "block_index": checkpoint.get("last_block_index"),
-            "character_offset": checkpoint.get("last_character_offset"),
-            "key_points": candidates[:2],
-            "candidates": candidates,
-            "content_version": body["content_version"],
+    tenant_key, user_id = _reader_identity(payload)
+    async with SessionLocal() as db:
+        rows = (await db.execute(select(KnowledgeBookSubscription).where(
+            KnowledgeBookSubscription.tenant_key == tenant_key,
+            KnowledgeBookSubscription.owner_user_id == user_id,
+        ).order_by(KnowledgeBookSubscription.last_read_at.desc(),
+                   KnowledgeBookSubscription.book_id))).scalars().all()
+    # Resume the actual checkpoint, not the series' newest unread issue.
+    # Recheck each candidate through the existing live authorization/content gate.
+    for row in rows:
+        try:
+            book, body = await _available_book_body(payload, row.book_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            continue
+        checkpoint = _book_subscription(row, {**book, "content_version": body["content_version"]})
+        section = _resume_section(body, checkpoint)
+        if section is None:
+            continue
+        candidates = _learning_resume_points(section, limit=256)
+        return {
+            "resume": {
+                "subscription": checkpoint,
+                "section_id": section["id"],
+                "section_title": section["title"],
+                "block_index": checkpoint.get("last_block_index"),
+                "character_offset": checkpoint.get("last_character_offset"),
+                "key_points": candidates[:2],
+                "candidates": candidates,
+                "content_version": body["content_version"],
+            }
         }
-    }
+    return {"resume": None}
 
 
 @router.put("/me/book-subscriptions")

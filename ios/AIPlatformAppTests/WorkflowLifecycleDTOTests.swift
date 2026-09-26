@@ -152,13 +152,9 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
              (true, "PATCH", "/api/v1/me/book-subscriptions/progress"):
             responseBody = Self.subscriptionResponse
         case (true, "GET", "/api/v1/me/learning-resume"):
-            responseBody = Data(#"{"resume":{"subscription":{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"last_section_id":"section-2","last_block_index":3,"last_character_offset":18,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"},"section_id":"section-2","section_title":"边界条件","block_index":3,"character_offset":18,"key_points":[{"title":"条件一","detail":"先验证输入。"},{"title":"条件二","detail":"再检查结果。"}]}}"#.utf8)
+            responseBody = Data(#"{"resume":{"subscription":{"book":{"id":"kn-1","title":"AI Lab 顶层设计","author":"AI Lab","author_source":"curated","summary":"架构说明","cover_theme":"product","cover_variant":2,"cover_version":1,"security_level":"green","knowledge_level":"K5","freshness":"current","source_count":3},"edition":1,"content_version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","progress":0.42,"last_section_id":"section-2","last_block_index":3,"last_character_offset":18,"subscribed_at":"2026-09-06T08:00:00Z","last_read_at":"2026-09-06T08:10:00Z"},"section_id":"section-2","section_title":"边界条件","block_index":3,"character_offset":18,"key_points":[{"title":"条件一","detail":"先验证输入。","source_excerpt":"先验证输入。"},{"title":"条件二","detail":"再检查结果。","source_excerpt":"再检查结果。"}]}}"#.utf8)
         case (true, "DELETE", "/api/v1/me/book-subscriptions"):
             responseBody = Data(#"{"deleted":true}"#.utf8)
-        case (true, "GET", let imagePath)
-            where imagePath.hasPrefix("/api/v1/knowledge-publications/publication-"):
-            responseHeaders["Content-Type"] = "image/png"
-            responseBody = Data("synthetic-image-bytes".utf8)
         case (true, "PUT", let notePath) where notePath.hasPrefix("/api/v1/me/knowledge-notes/"):
             let body = String(data: requestBody ?? Data(), encoding: .utf8) ?? ""
             let object = (try? JSONSerialization.jsonObject(with: requestBody ?? Data())) as? [String: Any]
@@ -805,51 +801,6 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
-    func testPublicationImageUsesAuthenticatedBoundedRelativePath() async throws {
-        APIContractURLProtocol.reset()
-        defer { APIContractURLProtocol.reset() }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [APIContractURLProtocol.self]
-        let client = APIClient(
-            baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
-            sessionConfiguration: configuration,
-            inMemoryToken: "image-token"
-        )
-        let publicationID = "publication-" + String(repeating: "a", count: 32)
-        let digest = String(repeating: "b", count: 64)
-
-        let data = try await client.fetchPublicationImage(
-            path: "/api/v1/knowledge-publications/\(publicationID)/assets/\(digest)"
-        )
-        XCTAssertEqual(data, Data("synthetic-image-bytes".utf8))
-        let request = try XCTUnwrap(APIContractURLProtocol.requests().first?.request)
-        XCTAssertEqual(request.url?.host, "contract.invalid")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer image-token")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg")
-        do {
-            _ = try await client.fetchPublicationImage(path: "https://evil.invalid/image.png")
-            XCTFail("absolute image URLs must be rejected")
-        } catch {}
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
-
-        _ = try await client.fetchPublicationImage(
-            path: "/api/v1/knowledge-publications/\(publicationID)/media/illustration_01"
-        )
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
-        for unsafe in [
-            "/api/v1/knowledge-publications/\(publicationID)/media/illustration_04",
-            "/api/v1/knowledge-publications/\(publicationID)/media/../evidence",
-            "//evil.invalid/api/v1/knowledge-publications/\(publicationID)/media/illustration_01",
-        ] {
-            do {
-                _ = try await client.fetchPublicationImage(path: unsafe)
-                XCTFail("unsafe publication media URL must be rejected")
-            } catch {}
-        }
-        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
-    }
-
-    @MainActor
     func testLearningResumeDecodesExactSectionAndTwoPoints() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
@@ -869,6 +820,185 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(resume.blockIndex, 3)
         XCTAssertEqual(resume.characterOffset, 18)
         XCTAssertEqual(resume.keyPoints.map(\.title), ["条件一", "条件二"])
+        XCTAssertEqual(resume.keyPoints.map(\.sourceExcerpt), ["先验证输入。", "再检查结果。"])
+        let welcome = LearningWelcomeView(resume: resume, resumeStatus: "正在读取上次进度…", onAction: nil)
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains(resume.subscription.book.title))
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains(resume.sectionTitle))
+        XCTAssertTrue(welcome.learningAccessibilityLabel.contains("百分之\(Int(resume.subscription.progress * 100))"))
+        for status in ["正在读取上次进度…", "还没有阅读记录", "暂时无法读取进度，点击重试"] {
+            XCTAssertEqual(LearningWelcomeView(resume: nil, resumeStatus: status, onAction: nil).learningAccessibilityLabel, "继续学，\(status)")
+        }
+        let heroRenderer = ImageRenderer(content: welcome.learningHero.frame(width: 350))
+        heroRenderer.scale = 2
+        let hero = XCTAttachment(image: try XCTUnwrap(heroRenderer.uiImage))
+        hero.name = "home-real-reading-resume"
+        hero.lifetime = .keepAlways
+        add(hero)
+
+        let first = LearningResumePointDTO(title: "概念", detail: "注意力机制是指计算输入位置之间的相关性。", sourceExcerpt: "注意力机制是指计算输入位置之间的相关性。", kind: "concept", score: 3)
+        let second = LearningResumePointDTO(title: "联系", detail: "交叉注意力与自注意力的区别在于输入来源。", sourceExcerpt: "交叉注意力与自注意力的区别在于输入来源。", kind: "connection", score: 3)
+        let future = LearningResumePointDTO(title: "未读", detail: "未来章节是指尚未阅读的后续内容。", sourceExcerpt: "未来章节是指尚未阅读的后续内容。", kind: "concept", score: 3)
+        let section = KnowledgeBookSectionDTO(id: "section-2", title: "注意力", level: 1, markdown: "\(second.detail)\n\n\(first.detail)\n\n\(future.detail)")
+        let checkpoint = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 1, characterOffset: (first.detail as NSString).length,
+            keyPoints: [future, first, second], candidates: [future, first, first, second])
+        let version = try XCTUnwrap(resume.subscription.contentVersion)
+        XCTAssertEqual(checkpoint.visiblePoints(in: section, contentVersion: version), [first, second])
+        XCTAssertEqual(checkpoint.visiblePoints(in: section, contentVersion: "changed-version"), [])
+        let partial = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 0, characterOffset: 2, keyPoints: [second])
+        XCTAssertEqual(partial.visiblePoints(in: section, contentVersion: version), [])
+
+        // Production Build49 returns title/detail without source_excerpt or kind.
+        let legacyFirst = LearningResumePointDTO(title: "旧概念", detail: first.detail, sourceExcerpt: nil)
+        let legacySecond = LearningResumePointDTO(title: "旧联系", detail: second.detail, sourceExcerpt: nil)
+        let fabricated = LearningResumePointDTO(title: "占位", detail: "继续理解本节中的核心概念与推理关系。", sourceExcerpt: nil)
+        let legacy = LearningResumeDTO(subscription: resume.subscription, sectionId: section.id, sectionTitle: section.title,
+            blockIndex: 1, characterOffset: (first.detail as NSString).length,
+            keyPoints: [fabricated, legacyFirst, legacySecond, future])
+        XCTAssertEqual(legacy.visiblePoints(in: section, contentVersion: version), [legacyFirst, legacySecond])
+        XCTAssertEqual(legacy.visiblePoints(in: section, contentVersion: "changed-version"), [])
+        var modernMissingEvidence = legacy
+        modernMissingEvidence.candidates = [legacyFirst, legacySecond]
+        XCTAssertEqual(modernMissingEvidence.visiblePoints(in: section, contentVersion: version), [])
+    }
+
+    @MainActor
+    func testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText() throws {
+        let original = "第一句。\n\n\n\n原文例子：\t {not json}  👨‍👩‍👧‍👦"
+        XCTAssertEqual(LearningConversationRecap.excerpt(original), "第一句。 原文例子： {not json} 👨‍👩‍👧‍👦")
+        XCTAssertTrue(original.contains("\n\n\n\n"))
+        XCTAssertEqual(LearningConversationRecap.excerpt(" \n\t"), "")
+        XCTAssertEqual(LearningConversationRecap.excerpt(String(repeating: "字", count: 181)), String(repeating: "字", count: 180) + "…")
+        for width in [320.0, 390.0] {
+            let preview = LearningConversationRecap(
+                question: "请结合我当前阅读位置和已有学习记忆，解释“载荷定位常被一句找到第一个左花括号草草带过”。这个规则为什么重要？",
+                answer: "从一段混有说明文字的响应中提取 JSON 时，不能简单地把第一个左花括号当成 JSON 的起点。\n\n\n\n原文被截断的完整例子是：\n\n格式说明 {not json}。",
+                sectionTitle: "载荷定位：支持前后缀，但不吞掉歧义",
+                onContinue: {}, onSource: {}
+            ).padding(16).frame(width: width).background(Color.white)
+            let renderer = ImageRenderer(content: preview)
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertLessThan(image.size.height, 600, "预览不应被历史回答的空行撑成长页")
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Learning-recap-\(Int(width))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    func testLearningRecapUsesStructuredSavedPreview() throws {
+        XCTAssertTrue(LearningRecapPrompt.isRecap(LearningRecapPrompt.question))
+        XCTAssertFalse(LearningRecapPrompt.isRecap("举个例子"))
+        XCTAssertLessThan(LearningRecapPrompt.question.count, 200)
+        XCTAssertTrue(LearningRecapPrompt.instruction.contains("不超过 220 个汉字"))
+        let answer = """
+        ## 一句话抓住
+        数据不完整时先确认响应是否结束。
+
+        ## 记住这三点
+        - 概念：未结束不等于错误。
+        - 条件或机制：确认完成信号再解析。
+        - 易错处：不要凭缺失的括号猜测真实值。
+
+        ## 一个贴近大学生活的例子
+        作业系统记录还在上传时，先等待完成提示。
+        """
+        XCTAssertTrue(ReadingCardDeck.answerBlocks(from: answer).contains {
+            if case .heading = $0 { return true }; return false
+        })
+        for width in [320.0, 390.0] {
+            let card = LearningConversationRecap(
+                question: LearningRecapPrompt.question, answer: answer,
+                sectionTitle: "第 3 章", onContinue: {}, onSource: {}, isRecap: true
+            )
+            .padding(16).frame(width: width).background(Color.white)
+            let renderer = ImageRenderer(content: card)
+            renderer.scale = 2
+            let image = try XCTUnwrap(renderer.uiImage)
+            XCTAssertGreaterThan(image.size.height, 180)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Learning-persistent-recap-\(Int(width))"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    func testLearningExerciseTypesSelectionAndRichQuestionRendering() async throws {
+        let incomplete = AsyncThrowingStream<APIClient.StreamEvent, Error> { continuation in
+            continuation.yield(.delta("不完整的评阅")); continuation.finish()
+        }
+        do { _ = try await collectChatAnswer(from: incomplete); XCTFail("未完成流不得作为完成评阅保存") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("未完整")) }
+        let complete = AsyncThrowingStream<APIClient.StreamEvent, Error> { continuation in
+            continuation.yield(.done(sessionId: nil, answer: "完整评阅")); continuation.finish()
+        }
+        let collected = try await collectChatAnswer(from: complete)
+        XCTAssertEqual(collected, "完整评阅")
+        let body = "## 已知条件\n\n\n| 灯塔 | 甲刻度 | 乙刻度 |\n| --- | --- | --- |\n| 甲塔 | 7 | 3 |\n| 乙塔 | 6 | 5 |\n\n## 作答要求\n\n1. 写出合并后的刻度。\n2. 解释重复合并的结果。"
+        XCTAssertTrue(MarkdownBlockParser.shared.parse(body).contains { if case .table = $0 { return true }; return false })
+        let questions = LearningExerciseKind.allCases.enumerated().map { index, kind in
+            MixedExerciseQuestion(hint: index == 0 ? "先观察同一份状态重复合并后的变化。" : nil, id: "q\(index + 1)", kind: kind,
+                body: kind == .judgement ? "重复合并相同状态不会改变结果。" : (kind == .choice ? "以下哪项符合合并规则？" : body),
+                knowledgePoint: "幂等合并", difficulty: 1, minutes: 2, sourceExcerpt: "合并时对每个分量取最大值。",
+                options: kind == .judgement ? [.init(id: "T", text: "正确"), .init(id: "F", text: "错误")] :
+                    (kind == .choice ? [.init(id: "A", text: "直接覆盖"), .init(id: "B", text: "分量取最大值")] : []),
+                isMultiple: false)
+        }
+        XCTAssertEqual(questions[0].presentation.selecting("B", from: ["A"]), ["B"])
+        XCTAssertEqual(questions[1].presentation.selecting("F", from: ["T"]), ["F"])
+        XCTAssertTrue(questions[1].isAnswered(.init(selected: ["T"])))
+        XCTAssertFalse(questions[2].isAnswered(.init(text: " \n ")))
+        let multi = LearningExerciseQuestion(kind: .choice, body: "", isMultiple: true, options: questions[0].options)
+        XCTAssertEqual(multi.selecting("B", from: ["A"]), ["A", "B"])
+        XCTAssertEqual(multi.selecting("A", from: ["A", "B"]), ["B"])
+        let exercise = MixedExerciseDTO(
+            id: UUID().uuidString, status: "draft", revision: 1, bookId: "book", sectionId: "chapter",
+            contentVersion: String(repeating: "a", count: 64), bookTitle: "群岛灯塔的潮汐日志", sectionTitle: "幂等性",
+            summary: "你反复询问旧抄本如何合并。本组先检查概念，再通过解答与解释确认推理。尚无可靠成绩，因此从基础诊断开始。",
+            confidence: "low", unavailable: [], evidenceKinds: ["reading", "saved_dialogue", "scored_attempts"],
+            minutes: 8, questions: questions, answers: [:], results: [], error: nil)
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let payload = try encoder.encode(exercise)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoded = try decoder.decode(MixedExerciseDTO.self, from: payload)
+        XCTAssertEqual(Set(decoded.questions.map(\.kind)), Set(LearningExerciseKind.allCases))
+        XCTAssertEqual(decoded.questions[0].hint, questions[0].hint)
+        XCTAssertNil(decoded.questions[1].hint)
+        XCTAssertTrue(decoded.results.isEmpty)
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("correct_ids"))
+        let draft = MixedExerciseSave(revision: 1, answers: ["q1": .init(selected: ["B"]), "q3": .init(text: "先取最大值。\n重复合并保持不变。", assisted: true)])
+        XCTAssertEqual(try JSONDecoder().decode(MixedExerciseSave.self, from: JSONEncoder().encode(draft)).answers, draft.answers)
+        let size = CGSize(width: 390, height: 844)
+        let host = UIHostingController(rootView: LearningExerciseView(
+            sourceTitle: exercise.bookTitle, contextScope: .init(selectedBookId: "book", selectedBookVersion: exercise.contentVersion, selectedBookSectionId: "chapter"),
+            exercise: decoded))
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<3 { await Task.yield(); host.view.layoutIfNeeded() }
+        let screen = UIGraphicsImageRenderer(size: size).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+        let fullPage = XCTAttachment(image: screen)
+        fullPage.name = "mixed-exercise-single-page"
+        fullPage.lifetime = .keepAlways
+        add(fullPage)
+        func scrollViews(in view: UIView) -> [UIScrollView] {
+            (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+        }
+        let scroll = try XCTUnwrap(scrollViews(in: host.view).max { $0.contentSize.height < $1.contentSize.height })
+        XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height * 2)
+        for (name, fraction) in [("mixed-judgement-and-solution", CGFloat(0.4)), ("mixed-response", CGFloat(1))] {
+            scroll.setContentOffset(CGPoint(x: 0, y: (scroll.contentSize.height - scroll.bounds.height) * fraction), animated: false)
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(size: size).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
     }
 
     func testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges() {
@@ -882,6 +1012,40 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             selectedVersion: "service-v1", currentVersion: "service-v2"
         ))
         XCTAssertFalse(LoginConsentPolicy.isAccepted(selectedVersion: nil, currentVersion: "service-v1"))
+    }
+
+    @MainActor
+    func testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload() throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")), sessionConfiguration: config, inMemoryToken: "fixture")
+        let store = KnowledgeNoteStore.shared
+        let tenant = "reader-test-\(UUID())"
+        store.activate(tenantKey: tenant, userId: "reader")
+        var ids: [String] = []
+        defer {
+            store.activate(tenantKey: tenant, userId: "reader")
+            ids.forEach { store.moveToTrash(id: $0) }
+            store.deactivate()
+        }
+        let longAnswer = String(repeating: "完整答案，不截断。\n\n", count: 350).trimmingCharacters(in: .whitespacesAndNewlines)
+        for index in 1...3 {
+            let entry = try XCTUnwrap(ReaderAnnotationEntry.save(
+                quote: "同一段原文", detail: "我的问题\n第\(index)次追问\n\nAI 回答摘要\n\(longAnswer)",
+                bookID: "book", bookTitle: "测试书", sectionID: "section", sectionTitle: "测试章",
+                citation: "fixture", contentVersion: String(repeating: "a", count: 64), sessionID: "saved-session", api: api
+            ))
+            ids.append(entry.id)
+        }
+        store.reload()
+        let restored = store.notes.compactMap(ReaderAnnotationEntry.init(note:))
+        XCTAssertEqual(restored.count, 3)
+        XCTAssertTrue(restored.allSatisfy { $0.questionTurn?.answer == longAnswer && $0.questionTurn?.sessionID == "saved-session" })
+        XCTAssertEqual(Set(restored.compactMap { $0.questionTurn?.question }), ["第1次追问", "第2次追问", "第3次追问"])
+        store.activate(tenantKey: tenant, userId: "other-reader")
+        XCTAssertTrue(store.notes.isEmpty)
     }
 
     @MainActor
@@ -1354,7 +1518,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     func testReaderBodySurvivesSubscriptionFailure() async throws {
         let body = try decoder().decode(
             KnowledgeBookBodyDTO.self,
-            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","reader_cover_url":"/api/v1/knowledge-publications/publication-1/covers/reader_cover","illustration_urls":["/api/v1/knowledge-publications/publication-1/media/illustration_01"],"sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
+            from: Data(#"{"book_id":"kn-1","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","sections":[{"id":"s1","title":"One","level":1,"markdown":"Body"}]}"#.utf8)
         )
 
         let loaded = try await loadKnowledgeBookReaderData(
@@ -1363,10 +1527,6 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         )
 
         XCTAssertEqual(loaded.body, body)
-        XCTAssertEqual(loaded.body.readerCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/reader_cover")
-        XCTAssertEqual(loaded.body.illustrationUrls, ["/api/v1/knowledge-publications/publication-1/media/illustration_01"])
-        XCTAssertEqual(readerIllustrationPaths(afterSectionAt: 0, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []), loaded.body.illustrationUrls)
-        XCTAssertTrue(readerIllustrationPaths(afterSectionAt: 1, sectionCount: 2, paths: loaded.body.illustrationUrls ?? []).isEmpty)
         XCTAssertNil(loaded.subscriptions)
 
         do {
@@ -1378,21 +1538,6 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         } catch {
             XCTAssertEqual((error as? URLError)?.code, .badServerResponse)
         }
-    }
-
-    func testPublicationReaderBodyDecodesOrderedInlineImageBlocks() throws {
-        let digest = String(repeating: "b", count: 64)
-        let data = Data("""
-        {"book_id":"publication-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"Readable","author":"Author","content_version":"v1","edition":1,"citation":"source","sections":[{"id":"s1","title":"One","level":1,"markdown":"Before image after","blocks":[{"id":"block-1","kind":"text","markdown":"Before"},{"id":"block-2","kind":"image","path":"/api/v1/knowledge-publications/publication-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/assets/\(digest)","alt":"结构示意","caption":"审定图注","width":640,"height":360},{"id":"block-3","kind":"text","markdown":"After"}]}]}
-        """.utf8)
-
-        let body = try decoder().decode(KnowledgeBookBodyDTO.self, from: data)
-        let blocks = try XCTUnwrap(body.sections.first?.blocks)
-        XCTAssertEqual(blocks.map(\.kind), ["text", "image", "text"])
-        XCTAssertEqual(blocks[1].alt, "结构示意")
-        XCTAssertEqual(blocks[1].caption, "审定图注")
-        XCTAssertEqual(blocks[1].width, 640)
-        XCTAssertEqual(blocks[1].height, 360)
     }
 
     func testKnowledgeBookSubscriptionDecodesBookAndProgress() throws {
@@ -1630,6 +1775,101 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(blocks[0], blocks[1])
         XCTAssertEqual(blocks[2], .divider)
         XCTAssertEqual(blocks[3], .divider)
+    }
+
+    func testReadingQuickActionsRenderVisualsWithoutCodeCards() {
+        XCTAssertNotEqual(ReadingQuickAction.example.prompt, ReadingQuickAction.simplify.prompt)
+        XCTAssertTrue(ReadingQuickAction.example.prompt.contains("Markdown 三列表格"))
+        XCTAssertTrue(ReadingQuickAction.simplify.prompt.contains("```comic"))
+
+        let blocks = MarkdownBlockParser.shared.parse("""
+        ```json
+        {"title":"读懂编号","panels":[{"scene":"先看到一半","dialogue":"别猜","symbol":"questionmark.circle.fill"},{"scene":"等待全文","dialogue":"再看看","symbol":"lightbulb.fill"},{"scene":"核对结果","dialogue":"这才确定","symbol":"checkmark.seal.fill"}]}
+        ```
+        ![示意图](https://example.com/figure.png)
+        ```swift
+        let value = 1
+        ```
+        """)
+        XCTAssertTrue(blocks.contains { if case .comic(_, let panels) = $0 { return panels.count == 3 }; return false })
+        XCTAssertTrue(blocks.contains { if case .image(let url, _) = $0 { return url.hasPrefix("https://") }; return false })
+        XCTAssertTrue(blocks.contains { if case .codeBlock(let language, _) = $0 { return language == "swift" }; return false })
+    }
+
+    func testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections() {
+        let blocks = ReadingCardDeck.answerBlocks(from: """
+        1.「一句话看懂」：客服是帮助用户解决问题的人或服务环节。
+
+
+        2.「校园例子」：
+
+        同学向校园服务台反馈问题。
+
+        3.「对照表」：
+        | 原文线索 | 校园对应 |
+        | --- | --- |
+        | 客服 | 服务台 |
+        """)
+        XCTAssertEqual(Array(blocks.prefix(5)), [
+            .heading(level: 2, text: "一句话看懂"),
+            .paragraph("客服是帮助用户解决问题的人或服务环节。"),
+            .heading(level: 2, text: "校园例子"),
+            .paragraph("同学向校园服务台反馈问题。"),
+            .heading(level: 2, text: "对照表")
+        ])
+        guard blocks.count == 6, case .table(let table) = blocks[5] else {
+            return XCTFail("对照表应保留为表格组件")
+        }
+        XCTAssertEqual(table.headers, ["原文线索", "校园对应"])
+        XCTAssertEqual(table.rows, [["客服", "服务台"]])
+        XCTAssertEqual(ReadingCardDeck.pages(from: blocks).count, 4)
+        XCTAssertEqual(ReadingCardDeck.answerBlocks(from: "```json\n{\"panels\":", isStreaming: true), [])
+    }
+
+    @MainActor
+    func testReadingAnswerDeckWrapsAtLargeTextSize() {
+        let blocks = ReadingCardDeck.answerBlocks(from: """
+        1.「一句话看懂」：客服是帮助用户解决问题的人或服务环节。
+
+        2.「校园例子」：同学向校园服务台反馈宿舍网络故障。
+        """)
+        for width in [CGFloat(320), CGFloat(390)] {
+            let host = UIHostingController(rootView: ReadingCardDeck(blocks: blocks)
+                .environment(\.dynamicTypeSize, .accessibility3)
+                .frame(width: width))
+            let size = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+            XCTAssertGreaterThan(size.height, 100)
+            XCTAssertLessThan(size.height, 1_000)
+        }
+    }
+
+    func testReadingSelectionQuestionPrioritizesSelectedWord() {
+        let question = ReadingQuickAction.focusedQuestion(ReadingQuickAction.example.prompt, excerpt: "客服")
+        XCTAssertTrue(question.contains("用户选中：「客服」"))
+        XCTAssertTrue(question.contains("先直接解释选中内容"))
+        XCTAssertTrue(question.contains("不要用概述整段替代选词解释"))
+    }
+
+    @MainActor
+    func testAnnotatedReadingTextFillsAvailableWidth() {
+        let root = HStack(alignment: .top, spacing: 8) {
+            Rectangle().frame(width: 3)
+            SelectableReadingText(
+                markdown: String(repeating: "客服摘要要变成工单，", count: 16),
+                onSelection: { _ in }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "bubble.left.fill").frame(width: 30)
+        }
+        .frame(width: 340)
+        let host = UIHostingController(rootView: root)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 340, height: 800))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        let textView = findScrollViews(in: host.view).compactMap { $0 as? UITextView }.first
+        XCTAssertNotNil(textView)
+        XCTAssertGreaterThan(textView?.bounds.width ?? 0, 280)
     }
 
     func testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers() {
@@ -3966,7 +4206,7 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     func testCompletedLongAnswerUsesBoundedSemanticPreview() {
-        let first = String(repeating: "甲", count: 800)
+        let first = String(repeating: "甲", count: 500)
         let second = String(repeating: "乙", count: 4_000)
         let content = first + "\n\n" + second
         let preview = LongMessagePresentation.collapsedPreview(content)
@@ -6057,6 +6297,23 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         if case .table = content.blocks[0] {} else { XCTFail("Expected a table") }
         XCTAssertEqual(content.blocks[1], .formula("H(x) = \\sum_{i=1}^{n} x_i"))
         XCTAssertEqual(content.blocks[2], .codeBlock(language: "python", code: "from pathlib import Path"))
+        let blocks = MarkdownBlockParser.shared.parse("""
+        ## 背景
+
+        先说明前提。**它之所以产生巨大的影响**，是因为注意力机制允许并行建模。
+        """)
+
+        XCTAssertEqual(
+            ReadingResumeTarget.find("它之所以产生巨大的影响", in: blocks),
+            .init(blockIndex: 1, characterOffset: 6)
+        )
+        XCTAssertNil(ReadingResumeTarget.find("重复原文", in: [.paragraph("重复原文"), .paragraph("重复原文")]))
+        XCTAssertNil(ReadingResumeTarget.find("重复", in: [.paragraph("重复与重复")]))
+        XCTAssertEqual(ReadingResumeTarget.find("定位", in: [.paragraph("😀**定位**")]), .init(blockIndex: 0, characterOffset: 2))
+        let math = "条件 $x^2$ 成立，接着推导。"
+        let rendered = String(ReadingResumeTarget.attributedText(math).characters)
+        XCTAssertEqual(ReadingResumeTarget.find("接着推导", in: [.paragraph(math)])?.characterOffset,
+                       (rendered as NSString).range(of: "接着推导").location)
     }
 
     func testLearningPlanParserRequiresThreeRowsAndTwentyFiveMinutes() throws {
@@ -6064,12 +6321,10 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         2|回顾柯西列|用自己的话复述定义
         15|继续阅读|回到定理证明的断点
         8|做一道理解题|检验完备性条件
-        KEY|每个柯西列都收敛
         """))
 
         XCTAssertEqual(plan.items.map(\.minutes), [2, 15, 8])
         XCTAssertEqual(plan.items.map(\.title), ["回顾柯西列", "继续阅读", "做一道理解题"])
-        XCTAssertEqual(plan.keyExcerpt, "每个柯西列都收敛")
         XCTAssertNil(LearningPlanResponse.parse("10|阅读|继续\n10|练习|答题\n4|复盘|总结"))
     }
 
@@ -6163,7 +6418,39 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
             of: "这里的听觉描写让画面更安静。",
             with: "我的问题\n> 这句话表达了怎样的情感？\n> \n> AI 回答摘要\n> 以自然描写呈现宁静温暖的氛围。"
         )
-        XCTAssertEqual(ReaderAnnotationEntry(note: questionNote)?.kind, "问答")
+        let questionEntry = try XCTUnwrap(ReaderAnnotationEntry(note: questionNote))
+        XCTAssertEqual(questionEntry.kind, "问答")
+        XCTAssertEqual(questionEntry.questionTurn?.question, "这句话表达了怎样的情感？")
+        XCTAssertEqual(questionEntry.questionTurn?.answer, "以自然描写呈现宁静温暖的氛围。")
+        let longAnswer = String(repeating: "完整回答，保留段落。\n\n", count: 350).trimmingCharacters(in: .whitespacesAndNewlines)
+        questionNote.body = questionNote.body.replacingOccurrences(
+            of: "以自然描写呈现宁静温暖的氛围。", with: longAnswer.replacingOccurrences(of: "\n", with: "\n> ")
+        )
+        XCTAssertEqual(ReaderAnnotationEntry(note: questionNote)?.questionTurn?.answer, longAnswer)
+    }
+
+    @MainActor
+    func testReadingCharacterRestoresAfterLayoutWithoutTimers() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let scroll = UIScrollView(frame: window.bounds)
+        controller.view.addSubview(scroll)
+        scroll.contentSize = CGSize(width: 390, height: 3000)
+        let text = ReadingPositionTextView(frame: CGRect(x: 20, y: 200, width: 350, height: 1800))
+        text.isScrollEnabled = false
+        text.text = String(repeating: "精确定位到段落字符。\n", count: 70)
+        text.font = .systemFont(ofSize: 18)
+        text.restoreCharacterOffset = 200
+        scroll.addSubview(text)
+        text.layoutIfNeeded()
+        text.restoreIfNeeded()
+        XCTAssertGreaterThan(scroll.contentOffset.y, 200)
+        let restored = scroll.contentOffset
+        text.restoreIfNeeded()
+        XCTAssertEqual(scroll.contentOffset, restored)
     }
 
     func testReadingLanguagePresentationSwitchesEnglishActions() {

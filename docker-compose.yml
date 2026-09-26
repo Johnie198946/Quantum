@@ -86,6 +86,7 @@ services:
         condition: service_healthy
     environment:
       QUANTUM_MONTHLY_TOKEN_LIMIT: ${QUANTUM_MONTHLY_TOKEN_LIMIT:-10000000}
+      PUBLICATION_AI_TOOLKIT_SCHEDULE_ID: ${PUBLICATION_AI_TOOLKIT_SCHEDULE_ID:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ailab}:${POSTGRES_PASSWORD:-ailab_dev}@postgres:5432/${POSTGRES_DB:-ai_lab}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       # 问答 API 需要 deepseek（.env 注入）
@@ -121,6 +122,7 @@ services:
       # 注册与请求鉴权共用 auth.py 的碰撞安全租户映射；不接受环境变量覆盖用户边界
       HERMES_BRIDGE_URL: ${HERMES_BRIDGE_URL:-http://host.docker.internal:9118/v1/chat}
       HERMES_BRIDGE_INTERNAL_TOKEN: ${HERMES_BRIDGE_INTERNAL_TOKEN:?Set a non-empty HERMES_BRIDGE_INTERNAL_TOKEN in .env}
+      LEGACY_AGENT_SCHEDULE_ALLOWLIST: ${LEGACY_AGENT_SCHEDULE_ALLOWLIST:-}
       AI_LAB_ENV: production
       AI_LAB_CORS_ORIGINS: ${AI_LAB_CORS_ORIGINS:-}
       TENANT_KNOWLEDGE_POLICY_V2: ${TENANT_KNOWLEDGE_POLICY_V2:-true}

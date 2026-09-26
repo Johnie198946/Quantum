@@ -12,6 +12,7 @@ import json
 import os
 import socket
 from datetime import datetime, timedelta, timezone
+from collections.abc import Collection
 from typing import Any
 
 import httpx
@@ -19,6 +20,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.services.knowledge_catalog import compute_catalog
+from backend.services.agent_capabilities import (
+    EffectiveAgent,
+    SAFE_GLOBAL_TOOLS,
+    resolve_agent_capability,
+)
 from backend.db import SessionLocal
 from backend.models.tenant import TenantMapping
 from backend.models.tenant_agent import TenantAgentModel
@@ -31,7 +37,11 @@ from backend.models.workflow import (
     WorkflowNodeRun,
     WorkflowPlanVersion,
 )
-from backend.services.workflow_contract import assert_plan_binding
+from backend.services.workflow_contract import (
+    PlanContractError,
+    assert_plan_binding,
+    canonical_plan_hash,
+)
 from backend.services.workflow_artifacts import (
     append_event,
     initialize_run,
@@ -55,6 +65,15 @@ HERMES_URL = os.environ.get(
 )
 HERMES_BRIDGE_INTERNAL_TOKEN = os.environ.get("HERMES_BRIDGE_INTERNAL_TOKEN", "")
 LEASE_SECONDS = 60
+
+
+class ExecutionAuthorityError(RuntimeError):
+    """A stable binding/policy denial that must not be retried as an outage."""
+
+
+def _restrict_requested_knowledge_scope(policy, requested_scope: list[str]) -> list[str]:
+    """Re-authorize only the frozen request; empty never expands to tenant defaults."""
+    return list(policy.restrict(requested_scope)) if requested_scope else []
 
 
 def utcnow() -> datetime:
@@ -148,6 +167,27 @@ async def _assert_execution_plan_binding(
     db: AsyncSession, execution: WorkflowExecution, plan: WorkflowPlanVersion
 ) -> None:
     workflow = await db.get(WorkflowDefinition, execution.workflow_id)
+    if (
+        workflow is None
+        or workflow.tenant_key != execution.tenant_key
+        or workflow.archived_at is not None
+        or plan.workflow_id != workflow.id
+        or plan.frozen_at is None
+    ):
+        raise ExecutionAuthorityError("workflow execution authority binding is invalid")
+    task_agent = (
+        await db.get(TenantAgentModel, workflow.primary_agent_id)
+        if workflow.primary_agent_id
+        else None
+    )
+    if (
+        task_agent is None
+        or task_agent.tenant_id != execution.tenant_key
+        or task_agent.owner_user_id != workflow.created_by
+        or task_agent.origin_workflow_id != workflow.id
+        or not task_agent.is_active
+    ):
+        raise ExecutionAuthorityError("workflow primary agent binding is invalid")
     approval = (
         await db.execute(
             select(WorkflowApproval)
@@ -160,14 +200,19 @@ async def _assert_execution_plan_binding(
             .limit(1)
         )
     ).scalar_one_or_none()
-    assert_plan_binding(
-        active_plan_id=workflow.active_plan_id if workflow else None,
-        active_plan_hash=plan.content_hash,
-        active_activation_revision=plan.activation_revision,
-        approval_plan_id=approval.plan_id if approval else None,
-        approval_plan_hash=approval.plan_hash if approval else None,
-        approval_activation_revision=approval.activation_revision if approval else None,
-    )
+    try:
+        if canonical_plan_hash(plan.dsl) != plan.content_hash:
+            raise PlanContractError("workflow_plan_content_hash_mismatch")
+        assert_plan_binding(
+            active_plan_id=workflow.active_plan_id if workflow else None,
+            active_plan_hash=plan.content_hash,
+            active_activation_revision=plan.activation_revision,
+            approval_plan_id=approval.plan_id if approval else None,
+            approval_plan_hash=approval.plan_hash if approval else None,
+            approval_activation_revision=approval.activation_revision if approval else None,
+        )
+    except (PlanContractError, TypeError, ValueError) as exc:
+        raise ExecutionAuthorityError(str(exc)) from exc
 
 
 def executable_plan_projection(plan: dict[str, Any]) -> dict[str, Any]:
@@ -207,36 +252,33 @@ def executable_plan_projection(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def trusted_task_agent_config(task_agent: TenantAgentModel | None) -> dict[str, Any]:
-    """Project persisted composition metadata to the Bridge's strict schema."""
-    if task_agent is None:
-        return {}
-    manifest = task_agent.composition_manifest or {}
-    capability_ids = sorted({
-        str(value)
-        for key in ("capability_agent_ids", "invoked_agent_ids")
-        for value in (manifest.get(key) or [])
-        if str(value)
-    })
-    config: dict[str, Any] = {
-        "id": task_agent.id,
-        "prompt": task_agent.private_prompt_delta,
-        "capability_agent_ids": capability_ids,
-        "knowledge_scope": list(manifest.get("knowledge_scope") or []),
-    }
-    delegation = manifest.get("delegation")
-    if isinstance(delegation, dict):
-        config["delegation"] = {
-            key: delegation[key]
-            for key in ("max_concurrent_children", "max_spawn_depth")
-            if key in delegation
-        }
-    if manifest.get("business_surface") == "agency":
-        config["composition"] = {"business_surface": "agency"}
+def trusted_task_agent_config(
+    agent: EffectiveAgent,
+    *,
+    authorized_scope: Collection[str],
+    allow_network: bool,
+) -> dict[str, Any]:
+    """Project a resolved, server-owned capability snapshot for the Bridge."""
+    safe_tools = set(SAFE_GLOBAL_TOOLS)
+    config = agent.bridge_config()
+    config["allowed_tools"] = [
+        tool for tool in agent.allowed_tools if tool in safe_tools
+    ]
+    agent_scope = set(agent.knowledge_scope)
+    config["knowledge_scope"] = sorted(
+        scope for scope in authorized_scope if scope in agent_scope
+    )
+    config["allow_network"] = bool(allow_network and agent.allow_network)
     return config
 
 
 async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
+    try:
+        current_hash = canonical_plan_hash(plan.dsl)
+    except (TypeError, ValueError) as exc:
+        raise ExecutionAuthorityError("workflow_plan_content_hash_invalid") from exc
+    if execution.plan_id != plan.id or current_hash != plan.content_hash:
+        raise ExecutionAuthorityError("workflow_plan_content_hash_mismatch")
     async with SessionLocal() as policy_db:
         mapping = (
             await policy_db.execute(
@@ -250,20 +292,56 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
             catalog=compute_catalog(),
             allow_admin_bypass=False,
         )
-        allowed_scope = policy.restrict(plan.knowledge_scope or [])
+        requested_scope = list(plan.knowledge_scope or [])
+        # An empty frozen scope means this Workflow has no knowledge authority.
+        # TenantPolicy.restrict([]) expands to the tenant's default readable
+        # categories, which must not be mistaken for requested authority during
+        # execution-time re-authorization.
+        allowed_scope = _restrict_requested_knowledge_scope(policy, requested_scope)
         workflow = await policy_db.get(WorkflowDefinition, execution.workflow_id)
+        if sorted(allowed_scope) != sorted(requested_scope):
+            raise ExecutionAuthorityError(
+                "workflow knowledge scope is no longer authorized"
+            )
+        task_agent = (
+            await policy_db.get(TenantAgentModel, workflow.primary_agent_id)
+            if workflow and workflow.primary_agent_id else None
+        )
+        if (
+            workflow is None
+            or workflow.tenant_key != execution.tenant_key
+            or workflow.archived_at is not None
+            or task_agent is None
+            or task_agent.tenant_id != execution.tenant_key
+            or task_agent.owner_user_id != workflow.created_by
+            or task_agent.origin_workflow_id != workflow.id
+            or not task_agent.is_active
+        ):
+            raise ExecutionAuthorityError("workflow dispatch authority binding is invalid")
+        effective_agent = await resolve_agent_capability(
+            policy_db,
+            agent_id=task_agent.id,
+            tenant_id=execution.tenant_key,
+            owner_user_id=workflow.created_by,
+        )
+        agent_config = trusted_task_agent_config(
+            effective_agent,
+            authorized_scope=allowed_scope,
+            allow_network=plan.allow_network,
+        )
+        effective_scope = list(agent_config["knowledge_scope"])
+        if sorted(effective_scope) != sorted(allowed_scope):
+            raise ExecutionAuthorityError(
+                "workflow knowledge scope exceeds effective agent authority"
+            )
         capability = mint_capability(
             policy,
             subject_id=execution.id,
             entry_point="workflow",
-            requested_scopes=allowed_scope,
-            user_id=str((workflow and workflow.created_by) or execution.id),
+            requested_scopes=effective_scope,
+            user_id=workflow.created_by,
             sources=("tenant_knowledge", "user_notes"),
             ttl_seconds=900,
-        )
-        task_agent = (
-            await policy_db.get(TenantAgentModel, workflow.primary_agent_id)
-            if workflow and workflow.primary_agent_id else None
         )
     payload = {
         "tenant_id": execution.tenant_key,
@@ -277,12 +355,12 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         "process_contract_digest": plan.dsl.get("process_contract_digest"),
         "dependency_lock_digest": dependency_lock_digest(plan.dsl),
         "activation_revision": plan.dsl.get("activation_revision"),
-        "allow_network": plan.allow_network,
-        "knowledge_scope": sorted(allowed_scope),
+        "allow_network": bool(agent_config["allow_network"]),
+        "knowledge_scope": effective_scope,
         "knowledge_capability": capability,
         "knowledge_policy_version": policy.policy_version,
         "max_tokens": plan.max_tokens,
-        "agent_config": trusted_task_agent_config(task_agent),
+        "agent_config": agent_config,
     }
     source = ((workflow.requirements_snapshot or {}).get("source_document") if workflow else None)
     if source:
@@ -694,10 +772,10 @@ async def sync_execution(execution_id: str, db: AsyncSession) -> None:
             select(WorkflowExecution).where(WorkflowExecution.id == execution_id)
         )
     ).scalar_one()
-    plan = await _plan(db, execution)
-    await _assert_execution_plan_binding(db, execution, plan)
-    initialize_run(execution, executable_plan_projection(plan.dsl))
     try:
+        plan = await _plan(db, execution)
+        await _assert_execution_plan_binding(db, execution, plan)
+        initialize_run(execution, executable_plan_projection(plan.dsl))
         dispatched = await dispatch(execution, plan)
         execution.hermes_session_id = dispatched.get("hermes_session_id")
         # 用户已在平台明确触发 retry/revision 后，本地状态会回到 queued。
@@ -743,6 +821,21 @@ async def sync_execution(execution_id: str, db: AsyncSession) -> None:
         from backend.services.showroom_insight_execution import project_execution
 
         await project_execution(db, execution.id)
+        await db.commit()
+    except ExecutionAuthorityError as exc:
+        execution.status = "failed"
+        execution.finished_at = utcnow()
+        execution.lease_owner = None
+        execution.lease_until = None
+        execution.error_message = f"Workflow authorization denied: {str(exc)[:500]}"
+        db.add(
+            WorkflowEvent(
+                execution_id=execution.id,
+                event_type="authorization_failed",
+                message=execution.error_message,
+                payload={"source": "workflow_worker", "fail_closed": True},
+            )
+        )
         await db.commit()
     except Exception as exc:
         # 外部执行器暂不可达不是业务失败；保留队列并释放租约，下轮安全重试同一幂等键。

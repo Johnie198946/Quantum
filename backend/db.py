@@ -83,8 +83,10 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(migrate_knowledge_contribution_v4)
         await conn.run_sync(_migrate_workflow_v2_columns)
+        await conn.run_sync(_migrate_workflow_execution_invariants)
         await conn.run_sync(_migrate_workflow_lifecycle_columns)
         await conn.run_sync(_migrate_workflow_contract_columns)
+        await conn.run_sync(_migrate_workflow_schedule_schema)
         await conn.run_sync(_migrate_knowledge_policy_v2_columns)
         await conn.run_sync(_migrate_book_subscription_version)
         await conn.run_sync(_migrate_showroom_epoch_bigint)
@@ -283,11 +285,6 @@ def _migrate_workflow_v2_columns(connection) -> None:
         "UPDATE workflow_executions SET idempotency_key = "
         "'legacy:' || id WHERE idempotency_key IS NULL"
     )
-    connection.exec_driver_sql(
-        "CREATE UNIQUE INDEX IF NOT EXISTS ix_workflow_executions_idempotency_key "
-        "ON workflow_executions (idempotency_key)"
-    )
-
     if "workflow_node_runs" not in tables:
         return
     node_columns = {
@@ -307,6 +304,72 @@ def _migrate_workflow_v2_columns(connection) -> None:
             connection.exec_driver_sql(
                 f'ALTER TABLE workflow_node_runs ADD COLUMN "{name}" {definition}'
             )
+
+
+def _migrate_workflow_execution_invariants(connection) -> None:
+    """Install tenant idempotency and one-active-run database invariants."""
+    schema = inspect(connection)
+    if "workflow_executions" not in set(schema.get_table_names()):
+        return
+    existing = {item["name"] for item in schema.get_columns("workflow_executions")}
+    timestamp_type = (
+        "TIMESTAMP WITH TIME ZONE"
+        if connection.dialect.name == "postgresql"
+        else "DATETIME"
+    )
+    for name, definition in {
+        "trigger_schedule_id": "VARCHAR(48)",
+        "scheduled_for": timestamp_type,
+    }.items():
+        if name not in existing:
+            connection.exec_driver_sql(
+                f'ALTER TABLE workflow_executions ADD COLUMN "{name}" {definition}'
+            )
+
+    quote = connection.dialect.identifier_preparer.quote
+    if connection.dialect.name == "postgresql":
+        for constraint in schema.get_unique_constraints("workflow_executions"):
+            if constraint.get("column_names") == ["idempotency_key"]:
+                connection.exec_driver_sql(
+                    "ALTER TABLE workflow_executions DROP CONSTRAINT IF EXISTS "
+                    + quote(str(constraint["name"]))
+                )
+    for index in schema.get_indexes("workflow_executions"):
+        if index.get("unique") and index.get("column_names") == ["idempotency_key"]:
+            if connection.dialect.name == "postgresql":
+                connection.exec_driver_sql(
+                    "DROP INDEX IF EXISTS " + quote(str(index["name"]))
+                )
+            elif not str(index["name"]).startswith("sqlite_autoindex"):
+                connection.exec_driver_sql(
+                    'DROP INDEX IF EXISTS "' + str(index["name"]).replace('"', '""') + '"'
+                )
+
+    connection.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_execution_tenant_request "
+        "ON workflow_executions (tenant_key, idempotency_key)"
+    )
+    duplicate_active = connection.execute(
+        text(
+            "SELECT workflow_id, COUNT(*) FROM workflow_executions "
+            "WHERE status IN ('queued','running','awaiting_approval','awaiting_review') "
+            "GROUP BY workflow_id HAVING COUNT(*) > 1 LIMIT 1"
+        )
+    ).first()
+    if duplicate_active is not None:
+        raise RuntimeError(
+            "multiple active workflow executions must be resolved before startup: "
+            f"workflow_id={duplicate_active[0]} count={duplicate_active[1]}"
+        )
+    connection.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_active_execution "
+        "ON workflow_executions (workflow_id) "
+        "WHERE status IN ('queued','running','awaiting_approval','awaiting_review')"
+    )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_workflow_executions_trigger_schedule_id "
+        "ON workflow_executions (trigger_schedule_id)"
+    )
 
 
 def _migrate_workflow_lifecycle_columns(connection) -> None:
@@ -458,6 +521,69 @@ def _migrate_workflow_contract_columns(connection) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_plan_edit_request "
             "ON workflow_plan_versions (workflow_id, edit_request_id)"
         )
+
+
+def _migrate_workflow_schedule_schema(connection) -> None:
+    """Verify the additive schedule table created by metadata.
+
+    This migration intentionally performs no legacy Agent backfill: those rows do
+    not contain a trustworthy Workflow/plan/owner/handler binding.  Rollback is a
+    single ``DROP TABLE workflow_schedules`` because no existing table is altered.
+    """
+    schema = inspect(connection)
+    if "workflow_schedules" not in set(schema.get_table_names()):
+        raise RuntimeError("workflow_schedules table missing after create_all")
+    existing = {item["name"] for item in schema.get_columns("workflow_schedules")}
+    if "deleted_at" not in existing:
+        timestamp_type = (
+            "TIMESTAMP WITH TIME ZONE"
+            if connection.dialect.name == "postgresql"
+            else "DATETIME"
+        )
+        connection.exec_driver_sql(
+            f"ALTER TABLE workflow_schedules ADD COLUMN deleted_at {timestamp_type}"
+        )
+        existing.add("deleted_at")
+    required = {
+        "tenant_key",
+        "owner_user_id",
+        "workflow_id",
+        "plan_id",
+        "plan_hash",
+        "activation_revision",
+        "cron_expression",
+        "timezone",
+        "enabled",
+        "next_run_at",
+        "last_scheduled_for",
+        "last_triggered_at",
+        "last_execution_id",
+        "last_result",
+        "last_error",
+        "contract_id",
+        "contract_version",
+        "handler_id",
+        "handler_version",
+        "version",
+        "deleted_at",
+    }
+    missing = required - existing
+    if missing:
+        raise RuntimeError(f"workflow schedule schema incomplete: {sorted(missing)}")
+    if connection.dialect.name == "postgresql":
+        quote = connection.dialect.identifier_preparer.quote
+        target = {"tenant_key", "workflow_id", "cron_expression", "timezone"}
+        for constraint in schema.get_unique_constraints("workflow_schedules"):
+            if set(constraint.get("column_names") or []) == target:
+                connection.exec_driver_sql(
+                    "ALTER TABLE workflow_schedules DROP CONSTRAINT IF EXISTS "
+                    + quote(str(constraint["name"]))
+                )
+    connection.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_workflow_schedule_expression_active "
+        "ON workflow_schedules (tenant_key, workflow_id, cron_expression, timezone) "
+        "WHERE deleted_at IS NULL"
+    )
 
 
 def _migrate_knowledge_policy_v2_columns(connection) -> None:

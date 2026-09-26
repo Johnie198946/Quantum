@@ -42,6 +42,33 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testExerciseHintExpandsAndKeepsAssistedWhenCollapsed() {
+        app.terminate()
+        app.launchArguments = ["-exerciseHintPreview"]
+        app.launch()
+        let hint = app.buttons["exercise-hint-q1"]
+        XCTAssertTrue(hint.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !hint.isHittable { app.swipeUp() }
+        XCTAssertTrue(hint.isHittable)
+        let text = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "先分别列出两港的成功次数")).firstMatch
+        XCTAssertFalse(text.exists)
+        let choice = app.buttons["T，正确"]
+        choice.tap()
+        XCTAssertTrue(choice.isSelected)
+        hint.tap()
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        XCTAssertEqual(hint.value as? String, "已展开")
+        XCTAssertTrue(text.isHittable)
+        XCTAssertTrue(choice.isSelected)
+        attachScreenshot(named: "exercise-hint-expanded")
+        hint.tap()
+        XCTAssertFalse(text.exists)
+        XCTAssertEqual(hint.value as? String, "已收起")
+        XCTAssertTrue(app.staticTexts["已看提示 · 本题正常评分，不计入独立掌握度"].exists)
+        hint.tap()
+        XCTAssertTrue(text.exists)
+    }
+
     func testBuild46ContinueLearningBackReturnsToWorkbench() throws {
         app.terminate()
         app.launchArguments = ["-tabBarPreview"]
@@ -59,6 +86,120 @@ final class ProductionBookshelfUITests: XCTestCase {
 
         XCTAssertTrue(workbenchGreeting.waitForExistence(timeout: 10))
         XCTAssertFalse(back.exists)
+    }
+
+    func testSelectionQuestionPreviewShowsReadingContextAndAnswer() {
+        app.terminate()
+        app.launchArguments = [
+            "-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview",
+            "-bookReadingPreview", "-bookReadingLongFixture", "-readingSelectionPreview"
+        ]
+        app.launch()
+
+        let ask = app.buttons["publication-reader-ask-selection.product-map"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15))
+        ask.tap()
+        XCTAssertTrue(app.staticTexts["一起读懂"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["选中内容"].exists)
+        XCTAssertTrue(app.staticTexts["AI 解读"].exists)
+        attachScreenshot(named: "reading-selection-question-design")
+    }
+
+    func testSelectionQuestionStreamsProgressAndAnswer() {
+        app.terminate()
+        app.launchArguments = [
+            "-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview",
+            "-bookReadingPreview", "-bookReadingLongFixture", "-readingSelectionPreview",
+            "-readingSelectionStreamPreview"
+        ]
+        app.launch()
+
+        let ask = app.buttons["publication-reader-ask-selection.product-map"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15))
+        ask.tap()
+        XCTAssertTrue(app.buttons["举个例子"].waitForExistence(timeout: 10))
+        app.buttons["举个例子"].tap()
+        XCTAssertTrue(app.staticTexts["校园例子"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["数据统计表格"].exists)
+        XCTAssertTrue(app.staticTexts["解读过程"].exists)
+        XCTAssertFalse(app.otherElements["reading-selection-question-error"].exists)
+        let summary = app.staticTexts["一句话看懂"]
+        let scroll = app.scrollViews["reading-selection-question-scroll"]
+        let summaryVisible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            summary.exists && summary.frame.minY >= scroll.frame.minY && summary.frame.minY < scroll.frame.maxY - 100
+        }, object: summary)
+        XCTAssertEqual(XCTWaiter.wait(for: [summaryVisible], timeout: 5), .completed)
+        attachScreenshot(named: "reading-example-priority-summary")
+    }
+
+    func testSelectionQuestionSimplifyShowsComicAndBlankTapDismissesKeyboard() {
+        app.terminate()
+        app.launchArguments = [
+            "-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview",
+            "-bookReadingPreview", "-bookReadingLongFixture", "-readingSelectionPreview",
+            "-readingSelectionStreamPreview"
+        ]
+        app.launch()
+
+        let ask = app.buttons["publication-reader-ask-selection.product-map"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15))
+        ask.tap()
+        let input = app.textFields["reading-selection-question-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let content = app.scrollViews["reading-selection-question-scroll"]
+        XCTAssertTrue(content.exists)
+        XCTAssertLessThan(content.frame.minY + content.frame.height * 0.31, input.frame.minY, "blank tap must stay above the composer and keyboard")
+        content.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.31)).tap()
+        XCTAssertFalse(app.keyboards.firstMatch.waitForExistence(timeout: 2))
+
+        app.buttons["再讲简单点"].tap()
+        XCTAssertTrue(app.staticTexts["编号没传完"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["没看全，就先别猜。"].exists)
+        XCTAssertFalse(app.staticTexts["代码片段"].exists)
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertTrue(app.staticTexts["编号没传完"].exists)
+        attachScreenshot(named: "reading-simplify-comic-card")
+    }
+
+    func testSelectionQuestionSurvivesFinalAnswerReplacement() {
+        app.terminate()
+        app.launchArguments = [
+            "-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview",
+            "-bookReadingPreview", "-bookReadingLongFixture", "-readingSelectionPreview",
+            "-readingSelectionStreamPreview", "-readingSelectionFinalReplacementPreview"
+        ]
+        app.launch()
+
+        let ask = app.buttons["publication-reader-ask-selection.product-map"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15))
+        ask.tap()
+        app.buttons["再讲简单点"].tap()
+        XCTAssertTrue(app.staticTexts["编号没传完"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertTrue(app.staticTexts["编号没传完"].exists)
+        XCTAssertFalse(app.otherElements["reading-selection-question-error"].exists)
+        XCTAssertFalse(app.staticTexts["代码片段"].exists)
+    }
+
+    func testSelectionQuestionReplacesSingleCharacterDeltaWithFullAnswerPage() {
+        app.terminate()
+        app.launchArguments = [
+            "-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview",
+            "-bookReadingPreview", "-bookReadingLongFixture", "-readingSelectionPreview",
+            "-readingSelectionStreamPreview", "-readingSelectionShortDeltaPreview"
+        ]
+        app.launch()
+
+        let ask = app.buttons["publication-reader-ask-selection.product-map"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 15))
+        ask.tap()
+        app.buttons["举个例子"].tap()
+        XCTAssertTrue(app.staticTexts["校园例子"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertTrue(app.staticTexts["校园例子"].exists)
+        XCTAssertFalse(app.otherElements["reading-selection-question-error"].exists)
     }
 
     func testProductionBookshelfReadingAndSelectedBookChat() throws {
@@ -556,6 +697,27 @@ final class ReaderFixtureUITests: XCTestCase {
         sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.18)).tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: keyboard)
         waitForExpectations(timeout: 5)
+    }
+
+    func testReaderAllowsThreeConsecutiveQuestions() {
+        app.launchArguments = ["-prototypePreview", "v4/08-reader-question-annotation-v4-p02"]
+        app.launchEnvironment["AI_LAB_E2E_DISABLE_ANIMATIONS"] = "1"
+        app.launch()
+        let input = app.textFields["reader-question-input"]
+        let sheet = app.scrollViews["reader-question-sheet"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        for index in 1...3 {
+            for _ in 0..<5 where !input.isHittable { sheet.swipeUp() }
+            input.tap()
+            input.typeText("Fixture \(index)")
+            app.buttons["reader-question-send"].tap()
+            let answer = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "宁静的瞬间。Fixture \(index)")).firstMatch
+            XCTAssertTrue(answer.waitForExistence(timeout: 5))
+        }
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "reader-three-followups"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testLongReaderSurvivesSubscriptionFailureAndNavigatesExactSections() {

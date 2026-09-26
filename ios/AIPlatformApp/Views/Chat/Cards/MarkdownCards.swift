@@ -13,14 +13,32 @@ public struct MarkdownText: View {
         self.text = text; self.font = font; self.color = color
     }
     public var body: some View {
-        InlineMathPresentation.segments(in: text)
-            .reduce(Text("")) { result, segment in
-                result + (segment.isMath
-                    ? Text(verbatim: MathFormulaPresentation.displayText(segment.text)).italic()
-                    : Text(LocalizedStringKey(segment.text)))
+        Group {
+            if text.contains("==") {
+                Text(highlightedMarkdown)
+            } else {
+                InlineMathPresentation.segments(in: text)
+                    .reduce(Text("")) { result, segment in
+                        result + (segment.isMath
+                            ? Text(verbatim: MathFormulaPresentation.displayText(segment.text)).italic()
+                            : Text(LocalizedStringKey(segment.text)))
+                    }
             }
-            .font(font)
-            .foregroundColor(color)
+        }
+        .font(font)
+        .foregroundColor(color)
+    }
+
+    private var highlightedMarkdown: AttributedString {
+        var result = AttributedString()
+        for (index, part) in text.components(separatedBy: "==").enumerated() {
+            var segment = (try? AttributedString(markdown: part)) ?? AttributedString(part)
+            if index.isMultiple(of: 2) == false {
+                segment.backgroundColor = Color(red: 0.78, green: 0.96, blue: 0.88)
+            }
+            result += segment
+        }
+        return result
     }
 }
 
@@ -92,15 +110,20 @@ public struct MarkdownBlockCard: View {
     public var body: some View {
         switch block {
         case .heading(let level, let text):
-            MarkdownText(
-                text,
-                font: .system(
-                    size: level == 1 ? 24 : (level == 2 ? 19 : 16),
-                    weight: level <= 2 ? .bold : .semibold,
-                    design: level == 1 ? .rounded : .default
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AppTheme.Colors.interactiveBlue)
+                    .frame(width: 3, height: level <= 2 ? 21 : 17)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
+                MarkdownText(
+                    text,
+                    font: level == 1 ? .title2.bold() : (level == 2 ? .headline : .subheadline.weight(.semibold))
                 )
-            )
-            .padding(.top, level <= 2 ? AppTheme.Spacing.md : AppTheme.Spacing.xs)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, level <= 2 ? AppTheme.Spacing.lg : AppTheme.Spacing.sm)
+            .accessibilityAddTraits(.isHeader)
         case .callout(let label, let text):
             HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
                 RoundedRectangle(cornerRadius: 2)
@@ -140,6 +163,21 @@ public struct MarkdownBlockCard: View {
             CodeBlockCard(snippet: CodeSnippet(language: lang ?? "text", code: code))
         case .formula(let formula):
             FormulaCard(formula: formula)
+        case .image(let url, let alt):
+            if let remote = URL(string: url), remote.scheme?.lowercased() == "https" {
+                AsyncImage(url: remote) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFit()
+                    case .failure: Label(alt.isEmpty ? "图片暂时无法加载" : alt, systemImage: "photo")
+                    default: ProgressView()
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .accessibilityLabel(alt.isEmpty ? "回答图片" : alt)
+            } else {
+                ImageCard(block: ImageBlock(assetName: url, caption: alt))
+            }
         case .quote(let text):
             HighlightCard(text: text)
         case .divider:
@@ -148,9 +186,60 @@ public struct MarkdownBlockCard: View {
             TableCard(block: t)
         case .chart(let c):
             ChartCard(block: c)
+        case .comic(let title, let panels):
+            ComicCard(title: title, panels: panels)
         case .sourceCitations(let items):
             SourceCitationsCard(items: items)
         }
+    }
+}
+
+private struct ComicCard: View {
+    let title: String
+    let panels: [ComicPanel]
+
+    private let colors: [Color] = [
+        Color(red: 0.95, green: 0.94, blue: 1.0),
+        Color(red: 0.89, green: 0.98, blue: 0.96),
+        Color(red: 1.0, green: 0.96, blue: 0.88)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: "rectangle.3.group.bubble.left.fill")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+            ForEach(Array(panels.enumerated()), id: \.offset) { index, panel in
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: panel.symbol)
+                        .font(.system(size: 23, weight: .medium))
+                        .foregroundStyle(AppTheme.Colors.quantumBlue)
+                        .frame(width: 50, height: 50)
+                        .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("第 \(index + 1) 格 · \(panel.scene)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                        Text("“\(panel.dialogue)”")
+                            .font(.system(size: 14))
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(colors[index], in: RoundedRectangle(cornerRadius: 18))
+                .accessibilityElement(children: .combine)
+            }
+            Text("示意漫画 · 用类比帮助理解，不代替原文事实")
+                .font(.system(size: 11))
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .accessibilityIdentifier("reading-comic-card")
     }
 }
 
@@ -206,6 +295,23 @@ public struct ReadingCardDeck: View {
     public let blocks: [MarkdownBlock]
 
     public init(blocks: [MarkdownBlock]) { self.blocks = blocks }
+
+    static func answerBlocks(from answer: String, isStreaming: Bool = false) -> [MarkdownBlock] {
+        MarkdownBlockParser.shared.parse(answer).compactMap { block in
+            guard case .codeBlock(let language, let code) = block else { return block }
+            let kind = language?.lowercased() ?? ""
+            if kind == "json" && isStreaming { return nil }
+            if kind == "comic" || kind == "chart"
+                || (kind == "json" && (code.contains("\"panels\"") || code.contains("\"points\""))) {
+                return isStreaming ? nil : .paragraph(kind == "chart" ? "图表暂时无法显示，请重试。" : "图解暂时无法显示，请重试。")
+            }
+            let codeLanguages: Set<String> = [
+                "swift", "python", "javascript", "js", "typescript", "ts", "java", "kotlin",
+                "go", "rust", "c", "cpp", "csharp", "sql", "bash", "sh", "html", "css", "json"
+            ]
+            return codeLanguages.contains(kind) ? block : .paragraph(code)
+        }
+    }
 
     public var body: some View {
         LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {

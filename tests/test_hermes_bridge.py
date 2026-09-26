@@ -691,30 +691,50 @@ class TestWorkflowHermesRuntime(unittest.TestCase):
     """工作流必须使用最小工具面与独立预算口径。"""
 
     def test_node_toolsets_are_minimal_and_permission_aware(self):
-        from scripts.hermes_bridge import _workflow_toolsets
+        from scripts.hermes_bridge import (
+            TrustedAgentConfig,
+            _workflow_agent_identity,
+            _workflow_toolsets,
+        )
 
+        offline = TrustedAgentConfig(
+            id="task-agent",
+            base_agent_id="main_agent",
+            allowed_tools=[],
+            knowledge_scope=["knowledge/product/public"],
+            allow_network=False,
+        )
+        online = TrustedAgentConfig(
+            id="task-agent",
+            base_agent_id="main_agent",
+            allowed_tools=["web_search", "skill_load"],
+            knowledge_scope=["knowledge/product/public"],
+            allow_network=True,
+        )
+        knowledge_node = {
+            "node_type": "KNOWLEDGE_RETRIEVAL",
+            "parameters": {"allow_network": True},
+        }
+        self.assertEqual(
+            _workflow_toolsets(knowledge_node, offline), ["__workflow_no_tools__"]
+        )
+        self.assertEqual(_workflow_toolsets(knowledge_node, online), ["web"])
         self.assertEqual(
             _workflow_toolsets(
-                {
-                    "node_type": "KNOWLEDGE_RETRIEVAL",
-                    "parameters": {"allow_network": False},
-                }
+                {"node_type": "OUTPUT_FORMAT", "parameters": {}}, online
             ),
             ["tenant_skill_reader"],
         )
         self.assertEqual(
-            _workflow_toolsets(
-                {
-                    "node_type": "KNOWLEDGE_RETRIEVAL",
-                    "parameters": {"allow_network": True},
-                }
+            _workflow_agent_identity(
+                {"parameters": {"agent_id": "main_agent"}}, online
             ),
-            ["web"],
+            "task-agent",
         )
-        self.assertEqual(
-            _workflow_toolsets({"node_type": "OUTPUT_FORMAT", "parameters": {}}),
-            ["tenant_skill_reader"],
-        )
+        with self.assertRaisesRegex(RuntimeError, "identity_denied"):
+            _workflow_agent_identity(
+                {"parameters": {"agent_id": "forged-agent"}}, online
+            )
 
     def test_artifact_contract_is_explicit_and_typed(self):
         from scripts.hermes_bridge import _workflow_artifact_contract, _workflow_artifact_instruction

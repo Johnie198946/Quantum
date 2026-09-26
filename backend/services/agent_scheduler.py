@@ -33,6 +33,43 @@ _scan_interval = 60  # 秒
 CST = timezone(timedelta(hours=8))
 
 
+def legacy_schedule_allowlist() -> frozenset[str]:
+    """Return explicitly approved legacy row IDs; default-empty fails closed."""
+    return frozenset(
+        value.strip()
+        for value in os.environ.get("LEGACY_AGENT_SCHEDULE_ALLOWLIST", "").split(",")
+        if value.strip()
+    )
+
+
+async def deprecated_inventory() -> list[dict[str, str | bool | None]]:
+    """Return active legacy rows without granting them execution authority."""
+    from sqlalchemy import select
+
+    from backend.db import SessionLocal
+    from backend.models.agent import Agent
+
+    allowed = legacy_schedule_allowlist()
+    async with SessionLocal() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(Agent).where(Agent.status == "active").order_by(Agent.id)
+                )
+            ).scalars().all()
+        )
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "schedule": row.schedule,
+            "last_status": row.last_status,
+            "allowlisted": row.id in allowed,
+        }
+        for row in rows
+    ]
+
+
 def compute_next_run(cron_expr: str, base: datetime | None = None) -> datetime:
     """cron 表达式 → 下次运行时间(UTC 存储)。表达式按北京时间(CST)解释。"""
     base_cst = base or datetime.now(CST)
@@ -78,6 +115,9 @@ async def _run_agent_once(agent_id: str) -> None:
     from backend.models.agent import Agent
     from backend.models.notification import Notification
 
+    if agent_id not in legacy_schedule_allowlist():
+        logger.warning("legacy Agent execution denied: id is not allowlisted")
+        return
     try:
         async with SessionLocal() as db:
             agent = (
@@ -158,6 +198,9 @@ async def _scan_due() -> None:
     from backend.db import SessionLocal
     from backend.models.agent import Agent
 
+    allowed = legacy_schedule_allowlist()
+    if not allowed:
+        return
     # now 用 UTC(DB 里 next_run_at 是 UTC 存储)
     now = datetime.now(timezone.utc)
     try:
@@ -165,6 +208,7 @@ async def _scan_due() -> None:
             due = (
                 await db.execute(
                     select(Agent).where(
+                        Agent.id.in_(allowed),
                         Agent.status == "active",
                         Agent.next_run_at.is_(None)
                         | (Agent.next_run_at <= now),

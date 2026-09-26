@@ -33,6 +33,7 @@ public struct ChatView: View {
     @State private var showingAgentPicker: Bool = false
     @State private var showingTopicDiscussion: Bool = false
     @State private var homeJourney: ChatHomeAction?
+    @State private var homeRefreshID = 0
     @State private var tenantAgents: [TenantAgentDTO] = []
     @State private var dismissKeyboardToken = 0
     // Keep the draft local so every keystroke does not publish through the
@@ -74,7 +75,8 @@ public struct ChatView: View {
                             coordinator.startTargetedTopic(from: message)
                             showingTopicDiscussion = currentTopic != nil
                         },
-                        onWelcomeAction: { homeJourney = $0 }
+                        onWelcomeAction: { homeJourney = $0 },
+                        homeRefreshID: homeRefreshID
                     )
                 }
 
@@ -124,7 +126,7 @@ public struct ChatView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .fullScreenCover(item: $homeJourney) { action in
+            .fullScreenCover(item: $homeJourney, onDismiss: { homeRefreshID += 1 }) { action in
                 HomeJourneyView(
                     action: action,
                     onBack: { homeJourney = nil },

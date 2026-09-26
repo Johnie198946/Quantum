@@ -298,8 +298,6 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public var sourceClassification: String? = nil
     public var readable: Bool? = nil
     public var unavailableReason: String? = nil
-    public var shelfCoverUrl: String? = nil
-    public var illustrationUrls: [String]? = nil
 
     public var isBodyUnavailable: Bool { readable == false || contentStatus == "metadata_only" }
     public var publicationTypeLabel: String? {
@@ -400,7 +398,94 @@ public struct KnowledgeBookSubscriptionsResponse: Codable {
 public struct LearningResumePointDTO: Codable, Hashable {
     public let title: String
     public let detail: String
+    public let sourceExcerpt: String?
+    public var sectionId: String? = nil
+    public var kind: String? = nil
+    public var score: Int? = nil
+    public var selectionReason: String? = nil
 }
+
+struct MixedExerciseDialogue: Codable {
+    let role: String
+    let content: String
+}
+
+struct MixedExerciseCreate: Encodable {
+    let id: String
+    let book_id: String
+    let section_id: String
+    let content_version: String
+    let minutes: Int
+    let dialogue: [MixedExerciseDialogue]
+}
+
+struct MixedExerciseAnswer: Codable, Equatable {
+    var selected: [String] = []
+    var text: String = ""
+    var assisted: Bool = false
+}
+
+struct MixedExerciseSave: Codable {
+    let revision: Int
+    let answers: [String: MixedExerciseAnswer]
+}
+
+struct MixedExerciseQuestion: Codable, Identifiable {
+    var hint: String? = nil
+    let id: String
+    let kind: LearningExerciseKind
+    let body: String
+    let knowledgePoint: String
+    let difficulty: Int
+    let minutes: Int
+    let sourceExcerpt: String
+    let options: [LearningExerciseQuestion.Option]
+    let isMultiple: Bool
+
+    var presentation: LearningExerciseQuestion {
+        .init(kind: kind, body: body, isMultiple: isMultiple, options: options)
+    }
+    func isAnswered(_ answer: MixedExerciseAnswer) -> Bool {
+        if kind == .choice || kind == .judgement { return !answer.selected.isEmpty }
+        return !answer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+struct MixedExerciseResult: Codable {
+    let questionId: String
+    let score: Int
+    let maxScore: Int
+    let confidence: String
+    let referenceAnswer: String
+    let explanation: String
+    let nextStep: String
+    let sourceExcerpt: String
+    let correctIds: [String]
+    let optionExplanations: [String: String]
+    let criterionFeedback: [String]
+}
+
+struct MixedExerciseDTO: Codable, Identifiable {
+    let id: String
+    let status: String
+    let revision: Int
+    let bookId: String
+    let sectionId: String
+    let contentVersion: String
+    let bookTitle: String
+    let sectionTitle: String
+    let summary: String
+    let confidence: String
+    let unavailable: [String]
+    let evidenceKinds: [String]
+    let minutes: Int
+    let questions: [MixedExerciseQuestion]
+    let answers: [String: MixedExerciseAnswer]
+    let results: [MixedExerciseResult]
+    let error: String?
+}
+
+struct MixedExerciseLatest: Decodable { let exercise: MixedExerciseDTO? }
 
 public struct LearningResumeDTO: Codable, Hashable {
     public let subscription: KnowledgeBookSubscriptionDTO
@@ -409,6 +494,8 @@ public struct LearningResumeDTO: Codable, Hashable {
     public let blockIndex: Int?
     public let characterOffset: Int?
     public let keyPoints: [LearningResumePointDTO]
+    public var candidates: [LearningResumePointDTO]? = nil
+    public var contentVersion: String? = nil
 }
 
 public struct LearningResumeResponse: Codable {
@@ -420,18 +507,6 @@ public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
     public let title: String
     public let level: Int
     public let markdown: String
-    public var blocks: [KnowledgeBookBlockDTO]? = nil
-}
-
-public struct KnowledgeBookBlockDTO: Codable, Identifiable, Hashable {
-    public let id: String
-    public let kind: String
-    public var markdown: String? = nil
-    public var path: String? = nil
-    public var alt: String? = nil
-    public var caption: String? = nil
-    public var width: Int? = nil
-    public var height: Int? = nil
 }
 
 public struct KnowledgeBookBodyDTO: Codable, Hashable {
@@ -459,8 +534,6 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var bodyOrigin: String? = nil
     public var completeness: String? = nil
     public var sourceClassification: String? = nil
-    public var readerCoverUrl: String? = nil
-    public var illustrationUrls: [String]? = nil
 }
 
 private struct KnowledgeBookSubscriptionWrite: Encodable {
@@ -2897,11 +2970,15 @@ public final class APIClient: ObservableObject {
             request.httpBody = try JSONEncoder().encode(body)
         }
 
+        // Generation/grading reuse the existing long-running chat transport, not the 15s CRUD timeout.
+        let isLearningGeneration = method == "POST" && (path == "me/learning-exercises" || path.hasPrefix("me/learning-exercises/"))
+        let requestSession = isLearningGeneration ? chatSession : session
+        if isLearningGeneration { request.timeoutInterval = 200 }
         // 仅 GET 幂等请求自动重试；POST/PATCH/DELETE 由 UI 触发手动重试
         let response: APIResponse<Data>
         do {
             response = try await performResponse(
-                request, session: session, canRetry: method == "GET", reauthOn401: reauthOn401,
+                request, session: requestSession, canRetry: method == "GET", reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
         } catch APIError.server(let status, let raw)
@@ -2915,7 +2992,7 @@ public final class APIClient: ObservableObject {
             guard accepted, anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
             // A protected request is replayed exactly once after explicit acceptance.
             response = try await performResponse(
-                request, session: session, canRetry: false, reauthOn401: reauthOn401,
+                request, session: requestSession, canRetry: false, reauthOn401: reauthOn401,
                 credentialGeneration: requestGeneration, anonymous: anonymous
             )
         }
@@ -3054,30 +3131,6 @@ public final class APIClient: ObservableObject {
 
     public func fetchKnowledgeBookBody(id: String) async throws -> KnowledgeBookBodyDTO {
         try await request(KnowledgeBookBodyDTO.self, path: "knowledge-books/\(encodedPath(id))")
-    }
-
-    public func fetchPublicationImage(path: String) async throws -> Data {
-        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
-        let validAsset = (parts.count == 6 && parts[4] == "covers"
-            && ["shelf_cover", "reader_cover"].contains(parts[5]))
-            || (parts.count == 6 && parts[4] == "media"
-                && ["illustration_01", "illustration_02", "illustration_03"].contains(parts[5]))
-            || (parts.count == 6 && parts[4] == "assets" && parts[5].count == 64
-                && parts[5].allSatisfy({ $0.isHexDigit && !$0.isUppercase }))
-        guard parts.count == 6, parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
-              parts[3].hasPrefix("publication-"), parts[3].count == 44,
-              parts[3].dropFirst(12).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
-              validAsset, path.hasPrefix("/api/v1/"),
-              !path.contains("?") && !path.contains("#"),
-              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
-              url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port else {
-            throw APIError.network("无效的出版媒体地址")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("image/png, image/jpeg", forHTTPHeaderField: "Accept")
-        applyClientContract(to: &request)
-        return try await perform(request, session: session, canRetry: true)
     }
 
     public func subscribeBook(id: String) async throws -> KnowledgeBookSubscriptionDTO {

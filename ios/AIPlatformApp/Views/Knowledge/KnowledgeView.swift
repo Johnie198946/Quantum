@@ -1133,7 +1133,10 @@ private struct KnowledgeNoteEditor: View {
                 excerpt: selectedExcerpt,
                 sourceTitle: title,
                 sourceSubtitle: "当前笔记",
-                onSaveAnswer: { question, answer in saveQuestionAnswerAnnotation(question: question, answer: answer) }
+                onSaveAnswer: { question, answer, _ in
+                    saveQuestionAnswerAnnotation(question: question, answer: answer)
+                    return store.lastError == nil
+                }
             ) { question, sessionID in
                 try await askAboutSelection(question, sessionID: sessionID)
             }
@@ -1678,7 +1681,7 @@ private struct KnowledgeNoteEditor: View {
     }
 
     private func saveQuestionAnswerAnnotation(question: String, answer: String) {
-        appendInlineAnnotation(detail: "我的问题\n\(question)\n\nAI 回答摘要\n\(String(answer.prefix(2_000)))")
+        appendInlineAnnotation(detail: "我的问题\n\(question)\n\nAI 回答摘要\n\(answer)")
     }
 
     private func appendInlineAnnotation(detail: String) {

@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -84,7 +85,7 @@ def flow(tmp_path, monkeypatch):
     store.mkdir()
     calls = []
 
-    def ssh(identity, hosts, command):
+    def ssh(identity, hosts, command, *, input_text=None):
         words = shlex.split(command)
         assert words[:12] == list(transport.OPERATOR[:12])
         calls.append(words[12:])
@@ -94,6 +95,7 @@ def flow(tmp_path, monkeypatch):
             )
             done = subprocess.run(
                 [sys.executable, "-c", script, *words[14:]],
+                input=input_text,
                 capture_output=True,
                 text=True,
             )
@@ -125,6 +127,9 @@ def flow(tmp_path, monkeypatch):
                 "policy_id": body["owner_policy_id"],
                 "status": "operator_attested",
                 "content_hashes": [body["body_hash"]],
+                "body_sha256": body["body_hash"],
+                "bound_files": ["body.md"],
+                "attested_by": "local_owner_policy",
             }
         )
     )
@@ -415,6 +420,73 @@ def test_global_review_scan_isolates_invalid_pending_manifest(flow):
     assert envelope["manifest"] == str(manifest)
 
 
+def test_global_finalize_isolates_invalid_pending_manifest(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
+    poisoned = local.parent / "00-poisoned-finalize" / "draft-manifest.json"
+    poisoned.parent.mkdir()
+    poisoned.write_text(
+        json.dumps({"version": relay.VERSION, "items": [{"status": "await_review"}]}),
+        encoding="utf-8",
+    )
+    db, key = native(flow)
+
+    result = relay.finalize(local.parent, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    assert json.loads(poisoned.read_text())["items"][0]["status"] == "await_review"
+
+
+def test_global_finalize_isolates_valid_sibling_runtime_failure(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
+    sibling = local.parent / "a-valid-sibling" / manifest.name
+    db, key = native(flow)
+    shutil.copytree(local, sibling.parent)
+    sibling_value = json.loads(sibling.read_text())
+    sibling_item = sibling_value["items"][0]
+    sibling_review = sibling.parent / sibling_item["review_file"]
+    sibling_review_value = json.loads(sibling_review.read_text())
+    sibling_review_value["reviewer_session"] = "hermes:cron-nonexistent"
+    sibling_review.write_bytes(relay.encoded(sibling_review_value))
+    result = relay.finalize(local.parent, remote, db=db, key=key)
+    assert any(entry["status"] == "staged" for entry in result["items"])
+    sibling_after = json.loads(sibling.read_text())["items"][0]
+    assert sibling_after["status"] == "await_review"
+
+
+def test_finalize_revalidates_immutable_legacy_failed_approval(flow):
+    local, manifest, remote, _, _, store, _ = flow
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
+    db, key = native(flow)
+    item = json.loads(manifest.read_text())["items"][0]
+    relay.save(local / item["proof_file"], relay.native_attest(db, local / item["review_file"], key))
+    review_hash = relay.sha((local / item["review_file"]).read_bytes())
+    with sqlite3.connect(store / "publication.sqlite3") as connection:
+        connection.execute(
+            "UPDATE editorial_attempts SET state='failed',review_hash=?,gaps_json=?,closed_at=? WHERE attempt_id=?",
+            (
+                review_hash,
+                json.dumps([
+                    {"id": "legacy.control", "question": "旧验证器控制面失败标记，不代表正文缺口。",
+                     "state": "open", "resolution": "", "source_urls": []}
+                ]),
+                "2026-09-08T01:00:00+00:00",
+                item["quality_contract"]["attempt_id"],
+            ),
+        )
+
+    result = relay.finalize(local, remote, db=db, key=key)
+
+    assert result["items"][0]["status"] == "staged"
+    with sqlite3.connect(store / "publication.sqlite3") as connection:
+        state = connection.execute(
+            "SELECT state FROM editorial_attempts WHERE attempt_id=?",
+            (item["quality_contract"]["attempt_id"],),
+        ).fetchone()[0]
+    assert state == "approved"
+
+
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 def test_real_native_signature_record_and_readback(flow, decision):
     local, manifest, remote, calls, _, store_root, intake = flow
@@ -428,6 +500,7 @@ def test_real_native_signature_record_and_readback(flow, decision):
     assert item["status"] == expected
     if decision == "rejected":
         assert "need-primary" in [g["id"] for g in item["receipt"]["gaps"]]
+        assert "review.rejected" not in [g["id"] for g in item["receipt"]["gaps"]]
         assert not any("stage" in c for c in calls)
     record_call = next(call for call in calls if "record-editorial-review" in call)
     assert remote.operator(*record_call[1:])["state"] == decision
@@ -755,14 +828,14 @@ def test_native_forgery_and_body_change_cannot_stage(flow):
 
 
 @pytest.mark.parametrize("size", [110_000, 2 * 1024 * 1024])
-def test_large_files_use_bounded_chunks_and_exact_readback(flow, size):
+def test_large_files_use_single_bounded_stdin_stream_and_exact_readback(flow, size):
     _, _, remote, calls, _, _, intake = flow
     raw = (bytes(range(256)) * ((size + 255) // 256))[:size]
     remote.upload("b" * 32, raw, ".md")
     assert (intake / ("b" * 32) / (relay.sha(raw) + ".md")).read_bytes() == raw
-    assert len(calls) > 1
+    assert len(calls) == 1
     assert max(len(shlex.join(call)) for call in calls) < 40_000
-    assert calls[-1][-2] == "chunks"
+    assert calls[-1][-1] == ".md"
 
 
 def test_draft_manifest_name_and_long_full_manuscript(flow):
@@ -846,6 +919,83 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     assert "need-primary" in [g["id"] for g in new["quality_contract"]["research_gaps"]]
 
 
+def test_content_only_revision_builds_and_prepares_all_platform_fields(flow, tmp_path):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+    old = json.loads(manifest.read_text())["items"][0]
+    old_body = (local / "body.md").read_text()
+    revised_body = tmp_path / "revised-body.md"
+    revised_body.write_text(
+        old_body + "\n### 审稿缺口修订\n本段补充一手来源核验方法，并明确由下一轮独立审稿确认是否满足证据要求。\n",
+        encoding="utf-8",
+    )
+
+    revision_manifest = relay.build_revision(
+        manifest, revised_body, writer_session="cron_revision_session"
+    )
+    revision_dir = revision_manifest.parent
+    pending = json.loads(revision_manifest.read_text())["items"][0]
+    bundle = json.loads((revision_dir / pending["bundle_file"]).read_text())
+    rights = json.loads(
+        (revision_dir / pending["rights_files"][0]["path"]).read_text()
+    )
+
+    assert pending["status"] == "prepared"
+    assert pending["body_sha256"] == relay.sha(revised_body.read_bytes())
+    assert pending["bundle_sha256"] == relay.sha(
+        (revision_dir / pending["bundle_file"]).read_bytes()
+    )
+    assert not {"revision", "attempt_id", "issue_id", "target_hash"} & set(
+        bundle["quality_contract"]
+    )
+    assert bundle["quality_contract"]["writer_sessions"][-1] == "hermes:cron_revision_session"
+    assert "need-primary" in {
+        gap["id"] for gap in bundle["quality_contract"]["research_gaps"]
+    }
+    assert all(
+        gap["state"] == "resolved"
+        for gap in bundle["quality_contract"]["research_gaps"]
+    )
+    assert rights["body_sha256"] == pending["body_sha256"]
+    assert rights["content_hashes"] == [pending["body_sha256"]]
+    assert not (revision_dir / pending["review_file"]).exists()
+    assert not (revision_dir / pending["proof_file"]).exists()
+    assert all(
+        pending[f"{role}_sha256"] == old[f"{role}_sha256"]
+        for role in relay.MEDIA_ROLES
+    )
+
+    result = relay.prepare(revision_manifest, remote)
+    assert result["statuses"] == ["await_review"]
+    prepared = json.loads(revision_manifest.read_text())["items"][0]
+    assert prepared["quality_contract"]["revision"] == old["quality_contract"]["revision"] + 1
+    assert prepared["quality_contract"]["previous_body_hash"] == old["body_sha256"]
+
+
+def test_content_only_revision_rejects_unchanged_body(flow):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+
+    with pytest.raises(ValueError, match="materially change"):
+        relay.build_revision(manifest, local / "body.md", writer_session="revision")
+
+
+def test_content_only_revision_rejects_visual_gap(flow, tmp_path):
+    local, manifest, remote, _, *_ = flow
+    db, key = native(flow, "rejected")
+    relay.finalize(local, remote, db=db, key=key)
+    review = json.loads((local / "review.json").read_text())
+    review["research_gaps"][0]["required_evidence"] = "重新生成与正文匹配的封面和插图"
+    relay.save(local / "review.json", review)
+    revised_body = tmp_path / "revised.md"
+    revised_body.write_text((local / "body.md").read_text() + "\n实质修订内容。\n")
+
+    with pytest.raises(ValueError, match="replacement media"):
+        relay.build_revision(manifest, revised_body, writer_session="revision")
+
+
 def test_prepare_wrong_server_target_readback_is_failure(flow, monkeypatch):
     _, manifest, remote, calls, *_ = flow
     operator = remote.operator
@@ -877,7 +1027,134 @@ def test_upload_transport_empty_stdout_is_not_json_error(flow, monkeypatch):
     monkeypatch.setattr(
         transport,
         "_ssh",
-        lambda *a: subprocess.CompletedProcess([], 255, "", "TEST connection failed"),
+        lambda *a, **kw: subprocess.CompletedProcess([], 255, "", "TEST connection failed"),
     )
     with pytest.raises(ValueError, match="exit 255"):
         remote.upload("a" * 32, b"x", ".bin")
+
+
+def initial_submission(tmp_path):
+    body_dir = tmp_path / "initial"
+    body_dir.mkdir()
+    body = synthetic_fixture("chapter")[0] + "\n[来源](https://example.com/source)\n"
+    (body_dir / "body.md").write_text(body, encoding="utf-8")
+    (body_dir / "source.json").write_text('{"source":"synthetic"}', encoding="utf-8")
+    (body_dir / "execution.log").write_text("synthetic execution passed", encoding="utf-8")
+    for role, (_, width, height) in relay.MEDIA_CONTRACT.items():
+        Image.new("RGB", (width, height), "#445566").save(body_dir / f"{role}.jpg", "JPEG")
+    submission = {
+        "title": "内容作者提交的合成标题",
+        "summary": "内容作者提交的合成摘要，仅用于自动化测试。",
+        "editorial_brief": synthetic_brief(),
+        "learning_objectives": ["验证初稿作者只提交内容和真实材料而不填写控制字段"],
+        "source_files": [{"kind": "source_snapshot", "path": "source.json"}],
+        "execution_files": [{"kind": "execution_log", "path": "execution.log"}],
+    }
+    path = body_dir / "content-submission.json"
+    path.write_text(json.dumps(submission, ensure_ascii=False), encoding="utf-8")
+    return body_dir, path
+
+
+def test_content_only_initial_builder_generates_and_prepares_control_fields(flow, tmp_path):
+    _, _, remote, _, *_ = flow
+    body_dir, submission = initial_submission(tmp_path)
+
+    manifest = relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="initial-writer",
+    )
+    before = manifest.read_bytes()
+    item = json.loads(before)["items"][0]
+    bundle = json.loads((body_dir / item["bundle_file"]).read_text())
+    rights = json.loads((body_dir / item["rights_files"][0]["path"]).read_text())
+
+    assert item["status"] == "prepared"
+    assert item["body_sha256"] == relay.sha((body_dir / "body.md").read_bytes())
+    assert item["bundle_sha256"] == relay.sha((body_dir / "candidate-bundle.json").read_bytes())
+    assert all(item[f"{role}_sha256"] for role in relay.MEDIA_ROLES)
+    assert rights["content_hashes"] == [item["body_sha256"]]
+    assert rights["attested_by"] == "local_owner_policy"
+    assert bundle["quality_contract"] == {
+        "format": "chapter", "writer_sessions": ["hermes:initial-writer"],
+        "learning_objectives": ["验证初稿作者只提交内容和真实材料而不填写控制字段"],
+        "editorial_brief": synthetic_brief(), "research_gaps": [],
+    }
+    assert bundle["execution_claim"] == "success"
+    assert not ({"revision", "issue_id", "attempt_id", "target_hash"}
+                & set(bundle["quality_contract"]))
+    assert relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="initial-writer",
+    ).read_bytes() == before
+
+    assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
+    assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
+    assert relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="retry-in-another-session",
+    ) == manifest
+
+
+def test_start_cli_builds_then_uses_existing_prepare_path(flow, tmp_path, monkeypatch, capsys):
+    _, _, remote, _, *_ = flow
+    body_dir, submission = initial_submission(tmp_path)
+    monkeypatch.setenv("HERMES_SESSION_ID", "cli-initial-writer")
+    monkeypatch.setattr(transport, "_trust", lambda _args: ("TEST-ONLY", "TEST-ONLY"))
+    monkeypatch.setattr(relay, "Remote", lambda *_args: remote)
+    args = [
+        "start", "--submission", str(submission), "--body-dir", str(body_dir),
+        "--series-id", "ai-toolkit", "--issue-date", "2026-09-24",
+        "--format", "chapter", "--owner-policy-id", "synthetic-owner-policy",
+    ]
+
+    assert relay.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["statuses"] == ["await_review"]
+    monkeypatch.setenv("HERMES_SESSION_ID", "cli-retry-writer")
+    assert relay.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["statuses"] == ["await_review"]
+
+
+@pytest.mark.parametrize("forbidden", [
+    "revision", "issue_id", "attempt_id", "target_hash", "body_sha256",
+    "rights_evidence", "review", "state", "publication_id", "execution_claim",
+])
+def test_content_submission_rejects_author_control_fields(tmp_path, forbidden):
+    body_dir, submission = initial_submission(tmp_path)
+    value = json.loads(submission.read_text())
+    value[forbidden] = "author-controlled"
+    submission.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="forbidden"):
+        relay.build_initial(
+            submission, body_dir, series_id="ai-history", issue_date="2026-09-24",
+            format="chapter", owner_policy_id="synthetic-owner-policy",
+            writer_session="initial-writer",
+        )
+
+
+@pytest.mark.parametrize("mutation", ["escape", "source_hash", "missing_media", "bad_dimensions"])
+def test_content_only_initial_builder_rejects_unsafe_or_invalid_material(tmp_path, mutation):
+    body_dir, submission = initial_submission(tmp_path)
+    value = json.loads(submission.read_text())
+    if mutation == "escape":
+        outside = tmp_path / "outside.json"
+        outside.write_text("{}")
+        value["source_files"][0]["path"] = "../outside.json"
+        submission.write_text(json.dumps(value), encoding="utf-8")
+    elif mutation == "source_hash":
+        value["source_files"][0]["sha256"] = "0" * 64
+        submission.write_text(json.dumps(value), encoding="utf-8")
+    elif mutation == "missing_media":
+        (body_dir / "illustration_03.jpg").unlink()
+    else:
+        Image.new("RGB", (100, 100), "#445566").save(body_dir / "reader_cover.jpg", "JPEG")
+
+    with pytest.raises(ValueError):
+        relay.build_initial(
+            submission, body_dir, series_id="ai-history", issue_date="2026-09-24",
+            format="chapter", owner_policy_id="synthetic-owner-policy",
+            writer_session="initial-writer",
+        )

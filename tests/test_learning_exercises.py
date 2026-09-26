@@ -27,7 +27,7 @@ def generated():
     for index, kind in enumerate(["choice", "judgement", "solution", "response"]):
         objective = kind in {"choice", "judgement"}
         ids = ["T", "F"] if kind == "judgement" else ["A", "B"]
-        qs.append(dict(id=f"q{index+1}", kind=kind, body=f"问题{index+1}：如何合并？", knowledge_point="幂等合并", difficulty=1, minutes=2,
+        qs.append(dict(id=f"q{index+1}", kind=kind, body=f"问题{index+1}：如何合并？", knowledge_point="幂等合并", hint="先把同一份状态合并两次，观察哪些数值不应再变化。", difficulty=1, minutes=2,
                        source_excerpt="合并计数器时，对每个分量取最大值。", options=[dict(id=k, text=("正确" if k == "T" else "错误") if kind == "judgement" else k) for k in ids] if objective else [],
                        correct_ids=[ids[0]] if objective else [], reference_answer="分量取最大值。", explanation="重复取最大值不会改变结果，因此该操作具有幂等性。",
                        option_explanations={k: "取最大值满足幂等性，覆盖会丢失数据。" for k in ids} if objective else {},
@@ -93,6 +93,7 @@ def test_mixed_set_private_keys_drafts_grading_and_idempotency(env):
     request = create()
     first = run(learning.create_exercise(request, AUTH))
     assert {q["kind"] for q in first["questions"]} == learning.KINDS
+    assert all(q["hint"] for q in first["questions"])
     assert first["confidence"] == "low"
     assert "saved_dialogue" in first["evidence_kinds"] and "memory" in first["evidence_kinds"]
     assert not any(k in json.dumps(first) for k in ["correct_ids", "reference_answer", "rubric", "option_explanations"])
@@ -155,13 +156,43 @@ def test_bad_mark_keeps_answers_and_allows_retry(env, monkeypatch):
     assert restored["revision"] > created["revision"]
 
 
+def test_judgement_contract_is_sent_to_model_and_missing_options_can_retry(env, monkeypatch):
+    request = create()
+    async def missing_options(prompt, payload):
+        # Real model failure: optional JSON-schema fields omitted for judgement.
+        data = generated()
+        for key in ("options", "correct_ids", "option_explanations"):
+            del data["questions"][1][key]
+        return json.dumps(data)
+    monkeypatch.setattr(learning, "model_json", missing_options)
+    with pytest.raises(HTTPException) as exc:
+        run(learning.create_exercise(request, AUTH))
+    assert exc.value.status_code == 502
+
+    async def instructed_model(prompt, payload):
+        schema = json.loads(prompt.split("只返回一个完整 JSON 对象，符合此 schema，不加任何额外说明：\n", 1)[1].split("\n证据及限制：\n", 1)[0])
+        fields = schema["$defs"]["Question"]["properties"]
+        assert '[{"id":"T","text":"正确"},{"id":"F","text":"错误"}]' in fields["options"]["description"]
+        assert '["T"] 或 ["F"]' in fields["correct_ids"]["description"]
+        assert "所有选项id" in fields["option_explanations"]["description"]
+        assert "至少一条评分规则" in fields["rubric"]["description"]
+        return json.dumps(generated())
+    monkeypatch.setattr(learning, "model_json", instructed_model)
+    assert run(learning.retry_generation(request.id, AUTH))["status"] == "draft"
+
+
 def test_independent_accuracy_excludes_repeats_and_assistance(env):
     first = create()
     created = run(learning.create_exercise(first, AUTH))
-    run(learning.submit_exercise(first.id, answers(created["revision"], assisted=True), AUTH))
+    assisted = run(learning.submit_exercise(first.id, answers(created["revision"], assisted=True), AUTH))
+    assert assisted["results"][0]["score"] == 1
+    assert "不计入独立掌握度" in assisted["results"][0]["next_step"]
+    assert "不计入独立掌握度" not in assisted["results"][1]["next_step"]
+    assert run(learning.get_exercise(first.id, AUTH))["results"] == assisted["results"]
     second = create()
     created2 = run(learning.create_exercise(second, AUTH))
-    run(learning.submit_exercise(second.id, answers(created2["revision"]), AUTH))
+    independent = run(learning.submit_exercise(second.id, answers(created2["revision"]), AUTH))
+    assert [r["score"] for r in independent["results"]] == [r["score"] for r in assisted["results"]]
     async def history():
         async with env() as db:
             return list((await db.scalars(select(LearningExercise))).all())
@@ -170,6 +201,22 @@ def test_independent_accuracy_excludes_repeats_and_assistance(env):
     assert stats[0]["objective_accuracy"] == 0
     assert stats[0]["subjective_count"] == 2
     assert stats[0]["subjective_mean"] == pytest.approx(2/3)
+
+
+def test_grading_prompt_keeps_scoring_evidence_without_repeated_explanations(env, monkeypatch):
+    request = create()
+    created = run(learning.create_exercise(request, AUTH))
+    model = learning.model_json
+    async def capture(prompt, payload):
+        questions_text, answer_text = prompt.split("\n评分题目和原文：", 1)[1].split("\n用户作答：", 1)
+        questions = json.loads(questions_text)
+        for compact, original in zip(questions, generated()["questions"][2:]):
+            assert set(compact) == {"id", "body", "source_excerpt", "reference_answer", "rubric"}
+            assert all(value == original[key] for key, value in compact.items())
+        assert json.loads(answer_text) == {"q3": "分量取最大值", "q4": "重复合并不变"}
+        return await model(prompt, payload)
+    monkeypatch.setattr(learning, "model_json", capture)
+    assert run(learning.submit_exercise(request.id, answers(created["revision"], assisted=True), AUTH))["status"] == "graded"
 
 
 def test_invalid_answer_and_incomplete_submit_do_not_change_draft(env):
@@ -383,3 +430,25 @@ def test_app_registers_the_client_learning_routes():
     assert ("/api/v1/me/learning-resume", "GET") in routes
     assert ("/api/v1/me/learning-exercises", "GET") in routes
     assert ("/api/v1/me/learning-exercises", "POST") in routes
+
+
+def test_hints_required_for_new_questions_and_optional_for_old_rows(env):
+    from pydantic import ValidationError
+    question = generated()["questions"][0]
+    for invalid in ("", " " * 3, "字" * 241):
+        with pytest.raises(ValidationError):
+            learning.Question.model_validate({**question, "hint": invalid})
+    del question["hint"]
+    with pytest.raises(ValidationError):
+        learning.Question.model_validate(question)
+    req = create()
+    run(learning.create_exercise(req, AUTH))
+    async def legacy():
+        async with env() as db:
+            row = await db.get(LearningExercise, str(req.id))
+            row.questions = [{k: v for k, v in q.items() if k != "hint"} for q in row.questions]
+            await db.commit()
+    run(legacy())
+    restored = run(learning.get_exercise(req.id, AUTH))
+    assert all(q["hint"] == "" for q in restored["questions"])
+    assert run(learning.submit_exercise(req.id, answers(restored["revision"]), AUTH))["status"] == "graded"
