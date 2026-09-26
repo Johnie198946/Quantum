@@ -528,34 +528,34 @@ def test_toolkit_blocked_prerequisite_recovers_supply_before_author(tmp_path, mo
     ]
 
 
-def test_toolkit_ready_requires_one_selected_compiled_candidate(tmp_path, monkeypatch):
+def test_toolkit_collection_requires_one_usable_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(watchdog, "OUTPUT_ROOT", tmp_path)
     receipt = tmp_path / "prerequisites/ai-toolkit" / f"{DAY}.json"
     receipt.parent.mkdir(parents=True)
     value = {
-        "status": "READY_FOR_AI_TOOLKIT",
-        "selected_candidates": [{"id": "selected-one"}],
-        "deposit": {"storage_verified": True, "manifest_registered": True},
-        "compilation": {"compile_verified": False, "wiki_compiled": False},
+        "status": "CONTENT_AVAILABLE",
+        "usable_content_available": False,
+        "selected_candidates": [],
     }
     receipt.write_text(json.dumps(value), encoding="utf-8")
     assert watchdog._toolkit_prerequisite_barrier(DAY) is not None
 
-    value["compilation"] = {"compile_verified": True, "wiki_compiled": True}
+    value["usable_content_available"] = True
+    value["selected_candidates"] = [{"id": "selected-one"}]
     receipt.write_text(json.dumps(value), encoding="utf-8")
     assert watchdog._toolkit_prerequisite_barrier(DAY) is None
 
 
-def test_toolkit_ready_does_not_require_unselected_candidates(tmp_path, monkeypatch):
+def test_toolkit_collection_does_not_require_unselected_categories_or_compilation(tmp_path, monkeypatch):
     monkeypatch.setattr(watchdog, "OUTPUT_ROOT", tmp_path)
     receipt = tmp_path / "prerequisites/ai-toolkit" / f"{DAY}.json"
     receipt.parent.mkdir(parents=True)
     receipt.write_text(json.dumps({
-        "status": "READY_FOR_AI_TOOLKIT",
+        "status": "CONTENT_AVAILABLE",
+        "usable_content_available": True,
         "selected_candidates": [{"id": "selected-one"}],
         "non_blocking_unselected": [{"id": "failed-two", "status": "failed"}],
-        "deposit": {"storage_verified": True, "manifest_registered": True},
-        "compilation": {"compile_verified": True, "wiki_compiled": True},
+        "compilation_readback": {"compile_verified": False, "wiki_compiled": False},
     }), encoding="utf-8")
     assert watchdog._toolkit_prerequisite_barrier(DAY) is None
 

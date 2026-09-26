@@ -805,3 +805,130 @@ def test_upload_transport_empty_stdout_is_not_json_error(flow, monkeypatch):
     )
     with pytest.raises(ValueError, match="exit 255"):
         remote.upload("a" * 32, b"x", ".bin")
+
+
+def initial_submission(tmp_path):
+    body_dir = tmp_path / "initial"
+    body_dir.mkdir()
+    body = synthetic_fixture("chapter")[0] + "\n[来源](https://example.com/source)\n"
+    (body_dir / "body.md").write_text(body, encoding="utf-8")
+    (body_dir / "source.json").write_text('{"source":"synthetic"}', encoding="utf-8")
+    (body_dir / "execution.log").write_text("synthetic execution passed", encoding="utf-8")
+    for role, (_, width, height) in relay.MEDIA_CONTRACT.items():
+        Image.new("RGB", (width, height), "#445566").save(body_dir / f"{role}.jpg", "JPEG")
+    submission = {
+        "title": "内容作者提交的合成标题",
+        "summary": "内容作者提交的合成摘要，仅用于自动化测试。",
+        "editorial_brief": synthetic_brief(),
+        "learning_objectives": ["验证初稿作者只提交内容和真实材料而不填写控制字段"],
+        "source_files": [{"kind": "source_snapshot", "path": "source.json"}],
+        "execution_files": [{"kind": "execution_log", "path": "execution.log"}],
+    }
+    path = body_dir / "content-submission.json"
+    path.write_text(json.dumps(submission, ensure_ascii=False), encoding="utf-8")
+    return body_dir, path
+
+
+def test_content_only_initial_builder_generates_and_prepares_control_fields(flow, tmp_path):
+    _, _, remote, _, *_ = flow
+    body_dir, submission = initial_submission(tmp_path)
+
+    manifest = relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="initial-writer",
+    )
+    before = manifest.read_bytes()
+    item = json.loads(before)["items"][0]
+    bundle = json.loads((body_dir / item["bundle_file"]).read_text())
+    rights = json.loads((body_dir / item["rights_files"][0]["path"]).read_text())
+
+    assert item["status"] == "prepared"
+    assert item["body_sha256"] == relay.sha((body_dir / "body.md").read_bytes())
+    assert item["bundle_sha256"] == relay.sha((body_dir / "candidate-bundle.json").read_bytes())
+    assert all(item[f"{role}_sha256"] for role in relay.MEDIA_ROLES)
+    assert rights["content_hashes"] == [item["body_sha256"]]
+    assert rights["attested_by"] == "local_owner_policy"
+    assert bundle["quality_contract"] == {
+        "format": "chapter", "writer_sessions": ["hermes:initial-writer"],
+        "learning_objectives": ["验证初稿作者只提交内容和真实材料而不填写控制字段"],
+        "editorial_brief": synthetic_brief(), "research_gaps": [],
+    }
+    assert bundle["execution_claim"] == "success"
+    assert not ({"revision", "issue_id", "attempt_id", "target_hash"}
+                & set(bundle["quality_contract"]))
+    assert relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="initial-writer",
+    ).read_bytes() == before
+
+    assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
+    assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
+    assert relay.build_initial(
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-owner-policy",
+        writer_session="retry-in-another-session",
+    ) == manifest
+
+
+def test_start_cli_builds_then_uses_existing_prepare_path(flow, tmp_path, monkeypatch, capsys):
+    _, _, remote, _, *_ = flow
+    body_dir, submission = initial_submission(tmp_path)
+    monkeypatch.setenv("HERMES_SESSION_ID", "cli-initial-writer")
+    monkeypatch.setattr(transport, "_trust", lambda _args: ("TEST-ONLY", "TEST-ONLY"))
+    monkeypatch.setattr(relay, "Remote", lambda *_args: remote)
+    args = [
+        "start", "--submission", str(submission), "--body-dir", str(body_dir),
+        "--series-id", "ai-toolkit", "--issue-date", "2026-09-24",
+        "--format", "chapter", "--owner-policy-id", "synthetic-owner-policy",
+    ]
+
+    assert relay.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["statuses"] == ["await_review"]
+    monkeypatch.setenv("HERMES_SESSION_ID", "cli-retry-writer")
+    assert relay.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["statuses"] == ["await_review"]
+
+
+@pytest.mark.parametrize("forbidden", [
+    "revision", "issue_id", "attempt_id", "target_hash", "body_sha256",
+    "rights_evidence", "review", "state", "publication_id", "execution_claim",
+])
+def test_content_submission_rejects_author_control_fields(tmp_path, forbidden):
+    body_dir, submission = initial_submission(tmp_path)
+    value = json.loads(submission.read_text())
+    value[forbidden] = "author-controlled"
+    submission.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="forbidden"):
+        relay.build_initial(
+            submission, body_dir, series_id="ai-history", issue_date="2026-09-24",
+            format="chapter", owner_policy_id="synthetic-owner-policy",
+            writer_session="initial-writer",
+        )
+
+
+@pytest.mark.parametrize("mutation", ["escape", "source_hash", "missing_media", "bad_dimensions"])
+def test_content_only_initial_builder_rejects_unsafe_or_invalid_material(tmp_path, mutation):
+    body_dir, submission = initial_submission(tmp_path)
+    value = json.loads(submission.read_text())
+    if mutation == "escape":
+        outside = tmp_path / "outside.json"
+        outside.write_text("{}")
+        value["source_files"][0]["path"] = "../outside.json"
+        submission.write_text(json.dumps(value), encoding="utf-8")
+    elif mutation == "source_hash":
+        value["source_files"][0]["sha256"] = "0" * 64
+        submission.write_text(json.dumps(value), encoding="utf-8")
+    elif mutation == "missing_media":
+        (body_dir / "illustration_03.jpg").unlink()
+    else:
+        Image.new("RGB", (100, 100), "#445566").save(body_dir / "reader_cover.jpg", "JPEG")
+
+    with pytest.raises(ValueError):
+        relay.build_initial(
+            submission, body_dir, series_id="ai-history", issue_date="2026-09-24",
+            format="chapter", owner_policy_id="synthetic-owner-policy",
+            writer_session="initial-writer",
+        )

@@ -66,9 +66,11 @@
     "minimum_usable_candidates": 1,
     "category_coverage_is_optional": true,
     "all_candidates_must_compile": false,
-    "author_requires_one_selected_candidate_compiled": true,
+    "collection_success_requires_one_usable_candidate": true,
+    "author_reuses_existing_wiki_retrieval": true,
+    "current_cycle_compilation_is_preferred_not_required": true,
     "unselected_candidate_failure_blocks_issue": false,
-    "sequence": ["collect", "deposit", "compile_selected", "author", "review", "finalize", "release", "reader_readback"]
+    "sequence": ["collect", "publish_content_available_receipt", "author_reads_canonical_wiki", "freeze_publication_inputs", "review", "finalize", "release", "reader_readback"]
   },
   "release_job": {
     "schedule": "0 12 * * *",

@@ -23,7 +23,7 @@
 - 作者只负责新正文，以及独立审稿明确要求补充的真实来源、实验或视觉材料。作者不得创建、猜测、复制或修补 revision、issue、attempt、target、previous-body、material hash、prepare receipt、review identity/decision、stage identity、publication identity 或 execution claim。
 - 上述字段必须由确定性打包器、服务端和调度器从冻结输入自动生成、传递、校验和回读。缺字段属于流水线故障，不得转成作者返工要求。
 - 采集任务只负责交付可用候选内容和来源证据，不承担“每一期覆盖全部门类”的义务。零个可用候选才阻塞；一个已核验、已授权且能支撑本期的候选即可进入其编译与写作链，其他候选缺失或失败不得阻塞本期。
-- `ai-toolkit` 固定时序为：01:00 采集与受控登记 → 03:00 前完成本期所选候选的 Wiki 编译/回读 → 08:05 作者首次取用 → 独立审稿 → 确定性 finalize/release → 生产与阅读端回读。作者只消费已经编译的所选候选；无需等待未选候选、全部门类或整批材料齐备。
+- `ai-toolkit` 固定时序为：01:00 采集并在至少一个可用候选后写 `CONTENT_AVAILABLE` 回执 → 新增材料按原有 Writer 路径异步编译 → 08:05 作者复用原有 `wiki-retrieval` 读取 canonical Wiki，优先使用已编译的本期新增材料，否则使用仍有效的既有 Wiki → 确定性打包器冻结实际使用的来源、rights 与 SHA-256 → 独立审稿 → finalize/release → 生产与阅读端回读。本期新增编译不是采集成功或整期写作的普遍硬门禁；未选候选、可选门类或单项失败不得阻塞本期。
 
 ### 每次执行
 

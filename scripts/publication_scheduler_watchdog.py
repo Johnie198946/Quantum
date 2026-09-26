@@ -232,20 +232,14 @@ def _toolkit_prerequisite_barrier(day: str) -> Barrier | None:
             value = _read_json(receipt)
         except (OSError, ValueError, json.JSONDecodeError):
             return Barrier("ai-toolkit", hashlib.sha256(receipt.read_bytes()).hexdigest())
-        deposit = value.get("deposit")
-        compilation = value.get("compilation")
         selected = value.get("selected_candidates")
-        ready = (
-            value.get("status") == "READY_FOR_AI_TOOLKIT"
-            and isinstance(selected, list) and bool(selected)
-            and isinstance(deposit, dict)
-            and deposit.get("storage_verified") is True
-            and deposit.get("manifest_registered") is True
-            and isinstance(compilation, dict)
-            and compilation.get("compile_verified") is True
-            and compilation.get("wiki_compiled") is True
+        content_available = (
+            value.get("status") in {"CONTENT_AVAILABLE", "READY_FOR_AI_TOOLKIT"}
+            and value.get("usable_content_available") is True
+            and isinstance(selected, list)
+            and bool(selected)
         )
-        if ready:
+        if content_available:
             return None
         return Barrier("ai-toolkit", hashlib.sha256(receipt.read_bytes()).hexdigest())
     marker = OUTPUT_ROOT / f"{day}-ai-toolkit-blocked" / "blocked-tutorial-prerequisite.json"
