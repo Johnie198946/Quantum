@@ -279,6 +279,7 @@ def test_concurrent_invocations_share_atomic_item_material_claim(tmp_path):
 
 def test_failed_claim_retries_bounded_then_stops(tmp_path, monkeypatch):
     ledger = watchdog.Claims(tmp_path / "claims.db")
+    assert ledger.MAX_ATTEMPTS == 6
     action = watchdog.Action("review", (watchdog.Barrier("ai-history", "a" * 64),), job_id=watchdog.REVIEW_JOB)
     monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
     for attempt in range(ledger.MAX_ATTEMPTS):

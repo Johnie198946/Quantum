@@ -17,6 +17,7 @@ Observed failures:
 5. The installed watchdog launched the editorial client without a verified repository module path, so automatic prepare/finalize failed with `No module named 'backend'` while foreground commands that explicitly set `PYTHONPATH=.` succeeded.
 6. Shared author jobs judged only production `published` state. They could therefore rewrite a sibling series already handed off as `prepared`, `await_review`, or `staged`, so the watchdog had to stop with `ambiguous_author_scope` instead of repairing a rejected sibling.
 7. `hermes cron run` waits for the whole Agent execution. After a scheduler restart had already terminalized the owner as `unknown`, the CLI could still wait and keep the watchdog lock held, making every native 10-minute recovery tick return `locked`.
+8. Three scheduler-owner exits could exhaust a material claim permanently before a healthy retry window.
 
 ## Change
 
@@ -31,6 +32,7 @@ Observed failures:
 - When `ai-toolkit` carries a machine-readable `BLOCKED_TUTORIAL_PREREQUISITE` marker, automatically dispatch the governed tutorial-supply job using the marker hash for bounded idempotent retries, without blocking unrelated series while a separately scheduled supply run is active.
 - Dispatch tutorial supply first; only a later machine receipt with `READY_FOR_AI_TOOLKIT` allows the toolkit author phase. Supply and author no longer run concurrently.
 - Pin the tutorial-supply job to `gpt-5.6-sol` / `openai-codex`, require every adopted URL to be opened and verified, and require a machine-readable `READY_FOR_AI_TOOLKIT` or `BLOCKED_DEPOSIT` receipt. Cron configuration was read back after the edit.
+- Allow six bounded claim attempts and retry persisted-but-unchanged dispatches after 15 minutes, so transient gateway restarts do not permanently dead-letter the day's material.
 - Add regression tests for stdin upload, timeout classification, and prerequisite-before-author recovery ordering.
 
 ## Compatibility and rollback

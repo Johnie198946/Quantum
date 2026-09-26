@@ -371,8 +371,10 @@ def _execution_blockers(
 
 
 class Claims:
-    MAX_ATTEMPTS = 3
-    DISPATCH_RETRY_AFTER = timedelta(minutes=45)
+    # Six bounded attempts survive transient scheduler restarts without
+    # turning a durable claim into a permanent dead letter before noon.
+    MAX_ATTEMPTS = 6
+    DISPATCH_RETRY_AFTER = timedelta(minutes=15)
 
     def __init__(self, path: Path = RECOVERY_DB):
         self.path = path
