@@ -2,10 +2,10 @@
 
 - task_id: publication-standard-workflow-20260926
 - goal: 将选题、写作、审核和发行复用既有主链路标准化，程序字段与可增删内容主题分离。
-- status: TESTED（400 项主回归与 10 项专题/返修回归通过；待提交、部署及真实生产验收）
+- status: PUSHED（远端分支SHA已核对；待部署及真实生产验收）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
-- head/local_commit: 52222059ce1750891d07635366826480392a9d4d（已合并上游基线；本任务尚未提交）
+- head/local_commit: 81ab5eef7b2721391fd778718bc1c4fedc3b6cef（出版物实现；上游基线52222059）
 
 ## 开工前盘点
 
@@ -23,14 +23,14 @@
 
 ## 运行态与外部写入
 
-- remote_sha: cbdea267b06ef086be7e49bfd3313e78e92f70fc（读取的基线；本任务未 push）
+- remote_sha: 81ab5eef7b2721391fd778718bc1c4fedc3b6cef（origin/codex/publication-standard-workflow-20260926）
 - server_before: 本任务未部署；前次诊断记录 .deployed-sha 00a847bb，运行容器 revision cbdea267。最终激活前必须重新盘点，不能当作当前保证。
 - server_after: 已授权，等待并发部署恢复；本任务尚未部署。
 - health_check: 未执行新版本服务器健康检查。
 - functional_check: 本地测试及 Hermes 原生定时隔离验收；生产端到端尚未执行。
 - rollback_point: 本地基线 cbdea267；生产部署前必须另建可恢复快照。
-- commit SHA: 用户已授权提交；本任务尚未提交。
-- GitHub remote/ref/SHA / ls-remote: 只读核对 origin/main 基线，不代表本任务已推送。
+- commit SHA: fa4f0d8c9a0331bd72971529dbb1746837935c9b、81ab5eef7b2721391fd778718bc1c4fedc3b6cef。
+- GitHub remote/ref/SHA / ls-remote: git ls-remote origin refs/heads/codex/publication-standard-workflow-20260926 返回81ab5eef7b2721391fd778718bc1c4fedc3b6cef，与本地HEAD一致。
 
 ## 原生定时验收记录
 
