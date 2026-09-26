@@ -167,6 +167,15 @@ def flow(tmp_path, monkeypatch):
         "proof_file": "proof.json",
         "status": "prepared",
     }
+    for role, size in (
+        ("shelf_cover", (1440, 2560)), ("reader_cover", (2560, 1440)),
+        ("illustration_01", (1600, 900)), ("illustration_02", (1600, 900)),
+        ("illustration_03", (1600, 900)),
+    ):
+        path = local / f"{role}.jpg"
+        Image.new("RGB", size, "#335577").save(path, format="JPEG")
+        item[f"{role}_file"] = path.name
+        item[f"{role}_sha256"] = relay.sha(path.read_bytes())
     manifest = local / "issue.manifest.json"
     relay.save(manifest, {"version": relay.VERSION, "items": [item]})
     key = Ed25519PrivateKey.generate()
@@ -304,6 +313,9 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
         request["source_receipts"]
         == json.loads((local / frozen).read_text())["source_receipts"]
     )
+    frozen_bundle = json.loads((local / frozen).read_text())
+    assert {asset["role"] for asset in frozen_bundle["assets"]} == set(relay.MEDIA_ROLES)
+    assert all(asset["receipt"]["sha256"] for asset in frozen_bundle["assets"])
     assert request["writer_sessions"] == request["quality_contract"]["writer_sessions"]
     assert request["review_policy"] == request["quality_contract"]["review_policy"] == "story-supervision-v2"
     assert request["writer_profile"] == "story"
@@ -339,7 +351,7 @@ def test_prepare_ingests_manifest_bound_inline_image_bytes(flow):
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
 
     frozen = json.loads(manifest.read_text())["items"][0]["bundle_file"]
-    asset = json.loads((local / frozen).read_text())["assets"][0]
+    asset = next(asset for asset in json.loads((local / frozen).read_text())["assets"] if "url" in asset)
     assert asset["url"] == image_url
     assert asset["receipt"]["sha256"] == relay.sha(image.read_bytes())
     assert (asset["media_type"], asset["width"], asset["height"]) == ("image/png", 640, 360)
@@ -386,6 +398,21 @@ def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
     )
 
     assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review"}
+
+
+def test_global_review_scan_isolates_invalid_pending_manifest(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    poisoned = local.parent / "00-poisoned" / "draft-manifest.json"
+    poisoned.parent.mkdir()
+    poisoned.write_text(
+        json.dumps({"version": relay.VERSION, "items": [{"status": "await_review"}]}),
+        encoding="utf-8",
+    )
+
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+
+    assert envelope["manifest"] == str(manifest)
 
 
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
@@ -442,7 +469,7 @@ def test_approved_finalize_explicitly_promotes_author_draft_to_staged(flow):
     assert len(staged) == 1 and staged[0]["state"] == "staged"
 
 
-def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
+def test_approved_stage_uploads_manifest_bound_daily_media(flow):
     local, manifest, remote, calls, *_ = flow
     value = json.loads(manifest.read_text())
     item = value["items"][0]
@@ -460,6 +487,7 @@ def test_approved_stage_uploads_manifest_bound_dual_covers(flow):
     stage_call = next(call for call in calls if "stage" in call)
     assert "--shelf-cover-file" in stage_call
     assert "--reader-cover-file" in stage_call
+    assert stage_call.count("--illustration-file") == 3
 
 
 def test_cover_changed_after_review_invalidates_signed_approval(flow):
@@ -511,6 +539,9 @@ def test_cover_only_change_creates_new_attempt_and_old_proof_is_rejected(flow):
     next_dir.mkdir()
     for name in ("bundle.json", "body.md", "source.json", "rights.json"):
         shutil.copyfile(local / name, next_dir / name)
+    for role in relay.MEDIA_ROLES:
+        if role != "shelf_cover":
+            shutil.copyfile(local / old[f"{role}_file"], next_dir / old[f"{role}_file"])
     changed_cover = next_dir / cover.name
     Image.new("RGB", (1440, 2560), "#773355").save(changed_cover, format="JPEG")
     item = {
@@ -793,7 +824,10 @@ def test_rejected_research_gaps_survive_next_revision(flow):
     old = json.loads(manifest.read_text())["items"][0]
     next_dir = local / "next"
     next_dir.mkdir()
-    for name in ("bundle.json", "body.md", "source.json", "rights.json"):
+    for name in (
+        "bundle.json", "body.md", "source.json", "rights.json", "shelf_cover.jpg",
+        "reader_cover.jpg", "illustration_01.jpg", "illustration_02.jpg", "illustration_03.jpg",
+    ):
         shutil.copyfile(local / name, next_dir / name)
     item = {
         k: v

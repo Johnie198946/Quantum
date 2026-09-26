@@ -56,14 +56,14 @@ def harness(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "gateway.session_context", SimpleNamespace(declare_stateless_channel=lambda: None))
     monkeypatch.setitem(sys.modules, "hermes_constants", SimpleNamespace(
         set_hermes_home_override=lambda home: "token", reset_hermes_home_override=lambda token: None))
-    monkeypatch.setattr(bridge, "_sandbox_hermes_home", lambda sandbox: tmp_path)
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *args: None)
-    monkeypatch.setattr(bridge, "_AGENT_CACHE", OrderedDict())
-    monkeypatch.setattr(bridge, "_AGENT_CACHE_MAX_SIZE", 2)
-    original_finish = bridge._finish_cached_agent
+    monkeypatch.setattr(bridge.memory, "_sandbox_hermes_home", lambda sandbox: tmp_path)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *args: None)
+    monkeypatch.setattr(bridge.agent_config, "_AGENT_CACHE", OrderedDict())
+    monkeypatch.setattr(bridge.agent_config, "_AGENT_CACHE_MAX_SIZE", 2)
+    original_finish = bridge.agent_config._finish_cached_agent
 
     def build(*args, **kwargs):
-        cached = bridge._take_cached_agent("user", "sig", agent.session_id)
+        cached = bridge.agent_config._take_cached_agent("user", "sig", agent.session_id)
         selected_agent, selected_db = cached[:2] if cached else (agent, db)
         return selected_agent, selected_db, {"agent_cache_key": "user", "agent_cache_signature": "sig"}
 
@@ -71,8 +71,8 @@ def harness(monkeypatch, tmp_path):
         retained.append(kwargs["keep"])
         return original_finish(*args, **kwargs)
 
-    monkeypatch.setattr(bridge, "_build_in_process_agent", build)
-    monkeypatch.setattr(bridge, "_finish_cached_agent", finish)
+    monkeypatch.setattr(bridge.agent_execution, "_build_in_process_agent", build)
+    monkeypatch.setattr(bridge.agent_config, "_finish_cached_agent", finish)
 
     def run(**kwargs):
         events = queue.Queue()
@@ -165,20 +165,20 @@ def test_missing_usage_stays_unavailable_and_normalization_is_idempotent():
 def test_signed_nonstream_chat_returns_same_turn_delta(harness, monkeypatch):
     agent, run, _, sandbox = harness
     run()
-    monkeypatch.setattr(bridge, "_require_internal_strict", lambda token: None)
-    monkeypatch.setattr(bridge, "_validated_knowledge_claims", lambda *args, **kwargs: {"tenant_key": "t", "user_id": "u"})
-    monkeypatch.setattr(bridge, "_validated_client_context_claims", lambda *args, **kwargs: None)
-    monkeypatch.setattr(bridge, "_validated_qws_business_context_claims", lambda *args, **kwargs: None)
-    monkeypatch.setattr(bridge, "_tenant_sandbox_from_claims", lambda **kwargs: sandbox)
-    monkeypatch.setattr(bridge, "_resolve_hermes_session", lambda user: agent.session_id)
-    monkeypatch.setattr(bridge, "_mark_consumed", lambda *args: None)
+    monkeypatch.setattr(bridge.persistence, "_require_internal_strict", lambda token: None)
+    monkeypatch.setattr(bridge.persistence, "_validated_knowledge_claims", lambda *args, **kwargs: {"tenant_key": "t", "user_id": "u"})
+    monkeypatch.setattr(bridge.persistence, "_validated_client_context_claims", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bridge.persistence, "_validated_qws_business_context_claims", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bridge.persistence, "_tenant_sandbox_from_claims", lambda **kwargs: sandbox)
+    monkeypatch.setattr(bridge.session_runtime, "_resolve_hermes_session", lambda user: agent.session_id)
+    monkeypatch.setattr(bridge.session_runtime, "_mark_consumed", lambda *args: None)
 
     @asynccontextmanager
     async def admitted():
         yield
 
-    monkeypatch.setattr(bridge, "_admit_request", admitted)
-    monkeypatch.setattr(bridge, "_get_user_lock", lambda user: asyncio.Lock())
+    monkeypatch.setattr(bridge.contracts, "_admit_request", admitted)
+    monkeypatch.setattr(bridge.contracts, "_get_user_lock", lambda user: asyncio.Lock())
     result = asyncio.run(bridge.chat(bridge.GoalRequest(goal="hello", session_id="user"), "token"))
     assert result["usage"]["total_tokens"] == 1060
     assert result["usage"]["cumulative_usage"]["total_tokens"] == 2120
@@ -202,13 +202,13 @@ def test_other_in_process_entrypoints_snapshot_before_execution(monkeypatch, tmp
     monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=build_agent))
     monkeypatch.setitem(sys.modules, "model_tools", SimpleNamespace(get_tool_definitions=lambda **kwargs: []))
     monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda cwd: None))
-    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": "test-model"})
-    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda cfg: {})
-    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda cfg: None)
-    monkeypatch.setattr(bridge, "_cache_request_overrides", lambda *args: {})
-    monkeypatch.setattr(bridge, "_ensure_tenant_skill_tool_registered", lambda: None)
-    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda sandbox: db)
-    monkeypatch.setattr(bridge, "_create_thread_local_session_db", lambda: db)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": "test-model"})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda cfg: {})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda cfg: None)
+    monkeypatch.setattr(bridge.agent_config, "_cache_request_overrides", lambda *args: {})
+    monkeypatch.setattr(bridge.knowledge, "_ensure_tenant_skill_tool_registered", lambda: None)
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda sandbox: db)
+    monkeypatch.setattr(bridge.agent_config, "_create_thread_local_session_db", lambda: db)
     if entrypoint == "workflow":
         reply, sid, usage = bridge._run_workflow_node_in_process(
             "hello", {"node_type": "LLM_INFERENCE", "parameters": {"max_tokens": 1000}},
@@ -229,11 +229,21 @@ def test_postprocessing_guard_retains_completed_usage(harness, monkeypatch):
     agent, run, _, _ = harness
     original = agent.run_conversation
     def guarded(*args, **kwargs):
+        from backend.services.capability_projection import (
+            bind_runtime_capability_selection,
+        )
+
         result = original(*args, **kwargs)
+        bind_runtime_capability_selection(
+            skill_id="personal-knowledge-action",
+            agent_id=None,
+            decision_id="test-usage-guard",
+            catalog_version="test",
+            policy_version="test",
+        )
         bridge._client_context_tool_context.value = {}
         return result
     monkeypatch.setattr(agent, "run_conversation", guarded)
-    monkeypatch.setattr(bridge, "_is_note_draft_request", lambda goal: True)
     errors = [event for event in run(knowledge_action_enabled=True) if event["type"] == "error"]
     assert errors[-1]["code"] == "knowledge_action_missing"
     assert errors[-1]["usage"]["total_tokens"] == 1060

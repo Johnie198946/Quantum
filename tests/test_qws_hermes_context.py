@@ -88,7 +88,7 @@ def test_bridge_rejects_tampered_qws_business_context() -> None:
 
 def test_qws_facts_are_not_rendered_as_conversation_messages(monkeypatch) -> None:
     context = _business_context()
-    monkeypatch.setattr(bridge, "_resolve_hermes_session", lambda _user_id: "hermes-native-session")
+    monkeypatch.setattr(bridge.session_runtime, "_resolve_hermes_session", lambda _user_id: "hermes-native-session")
 
     assert bridge._hermes_session_for_request("stable-qws-session", None) == "hermes-native-session"
     goal = bridge._with_qws_business_context("按照刚才第二种方案继续", context)
@@ -140,11 +140,11 @@ def test_bridge_exposes_qws_facts_ephemerally_but_persists_clean_turn(
             return None
 
     monkeypatch.setattr(
-        bridge,
+        bridge.agent_execution,
         "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args: None)
 
     events: queue.Queue = queue.Queue()
     bridge._run_agent_sync(
@@ -212,11 +212,11 @@ def test_first_recovery_snapshot_is_imported_into_native_sessiondb(
             return None
 
     monkeypatch.setattr(
-        bridge,
+        bridge.agent_execution,
         "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args: None)
 
     bridge._run_agent_sync(
         "继续上次对话",
@@ -269,11 +269,11 @@ def test_bridge_fails_closed_when_mapped_history_cannot_be_loaded(
             return None
 
     monkeypatch.setattr(
-        bridge,
+        bridge.agent_execution,
         "_build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), BrokenSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr(bridge, "_update_session_mapping", lambda *_args: None)
+    monkeypatch.setattr(bridge.session_runtime, "_update_session_mapping", lambda *_args: None)
 
     events: queue.Queue = queue.Queue()
     bridge._run_agent_sync(

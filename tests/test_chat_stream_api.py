@@ -20,7 +20,7 @@ from backend.api.chat import (  # noqa: E402
     derive_isolated_session_id,
 )
 from backend.api.chat import router as chat_router  # noqa: E402
-from backend.services.agent_capabilities import AgentInvocationMatch, EffectiveAgent  # noqa: E402
+from backend.services.agent_capabilities import EffectiveAgent  # noqa: E402
 
 
 def effective_agent(agent_id: str, name: str) -> EffectiveAgent:
@@ -113,7 +113,7 @@ async def test_prewarm_queues_same_general_agent_lane_without_model_call(monkeyp
             return Response()
 
     async def resolve_route(**_kwargs):
-        return effective_agent("main_agent", "Main"), AgentInvocationMatch(status="none")
+        return effective_agent("main_agent", "Main")
 
     monkeypatch.setattr(chat_mod, "HERMES_BRIDGE_INTERNAL_TOKEN", "internal-token")
     monkeypatch.setattr(
@@ -367,7 +367,7 @@ async def test_selected_book_stream_payload_validates_at_the_bridge_contract(mon
         )
 
     async def fake_route(**_kwargs):
-        return main, AgentInvocationMatch(status="none")
+        return main
 
     class BridgeResponse:
         status_code = 200
@@ -474,47 +474,42 @@ async def test_stream_signs_client_context_and_never_trusts_client_tenant(
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_agent_route_and_handoffs_child_result(
+async def test_stream_explicit_agent_id_uses_one_hermes_path(
     app: FastAPI, transport: httpx.ASGITransport, monkeypatch
 ):
     import backend.api.chat as chat_mod
 
-    main = effective_agent("main_agent", "Main 智能编排")
     target = effective_agent("english-agent", "小学生英语评估 · 专属 Agent")
     observed = {}
 
     async def fake_route(**_kwargs):
-        return main, AgentInvocationMatch(status="matched", agent=target)
-
-    async def fake_child(*_args, **kwargs):
-        observed["child_agent"] = kwargs["agent_config"]["id"]
-        observed["child_session"] = kwargs["session_id"]
-        return "英语评估结果", []
+        return target
 
     async def fake_bridge_stream(goal: str, session_id: str, **kwargs):
-        observed["main_agent"] = kwargs["agent_config"]["id"]
-        observed["main_session"] = session_id
+        observed["agent"] = kwargs["agent_config"]["id"]
+        observed["session"] = session_id
         observed["goal"] = goal
-        yield 'data: {"type":"done","answer":"已转交"}\n\n'
+        yield 'data: {"type":"done","answer":"英语评估结果"}\n\n'
 
     monkeypatch.setattr(chat_mod, "_resolve_agent_route", fake_route)
-    monkeypatch.setattr(chat_mod, "_call_hermes", fake_child)
     monkeypatch.setattr(chat_mod, "_call_bridge_stream", fake_bridge_stream)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/chat/stream",
-            json={"question": "调用小学生英语评估 Agent", "session_id": "s1"},
+            json={
+                "question": "帮我评估",
+                "agent_id": target.id,
+                "session_id": "s1",
+            },
             headers=auth_headers(),
         )
 
     assert response.status_code == 200
     assert '"type": "agent_route"' in response.text
     assert "小学生英语评估" in response.text
-    assert observed["child_agent"] == target.id
-    assert observed["main_agent"] == main.id
-    assert observed["child_session"] != observed["main_session"]
-    assert "英语评估结果" in observed["goal"]
+    assert observed["agent"] == target.id
+    assert observed["goal"] == "帮我评估"
 
 
 @pytest.mark.asyncio
@@ -557,7 +552,7 @@ async def test_stream_triage_preserves_evidence_but_not_skill_agent_availability
         )
 
     async def fake_route(**_kwargs):
-        return main, AgentInvocationMatch(status="none")
+        return main
 
     async def fake_bridge_stream(_goal: str, _session_id: str, **kwargs):
         observed.update(kwargs["agent_config"]["triage"])
@@ -602,7 +597,7 @@ async def test_internal_stream_uses_raw_knowledge_query_for_augmented_goal(monke
         )
 
     async def fake_route(**_kwargs):
-        return main, AgentInvocationMatch(status="none")
+        return main
 
     async def fake_bridge_stream(_goal: str, _session_id: str, **kwargs):
         observed["bridge_query"] = kwargs["knowledge_query"]
@@ -653,7 +648,7 @@ async def test_internal_stream_stops_when_no_model_or_tool_activity(monkeypatch)
         )
 
     async def fake_route(**_kwargs):
-        return main, AgentInvocationMatch(status="none")
+        return main
 
     async def stalled_bridge_stream(_goal: str, _session_id: str, **_kwargs):
         await asyncio.sleep(1)

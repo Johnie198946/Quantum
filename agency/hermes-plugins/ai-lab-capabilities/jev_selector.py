@@ -41,7 +41,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE: "OrderedDict[str, tuple[float, RouteDecision]]" = OrderedDict()
 _RESIDENT_MODULE: Any = None
 _VOLATILE_TASK_STATE_KEYS = {
-    "turn_id", "request_id", "trace_id", "decision_id",
+    "session_id", "turn_id", "request_id", "trace_id", "decision_id",
     "timestamp", "created_at", "updated_at",
 }
 
@@ -121,7 +121,7 @@ def validate_card(card: dict[str, Any]) -> None:
 
 
 def catalog_version(cards: Iterable[dict[str, Any]]) -> str:
-    stable = sorted((card["id"], card["version"]) for card in cards)
+    stable = sorted(cards, key=lambda card: str(card["id"]))
     raw = json.dumps(stable, ensure_ascii=False, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
@@ -218,6 +218,7 @@ def _validate_output(
     output: dict[str, Any], *, skill_ids: set[str], agent_ids: set[str],
     threshold: float, policy_version: str, catalog_version_value: str,
     latency_ms: float, decision_id: str,
+    forbid_agent_with_skills: set[str] | None = None,
 ) -> RouteDecision:
     allowed = {"skill_id", "agent_id", "skill_confidence", "agent_confidence", "reason_code"}
     if set(output) != allowed:
@@ -231,6 +232,10 @@ def _validate_output(
                               catalog_version_value=catalog_version_value,
                               latency_ms=latency_ms, decision_id=decision_id)
     if agent_id is not None and (not isinstance(agent_id, str) or agent_id not in agent_ids):
+        return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
+                              catalog_version_value=catalog_version_value,
+                              latency_ms=latency_ms, decision_id=decision_id)
+    if agent_id is not None and skill_id in (forbid_agent_with_skills or set()):
         return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
                               catalog_version_value=catalog_version_value,
                               latency_ms=latency_ms, decision_id=decision_id)
@@ -384,6 +389,12 @@ def select_route(
             catalog_version_value=version,
             latency_ms=elapsed,
             decision_id=decision_id,
+            forbid_agent_with_skills={
+                card["id"]
+                for card in skills
+                if str((card.get("requires") or {}).get("agent") or "")
+                == "forbidden"
+            },
         )
     except TimeoutError:
         decision = _null_decision(reason="TIMEOUT", policy_version=policy_version,
@@ -395,8 +406,9 @@ def select_route(
                                   catalog_version_value=version,
                                   latency_ms=(time.perf_counter() - started) * 1000,
                                   decision_id=decision_id)
-    with _CACHE_LOCK:
-        _CACHE[digest] = (now, decision)
-        while len(_CACHE) > 512:
-            _CACHE.popitem(last=False)
+    if decision.validated:
+        with _CACHE_LOCK:
+            _CACHE[digest] = (now, decision)
+            while len(_CACHE) > 512:
+                _CACHE.popitem(last=False)
     return decision

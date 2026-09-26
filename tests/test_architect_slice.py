@@ -73,12 +73,12 @@ def test_clarification_bridge_token_and_schema_fail_closed(monkeypatch):
     from pydantic import ValidationError
     from scripts import hermes_bridge
 
-    monkeypatch.setattr(hermes_bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "")
+    monkeypatch.setattr(hermes_bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "")
     with pytest.raises(HTTPException) as missing:
         hermes_bridge._require_internal_strict(None)
     assert missing.value.status_code == 503
 
-    monkeypatch.setattr(hermes_bridge, "HERMES_BRIDGE_INTERNAL_TOKEN", "server-secret")
+    monkeypatch.setattr(hermes_bridge.contracts, "HERMES_BRIDGE_INTERNAL_TOKEN", "server-secret")
     with pytest.raises(HTTPException) as invalid:
         hermes_bridge._require_internal_strict("wrong-secret")
     assert invalid.value.status_code == 401
@@ -106,7 +106,7 @@ def test_clarification_runner_declares_zero_tool_and_zero_context_boundary():
     source = inspect.getsource(hermes_bridge._run_clarification_in_process)
     assert 'enabled_toolsets=no_toolsets' in source
     assert 'get_tool_definitions(enabled_toolsets=no_toolsets' in source
-    assert '**_isolated_agent_context_kwargs()' in source
+    assert '_isolated_agent_context_kwargs()' in source
     assert hermes_bridge._isolated_agent_context_kwargs() == {
         "skip_context_files": True,
         "skip_memory": True,

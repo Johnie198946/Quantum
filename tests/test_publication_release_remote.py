@@ -62,3 +62,16 @@ def test_status_only_never_finalizes_even_if_configured(monkeypatch):
     monkeypatch.setattr(editorial, "finalize", lambda *a: pytest.fail("status-only must not write"))
     assert release.main(["--status-only", "--editorial-root", "/TEST-ONLY"]) == 0
     assert calls == ["status"]
+
+
+@pytest.mark.parametrize("change", [
+    {"body_available": False},
+    {"media_roles": ["shelf_cover", "reader_cover", "illustration_01", "illustration_02"]},
+    {"media_roles": ["shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03", "illustration_04"]},
+])
+def test_attention_requires_body_and_exactly_three_illustrations(change):
+    item = {"published": 1, "body_available": True, "media_roles": sorted(release.REQUIRED_DAILY_MEDIA)}
+    item.update(change)
+    summary = {"today": {"date": "2026-09-25", "by_series": {"ai-history": item}},
+               "issues": {"blocked": [], "missing": []}}
+    assert release._attention(summary) is True

@@ -19,8 +19,8 @@ def run(tmp_path, monkeypatch):
         tenant_user_hash=owner, session_id="session", request_id="request",
         execution_payload={"answer_blocks_v1": True},
     )
-    monkeypatch.setattr(bridge, "_chat_run_store", store)
-    monkeypatch.setattr(bridge, "_durable_worker_is_live", lambda: True)
+    monkeypatch.setattr(bridge.session_runtime, "_chat_run_store", store)
+    monkeypatch.setattr(bridge.contracts, "_durable_worker_is_live", lambda: True)
     return store, owner, row["run_id"]
 
 
@@ -101,7 +101,7 @@ async def test_final_revision_and_disconnected_snapshot_are_exact(run, monkeypat
     # A new process recovers the accepted unfinished tail without provider replay.
     reopened = DurableChatRunStore(store.path)
     assert text(reopened.block_page(rid, tenant_user_hash=owner)) == "\n\ndraft"
-    monkeypatch.setattr(bridge, "_require_internal_strict", lambda _: None)
+    monkeypatch.setattr(bridge.persistence, "_require_internal_strict", lambda _: None)
     snapshot = await bridge.durable_chat_run(
         rid, after=sequence, x_hermes_internal_token="test", x_tenant_id="tenant",
         x_user_id="user", answer_blocks_v1=True,
@@ -147,13 +147,15 @@ def test_first_visible_timing_ignores_whitespace_and_rejected_sink(monkeypatch, 
     monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=Agent))
     monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda _: None))
     monkeypatch.setitem(sys.modules, "model_tools", SimpleNamespace(get_tool_definitions=lambda **_: []))
-    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": {"default": "test"}})
-    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _: {"provider": "test"})
-    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _: None)
-    monkeypatch.setattr(bridge, "_get_cached_tools", lambda _: set())
-    monkeypatch.setattr(bridge, "_resolve_dynamic_toolsets", lambda *_: [])
-    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _: object())
-    monkeypatch.setattr(bridge, "persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": {"default": "test"}})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda _: {"provider": "test"})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda _: None)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_tools", lambda _: set())
+    monkeypatch.setattr(
+        bridge.agent_config, "_resolve_base_toolsets", lambda *_args, **_kwargs: []
+    )
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda _: object())
+    monkeypatch.setattr(bridge.agent_execution, "persist_agent_snapshot", lambda *_: None)
     events = queue.Queue()
     rejected = False
     def accept(item):

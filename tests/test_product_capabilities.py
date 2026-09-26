@@ -367,12 +367,11 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
     assert "tenant_key" not in serialized and "user_id" not in serialized
 
 
-def test_presentation_request_directive_routes_to_native_confirmation_tool():
-    directive = bridge._presentation_capability_directive("帮我做一份学习方法 PPT", True)
-    assert "app_presentation_create_from_text" in directive
-    assert "one-time token" in directive
-    assert bridge._presentation_capability_directive("怎么写好一份演示文稿？", False) == ""
-    assert bridge._presentation_capability_directive("解释太阳能电池", True) == ""
+def test_presentation_native_tool_uses_pcm_contract_without_keyword_router():
+    schema = bridge._app_capability_native_tool_schema(describe_capability("presentation.create_from_text"))
+    assert schema["name"] == "app_presentation_create_from_text"
+    assert "authenticated app must confirm" in schema["description"]
+    assert not hasattr(bridge, "_presentation_capability_directive")
 
 
 def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
@@ -565,10 +564,9 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
     monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _cfg: {"provider": "test"})
     monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _cfg: None)
     monkeypatch.setattr(bridge, "_get_cached_tools", lambda _cfg: set())
-    monkeypatch.setattr(bridge, "_resolve_dynamic_toolsets", lambda *_args: [])
     monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _sandbox: object())
     monkeypatch.setattr(bridge, "_take_cached_agent", lambda *_args: None)
-    monkeypatch.setattr(bridge, "persist_agent_snapshot", lambda *_args: None)
+    monkeypatch.setattr(bridge.agent_execution, "persist_agent_snapshot", lambda *_args: None)
     monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
 
     agent, _, route = bridge._build_in_process_agent(

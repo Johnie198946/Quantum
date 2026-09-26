@@ -47,7 +47,7 @@ from backend.services.knowledge_action_capability import (
     mint_knowledge_action_capability,
 )
 from backend.api.knowledge_actions import persist_knowledge_action_proposal
-from backend.services.llm_usage import combine_provider_usage, record_llm_usage
+from backend.services.llm_usage import record_llm_usage
 from backend.services.inference_policy import (
     InferencePolicyConflict,
     InferenceQuotaExceeded,
@@ -67,9 +67,7 @@ from backend.services.user_note_context import (
 )
 from backend.services.agent_capabilities import (
     BASELINE_AGENT_IDS,
-    AgentInvocationMatch,
     EffectiveAgent,
-    match_explicit_tenant_agent,
     resolve_agent,
 )
 from backend.services.chat_triage import (
@@ -170,11 +168,6 @@ def _bridge_url_for_placement(
     return urlunsplit((base.scheme, base.netloc, original.path, original.query, ""))
 
 
-def _combined_usage(*items: dict[str, Any] | None) -> dict[str, Any] | None:
-    return combine_provider_usage(*(
-        item if item is None or item.get("usage_scope") == "turn" else {}
-        for item in items
-    ))
 HERMES_TIMEOUT = 300
 # 流式端点专用：单次请求 240s 空闲保活上限（keepalive 帧每 30s 刷新），总时长由 bridge 300s 兜底
 STREAM_IDLE_TIMEOUT = 240
@@ -854,51 +847,23 @@ async def _resolve_source_context(
 
 async def _resolve_agent_route(
     *,
-    question: str,
     requested_agent_id: str | None,
     payload: Dict[str, Any],
-    allow_explicit_invocation: bool = True,
-) -> tuple[EffectiveAgent, AgentInvocationMatch]:
+) -> EffectiveAgent:
+    """Resolve only an explicit, authenticated Agent id.
+
+    Natural-language capability selection belongs to the single JEV decision.
+    This function is a deterministic QCP binding, not a semantic router.
+    """
     tenant_id = str(payload.get("tenant_key") or "public")
     owner_user_id = str(payload.get("user_id") or payload.get("sub") or "")
     async with SessionLocal() as db:
-        selected = await resolve_agent(
+        return await resolve_agent(
             db,
             agent_id=requested_agent_id,
             tenant_id=tenant_id,
             owner_user_id=owner_user_id,
         )
-        if selected.id != "main_agent" or not allow_explicit_invocation:
-            return selected, AgentInvocationMatch(status="none")
-        invocation = await match_explicit_tenant_agent(
-            db,
-            question=question,
-            tenant_id=tenant_id,
-            owner_user_id=owner_user_id,
-        )
-    return selected, invocation
-
-
-def _invocation_clarify(invocation: AgentInvocationMatch) -> ClarifyPayload:
-    choices = [f"调用「{name}」（#{agent_id[:8]}）" for agent_id, name in invocation.candidates]
-    return ClarifyPayload(
-        question="匹配到多个同名专属 Agent，请选择要调用的一个。",
-        choices=choices,
-        multi_select=False,
-        source="agent_route",
-    )
-
-
-def _delegation_handoff_goal(
-    *, user_question: str, target: EffectiveAgent, child_reply: str
-) -> str:
-    return (
-        f"用户明确要求调用专属 Agent「{target.name}」。你已完成安全委派。\n"
-        "以下内容是该专属 Agent 的真实执行结果。请直接、忠实地转交给用户，"
-        "保留关键事实、结构和结论，不要声称无法调用，也不要编造额外结果。\n\n"
-        f"用户原始请求：{user_question}\n\n"
-        f"专属 Agent 执行结果：\n{child_reply}"
-    )
 
 
 def _route_frame(target: EffectiveAgent, *, delegated: bool) -> str:
@@ -934,31 +899,6 @@ def _skill_routing_enabled(agent: EffectiveAgent, skill_id: str | None) -> bool:
     )
 
 
-_SKILL_MANAGEMENT_INTENT = re.compile(
-    r"(?:创建|新建|生成|做|建|更新|修改|删除|create|update|delete).{0,80}(?:技能|skill)",
-    re.IGNORECASE,
-)
-
-
-def _is_skill_management_request(text: str) -> bool:
-    return "tenant_skill_manage" in (text or "") or bool(
-        _SKILL_MANAGEMENT_INTENT.search(text or "")
-    )
-
-
-def _skill_management_decision(
-    question: str, decision: TriageDecision
-) -> TriageDecision:
-    if not _is_skill_management_request(question):
-        return decision
-    return TriageDecision(
-        PROFESSIONAL_TASK,
-        max(0.99, decision.confidence),
-        "tenant_skill_management",
-        (),
-    )
-
-
 def _classify_stream_request(
     req: "StreamRequest",
     *,
@@ -986,7 +926,6 @@ def _classify_stream_request(
         ),
         explicit_skill=bool(skill_id),
     )
-    decision = _skill_management_decision(question or req.question, decision)
     if trusted_professional_surface and decision.route_class == GENERAL_QA:
         return TriageDecision(
             PROFESSIONAL_TASK,
@@ -997,8 +936,7 @@ def _classify_stream_request(
     return decision
 
 
-def _triage_frame(decision: TriageDecision, config: dict[str, Any]) -> str:
-    triage = dict(config.get("triage") or {})
+def _triage_frame(decision: TriageDecision) -> str:
     payload = {
         "type": "triage_route",
         "route_class": decision.route_class,
@@ -1008,8 +946,6 @@ def _triage_frame(decision: TriageDecision, config: dict[str, Any]) -> str:
         "selected_capabilities": [
             capability
             for capability, enabled in (
-                ("agency_agents", triage.get("agency_enabled")),
-                ("tenant_skills", triage.get("skill_enabled")),
                 ("web", any(
                     item in decision.evidence_requirements
                     for item in ("web_search", "web_extract")
@@ -1060,22 +996,9 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         if quote:
             goal = f"（你正在回复用户引用的历史消息：{quote[:500]}）\n{goal}"
     policy = await _resolve_chat_policy(payload)
-    agent, invocation = await _resolve_agent_route(
-        question=req.question, requested_agent_id=req.agent_id, payload=payload
+    agent = await _resolve_agent_route(
+        requested_agent_id=req.agent_id, payload=payload
     )
-    if invocation.status == "not_found":
-        answer = "未找到当前账号可调用的同名专属 Agent，请从 Agent 选择器确认名称或状态。"
-        return ChatResponse(
-            question=req.question, answer=answer, feedback_receipt=feedback_payload
-        )
-    if invocation.status == "ambiguous":
-        clarify = _invocation_clarify(invocation)
-        return ChatResponse(
-            question=req.question,
-            answer=clarify.question,
-            clarify=clarify,
-            feedback_receipt=feedback_payload,
-        )
 
     isolated_session_id = _tenant_namespaced_session(
         derive_isolated_session_id(req.agent_id, req.session_id),
@@ -1101,33 +1024,23 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         tenant_id=str(payload.get("tenant_key") or "public"),
         user_id=owner_user_id,
     )
-    if cached is not None and invocation.status != "matched":
+    if cached is not None:
         cached.feedback_receipt = feedback_payload
         return cached
 
-    delegated_target = invocation.agent if invocation.status == "matched" else None
     triage = classify_request(
         req.question,
         quoted_context=req.quoted_context,
         has_local_notes=bool(
             req.client_session_context and req.client_session_context.local_notes
         ),
-        explicit_agent=(
-            delegated_target is not None
-            or bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
-        ),
+        explicit_agent=bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID),
         explicit_skill=bool(skill_id),
     )
-    triage = _skill_management_decision(req.question, triage)
     main_agent_config = _triaged_agent_config(
         agent,
         triage,
-        agency_enabled=(
-            agent.id == DEFAULT_AGENT_ID
-            and delegated_target is None
-            and not skill_id
-            and not _is_skill_management_request(req.question)
-        ),
+        agency_enabled=(agent.id == DEFAULT_AGENT_ID and not skill_id),
         skill_enabled=_skill_routing_enabled(agent, skill_id),
     )
     inference = decide_inference(
@@ -1135,7 +1048,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         route_class=triage.route_class,
         confidence=triage.confidence,
         agency_enabled=bool(main_agent_config["triage"].get("agency_enabled")),
-        model_calls=2 if delegated_target is not None else 1,
+        model_calls=1,
     )
     main_agent_config["inference_policy"] = inference.bridge_config()
     try:
@@ -1166,49 +1079,11 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     except InferencePolicyConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
-    # 透传 Hermes bridge（附真实思维链）。自然语言委派先运行隔离的专属
-    # Agent，再由 Main 在父会话中忠实转交，使父会话保留连续上下文。
+    # Execute exactly one Hermes path. Explicit Agent ids select the authenticated
+    # configuration; natural-language capability selection remains JEV-owned.
     model_attempted = False
     started = time.perf_counter()
-    delegated_usage: dict[str, Any] | None = None
     try:
-        if delegated_target is not None:
-            child_session_id = _tenant_namespaced_session(
-                derive_isolated_session_id(delegated_target.id, req.session_id),
-                str(payload.get("tenant_key") or "public"),
-                policy.policy_version,
-                str(payload.get("user_id") or payload.get("sub") or "anonymous"),
-            )
-            child_context = await _resolve_source_context(
-                scope=req.context_scope,
-                payload=payload,
-                subject_id=child_session_id,
-                question=req.question,
-                policy=policy,
-            )
-            child_config = _triaged_agent_config(delegated_target, triage)
-            child_config["inference_policy"] = inference.bridge_config()
-            child_config["runtime_placement"] = placement.bridge_config()
-            model_attempted = True
-            child_reply, _ = await _call_hermes_recorded(
-                goal + child_context.evidence,
-                auth_payload=payload,
-                session_id=child_session_id,
-                knowledge_capability=child_context.capability,
-                policy_version=child_context.policy_version,
-                knowledge_query=child_context.knowledge_query,
-                agent_config=child_config,
-            )
-            delegated_usage = dict(_last_hermes_usage.get())
-            await persist_usage_prefix(payload, effective_request_id, delegated_usage)
-            if not child_reply.strip() or child_reply.lstrip().startswith("⚠️"):
-                raise RuntimeError(child_reply.strip() or "专属 Agent 未返回结果")
-            goal = _delegation_handoff_goal(
-                user_question=req.question,
-                target=delegated_target,
-                child_reply=child_reply,
-            ) + source_context.evidence
-
         if skill_id:
             model_attempted = True
             reply, reasoning = await _call_hermes_recorded(
@@ -1256,7 +1131,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         await settle_inference(
             payload,
             effective_request_id,
-            _combined_usage(delegated_usage, _last_hermes_usage.get()),
+            _last_hermes_usage.get(),
             latency_ms=round((time.perf_counter() - started) * 1000),
             success=bool(answer) and not answer.lstrip().startswith("⚠️"),
         )
@@ -1269,11 +1144,11 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             citations=citations,
             clarify=clarify,
             resolved_agent=AgentRouteInfo(
-                id=(delegated_target or agent).id,
-                name=(delegated_target or agent).name,
-                delegated=delegated_target is not None,
+                id=agent.id,
+                name=agent.name,
+                delegated=False,
             ),
-            delegated_by="main_agent" if delegated_target is not None else None,
+            delegated_by=None,
             feedback_receipt=feedback_payload,
         )
     except (Exception, asyncio.CancelledError) as e:
@@ -1720,11 +1595,9 @@ async def prewarm_chat(
         policy.policy_version,
         str(payload.get("user_id") or payload.get("sub") or "anonymous"),
     )
-    agent, _ = await _resolve_agent_route(
-        question="",
+    agent = await _resolve_agent_route(
         requested_agent_id=req.agent_id,
         payload=payload,
-        allow_explicit_invocation=False,
     )
     explicit_agent = bool(req.agent_id and req.agent_id != DEFAULT_AGENT_ID)
     decision = TriageDecision(
@@ -1872,7 +1745,6 @@ async def stream_chat(
         reservation_active = False
         model_attempted = False
         ledger_terminal = False
-        delegated_usage: dict[str, Any] | None = None
         try:
             # 建立 SSE 后再解析 Agent 路由；客户端不再等待数据库查询才收到首帧。
             yield "data: " + json.dumps(
@@ -1900,30 +1772,14 @@ async def stream_chat(
             routed_goal = goal + source_context.evidence
 
             setup_started = time.monotonic()
-            agent, invocation = await _resolve_agent_route(
-                question=req.question,
+            agent = await _resolve_agent_route(
                 requested_agent_id=req.agent_id,
                 payload=payload,
-                allow_explicit_invocation=allow_agent_invocation,
             )
-            if invocation.status == "not_found":
-                for frame in _message_sse(
-                    "未找到当前账号可调用的同名专属 Agent，请从 Agent 选择器确认名称或状态。"
-                ):
-                    yield frame
-                return
-            if invocation.status == "ambiguous":
-                clarify = _invocation_clarify(invocation)
-                for frame in _message_sse(clarify.question, clarify=clarify):
-                    yield frame
-                return
-
-            delegated_target = invocation.agent if invocation.status == "matched" else None
-            routed_agent = delegated_target or agent
-            yield _route_frame(routed_agent, delegated=delegated_target is not None)
+            yield _route_frame(agent, delegated=False)
             triage = _classify_stream_request(
                 req,
-                delegated=delegated_target is not None,
+                delegated=False,
                 skill_id=skill_id,
                 trusted_professional_surface=trusted_professional_surface,
                 question=(knowledge_query if trusted_professional_surface else None),
@@ -1934,9 +1790,7 @@ async def stream_chat(
                 agency_enabled=(
                     allow_agency
                     and agent.id == DEFAULT_AGENT_ID
-                    and delegated_target is None
                     and not skill_id
-                    and not _is_skill_management_request(req.question)
                 ),
                 skill_enabled=_skill_routing_enabled(agent, skill_id),
             )
@@ -1947,7 +1801,7 @@ async def stream_chat(
                 agency_enabled=bool(
                     main_agent_config["triage"].get("agency_enabled")
                 ),
-                model_calls=2 if delegated_target is not None else 1,
+                model_calls=1,
             )
             main_agent_config["inference_policy"] = inference.bridge_config()
             placement = await resolve_runtime_placement(payload)
@@ -1955,7 +1809,7 @@ async def stream_chat(
             await reserve_inference(payload, effective_request_id, inference)
             reservation_active = True
             yield f"data: {json.dumps({'type': 'model_route', 'tier': inference.tier, 'policy_version': inference.policy_version, 'max_output_tokens': inference.max_output_tokens}, ensure_ascii=False)}\n\n"
-            yield _triage_frame(triage, main_agent_config)
+            yield _triage_frame(triage)
             policy_version = policy.policy_version
             setup_ms = (time.monotonic() - setup_started) * 1000.0
             print(
@@ -1964,52 +1818,6 @@ async def stream_chat(
             )
 
             routed_goal = goal + source_context.evidence
-            if delegated_target is not None:
-                yield f"data: {json.dumps({'type': 'status', 'phase': 'delegate', 'detail': f'正在调用「{delegated_target.name}」…'}, ensure_ascii=False)}\n\n"
-                child_session_id = _tenant_namespaced_session(
-                    derive_isolated_session_id(delegated_target.id, req.session_id),
-                    str(payload.get("tenant_key") or "public"),
-                    policy.policy_version,
-                    str(payload.get("user_id") or payload.get("sub") or "anonymous"),
-                )
-                child_capability = mint_capability(
-                    policy,
-                    subject_id=child_session_id,
-                    entry_point="chat",
-                    user_id=str(
-                        payload.get("user_id") or payload.get("sub") or "anonymous"
-                    ),
-                    sources=("tenant_knowledge", "user_notes"),
-                )
-                child_policy_version = policy.policy_version
-                try:
-                    child_config = _triaged_agent_config(delegated_target, triage)
-                    child_config["inference_policy"] = inference.bridge_config()
-                    child_config["runtime_placement"] = placement.bridge_config()
-                    model_attempted = True
-                    child_reply, _ = await _call_hermes_recorded(
-                        goal,
-                        auth_payload=payload,
-                        session_id=child_session_id,
-                        knowledge_capability=child_capability,
-                        policy_version=child_policy_version,
-                        knowledge_query=effective_knowledge_query,
-                        agent_config=child_config,
-                    )
-                    delegated_usage = dict(_last_hermes_usage.get())
-                    await persist_usage_prefix(payload, effective_request_id, delegated_usage)
-                    if not child_reply.strip() or child_reply.lstrip().startswith("⚠️"):
-                        raise RuntimeError(child_reply.strip() or "专属 Agent 未返回结果")
-                except Exception as exc:
-                    message = f"专属 Agent 调用失败：{exc}"
-                    for frame in _message_sse(message):
-                        yield frame
-                    return
-                routed_goal = _delegation_handoff_goal(
-                    user_question=req.question,
-                    target=delegated_target,
-                    child_reply=child_reply,
-                ) + source_context.evidence
             kwargs = {
                 "regenerate": req.regenerate,
                 "skill_id": skill_id,
@@ -2092,14 +1900,9 @@ async def stream_chat(
                     await settle_inference(
                         payload,
                         effective_request_id,
-                        (
-                            _combined_usage(
-                                delegated_usage,
-                                event.get("usage")
-                                if isinstance(event.get("usage"), dict)
-                                else {},
-                            )
-                        ),
+                        event.get("usage")
+                        if isinstance(event.get("usage"), dict)
+                        else {},
                         latency_ms=round((time.perf_counter() - started) * 1000),
                         success=event.get("type") == "done",
                     )

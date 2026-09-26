@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from markdown_it import MarkdownIt
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
@@ -337,7 +338,7 @@ _PUBLIC_BOOK_FIELDS = (
     "source_id", "body_origin", "completeness", "source_classification",
     "readable", "unavailable_reason", "content_version",
     "publication_format", "publication_type_label", "editorial_genre",
-    "shelf_cover_url",
+    "shelf_cover_url", "illustration_urls",
 )
 
 
@@ -413,6 +414,7 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             "source_urls": [ref["url"] for ref in item["bundle"]["references"]],
             **({"reader_cover_url": f"/api/v1/knowledge-publications/{book_id}/covers/reader_cover"}
                if any(asset.get("role") == "reader_cover" for asset in item["bundle"].get("assets", [])) else {}),
+            "illustration_urls": book.get("illustration_urls", []),
         } if sections else None)
     else:
         source_path = str(book["source_path"])
@@ -459,38 +461,54 @@ def _book_subscription(row: KnowledgeBookSubscription | None, book: dict[str, An
     }
 
 
-def _plain_learning_lines(markdown: str) -> list[str]:
-    lines: list[str] = []
-    for raw in markdown.splitlines():
-        value = raw.strip()
-        if not value or value.startswith(("```", "$$", "<!--")):
+def _learning_resume_points(section: dict[str, Any], *, limit: int = 2) -> list[dict[str, Any]]:
+    """Extract evidence, never synthesize a quote or pad an empty result.
+
+    The reader resolves these excerpts against its rendered blocks and filters
+    beyond the checkpoint before choosing two. Markdown token indices are NOT
+    interchangeable with iOS block indices.
+    """
+    tokens = MarkdownIt().parse(str(section.get("markdown") or ""))
+    candidates = []
+    seen = set()
+    for index, token in enumerate(tokens):
+        if token.type != "inline" or index == 0 or tokens[index - 1].type != "paragraph_open":
             continue
-        value = re.sub(r"^#{1,6}\s+", "", value)
-        value = re.sub(r"^[-*+]\s+", "", value)
-        value = re.sub(r"^\d+[.)]\s+", "", value)
-        value = re.sub(r"!\[[^]]*]\([^)]*\)", "", value)
-        value = re.sub(r"\[([^]]+)]\([^)]*\)", r"\1", value)
-        value = re.sub(r"[*_`>|]", "", value).strip()
-        if len(value) >= 4 and value not in lines:
-            lines.append(value)
-    return lines
-
-
-def _learning_resume_points(section: dict[str, Any]) -> list[dict[str, str]]:
-    lines = _plain_learning_lines(str(section.get("markdown") or ""))
-    fallback = str(section.get("title") or "继续阅读")
-    while len(lines) < 3:
-        lines.append(f"继续理解“{fallback}”中的核心概念与推理关系。")
-    return [
-        {
-            "title": lines[0][:48],
-            "detail": lines[1][:180],
-        },
-        {
-            "title": lines[2][:48] if len(lines) > 3 else "本节关键联系",
-            "detail": (lines[3] if len(lines) > 3 else lines[2])[:180],
-        },
-    ]
+        if any(child.type in {"image", "html_inline", "code_inline"} for child in token.children or []):
+            continue
+        paragraph = "".join(
+            child.content if child.type == "text" else " " if child.type in {"softbreak", "hardbreak"} else ""
+            for child in token.children or []
+        ).strip()
+        for match in re.finditer(r"[^。！？.!?]+[。！？.!?](?:[”’\"])?", paragraph):
+            sentence = match.group().strip()
+            if not 12 <= len(sentence) <= 200 or sentence in seen:
+                continue
+            if re.match(r"^(它|这[一个位种些]?|那|因此|所以|此外|然而|总之|其|上述|前者|后者|It\b|This\b|These\b|Therefore\b)", sentence, re.I):
+                continue
+            if re.search(r"巨大.{0,3}影响|意义重大|至关重要|广泛关注|学习目标|连载[：:]", sentence):
+                continue
+            if re.search(r"[$\\]|https?://", sentence):
+                continue
+            if re.search(r"区别|不同于|相比|而非|前提|条件|只有|当且仅当|依赖|取决于|because|unlike|requires", sentence, re.I):
+                kind, score, reason = "connection", 3, "帮助接回概念之间的条件或区别"
+            elif re.search(r"是指|定义|称为|指的是|意味着|表示|means|defined|refers to", sentence, re.I):
+                kind, score, reason = "concept", 3, "恢复本段正在解释的概念"
+            elif re.search(r"通过|使得|可以|能够|必有|等于|满足|用于|allows|enables|consists", sentence, re.I):
+                kind, score, reason = "conclusion", 2, "恢复本段的具体结论或机制"
+            else:
+                continue
+            seen.add(sentence)
+            candidates.append({
+                "title": "上次停留处的核心内容",
+                "detail": sentence,
+                "source_excerpt": sentence,
+                "section_id": section["id"],
+                "kind": kind,
+                "score": score,
+                "selection_reason": reason,
+            })
+    return sorted(candidates, key=lambda point: -point["score"])[:limit]
 
 
 def _resume_section(body: dict[str, Any], checkpoint: dict[str, Any]) -> dict[str, Any] | None:
@@ -556,6 +574,22 @@ async def knowledge_publication_asset(publication_id: str, digest: str, payload=
             action="refresh_catalog", retryable=True,
         )
     data, media_type = asset
+    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=300"})
+
+
+@router.get("/knowledge-publications/{publication_id}/media/{role}")
+async def knowledge_publication_media(publication_id: str, role: str, payload=Depends(require_auth)):
+    if role not in {f"illustration_{index:02d}" for index in range(1, 4)}:
+        raise HTTPException(status_code=422, detail="unknown publication media role")
+    if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
+        raise HTTPException(status_code=422, detail="invalid publication_id")
+    visible = payload.get("visible_categories")
+    media = (PublicationStore().get_published_media(publication_id, role, vault=knowledge._vault())
+             if visible is None or PUBLICATION_CATEGORY in visible else None)
+    if media is None:
+        raise _error(404, code="media_not_found", message="插图已下架或当前无权读取",
+                     action="refresh_catalog", retryable=True)
+    data, media_type = media
     return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
 
 
@@ -608,6 +642,7 @@ async def learning_resume(payload=Depends(require_auth)):
     section = _resume_section(body, checkpoint)
     if section is None:
         return {"resume": None}
+    candidates = _learning_resume_points(section, limit=256)
     return {
         "resume": {
             "subscription": checkpoint,
@@ -615,7 +650,9 @@ async def learning_resume(payload=Depends(require_auth)):
             "section_title": section["title"],
             "block_index": checkpoint.get("last_block_index"),
             "character_offset": checkpoint.get("last_character_offset"),
-            "key_points": _learning_resume_points(section),
+            "key_points": candidates[:2],
+            "candidates": candidates,
+            "content_version": body["content_version"],
         }
     }
 

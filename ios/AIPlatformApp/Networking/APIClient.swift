@@ -298,6 +298,8 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public var sourceClassification: String? = nil
     public var readable: Bool? = nil
     public var unavailableReason: String? = nil
+    public var shelfCoverUrl: String? = nil
+    public var illustrationUrls: [String]? = nil
 
     public var isBodyUnavailable: Bool { readable == false || contentStatus == "metadata_only" }
     public var publicationTypeLabel: String? {
@@ -457,6 +459,8 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var bodyOrigin: String? = nil
     public var completeness: String? = nil
     public var sourceClassification: String? = nil
+    public var readerCoverUrl: String? = nil
+    public var illustrationUrls: [String]? = nil
 }
 
 private struct KnowledgeBookSubscriptionWrite: Encodable {
@@ -3007,17 +3011,20 @@ public final class APIClient: ObservableObject {
 
     public func fetchPublicationImage(path: String) async throws -> Data {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
-        guard parts.count == 6,
-              parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
+        let validAsset = (parts.count == 6 && parts[4] == "covers"
+            && ["shelf_cover", "reader_cover"].contains(parts[5]))
+            || (parts.count == 6 && parts[4] == "media"
+                && ["illustration_01", "illustration_02", "illustration_03"].contains(parts[5]))
+            || (parts.count == 6 && parts[4] == "assets" && parts[5].count == 64
+                && parts[5].allSatisfy({ $0.isHexDigit && !$0.isUppercase }))
+        guard parts.count == 6, parts[0] == "api", parts[1] == "v1", parts[2] == "knowledge-publications",
               parts[3].hasPrefix("publication-"), parts[3].count == 44,
               parts[3].dropFirst(12).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
-              ((parts[4] == "covers" && ["shelf_cover", "reader_cover"].contains(parts[5]))
-               || (parts[4] == "assets" && parts[5].count == 64
-                   && parts[5].allSatisfy({ $0.isHexDigit && !$0.isUppercase }))),
-              !path.contains("?"), !path.contains("#"),
+              validAsset, path.hasPrefix("/api/v1/"),
+              !path.contains("?") && !path.contains("#"),
               let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
               url.scheme == baseURL.scheme, url.host == baseURL.host, url.port == baseURL.port else {
-            throw APIError.network("无效的出版图片地址")
+            throw APIError.network("无效的出版媒体地址")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"

@@ -38,13 +38,33 @@ HASH = re.compile(r"[0-9a-f]{64}\Z")
 FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_files",
           "rights_files", "execution_files", "review_file", "proof_file", "status",
           "batch", "quality_contract", "receipt", "error", "shelf_cover_file",
-          "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256", "asset_files"}
+          "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256",
+          "illustration_01_file", "illustration_01_sha256", "illustration_02_file",
+          "illustration_02_sha256", "illustration_03_file", "illustration_03_sha256", "asset_files"}
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
+MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
+MEDIA_CONTRACT = {
+    "shelf_cover": ("publication_shelf_cover", 1440, 2560),
+    "reader_cover": ("publication_reader_cover", 2560, 1440),
+    "illustration_01": ("publication_illustration", 1600, 900),
+    "illustration_02": ("publication_illustration", 1600, 900),
+    "illustration_03": ("publication_illustration", 1600, 900),
+}
+DAILY_SERIES = {"ai-history", "ai-practice", "concept-fables", "ai-toolkit"}
 
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    raise ValueError("unsupported publication media extension")
 
 
 def encoded(value):
@@ -117,10 +137,10 @@ def load_manifest(path):
             raise ValueError("unknown manifest fields or invalid status")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
                   (item.get("body_file"), item.get("body_sha256"))]
-        for role in ("shelf_cover", "reader_cover"):
+        for role in MEDIA_ROLES:
             name, digest = item.get(f"{role}_file"), item.get(f"{role}_sha256")
             if (name is None) != (digest is None):
-                raise ValueError("cover file and hash must be provided together")
+                raise ValueError(f"{role} file and hash must be provided together")
             if name is not None:
                 inputs.append((name, digest))
         for group in GROUPS:
@@ -131,7 +151,7 @@ def load_manifest(path):
                 if not isinstance(entry, dict) or set(entry) != {"kind", "path", "sha256"} or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", entry.get("kind", "")):
                     raise ValueError("invalid evidence entry")
                 inputs.append((entry["path"], entry["sha256"]))
-        assets = item.get("asset_files")
+        assets = item.setdefault("asset_files", [])
         if not isinstance(assets, list) or len(assets) > 50:
             raise ValueError("explicit bounded asset list required")
         if len({entry.get("url") for entry in assets if isinstance(entry, dict)}) != len(assets):
@@ -147,8 +167,8 @@ def load_manifest(path):
                 digest = item["bundle_sha256"] = sha(read(file))
             if not isinstance(digest, str) or not HASH.fullmatch(digest) or sha(read(file)) != digest:
                 raise ValueError("input hash mismatch or missing hash")
-            if file == path or file in outputs:
-                raise ValueError("input overlaps manifest or another output")
+            if file == path or file in paths or file in outputs:
+                raise ValueError("input overlaps manifest, another input or output")
             paths.add(file)
         for field in ("review_file", "proof_file"):
             output = local_path(path.parent, item.get(field), output=True)
@@ -163,6 +183,8 @@ def load_manifest(path):
         bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
         if bundle.get("body_hash") != item["body_sha256"]:
             raise ValueError("bundle body hash mismatch")
+        if bundle.get("series_id") in DAILY_SERIES and any(item.get(f"{role}_file") is None for role in MEDIA_ROLES):
+            raise ValueError("daily editorial manifest requires all five publication media files and hashes")
         if item["status"] != "prepared" and bundle.get("quality_contract") != item.get("quality_contract"):
             raise ValueError("immutable contract mismatch")
     return path, value
@@ -276,6 +298,11 @@ def arguments(remote, base, item, bundle, review=None, proof=None, *, stage=Fals
             if name:
                 args += [f"--{role.replace('_', '-')}-file",
                          remote.upload(batch, read(local_path(base, name)), ".bin")]
+        for role in ("illustration_01", "illustration_02", "illustration_03"):
+            name = item.get(f"{role}_file")
+            if name:
+                args += ["--illustration-file",
+                         role + "=" + remote.upload(batch, read(local_path(base, name)), ".bin")]
     return args
 
 
@@ -311,8 +338,6 @@ def prepare(path, remote, *, review_policy=None):
         if not isinstance(contract, dict) or any(key not in contract for key in ("issue_id", "revision", "attempt_id", "target_hash", "writer_sessions")):
             raise ValueError("server contract missing")
         receipt = attempt(remote, contract, {"await_review"})
-        # The operator's ingest receipt IDs are deterministic. Reconstruct only
-        # after successful intake, then verify the exact server target binding.
         for group, field in (("source_files", "source_receipts"), ("rights_files", "rights_evidence"), ("execution_files", "execution_evidence")):
             if item[group]:
                 bundle[field] = [{"artifact_id": f"receipt-{e['kind']}-{e['sha256']}", "sha256": e["sha256"], "kind": e["kind"]} for e in item[group]]
@@ -355,13 +380,14 @@ def material_assets(item, bundle):
             raise ValueError("invalid publication asset mapping")
         assets.append({identity: asset[identity], "sha256": digest})
     by_role = {asset["role"]: asset["sha256"] for asset in assets if "role" in asset}
-    for role in ("shelf_cover", "reader_cover"):
+    for role in MEDIA_ROLES:
         if item.get(f"{role}_file") and by_role.get(role) != item.get(f"{role}_sha256"):
             raise ValueError("signed proof does not bind manifest assets")
     return assets
 
 
 def review_input(root, remote):
+    invalid_pending: list[str] = []
     for path in manifests(root):
         # Historical output roots can contain pre-v2 or abandoned manifests.
         # They are irrelevant unless they explicitly claim a pending review;
@@ -375,7 +401,13 @@ def review_input(root, remote):
             for item in raw.get("items", [])
         ):
             continue
-        path, value = load_manifest(path)
+        try:
+            path, value = load_manifest(path)
+        except ValueError:
+            # A malformed pending draft must fail its own pipeline, not poison
+            # every other valid candidate in the shared output root.
+            invalid_pending.append(str(path))
+            continue
         for item in value["items"]:
             if item["status"] != "await_review":
                 continue
@@ -410,13 +442,15 @@ def review_input(root, remote):
             files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
             files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
             files["assets"] = [str(local_path(path.parent, item[f"{role}_file"]))
-                               for role in ("shelf_cover", "reader_cover") if item.get(f"{role}_file")]
+                               for role in MEDIA_ROLES if item.get(f"{role}_file")]
             files["assets"] += [str(local_path(path.parent, entry["path"])) for entry in item["asset_files"]]
             visual = "Use visual tools to inspect every actual image in read_only_inputs.assets; hashes and prompts are not substitutes for visual inspection. "
             instruction = ("Read inputs only; " + visual + "write only review_file. Bind publication_material_hash in the review bytes. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,publication_material_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."
                            if contract.get("review_policy") == "story-supervision-v2" else
                            "Read inputs only; " + visual + "write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign.")
             return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": instruction}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
+    if invalid_pending:
+        raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
     return json.dumps({"status": "no_await_review"})
 
 

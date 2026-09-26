@@ -481,48 +481,22 @@ def test_bridge_triage_does_not_gate_skill_or_agent_tools():
 
 
 
-def test_note_route_keeps_note_tools_and_removes_agency_for_every_triage_class():
+def test_note_semantics_are_not_selected_by_chat_triage_policy():
+    triage = _request_triage({"triage": {
+        "route_class": "PROFESSIONAL_TASK",
+        "reason_code": "professional_action_and_deliverable",
+        "evidence_requirements": [],
+        "agency_enabled": True,
+    }})
     selected = [
-        "memory", "knowledge_gateway", "user_notes_gateway", "client_context", "delegation",
-        "agency_agents", "ai_lab",
+        "knowledge_gateway", "user_notes_gateway", "client_context",
+        "delegation", "agency_agents", "ai_lab",
     ]
-    triages = [
-        None,
-        _request_triage({"triage": {
-            "route_class": "CASUAL",
-            "reason_code": "conversation_marker",
-            "evidence_requirements": [],
-            "agency_enabled": False,
-        }}),
-        _request_triage({"triage": {
-            "route_class": "GENERAL_QA",
-            "reason_code": "general_question",
-            "evidence_requirements": [],
-            "agency_enabled": False,
-        }}),
-        _request_triage({"triage": {
-            "route_class": "PROFESSIONAL_TASK",
-            "reason_code": "professional_action_and_deliverable",
-            "evidence_requirements": [],
-            "agency_enabled": True,
-        }}),
+
+    assert _apply_triage_toolset_policy(selected, triage) == [
+        "knowledge_gateway", "client_context", "delegation", "agency_agents", "ai_lab",
     ]
-    for triage in triages:
-        routed = _apply_triage_toolset_policy(
-            selected, triage, note_draft_request=True
-        )
-        assert "knowledge_gateway" in routed
-        assert "user_notes_gateway" in routed
-        assert "client_context" in routed
-        assert "delegation" not in routed
-        assert "agency_agents" not in routed
-        assert "ai_lab" not in routed
-        directive = _triage_system_directive(
-            triage, note_draft_request=True
-        )
-        if triage is not None:
-            assert "note_draft" in directive
-            assert "不搜索、不加载 Skill、不调用 Agent" not in directive
+    assert "note_draft" not in _triage_system_directive(triage)
 
 
 def test_user_note_evidence_keeps_private_note_gateway_and_directive():
@@ -594,24 +568,25 @@ def test_wechat_goal_adds_builtin_browser_toolset_without_terminal(monkeypatch, 
     setattr(run_agent, "AIAgent", FakeAgent)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_config",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_config",
         lambda: {"model": {"default": "test-model"}},
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_runtime",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_runtime",
         lambda _cfg: {"provider": "test", "api_key": "test", "base_url": None},
     )
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_fallback", lambda _cfg: None)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_tools", lambda _cfg: {"web", "browser"}
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_tools", lambda _cfg: {"web", "browser"}
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._resolve_dynamic_toolsets", lambda *_: ["web"]
+        "scripts.hermes_bridge_runtime.agent_config._resolve_base_toolsets",
+        lambda *_args, **_kwargs: ["web"],
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._create_sandbox_session_db", lambda _sandbox: object()
+        "scripts.hermes_bridge_runtime.agent_config._create_sandbox_session_db", lambda _sandbox: object()
     )
-    monkeypatch.setattr("scripts.hermes_bridge.persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_execution.persist_agent_snapshot", lambda *_: None)
     monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
     sandbox = types.SimpleNamespace(
         root=tmp_path / "tenant-root",
@@ -645,19 +620,15 @@ def test_wechat_goal_adds_builtin_browser_toolset_without_terminal(monkeypatch, 
     assert "terminal" not in enabled_toolsets
 
 
-def test_note_directive_anchors_on_nearest_topic_and_requires_merge_confirmation():
-    triage = _request_triage({"triage": {
-        "route_class": "GENERAL_QA",
-        "reason_code": "general_question",
-        "evidence_requirements": [],
-        "agency_enabled": False,
-    }})
+def test_personal_knowledge_protocol_lives_in_formal_skill():
+    skill = (
+        Path(__file__).resolve().parents[1]
+        / "backend/skill_packs/personal-knowledge-action/SKILL.md"
+    ).read_text(encoding="utf-8")
 
-    directive = _triage_system_directive(triage, note_draft_request=True)
-
-    assert "距离指令最近的实质性话题" in directive
-    assert "merge_candidates" in directive
-    assert "新建或合并" in directive
+    assert "knowledge_action_propose" in skill
+    assert "Do not delegate" in skill
+    assert "awaiting_confirmation" in skill
 
 def test_agency_tool_event_exposes_only_selected_route_target():
     events: queue.Queue = queue.Queue()
@@ -834,10 +805,10 @@ def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_pa
             observed["db_closed"] = True
 
     monkeypatch.setattr(
-        "scripts.hermes_bridge._build_in_process_agent",
+        "scripts.hermes_bridge_runtime.agent_execution._build_in_process_agent",
         lambda *_args, **_kwargs: (FakeAgent(), FakeSessionDB(), {"triage": None}),
     )
-    monkeypatch.setattr("scripts.hermes_bridge._update_session_mapping", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.session_runtime._update_session_mapping", lambda *_: None)
 
     events: queue.Queue = queue.Queue()
     sandbox = types.SimpleNamespace(
@@ -861,7 +832,8 @@ def test_bridge_declares_finite_session_before_running_agent(monkeypatch, tmp_pa
     assert observed["db_closed"] is True
     routing_scope = observed["routing_scope"]
     assert isinstance(routing_scope, dict)
-    assert routing_scope["authorized_skill_ids"] is None
+    # A non-canonical/fake sandbox cannot project an authenticated catalog.
+    assert routing_scope["authorized_skill_ids"] == []
     assert routing_scope["authorized_agent_ids"] == []
     assert routing_scope["policy_version"] == "policy-test"
     from backend.services.capability_projection import get_runtime_routing_scope
@@ -886,21 +858,24 @@ def test_bridge_agent_disables_host_profile_and_project_context(monkeypatch, tmp
     setattr(run_agent, "AIAgent", FakeAgent)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_config",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_config",
         lambda: {"model": {"default": "test-model"}},
     )
     monkeypatch.setattr(
-        "scripts.hermes_bridge._get_cached_runtime",
+        "scripts.hermes_bridge_runtime.agent_config._get_cached_runtime",
         lambda _cfg: {"provider": "test", "api_key": "test", "base_url": None},
     )
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_fallback", lambda _cfg: None)
-    monkeypatch.setattr("scripts.hermes_bridge._get_cached_tools", lambda _cfg: set())
-    monkeypatch.setattr("scripts.hermes_bridge._resolve_dynamic_toolsets", lambda *_: [])
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_fallback", lambda _cfg: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_config._get_cached_tools", lambda _cfg: set())
     monkeypatch.setattr(
-        "scripts.hermes_bridge._create_sandbox_session_db",
+        "scripts.hermes_bridge_runtime.agent_config._resolve_base_toolsets",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "scripts.hermes_bridge_runtime.agent_config._create_sandbox_session_db",
         lambda _sandbox: object(),
     )
-    monkeypatch.setattr("scripts.hermes_bridge.persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr("scripts.hermes_bridge_runtime.agent_execution.persist_agent_snapshot", lambda *_: None)
     monkeypatch.setattr(
         "agent.runtime_cwd.set_session_cwd",
         lambda value: captured.__setitem__("session_cwd", value),

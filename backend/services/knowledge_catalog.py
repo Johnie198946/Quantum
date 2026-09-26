@@ -959,6 +959,7 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
 
     bundle = item["bundle"]
     cover_roles = {asset.get("role") for asset in bundle.get("assets", [])}
+    illustration_roles = sorted(role for role in cover_roles if isinstance(role, str) and role.startswith("illustration_"))
     return {
         "id": item["publication_id"], "source_kind": "publication",
         "title": item["title"], "author": item["author"],
@@ -978,6 +979,10 @@ def publication_book(item: dict[str, Any]) -> dict[str, Any]:
         "content_version": item["content_hash"],
         **({"shelf_cover_url": f"/api/v1/knowledge-publications/{item['publication_id']}/covers/shelf_cover"}
            if "shelf_cover" in cover_roles else {}),
+        "illustration_urls": [
+            f"/api/v1/knowledge-publications/{item['publication_id']}/media/{role}"
+            for role in illustration_roles
+        ],
     }
 
 

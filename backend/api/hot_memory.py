@@ -45,6 +45,15 @@ def _bridge_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=502, detail="Hermes memory unavailable")
 
 
+async def _invalidate_learning_profiles(payload: dict[str, Any]) -> None:
+    # Keep memory edits successful even if the optional exercise projection is unavailable.
+    try:
+        from backend.api.learning import invalidate_profile_signals
+        await invalidate_profile_signals(payload)
+    except Exception:
+        pass
+
+
 @router.get("")
 async def get_memory(payload: dict[str, Any] = Depends(require_auth)):
     try:
@@ -61,7 +70,7 @@ async def create_memory(
     payload: dict[str, Any] = Depends(require_auth),
 ):
     try:
-        return await add_native_memory(
+        result = await add_native_memory(
             await _resolve_chat_policy(payload),
             user_id=_user_id(payload),
             target=request.target,
@@ -69,6 +78,8 @@ async def create_memory(
         )
     except Exception as exc:
         raise _bridge_error(exc) from exc
+    await _invalidate_learning_profiles(payload)
+    return result
 
 
 @router.put("/{memory_id}")
@@ -78,7 +89,7 @@ async def replace_memory(
     payload: dict[str, Any] = Depends(require_auth),
 ):
     try:
-        return await replace_native_memory(
+        result = await replace_native_memory(
             await _resolve_chat_policy(payload),
             user_id=_user_id(payload),
             memory_id=memory_id,
@@ -86,6 +97,8 @@ async def replace_memory(
         )
     except Exception as exc:
         raise _bridge_error(exc) from exc
+    await _invalidate_learning_profiles(payload)
+    return result
 
 
 @router.delete("/{memory_id}")
@@ -94,10 +107,12 @@ async def remove_memory(
     payload: dict[str, Any] = Depends(require_auth),
 ):
     try:
-        return await delete_native_memory(
+        result = await delete_native_memory(
             await _resolve_chat_policy(payload),
             user_id=_user_id(payload),
             memory_id=memory_id,
         )
     except Exception as exc:
         raise _bridge_error(exc) from exc
+    await _invalidate_learning_profiles(payload)
+    return result

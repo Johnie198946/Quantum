@@ -9,6 +9,10 @@ _RUNTIME_ROUTING_SCOPE: ContextVar[dict[str, Any] | None] = ContextVar(
     "quantum_runtime_routing_scope", default=None
 )
 
+_RUNTIME_CAPABILITY_SELECTION: ContextVar[dict[str, Any] | None] = ContextVar(
+    "quantum_runtime_capability_selection", default=None
+)
+
 
 def set_runtime_routing_scope(scope: dict[str, Any]) -> Token:
     """Bind server-authorized routing scope to the current Hermes request."""
@@ -21,6 +25,39 @@ def get_runtime_routing_scope() -> dict[str, Any]:
 
 def reset_runtime_routing_scope(token: Token) -> None:
     _RUNTIME_ROUTING_SCOPE.reset(token)
+
+
+def bind_runtime_capability_selection(
+    *,
+    skill_id: str | None,
+    agent_id: str | None,
+    decision_id: str,
+    catalog_version: str,
+    policy_version: str,
+) -> None:
+    """Expose one validated JEV result to deterministic execution guards.
+
+    This carries no authority: QCP's routing scope and tool handlers remain the
+    permission source. The value is overwritten on every pre-model decision and
+    is automatically discarded with the request ContextVar context.
+    """
+    _RUNTIME_CAPABILITY_SELECTION.set({
+        "skill_id": str(skill_id or "") or None,
+        "agent_id": str(agent_id or "") or None,
+        "decision_id": str(decision_id),
+        "catalog_version": str(catalog_version),
+        "policy_version": str(policy_version),
+        "validated": True,
+    })
+
+
+def get_runtime_capability_selection() -> dict[str, Any]:
+    return dict(_RUNTIME_CAPABILITY_SELECTION.get() or {})
+
+
+def clear_runtime_capability_selection() -> None:
+    """Clear the request-local JEV projection at a run boundary."""
+    _RUNTIME_CAPABILITY_SELECTION.set(None)
 
 
 def project_capability(*, connected: bool, checked_at: datetime | None, ttl_seconds: int, now: datetime | None = None) -> dict[str, object]:

@@ -52,6 +52,12 @@ _PUBLICATION_REVIEW_ATTESTATIONS: dict[str, dict[str, Any]] = {}
 _LOCAL_ENABLED = True
 logger = logging.getLogger(__name__)
 
+_NON_DELEGATING_SKILLS = frozenset({
+    "requirements-clarification",
+    "personal-knowledge-action",
+    "skill-authoring",
+})
+
 # On a single-user Mac, Feishu/Lark reaches the same owner-controlled Hermes
 # gateway and is an owner surface. Cloud multi-tenant deployments keep their
 # scoped identity policy even though they load the same plugin.
@@ -567,12 +573,21 @@ def _skill_capabilities() -> list[dict[str, Any]]:
             "name": name,
             "description": description,
             "version": str(skill.get("version") or "1.0.0"),
-            "use_when": skill.get("use_when") or ([description] if description else []),
-            "do_not_use_when": skill.get("do_not_use_when") or [],
+            "use_when": list(dict.fromkeys([
+                *_string_list(skill.get("trigger_phrases")),
+                *_string_list(skill.get("use_when")),
+                *([description] if description else []),
+            ])),
+            "do_not_use_when": list(dict.fromkeys([
+                *_string_list(skill.get("negative_phrases")),
+                *_string_list(skill.get("do_not_use_when")),
+            ])),
             "requires": skill.get("requires") or {},
             "risk": str(skill.get("risk") or "read"),
             "status": str(skill.get("status") or "active"),
-            "domain": str(skill.get("category") or "general"),
+            "domain": str(
+                skill.get("skill_path") or skill.get("category") or "general"
+            ),
             "invoke_tool": "skill_view",
             "invoke_args": {"name": name},
         })
@@ -795,14 +810,14 @@ def _jev_routing_context(
         ),
         None,
     )
+    selected_skill_name = (
+        str(selected_skill.get("id") or "").removeprefix("skill:")
+        if selected_skill else ""
+    )
     expected_delegate_args = None
     if selected_agency:
         slug = str(selected_agency["id"]).removeprefix("agency:")
         agent_version = str(selected_agency.get("version") or "")
-        selected_skill_name = (
-            str(selected_skill.get("id") or "").removeprefix("skill:")
-            if selected_skill else ""
-        )
         child_steps = (
             f'First call skill_view with arguments {{"name":"{selected_skill_name}"}} and use '
             "that verified Skill before loading the specialist. "
@@ -856,6 +871,23 @@ def _jev_routing_context(
         "dispatch_delegation_id": None,
         "failure_code": None,
     })
+    try:
+        from backend.services.capability_projection import (
+            bind_runtime_capability_selection,
+        )
+
+        bind_runtime_capability_selection(
+            skill_id=selected_skill_name or None,
+            agent_id=(
+                str(selected_agency.get("id") or "").removeprefix("agency:")
+                if selected_agency else None
+            ),
+            decision_id=decision.decision_id,
+            catalog_version=decision.catalog_version,
+            policy_version=decision.policy_version,
+        )
+    except (ImportError, RuntimeError, TypeError, ValueError):
+        pass
     if not selected_skill and not selected_agency:
         return ""
     plan: list[dict[str, Any]] = []
@@ -1640,6 +1672,36 @@ def _pre_tool_call(
         denial = _principal_denial(tool_name, args, local_state)
         if denial is not None:
             return denial
+
+        selected_skill = str(local_state.get("requested_skill") or "")
+        required_skill = {
+            "knowledge_workspace_read": "personal-knowledge-action",
+            "knowledge_action_propose": "personal-knowledge-action",
+            "note_draft": "personal-knowledge-action",
+            "tenant_skill_manage": "skill-authoring",
+        }.get(effective_tool)
+        if required_skill and selected_skill != required_skill:
+            return {
+                "action": "block",
+                "message": (
+                    f"Tool {effective_tool} requires the exact PCM Skill {required_skill!r} "
+                    "from this turn's validated JEV decision. "
+                    "[PCM_EXECUTION_PROTOCOL_MISMATCH]"
+                ),
+            }
+
+        if (
+            effective_tool == "delegate_task"
+            and str(local_state.get("requested_skill") or "")
+            in _NON_DELEGATING_SKILLS
+        ):
+            return {
+                "action": "block",
+                "message": (
+                    "The selected PCM Skill requires same-runtime execution and forbids "
+                    "delegation for this turn. [SKILL_DELEGATION_FORBIDDEN]"
+                ),
+            }
 
         # Remote semantic JEV is the sole Skill/Agent selector.  The retained
         # Agency plugin is an exact catalog loader for an already-validated

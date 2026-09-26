@@ -112,7 +112,7 @@ def test_learning_resume_returns_exact_section_and_two_dynamic_points(book_db, m
                 "id": "section-2",
                 "title": "极限的判断",
                 "level": 1,
-                "markdown": "## 单调有界\n单调有界数列必有极限。\n\n极限值由上下确界约束。",
+                "markdown": "## 单调有界\n单调有界的实数数列必有唯一极限。\n\n数列收敛的充分条件是单调并且有界。",
             },
         ],
     }
@@ -134,10 +134,36 @@ def test_learning_resume_returns_exact_section_and_two_dynamic_points(book_db, m
     assert resume["block_index"] == 1
     assert resume["character_offset"] == 6
     assert len(resume["key_points"]) == 2
-    assert resume["key_points"][0] == {
-        "title": "单调有界", "detail": "单调有界数列必有极限。",
-    }
-    assert resume["key_points"][1]["detail"] == "极限值由上下确界约束。"
+    assert resume["content_version"] == VERSION
+    assert resume["key_points"][0]["kind"] == "connection"
+    assert all(point["source_excerpt"] == point["detail"] for point in resume["candidates"])
+    assert all(point["section_id"] == "section-2" for point in resume["candidates"])
+    assert run(subscriptions.learning_resume(AUTH))["resume"] == resume
+    assert run(subscriptions.learning_resume({**AUTH, "user_id": "reader-2"}))["resume"] is None
+
+
+def test_resume_selection_rejects_vague_unanchored_and_duplicate_prose():
+    section = {"id": "attention", "markdown": """
+## 注意力的意义
+它之所以产生巨大的影响，是因为它能够改变世界。
+
+注意力机制是指根据输入内容计算各个位置之间的相关性。
+
+注意力机制是指根据输入内容计算各个位置之间的相关性。
+
+自注意力与交叉注意力的区别在于查询和键值的来源不同。
+
+```python
+伪造定义是指藏在代码中的错误内容。
+```
+
+![图片是指不应成为关键点的替代文本。](cover.png)
+"""}
+    points = subscriptions._learning_resume_points(section, limit=256)
+    assert len(points) == 2
+    assert {point["kind"] for point in points} == {"concept", "connection"}
+    assert all(point["source_excerpt"] in section["markdown"] for point in points)
+    assert subscriptions._learning_resume_points({"id": "empty", "title": "空章节", "markdown": "## 标题"}) == []
 
 
 def test_progress_rejects_section_from_another_book_version(book_db):

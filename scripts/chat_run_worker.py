@@ -184,7 +184,7 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
         "type": "runtime_timing", "phase": "queue_claimed",
         "queue_delay_ms": float(run.get("queue_delay_ms") or 0.0),
     })
-    bridge._chat_run_store = store
+    bridge.session_runtime._chat_run_store = store
     _run_context.run_id = run_id
     payload = dict(
         run.get("execution_payload")
@@ -359,9 +359,9 @@ def main() -> None:
     store = DurableChatRunStore(RUN_DB)
     from backend.services.durable_usage_recovery import initialize_usage_recovery
     initialize_usage_recovery(store.path)
-    bridge._chat_run_store = store
+    bridge.session_runtime._chat_run_store = store
     gateway = DurableClarifyGateway(store)
-    bridge._get_clarify_gateway = lambda: gateway
+    bridge.contracts._get_clarify_gateway = lambda: gateway
     store.recover_after_restart()
     warmup = bridge._prewarm_bridge_agent()
     warmup.join(timeout=90)

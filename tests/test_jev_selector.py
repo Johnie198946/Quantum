@@ -159,6 +159,74 @@ def test_cache_key_isolated_by_tenant_principal_policy_catalog_and_request():
     assert cached.decision_id != first.decision_id
 
 
+def test_cache_reuses_decision_across_opaque_session_ids_but_not_platforms():
+    calls = []
+
+    def provider(_payload, _timeout):
+        calls.append(1)
+        return {"skill_id": None, "agent_id": None, "skill_confidence": 0,
+                "agent_confidence": 0, "reason_code": "NO_MATCH"}
+
+    common = dict(
+        request_text="same authorized request",
+        policy_version="policy-session-cache",
+        skill_candidates=[], agent_candidates=[], provider=provider,
+        tenant_scope="tenant-a", principal_scope="user-a",
+    )
+    first = module.select_route(
+        **common,
+        task_state={"session_id": "session-1", "turn_id": "turn-1", "platform": "ios"},
+    )
+    cached = module.select_route(
+        **common,
+        task_state={"session_id": "session-2", "turn_id": "turn-2", "platform": "ios"},
+    )
+    other_platform = module.select_route(
+        **common,
+        task_state={"session_id": "session-3", "turn_id": "turn-3", "platform": "qws"},
+    )
+
+    assert first.cache_hit is False
+    assert cached.cache_hit is True
+    assert other_platform.cache_hit is False
+    assert len(calls) == 2
+
+
+def test_transient_failure_is_not_reused_across_sessions():
+    calls = []
+
+    def provider(_payload, _timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("temporary outage")
+        return {"skill_id": None, "agent_id": None, "skill_confidence": 0,
+                "agent_confidence": 0, "reason_code": "NO_MATCH"}
+
+    common = dict(
+        request_text="retry after outage", policy_version="policy-retry",
+        skill_candidates=[], agent_candidates=[], provider=provider,
+        tenant_scope="tenant-a", principal_scope="user-a",
+    )
+    failed = module.select_route(
+        **common, task_state={"session_id": "session-1", "platform": "ios"}
+    )
+    retried = module.select_route(
+        **common, task_state={"session_id": "session-2", "platform": "ios"}
+    )
+
+    assert failed.reason_code == "PROVIDER_UNAVAILABLE"
+    assert retried.validated is True
+    assert retried.cache_hit is False
+    assert len(calls) == 2
+
+
+def test_catalog_version_changes_when_semantic_boundaries_change():
+    original = module.compact_card(capability("skill:research", "skill"))
+    changed = dict(original, use_when=["a materially different trigger"])
+
+    assert module.catalog_version([original]) != module.catalog_version([changed])
+
+
 def test_incomplete_output_and_duplicate_catalog_fail_closed():
     incomplete = module.select_route(
         "strict output",
@@ -458,3 +526,132 @@ def test_resident_provider_call_has_a_hard_request_deadline(monkeypatch):
     finally:
         release.set()
     assert time.perf_counter() - started < 0.2
+
+
+def test_resident_rejects_immediately_when_provider_workers_are_saturated(monkeypatch):
+    resident = module._resident_module()
+
+    class BusySlots:
+        @staticmethod
+        def acquire(*, blocking):
+            assert blocking is False
+            return False
+
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(resident, "_PROVIDER_SLOTS", BusySlots())
+    monkeypatch.setattr(
+        resident,
+        "_shortlist",
+        lambda _payload: ([{"id": "skill:research"}], [], 0.9, -1.0),
+    )
+    monkeypatch.setattr(
+        resident,
+        "_provider_select",
+        lambda _payload: (_ for _ in ()).throw(AssertionError("must not queue")),
+    )
+
+    started = time.perf_counter()
+    try:
+        resident.select({"request": "research"}, 1.0)
+    except RuntimeError as exc:
+        assert str(exc) == "resident_provider_busy"
+    else:
+        raise AssertionError("saturated provider must fail fast")
+    assert time.perf_counter() - started < 0.05
+
+
+def test_resident_omits_each_low_affinity_kind_before_remote_selection(monkeypatch):
+    resident = module._resident_module()
+    captured = []
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(resident, "_number", lambda _name, default: default)
+    monkeypatch.setattr(
+        resident,
+        "_shortlist",
+        lambda _payload: (
+            [{"id": "skill:research"}],
+            [{"id": "agency:reviewer"}],
+            0.9,
+            0.2,
+        ),
+    )
+
+    def provider(payload):
+        captured.append(payload)
+        return {
+            "skill_id": "skill:research",
+            "agent_id": None,
+            "skill_confidence": 0.9,
+            "agent_confidence": 0.0,
+            "reason_code": "MATCHED",
+        }
+
+    monkeypatch.setattr(resident, "_provider_select", provider)
+    output = resident.select({"request": "research"}, 0.2)
+
+    assert output["skill_id"] == "skill:research"
+    assert captured[0]["skill_candidates"] == [{"id": "skill:research"}]
+    assert captured[0]["agent_candidates"] == []
+
+
+def test_resident_rejects_an_id_omitted_by_per_kind_abstention(monkeypatch):
+    resident = module._resident_module()
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(resident, "_number", lambda _name, default: default)
+    monkeypatch.setattr(
+        resident,
+        "_shortlist",
+        lambda _payload: (
+            [{"id": "skill:research"}],
+            [{"id": "agency:reviewer"}],
+            0.9,
+            0.2,
+        ),
+    )
+    monkeypatch.setattr(
+        resident,
+        "_provider_select",
+        lambda _payload: {
+            "skill_id": None,
+            "agent_id": "agency:reviewer",
+            "skill_confidence": 0.0,
+            "agent_confidence": 0.99,
+            "reason_code": "MATCHED",
+        },
+    )
+
+    try:
+        resident.select({"request": "research"}, 0.2)
+    except ValueError as exc:
+        assert str(exc) == "resident_jev_candidate_escape"
+    else:
+        raise AssertionError("an omitted candidate must fail closed")
+
+
+def test_resident_rejects_non_string_provider_ids(monkeypatch):
+    resident = module._resident_module()
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(resident, "_number", lambda _name, default: default)
+    monkeypatch.setattr(
+        resident,
+        "_shortlist",
+        lambda _payload: ([{"id": "skill:research"}], [], 0.9, 0.0),
+    )
+    monkeypatch.setattr(
+        resident,
+        "_provider_select",
+        lambda _payload: {
+            "skill_id": [],
+            "agent_id": None,
+            "skill_confidence": 0.99,
+            "agent_confidence": 0.0,
+            "reason_code": "MATCHED",
+        },
+    )
+
+    try:
+        resident.select({"request": "research"}, 0.2)
+    except ValueError as exc:
+        assert str(exc) == "resident_jev_candidate_escape"
+    else:
+        raise AssertionError("a non-string candidate id must fail closed")

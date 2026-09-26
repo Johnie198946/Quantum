@@ -3306,6 +3306,11 @@ func loadKnowledgeBookReaderData(
     return KnowledgeBookReaderLoad(body: body, subscriptions: loadedSubscriptions)
 }
 
+func readerIllustrationPaths(afterSectionAt index: Int, sectionCount: Int, paths: [String]) -> [String] {
+    guard sectionCount > 0, index >= 0, index < sectionCount else { return [] }
+    return paths.enumerated().compactMap { min($0.offset, sectionCount - 1) == index ? $0.element : nil }
+}
+
 private struct KnowledgeBookReadingView: View {
     @EnvironmentObject private var api: APIClient
     @ObservedObject private var noteStore = KnowledgeNoteStore.shared
@@ -3663,6 +3668,21 @@ private struct KnowledgeBookReadingView: View {
                 .accessibilityLabel("查看本章批注，共 \(sectionAnnotations.count) 条")
             }
             }
+                            ForEach(readerIllustrationPaths(
+                                afterSectionAt: index,
+                                sectionCount: bookBody.sections.count,
+                                paths: bookBody.illustrationUrls ?? []
+                            ), id: \.self) { path in
+                                PublicationInlineImage(
+                                    block: KnowledgeBookBlockDTO(
+                                        id: path, kind: "image", path: path,
+                                        alt: "《\(book.title)》正文插图", width: 1600, height: 900
+                                    ),
+                                    path: path
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .accessibilityIdentifier("publication-reader-illustration.\(path)")
+                            }
             if index < bookBody.sections.count - 1 {
                 HStack(spacing: 12) {
                     Rectangle().frame(height: 1)

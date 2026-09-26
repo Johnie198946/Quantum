@@ -498,13 +498,17 @@ def test_existing_bridge_builder_enforces_empty_tool_schema(monkeypatch, tmp_pat
         return [{"name": "unsafe"}] if tool_leak else []
     monkeypatch.setitem(sys.modules, "model_tools", SimpleNamespace(get_tool_definitions=definitions))
     bridge = worker.bridge
-    monkeypatch.setattr(bridge, "_get_cached_config", lambda: {"model": {"default": "test-model"}})
-    monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _: {"provider": "test"})
-    monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _: None)
-    monkeypatch.setattr(bridge, "_get_cached_tools", lambda _: {"web", "terminal"})
-    monkeypatch.setattr(bridge, "_resolve_dynamic_toolsets", lambda *_: ["web", "terminal"])
-    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _: object())
-    monkeypatch.setattr(bridge, "persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": {"default": "test-model"}})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda _: {"provider": "test"})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda _: None)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_tools", lambda _: {"web", "terminal"})
+    monkeypatch.setattr(
+        bridge.agent_config,
+        "_resolve_base_toolsets",
+        lambda *_args, **_kwargs: ["web", "terminal"],
+    )
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda _: object())
+    monkeypatch.setattr(bridge.agent_execution, "persist_agent_snapshot", lambda *_: None)
     sandbox = SimpleNamespace(root=tmp_path, state_db=tmp_path / "state.db", hermes_home=tmp_path)
     events = queue.Queue()
     def build():
