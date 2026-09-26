@@ -324,6 +324,17 @@ def test_system_fields_are_deterministic_and_forbidden_in_writer_artifact():
         validate_ai_toolkit_artifact(canonical_json(no_source))
 
 
+@pytest.mark.parametrize("opening,closing", [("（", "）"), ("“", "”"), ("‘", "’"), ("「", "」"), ("『", "』")])
+def test_system_fields_extract_sources_delimited_by_chinese_punctuation(opening, closing):
+    content = artifact_value()
+    paper = "https://arxiv.org/html/2603.11078"
+    query = "https://example.org/来源?q=agent%20tools&filter=%5B1%5D#evidence"
+    content["source_documents"][0]["content"] = (
+        f"研究来源{opening}{paper}{closing}，补充来源{opening}{query}{closing}。"
+    )
+    assert publication_system_fields(content)["editorial_brief"]["evidence_urls"] == [paper, query]
+
+
 @pytest.mark.asyncio
 async def test_export_is_exact_schedule_bound_and_rejects_revocation(handoff_db):
     maker, _ = handoff_db
@@ -1049,20 +1060,29 @@ def test_native_terminal_content_materializes_and_builder_binds_author(native_au
 def test_native_intake_rejects_foreign_or_nonterminal_author(native_author, mutation, tmp_path):
     handoff, root, db_path, artifact = native_author
     with sqlite3.connect(db_path) as db:
-        if mutation == "profile": db.execute("UPDATE sessions SET profile_name='story'")
-        elif mutation == "owner": db.execute("UPDATE sessions SET user_id='other'")
-        elif mutation == "job": db.execute("UPDATE sessions SET id='cron_foreign_run'")
-        elif mutation == "unfinished": db.execute("UPDATE sessions SET ended_at=NULL")
-        elif mutation == "tool_final": db.execute("UPDATE messages SET tool_calls='[]'")
+        if mutation == "profile":
+            db.execute("UPDATE sessions SET profile_name='story'")
+        elif mutation == "owner":
+            db.execute("UPDATE sessions SET user_id='other'")
+        elif mutation == "job":
+            db.execute("UPDATE sessions SET id='cron_foreign_run'")
+        elif mutation == "unfinished":
+            db.execute("UPDATE sessions SET ended_at=NULL")
+        elif mutation == "tool_final":
+            db.execute("UPDATE messages SET tool_calls='[]'")
         elif mutation == "escape":
             final = json.loads(db.execute("SELECT content FROM messages WHERE role='assistant'").fetchone()[0])
             final["publication_content_result"]["artifact_file"] = str(tmp_path / "outside.json")
             db.execute("UPDATE messages SET content=? WHERE role='assistant'", (json.dumps(final),))
         elif mutation == "symlink":
-            original = artifact.read_bytes(); artifact.unlink()
-            outside = tmp_path / "outside.json"; outside.write_bytes(original); artifact.symlink_to(outside)
+            original = artifact.read_bytes()
+            artifact.unlink()
+            outside = tmp_path / "outside.json"
+            outside.write_bytes(original)
+            artifact.symlink_to(outside)
     if mutation in {"escape", "symlink"}:
-        with pytest.raises(ValueError): handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+        with pytest.raises(ValueError):
+            handoff.fetch_native("ai-toolkit", "2026-09-26", root)
     else:
         assert handoff.fetch_native("ai-toolkit", "2026-09-26", root)["status"] == "waiting_author"
 

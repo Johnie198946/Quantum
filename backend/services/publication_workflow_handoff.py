@@ -162,7 +162,7 @@ def publication_system_fields(content: dict[str, Any], series_id: str = "ai-tool
     """Generate publication policy fields without involving the writing Agent."""
     urls: list[str] = []
     for document in content.get("source_documents", []):
-        for token in re.findall(r"https://[^\s<>\]\[(){}\"']+", document.get("content", "")):
+        for token in re.findall(r"https://[^\s<>\]\[(){}（）“”‘’「」『』\"']+", document.get("content", "")):
             candidate = token.rstrip(".,;:!?，。；：！？")
             try:
                 parsed = urlsplit(candidate)
