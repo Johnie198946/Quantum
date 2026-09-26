@@ -599,6 +599,7 @@ def native_running(db, review):
 def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes/config/publication-editorial-private.pem"), attest=native_attest):
     results = []
     invalid_pending: list[tuple[str, str]] = []
+    failures: list[dict] = []
     for path in manifests(root):
         try:
             raw_manifest = json.loads(read(path))
@@ -624,13 +625,17 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
             try:
                 raw = read(review_path)
                 review = json.loads(raw)
-                try:
-                    proof = attest(db, review_path, key)
-                except ValueError as exc:
-                    if str(exc) == "native review is not completed" and native_running(db, review):
-                        results.append({"status": "pending", "manifest": str(path)})
-                        continue
-                    raise
+                proof_path = local_path(path.parent, item["proof_file"], output=True)
+                if proof_path.exists():
+                    proof = json.loads(read(proof_path))
+                else:
+                    try:
+                        proof = attest(db, review_path, key)
+                    except ValueError as exc:
+                        if str(exc) == "native review is not completed" and native_running(db, review):
+                            results.append({"status": "pending", "manifest": str(path)})
+                            continue
+                        raise
                 if read(review_path) != raw:
                     raise ValueError("review changed during attestation")
                 c = item["quality_contract"]
@@ -641,7 +646,6 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                     raise ValueError("signed proof does not bind manifest")
                 # Revalidate every frozen input after native DB work and before upload.
                 load_manifest(path)
-                proof_path = local_path(path.parent, item["proof_file"], output=True)
                 if proof_path.exists() and read(proof_path) != encoded(proof):
                     raise ValueError("proof output conflict")
                 save(proof_path, proof)
@@ -675,14 +679,18 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
                 save(path, value)
                 results.append({"status": item["status"], "manifest": str(path), "attempt_id": c["attempt_id"]})
             except Exception as exc:
-                # Keep await_review for deterministic readback/retry after uncertain SSH writes.
                 item["error"] = str(exc)
                 save(path, value)
-                raise
+                failure = {"status": "failed", "manifest": str(path), "error": str(exc)}
+                failures.append(failure)
+                results.append(failure)
+                continue
     if invalid_pending and not results:
         if len(invalid_pending) == 1:
-            raise ValueError("invalid pending editorial manifest: " + invalid_pending[0][1])
-        raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
+            raise ValueError(invalid_pending[0][1])
+        raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifests")
+    if failures and not any(result.get("status") in {"staged", "rejected", "blocked"} for result in results):
+        raise ValueError(failures[0]["error"])
     return {"items": results}
 
 

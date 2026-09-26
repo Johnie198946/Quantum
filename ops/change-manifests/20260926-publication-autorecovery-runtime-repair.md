@@ -46,6 +46,7 @@ Observed failures:
 - Stop adding synthetic `review.rejected` when a rejected review already provides structured substantive gaps. Retain a narrowly matched compatibility rule so already-prepared revision 2 attempts are not forced into a fake content revision solely to remove that legacy marker.
 - Make the shared finalizer filter for `await_review` before strict manifest loading and isolate invalid pending histories, matching the reviewer selector's per-item failure boundary. One broken book can no longer block a valid approved sibling.
 - Permit a terminal `failed` approval to self-heal only when the exact same contract and review hash are resubmitted and the full current editorial/provenance gate passes. The service records the already-verified proof and advances that same attempt; it does not alter content or consume a new revision.
+- Reuse an already-written immutable signed proof on finalize retry instead of asking a completed reviewer session to emit a second review request. Isolate per-manifest runtime failures so a broken sibling retains its retryable state without preventing a valid sibling from staging.
 
 ## Compatibility and rollback
 
@@ -62,4 +63,4 @@ Observed failures:
 - Installed runtime scripts were hash-compared with repository copies.
 - Idempotent production prepare for today's `ai-history` completed successfully in `0.96s`, versus the observed multi-minute chunked path.
 - Today's manifests remain governed by independent review; no review decision or image gate was bypassed.
-- Content-only revision and legacy-marker regressions are included in the focused publication suite; the latest focused run before commit passed `182` tests, Ruff, and `git diff --check`.
+- Content-only revision, immutable approval recovery, proof reuse and per-item isolation regressions are included in the focused publication suite; the latest focused run before commit passed `183` tests, Ruff, and `git diff --check`.

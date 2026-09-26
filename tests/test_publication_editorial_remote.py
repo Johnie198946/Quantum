@@ -7,6 +7,7 @@ import gzip
 import json
 from pathlib import Path
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -368,7 +369,25 @@ def test_global_finalize_isolates_invalid_pending_manifest(flow):
     result = relay.finalize(local.parent, remote, db=db, key=key)
 
     assert result["items"][0]["status"] == "staged"
-    assert json.loads(manifest.read_text())["items"][0]["status"] == "staged"
+    assert json.loads(poisoned.read_text())["items"][0]["status"] == "await_review"
+
+
+def test_global_finalize_isolates_valid_sibling_runtime_failure(flow):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    sibling = local.parent / "a-valid-sibling" / manifest.name
+    db, key = native(flow)
+    shutil.copytree(local, sibling.parent)
+    sibling_value = json.loads(sibling.read_text())
+    sibling_item = sibling_value["items"][0]
+    sibling_review = sibling.parent / sibling_item["review_file"]
+    sibling_review_value = json.loads(sibling_review.read_text())
+    sibling_review_value["reviewer_session"] = "hermes:cron-nonexistent"
+    sibling_review.write_bytes(relay.encoded(sibling_review_value))
+    result = relay.finalize(local.parent, remote, db=db, key=key)
+    assert any(entry["status"] == "staged" for entry in result["items"])
+    sibling_after = json.loads(sibling.read_text())["items"][0]
+    assert sibling_after["status"] == "await_review"
 
 
 def test_finalize_revalidates_immutable_legacy_failed_approval(flow):
@@ -376,6 +395,7 @@ def test_finalize_revalidates_immutable_legacy_failed_approval(flow):
     relay.prepare(manifest, remote)
     db, key = native(flow)
     item = json.loads(manifest.read_text())["items"][0]
+    relay.save(local / item["proof_file"], relay.native_attest(db, local / item["review_file"], key))
     review_hash = relay.sha((local / item["review_file"]).read_bytes())
     with sqlite3.connect(store / "publication.sqlite3") as connection:
         connection.execute(
