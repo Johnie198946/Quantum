@@ -27,7 +27,7 @@ Observed failures:
 - Treat `by_series.published` as the complete unpublished-set truth and validate `issues.missing` as a non-contradictory subset, allowing staged items to proceed to the deterministic release schedule.
 - Resolve and validate the repository root, then replace inherited `PYTHONPATH` with that exact root for every watchdog subprocess.
 - Claim only series that actually require author work. Persisted author-job guards now skip immutable `prepared`, `await_review`, and `staged` handoffs even while production still reports unpublished.
-- Bound Agent dispatch to 30 seconds and reconcile timeout/non-zero returns against a newly persisted execution row. The watchdog releases its lock after verified dispatch instead of waiting for long author/reviewer completion.
+- Bound Agent dispatch to 30 seconds and require a newly persisted execution row even when the CLI exits zero; classify a zero-exit/no-row response as `dispatch_not_persisted`. The watchdog releases its lock after verified dispatch instead of waiting for long author/reviewer completion.
 - When `ai-toolkit` carries a machine-readable `BLOCKED_TUTORIAL_PREREQUISITE` marker, automatically dispatch the governed tutorial-supply job using the marker hash for bounded idempotent retries, without blocking unrelated series while a separately scheduled supply run is active.
 - Dispatch tutorial supply first; only a later machine receipt with `READY_FOR_AI_TOOLKIT` allows the toolkit author phase. Supply and author no longer run concurrently.
 - Pin the tutorial-supply job to `gpt-5.6-sol` / `openai-codex`, require every adopted URL to be opened and verified, and require a machine-readable `READY_FOR_AI_TOOLKIT` or `BLOCKED_DEPOSIT` receipt. Cron configuration was read back after the edit.
@@ -41,7 +41,7 @@ Observed failures:
 
 ## Verification
 
-- Publication test modules: `281 passed`.
+- Publication test modules: `282 passed`.
 - Ruff: passed.
 - `git diff --check`: passed.
 - Installed runtime scripts were hash-compared with repository copies.

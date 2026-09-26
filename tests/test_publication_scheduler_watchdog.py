@@ -397,6 +397,20 @@ def test_dispatch_timeout_reconciles_persisted_execution(tmp_path, monkeypatch):
     watchdog._dispatch_job(watchdog.REVIEW_JOB)
 
 
+def test_zero_exit_without_persisted_execution_fails_closed(tmp_path, monkeypatch):
+    database = tmp_path / "executions.db"
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
+    monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
+    monkeypatch.setattr(
+        watchdog.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    with pytest.raises(watchdog.ActionFailure, match="dispatch_not_persisted"):
+        watchdog._dispatch_job(watchdog.REVIEW_JOB)
+
+
 def test_action_timeout_is_classified_for_bounded_retry(tmp_path):
     claims = watchdog.Claims(tmp_path / "claims.db")
 

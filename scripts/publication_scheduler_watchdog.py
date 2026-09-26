@@ -504,8 +504,6 @@ def _dispatch_job(job_id: str) -> None:
         )
     except subprocess.TimeoutExpired:
         completed = None
-    if completed is not None and completed.returncode == 0:
-        return
     uri = EXECUTIONS_DB.expanduser().resolve().as_uri() + "?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True) as connection:
@@ -518,7 +516,11 @@ def _dispatch_job(job_id: str) -> None:
         raise ActionFailure("dispatch_readback_failed") from exc
     if row and row[0] in {"claimed", "running", "completed", "unknown"}:
         return
-    raise ActionFailure("action_timeout" if completed is None else "action_exit_nonzero")
+    if completed is None:
+        raise ActionFailure("action_timeout")
+    if completed.returncode:
+        raise ActionFailure("action_exit_nonzero")
+    raise ActionFailure("dispatch_not_persisted")
 
 
 def supervise(
