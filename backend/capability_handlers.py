@@ -1115,7 +1115,101 @@ async def _task_execute(data, payload, key):
     )
 
 
+
+
+def _learning_chat_snapshot(item):
+    # Unrequested hints are withheld from Chat; the exercise screen uses its domain API.
+    return {**item, "questions": [
+        {**q, "hint": q.get("hint", "") if item["answers"].get(q["id"], {}).get("assisted") else ""}
+        for q in item["questions"]
+    ]}
+
+
+async def _learning_resume(data, payload, key):
+    from backend.api.subscriptions import learning_resume
+    return await learning_resume(payload)
+
+
+async def _learning_read(data, payload, key):
+    from backend.api import learning
+    from uuid import UUID
+    exercise_id = data.get("exercise_id")
+    if not exercise_id:
+        query = learning.owner_query(payload)
+        if data.get("unfinished_only"):
+            query = query.where(learning.LearningExercise.status.in_(["draft", "generating", "grading"]))
+        async with learning.SessionLocal() as db:
+            row = await db.scalar(query.order_by(
+                learning.LearningExercise.updated_at.desc(), learning.LearningExercise.id.desc()
+            ).limit(1))
+        if row is None:
+            raise HTTPException(404, "没有符合条件的练习，请选择阅读章节出题或指定已有题组。")
+        exercise_id = row.id
+    return _learning_chat_snapshot(await learning.get_exercise(UUID(exercise_id), payload))
+
+
+async def _learning_create(data, payload, key):
+    from backend.api import learning
+    from uuid import NAMESPACE_URL, uuid5
+    # Same confirmed operation always resumes the same domain request after a lost response.
+    identity = f"{payload['tenant_key']}:{payload.get('user_id') or payload.get('sub')}:{key}"
+    body = learning.CreateExercise(id=uuid5(NAMESPACE_URL, identity), **data)
+    return _learning_chat_snapshot(await learning.create_exercise(body, payload))
+
+
+async def _learning_change(data, payload, key, *, operation):
+    from backend.api import learning
+    from uuid import UUID
+    exercise_id = UUID(data["exercise_id"])
+    row = await learning.owned(exercise_id, payload)
+    if row.revision != data["revision"]:
+        raise HTTPException(409, "练习已更新，请重新读取后操作；已有答案已保留。")
+    answers = {k: dict(v) for k, v in row.drafts.items()}
+    if operation == "submit":
+        return _learning_chat_snapshot(await learning.submit_exercise(exercise_id,
+            learning.SaveAnswers(revision=data["revision"], answers=answers), payload))
+    question_id = data["question_id"]
+    question = next((q for q in row.questions if q["id"] == question_id), None)
+    if question is None:
+        raise HTTPException(422, "题号不存在，请重新读取题组。")
+    answer = dict(answers.get(question_id) or learning.Answer().model_dump())
+    if operation == "hint":
+        if not question.get("hint"):
+            raise HTTPException(409, "这份旧题组没有提示，可继续独立作答或生成新题组。")
+        answer["assisted"] = True
+    else:
+        if not data.get("selected") and not str(data.get("text") or "").strip():
+            raise HTTPException(422, "请先提供这一题的答案。")
+        answer.update(selected=data.get("selected", []), text=data.get("text", ""))
+    answers[question_id] = answer
+    item = await learning.save_draft(exercise_id,
+        learning.SaveAnswers(revision=data["revision"], answers=answers), payload)
+    result = _learning_chat_snapshot(item)
+    if operation == "hint":
+        result.update(question_id=question_id, hint=question["hint"])
+    return result
+
+
+async def _learning_hint(data, payload, key):
+    return await _learning_change(data, payload, key, operation="hint")
+
+
+async def _learning_answer(data, payload, key):
+    return await _learning_change(data, payload, key, operation="answer")
+
+
+async def _learning_submit(data, payload, key):
+    return await _learning_change(data, payload, key, operation="submit")
+
+
 HANDLERS: dict[str, Handler] = {
+    "learning.resume": _learning_resume,
+    "learning.exercise.read": _learning_read,
+    "learning.exercise.create": _learning_create,
+    "learning.exercise.hint": _learning_hint,
+    "learning.exercise.answer": _learning_answer,
+    "learning.exercise.submit": _learning_submit,
+
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
     "knowledge.create": _knowledge_create,

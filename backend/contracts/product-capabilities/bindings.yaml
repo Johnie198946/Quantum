@@ -153,3 +153,15 @@ bindings:
     handler: task.execute
   - id: conversation.lifecycle
     handler: conversation.lifecycle
+  - id: learning.resume
+    handler: learning.resume
+  - id: learning.exercise.read
+    handler: learning.exercise.read
+  - id: learning.exercise.create
+    handler: learning.exercise.create
+  - id: learning.exercise.hint
+    handler: learning.exercise.hint
+  - id: learning.exercise.answer
+    handler: learning.exercise.answer
+  - id: learning.exercise.submit
+    handler: learning.exercise.submit

@@ -93,3 +93,7 @@ events:
     version: 1
   - id: task.execution_queued
     version: 1
+  - id: learning.resume
+    version: 1
+  - id: learning.exercise
+    version: 1

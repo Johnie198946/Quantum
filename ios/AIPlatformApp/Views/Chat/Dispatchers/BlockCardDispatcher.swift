@@ -112,6 +112,8 @@ public struct BlockCardDispatcher: View {
             )
         case .artifactConsumption(let receipt):
             ArtifactConsumptionCard(receipt: receipt)
+        case .learningExercise(let exercise):
+            LearningExerciseMessageCard(exercise: exercise)
         case .workflow(let workflow):
             Button { onWorkflowOpen?(workflow.id) } label: {
                 WorkflowSummaryCard(workflow: workflow)
@@ -212,5 +214,47 @@ private struct ArtifactConsumptionCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("工件已消费回执")
+    }
+}
+
+
+private struct LearningExerciseMessageCard: View {
+    let exercise: LearningExerciseBlock
+    @State private var showingExercise = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Label(exercise.status == "graded" ? "练习已批改" : "继续这组练习", systemImage: "pencil.and.list.clipboard")
+                .font(AppTheme.Typography.cardTitle)
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+            Text(exercise.bookTitle + " · " + exercise.sectionTitle)
+                .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
+            if let hint = exercise.hint, !hint.isEmpty {
+                Text(exercise.questionId.map { "第 \($0.dropFirst()) 题 · 一点提示" } ?? "一点提示").font(.subheadline.weight(.semibold))
+                Text(hint).font(.body).textSelection(.enabled)
+                Text("已记录借助提示，不影响本题分数")
+                    .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            Button { showingExercise = true } label: {
+                HStack {
+                    Text(exercise.status == "graded" ? "查看批改与解析" : "打开题组")
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                }
+                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).foregroundStyle(AppTheme.Colors.leaf)
+            .accessibilityIdentifier("chat-learning-open")
+            Text("也可以直接说：第二题选 B、给第三题一点提示、提交这组答案")
+                .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        .fullScreenCover(isPresented: $showingExercise) {
+            LearningExerciseView(sourceTitle: exercise.bookTitle,
+                contextScope: ChatContextScopeDTO(mode: .platformOnly, selectedBookId: exercise.bookId,
+                    selectedBookVersion: exercise.contentVersion, selectedBookSectionId: exercise.sectionId),
+                exerciseID: exercise.id)
+        }
     }
 }

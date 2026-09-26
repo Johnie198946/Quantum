@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `1513d198550c7cb4bb334605da2262b99fdd6636b0ffc3a70295bf171fa23b5f`
+Catalog digest: `7c10019b7820c0565f201713ec13e518efef1fae494010aaa833e874ba8a3bbe`
 
 ## Gateway 核心模块规范
 
@@ -335,6 +335,12 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `learning.exercise.answer@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |
+| `learning.exercise.create@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |
+| `learning.exercise.hint@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |
+| `learning.exercise.read@1.0.0` | learning | read | none | none | `learning.exercise` | `learning_exercise@1` | implemented |
+| `learning.exercise.submit@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |
+| `learning.resume@1.0.0` | learning | read | none | none | `learning.resume` | `answer@1` | implemented |
 | `media.create@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `image_card@1` | implemented |
 | `memory.create@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.delete@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |

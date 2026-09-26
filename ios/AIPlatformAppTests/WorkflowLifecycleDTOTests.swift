@@ -6552,3 +6552,56 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertTrue(spans.contains { $0.kind == .code })
     }
 }
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testLearningChatEventPersistsReferenceAndHintWithoutDuplicatingExerciseState() throws {
+        let id = "00000000-0000-4000-8000-000000000001"
+        let data = Data("""
+        {"type":"learning.exercise","version":1,"renderer":"learning_exercise","renderer_version":1,"payload":{"id":"\(id)","revision":3,"status":"draft","book_id":"book","section_id":"chapter","content_version":"\(String(repeating: "a", count: 64))","book_title":"统计学","section_title":"加权平均","question_id":"q2","hint":"先比较两组样本量。"}}
+        """.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let event = try decoder.decode(QCPStreamEvent.self, from: data)
+        XCTAssertEqual(RendererRegistry.route(for: event), .learningExercise)
+        var message = ChatMessage(sessionId: "learning-chat", role: .assistant, content: "")
+        XCTAssertNotNil(message.appendCapabilityBlock(from: event))
+        XCTAssertNil(message.appendCapabilityBlock(from: event))
+        let stored = try JSONEncoder().encode(PersistedMessage(message))
+        let restored = try JSONDecoder().decode(PersistedMessage.self, from: stored).toChatMessage(sessionId: "learning-chat")
+        guard case .learningExercise(let item) = try XCTUnwrap(restored.blocks.first) else {
+            return XCTFail("Missing durable exercise card")
+        }
+        XCTAssertEqual(item.id, id)
+        XCTAssertEqual(item.hint, "先比较两组样本量。")
+        let context = ClientSessionContextDTO(sessionId: "learning-chat", messages: [], truncated: false, learningExerciseId: item.id)
+        let roundTrip = try JSONDecoder().decode(ClientSessionContextDTO.self, from: JSONEncoder().encode(context))
+        XCTAssertEqual(roundTrip.learningExerciseId, id)
+        let controller = UIHostingController(rootView: BlockCardDispatcher(block: .learningExercise(item)))
+        controller.loadViewIfNeeded()
+        XCTAssertGreaterThan(controller.view.intrinsicContentSize.height, 0)
+        let renderer = ImageRenderer(content: BlockCardDispatcher(block: .learningExercise(item))
+            .frame(width: 320).padding(16).background(Color(white: 0.96)))
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.uiImage)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "learning-chat-card"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(RendererRegistry.route(for: "learning.exercise", renderer: "learning_exercise", version: 2, rendererVersion: 1), .answer)
+    }
+
+    func testLearningAnswerProposalPreservesExactInputForRetry() throws {
+        let data = Data(#"{"proposal_id":"learning-proposal","capability_id":"learning.exercise.answer","input":{"exercise_id":"00000000-0000-4000-8000-000000000001","revision":3,"question_id":"q2","selected":["F"]},"summary":"保存答案","risk":"low","state":"awaiting_confirmation"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: data)
+        let apiDecoder = JSONDecoder()
+        apiDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        let apiProposal = try apiDecoder.decode(CapabilityProposalBlock.self, from: data)
+        XCTAssertEqual(apiProposal.input, proposal.input)
+        XCTAssertEqual(proposal.input.questionId, "q2")
+        XCTAssertEqual(proposal.input.selected, ["F"])
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(proposal.input)) as? [String: Any])
+        XCTAssertEqual(encoded["revision"] as? Int, 3)
+        XCTAssertEqual(encoded["exercise_id"] as? String, proposal.input.exerciseId)
+    }
+}

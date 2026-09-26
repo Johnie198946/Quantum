@@ -14,6 +14,7 @@ const genericEvents = [
 
 const semanticRendererByEvent = new Map([
   ["capability.proposed", "confirmation"],
+  ["learning.exercise", "learning_exercise"],
   ["bookshelf.opened", "bookshelf"],
   ["bookshelf.results", "bookshelf"],
   ["bookshelf.subscription_changed", "bookshelf"],
@@ -41,6 +42,7 @@ const rendererRoutes = new Map([
   ["workflow", { path: "workflow", minimumVersion: 1, fallback: "answer" }],
   ["presentation_review", { path: "presentation_review", minimumVersion: 1, fallback: "artifact" }],
   ["artifact", { path: "artifact", minimumVersion: 1, fallback: "answer" }],
+  ["learning_exercise", { path: "learning_exercise", minimumVersion: 1, fallback: "answer" }],
   ["bookshelf", { path: "bookshelf", minimumVersion: 1, fallback: "answer" }],
   ["hermes_session_list", { path: "hermes_session_list", minimumVersion: 1, fallback: "answer" }],
   ["hermes_session_detail", { path: "hermes_session_detail", minimumVersion: 1, fallback: "answer" }],
@@ -52,6 +54,8 @@ const rendererRoutes = new Map([
 ]);
 
 const routes = new Map([
+  ["learning.resume", { path: "answer", minimumVersion: 1, fallback: "answer", render: (payload) => payload?.resume ? `继续学习 · ${payload.resume.section_title}` : "还没有阅读记录，请先选择一本书。" }],
+  ["learning.exercise", { path: "learning_exercise", minimumVersion: 1, fallback: "answer", render: (payload) => [payload?.status === "graded" ? "练习已批改" : "练习已同步", payload?.book_title, payload?.section_title, payload?.hint].filter(Boolean).join(" · ") }],
   ["project.change_proposed", { path: "answer", minimumVersion: 1, fallback: "answer", render: (payload) => `项目变更提案 · ${payload?.proposal?.id || "待回读"}` }],
   ["task.change_proposed", { path: "answer", minimumVersion: 1, fallback: "answer", render: (payload) => `任务变更提案 · ${payload?.proposal?.id || "待回读"}` }],
   ["schedule.snapshot", { path: "answer", minimumVersion: 1, fallback: "answer", render: (payload) => `项目排期已回读 · revision ${payload?.schedule?.process_revision ?? "-"}` }],

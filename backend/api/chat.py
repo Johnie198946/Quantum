@@ -301,6 +301,7 @@ class ClientSessionContext(BaseModel):
     # a tenant Wiki source.
     local_notes: List[LocalNoteContext] = Field(default_factory=list, max_length=50)
     active_document_note_id: Optional[str] = Field(None, min_length=1, max_length=128)
+    learning_exercise_id: Optional[str] = Field(None, pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 class QWSBusinessContext(BaseModel):

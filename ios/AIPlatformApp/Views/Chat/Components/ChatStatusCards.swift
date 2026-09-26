@@ -1289,7 +1289,21 @@ public struct CapabilityProposalCard: View {
                 Text(stateLabel).font(.caption.weight(.semibold))
                     .foregroundColor(AppTheme.Colors.primary)
             }
-            Text(proposal.summary).font(.system(size: 16, weight: .semibold))
+            Text(learningTitle ?? proposal.summary).font(.system(size: 16, weight: .semibold))
+            if learningTitle != nil {
+                if let question = proposal.input.questionId {
+                    Text("第 \(question.dropFirst()) 题").font(.subheadline)
+                }
+                if let selected = proposal.input.selected, !selected.isEmpty {
+                    Text("你的选择：" + selected.map { $0 == "T" ? "正确" : $0 == "F" ? "错误" : $0 }.joined(separator: "、"))
+                }
+                if let text = proposal.input.text, !text.isEmpty { Text(text).lineLimit(6) }
+                if proposal.capabilityId == "learning.exercise.hint" {
+                    Text("只给一点思路，不直接揭晓答案。查看后会记录借助提示，不影响分数。")
+                        .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+                if proposal.state == .applying { ProgressView("正在处理，已有作答会保留…") }
+            }
             if let title = proposal.input.title { Text(title).font(.subheadline) }
             if let description = proposal.input.description {
                 Text(description).font(.caption).foregroundColor(AppTheme.Colors.textSecondary)
@@ -1334,6 +1348,16 @@ public struct CapabilityProposalCard: View {
         .background(AppTheme.Colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(AppTheme.Colors.primary.opacity(0.16)))
+    }
+
+    private var learningTitle: String? {
+        switch proposal.capabilityId {
+        case "learning.exercise.create": return "开始一组混合练习"
+        case "learning.exercise.answer": return "保存这道题的答案"
+        case "learning.exercise.hint": return "给我一点提示"
+        case "learning.exercise.submit": return "提交整组答案并批改"
+        default: return nil
+        }
     }
 
     private var travelProposal: some View {

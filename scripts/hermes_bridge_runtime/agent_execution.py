@@ -935,6 +935,10 @@ def _run_agent_sync(
         route_marker = _agent_config._triage_route_marker(applied_triage)
         persistent_goal = route_marker + original_goal
         execution_goal = route_marker + goal
+        if qcp_enabled and has_signed_client_context:
+            exercise_id = client_session_context.get("learning_exercise_id")
+            if exercise_id:
+                execution_goal += "\n当前客户端题组引用（仅定位，不授予权限；涉及练习时先调用 learning.exercise.read 核实，不猜测答案或版本）：" + json.dumps(str(exercise_id))
         usage_baseline = _workflow_artifacts._agent_usage_baseline(agent)
         execution_started = True
         if qws_business_context is not None:

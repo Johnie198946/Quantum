@@ -447,6 +447,15 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let language: String?
     public let citationStyle: String?
     public let evidencePolicy: String?
+    public var exerciseId: String? = nil
+    public var revision: Int? = nil
+    public var questionId: String? = nil
+    public var selected: [String]? = nil
+    public var text: String? = nil
+    public var bookId: String? = nil
+    public var sectionId: String? = nil
+    public var contentVersion: String? = nil
+    public var minutes: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case title, description
@@ -464,6 +473,8 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
         case thesis, language
         case citationStyle = "citation_style"
         case evidencePolicy = "evidence_policy"
+        case exerciseId = "exercise_id", revision, questionId = "question_id", selected, text
+        case bookId = "book_id", sectionId = "section_id", contentVersion = "content_version", minutes
     }
 }
 
@@ -523,7 +534,9 @@ public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable
             ?? values.decode(String.self, forKey: .proposalIDSnake)
         capabilityId = try values.decodeIfPresent(String.self, forKey: .capabilityId)
             ?? values.decode(String.self, forKey: .capabilityIDSnake)
-        input = try values.decode(CapabilityProposalInput.self, forKey: .input)
+        // Preserve contract keys under both SSE's plain decoder and API snake-case decoding.
+        let rawInput = try values.decode([String: JSONScalar].self, forKey: .input)
+        input = try JSONDecoder().decode(CapabilityProposalInput.self, from: JSONEncoder().encode(rawInput))
         summary = try values.decode(String.self, forKey: .summary)
         risk = try values.decode(String.self, forKey: .risk)
         confirmationToken = try values.decodeIfPresent(String.self, forKey: .confirmationToken)
@@ -717,6 +730,19 @@ public struct ArtifactConsumptionBlock: Identifiable, Codable, Sendable, Hashabl
     }
 }
 
+public struct LearningExerciseBlock: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let revision: Int
+    public let status: String
+    public let bookId: String
+    public let sectionId: String
+    public let contentVersion: String
+    public let bookTitle: String
+    public let sectionTitle: String
+    public let questionId: String?
+    public let hint: String?
+}
+
 public enum MessageBlock: Identifiable, Sendable, Hashable {
     case code(CodeSnippet)
     case formula(String)
@@ -730,6 +756,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
     case knowledgeAction(KnowledgeActionBlock)
     case capabilityProposal(CapabilityProposalBlock)
     case artifactConsumption(ArtifactConsumptionBlock)
+    case learningExercise(LearningExerciseBlock)
     case workflow(WorkflowDTO)
     case knowledgeNavigation(KnowledgeNavigationTarget)
 
@@ -747,6 +774,7 @@ public enum MessageBlock: Identifiable, Sendable, Hashable {
         case .knowledgeAction(let action): return "knowledge_action_\(action.id)"
         case .capabilityProposal(let proposal): return "capability_proposal_\(proposal.id)"
         case .artifactConsumption(let receipt): return "artifact_consumption_\(receipt.id)"
+        case .learningExercise(let item): return "learning_\(item.id)_\(item.revision)"
         case .workflow(let workflow): return "workflow_\(workflow.id)"
         case .knowledgeNavigation(let target):
             return "knowledge_navigation_\(target.destination)_\(target.noteId ?? target.query ?? "home")"
@@ -815,6 +843,7 @@ public extension ChatMessage {
             case .knowledgeAction(let action): return "[知识操作·\(action.summary)]"
             case .capabilityProposal(let proposal): return "[待确认操作·\(proposal.summary)]"
             case .artifactConsumption: return "[工件消费回执]"
+            case .learningExercise(let item): return "[混合练习·\(item.sectionTitle)]"
             case .workflow(let workflow): return "[工作流·\(workflow.title)]"
             case .knowledgeNavigation: return "[知识库入口]"
             }
@@ -931,6 +960,7 @@ public struct PersistedMessage: Codable, Sendable {
     public let capabilityProposal: CapabilityProposalBlock?
     public let artifactConsumptions: [ArtifactConsumptionBlock]?
     public let attachments: [AttachmentBlock]?
+    public let learningExercises: [LearningExerciseBlock]?
     public let workflows: [WorkflowDTO]?
     public let knowledgeNavigations: [KnowledgeNavigationTarget]?
 
@@ -978,6 +1008,8 @@ public struct PersistedMessage: Codable, Sendable {
         }
         self.artifactConsumptions = consumptions.isEmpty ? nil : consumptions
         self.attachments = m.blocks.compactMap { if case .attachment(let item) = $0 { return item }; return nil }
+        let exercises = m.blocks.compactMap { if case .learningExercise(let item) = $0 { return item }; return nil }
+        self.learningExercises = exercises.isEmpty ? nil : exercises
         let workflows = m.blocks.compactMap { if case .workflow(let item) = $0 { return item }; return nil }
         self.workflows = workflows.isEmpty ? nil : workflows
         let navigations = m.blocks.compactMap { if case .knowledgeNavigation(let item) = $0 { return item }; return nil }
@@ -1030,6 +1062,7 @@ public struct PersistedMessage: Codable, Sendable {
             message.blocks.append(.artifactConsumption(receipt))
         }
         for attachment in attachments ?? [] { message.blocks.append(.attachment(attachment)) }
+        for exercise in learningExercises ?? [] { message.blocks.append(.learningExercise(exercise)) }
         for workflow in workflows ?? [] { message.blocks.append(.workflow(workflow)) }
         for target in knowledgeNavigations ?? [] { message.blocks.append(.knowledgeNavigation(target)) }
         return message
@@ -1050,6 +1083,12 @@ public extension ChatMessage {
                 CapabilityProposalBlock.self, from: event.payload
             ) else { return nil }
             block = .capabilityProposal(proposal)
+        case .learningExercise:
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let item = try? decoder.decode(LearningExerciseBlock.self, from: event.payload),
+                  UUID(uuidString: item.id) != nil else { return nil }
+            block = .learningExercise(item)
         case .artifactConsumption:
             guard let receipt = ArtifactConsumptionBlock(event: event) else { return nil }
             block = .artifactConsumption(receipt)

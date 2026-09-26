@@ -67,3 +67,7 @@ renderers:
     version: 1
     fallback: answer
     fallback_version: 1
+  - id: learning_exercise
+    version: 1
+    fallback: answer
+    fallback_version: 1

@@ -78,6 +78,8 @@ def answers(revision, *, assisted=False):
 
 def test_model_uses_existing_jev_chat_route_with_compact_platform_scope(monkeypatch):
     async def chat_route(request, payload):
+        assert request.client_capabilities == []  # internal generation cannot dispatch QCP tools recursively
+        assert request.client_session_context is None
         assert request.context_scope.mode == "platform_only"
         assert request.question == "请生成诊断题"
         assert payload == AUTH
@@ -456,3 +458,89 @@ def test_hints_required_for_new_questions_and_optional_for_old_rows(env):
     restored = run(learning.get_exercise(req.id, AUTH))
     assert all(q["hint"] == "" for q in restored["questions"])
     assert run(learning.submit_exercise(req.id, answers(restored["revision"]), AUTH))["status"] == "graded"
+
+
+def test_chat_pcm_learning_round_trip_uses_same_records_and_confirmation(env, monkeypatch):
+    from backend.services import capability_gateway as gateway
+    from backend.services.capability_catalog import invoke_capability, execute_verified_capability
+    from scripts.hermes_bridge_runtime.knowledge import _app_capability_native_tool_schema
+    from backend.services.capability_catalog import describe_capability
+    monkeypatch.setattr(gateway, "SessionLocal", env)
+    create_data = dict(book_id="book", section_id="chapter", content_version=VERSION)
+    def invoke(cid, data, auth=AUTH):
+        return run(execute_verified_capability(cid, data, payload=auth, idempotency_key="learning-test-key"))
+    denied = run(invoke_capability("learning.exercise.create", create_data, payload=AUTH, idempotency_key="learning-test-key"))
+    assert denied["error"]["code"] == "confirmation_protocol_upgrade_required"
+    proposed = run(gateway.create_capability_proposal("learning.exercise.create", create_data,
+        payload=AUTH, session_id="chat-session", request_id="chat-request", idempotency_key="learning-create-key"))
+    proposal = proposed["events"][0]["payload"]
+    result = run(gateway.confirm_capability_proposal(proposal["proposal_id"], proposal["confirmation_token"], payload=AUTH, session_id="chat-session"))
+    item = result["events"][0]["payload"]
+    assert run(gateway.proposal_status(proposal["proposal_id"], payload=AUTH))["result"] == result
+    assert run(gateway.confirm_capability_proposal(proposal["proposal_id"], proposal["confirmation_token"], payload=AUTH, session_id="chat-session"))["status"] == "failed"
+    assert all(not q["hint"] for q in item["questions"])
+    assert not any(k in json.dumps(item) for k in ["correct_ids", "reference_answer", "rubric"])
+    read = invoke("learning.exercise.read", {})["events"][0]["payload"]
+    assert read["id"] == item["id"]
+    assert invoke("learning.exercise.read", {"exercise_id": item["id"]}, {**AUTH, "user_id": "other"})["status"] == "failed"
+    def change(action, **data):
+        return invoke("learning.exercise." + action, dict(exercise_id=item["id"], revision=item["revision"], **data))
+    item = change("answer", question_id="q2", selected=["F"])["events"][0]["payload"]
+    before_hint_revision = item["revision"]
+    # Hint is pre-generated: viewing it must not invoke the model.
+    model = learning.model_json
+    async def forbidden(*args):
+        raise AssertionError("hint invoked model")
+    monkeypatch.setattr(learning, "model_json", forbidden)
+    item = change("hint", question_id="q3")["events"][0]["payload"]
+    assert item["hint"] and item["answers"]["q3"]["assisted"]
+    assert item["answers"]["q2"]["selected"] == ["F"]
+    stale = invoke("learning.exercise.answer", dict(exercise_id=item["id"], revision=before_hint_revision, question_id="q2", selected=["T"]))
+    assert stale["status"] == "failed"
+    assert change("submit")["status"] == "failed"  # no silently completed answers
+    monkeypatch.setattr(learning, "model_json", model)
+    for question_id, answer in [("q1", dict(selected=["A"])), ("q3", dict(text="分量取最大值")), ("q4", dict(text="重复合并不变"))]:
+        item = change("answer", question_id=question_id, **answer)["events"][0]["payload"]
+    assert item["answers"]["q3"]["assisted"]
+    item = change("submit")["events"][0]["payload"]
+    assert item["status"] == "graded" and item["results"]
+    assert invoke("learning.exercise.read", {"unfinished_only": True})["status"] == "failed"
+    assert run(learning.get_exercise(item["id"], AUTH))["answers"] == item["answers"]
+    for action in ("read", "create", "answer", "hint", "submit"):
+        schema = _app_capability_native_tool_schema(describe_capability("learning.exercise." + action))
+        assert schema["name"] == "app_learning_exercise_" + action
+        assert "Do not use" in schema["description"] or "不要" in schema["description"] or "Exclude" in schema["description"]
+
+
+def test_chat_learning_rejects_old_hint_and_revoked_source(env, monkeypatch):
+    from backend.services.capability_catalog import execute_verified_capability
+    item = run(learning.create_exercise(create(), AUTH))
+    async def remove_hint():
+        async with env() as db:
+            row = await db.scalar(learning.owner_query(AUTH))
+            questions = copy.deepcopy(row.questions)
+            questions[0].pop("hint")
+            await db.execute(update(LearningExercise).where(LearningExercise.id == row.id).values(questions=questions))
+            await db.commit()
+    run(remove_hint())
+    result = run(execute_verified_capability("learning.exercise.hint", dict(exercise_id=item["id"], revision=item["revision"], question_id="q1"), payload=AUTH, idempotency_key="no-old-hint"))
+    assert result["status"] == "failed"
+    assert run(learning.get_exercise(item["id"], AUTH))["answers"] == {}
+    async def revoked(*args):
+        raise HTTPException(403, "revoked")
+    monkeypatch.setattr(learning.subscriptions, "_available_book_body", revoked)
+    result = run(execute_verified_capability("learning.exercise.read", dict(exercise_id=item["id"]), payload=AUTH, idempotency_key=None))
+    assert result["status"] == "failed" and result["events"] == []
+
+
+def test_learning_reference_is_covered_by_existing_signed_client_context():
+    from backend.services.client_context_capability import context_digest, mint_client_context_capability
+    from scripts.hermes_bridge_runtime.persistence import _validated_client_context_claims
+    context = learning.chat.ClientSessionContext(session_id="learning-session", learning_exercise_id=str(uuid4())).model_dump()
+    scope = dict(subject_id="tenant-user-learning-session", request_id="request-1234", policy_version="policy-v1")
+    token = mint_client_context_capability(tenant_key=AUTH["tenant_key"], user_id=AUTH["user_id"],
+        session_id=scope["subject_id"], request_id=scope["request_id"], policy_version=scope["policy_version"], context_hash=context_digest(context))
+    assert _validated_client_context_claims(token, context, **scope)
+    with pytest.raises(HTTPException) as denied:
+        _validated_client_context_claims(token, {**context, "learning_exercise_id": str(uuid4())}, **scope)
+    assert denied.value.status_code == 403
