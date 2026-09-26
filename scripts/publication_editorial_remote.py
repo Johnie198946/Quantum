@@ -343,6 +343,14 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
                 raise ValueError("submission input paths must be unique")
             input_paths.add(path)
             groups[field].append(normalized)
+    image_manifest = base / "image-manifest.json"
+    if image_manifest.exists() or image_manifest.is_symlink():
+        entry, path = _submission_entry(base, {"kind": "publication_image_generation",
+                                             "path": "image-manifest.json"}, group="source_files")
+        if path in input_paths:
+            raise ValueError("image generation evidence must be separate from author inputs")
+        input_paths.add(path)
+        groups["source_files"].append(entry)
     item = _initial_item(base, body_raw, groups["source_files"], groups["execution_files"])
     media_paths = {local_path(base, item[f"{role}_file"]) for role in MEDIA_ROLES}
     if input_paths & media_paths or len(media_paths) != len(MEDIA_ROLES):

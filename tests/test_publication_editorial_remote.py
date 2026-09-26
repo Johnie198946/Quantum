@@ -1287,3 +1287,35 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
         db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", (sid, "story", None, "cron", 100, "cron_complete", 90))
     assert json.loads(manifest.read_text())["items"][0]["quality_contract"]["revision"] == 2
     assert relay.finalize(base, remote, db=review_dbs, key=key)["items"][0]["status"] == "staged"
+
+
+def test_initial_builder_binds_asset_generation_evidence_without_author_mutation_or_execution_claim(flow, tmp_path):
+    _, _, remote, _, *_ = flow
+    body_dir, submission = initial_submission(tmp_path)
+    content = json.loads(submission.read_text())
+    content["execution_files"] = []
+    relay.save(submission, content)
+    original_submission = submission.read_bytes()
+    image_manifest = body_dir / "image-manifest.json"
+    image_manifest.write_text(json.dumps({"synthetic_test_only": True, "generator": "fixture"}))
+    digest = relay.sha(image_manifest.read_bytes())
+    manifest = relay.build_initial(submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        issue_slot="12:00", format="chapter", owner_policy_id="synthetic-owner-policy", writer_session="author")
+    item = json.loads(manifest.read_text())["items"][0]
+    entry = next(entry for entry in item["source_files"] if entry["kind"] == "publication_image_generation")
+    assert entry == {"kind": "publication_image_generation", "path": "image-manifest.json", "sha256": digest}
+    bundle = json.loads((body_dir / item["bundle_file"]).read_text())
+    assert bundle["execution_claim"] == "not_run" and not item["execution_files"]
+    assert submission.read_bytes() == original_submission
+    relay.prepare(manifest, remote)
+    review_input = relay.review_input(body_dir, remote)
+    request = json.loads(review_input.split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert any(entry["path"] == str(image_manifest) and entry["sha256"] == digest
+               for entry in request["read_only_inputs"]["source_files"])
+    frozen = json.loads(manifest.read_text())["items"][0]
+    frozen_bundle = json.loads((body_dir / frozen["bundle_file"]).read_text())
+    assert any(receipt["kind"] == "publication_image_generation" and receipt["sha256"] == digest
+               for receipt in frozen_bundle["source_receipts"])
+    image_manifest.write_text('{"changed": true}')
+    with pytest.raises(ValueError, match="hash mismatch"):
+        relay.load_manifest(manifest)
