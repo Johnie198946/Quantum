@@ -275,7 +275,8 @@ def main() -> int:
                 receipt = store.ingest_file(args.review_file, "content_review")
                 if "reviewer_session" in review:
                     bundle["review"] = {"content_hash": review.get("content_hash"), "decision": review.get("decision"),
-                        "reviewed_by": review["reviewer_session"], "reviewed_at": review.get("reviewed_at"), "receipt": receipt}
+                        "reviewed_by": review["reviewer_session"],
+                        "reviewed_at": bundle["review"].get("reviewed_at") or review.get("reviewed_at"), "receipt": receipt}
                 else:
                     bundle["review"]["receipt"] = receipt
             if args.proof_file:

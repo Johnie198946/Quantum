@@ -748,7 +748,21 @@ class Remote:
             input_text=input_text,
         )
         if result.returncode:
-            raise ValueError(f"remote command failed (exit {result.returncode})")
+            detail = ""
+            if len(result.stdout) <= 4096:
+                try:
+                    failure = json.loads(result.stdout)
+                    error = failure.get("error") if isinstance(failure, dict) and failure.get("ok") is False else None
+                    # Only plain diagnostic prose from the structured operator
+                    # envelope; never relay stderr, paths, tokens or credentials.
+                    if (isinstance(error, str) and len(error) <= 240
+                            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_ .,:()\-]*", error)
+                            and not re.search(r"(?:token|secret|password|credential|authorization|bearer|api[_ -]?key)", error, re.I)
+                            and not re.search(r"[A-Za-z0-9_-]{32,}", error)):
+                        detail = ": " + error
+                except (ValueError, TypeError):
+                    pass
+            raise ValueError(f"remote command failed (exit {result.returncode}){detail}")
         ok, value = transport._json(result.stdout, "editorial")
         if ok is not True:
             raise ValueError("remote editorial admission failed")
@@ -1072,12 +1086,21 @@ def finalize(root, remote, *, db=None, key=Path("~/.hermes/config/publication-ed
                 bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
                 current = attempt(remote, c, {"await_review", "approved", "rejected", "failed"})
                 if current["state"] in {"await_review", "failed"}:
-                    remote.operator("record-editorial-review", *arguments(remote, path.parent, item, bundle, raw, proof))
+                    recorded = remote.operator("record-editorial-review", *arguments(remote, path.parent, item, bundle, raw, proof))
+                elif review["decision"] == "approved":
+                    # Idempotent record revalidates the immutable proof and
+                    # returns the platform-owned timestamp for staging.
+                    recorded = remote.operator("record-editorial-review", *arguments(remote, path.parent, item, bundle, raw, proof))
                 receipt = attempt(remote, c, {review["decision"]})
                 if receipt.get("review_hash") != sha(raw):
                     raise ValueError("recorded review hash mismatch")
                 if review["decision"] == "approved":
-                    bundle["review"] = {"content_hash": review["content_hash"], "decision": "approved", "reviewed_by": review["reviewer_session"], "reviewed_at": review["reviewed_at"], "receipt": None}
+                    admitted_review = recorded.get("review")
+                    if (not isinstance(admitted_review, dict) or admitted_review.get("decision") != "approved"
+                            or admitted_review.get("content_hash") != item["body_sha256"]
+                            or admitted_review.get("reviewed_by") != review["reviewer_session"]):
+                        raise ValueError("verified review envelope missing")
+                    bundle["review"] = {**admitted_review, "receipt": None}
                     # Author bundles may remain in draft while awaiting review.
                     # Staging is an explicit operator transition; never inherit
                     # the author's draft state into the stage request.

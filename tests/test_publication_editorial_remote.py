@@ -211,7 +211,7 @@ def flow(tmp_path, monkeypatch):
     )
 
 
-def native(flow, decision="approved", ended=True, *, gap_disposition="resolved", omit_gap_resolutions=False, rejection_gap=None):
+def native(flow, decision="approved", ended=True, *, gap_disposition="resolved", omit_gap_resolutions=False, rejection_gap=None, review_timestamp="2026-09-08T03:00:00+00:00"):
     local, manifest, remote, _, key, _, _ = flow
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     from unittest.mock import patch
@@ -223,7 +223,7 @@ def native(flow, decision="approved", ended=True, *, gap_disposition="resolved",
     review = {
         "content_hash": item["body_sha256"],
         "decision": decision,
-        "reviewed_at": "2026-09-08T03:00:00+00:00",
+        "reviewed_at": review_timestamp,
         "editorial_target_hash": c["target_hash"],
         "publication_material_hash": request_value["publication_material_hash"],
         "revision": c["revision"],
@@ -267,6 +267,8 @@ def native(flow, decision="approved", ended=True, *, gap_disposition="resolved",
                 "question": "需要查阅一手原始来源以补充缺少的历史证据",
             }
         ]
+    if review_timestamp is None:
+        review.pop("reviewed_at")
     relay.save(local / "review.json", review)
     result = {
         "issue_id": c["issue_id"],
@@ -1480,3 +1482,62 @@ def test_initial_builder_binds_asset_generation_evidence_without_author_mutation
     image_manifest.write_text('{"changed": true}')
     with pytest.raises(ValueError, match="hash mismatch"):
         relay.load_manifest(manifest)
+
+
+@pytest.mark.parametrize("model_time", ["2099-09-27T05:35:00.000Z", None])
+def test_native_review_clock_is_program_owned_and_frozen_bytes_survive(flow, model_time):
+    from backend.services.publication_review_provenance import native_reviewed_at
+    local, manifest, remote, _, key, store_root, *_ = flow
+    databases, _ = native(flow, review_timestamp=model_time)
+    original_review = (local / "review.json").read_bytes()
+    item = json.loads(manifest.read_text())["items"][0]
+    original_contract = item["quality_contract"]
+    proof = relay.native_attest(databases, local / "review.json", key)
+    relay.save(local / item["proof_file"], proof)
+    original_proof = (local / item["proof_file"]).read_bytes()
+    assert relay.finalize(local, remote, db=databases, key=key)["items"][0]["status"] == "staged"
+    with sqlite3.connect(store_root / "publication.sqlite3") as db:
+        stored = json.loads(db.execute("SELECT bundle_json FROM editions").fetchone()[0])
+    assert stored["review"]["reviewed_at"] == native_reviewed_at(proof)
+    assert stored["quality_contract"] == original_contract
+    assert (local / "review.json").read_bytes() == original_review
+    assert (local / item["proof_file"]).read_bytes() == original_proof
+    # Simulate retry after server approval/staging but before local receipt save.
+    value = json.loads(manifest.read_text())
+    value["items"][0]["status"] = "await_review"
+    relay.save(manifest, value)
+    assert relay.finalize(local, remote, db=databases, key=key)["items"][0]["status"] == "staged"
+
+
+def test_remote_operator_safe_json_error_is_visible_but_secrets_and_stderr_are_not(flow, monkeypatch):
+    _, _, remote, *_ = flow
+    for error, expected in [("reviewed_at is in the future", "reviewed_at is in the future"),
+                            ("contract target mismatch", "contract target mismatch"),
+                            ("token: secret-value", None), ("/private/secret-file", None), ("x" * 300, None)]:
+        monkeypatch.setattr(transport, "_ssh", lambda *a, **kw: subprocess.CompletedProcess(
+            [], 2, json.dumps({"ok": False, "error": error}), "SECRET_STDERR"))
+        with pytest.raises(ValueError) as caught:
+            remote.operator("stage")
+        assert "SECRET_STDERR" not in str(caught.value)
+        assert (expected in str(caught.value)) if expected else str(caught.value) == "remote command failed (exit 2)"
+
+
+@pytest.mark.parametrize("proof_mutation", ["future", "tampered", "nan"])
+def test_native_clock_never_uses_unverified_or_future_proof(flow, proof_mutation):
+    local, manifest, remote, _, key, store_root, *_ = flow
+    databases, _ = native(flow, review_timestamp="2099-09-27T05:35:00.000Z")
+    item = json.loads(manifest.read_text())["items"][0]
+    proof = relay.native_attest(databases, local / "review.json", key)
+    proof["native_ended_at"] = float("nan") if proof_mutation == "nan" else time.time() + 3600
+    if proof_mutation != "tampered":
+        signing_key = serialization.load_pem_private_key(key.read_bytes(), password=None)
+        payload = {name: value for name, value in proof.items() if name != "signature"}
+        proof["signature"] = base64.b64encode(signing_key.sign(json.dumps(
+            payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode())).decode()
+    relay.save(local / item["proof_file"], proof)
+    with pytest.raises(ValueError, match="proof invalid|proof does not bind|proof output"):
+        relay.finalize(local, remote, db=databases, key=key)
+    with sqlite3.connect(store_root / "publication.sqlite3") as db:
+        assert db.execute("SELECT COUNT(*) FROM editions WHERE state IN ('staged','scheduled','published')").fetchone()[0] == 0
+        assert db.execute("SELECT review_hash FROM editorial_attempts WHERE attempt_id=?",
+                          (item["quality_contract"]["attempt_id"],)).fetchone()[0] is None

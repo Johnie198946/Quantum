@@ -11,6 +11,9 @@ import base64
 import gzip
 import hashlib
 import json
+import math
+import time
+from datetime import datetime, timezone
 import sqlite3
 from pathlib import Path
 
@@ -215,6 +218,22 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
     return {**payload, "signature": base64.b64encode(key.sign(_canonical(payload))).decode()}
 
 
+
+def native_reviewed_at(proof: dict, *, now: float | None = None) -> str:
+    """Convert native terminal time; callers must authenticate the proof first."""
+    start, end = proof.get("native_started_at"), proof.get("native_ended_at")
+    current = time.time() if now is None else now
+    try:
+        if (type(start) not in (int, float) or type(end) not in (int, float)
+                or type(current) not in (int, float)
+                or not math.isfinite(start) or not math.isfinite(end) or not math.isfinite(current)
+                or not 0 <= start < end or end > current + 300):
+            raise ValueError("invalid native review terminal time")
+        return datetime.fromtimestamp(end, timezone.utc).isoformat()
+    except (OverflowError, OSError, TypeError) as exc:
+        raise ValueError("invalid native review terminal time") from exc
+
+
 def verify_review_proof(proof, public_key_pem: bytes, *, issue_id, revision, attempt_id,
                         target_hash, review_file_hash, reviewer_session, writer_sessions,
                         required_policy=None, assets=None, now=None) -> list[str]:
@@ -252,8 +271,9 @@ def verify_review_proof(proof, public_key_pem: bytes, *, issue_id, revision, att
         reasons.append("provenance.source")
     if payload.get("native_end_reason") not in {"agent_close", "cli_close", "cron_complete"}:
         reasons.append("provenance.native_terminal")
-    start, end = payload.get("native_started_at"), payload.get("native_ended_at")
-    if (not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or end <= start):
+    try:
+        native_reviewed_at(payload, now=now)
+    except ValueError:
         reasons.append("provenance.native_terminal")
     if version.endswith("v2"):
         try:

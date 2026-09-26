@@ -543,3 +543,27 @@ def test_cli_prepare_record_and_body_hash_guard(tmp_path):
     body.write_text("wrong")
     run = subprocess.run([*command, "prepare-editorial", "--bundle", str(path), "--body-file", str(body)], capture_output=True, text=True)
     assert run.returncode == 2 and "body_hash mismatch" in run.stdout
+
+
+def test_legacy_raw_review_clock_envelope_still_releases_and_is_readable(tmp_path):
+    store = PublicationStore(tmp_path)
+    value = ready(store, bundle())
+    review_raw = (store.evidence / (value["review"]["receipt"]["sha256"] + ".bin")).read_bytes()
+    legacy_time = json.loads(review_raw)["reviewed_at"]
+    assert value["review"]["reviewed_at"] != legacy_time
+    value["review"]["reviewed_at"] = legacy_time
+    staged = store.stage(value, now=at(3))
+    assert staged["state"] == "scheduled"
+    assert store.release_due(now=at(4))["released"]
+    published = store.get_published(staged["publication_id"], now=at(4))
+    assert published["bundle"]["review"]["reviewed_at"] == legacy_time
+    assert (store.evidence / (value["review"]["receipt"]["sha256"] + ".bin")).read_bytes() == review_raw
+    with sqlite3.connect(tmp_path / "publication.sqlite3") as db:
+        frozen = db.execute("SELECT bundle_json FROM editions WHERE edition_id=?", (staged["edition_id"],)).fetchone()[0]
+    review_file = store.evidence / (value["review"]["receipt"]["sha256"] + ".bin")
+    retry = store.record_editorial_review(value, review_file)
+    assert retry["review"]["reviewed_at"] == legacy_time
+    value["review"] = retry["review"]
+    assert store.stage(value, now=at(4))["state"] == "published"
+    with sqlite3.connect(tmp_path / "publication.sqlite3") as db:
+        assert db.execute("SELECT bundle_json FROM editions WHERE edition_id=?", (staged["edition_id"],)).fetchone()[0] == frozen

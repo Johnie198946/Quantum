@@ -1,0 +1,56 @@
+full-relay
+........................................................................ [ 84%]
+.............                                                            [100%]
+=============================== warnings summary ===============================
+tests/test_publication_editorial_remote.py::test_prepare_is_private_intake_and_request_contains_full_material
+tests/test_publication_editorial_remote.py::test_prepare_is_private_intake_and_request_contains_full_material
+tests/test_publication_editorial_remote.py::test_prepare_is_private_intake_and_request_contains_full_material
+tests/test_publication_editorial_remote.py::test_prepare_is_private_intake_and_request_contains_full_material
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+85 passed, 4 warnings in 231.02s (0:03:51)
+
+
+store
+........................................................................ [ 78%]
+....................                                                     [100%]
+=============================== warnings summary ===============================
+tests/test_publication_review_provenance.py::test_story_author_and_supervision_reviewer_are_attested_across_owned_databases
+tests/test_publication_review_provenance.py::test_story_author_and_supervision_reviewer_are_attested_across_owned_databases
+tests/test_publication_review_provenance.py::test_story_author_and_supervision_reviewer_are_attested_across_owned_databases
+tests/test_publication_review_provenance.py::test_story_author_and_supervision_reviewer_are_attested_across_owned_databases
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+92 passed, 4 warnings in 26.25s
+
+
+legacy-retry
+......                                                                   [100%]
+=============================== warnings summary ===============================
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6 passed, 33 deselected, 4 warnings in 5.82s
+
+
+overflow
+.........                                                                [100%]
+=============================== warnings summary ===============================
+tests/test_publication_review_provenance.py::test_native_review_timestamp_rejects_invalid_or_future_terminal[10-nan]
+tests/test_publication_review_provenance.py::test_native_review_timestamp_rejects_invalid_or_future_terminal[10-nan]
+tests/test_publication_review_provenance.py::test_native_review_timestamp_rejects_invalid_or_future_terminal[10-nan]
+tests/test_publication_review_provenance.py::test_native_review_timestamp_rejects_invalid_or_future_terminal[10-nan]
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+9 passed, 46 deselected, 4 warnings in 3.07s

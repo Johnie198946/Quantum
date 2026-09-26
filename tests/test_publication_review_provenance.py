@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from backend.services.publication_review_provenance import (
     REQUEST_END, REQUEST_START, attest_native_review, publication_material_hash,
-    verify_review_proof,
+    native_reviewed_at, verify_review_proof,
 )
 from backend.services.publication_editorial import editorial_target_hash
 
@@ -341,3 +341,25 @@ def test_request_and_final_must_bind_same_nonce(native):
         conn.execute("UPDATE messages SET content=? WHERE id=2", (json.dumps(value),))
     with pytest.raises(ValueError, match="target mismatch"):
         attest_native_review(db, review, key)
+
+
+@pytest.mark.parametrize("start,end", [(10, float("nan")), (10, float("inf")), (True, 20),
+                                        (10, True), (20, 10), (10, 1000), (-1, 20), (10, 10 ** 500)])
+def test_native_review_timestamp_rejects_invalid_or_future_terminal(start, end):
+    with pytest.raises(ValueError, match="terminal time"):
+        native_reviewed_at({"native_started_at": start, "native_ended_at": end}, now=100)
+
+
+def test_native_review_timestamp_uses_utc_and_original_future_tolerance(native):
+    assert native_reviewed_at({"native_started_at": 10, "native_ended_at": 20}, now=20) == "1970-01-01T00:00:20+00:00"
+    assert native_reviewed_at({"native_started_at": 10, "native_ended_at": 320}, now=20)
+    db, review, private, public, expected = native
+    proof = attest_native_review(db, review, private)
+    proof["native_ended_at"] = 321
+    key = serialization.load_pem_private_key(private, password=None)
+    payload = {k: v for k, v in proof.items() if k != "signature"}
+    proof["signature"] = base64.b64encode(key.sign(json.dumps(payload, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False).encode())).decode()
+    assert "provenance.native_terminal" in verify_review_proof(proof, public, now=20, **expected)
+    proof["native_ended_at"] = 20
+    assert "provenance.signature" in verify_review_proof(proof, public, now=20, **expected)

@@ -987,7 +987,7 @@ class PublicationStore:
 
     def _editorial_check(
         self, db, bundle, *, require_approved=True, frozen=False,
-        verified=None, allow_failed_revalidation=False,
+        verified=None, allow_failed_revalidation=False, derive_review_time=False,
     ):
         if bundle.get("content_kind") != "commentary":
             return []
@@ -1013,7 +1013,6 @@ class PublicationStore:
                 return ["editorial_review_hash_mismatch"]
             review = json.loads(raw)
             if (bundle["review"].get("reviewed_by") != review.get("reviewer_session")
-                    or bundle["review"].get("reviewed_at") != review.get("reviewed_at")
                     or bundle["review"].get("decision") != review.get("decision")):
                 return ["editorial_review_envelope_mismatch"]
             proof_path = Path(bundle["editorial_proof_file"])
@@ -1023,7 +1022,7 @@ class PublicationStore:
             if hashlib.sha256(proof_raw).hexdigest() != bundle["editorial_proof_sha256"]:
                 return ["editorial_proof_hash_mismatch"]
             proof = json.loads(proof_raw)
-            from backend.services.publication_review_provenance import verify_review_proof
+            from backend.services.publication_review_provenance import native_reviewed_at, verify_review_proof
             binding_reasons = verify_review_proof(proof, (self.root / "editorial-review-public.pem").read_bytes(),
                 issue_id=issue_id, revision=contract["revision"], attempt_id=contract["attempt_id"],
                 target_hash=contract["target_hash"], review_file_hash=review_hash,
@@ -1039,6 +1038,15 @@ class PublicationStore:
                 binding_reasons.append("editorial_review_material_hash")
             if review.get("content_hash") != bundle["body_hash"]:
                 binding_reasons.append("editorial_review_body_hash")
+            if not binding_reasons:
+                reviewed_at = native_reviewed_at(proof)
+                envelope_time = bundle["review"].get("reviewed_at")
+                if derive_review_time:
+                    envelope_time = reviewed_at
+                if envelope_time not in {reviewed_at, review.get("reviewed_at")}:
+                    binding_reasons.append("editorial_review_envelope_mismatch")
+                elif _parse_datetime(envelope_time, "review.reviewed_at") > _now() + timedelta(minutes=5):
+                    binding_reasons.append("editorial_review_envelope_mismatch")
             reasons = binding_reasons + validate_editorial(
                 bundle["body"], contract, review, bundle["source_receipts"]
             )
@@ -1046,6 +1054,7 @@ class PublicationStore:
                 reasons.append("editorial_review_not_recorded")
             if not binding_reasons and verified is not None:
                 verified["proof_json"] = _canonical(proof).decode()
+                verified["reviewed_at"] = reviewed_at
                 if not reasons:
                     dispositions = ({entry["id"]: entry for entry in review["gap_resolutions"]}
                                     if any(g.get("state") == "open" and g.get("id") != "review.rejected"
@@ -1066,11 +1075,11 @@ class PublicationStore:
         if not isinstance(review, dict):
             raise PublicationError("invalid editorial review")
         receipt = self.ingest_file(review_file, "content_review")
-        working = {**bundle, "review": {"content_hash": review.get("content_hash"), "decision": "approved",
-            "reviewed_by": review.get("reviewer_session"), "reviewed_at": review.get("reviewed_at"), "receipt": receipt}}
-        # Rejections still use the original pending envelope for structural intake validation.
-        if review.get("decision") != "approved":
-            working["review"] = {"content_hash": "", "decision": "pending", "reviewed_by": "", "reviewed_at": "", "receipt": None}
+        # Model-authored timestamps are evidence bytes, not clock authority.
+        # Admit structure as pending, then derive the approved envelope only
+        # after the full pinned-key proof binding has been verified.
+        working = {**bundle, "review": {"content_hash": "", "decision": "pending",
+            "reviewed_by": "", "reviewed_at": "", "receipt": None}}
         normalized, _ = validate_bundle(working)
         if normalized["content_kind"] != "commentary":
             raise PublicationError("editorial workflow requires commentary")
@@ -1086,6 +1095,15 @@ class PublicationStore:
         db = self._connect()
         try:
             db.execute("BEGIN IMMEDIATE")
+            time_binding = {}
+            self._editorial_check(db, checked, require_approved=False, frozen=True,
+                                 verified=time_binding, allow_failed_revalidation=True,
+                                 derive_review_time=True)
+            if "reviewed_at" in time_binding:
+                checked["review"]["reviewed_at"] = time_binding["reviewed_at"]
+                if review.get("decision") == "approved":
+                    working["review"] = dict(checked["review"])
+                    normalized, _ = validate_bundle(working)
             previous = db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? AND attempt_id=?", (issue_id, contract.get("attempt_id"))).fetchone()
             if previous and previous["state"] in {"approved", "rejected", "failed"}:
                 if previous["review_hash"] == receipt["sha256"] and contract == json.loads(previous["contract_json"]):
@@ -1118,6 +1136,16 @@ class PublicationStore:
                     db.commit()
                     result = self._attempt_record(previous)
                     result["review"] = working["review"]
+                    # A retry must not rewrite a published edition's envelope.
+                    # Preserve its legacy clock only after revalidating the
+                    # exact frozen review against the same authenticated proof.
+                    for edition in db.execute("SELECT bundle_json FROM editions WHERE issue_id=? AND state IN ('published','withdrawn')",
+                                              (issue_id,)).fetchall():
+                        frozen = json.loads(edition["bundle_json"])
+                        if (frozen.get("quality_contract") == contract
+                                and not self._editorial_check(db, {**normalized, "review": frozen.get("review")}, frozen=True)):
+                            result["review"] = frozen["review"]
+                            break
                     result.update({k: normalized[k] for k in ("editorial_proof_file", "editorial_proof_sha256") if k in normalized})
                     return result
                 raise PublicationError("terminal editorial attempt cannot be overwritten")
