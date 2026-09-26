@@ -560,6 +560,13 @@ def test_toolkit_collection_does_not_require_unselected_categories_or_compilatio
     assert watchdog._toolkit_prerequisite_barrier(DAY) is None
 
 
+def test_toolkit_author_is_owned_by_platform_workflow_not_local_cron(tmp_path):
+    result, calls = run(tmp_path, summary("ai-toolkit"), [])
+    assert result["reason"] == "awaiting_platform_author"
+    assert result["action"] == "none"
+    assert calls == []
+
+
 def test_author_shared_scope_claims_each_item_atomically(tmp_path):
     missing = ("ai-history", "ai-practice", "concept-fables")
     result, calls = run(tmp_path, summary(*missing), [])

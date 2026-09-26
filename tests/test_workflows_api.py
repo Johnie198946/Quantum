@@ -46,6 +46,7 @@ class TestWorkflowsAPI(unittest.TestCase):
             WorkflowNodeRun,
             WorkflowPlanningJob,
             WorkflowPlanVersion,
+            WorkflowSchedule,
             WorkflowClarificationSession,
             WorkflowLifecycleEvent,
             WorkflowSessionMessage,
@@ -82,6 +83,7 @@ class TestWorkflowsAPI(unittest.TestCase):
                     WorkflowArtifact,
                     WorkflowNodeRun,
                     WorkflowApproval,
+                    WorkflowSchedule,
                     WorkflowExecution,
                     WorkflowPlanningJob,
                     WorkflowPlanVersion,
@@ -1053,6 +1055,65 @@ class TestWorkflowsAPI(unittest.TestCase):
             [node["status"] for node in execution["nodes"]], ["pending"] * 5
         )
         self.assertEqual(execution["nodes"][0]["node_type"], "KNOWLEDGE_RETRIEVAL")
+
+    def test_schedule_api_derives_owner_and_tenant_from_auth(self):
+        body = self.create_ready()
+        approved = self.request(
+            "POST",
+            f"/api/v1/workflows/{body['id']}/approve-plan",
+            json={"comment": "允许服务端调度"},
+        )
+        self.assertEqual(approved.status_code, 201, approved.text)
+        started = self.request(
+            "POST",
+            f"/api/v1/workflows/{body['id']}/start",
+            json={"request_id": "schedule-owner-history-0001"},
+        )
+        self.assertEqual(started.status_code, 201, started.text)
+        denied_history = self.request(
+            "GET",
+            f"/api/v1/workflow-executions/{started.json()['id']}",
+            sub="beta",
+        )
+        self.assertEqual(denied_history.status_code, 404, denied_history.text)
+        path = f"/api/v1/workflows/{body['id']}/schedules"
+
+        forged = self.request(
+            "POST",
+            path,
+            json={
+                "cron": "0 18 * * *",
+                "timezone": "Asia/Shanghai",
+                "tenant_key": "tenant-beta",
+                "owner_user_id": "beta",
+            },
+        )
+        self.assertEqual(forged.status_code, 422, forged.text)
+
+        created = self.request(
+            "POST",
+            path,
+            json={"cron": "0 18 * * *", "timezone": "Asia/Shanghai"},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        schedule = created.json()
+        self.assertEqual(schedule["workflow_id"], body["id"])
+        self.assertEqual(schedule["contract"]["id"], "workflow.schedule")
+        self.assertEqual(schedule["handler"]["id"], "workflow_executor.dispatch")
+
+        denied = self.request("GET", path, sub="beta")
+        self.assertEqual(denied.status_code, 404, denied.text)
+
+        paused = self.request(
+            "POST", f"{path}/{schedule['id']}/pause"
+        )
+        self.assertEqual(paused.status_code, 200, paused.text)
+        self.assertFalse(paused.json()["enabled"])
+        self.assertIsNone(paused.json()["next_run_at"])
+
+        deleted = self.request("DELETE", f"{path}/{schedule['id']}")
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        self.assertEqual(self.request("GET", path).json(), [])
 
     def test_approve_ignores_skill_references_when_persisting_agent_relations(self):
         from backend.db import SessionLocal

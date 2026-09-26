@@ -17,6 +17,7 @@ from backend.services.document_sources import DocumentSourceError
 from backend.services.presentation_renderer import build_pptx, render_pptx_pdf
 from backend.services.presentation_scenario import build_presentation_plan
 from backend.services.dsl_safety_compiler import DSLSafetyCompiler
+from backend.services.agent_capabilities import EffectiveAgent
 from backend.services.workflow_executor import trusted_task_agent_config
 from backend.api.auth import require_auth
 from backend.api.documents import router as documents_router
@@ -152,23 +153,32 @@ def test_private_document_is_tenant_bound_and_original_survives_parse_failure(
 
 
 def test_task_agent_manifest_is_projected_to_strict_bridge_schema():
-    agent = type("Agent", (), {
+    agent = EffectiveAgent(
+        id="agent-private",
+        base_agent_id="main_agent",
+        name="private agent",
+        prompt="approved prompt",
+        allowed_tools=("knowledge_search", "terminal"),
+        capability_agent_ids=("main_agent",),
+        knowledge_scope=("knowledge/product/public", "knowledge/private/other"),
+        allow_network=True,
+        max_concurrent_children=3,
+        max_spawn_depth=1,
+    )
+    assert trusted_task_agent_config(
+        agent,
+        authorized_scope=["knowledge/product/public"],
+        allow_network=False,
+    ) == {
         "id": "agent-private",
-        "private_prompt_delta": "approved prompt",
-        "composition_manifest": {
-            "capability_agent_ids": ["main_agent"],
-            "invoked_agent_ids": ["tenant_specialist"],
-            "delegation": {"max_concurrent_children": 3, "max_spawn_depth": 1},
-            "knowledge_scope": ["knowledge/product/public"],
-            "plan_id": "must-not-cross-runtime-boundary",
-        },
-    })()
-    assert trusted_task_agent_config(agent) == {  # type: ignore[arg-type]
-        "id": "agent-private",
+        "base_agent_id": "main_agent",
+        "name": "private agent",
         "prompt": "approved prompt",
-        "capability_agent_ids": ["main_agent", "tenant_specialist"],
+        "allowed_tools": ["knowledge_search"],
+        "capability_agent_ids": ["main_agent"],
         "knowledge_scope": ["knowledge/product/public"],
         "delegation": {"max_concurrent_children": 3, "max_spawn_depth": 1},
+        "allow_network": False,
     }
 
 

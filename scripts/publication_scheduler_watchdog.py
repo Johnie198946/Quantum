@@ -37,6 +37,7 @@ AUTHOR_JOBS = {
     "concept-fables": "5a3f2a2eb988",
     "ai-toolkit": "171a125ddb63",
 }
+PLATFORM_AUTHOR_SERIES = frozenset({"ai-toolkit"})
 REVIEW_JOB = "fbd1cd1217d7"
 PREREQUISITE_JOB = "b8c4c5e40bb1"
 TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB)
@@ -277,6 +278,11 @@ def _plan(
         barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(day, series, rows))
         if not active and series == "ai-toolkit" and prerequisite is not None:
             desired[series] = Action("prerequisite", (prerequisite,), job_id=PREREQUISITE_JOB)
+        elif not active and series in PLATFORM_AUTHOR_SERIES:
+            # Authorship is owned by the governed platform Workflow schedule.
+            # The local watchdog resumes at prepare/review once its immutable
+            # manifest appears; it must not revive the retired Mac author job.
+            continue
         elif not active:
             desired[series] = Action("author", (barrier,), job_id=AUTHOR_JOBS[series])
         else:
@@ -295,6 +301,8 @@ def _plan(
     if not desired:
         if invalid_series:
             return None, "invalid_manifest"
+        if set(missing) & PLATFORM_AUTHOR_SERIES:
+            return None, "awaiting_platform_author"
         return None, "awaiting_release" if missing else "complete"
     phase = min((action.phase for action in desired.values()), key=PHASE_ORDER.__getitem__)
     phase_actions = [action for action in desired.values() if action.phase == phase]

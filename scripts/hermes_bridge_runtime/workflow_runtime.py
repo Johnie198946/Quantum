@@ -72,6 +72,16 @@ def _workflow_run_sync(execution_id: str) -> None:
         )
     try:
         sandbox = _persistence._workflow_sandbox(run)
+        agent_config = _contracts.TrustedAgentConfig.model_validate(
+            run.get("agent_config") or {}
+        )
+        run_scope = set(str(item) for item in run.get("knowledge_scope") or [])
+        agent_scope = set(agent_config.knowledge_scope)
+        if not run_scope.issubset(agent_scope):
+            raise RuntimeError("workflow_agent_knowledge_scope_denied")
+        effective_allow_network = bool(
+            run.get("allow_network") and agent_config.allow_network
+        )
         plan = run["plan"]
         node_map = {str(node["id"]): node for node in plan.get("nodes") or []}
         order = _workflow_artifacts._workflow_order(plan)
@@ -95,7 +105,9 @@ def _workflow_run_sync(execution_id: str) -> None:
                     node_id=node_id,
                     node_attempt_id=f"{execution_id}:{node_id}:{state['attempt']}",
                     node_type=node.get("node_type"),
-                    agent_id=(node.get("parameters") or {}).get("agent_id") or "main_agent",
+                    agent_id=_workflow_artifacts._workflow_agent_identity(
+                        node, agent_config
+                    ),
                     message=f"开始：{node.get('name') or node_id}",
                 )
             node_prompt = _workflow_artifacts._workflow_node_prompt(run, node)
@@ -117,13 +129,23 @@ def _workflow_run_sync(execution_id: str) -> None:
             gateway_completed = False
             if str(node.get("node_type") or "") == "KNOWLEDGE_RETRIEVAL":
                 params = node.get("parameters") or {}
-                requested_scope = list(params.get("knowledge_scope") or run.get("knowledge_scope") or [])
+                requested_scope = list(
+                    params.get("knowledge_scope") or agent_config.knowledge_scope
+                )
+                if not set(requested_scope).issubset(run_scope & agent_scope):
+                    raise RuntimeError("workflow_node_knowledge_scope_denied")
                 docs = _persistence._knowledge_gateway_search(
                     str(run.get("knowledge_capability") or ""),
                     query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                     category_scope=requested_scope,
                 )
-                if docs or not bool(run.get("allow_network")):
+                node_network_allowed = bool(
+                    effective_allow_network
+                    and params.get("allow_network")
+                    and set(agent_config.allowed_tools)
+                    & {"web_search", "web_extract"}
+                )
+                if docs or not node_network_allowed:
                     gateway_completed = True
                     if docs:
                         rows = [
@@ -162,6 +184,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                     execution_id,
                     event_callback=_node_event,
                     sandbox=sandbox,
+                    agent_config=agent_config,
                 )
                 if new_sid:
                     hermes_sid = new_sid
@@ -211,6 +234,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                         execution_id,
                         event_callback=_node_event,
                         sandbox=sandbox,
+                        agent_config=agent_config,
                     )
                     if new_sid:
                         hermes_sid = new_sid
@@ -255,6 +279,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                         execution_id,
                         event_callback=_node_event,
                         sandbox=sandbox,
+                        agent_config=agent_config,
                     )
                     if new_sid:
                         hermes_sid = new_sid

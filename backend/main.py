@@ -58,7 +58,7 @@ _cors_origins = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动: 启动守卫 + 初始化数据库表(幂等) + 启动 Agent 调度器。"""
+    """Initialize durable services and the governed Workflow scheduler."""
     # 启动守卫：JWT secret 为空 → 开发态全可见，隔离承诺不生效
     check_dev_visibility_guard()
     db_ready = True
@@ -106,17 +106,38 @@ async def lifespan(app: FastAPI):
         )
 
         start_knowledge_pipeline_supervisor()
-    # 启动平台 Agent 调度器(容器重启自动恢复)
-    from backend.services.agent_scheduler import start_scheduler
+        from backend.services.workflow_scheduler import (
+            start_scheduler as start_workflow_scheduler,
+        )
 
-    start_scheduler()
+        # Legacy Agent rows cannot prove Workflow/plan/handler authority and are
+        # never auto-promoted. During migration, only an explicit server-side
+        # allowlist may keep already-inventoried rows alive.
+        start_workflow_scheduler()
+        from backend.services.agent_scheduler import (
+            legacy_schedule_allowlist,
+            start_scheduler as start_legacy_agent_scheduler,
+        )
+
+        if legacy_schedule_allowlist():
+            start_legacy_agent_scheduler()
     from backend.services.entitlement_sync import start_entitlement_sync
 
     start_entitlement_sync()
     yield
-    from backend.services.agent_scheduler import stop_scheduler
+    if db_ready:
+        from backend.services.workflow_scheduler import (
+            stop_scheduler as stop_workflow_scheduler,
+        )
 
-    stop_scheduler()
+        stop_workflow_scheduler()
+        from backend.services.agent_scheduler import (
+            legacy_schedule_allowlist,
+            stop_scheduler as stop_legacy_agent_scheduler,
+        )
+
+        if legacy_schedule_allowlist():
+            stop_legacy_agent_scheduler()
     from backend.services.entitlement_sync import stop_entitlement_sync
 
     await stop_entitlement_sync()

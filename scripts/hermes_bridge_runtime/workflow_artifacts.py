@@ -229,10 +229,14 @@ def _accumulate_usage(run: dict[str, Any], usage: dict[str, Any]) -> dict[str, A
     return delta
 
 
-def _workflow_toolsets(node: dict[str, Any]) -> list[str]:
-    """按节点最小授权工具，避免把整套 CLI Schema 重复塞进每次推理。"""
+def _workflow_toolsets(
+    node: dict[str, Any], agent_config: _contracts.TrustedAgentConfig
+) -> list[str]:
+    """Intersect validated PCM authority with the node's least-privilege tools."""
     node_type = str(node.get("node_type") or "")
     params = node.get("parameters") or {}
+    allowed = set(agent_config.allowed_tools)
+    no_tools = ["__workflow_no_tools__"]
     if params.get("workspace_mode") == "tenant_coder":
         # Never grant Hermes' host terminal/files. These names route only to
         # the authenticated workspace and the root-owned networkless runner.
@@ -241,15 +245,58 @@ def _workflow_toolsets(node: dict[str, Any]) -> list[str]:
         # Tenant knowledge is fetched by Bridge through Knowledge Gateway before
         # model execution. Hermes may only supplement an explicit evidence gap
         # with the web tool; local Vault/file tools are never granted.
-        return ["web"] if bool(params.get("allow_network")) else ["tenant_skill_reader"]
+        return (
+            ["web"]
+            if bool(params.get("allow_network"))
+            and bool(agent_config.allow_network)
+            and bool(allowed & {"web_search", "web_extract"})
+            else no_tools
+        )
     if node_type == "LLM_INFERENCE" and str(params.get("agent_id") or "") not in {
         "",
         "main_agent",
     }:
-        return ["tenant_skill_reader"]
-    # AIAgent 对空列表存在跨版本 fallback 差异；给纯推理节点一个无执行副作用的
-    # 最小 skill 元数据面，同时在节点 Prompt 中明确禁止工具调用。
-    return ["tenant_skill_reader"]
+        return ["tenant_skill_reader"] if "skill_load" in allowed else no_tools
+    toolsets: list[str] = []
+    if "memory" in allowed:
+        toolsets.append("memory")
+    if "session_search" in allowed:
+        toolsets.append("session_search")
+    if "skill_load" in allowed:
+        toolsets.append("tenant_skill_reader")
+    if "delegate_task" in allowed:
+        toolsets.append("delegation")
+    if (
+        bool(params.get("allow_network"))
+        and bool(agent_config.allow_network)
+        and allowed & {"web_search", "web_extract"}
+    ):
+        toolsets.append("web")
+    if (
+        bool(params.get("allow_network"))
+        and bool(agent_config.allow_network)
+        and "browser_navigate" in allowed
+    ):
+        toolsets.append("browser")
+    # AIAgent versions differ on whether [] means "none" or "use defaults".
+    # A deliberately unknown toolset is a stable fail-closed empty surface.
+    return toolsets or no_tools
+
+
+def _workflow_agent_identity(
+    node: dict[str, Any], agent_config: _contracts.TrustedAgentConfig
+) -> str:
+    requested = str((node.get("parameters") or {}).get("agent_id") or "main_agent")
+    effective_id = str(agent_config.id or agent_config.base_agent_id or "main_agent")
+    allowed_ids = {
+        "main_agent",
+        effective_id,
+        str(agent_config.base_agent_id or ""),
+        *agent_config.capability_agent_ids,
+    }
+    if requested not in allowed_ids:
+        raise RuntimeError("workflow_node_agent_identity_denied")
+    return effective_id if requested == "main_agent" else requested
 
 
 def _workflow_turn_token_cap(node: dict[str, Any]) -> int:
@@ -281,6 +328,7 @@ def _run_workflow_node_in_process(
     execution_id: str | None = None,
     event_callback=None,
     sandbox: TenantHermesSandbox | None = None,
+    agent_config: _contracts.TrustedAgentConfig | None = None,
 ) -> tuple[str, str | None, dict[str, Any]]:
     """通过 Hermes AIAgent 原生 Session 执行节点。
 
@@ -300,6 +348,10 @@ def _run_workflow_node_in_process(
     runtime = _agent_config._get_cached_runtime(cfg)
     if sandbox is None:
         raise RuntimeError("tenant_sandbox_unavailable")
+    if agent_config is None:
+        raise RuntimeError("trusted_workflow_agent_config_missing")
+    effective_agent_id = _workflow_agent_identity(node, agent_config)
+    persist_agent_snapshot(sandbox, agent_config.model_dump(exclude_none=True))
     _knowledge._ensure_tenant_skill_tool_registered()
     if (node.get("parameters") or {}).get("workspace_mode") == "tenant_coder":
         _knowledge._ensure_tenant_coder_tools_registered()
@@ -372,7 +424,7 @@ def _run_workflow_node_in_process(
             model=cfg_model,
             max_iterations=_contracts.WORKFLOW_NODE_MAX_ITERATIONS,
             max_tokens=max_tokens,
-            enabled_toolsets=_workflow_toolsets(node),
+            enabled_toolsets=_workflow_toolsets(node, agent_config),
             quiet_mode=True,
             platform="cli",
             session_id=session_id,
@@ -385,7 +437,10 @@ def _run_workflow_node_in_process(
             reasoning_config={"effort": "minimal"},
             ephemeral_system_prompt=(
                 "你是持久工作流节点执行器。严格执行当前节点，不追问、不扩展范围；"
-                "工具调用以完成当前节点所需的最少次数为限；只返回可落盘成果。"
+                "工具调用以完成当前节点所需的最少次数为限；只返回可落盘成果。\n"
+                f"可信 Agent identity: {effective_agent_id}"
+                + (f" ({agent_config.name})" if agent_config.name else "")
+                + (f"\n可信 Agent 指令：\n{agent_config.prompt}" if agent_config.prompt else "")
             ),
             tool_start_callback=_tool_start,
             tool_complete_callback=_tool_complete,

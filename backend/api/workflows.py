@@ -17,8 +17,9 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.api.auth import require_auth
 from backend.api.tenant import current_tenant
@@ -38,6 +39,7 @@ from backend.models.workflow import (
     WorkflowNodeRun,
     WorkflowPlanningJob,
     WorkflowPlanVersion,
+    WorkflowSchedule,
     WorkflowSessionMessage,
 )
 from backend.models.workspace import WorkspaceProcessRevision, WorkspaceWorkflowBinding
@@ -60,6 +62,17 @@ from backend.services.workflow_executor import (
     retry_remote,
 )
 from backend.services.workflow_planner import validate_plan_policy
+from backend.services.workflow_execution_start import (
+    WorkflowStartError,
+    create_workflow_execution,
+)
+from backend.services.workflow_scheduler import (
+    create_schedule as create_workflow_schedule,
+    compute_next_run as compute_schedule_next_run,
+    schedule_out,
+    validate_schedule_binding,
+    validate_cron as validate_schedule_cron,
+)
 from backend.services.workflow_contract import (
     PlanContractError,
     assert_plan_binding,
@@ -184,6 +197,22 @@ class ReplanRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     comment: str = Field("", max_length=2000)
     request_id: str | None = Field(None, min_length=8, max_length=160)
+
+
+class WorkflowScheduleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cron: str = Field(..., min_length=5, max_length=120)
+    timezone: str = Field(..., min_length=1, max_length=64)
+    enabled: bool = True
+
+
+class WorkflowScheduleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cron: str | None = Field(None, min_length=5, max_length=120)
+    timezone: str | None = Field(None, min_length=1, max_length=64)
+    enabled: bool | None = None
 
 
 class OutputApprovalRequest(BaseModel):
@@ -395,6 +424,8 @@ def execution_out(
         "id": row.id,
         "workflow_id": row.workflow_id,
         "plan_id": row.plan_id,
+        "trigger_schedule_id": row.trigger_schedule_id,
+        "scheduled_for": row.scheduled_for.isoformat() if row.scheduled_for else None,
         "status": row.status,
         "truth": truth_for_execution(
             status=row.status, hermes_receipt=None
@@ -459,10 +490,7 @@ async def owned_workflow(
             )
         )
     ).scalar_one_or_none()
-    if row is None or (
-        row.clarification_session_id
-        and row.created_by != current_user(payload)
-    ):
+    if row is None or row.created_by != current_user(payload):
         raise HTTPException(status_code=404, detail="工作流不存在")
     return row
 
@@ -693,10 +721,7 @@ async def owned_execution(
         )
     ).scalar_one_or_none()
     workflow = await db.get(WorkflowDefinition, row.workflow_id) if row else None
-    if row is None or workflow is None or (
-        workflow.clarification_session_id
-        and workflow.created_by != current_user(payload)
-    ):
+    if row is None or workflow is None or workflow.created_by != current_user(payload):
         raise HTTPException(status_code=404, detail="工作流执行不存在")
     return row
 
@@ -1544,6 +1569,170 @@ async def get_workflow(workflow_id: str, payload: dict = Depends(require_auth)):
         return result
 
 
+async def owned_schedule(
+    db, workflow_id: str, schedule_id: str, payload: dict[str, Any]
+) -> WorkflowSchedule:
+    row = await db.scalar(
+        select(WorkflowSchedule).where(
+            WorkflowSchedule.id == schedule_id,
+            WorkflowSchedule.workflow_id == workflow_id,
+            WorkflowSchedule.tenant_key == tenant(),
+            WorkflowSchedule.owner_user_id == current_user(payload),
+            WorkflowSchedule.deleted_at.is_(None),
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="工作流调度不存在")
+    return row
+
+
+@router.get("/workflows/{workflow_id}/schedules")
+async def list_workflow_schedules(
+    workflow_id: str, payload: dict = Depends(require_auth)
+):
+    async with SessionLocal() as db:
+        workflow = await owned_workflow(db, workflow_id, payload)
+        if workflow.created_by != current_user(payload):
+            raise HTTPException(status_code=404, detail="工作流不存在")
+        rows = list(
+            (
+                await db.execute(
+                    select(WorkflowSchedule, WorkflowExecution.status)
+                    .outerjoin(
+                        WorkflowExecution,
+                        WorkflowExecution.id == WorkflowSchedule.last_execution_id,
+                    )
+                    .where(
+                        WorkflowSchedule.workflow_id == workflow.id,
+                        WorkflowSchedule.tenant_key == tenant(),
+                        WorkflowSchedule.owner_user_id == current_user(payload),
+                        WorkflowSchedule.deleted_at.is_(None),
+                    )
+                    .order_by(WorkflowSchedule.created_at)
+                )
+            ).all()
+        )
+        return [
+            schedule_out(row, execution_status=execution_status)
+            for row, execution_status in rows
+        ]
+
+
+@router.post("/workflows/{workflow_id}/schedules", status_code=201)
+async def create_schedule_api(
+    workflow_id: str,
+    body: WorkflowScheduleCreate,
+    payload: dict = Depends(require_auth),
+):
+    async with SessionLocal() as db:
+        workflow = await owned_workflow(db, workflow_id, payload)
+        if workflow.created_by != current_user(payload):
+            raise HTTPException(status_code=404, detail="工作流不存在")
+        try:
+            row = await create_workflow_schedule(
+                db,
+                workflow=workflow,
+                tenant_key=tenant(),
+                owner_user_id=current_user(payload),
+                cron_expression=body.cron,
+                timezone_name=body.timezone,
+                enabled=body.enabled,
+            )
+            await db.commit()
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="相同工作流调度已存在") from exc
+        await db.refresh(row)
+        return schedule_out(row)
+
+
+@router.patch("/workflows/{workflow_id}/schedules/{schedule_id}")
+async def update_schedule_api(
+    workflow_id: str,
+    schedule_id: str,
+    body: WorkflowScheduleUpdate,
+    payload: dict = Depends(require_auth),
+):
+    async with SessionLocal() as db:
+        workflow = await owned_workflow(db, workflow_id, payload)
+        if workflow.created_by != current_user(payload):
+            raise HTTPException(status_code=404, detail="工作流不存在")
+        row = await owned_schedule(db, workflow_id, schedule_id, payload)
+        cron_expression = body.cron or row.cron_expression
+        timezone_name = body.timezone or row.timezone
+        try:
+            validate_schedule_cron(cron_expression, timezone_name)
+            plan = await validate_schedule_binding(
+                db,
+                workflow=workflow,
+                tenant_key=tenant(),
+                owner_user_id=current_user(payload),
+            )
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        row.cron_expression = cron_expression
+        row.timezone = timezone_name
+        row.plan_id = plan.id
+        row.plan_hash = plan.content_hash
+        row.activation_revision = plan.activation_revision
+        row.enabled = body.enabled if body.enabled is not None else row.enabled
+        row.next_run_at = (
+            compute_schedule_next_run(cron_expression, timezone_name)
+            if row.enabled
+            else None
+        )
+        row.last_result = None
+        row.last_error = None
+        row.version += 1
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="相同工作流调度已存在") from exc
+        await db.refresh(row)
+        return schedule_out(row)
+
+
+@router.post("/workflows/{workflow_id}/schedules/{schedule_id}/pause")
+async def pause_schedule_api(
+    workflow_id: str,
+    schedule_id: str,
+    payload: dict = Depends(require_auth),
+):
+    async with SessionLocal() as db:
+        await owned_workflow(db, workflow_id, payload)
+        row = await owned_schedule(db, workflow_id, schedule_id, payload)
+        row.enabled = False
+        row.next_run_at = None
+        row.version += 1
+        await db.commit()
+        await db.refresh(row)
+        return schedule_out(row)
+
+
+@router.delete("/workflows/{workflow_id}/schedules/{schedule_id}", status_code=204)
+async def delete_schedule_api(
+    workflow_id: str,
+    schedule_id: str,
+    payload: dict = Depends(require_auth),
+) -> Response:
+    async with SessionLocal() as db:
+        await owned_workflow(db, workflow_id, payload)
+        row = await owned_schedule(db, workflow_id, schedule_id, payload)
+        row.enabled = False
+        row.next_run_at = None
+        row.deleted_at = now()
+        row.version += 1
+        await db.commit()
+    return Response(status_code=204)
+
+
 @router.delete("/workflows/{workflow_id}", status_code=204)
 async def delete_workflow(
     workflow_id: str,
@@ -1614,6 +1803,23 @@ async def delete_workflow(
         ).scalar_one_or_none()
         if session is not None:
             session.phase = "archived"
+
+        schedules = list(
+            (
+                await db.execute(
+                    select(WorkflowSchedule).where(
+                        WorkflowSchedule.workflow_id == workflow.id,
+                        WorkflowSchedule.enabled.is_(True),
+                    )
+                )
+            ).scalars().all()
+        )
+        for schedule in schedules:
+            schedule.enabled = False
+            schedule.next_run_at = None
+            schedule.last_result = "error"
+            schedule.last_error = "workflow_archived"
+            schedule.version += 1
 
         workflow.status = "archived"
         workflow.archived_at = now()
@@ -2222,111 +2428,19 @@ async def start_workflow(
 ):
     async with SessionLocal() as db:
         workflow = await owned_workflow(db, workflow_id, payload)
-        if workflow.status not in {"agent_ready", "ready"} or not workflow.active_plan_id:
-            raise HTTPException(status_code=409, detail="专属 Agent 尚未就绪")
-        plan = await db.get(WorkflowPlanVersion, workflow.active_plan_id)
-        qws_binding = await db.scalar(select(WorkspaceWorkflowBinding).where(
-            WorkspaceWorkflowBinding.workflow_id == workflow.id,
-            WorkspaceWorkflowBinding.status == "ACTIVE",
-        ))
-        if qws_binding is not None and (
-            plan is None
-            or qws_binding.plan_id != plan.id
-            or qws_binding.plan_hash != plan.content_hash
-            or qws_binding.activation_revision != plan.activation_revision
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="qws_workflow_plan_change_requires_project_proposal",
-            )
-        approval = (
-            await db.execute(
-                select(WorkflowApproval)
-                .where(
-                    WorkflowApproval.workflow_id == workflow.id,
-                    WorkflowApproval.approval_type == "plan",
-                    WorkflowApproval.decision == "approved",
-                )
-                .order_by(WorkflowApproval.created_at.desc(), WorkflowApproval.id.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
         try:
-            assert_plan_binding(
-                active_plan_id=plan.id if plan else None,
-                active_plan_hash=plan.content_hash if plan else None,
-                active_activation_revision=plan.activation_revision if plan else None,
-                approval_plan_id=approval.plan_id if approval else None,
-                approval_plan_hash=approval.plan_hash if approval else None,
-                approval_activation_revision=approval.activation_revision if approval else None,
+            execution, nodes, _ = await create_workflow_execution(
+                db,
+                workflow=workflow,
+                tenant_key=tenant(),
+                owner_user_id=current_user(payload),
+                request_key=(
+                    body.request_id or f"start:{workflow.id}:{uuid.uuid4().hex}"
+                ),
             )
-        except PlanContractError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        request_key = body.request_id or f"start:{workflow.id}:{uuid.uuid4().hex}"
-        existing = (
-            await db.execute(
-                select(WorkflowExecution).where(
-                    WorkflowExecution.idempotency_key == request_key,
-                    WorkflowExecution.tenant_key == tenant(),
-                )
-            )
-        ).scalar_one_or_none()
-        if existing:
-            nodes = list(
-                (
-                    await db.execute(
-                        select(WorkflowNodeRun)
-                        .where(WorkflowNodeRun.execution_id == existing.id)
-                        .order_by(WorkflowNodeRun.position)
-                    )
-                ).scalars().all()
-            )
-            return execution_out(existing, nodes)
-        active = (
-            await db.execute(
-                select(WorkflowExecution).where(
-                    WorkflowExecution.workflow_id == workflow.id,
-                    WorkflowExecution.tenant_key == tenant(),
-                    WorkflowExecution.status.in_(["queued", "running", "awaiting_approval", "awaiting_review"]),
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if active:
-            raise HTTPException(status_code=409, detail="该工作流已有活动执行，请先恢复或完成现有任务")
-        compiled = DSLSafetyCompiler.compile_and_validate(
-            executable_plan_projection(plan.dsl)
-        )
-        execution = WorkflowExecution(
-            id=uid("wfr"), workflow_id=workflow.id, plan_id=plan.id,
-            tenant_key=tenant(), status="queued", token_budget=plan.max_tokens,
-            idempotency_key=request_key,
-        )
-        db.add(execution)
-        order = DSLSafetyCompiler.check_dag_cycle_kahn(compiled)
-        node_map = {node.id: node for node in compiled.nodes}
-        for position, node_id in enumerate(order):
-            node = node_map[node_id]
-            db.add(
-                WorkflowNodeRun(
-                    id=uid("wfn"), execution_id=execution.id, node_id=node.id,
-                    node_type=node.node_type.value, name=node.name or node.id,
-                    agent_id=str(node.parameters.get("agent_id") or "main_agent"),
-                    position=position,
-                    max_tokens=int(node.parameters.get("max_tokens", 4000)),
-                    input_refs=[edge.source for edge in compiled.edges if edge.target == node.id],
-                )
-            )
-        workflow.status = "ready"
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         await db.commit()
-        nodes = list(
-            (
-                await db.execute(
-                    select(WorkflowNodeRun)
-                    .where(WorkflowNodeRun.execution_id == execution.id)
-                    .order_by(WorkflowNodeRun.position)
-                )
-            ).scalars().all()
-        )
         return execution_out(execution, nodes)
 
 
