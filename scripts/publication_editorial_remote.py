@@ -4,7 +4,7 @@
 No model calls, scheduler, session writes, SCP, or release operation. Manifests
 must be named draft-manifest.json or *.manifest.json for root discovery. Initial items use `prepared`;
 all input hashes are required (bundle_sha256 is added when initially absent).
-Files are limited to 2 MiB each (24 KiB transport chunks), 64 evidence files/item
+Files are limited to 2 MiB each (single authenticated stdin stream), 64 evidence files/item
 and 64 items/manifest. The server independently enforces its body size policy.
 Transport and signing credentials are operator-owned, never manifest fields.
 """
@@ -32,7 +32,7 @@ except ImportError:
 
 VERSION = "editorial-workflow-v2"
 LIMIT = 2 * 1024 * 1024
-CHUNK = 24 * 1024
+
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_files",
           "rights_files", "execution_files", "review_file", "proof_file", "status",
@@ -183,7 +183,7 @@ def load_manifest(path):
 # Existing matching content is an idempotent retry, conflicting bytes fail closed.
 UPLOAD = '''import os,sys,base64,hashlib,json,stat,tempfile
 from pathlib import Path
-batch,digest,ext,mode,payload=sys.argv[1:]
+batch,digest,ext=sys.argv[1:]
 def valid(s,n):
  return isinstance(s,str) and len(s)==n and all(c in '0123456789abcdef' for c in s)
 assert valid(batch,32) and valid(digest,64)
@@ -200,20 +200,9 @@ def read(p,limit):
   raw=f.read(limit+1)
  assert len(raw)<=limit
  return raw
-if mode=='bytes':
- raw=base64.b64decode(payload,validate=True)
- assert len(raw)<=24576
-else:
- assert mode=='chunks'
- chunks=json.loads(payload)
- assert isinstance(chunks,list) and 1<=len(chunks)<=86
- parts=[]
- for h in chunks:
-  assert valid(h,64)
-  part=read(base/batch/(h+'.bin'),24576)
-  assert hashlib.sha256(part).hexdigest()==h
-  parts.append(part)
- raw=b''.join(parts)
+payload=sys.stdin.buffer.read(2796205)
+assert len(payload)<=2796204
+raw=base64.b64decode(payload,validate=True)
 assert len(raw)<=2097152 and hashlib.sha256(raw).hexdigest()==digest
 p=base/batch/(digest+ext)
 fd,tmp=tempfile.mkstemp(prefix='.upload-',dir=base/batch)
@@ -233,8 +222,13 @@ class Remote:
     def __init__(self, identity, known_hosts):
         self.identity, self.known_hosts = identity, known_hosts
 
-    def call(self, words):
-        result = transport._ssh(self.identity, self.known_hosts, shlex.join(words))
+    def call(self, words, *, input_text=None):
+        result = transport._ssh(
+            self.identity,
+            self.known_hosts,
+            shlex.join(words),
+            input_text=input_text,
+        )
         if result.returncode:
             raise ValueError(f"remote command failed (exit {result.returncode})")
         ok, value = transport._json(result.stdout, "editorial")
@@ -249,16 +243,11 @@ class Remote:
         digest = sha(raw)
         if len(raw) > LIMIT:
             raise ValueError("upload exceeds limit")
-        if len(raw) > CHUNK:
-            chunks = []
-            for offset in range(0, len(raw), CHUNK):
-                chunk = raw[offset:offset + CHUNK]
-                self.upload(batch, chunk, ".bin")
-                chunks.append(sha(chunk))
-            mode, payload = "chunks", json.dumps(chunks)
-        else:
-            mode, payload = "bytes", base64.b64encode(raw).decode()
-        value = self.call([*transport.OPERATOR[:12], "-c", UPLOAD, batch, digest, ext, mode, payload])
+        payload = base64.b64encode(raw).decode("ascii")
+        value = self.call(
+            [*transport.OPERATOR[:12], "-c", UPLOAD, batch, digest, ext],
+            input_text=payload,
+        )
         expected = f"/app/data/runtime/publication-intake/{batch}/{digest}{ext}"
         if value != {"path": expected, "sha256": digest}:
             raise ValueError("upload readback mismatch")

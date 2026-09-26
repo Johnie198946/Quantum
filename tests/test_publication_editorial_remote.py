@@ -74,7 +74,7 @@ def flow(tmp_path, monkeypatch):
     store.mkdir()
     calls = []
 
-    def ssh(identity, hosts, command):
+    def ssh(identity, hosts, command, *, input_text=None):
         words = shlex.split(command)
         assert words[:12] == list(transport.OPERATOR[:12])
         calls.append(words[12:])
@@ -84,6 +84,7 @@ def flow(tmp_path, monkeypatch):
             )
             done = subprocess.run(
                 [sys.executable, "-c", script, *words[14:]],
+                input=input_text,
                 capture_output=True,
                 text=True,
             )
@@ -529,14 +530,14 @@ def test_native_forgery_and_body_change_cannot_stage(flow):
 
 
 @pytest.mark.parametrize("size", [110_000, 2 * 1024 * 1024])
-def test_large_files_use_bounded_chunks_and_exact_readback(flow, size):
+def test_large_files_use_single_bounded_stdin_stream_and_exact_readback(flow, size):
     _, _, remote, calls, _, _, intake = flow
     raw = (bytes(range(256)) * ((size + 255) // 256))[:size]
     remote.upload("b" * 32, raw, ".md")
     assert (intake / ("b" * 32) / (relay.sha(raw) + ".md")).read_bytes() == raw
-    assert len(calls) > 1
+    assert len(calls) == 1
     assert max(len(shlex.join(call)) for call in calls) < 40_000
-    assert calls[-1][-2] == "chunks"
+    assert calls[-1][-1] == ".md"
 
 
 def test_draft_manifest_name_and_long_full_manuscript(flow):
@@ -651,7 +652,7 @@ def test_upload_transport_empty_stdout_is_not_json_error(flow, monkeypatch):
     monkeypatch.setattr(
         transport,
         "_ssh",
-        lambda *a: subprocess.CompletedProcess([], 255, "", "TEST connection failed"),
+        lambda *a, **kw: subprocess.CompletedProcess([], 255, "", "TEST connection failed"),
     )
     with pytest.raises(ValueError, match="exit 255"):
         remote.upload("a" * 32, b"x", ".bin")

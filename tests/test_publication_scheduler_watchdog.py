@@ -53,6 +53,26 @@ def item(series: str, status: str, *, digest: str | None = None, day: str = DAY,
     )
 
 
+def test_staged_item_may_be_absent_from_missing_issue_rows():
+    value = summary(*watchdog.SERIES)
+    value["issues"]["missing"] = [
+        row for row in value["issues"]["missing"]
+        if row["series_id"] != "concept-fables"
+    ]
+    assert watchdog._missing(value, DAY) == set(watchdog.SERIES)
+
+
+def test_missing_issue_row_cannot_claim_a_published_series():
+    value = summary("ai-history")
+    value["issues"]["missing"].append({
+        "issue_date": DAY,
+        "series_id": "concept-fables",
+        "status": "overdue_missing",
+    })
+    with pytest.raises(ValueError, match="contradictory publication status"):
+        watchdog._missing(value, DAY)
+
+
 def run(tmp_path: Path, value: dict, items: list, *, blockers=None, calls=None):
     calls = calls if calls is not None else []
     result = watchdog.supervise(
@@ -331,6 +351,17 @@ def test_default_environment_removes_story_credentials(monkeypatch):
     assert env["HERMES_HOME"] == str(Path.home() / ".hermes")
 
 
+def test_default_env_pins_repository_and_removes_profile_overrides(monkeypatch):
+    monkeypatch.chdir(SCRIPT.parents[1])
+    monkeypatch.setenv("PYTHONPATH", "/tmp/untrusted")
+    monkeypatch.setenv("STORY_PUBLICATION_OPERATOR_IDENTITY_FILE", "/tmp/story-key")
+    env = watchdog._default_env()
+    assert env["PYTHONPATH"] == str(SCRIPT.parents[1])
+    assert env["HERMES_HOME"] == str(Path.home() / ".hermes")
+    assert "HERMES_PROFILE" not in env
+    assert "STORY_PUBLICATION_OPERATOR_IDENTITY_FILE" not in env
+
+
 def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     calls = []
 
@@ -345,6 +376,77 @@ def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     assert calls[0][0] == [str(watchdog.EDITORIAL_CLIENT), "prepare", "--manifest", str(manifest)]
     assert calls[1][0] == [str(watchdog.EDITORIAL_CLIENT), "finalize", "--root", str(manifest.parent)]
     assert all(not any("release" in word for word in command) for command, _ in calls)
+
+
+def test_action_timeout_is_classified_for_bounded_retry(tmp_path):
+    claims = watchdog.Claims(tmp_path / "claims.db")
+
+    def timeout(_action):
+        raise watchdog.ActionFailure("action_timeout")
+
+    result = watchdog.supervise(
+        DAY,
+        status=lambda: summary("ai-history"),
+        load_items=lambda: [item("ai-history", "prepared")],
+        blockers=lambda _: [],
+        run_action=timeout,
+        claims=claims,
+    )
+    assert result == {
+        "ok": False,
+        "action": "none",
+        "reason": "action_timeout",
+        "phase": "prepare",
+    }
+    with sqlite3.connect(claims.path) as db:
+        assert db.execute("SELECT state,attempts FROM recovery_claims").fetchone() == ("failed", 1)
+
+
+def test_regular_revision_precedes_toolkit_prerequisite_retry(tmp_path):
+    barrier = watchdog.Barrier("ai-toolkit", "f" * 64)
+    calls = []
+    result = watchdog.supervise(
+        DAY,
+        status=lambda: summary(*watchdog.SERIES),
+        load_items=lambda: [
+            item("ai-history", "staged"),
+            item("ai-practice", "rejected"),
+            item("concept-fables", "staged"),
+        ],
+        blockers=lambda _: [],
+        prerequisite=lambda _: barrier,
+        run_action=lambda action: calls.append(action),
+        claims=watchdog.Claims(tmp_path / "claims.db"),
+    )
+    assert result["phase"] == "author"
+    assert result["series"] == ["ai-practice"]
+    assert calls[0].job_id == watchdog.AUTHOR_JOBS["ai-practice"]
+
+
+def test_toolkit_blocked_prerequisite_recovers_supply_before_author(tmp_path, monkeypatch):
+    barrier = watchdog.Barrier("ai-toolkit", "f" * 64)
+    calls = []
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[0] == "ps":
+            return subprocess.CompletedProcess(command, 0, "Thu Sep 25 09:00:00 2026\n", "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(watchdog.subprocess, "run", fake_run)
+    result = watchdog.supervise(
+        DAY,
+        status=lambda: summary("ai-toolkit"),
+        load_items=lambda: [],
+        blockers=lambda _: [],
+        prerequisite=lambda _: barrier,
+        run_action=watchdog._run_action,
+        claims=watchdog.Claims(tmp_path / "claims.db"),
+    )
+    assert result["phase"] == "prerequisite"
+    assert calls[-2:] == [
+        ["hermes", "cron", "run", watchdog.PREREQUISITE_JOB],
+        ["hermes", "cron", "run", watchdog.AUTHOR_JOBS["ai-toolkit"]],
+    ]
 
 
 def test_author_shared_scope_claims_each_item_atomically(tmp_path):
@@ -369,7 +471,6 @@ def test_review_file_does_not_bypass_editorial_approval_gate(tmp_path):
 
 @pytest.mark.parametrize("mutation", [
     lambda value: value["today"].update(expected=5),
-    lambda value: value["issues"].update(missing=[]),
     lambda value: value["today"].update(date="2026-09-24"),
     lambda value: value["today"]["by_series"]["ai-history"].update(published="unknown"),
 ])

@@ -35,12 +35,13 @@ AUTHOR_JOBS = {
     "ai-toolkit": "171a125ddb63",
 }
 REVIEW_JOB = "fbd1cd1217d7"
+PREREQUISITE_JOB = "b8c4c5e40bb1"
 TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB)
 SERIES = tuple(AUTHOR_JOBS)
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
 EVIDENCE_GROUPS = ("source_files", "rights_files", "execution_files")
-PHASE_ORDER = {"finalize": 0, "review": 1, "prepare": 2, "author": 3}
+PHASE_ORDER = {"finalize": 0, "review": 1, "prepare": 2, "author": 3, "prerequisite": 4}
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,12 @@ class Action:
     barriers: tuple[Barrier, ...]
     job_id: str | None = None
     manifest: Path | None = None
+
+
+class ActionFailure(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def _default_profile_only() -> None:
@@ -101,6 +108,14 @@ def _default_env() -> dict[str, str]:
     for name in tuple(env):
         if name.startswith("STORY_"):
             env.pop(name)
+    source_root = Path(__file__).resolve().parents[1]
+    if not (source_root / "backend/services/publication_editorial.py").is_file():
+        source_root = Path.cwd().resolve()
+    if not (source_root / "backend/services/publication_editorial.py").is_file():
+        raise RuntimeError("publication repository root is unavailable")
+    # The editorial client imports the sibling backend package. Replace, do
+    # not extend, inherited PYTHONPATH so scheduler state cannot inject code.
+    env["PYTHONPATH"] = str(source_root)
     return env
 
 
@@ -194,7 +209,10 @@ def _missing(summary: dict, day: str) -> set[str]:
         if item["published"] == 0:
             inferred.add(name)
     reported = {row.get("series_id") for row in missing_rows if isinstance(row, dict) and row.get("issue_date") == day}
-    if None in reported or reported != inferred or today.get("published") != len(SERIES) - len(inferred):
+    # `issues.missing` intentionally excludes an unpublished item once it is
+    # staged. `by_series.published` remains the complete publication truth,
+    # so the issue list may be a subset but must never contradict it.
+    if None in reported or not reported <= inferred or today.get("published") != len(SERIES) - len(inferred):
         raise ValueError("contradictory publication status")
     return inferred
 
@@ -204,7 +222,25 @@ def _absent_hash(day: str, series: str, terminal: Sequence[Item]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _plan(day: str, missing: set[str], items: Sequence[Item]) -> tuple[Action | None, str]:
+def _toolkit_prerequisite_barrier(day: str) -> Barrier | None:
+    marker = OUTPUT_ROOT / f"{day}-ai-toolkit-blocked" / "blocked-tutorial-prerequisite.json"
+    if not marker.is_file() or marker.is_symlink():
+        return None
+    try:
+        value = _read_json(marker)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if value.get("status") != "BLOCKED_TUTORIAL_PREREQUISITE":
+        return None
+    return Barrier("ai-toolkit", hashlib.sha256(marker.read_bytes()).hexdigest())
+
+
+def _plan(
+    day: str,
+    missing: set[str],
+    items: Sequence[Item],
+    prerequisite: Barrier | None = None,
+) -> tuple[Action | None, str]:
     today = [item for item in items if item.day == day and item.series in SERIES]
     desired: dict[str, Action] = {}
     invalid_series: set[str] = set()
@@ -220,7 +256,9 @@ def _plan(day: str, missing: set[str], items: Sequence[Item]) -> tuple[Action | 
         if active and any((item.status, item.review_ready) != (active[0].status, active[0].review_ready) for item in active[1:]):
             return None, "ambiguous_manifests"
         barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(day, series, rows))
-        if not active:
+        if not active and series == "ai-toolkit" and prerequisite is not None:
+            desired[series] = Action("prerequisite", (prerequisite,), job_id=PREREQUISITE_JOB)
+        elif not active:
             desired[series] = Action("author", (barrier,), job_id=AUTHOR_JOBS[series])
         else:
             item = active[0]
@@ -244,9 +282,13 @@ def _plan(day: str, missing: set[str], items: Sequence[Item]) -> tuple[Action | 
     if phase == "author":
         first = phase_actions[0]
         same_job = [a for a in phase_actions if a.job_id == first.job_id]
-        # A shared author job can touch every series in its declared scope.  Run
-        # it only when every currently missing series in that scope is claimed.
-        scope_missing = {s for s in missing if AUTHOR_JOBS[s] == first.job_id}
+        # A shared author job can touch every series in its declared scope.
+        # Claim every series that actually needs author work; prepared,
+        # await-review, and staged siblings are immutable handoffs and excluded.
+        scope_missing = {
+            series for series, candidate in desired.items()
+            if candidate.phase == "author" and candidate.job_id == first.job_id
+        }
         claimed = {b.series for a in same_job for b in a.barriers}
         if claimed != scope_missing:
             return None, "ambiguous_author_scope"
@@ -416,21 +458,34 @@ class Claims:
 def _run_action(action: Action) -> None:
     if action.phase in {"author", "review"}:
         assert action.job_id is not None
-        command = ["hermes", "cron", "run", action.job_id]
+        commands = [["hermes", "cron", "run", action.job_id]]
+        timeout = 1800
+    elif action.phase == "prerequisite":
+        commands = [
+            ["hermes", "cron", "run", PREREQUISITE_JOB],
+            ["hermes", "cron", "run", AUTHOR_JOBS["ai-toolkit"]],
+        ]
         timeout = 1800
     elif action.phase == "prepare":
         assert action.manifest is not None
-        command = [str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]
+        commands = [[str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]]
         timeout = 600
     elif action.phase == "finalize":
         assert action.manifest is not None
-        command = [str(EDITORIAL_CLIENT), "finalize", "--root", str(action.manifest.parent)]
+        commands = [[str(EDITORIAL_CLIENT), "finalize", "--root", str(action.manifest.parent)]]
         timeout = 600
     else:
         raise ValueError("unsupported recovery phase")
-    completed = subprocess.run(command, text=True, capture_output=True, timeout=timeout, check=False, env=_default_env())
-    if completed.returncode:
-        raise RuntimeError("recovery action failed")
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command, text=True, capture_output=True, timeout=timeout,
+                check=False, env=_default_env(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ActionFailure("action_timeout") from exc
+        if completed.returncode:
+            raise ActionFailure("action_exit_nonzero")
 
 
 def supervise(
@@ -439,13 +494,14 @@ def supervise(
     status: Callable[[], dict] = _status,
     load_items: Callable[[], list[Item]] = _manifest_items,
     blockers: Callable[[str], list[str]] = _execution_blockers,
+    prerequisite: Callable[[str], Barrier | None] = _toolkit_prerequisite_barrier,
     run_action: Callable[[Action], None] = _run_action,
     claims: Claims | None = None,
 ) -> dict:
     _default_profile_only()
     missing = _missing(status(), day)
     items = load_items()
-    action, reason = _plan(day, missing, items)
+    action, reason = _plan(day, missing, items, prerequisite(day))
     if action is None:
         return {"ok": True, "action": "none", "reason": reason, "missing": sorted(missing)}
     active = blockers(day)
@@ -460,7 +516,7 @@ def supervise(
         return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase}
     try:
         run_action(action)
-    except Exception:
+    except Exception as exc:
         try:
             missing_after = _missing(status(), day)
         except Exception:
@@ -474,8 +530,9 @@ def supervise(
                 "series": sorted(barrier.series for barrier in action.barriers),
             }
         ledger.finish(day, action, "failed")
-        return {"ok": False, "action": "none", "reason": "trigger_failed", "phase": action.phase}
-    ledger.finish(day, action, "dispatched" if action.phase in {"author", "review"} else "completed")
+        reason = exc.reason if isinstance(exc, ActionFailure) else "action_exception"
+        return {"ok": False, "action": "none", "reason": reason, "phase": action.phase}
+    ledger.finish(day, action, "dispatched" if action.phase in {"author", "review", "prerequisite"} else "completed")
     return {
         "ok": True, "action": "triggered", "phase": action.phase,
         "series": sorted(barrier.series for barrier in action.barriers),
