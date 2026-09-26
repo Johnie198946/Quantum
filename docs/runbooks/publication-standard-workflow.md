@@ -37,4 +37,4 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 
 本任务的 `publication-standard-timed-check.json` 是真实 Hermes 定时触发的隔离集成测试（使用合成审核/素材 fixtures），只验证调度与程序链路，不代表真实内容和生产出版验收。用户已于本任务授权推送、部署和真实定时验收；最终状态以 completion manifest 为准。
 
-当前验收临时增加 ai-toolkit/tang-history 的 00:01 时隙，便于验证已经到期的真实发行；验收后移除此临时时隙并保留历史记录。
+2026-09-27 真实验收使用 ai-toolkit/tang-history 的临时 00:01 时隙，两篇均已通过真实作者、独立审核、自动发行和正文/五媒体回读。验收后移除此临时时隙，保留历史记录；正常时隙为主栏目每日12:00、Story每日08:00/13:00/20:00。测试中修复过系统缺陷并重启定时恢复，不声称原测试全程未中断。

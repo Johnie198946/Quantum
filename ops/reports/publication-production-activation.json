@@ -1,0 +1,2245 @@
+{
+  "task_id": "publication-standard-workflow-20260926",
+  "production_acceptance": true,
+  "deployment": {
+    "server_after": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+    "release": "/opt/releases/ai-lab-platform-0832e95ae252.sKcoYr",
+    "containers": {
+      "api": {
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "health": "healthy",
+        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+      },
+      "workflow-worker": {
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "health": "healthy",
+        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+      },
+      "planning-worker": {
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "health": "healthy",
+        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+      },
+      "agent-evaluation-worker": {
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "health": "healthy",
+        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+      },
+      "frontend": {
+        "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+        "health": "healthy",
+        "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+      },
+      "postgres": {
+        "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+        "health": "healthy",
+        "revision": null
+      },
+      "redis": {
+        "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+        "health": "healthy",
+        "revision": null
+      },
+      "taskboard": {
+        "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+        "health": "healthy",
+        "revision": null
+      }
+    },
+    "health_check": {
+      "api": {
+        "status": "ready",
+        "version": "0.8.0"
+      },
+      "bridge": {
+        "status": "ok",
+        "service": "hermes-bridge",
+        "version": "v6.0",
+        "sessions": 16,
+        "workflow_runs": 46,
+        "workflow_orchestration": true,
+        "streaming": true,
+        "ws_pty": "ws://127.0.0.1:9119/api/pty"
+      }
+    },
+    "deploy_lock_free": true
+  },
+  "rollback": {
+    "server_before": "b74a528886d399615d4dedefc7aeae766c49c09e",
+    "release": "/opt/releases/ai-lab-platform-b74a528886d3.93egPT",
+    "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b74a528886d3",
+    "images": {
+      "api": {
+        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "health": "healthy"
+      },
+      "workflow-worker": {
+        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "health": "healthy"
+      },
+      "planning-worker": {
+        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "health": "healthy"
+      },
+      "agent-evaluation-worker": {
+        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "health": "healthy"
+      },
+      "frontend": {
+        "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+        "health": "healthy"
+      },
+      "postgres": {
+        "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+        "health": "healthy"
+      },
+      "redis": {
+        "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+        "health": "healthy"
+      },
+      "taskboard": {
+        "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+        "health": "healthy"
+      }
+    },
+    "publication_db_bytes": 2584576
+  },
+  "remote_sha": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+  "remaining": [
+    "Deploy cleanup removing temporary 00:01 slots; restore normal role schedules; verify both historical publications after cleanup.",
+    "Authenticated user/mobile UI not tested."
+  ],
+  "timed_trigger": {
+    "job_id": "a8a830958fb6",
+    "requested_next_run": "2026-09-27T01:57:01.516757+08:00",
+    "execution_id": "e04f1e5e42a9461cae6cc03fcfd7e265",
+    "started_at": "2026-09-27T01:57:34.490761+08:00",
+    "finished_at": "2026-09-27T01:58:01.463168+08:00",
+    "status": "completed",
+    "main_execution_id": "249acc4e557b42a18401afb65b9d1654",
+    "story_execution_id": "971855f91fac4028a50a7afe4c45b774",
+    "main_session": "cron_b52aa900ac12_20260927_015829",
+    "story_session": "cron_d3e461e0578c_20260927_015830",
+    "production_acceptance": false
+  },
+  "collection": {
+    "receipt": "~/.hermes/outputs/quantumn-editorial-v2/prerequisites/ai-toolkit/2026-09-27.json",
+    "generated_at": "2026-09-27T01:02:52+08:00",
+    "status": "CONTENT_AVAILABLE",
+    "candidate_count": 1,
+    "saved": true,
+    "queued": true,
+    "compilation_verified_at_receipt": false
+  },
+  "repair_tests": {
+    "passed": 202,
+    "log": "ops/reports/publication-real-loop-repair-tests.txt",
+    "independent_review": "No deterministic blocker for two real 00:01 author artifacts; live recovery claim state excluded from reviewer check"
+  },
+  "maintenance_resume": {
+    "job_id": "8ff246d01888",
+    "scheduled_at": "2026-09-27T02:52:04.928373+08:00",
+    "purpose": "resume controller after verified repair; does not regenerate completed author artifacts",
+    "production_acceptance": false,
+    "execution_id": "f03e30dc1a7f4a768c328a89860fadb0",
+    "started_at": "2026-09-27T02:52:54.034080+08:00",
+    "finished_at": "2026-09-27T02:53:01.012068+08:00",
+    "status": "completed",
+    "first_controller_execution": "264298a3f5b741bf83ddbbd0d92be16c",
+    "first_controller_result": {
+      "phase": "finalize",
+      "series": [
+        "ai-history"
+      ],
+      "ok": true
+    }
+  },
+  "collection_timing_contract": {
+    "job_id": "b8c4c5e40bb1",
+    "aligned": true,
+    "collection_success": "at_least_one_usable_candidate",
+    "compile": "asynchronous; saved/queued/compiled distinct",
+    "freeze": "when assigned author actually starts; fixed 08:05 is additional wakeup"
+  },
+  "shared_server_maintenance": {
+    "next_release": "b74a528886d399615d4dedefc7aeae766c49c09e",
+    "reason": "another user-authorized cleanup deployment",
+    "publication_code_diff": "empty",
+    "publication_jobs_paused": false,
+    "active_publication_writes_at_pause": 0,
+    "resumed_standard_cron": true,
+    "next_controller_at": "2026-09-27T03:06:00+08:00"
+  },
+  "temporary_trigger_cleanup": {
+    "jobs": [
+      "a8a830958fb6",
+      "8ff246d01888"
+    ],
+    "jobs_removed": true,
+    "scripts_removed": true,
+    "receipts": "ops/reports/publication-native-trigger-receipts.json"
+  },
+  "main_revision_test": {
+    "issue_key": "2026-09-27T00:01",
+    "revision_1_attempt": "attempt-dd4ba1d014194ef19ee34ceaa4ec4761",
+    "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_031717",
+    "decision": "rejected",
+    "gap_ids": [
+      "execution_evidence_missing",
+      "end_to_end_closure_missing",
+      "copyable_path_mismatch"
+    ],
+    "automatic_revision_execution": "24366c2706654caea3022768327f8920",
+    "revision_started_at": "2026-09-27T03:24:14.396757+08:00",
+    "revision_finished_at": "2026-09-27T03:30:54.424340+08:00",
+    "new_title": "先别把代码审查 Agent 放进定时任务：用离线预检守住只读边界",
+    "execution_documents": 4,
+    "manual_content_or_review_edits": false,
+    "production_acceptance": false,
+    "native_revision_directory": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-b0b67bb5e6704d99b47e6d52-2026-09-27T0001",
+    "automatic_materialized_at": "2026-09-27T03:32:17+08:00",
+    "revision_asset_execution": "f5f95409808048b4a131c333d49b27a6"
+  },
+  "gap_contract_repair": {
+    "paused_after_execution": "f8eff376794a41f38456b5bb765a0f45",
+    "paused_after_finished_at": "2026-09-27T03:54:53.120445+08:00",
+    "all_publication_roles_paused": false,
+    "revision": 2,
+    "attempt_id": "attempt-da1197ed9bfa420eb4624069e2f544b1",
+    "review_decision": "rejected",
+    "review_sha256": "f47ced729ca84574c9cfb3bf32046f57537d8c01a41223b570244900ed2993b5",
+    "gaps": [
+      "copyable_preflight_incomplete",
+      "resolved_gap_contradicts_evidence"
+    ],
+    "root_cause": "revision builder claimed old requirements resolved merely upon resubmission; validator required resolved gaps, coupling system control fields to author content",
+    "repair": "preserve gaps open, require signed independent per-gap resolution, close existing gaps ledger only after complete approval; preserve frozen contracts",
+    "rollback": {
+      "server_before": "b74a528886d399615d4dedefc7aeae766c49c09e",
+      "release": "/opt/releases/ai-lab-platform-b74a528886d3.93egPT",
+      "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b74a528886d3",
+      "images": {
+        "api": {
+          "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+          "health": "healthy"
+        },
+        "workflow-worker": {
+          "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+          "health": "healthy"
+        },
+        "planning-worker": {
+          "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+          "health": "healthy"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+          "health": "healthy"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy"
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy"
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy"
+        }
+      },
+      "publication_db_bytes": 2584576
+    },
+    "acceptance_complete": false,
+    "tests": {
+      "editorial_and_store": {
+        "passed": 82
+      },
+      "native_targeted": {
+        "passed": 7
+      },
+      "controller_and_handoff": {
+        "passed": 131,
+        "warnings": 4
+      },
+      "merged_notes": {
+        "passed": 19,
+        "warnings": 6
+      },
+      "independent_review_focused": {
+        "passed": 5
+      },
+      "ruff": "passed",
+      "diff_check": "passed",
+      "environment_failure": "Initial sandbox run could not execute ps: 34 failed, 97 passed; rerun with read-only process permission all131 passed.",
+      "capability_manual_check": "passed",
+      "ios_capability_matrix_check": "passed"
+    },
+    "release_sha": "5266d737de37aec0e33155c24d9e6914518d044c",
+    "remote_verified": true,
+    "approval_review": {
+      "initial_rejection": "main push scope appeared to include parallel notes",
+      "verified_evidence": "origin/main already05a0efa containing note work; diff12 publication files only",
+      "retry_result": "approved; both refs verified5266d73"
+    },
+    "server": {
+      "server_after": "5266d737de37aec0e33155c24d9e6914518d044c",
+      "release": "/opt/releases/ai-lab-platform-5266d737de37.QCFAK1",
+      "containers": {
+        "api": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy",
+          "revision": "5266d737de37aec0e33155c24d9e6914518d044c"
+        },
+        "workflow-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy",
+          "revision": "5266d737de37aec0e33155c24d9e6914518d044c"
+        },
+        "planning-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy",
+          "revision": "5266d737de37aec0e33155c24d9e6914518d044c"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy",
+          "revision": "5266d737de37aec0e33155c24d9e6914518d044c"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 16,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "runtime_installed": true,
+    "review_contracts_verified": true,
+    "controller_paused_for_timed_resume": false,
+    "timed_resume": {
+      "job_id": "6c4c454890e9",
+      "scheduled_at": "2026-09-27T04:18:34.070374+08:00",
+      "executed": true,
+      "execution_id": "a91785676227406880ae31d40d38f9ee",
+      "started_at": "2026-09-27T04:19:12.121078+08:00",
+      "finished_at": "2026-09-27T04:19:14.362576+08:00",
+      "status": "completed",
+      "controller_execution": "c3af242b32c74450a5a2a8dcd8c89606",
+      "author_execution": "0d470fa1098a4e248abfa25d14024c67",
+      "temporary_job_and_script_removed": true
+    },
+    "server_attempts_before_resume": [
+      {
+        "revision": 1,
+        "state": "rejected"
+      },
+      {
+        "revision": 2,
+        "state": "rejected"
+      }
+    ],
+    "author_revision3": {
+      "execution_id": "0d470fa1098a4e248abfa25d14024c67",
+      "session_id": "cron_b52aa900ac12_20260927_041940",
+      "started_at": "2026-09-27T04:19:27.786544+08:00",
+      "finished_at": "2026-09-27T04:22:55.747953+08:00",
+      "artifact": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/author-content/2026-09-27-ai-toolkit-0001-b52aa900ac12-r3/content.json",
+      "sha256": "605e7b8f6ff877f72cbac1738b813a658b5d4978a572eecbf24295fac0e9e838",
+      "fields": [
+        "schema_version",
+        "title",
+        "summary",
+        "body",
+        "source_documents",
+        "execution_documents"
+      ],
+      "title": "先别把代码审查 Agent 放进定时任务：用离线预检守住只读边界",
+      "body_chars": 12508,
+      "source_documents": 1,
+      "execution_documents": 5,
+      "review_pending": true
+    },
+    "prepared_revision3": {
+      "path": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-605e7b8f6ff877f72cbac173-2026-09-27T0001",
+      "prepared_file": "prepared-492aca3d8cba48928a551aa38ddf6040.json",
+      "prepared_sha256": "51dbc46ad583be883102c9626d3f26519460b04b5d457041ea3e0130a28b6a78",
+      "body_sha256": "a01b19a31545694b284e107b6aa7ad7382fd1d97bdd5149bfc078328dea581ff",
+      "revision": 3,
+      "attempt_id": "attempt-c8a8444415d248aeae1d75636d137a67",
+      "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+      "target_hash": "9faae2e3e33a464b8094bbc6ae0eaedb54b9bb460ad4a011ebb3afca33dd6c3f",
+      "writer_sessions": [
+        "hermes:cron_b52aa900ac12_20260927_015829",
+        "hermes:cron_b52aa900ac12_20260927_032425",
+        "hermes:cron_b52aa900ac12_20260927_041940"
+      ],
+      "gap_states": {
+        "execution_evidence_missing": "open",
+        "end_to_end_closure_missing": "open",
+        "copyable_path_mismatch": "open",
+        "copyable_preflight_incomplete": "open",
+        "resolved_gap_contradicts_evidence": "open"
+      },
+      "assets": [
+        {
+          "height": 2560,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_shelf_cover-1c994eaf5c03a66456f35434dc2a00fb7f032fa91fad562587e1aebd7dc712f6",
+            "kind": "publication_shelf_cover",
+            "sha256": "1c994eaf5c03a66456f35434dc2a00fb7f032fa91fad562587e1aebd7dc712f6"
+          },
+          "role": "shelf_cover",
+          "width": 1440
+        },
+        {
+          "height": 1440,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_reader_cover-68ea7bd676ae9c805fa13d4f8e2a4d10e3927802b0344885805a9b7405afa275",
+            "kind": "publication_reader_cover",
+            "sha256": "68ea7bd676ae9c805fa13d4f8e2a4d10e3927802b0344885805a9b7405afa275"
+          },
+          "role": "reader_cover",
+          "width": 2560
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-51999db67cdd9df537b8cbd82c64beadd65547be886f4e93dc7f0b65b07fb64b",
+            "kind": "publication_illustration",
+            "sha256": "51999db67cdd9df537b8cbd82c64beadd65547be886f4e93dc7f0b65b07fb64b"
+          },
+          "role": "illustration_01",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-2176d4d256df25cf78b4e7fc2e11acb553133f2782f3b3001adf8e077d43f83e",
+            "kind": "publication_illustration",
+            "sha256": "2176d4d256df25cf78b4e7fc2e11acb553133f2782f3b3001adf8e077d43f83e"
+          },
+          "role": "illustration_02",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-76088b04520e8b6b537a61ebb38a6dde1bc2e58247230425dbecb48855b83581",
+            "kind": "publication_illustration",
+            "sha256": "76088b04520e8b6b537a61ebb38a6dde1bc2e58247230425dbecb48855b83581"
+          },
+          "role": "illustration_03",
+          "width": 1600
+        }
+      ],
+      "asset_execution": "13002444c1684ce286ffcb364b3590c4",
+      "asset_finished_at": "2026-09-27T04:36:56.330930+08:00"
+    },
+    "review_revision3": {
+      "execution_id": "70cd7daa24d545e2bd7978ee634400c9",
+      "session_id": "cron_fbd1cd1217d7_20260927_043834",
+      "finished_at": "2026-09-27T04:44:03.448441+08:00",
+      "sha256": "d6dca1c7d91c9a8f41db839a29993ca474e6d14747945eae09095c77b859c3aa",
+      "decision": "rejected",
+      "gaps": [
+        {
+          "acceptance_criterion": "从修订后的用户可见 Python 代码块提取原始内容，SHA-256 等于正文标示值、execution-01 哈希和实际执行脚本哈希，且重新运行离线预检退出码为 0。",
+          "chapter": "chapter-001",
+          "id": "copyable_script_hash_mismatch",
+          "question": "正文代码块按用户可见字节复制后，为何无法得到正文宣称的 SHA-256？",
+          "required_evidence": "修订正文代码块使其字节与 execution-01 完全一致，或更新脚本证据、正文哈希及对应真实执行记录，使三者绑定同一份脚本。",
+          "why_reader_needs_it": "教程明确要求哈希不符时停止；当前代码块多一个末尾换行，会让正确复制的读者误判为文件被编辑器改写。"
+        }
+      ],
+      "gap_resolutions": [
+        {
+          "disposition": "resolved",
+          "finding": "execution-01 至 execution-05 的本地文件哈希均与 manifest 一致，分别给出完整预检脚本、环境版本、离线成功、错误布局拒绝和认证失败；正文仅采用这些有界结果。",
+          "id": "execution_evidence_missing",
+          "quote": "本次真实输出包括：`LAYOUT separated=true`、`HOOK inside_read=allow`、`HOOK outside_read=deny`、`HOOK parent_glob=deny`、`SCHEMA invalid_verdict_rejected=true`，以及 `PREFLIGHT result=pass` 和 `EXIT_CODE=0`。"
+        },
+        {
+          "disposition": "scope_removed",
+          "finding": "正文已明确撤回端到端完成主张，并将成功冷启动、续跑、finding 质量和真实费用列为未验证；当前结论只覆盖离线预检门。",
+          "id": "end_to_end_closure_missing",
+          "quote": "本文不承诺完成在线代码审查。我们在真实隔离环境中固定了 Anthropic 官方 `claude-cookbooks` 提交和 SDK 版本，离线预检全部通过；"
+        },
+        {
+          "disposition": "resolved",
+          "finding": "修订脚本要求 --script 与 --repo，正文命令传入官方脚本和服务目录外演示仓库的绝对路径，消除了相对路径与目录隔离冲突。",
+          "id": "copyable_path_mismatch",
+          "quote": "预检工具接收官方脚本与仓库的绝对路径，不再偷偷假设 `demo-repo` 位于当前目录。"
+        },
+        {
+          "disposition": "resolved",
+          "finding": "正文现已包含 execution-01 的全部可执行代码行，十一项检查和退出逻辑完整；但代码围栏额外末尾换行造成的新哈希矛盾另列本轮缺口。",
+          "id": "copyable_preflight_incomplete",
+          "quote": "把下面这份**完整脚本**逐行复制并保存为服务目录外的 `preflight_checks.py`。"
+        },
+        {
+          "disposition": "scope_removed",
+          "finding": "正文不再声称两轮在线成功，明确记录认证失败、无 finding、无成功状态及未发生续跑，因此与 execution-05 的失败证据一致。",
+          "id": "resolved_gap_contradicts_evidence",
+          "quote": "这里必须保留一条没有被关闭的缺口：上述日志只证明这份离线预检器在记录的环境中运行成功。"
+        }
+      ],
+      "meaning": "new signed per-gap contract exercised; overall reject correctly prevents gap ledger closure and publication; remaining content byte mismatch requires author revision"
+    },
+    "author_revision4": {
+      "execution_id": "fe1bc2fca2f24aff9be4f8a46325f058",
+      "session_id": "cron_b52aa900ac12_20260927_044637",
+      "started_at": "2026-09-27T04:46:27.880698+08:00",
+      "finished_at": "2026-09-27T04:50:26.331616+08:00",
+      "artifact": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/author-content/2026-09-27-ai-toolkit-0001-b52aa900ac12-r4/content.json",
+      "sha256": "287e1d9d33264005bf2515eff08aaa4900c7c96a5b2ff5df444e13f2fc9f96b8",
+      "fields": [
+        "schema_version",
+        "title",
+        "summary",
+        "body",
+        "source_documents",
+        "execution_documents"
+      ],
+      "embedded_script_sha256": "27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a",
+      "evidence_script_sha256": "27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a",
+      "body_claim_matches": true,
+      "review_pending": true
+    },
+    "prepared_revision4": {
+      "path": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-287e1d9d33264005bf2515ef-2026-09-27T0001",
+      "prepared_file": "prepared-14050914ef8e4120a752b2cfddc8fcf8.json",
+      "prepared_sha256": "b23d6e251b9c29675e069d3857dac64cabc2f27801b01ccb878fc1dbad7dd155",
+      "body_sha256": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+      "revision": 4,
+      "attempt_id": "attempt-3c402037abcf49f8aff76e38dfa761af",
+      "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+      "target_hash": "e82bc6f24e7e0f25953972d0a12de2d5cb4519ce5aeb692dcb34f4f2af788832",
+      "writer_sessions": [
+        "hermes:cron_b52aa900ac12_20260927_015829",
+        "hermes:cron_b52aa900ac12_20260927_032425",
+        "hermes:cron_b52aa900ac12_20260927_041940",
+        "hermes:cron_b52aa900ac12_20260927_044637"
+      ],
+      "gap_states": {
+        "execution_evidence_missing": "open",
+        "end_to_end_closure_missing": "open",
+        "copyable_path_mismatch": "open",
+        "copyable_preflight_incomplete": "open",
+        "resolved_gap_contradicts_evidence": "open",
+        "copyable_script_hash_mismatch": "open"
+      },
+      "assets": [
+        {
+          "height": 2560,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_shelf_cover-7d1194809b3c0c36fbabb63e93aa6ca02b271e0e4f9e10d96a2ae7cee6e26dd0",
+            "kind": "publication_shelf_cover",
+            "sha256": "7d1194809b3c0c36fbabb63e93aa6ca02b271e0e4f9e10d96a2ae7cee6e26dd0"
+          },
+          "role": "shelf_cover",
+          "width": 1440
+        },
+        {
+          "height": 1440,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_reader_cover-cc910139e7e67a36069150ad24c176c7f3a6e62f92e6da43d05b2b798eda9830",
+            "kind": "publication_reader_cover",
+            "sha256": "cc910139e7e67a36069150ad24c176c7f3a6e62f92e6da43d05b2b798eda9830"
+          },
+          "role": "reader_cover",
+          "width": 2560
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-945acb5b077ed86a697d605aa17fb45de974eb4cebdca751bf489ed5bcb8178b",
+            "kind": "publication_illustration",
+            "sha256": "945acb5b077ed86a697d605aa17fb45de974eb4cebdca751bf489ed5bcb8178b"
+          },
+          "role": "illustration_01",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-d90c7c8e716ce6880c364d955ccf4df1fb678a1bee3a34896e42622e231315bc",
+            "kind": "publication_illustration",
+            "sha256": "d90c7c8e716ce6880c364d955ccf4df1fb678a1bee3a34896e42622e231315bc"
+          },
+          "role": "illustration_02",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-5322c7d4339ddf1242d326cfc14489c9be242dbc6813c018394a42b69eeedf3b",
+            "kind": "publication_illustration",
+            "sha256": "5322c7d4339ddf1242d326cfc14489c9be242dbc6813c018394a42b69eeedf3b"
+          },
+          "role": "illustration_03",
+          "width": 1600
+        }
+      ],
+      "asset_execution": "78eaf5d3824249998ae173926141ecd9",
+      "asset_finished_at": "2026-09-27T05:06:52.180240+08:00",
+      "autonomous_corrections": [
+        "asset generator regenerated ambiguous portrait cover",
+        "asset agent corrected hyphenated names to prescribed underscore names after builder rejection"
+      ]
+    },
+    "review_revision4": {
+      "execution_id": "2f53f3477ffe4632b4b4f24d467f97fb",
+      "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_050839",
+      "started_at": "2026-09-27T05:08:32.172123+08:00",
+      "finished_at": "2026-09-27T05:12:42.515920+08:00",
+      "sha256": "50751586c93918009e47a6adff427d684b63e036d4c9d7191e63483196e5681b",
+      "decision": "approved",
+      "gaps": [],
+      "gap_resolutions": [
+        {
+          "id": "execution_evidence_missing",
+          "disposition": "resolved",
+          "quote": "本次真实输出包括：`LAYOUT separated=true`、`HOOK inside_read=allow`、`HOOK outside_read=deny`、`HOOK parent_glob=deny`、`SCHEMA invalid_verdict_rejected=true`，以及 `PREFLIGHT result=pass` 和 `EXIT_CODE=0`。",
+          "finding": "execution-01 是 4047 字节完整脚本；execution-02 至 execution-06 分别绑定环境、正向预检、错误布局、在线认证失败与修订后重跑，文件哈希均与 manifest 和 bundle receipt 一致。"
+        },
+        {
+          "id": "end_to_end_closure_missing",
+          "disposition": "scope_removed",
+          "quote": "本文不承诺完成在线代码审查。我们在真实隔离环境中固定了 Anthropic 官方 `claude-cookbooks` 提交和 SDK 版本，离线预检全部通过；随后进行在线就绪探测，得到 `Not logged in · Please run /login`，退出码为 1。",
+          "finding": "当前标题、论点与结论已收窄为上线前离线预检门；正文明确在线冷启动和续跑未发生，最终决定为不得安装定时任务，因此不再保留端到端成功主张。"
+        },
+        {
+          "id": "copyable_path_mismatch",
+          "disposition": "resolved",
+          "quote": "预检工具接收官方脚本与仓库的绝对路径，不再偷偷假设 `demo-repo` 位于当前目录。",
+          "finding": "完整脚本强制要求 `--script` 与 `--repo`，二者均 resolve 为绝对路径并检查双向非嵌套；正文创建的演示仓库位于服务目录同级，命令关系一致。"
+        },
+        {
+          "id": "copyable_preflight_incomplete",
+          "disposition": "resolved",
+          "quote": "把下面这份**完整脚本**逐行复制并保存为服务目录外的 `preflight_checks.py`。脚本文本采用 UTF-8，末尾保留一个换行；其 SHA-256 为 `27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a`。",
+          "finding": "用户可见 Python 围栏含完整 129 行、4047 字节脚本，覆盖十一项断言与退出码；execution-06 记录相同字节脚本重跑得到 PREFLIGHT pass 和退出码 0。"
+        },
+        {
+          "id": "resolved_gap_contradicts_evidence",
+          "disposition": "scope_removed",
+          "quote": "在线冷启动仍因认证失败而没有完成，续跑也没有发生；因此端到端审查闭环仍是未解决项，不能把两次离线执行、两类本地检查或一次失败的在线探测表述成“两次在线运行成功”。",
+          "finding": "正文与 execution-05 一致记录 INCOMPLETE、认证失败和退出码 1，并明确无 finding、无成功状态、无续跑；当前有限结论不依赖在线闭环完成。"
+        },
+        {
+          "id": "copyable_script_hash_mismatch",
+          "disposition": "resolved",
+          "quote": "复制后可先运行 `shasum -a 256 /绝对路径/preflight_checks.py` 核对字节是否一致。若哈希不同，先检查是否被编辑器改写了引号、缩进或换行，不要继续把不同字节的运行结果与本文日志对照。",
+          "finding": "独立提取正文 Python 围栏原始内容得到 4047 字节，SHA-256 为 27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a，与 execution-01 字节完全相等。"
+        }
+      ],
+      "publication_not_yet_confirmed": false
+    },
+    "server_signed_approval_snapshot": {
+      "server_sha": "5266d737de37aec0e33155c24d9e6914518d044c",
+      "editions": [
+        {
+          "edition_id": "edition-8ea548b0e71c58c6389c6a1e0f996ee7",
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "ai-toolkit",
+          "edition": 1,
+          "content_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "state": "staged",
+          "actual_release_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_id": "attempt-dd4ba1d014194ef19ee34ceaa4ec4761",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 1,
+          "state": "rejected",
+          "target_hash": "7f26dfde3eb492916b0f4fb8319272588455db540c88f553303d24d5a787b476",
+          "review_hash": "dd7324fe561108e54211685cee6a25e5d271082af21be7b363ac2aa3395f1658",
+          "contract_gaps": {},
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:22:34.526929+00:00"
+        },
+        {
+          "attempt_id": "attempt-da1197ed9bfa420eb4624069e2f544b1",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 2,
+          "state": "rejected",
+          "target_hash": "e979ff967c22a5feca08b44a7e7d6231783034b5964ec163f78a6ba4ae9136ae",
+          "review_hash": "f47ced729ca84574c9cfb3bf32046f57537d8c01a41223b570244900ed2993b5",
+          "contract_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:54:45.554495+00:00"
+        },
+        {
+          "attempt_id": "attempt-c8a8444415d248aeae1d75636d137a67",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 3,
+          "state": "rejected",
+          "target_hash": "9faae2e3e33a464b8094bbc6ae0eaedb54b9bb460ad4a011ebb3afca33dd6c3f",
+          "review_hash": "d6dca1c7d91c9a8f41db839a29993ca474e6d14747945eae09095c77b859c3aa",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T20:44:55.470083+00:00"
+        },
+        {
+          "attempt_id": "attempt-3c402037abcf49f8aff76e38dfa761af",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 4,
+          "state": "approved",
+          "target_hash": "e82bc6f24e7e0f25953972d0a12de2d5cb4519ce5aeb692dcb34f4f2af788832",
+          "review_hash": "50751586c93918009e47a6adff427d684b63e036d4c9d7191e63483196e5681b",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "resolved",
+            "resolved_gap_contradicts_evidence": "resolved",
+            "copyable_script_hash_mismatch": "resolved"
+          },
+          "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_050839",
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940",
+            "hermes:cron_b52aa900ac12_20260927_044637"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T21:15:01.840813+00:00"
+        }
+      ]
+    }
+  },
+  "story_native_test": {
+    "path": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-e1befd79290a6bb16b58929f-2026-09-27T0001",
+    "author_binding": {
+      "artifact_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/author-content/tang-history-2026-09-27-0001-971855f91fac/content.json",
+      "artifact_sha256": "e1befd79290a6bb16b58929f1bc0843e1331b0bfad4f92aa1c67afacb1c62a30",
+      "author_job_id": "d3e461e0578c",
+      "author_profile": "story",
+      "issue_date": "2026-09-27",
+      "issue_key": "2026-09-27T00:01",
+      "issue_slot": "00:01",
+      "release_at": "2026-09-27T00:01:00+08:00",
+      "series_id": "tang-history",
+      "version": "publication-native-author-v1",
+      "writer_session": "hermes:cron_d3e461e0578c_20260927_015830"
+    },
+    "native_fetch_execution": "1bf8a32a08cf4232a89c0e2ba5c2ebbe",
+    "native_fetch_finished_at": "2026-09-27T05:18:35.050277+08:00",
+    "publication_confirmed": true,
+    "prepared": {
+      "prepared_file": "prepared-22d82ac660634a85aaf3024985615e59.json",
+      "prepared_sha256": "371d59a60fb3bb951c4244cb5db9e766d3adfde58bad5af561d922eb4df9fe49",
+      "body_sha256": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+      "revision": 1,
+      "attempt_id": "attempt-a026c48ee0014404ba4524de2daaacf3",
+      "issue_id": "issue-40380deb936907737fda3763801a2a5c",
+      "target_hash": "89431dc99a67e50e126299dcf3ad5b1e0969fc234d70001c37a187556bfc6562",
+      "writer_sessions": [
+        "hermes:cron_d3e461e0578c_20260927_015830"
+      ],
+      "review_policy": "story-supervision-v2",
+      "assets": [
+        {
+          "height": 2560,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_shelf_cover-ad518f0c59487ae52c8f4e3e47b64ba28386ca9f8da252c8d2adba2a93794e16",
+            "kind": "publication_shelf_cover",
+            "sha256": "ad518f0c59487ae52c8f4e3e47b64ba28386ca9f8da252c8d2adba2a93794e16"
+          },
+          "role": "shelf_cover",
+          "width": 1440
+        },
+        {
+          "height": 1440,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_reader_cover-10c60058c1163dca220e1c703baca4bbe9c879bf792a12033dc20546d89dc084",
+            "kind": "publication_reader_cover",
+            "sha256": "10c60058c1163dca220e1c703baca4bbe9c879bf792a12033dc20546d89dc084"
+          },
+          "role": "reader_cover",
+          "width": 2560
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-d62a8251bf7e5edd747bdfcfb0583493994532e61ebd6413a1fdaf8c291d5545",
+            "kind": "publication_illustration",
+            "sha256": "d62a8251bf7e5edd747bdfcfb0583493994532e61ebd6413a1fdaf8c291d5545"
+          },
+          "role": "illustration_01",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-c62f94685f1ce73fe58d27ea1b29f78f945c9f816222c2012cf21fbb0ca8db34",
+            "kind": "publication_illustration",
+            "sha256": "c62f94685f1ce73fe58d27ea1b29f78f945c9f816222c2012cf21fbb0ca8db34"
+          },
+          "role": "illustration_02",
+          "width": 1600
+        },
+        {
+          "height": 900,
+          "media_type": "image/jpeg",
+          "receipt": {
+            "artifact_id": "receipt-publication_illustration-191f261e653943558cc7f466c7efa7e6a3633c64358fb3cb45a55a7d4bee90b2",
+            "kind": "publication_illustration",
+            "sha256": "191f261e653943558cc7f466c7efa7e6a3633c64358fb3cb45a55a7d4bee90b2"
+          },
+          "role": "illustration_03",
+          "width": 1600
+        }
+      ],
+      "asset_execution": "0c7f89abbfda47e8a1c4485635855555",
+      "asset_finished_at": "2026-09-27T05:33:48.563196+08:00"
+    },
+    "review": {
+      "execution_id": "018733cfa9ec48a3a7eb2a04d4c4b65c",
+      "reviewer_session": "hermes:cron_0dd3884f173c_20260927_053444",
+      "started_at": "2026-09-27T05:34:37.031002+08:00",
+      "finished_at": "2026-09-27T05:36:14.923156+08:00",
+      "sha256": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+      "decision": "approved",
+      "research_gaps": [],
+      "publication_material_hash": "97eaa25daa180dbc4ac61b31a6c57e1f4fd22fc08011d84b6b5831e18b053c34"
+    }
+  },
+  "main_production_acceptance": {
+    "automatic_release_execution": "687597ab1303405f92b1bb6464f8eab5",
+    "automatic_release_receipt": "2026-09-27_05-20-51.md",
+    "state": {
+      "server_sha": "5266d737de37aec0e33155c24d9e6914518d044c",
+      "editions": [
+        {
+          "edition_id": "edition-8ea548b0e71c58c6389c6a1e0f996ee7",
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "ai-toolkit",
+          "edition": 1,
+          "content_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "state": "published",
+          "actual_release_at": "2026-09-26T21:20:44.262010+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_id": "attempt-dd4ba1d014194ef19ee34ceaa4ec4761",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 1,
+          "state": "rejected",
+          "target_hash": "7f26dfde3eb492916b0f4fb8319272588455db540c88f553303d24d5a787b476",
+          "review_hash": "dd7324fe561108e54211685cee6a25e5d271082af21be7b363ac2aa3395f1658",
+          "contract_gaps": {},
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:22:34.526929+00:00"
+        },
+        {
+          "attempt_id": "attempt-da1197ed9bfa420eb4624069e2f544b1",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 2,
+          "state": "rejected",
+          "target_hash": "e979ff967c22a5feca08b44a7e7d6231783034b5964ec163f78a6ba4ae9136ae",
+          "review_hash": "f47ced729ca84574c9cfb3bf32046f57537d8c01a41223b570244900ed2993b5",
+          "contract_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:54:45.554495+00:00"
+        },
+        {
+          "attempt_id": "attempt-c8a8444415d248aeae1d75636d137a67",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 3,
+          "state": "rejected",
+          "target_hash": "9faae2e3e33a464b8094bbc6ae0eaedb54b9bb460ad4a011ebb3afca33dd6c3f",
+          "review_hash": "d6dca1c7d91c9a8f41db839a29993ca474e6d14747945eae09095c77b859c3aa",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T20:44:55.470083+00:00"
+        },
+        {
+          "attempt_id": "attempt-3c402037abcf49f8aff76e38dfa761af",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 4,
+          "state": "approved",
+          "target_hash": "e82bc6f24e7e0f25953972d0a12de2d5cb4519ce5aeb692dcb34f4f2af788832",
+          "review_hash": "50751586c93918009e47a6adff427d684b63e036d4c9d7191e63483196e5681b",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "resolved",
+            "resolved_gap_contradicts_evidence": "resolved",
+            "copyable_script_hash_mismatch": "resolved"
+          },
+          "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_050839",
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940",
+            "hermes:cron_b52aa900ac12_20260927_044637"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T21:15:01.840813+00:00"
+        }
+      ]
+    },
+    "reader_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "series_id": "ai-toolkit",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 7,
+          "code_block_hashes": [
+            "1318022abd5d1057eb3aecc6bbd5cbca8e1573ef7658243d6e04b52319496a1f",
+            "ef6c579eacae778249b003d57e26a30d68501661b4b3334f4ce2a79914be2024",
+            "2cfc0e4f7b9282e2367ac3f466dbd72a437babfdac153c55069ff9becf521165",
+            "27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a",
+            "685849972ea524b1b0122dd81f5ba98041e84cbc05282c3f7ec739999d8c174c",
+            "fa628f3d133161047e434359779de1958931e70ec074df53a8896b3727fa2503",
+            "cb2ffb3eade73ff65d5f160c23338d81a6707874e4cc739e591d37f668d8d5cd"
+          ],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 1011134,
+              "sha256": "7d1194809b3c0c36fbabb63e93aa6ca02b271e0e4f9e10d96a2ae7cee6e26dd0"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1140002,
+              "sha256": "cc910139e7e67a36069150ad24c176c7f3a6e62f92e6da43d05b2b798eda9830"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 389788,
+              "sha256": "945acb5b077ed86a697d605aa17fb45de974eb4cebdca751bf489ed5bcb8178b"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 593066,
+              "sha256": "d90c7c8e716ce6880c364d955ccf4df1fb678a1bee3a34896e42622e231315bc"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 558687,
+              "sha256": "5322c7d4339ddf1242d326cfc14489c9be242dbc6813c018394a42b69eeedf3b"
+            }
+          ]
+        }
+      ]
+    },
+    "duplicate_release": {
+      "global_attention": true,
+      "issues": {
+        "blocked": [
+          {
+            "blocked_reasons": [
+              "rights_attestation_missing_or_unbound"
+            ],
+            "issue_date": "2026-09-09",
+            "publication_id": "publication-f5a8313172bb7b63cb6a4cf55a308bef",
+            "series_id": "ai-practice",
+            "state": "blocked"
+          }
+        ],
+        "missing": [
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "ai-practice",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "concept-fables",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "ai-toolkit",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T00:01",
+            "issue_slot": "00:01",
+            "release_at": "2026-09-27T00:01:00+08:00",
+            "series_id": "tang-history",
+            "status": "overdue_missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T08:00",
+            "issue_slot": "08:00",
+            "release_at": "2026-09-27T08:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T13:00",
+            "issue_slot": "13:00",
+            "release_at": "2026-09-27T13:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T20:00",
+            "issue_slot": "20:00",
+            "release_at": "2026-09-27T20:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          }
+        ]
+      },
+      "observed_published_publication_id_delta": [],
+      "released_edition_ids": [],
+      "target": {
+        "edition_id": "edition-8ea548b0e71c58c6389c6a1e0f996ee7",
+        "issue_date": "2026-09-27",
+        "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+        "series_id": "ai-toolkit",
+        "state": "published"
+      },
+      "today": {
+        "by_series": {
+          "ai-history": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "ai-practice": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "ai-toolkit": {
+            "body_available": false,
+            "expected": 2,
+            "media_roles": [],
+            "published": 1,
+            "slots": [
+              {
+                "body_available": true,
+                "issue_key": "2026-09-27T00:01",
+                "issue_slot": "00:01",
+                "media_roles": [
+                  "illustration_01",
+                  "illustration_02",
+                  "illustration_03",
+                  "reader_cover",
+                  "shelf_cover"
+                ],
+                "published": 1,
+                "release_at": "2026-09-27T00:01:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "concept-fables": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "tang-history": {
+            "body_available": false,
+            "expected": 4,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T00:01",
+                "issue_slot": "00:01",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T00:01:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T08:00",
+                "issue_slot": "08:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T08:00:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T13:00",
+                "issue_slot": "13:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T13:00:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T20:00",
+                "issue_slot": "20:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T20:00:00+08:00"
+              }
+            ]
+          }
+        },
+        "date": "2026-09-27",
+        "expected": 9,
+        "published": 1
+      },
+      "totals": {
+        "blocked": 1,
+        "draft": 0,
+        "missing": 7,
+        "published": 18,
+        "scheduled": 0,
+        "staged": 1,
+        "withdrawn": 13
+      }
+    },
+    "editions_unchanged": true,
+    "audit_records_unchanged": true,
+    "verified": true
+  },
+  "trusted_review_time_repair": {
+    "cause": "Reviewer supplied Beijing local clock with Z suffix; validate_bundle rejected reviewed_at is in the future. Program had incorrectly trusted model-authored system timestamp.",
+    "attempt_id": "attempt-a026c48ee0014404ba4524de2daaacf3",
+    "raw_reviewed_at": "2026-09-27T05:35:00.000Z",
+    "native_ended_at": 1790458574.858036,
+    "publication_roles_paused": false,
+    "server_before": {
+      "server_before": "5266d737de37aec0e33155c24d9e6914518d044c",
+      "release": "/opt/releases/ai-lab-platform-5266d737de37.QCFAK1",
+      "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/5266d737de37",
+      "images": {
+        "api": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy"
+        },
+        "workflow-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy"
+        },
+        "planning-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:8a067571d76a168f86626a38b4508a9a6c883b74a6ffa3dcfa17628bed1f7a0f",
+          "health": "healthy"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy"
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy"
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy"
+        }
+      },
+      "publication_db_bytes": 2584576
+    },
+    "status": "real_story_published",
+    "raw_evidence_must_remain_immutable": true,
+    "immutable_before": {
+      "editorial-review.json": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+      "editorial-proof.json": "64bd15af1c9206d80aab2507067d19f176a8af4705f150c5e5ad193b706c6ddc",
+      "prepared-22d82ac660634a85aaf3024985615e59.json": "371d59a60fb3bb951c4244cb5db9e766d3adfde58bad5af561d922eb4df9fe49",
+      "body.md": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1"
+    },
+    "tests": {
+      "relay": "85 passed, 4 warnings",
+      "provenance_workflow": "92 passed",
+      "legacy_compatibility": "6 passed",
+      "clock_boundaries": "9 passed",
+      "independent_review": "10 passed; no remaining blockers"
+    },
+    "test_log": "ops/reports/publication-native-clock-tests.txt",
+    "server_after": {
+      "server_after": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "release": "/opt/releases/ai-lab-platform-0832e95ae252.sKcoYr",
+      "containers": {
+        "api": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy",
+          "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        },
+        "workflow-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy",
+          "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        },
+        "planning-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy",
+          "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy",
+          "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 16,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "runtime_prompt_verified": true,
+    "timed_resume": {
+      "id": "ea574986acc4",
+      "name": "publication-native-clock-resume-once",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "publication-native-clock-resume.py",
+      "no_agent": true,
+      "monitor_script": null,
+      "monitor_url": null,
+      "monitor_state": null,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1,
+        "display": "every 1m"
+      },
+      "schedule_display": "every 1m",
+      "repeat": {
+        "times": 1,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-09-27T06:03:14.785316+08:00",
+      "next_run_at": "2026-09-27T06:04:14.786903+08:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "last_delivery_unverified": null,
+      "failure_streak": 0,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "failure_deliver": "local"
+    },
+    "controller_waiting_timed_resume": false,
+    "immutable_after": {
+      "editorial-review.json": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+      "editorial-proof.json": "64bd15af1c9206d80aab2507067d19f176a8af4705f150c5e5ad193b706c6ddc",
+      "prepared-22d82ac660634a85aaf3024985615e59.json": "371d59a60fb3bb951c4244cb5db9e766d3adfde58bad5af561d922eb4df9fe49",
+      "body.md": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1"
+    },
+    "immutable_bytes_verified": true,
+    "recovery_execution": {
+      "id": "7d7c955f30394f239f18be6fb871c392",
+      "started_at": "2026-09-27T06:04:34.491551+08:00",
+      "finished_at": "2026-09-27T06:05:55.789615+08:00",
+      "status": "completed"
+    },
+    "release_execution": {
+      "id": "9aa0d52317464a8fae4745284a2a9577",
+      "started_at": "2026-09-27T06:05:32.787682+08:00",
+      "finished_at": "2026-09-27T06:06:04.884514+08:00",
+      "status": "completed"
+    },
+    "server_publication_state": {
+      "server_sha": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "editions": [
+        {
+          "edition_id": "edition-8ea548b0e71c58c6389c6a1e0f996ee7",
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "ai-toolkit",
+          "edition": 1,
+          "content_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "state": "published",
+          "actual_release_at": "2026-09-26T21:20:44.262010+00:00"
+        },
+        {
+          "edition_id": "edition-da58df44faaaa3a4730e02402da4cb94",
+          "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+          "issue_id": "issue-40380deb936907737fda3763801a2a5c",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "tang-history",
+          "edition": 1,
+          "content_hash": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+          "state": "published",
+          "actual_release_at": "2026-09-26T22:05:56.822040+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_id": "attempt-dd4ba1d014194ef19ee34ceaa4ec4761",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 1,
+          "state": "rejected",
+          "target_hash": "7f26dfde3eb492916b0f4fb8319272588455db540c88f553303d24d5a787b476",
+          "review_hash": "dd7324fe561108e54211685cee6a25e5d271082af21be7b363ac2aa3395f1658",
+          "contract_gaps": {},
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:22:34.526929+00:00"
+        },
+        {
+          "attempt_id": "attempt-da1197ed9bfa420eb4624069e2f544b1",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 2,
+          "state": "rejected",
+          "target_hash": "e979ff967c22a5feca08b44a7e7d6231783034b5964ec163f78a6ba4ae9136ae",
+          "review_hash": "f47ced729ca84574c9cfb3bf32046f57537d8c01a41223b570244900ed2993b5",
+          "contract_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:54:45.554495+00:00"
+        },
+        {
+          "attempt_id": "attempt-c8a8444415d248aeae1d75636d137a67",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 3,
+          "state": "rejected",
+          "target_hash": "9faae2e3e33a464b8094bbc6ae0eaedb54b9bb460ad4a011ebb3afca33dd6c3f",
+          "review_hash": "d6dca1c7d91c9a8f41db839a29993ca474e6d14747945eae09095c77b859c3aa",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T20:44:55.470083+00:00"
+        },
+        {
+          "attempt_id": "attempt-3c402037abcf49f8aff76e38dfa761af",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 4,
+          "state": "approved",
+          "target_hash": "e82bc6f24e7e0f25953972d0a12de2d5cb4519ce5aeb692dcb34f4f2af788832",
+          "review_hash": "50751586c93918009e47a6adff427d684b63e036d4c9d7191e63483196e5681b",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "resolved",
+            "resolved_gap_contradicts_evidence": "resolved",
+            "copyable_script_hash_mismatch": "resolved"
+          },
+          "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_050839",
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940",
+            "hermes:cron_b52aa900ac12_20260927_044637"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T21:15:01.840813+00:00"
+        },
+        {
+          "attempt_id": "attempt-a026c48ee0014404ba4524de2daaacf3",
+          "issue_id": "issue-40380deb936907737fda3763801a2a5c",
+          "revision": 1,
+          "state": "approved",
+          "target_hash": "89431dc99a67e50e126299dcf3ad5b1e0969fc234d70001c37a187556bfc6562",
+          "review_hash": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+          "contract_gaps": {},
+          "ledger_gaps": {},
+          "reviewer_session": "hermes:cron_0dd3884f173c_20260927_053444",
+          "writer_sessions": [
+            "hermes:cron_d3e461e0578c_20260927_015830"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T22:05:09.020948+00:00"
+        }
+      ]
+    },
+    "timed_resume_completed": {
+      "id": "ea574986acc4",
+      "name": "publication-native-clock-resume-once",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "publication-native-clock-resume.py",
+      "no_agent": true,
+      "monitor_script": null,
+      "monitor_url": null,
+      "monitor_state": null,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1,
+        "display": "every 1m"
+      },
+      "schedule_display": "every 1m",
+      "repeat": {
+        "times": 1,
+        "completed": 1
+      },
+      "enabled": false,
+      "state": "completed",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-09-27T06:03:14.785316+08:00",
+      "next_run_at": null,
+      "last_run_at": "2026-09-27T06:04:34.701305+08:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "last_delivery_unverified": null,
+      "failure_streak": 0,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "failure_deliver": "local",
+      "last_dispatch": {
+        "scheduled_at": "2026-09-27T06:04:14.786903+08:00",
+        "dispatched_at": "2026-09-27T06:04:32.506383+08:00",
+        "lateness_seconds": 17.7,
+        "kind": "on_time"
+      },
+      "fire_claim": null
+    },
+    "timed_resume_execution": [
+      {
+        "id": "60d4177f7a144b0e8f7d5591ec0d0889",
+        "job_id": "ea574986acc4",
+        "status": "completed",
+        "started_at": "2026-09-27T06:04:32.614224+08:00",
+        "finished_at": "2026-09-27T06:04:34.705026+08:00",
+        "error": null
+      }
+    ],
+    "temporary_job_and_script_removed": true
+  },
+  "story_production_acceptance": {
+    "verified": true,
+    "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+    "published_at": "2026-09-26T22:05:56.822040+00:00",
+    "state_after": {
+      "server_sha": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "editions": [
+        {
+          "edition_id": "edition-8ea548b0e71c58c6389c6a1e0f996ee7",
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "ai-toolkit",
+          "edition": 1,
+          "content_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "state": "published",
+          "actual_release_at": "2026-09-26T21:20:44.262010+00:00"
+        },
+        {
+          "edition_id": "edition-da58df44faaaa3a4730e02402da4cb94",
+          "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+          "issue_id": "issue-40380deb936907737fda3763801a2a5c",
+          "issue_key": "2026-09-27T00:01",
+          "series_id": "tang-history",
+          "edition": 1,
+          "content_hash": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+          "state": "published",
+          "actual_release_at": "2026-09-26T22:05:56.822040+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_id": "attempt-dd4ba1d014194ef19ee34ceaa4ec4761",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 1,
+          "state": "rejected",
+          "target_hash": "7f26dfde3eb492916b0f4fb8319272588455db540c88f553303d24d5a787b476",
+          "review_hash": "dd7324fe561108e54211685cee6a25e5d271082af21be7b363ac2aa3395f1658",
+          "contract_gaps": {},
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:22:34.526929+00:00"
+        },
+        {
+          "attempt_id": "attempt-da1197ed9bfa420eb4624069e2f544b1",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 2,
+          "state": "rejected",
+          "target_hash": "e979ff967c22a5feca08b44a7e7d6231783034b5964ec163f78a6ba4ae9136ae",
+          "review_hash": "f47ced729ca84574c9cfb3bf32046f57537d8c01a41223b570244900ed2993b5",
+          "contract_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T19:54:45.554495+00:00"
+        },
+        {
+          "attempt_id": "attempt-c8a8444415d248aeae1d75636d137a67",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 3,
+          "state": "rejected",
+          "target_hash": "9faae2e3e33a464b8094bbc6ae0eaedb54b9bb460ad4a011ebb3afca33dd6c3f",
+          "review_hash": "d6dca1c7d91c9a8f41db839a29993ca474e6d14747945eae09095c77b859c3aa",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "reviewer_session": null,
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940"
+          ],
+          "proof_present": false,
+          "closed_at": "2026-09-26T20:44:55.470083+00:00"
+        },
+        {
+          "attempt_id": "attempt-3c402037abcf49f8aff76e38dfa761af",
+          "issue_id": "issue-234c61fdd8aacdf10057f6d6c6434fc8",
+          "revision": 4,
+          "state": "approved",
+          "target_hash": "e82bc6f24e7e0f25953972d0a12de2d5cb4519ce5aeb692dcb34f4f2af788832",
+          "review_hash": "50751586c93918009e47a6adff427d684b63e036d4c9d7191e63483196e5681b",
+          "contract_gaps": {
+            "execution_evidence_missing": "open",
+            "end_to_end_closure_missing": "open",
+            "copyable_path_mismatch": "open",
+            "copyable_preflight_incomplete": "open",
+            "resolved_gap_contradicts_evidence": "open",
+            "copyable_script_hash_mismatch": "open"
+          },
+          "ledger_gaps": {
+            "execution_evidence_missing": "resolved",
+            "end_to_end_closure_missing": "resolved",
+            "copyable_path_mismatch": "resolved",
+            "copyable_preflight_incomplete": "resolved",
+            "resolved_gap_contradicts_evidence": "resolved",
+            "copyable_script_hash_mismatch": "resolved"
+          },
+          "reviewer_session": "hermes:cron_fbd1cd1217d7_20260927_050839",
+          "writer_sessions": [
+            "hermes:cron_b52aa900ac12_20260927_015829",
+            "hermes:cron_b52aa900ac12_20260927_032425",
+            "hermes:cron_b52aa900ac12_20260927_041940",
+            "hermes:cron_b52aa900ac12_20260927_044637"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T21:15:01.840813+00:00"
+        },
+        {
+          "attempt_id": "attempt-a026c48ee0014404ba4524de2daaacf3",
+          "issue_id": "issue-40380deb936907737fda3763801a2a5c",
+          "revision": 1,
+          "state": "approved",
+          "target_hash": "89431dc99a67e50e126299dcf3ad5b1e0969fc234d70001c37a187556bfc6562",
+          "review_hash": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+          "contract_gaps": {},
+          "ledger_gaps": {},
+          "reviewer_session": "hermes:cron_0dd3884f173c_20260927_053444",
+          "writer_sessions": [
+            "hermes:cron_d3e461e0578c_20260927_015830"
+          ],
+          "proof_present": true,
+          "closed_at": "2026-09-26T22:05:09.020948+00:00"
+        }
+      ]
+    },
+    "reader_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "series_id": "ai-toolkit",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 7,
+          "code_block_hashes": [
+            "1318022abd5d1057eb3aecc6bbd5cbca8e1573ef7658243d6e04b52319496a1f",
+            "ef6c579eacae778249b003d57e26a30d68501661b4b3334f4ce2a79914be2024",
+            "2cfc0e4f7b9282e2367ac3f466dbd72a437babfdac153c55069ff9becf521165",
+            "27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a",
+            "685849972ea524b1b0122dd81f5ba98041e84cbc05282c3f7ec739999d8c174c",
+            "fa628f3d133161047e434359779de1958931e70ec074df53a8896b3727fa2503",
+            "cb2ffb3eade73ff65d5f160c23338d81a6707874e4cc739e591d37f668d8d5cd"
+          ],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 1011134,
+              "sha256": "7d1194809b3c0c36fbabb63e93aa6ca02b271e0e4f9e10d96a2ae7cee6e26dd0"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1140002,
+              "sha256": "cc910139e7e67a36069150ad24c176c7f3a6e62f92e6da43d05b2b798eda9830"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 389788,
+              "sha256": "945acb5b077ed86a697d605aa17fb45de974eb4cebdca751bf489ed5bcb8178b"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 593066,
+              "sha256": "d90c7c8e716ce6880c364d955ccf4df1fb678a1bee3a34896e42622e231315bc"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 558687,
+              "sha256": "5322c7d4339ddf1242d326cfc14489c9be242dbc6813c018394a42b69eeedf3b"
+            }
+          ]
+        },
+        {
+          "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+          "series_id": "tang-history",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 0,
+          "code_block_hashes": [],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 986933,
+              "sha256": "ad518f0c59487ae52c8f4e3e47b64ba28386ca9f8da252c8d2adba2a93794e16"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1094288,
+              "sha256": "10c60058c1163dca220e1c703baca4bbe9c879bf792a12033dc20546d89dc084"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 450066,
+              "sha256": "d62a8251bf7e5edd747bdfcfb0583493994532e61ebd6413a1fdaf8c291d5545"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 455250,
+              "sha256": "c62f94685f1ce73fe58d27ea1b29f78f945c9f816222c2012cf21fbb0ca8db34"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 675483,
+              "sha256": "191f261e653943558cc7f466c7efa7e6a3633c64358fb3cb45a55a7d4bee90b2"
+            }
+          ]
+        }
+      ]
+    },
+    "duplicate_release": {
+      "global_attention": true,
+      "issues": {
+        "blocked": [
+          {
+            "blocked_reasons": [
+              "rights_attestation_missing_or_unbound"
+            ],
+            "issue_date": "2026-09-09",
+            "publication_id": "publication-f5a8313172bb7b63cb6a4cf55a308bef",
+            "series_id": "ai-practice",
+            "state": "blocked"
+          }
+        ],
+        "missing": [
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "ai-practice",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "concept-fables",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "release_at": "2026-09-27T12:00:00+08:00",
+            "series_id": "ai-toolkit",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T08:00",
+            "issue_slot": "08:00",
+            "release_at": "2026-09-27T08:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T13:00",
+            "issue_slot": "13:00",
+            "release_at": "2026-09-27T13:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          },
+          {
+            "issue_date": "2026-09-27",
+            "issue_key": "2026-09-27T20:00",
+            "issue_slot": "20:00",
+            "release_at": "2026-09-27T20:00:00+08:00",
+            "series_id": "tang-history",
+            "status": "missing"
+          }
+        ]
+      },
+      "observed_published_publication_id_delta": [],
+      "released_edition_ids": [],
+      "target": {
+        "edition_id": "edition-da58df44faaaa3a4730e02402da4cb94",
+        "issue_date": "2026-09-27",
+        "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+        "series_id": "tang-history",
+        "state": "published"
+      },
+      "today": {
+        "by_series": {
+          "ai-history": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "ai-practice": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "ai-toolkit": {
+            "body_available": false,
+            "expected": 2,
+            "media_roles": [],
+            "published": 1,
+            "slots": [
+              {
+                "body_available": true,
+                "issue_key": "2026-09-27T00:01",
+                "issue_slot": "00:01",
+                "media_roles": [
+                  "illustration_01",
+                  "illustration_02",
+                  "illustration_03",
+                  "reader_cover",
+                  "shelf_cover"
+                ],
+                "published": 1,
+                "release_at": "2026-09-27T00:01:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "concept-fables": {
+            "body_available": false,
+            "expected": 1,
+            "media_roles": [],
+            "published": 0,
+            "slots": [
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27",
+                "issue_slot": "12:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T12:00:00+08:00"
+              }
+            ]
+          },
+          "tang-history": {
+            "body_available": false,
+            "expected": 4,
+            "media_roles": [],
+            "published": 1,
+            "slots": [
+              {
+                "body_available": true,
+                "issue_key": "2026-09-27T00:01",
+                "issue_slot": "00:01",
+                "media_roles": [
+                  "illustration_01",
+                  "illustration_02",
+                  "illustration_03",
+                  "reader_cover",
+                  "shelf_cover"
+                ],
+                "published": 1,
+                "release_at": "2026-09-27T00:01:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T08:00",
+                "issue_slot": "08:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T08:00:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T13:00",
+                "issue_slot": "13:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T13:00:00+08:00"
+              },
+              {
+                "body_available": false,
+                "issue_key": "2026-09-27T20:00",
+                "issue_slot": "20:00",
+                "media_roles": [],
+                "published": 0,
+                "release_at": "2026-09-27T20:00:00+08:00"
+              }
+            ]
+          }
+        },
+        "date": "2026-09-27",
+        "expected": 9,
+        "published": 2
+      },
+      "totals": {
+        "blocked": 1,
+        "draft": 0,
+        "missing": 6,
+        "published": 19,
+        "scheduled": 0,
+        "staged": 1,
+        "withdrawn": 13
+      }
+    },
+    "duplicate_state_unchanged": true,
+    "approval_retry_evidence": {
+      "checked_at": "2026-09-26T22:08:07.288870+00:00",
+      "due": [],
+      "future": [
+        {
+          "edition_id": "edition-0cb52123aa525bab360a867415ccfd81",
+          "series_id": "ai-history",
+          "state": "staged",
+          "release_at": "2026-09-27T04:00:00+00:00"
+        }
+      ],
+      "story_review_envelope": {
+        "content_hash": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+        "decision": "approved",
+        "receipt": {
+          "artifact_id": "receipt-content_review-87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815",
+          "kind": "content_review",
+          "sha256": "87a745621829923c7643b7773ef21b1f0cc3d91d367f850f55ced6ee42d66815"
+        },
+        "reviewed_at": "2026-09-26T21:36:14.858036+00:00",
+        "reviewed_by": "hermes:cron_0dd3884f173c_20260927_053444"
+      }
+    }
+  }
+}

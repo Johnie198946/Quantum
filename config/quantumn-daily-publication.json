@@ -81,7 +81,6 @@
       "kind": "daily",
       "enabled": true,
       "release_times": [
-        "00:01",
         "12:00"
       ],
       "cover_theme": "practice",
@@ -99,7 +98,6 @@
       "kind": "daily",
       "enabled": true,
       "release_times": [
-        "00:01",
         "08:00",
         "13:00",
         "20:00"

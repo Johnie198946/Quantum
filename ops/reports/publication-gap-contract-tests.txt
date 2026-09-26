@@ -1,0 +1,74 @@
+publication-gap-server-boundary-tests.txt
+........................................................................ [ 87%]
+..........                                                               [100%]
+=============================== warnings summary ===============================
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+tests/test_publication_editorial_workflow.py::test_head_v1_attempt_remains_idempotent_after_upgrade[False-await_review]
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+82 passed, 4 warnings in 24.85s
+
+
+publication-gap-final-native-tests.txt
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+tests/test_publication_editorial_remote.py::test_content_only_revision_builds_and_prepares_all_platform_fields
+tests/test_publication_editorial_remote.py::test_content_only_revision_builds_and_prepares_all_platform_fields
+tests/test_publication_editorial_remote.py::test_content_only_revision_builds_and_prepares_all_platform_fields
+tests/test_publication_editorial_remote.py::test_content_only_revision_builds_and_prepares_all_platform_fields
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+7 passed, 72 deselected, 4 warnings in 43.71s
+
+
+publication-gap-controller-tests.txt
+........................................................................ [ 54%]
+...........................................................              [100%]
+=============================== warnings summary ===============================
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+131 passed, 4 warnings in 10.21s
+
+
+publication-merged-note-tests.txt
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_note_illustrations.py::test_positions_exclude_code_existing_images_and_short_notes
+tests/test_note_illustrations.py::test_positions_exclude_code_existing_images_and_short_notes
+tests/test_note_illustrations.py::test_positions_exclude_code_existing_images_and_short_notes
+tests/test_note_illustrations.py::test_positions_exclude_code_existing_images_and_short_notes
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_note_illustrations.py::test_existing_worker_dispatches_note_job_without_chat_agent
+  /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926/scripts/hermes_bridge.py:108: DeprecationWarning:
+          on_event is deprecated, use lifespan event handlers instead.
+
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+    app.on_event("startup")(session_runtime._startup)
+
+tests/test_note_illustrations.py::test_existing_worker_dispatches_note_job_without_chat_agent
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/fastapi/applications.py:4547: DeprecationWarning:
+          on_event is deprecated, use lifespan event handlers instead.
+
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+19 passed, 6 warnings in 4.06s

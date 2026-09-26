@@ -1,0 +1,30 @@
+[
+  {
+    "job_id": "a8a830958fb6",
+    "original_path": "/Users/dengzhaoyu/.hermes/cron/output/a8a830958fb6/2026-09-27_01-58-01.md",
+    "output": "# Cron Job: publication-native-e2e-20260927\n\n**Job ID:** a8a830958fb6\n**Run Time:** 2026-09-27 01:58:01\n**Mode:** no_agent (script)\n\n---\n\n{\"triggered_at\": \"2026-09-27T01:58:00.551366+08:00\", \"dispatches\": [{\"profile\": \"default\", \"job_id\": \"b52aa900ac12\", \"scheduler_accepted\": true}, {\"profile\": \"story\", \"job_id\": \"d3e461e0578c\", \"scheduler_accepted\": true}], \"production_acceptance\": false}\n"
+  },
+  {
+    "job_id": "8ff246d01888",
+    "original_path": "/Users/dengzhaoyu/.hermes/cron/output/8ff246d01888/2026-09-27_02-53-00.md",
+    "output": "# Cron Job: 出版修复下一分钟恢复验收20260927\n\n**Job ID:** 8ff246d01888\n**Run Time:** 2026-09-27 02:53:00\n**Mode:** no_agent (script)\n\n---\n\n{\"triggered_at\": \"2026-09-27T02:53:00.833168+08:00\", \"phase\": \"resume_after_verified_repair\", \"controller_job\": \"94f82c141295\", \"scheduler_accepted\": true, \"production_acceptance\": false}\n"
+  },
+  {
+    "job_id": "6c4c454890e9",
+    "original_path": "/Users/dengzhaoyu/.hermes/cron/output/6c4c454890e9/2026-09-27_04-19-14.md",
+    "output": "# Cron Job: Publication gap repair timed resume (temporary)\n\n**Job ID:** 6c4c454890e9\n**Run Time:** 2026-09-27 04:19:14\n**Mode:** no_agent (script)\n\n---\n\n{\"triggered_at\": \"2026-09-27T04:19:14.289713+08:00\", \"phase\": \"resume_after_gap_contract_repair\", \"controller_job\": \"94f82c141295\", \"scheduler_accepted\": true, \"production_acceptance\": false}\n",
+    "execution_id": "a91785676227406880ae31d40d38f9ee",
+    "started_at": "2026-09-27T04:19:12.121078+08:00",
+    "finished_at": "2026-09-27T04:19:14.362576+08:00",
+    "status": "completed"
+  },
+  {
+    "job_id": "ea574986acc4",
+    "output": [
+      {
+        "path": "/Users/dengzhaoyu/.hermes/cron/output/ea574986acc4/2026-09-27_06-04-34.md",
+        "text": "# Cron Job: publication-native-clock-resume-once\n\n**Job ID:** ea574986acc4\n**Run Time:** 2026-09-27 06:04:34\n**Mode:** no_agent (script)\n\n---\n\n{\"triggered_at\": \"2026-09-27T06:04:34.645580+08:00\", \"phase\": \"resume_after_trusted_review_time_repair\", \"controller_job\": \"94f82c141295\", \"scheduler_accepted\": true, \"production_acceptance\": false}\n"
+      }
+    ]
+  }
+]
