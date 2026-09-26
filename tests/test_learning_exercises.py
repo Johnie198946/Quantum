@@ -425,11 +425,15 @@ def test_prompt_bounds_reading_and_rejects_oversized_grading_without_losing_answ
 def test_app_registers_the_client_learning_routes():
     from backend.main import app
 
-    routes = {(route.path, method) for route in app.routes
-              for method in getattr(route, "methods", set())}
-    assert ("/api/v1/me/learning-resume", "GET") in routes
-    assert ("/api/v1/me/learning-exercises", "GET") in routes
-    assert ("/api/v1/me/learning-exercises", "POST") in routes
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    for method, path in [
+        ("GET", "/api/v1/me/learning-resume"),
+        ("GET", "/api/v1/me/learning-exercises"),
+        ("POST", "/api/v1/me/learning-exercises"),
+    ]:
+        assert client.request(method, path).status_code == 401
 
 
 def test_hints_required_for_new_questions_and_optional_for_old_rows(env):

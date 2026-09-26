@@ -71,3 +71,11 @@ def test_docker_consumes_hash_locks_and_pinned_python_not_floating_input():
     assert 'requirements-bridge-worker' not in dockerfile
     assert 'python -m pip check' in dockerfile
     assert '-r requirements.txt' not in dockerfile
+
+
+def test_generated_pdf_runtime_dependency_is_declared():
+    requirements = [
+        Requirement(line) for line in (ROOT / "requirements.txt").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    assert "reportlab" in {canonicalize_name(item.name) for item in requirements}
