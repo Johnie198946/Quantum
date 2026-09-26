@@ -183,10 +183,15 @@ def test_judgement_contract_is_sent_to_model_and_missing_options_can_retry(env, 
 def test_independent_accuracy_excludes_repeats_and_assistance(env):
     first = create()
     created = run(learning.create_exercise(first, AUTH))
-    run(learning.submit_exercise(first.id, answers(created["revision"], assisted=True), AUTH))
+    assisted = run(learning.submit_exercise(first.id, answers(created["revision"], assisted=True), AUTH))
+    assert assisted["results"][0]["score"] == 1
+    assert "不计入独立掌握度" in assisted["results"][0]["next_step"]
+    assert "不计入独立掌握度" not in assisted["results"][1]["next_step"]
+    assert run(learning.get_exercise(first.id, AUTH))["results"] == assisted["results"]
     second = create()
     created2 = run(learning.create_exercise(second, AUTH))
-    run(learning.submit_exercise(second.id, answers(created2["revision"]), AUTH))
+    independent = run(learning.submit_exercise(second.id, answers(created2["revision"]), AUTH))
+    assert [r["score"] for r in independent["results"]] == [r["score"] for r in assisted["results"]]
     async def history():
         async with env() as db:
             return list((await db.scalars(select(LearningExercise))).all())
@@ -195,6 +200,22 @@ def test_independent_accuracy_excludes_repeats_and_assistance(env):
     assert stats[0]["objective_accuracy"] == 0
     assert stats[0]["subjective_count"] == 2
     assert stats[0]["subjective_mean"] == pytest.approx(2/3)
+
+
+def test_grading_prompt_keeps_scoring_evidence_without_repeated_explanations(env, monkeypatch):
+    request = create()
+    created = run(learning.create_exercise(request, AUTH))
+    model = learning.model_json
+    async def capture(prompt, payload):
+        questions_text, answer_text = prompt.split("\n评分题目和原文：", 1)[1].split("\n用户作答：", 1)
+        questions = json.loads(questions_text)
+        for compact, original in zip(questions, generated()["questions"][2:]):
+            assert set(compact) == {"id", "body", "source_excerpt", "reference_answer", "rubric"}
+            assert all(value == original[key] for key, value in compact.items())
+        assert json.loads(answer_text) == {"q3": "分量取最大值", "q4": "重复合并不变"}
+        return await model(prompt, payload)
+    monkeypatch.setattr(learning, "model_json", capture)
+    assert run(learning.submit_exercise(request.id, answers(created["revision"], assisted=True), AUTH))["status"] == "graded"
 
 
 def test_invalid_answer_and_incomplete_submit_do_not_change_draft(env):
