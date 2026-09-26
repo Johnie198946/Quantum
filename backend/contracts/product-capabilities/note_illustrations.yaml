@@ -1,0 +1,262 @@
+capabilities:
+- id: knowledge.note.illustration.generate
+  version: 1.0.0
+  domain: knowledge
+  description: Generate contextual note illustrations after one confirmation. Read
+    the complete note first. Empty anchor chooses positions automatically; otherwise
+    use the exact unique paragraph, or overview/stop:N for travel. insert=true only
+    when the user requests insertion; false previews. Retry uses retry_run_id and
+    reuses successes. Never invent image paths.
+  positive_examples:
+  - 给这篇笔记自动配图
+  - 在宿舍夜读那段后插一张温暖的插画
+  - 重试刚才失败的配图
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: &id001
+        type: string
+        pattern: ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$
+      base_hash: &id002
+        type: string
+        pattern: ^[0-9a-f]{64}$
+      anchor:
+        type: string
+        maxLength: 16000
+      brief:
+        type: string
+        maxLength: 2000
+      insert:
+        type: boolean
+      retry_run_id: &id003
+        type: string
+        pattern: ^[0-9a-f]{32}$
+    required:
+    - note_id
+    - base_hash
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - base_hash_matches
+  - note_illustration_v1_client
+  policy_ref: personal-knowledge-confirmed-mutation
+  handler_binding: knowledge.illustration.action
+  idempotency: required
+  receipt: required
+  result_event: knowledge.action
+  renderer: knowledge_action
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented
+- id: knowledge.note.illustration.status
+  version: 1.0.0
+  domain: knowledge
+  description: Read the current user’s latest durable illustration generation status
+    for a note. Generation completion does not prove insertion on a device. Use returned
+    run_id for cancel/retry/apply/undo.
+  positive_examples:
+  - 这篇笔记的插图生成好了吗
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: *id001
+    required:
+    - note_id
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: personal-knowledge-owner
+  handler_binding: knowledge.illustration.status
+  idempotency: none
+  receipt: none
+  result_event: knowledge.note
+  renderer: answer
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented
+- id: knowledge.note.illustration.cancel
+  version: 1.0.0
+  domain: knowledge
+  description: Stop a specific note illustration job; an in-flight provider request
+    may still finish but its result must not be applied.
+  positive_examples:
+  - 停止这篇笔记的配图
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: *id001
+      base_hash: *id002
+      run_id: *id003
+    required:
+    - note_id
+    - base_hash
+    - run_id
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - base_hash_matches
+  - note_illustration_v1_client
+  policy_ref: personal-knowledge-confirmed-mutation
+  handler_binding: knowledge.illustration.action
+  idempotency: required
+  receipt: required
+  result_event: knowledge.action
+  renderer: knowledge_action
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented
+- id: knowledge.note.illustration.apply
+  version: 1.0.0
+  domain: knowledge
+  description: Insert the reviewed illustrations from the specified completed job
+    using note version checks.
+  positive_examples:
+  - 把刚才预览的插图放进笔记
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: *id001
+      base_hash: *id002
+      run_id: *id003
+    required:
+    - note_id
+    - base_hash
+    - run_id
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - base_hash_matches
+  - note_illustration_v1_client
+  policy_ref: personal-knowledge-confirmed-mutation
+  handler_binding: knowledge.illustration.action
+  idempotency: required
+  receipt: required
+  result_event: knowledge.action
+  renderer: knowledge_action
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented
+- id: knowledge.note.illustration.undo
+  version: 1.0.0
+  domain: knowledge
+  description: Remove only image references from the specified previously applied
+    batch; preserve subsequent writing.
+  positive_examples:
+  - 撤销刚才加入的插图
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: *id001
+      base_hash: *id002
+      run_id: *id003
+    required:
+    - note_id
+    - base_hash
+    - run_id
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - base_hash_matches
+  - note_illustration_v1_client
+  policy_ref: personal-knowledge-confirmed-mutation
+  handler_binding: knowledge.illustration.action
+  idempotency: required
+  receipt: required
+  result_event: knowledge.action
+  renderer: knowledge_action
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented
+- id: knowledge.note.illustration.configure
+  version: 1.0.0
+  domain: knowledge
+  description: Enable or disable automatic illustrations for this note on the current
+    device. Does not generate an image.
+  positive_examples:
+  - 这篇笔记以后不要自动配图
+  - 恢复这篇笔记的自动配图
+  negative_examples:
+  - 生成与笔记无关的广告图片
+  - 修改其他用户的笔记
+  input_schema:
+    type: object
+    properties:
+      note_id: *id001
+      base_hash: *id002
+      enabled:
+        type: boolean
+    required:
+    - note_id
+    - base_hash
+    - enabled
+    additionalProperties: false
+  output_schema:
+    type: object
+  effect: write
+  risk: medium
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - base_hash_matches
+  - note_illustration_v1_client
+  policy_ref: personal-knowledge-confirmed-mutation
+  handler_binding: knowledge.illustration.action
+  idempotency: required
+  receipt: required
+  result_event: knowledge.action
+  renderer: knowledge_action
+  renderer_version: 1
+  tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  implementation_status: implemented

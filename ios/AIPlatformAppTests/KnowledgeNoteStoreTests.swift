@@ -30,6 +30,103 @@ final class SignedKeychainAcceptanceTests: XCTestCase {
 
 @MainActor
 final class KnowledgeNoteStoreTests: XCTestCase {
+    func testSyncStatusRequiresServerConfirmationOfTheCurrentContent() {
+        let synced = KnowledgeNoteSyncStatusDTO(noteId: "n", contentHash: "current", syncStatus: "synced")
+        XCTAssertEqual(KnowledgeNoteStatusPolicy.message(for: synced, expectedContentHash: "current"), "已同步")
+        XCTAssertEqual(KnowledgeNoteStatusPolicy.message(for: synced, expectedContentHash: "newer"), "已保存到本地，云端同步待确认")
+        let pending = KnowledgeNoteSyncStatusDTO(noteId: "n", contentHash: "current", syncStatus: "pending")
+        XCTAssertEqual(KnowledgeNoteStatusPolicy.message(for: pending, expectedContentHash: "current"), "已保存到本地，云端同步待确认")
+    }
+
+    func testUnchangedSavePreservesContentHashTimestampAndFile() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "unchanged-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let original = try XCTUnwrap(store.createNote(title: "Keep order", body: "Read only", tags: ["z", "a"]))
+        let bytes = try Data(contentsOf: original.fileURL)
+        let modification = try original.fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let saved = try XCTUnwrap(store.save(id: original.id, title: " Keep order ", body: original.body,
+                                             tags: original.tags.reversed(), isPinned: original.isPinned))
+        XCTAssertEqual(saved.updatedAt, original.updatedAt)
+        XCTAssertEqual(store.contentHash(for: saved), store.contentHash(for: original))
+        XCTAssertEqual(try Data(contentsOf: saved.fileURL), bytes)
+        XCTAssertEqual(try saved.fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, modification)
+    }
+
+    func testChineseTagsRoundTripThroughSaveAndReload() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "tags-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let tags = KnowledgeNoteStore.parseTags(" #学习，灵感、阅读,学习, ,# ")
+        XCTAssertEqual(Set(tags), Set(["学习", "灵感", "阅读"]))
+        XCTAssertEqual(KnowledgeNoteStore.parseTags("学习,灵感,阅读"), tags)
+        let original = try XCTUnwrap(store.createNote(title: "Tags"))
+        _ = try XCTUnwrap(store.save(id: original.id, title: original.title, body: "正文", tags: tags, isPinned: false))
+        store.reload()
+        XCTAssertEqual(Set(try XCTUnwrap(store.note(id: original.id)).tags), Set(tags))
+        XCTAssertEqual(store.search("", tags: ["学习", "灵感"]).map(\.id), [original.id])
+    }
+
+    func testTrashSurvivesReloadAndCloudRefreshThenRestoresWithoutOverwritingSameTitle() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "trash-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let original = try XCTUnwrap(store.createNote(title: "Same title", body: "Keep this", tags: ["学习"]))
+        XCTAssertTrue(store.moveToTrash(id: original.id))
+        store.reload()
+        XCTAssertNil(store.note(id: original.id))
+        XCTAssertEqual(store.trashedNotes.map(\.id), [original.id])
+        XCTAssertTrue(store.search("Keep this").isEmpty)
+        try store.restoreFromCloudSnapshot(CloudKnowledgeNotesResponse(items: [CloudKnowledgeNoteDTO(
+            noteId: original.id, markdown: store.markdown(for: original), contentHash: store.contentHash(for: original),
+            updatedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(60)),
+            archived: false, mergedIntoNoteId: nil
+        )], count: 1, compileStatus: "pending"))
+        XCTAssertNil(store.note(id: original.id), "Refreshing must not resurrect a local deletion")
+        let other = try XCTUnwrap(store.createNote(title: original.title, body: "Another note"))
+        let restored = try XCTUnwrap(store.restoreTrashedNote(id: original.id))
+        XCTAssertEqual(restored.body, original.body)
+        XCTAssertEqual(restored.updatedAt.timeIntervalSince1970, original.updatedAt.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertNotEqual(restored.fileURL, other.fileURL)
+        XCTAssertEqual(store.note(id: other.id)?.body, "Another note")
+        XCTAssertTrue(store.trashedNotes.isEmpty)
+        store.reload()
+        XCTAssertEqual(store.search("Keep this").map(\.id), [original.id])
+    }
+
+    func testTrashIsIsolatedAcrossAccounts() throws {
+        let store = KnowledgeNoteStore()
+        let tenant = "trash-isolation-\(UUID())"
+        store.activate(tenantKey: tenant, userId: "a")
+        let directoryA = store.vaultDirectory
+        let note = try XCTUnwrap(store.createNote(title: "Private"))
+        XCTAssertTrue(store.moveToTrash(id: note.id))
+        store.activate(tenantKey: tenant, userId: "b")
+        let directoryB = store.vaultDirectory
+        defer {
+            try? FileManager.default.removeItem(at: directoryB)
+            try? FileManager.default.removeItem(at: directoryA)
+        }
+        XCTAssertTrue(store.trashedNotes.isEmpty)
+        XCTAssertNil(store.restoreTrashedNote(id: note.id))
+        store.activate(tenantKey: tenant, userId: "a")
+        XCTAssertEqual(store.trashedNotes.map(\.id), [note.id])
+        store.deactivate()
+        XCTAssertTrue(store.trashedNotes.isEmpty)
+    }
+
+    func testFailedSaveKeepsInMemoryContentAndReportsFailure() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "failed-save-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let original = try XCTUnwrap(store.createNote(title: "Save failure", body: "Original"))
+        try FileManager.default.removeItem(at: original.fileURL)
+        try FileManager.default.createDirectory(at: original.fileURL, withIntermediateDirectories: true)
+        XCTAssertNil(store.save(id: original.id, title: original.title, body: "New", tags: [], isPinned: false))
+        XCTAssertEqual(store.note(id: original.id)?.body, "Original")
+        XCTAssertTrue(store.lastError?.hasPrefix("自动保存失败") == true)
+    }
+
     func testArchiveExcludesNoteFromActiveSearchAndCanRestore() throws {
         let store = KnowledgeNoteStore.shared
         store.activate(tenantKey: "archive-tenant-\(UUID())", userId: "archive-user")
@@ -568,6 +665,11 @@ final class KnowledgeNoteStoreTests: XCTestCase {
 
 @MainActor
 private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizing {
+    var afterSync: (() -> Void)?
+    private(set) var illustrationRequests: [(String, KnowledgeActionStep, String)] = []
+    func enqueueIllustrations(store: KnowledgeNoteStore, id: String, step: KnowledgeActionStep, requestID: String) {
+        illustrationRequests.append((id, step, requestID))
+    }
     private var notes: [String: CloudKnowledgeNoteDTO] = [:]
     private(set) var mergeRequests: [KnowledgeNoteMergeRequestDTO] = []
     private(set) var legacyMergeMutationCount = 0
@@ -588,6 +690,7 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
             noteId: id, markdown: markdown, contentHash: hash, updatedAt: nil,
             archived: false, mergedIntoNoteId: nil
         )
+        afterSync?()
     }
 
     func archiveKnowledgeNote(id: String, mergedIntoNoteId: String?, expectedContentHash: String?) async throws {
@@ -625,4 +728,193 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
     func commitKnowledgeAction(id: String, capability: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws {}
     func resumeKnowledgeActionSync(id: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws {}
     func discardKnowledgeAction(id: String, capability: String, actionDigest: String) async throws {}
+}
+
+@MainActor
+final class NoteIllustrationTests: XCTestCase {
+    private func asset(anchor: String) -> NoteIllustrationAsset {
+        .init(runId: String(repeating: "a", count: 32), index: 0, anchor: anchor,
+              alt: "AI 插图：学习", sha256: String(repeating: "b", count: 64), provider: "fixture", model: "fixture")
+    }
+    func testUnicodeCursorAndUnsafeLocations() {
+        let body = "开头🌿\n\n这一段讲学习。\n\n结尾"
+        let position = (body as NSString).range(of: "讲学习").location
+        XCTAssertEqual(NoteIllustrationPlacement.anchor(in: body, selection: NSRange(location: position, length: 0)), "这一段讲学习。")
+        XCTAssertNil(NoteIllustrationPlacement.anchor(in: "```swift\nlet x = 1\n```", selection: NSRange(location: 12, length: 0)))
+        XCTAssertEqual(NoteIllustrationPlacement.anchor(in: "> [!note] 重点\n> 内容", selection: NSRange(location: 17, length: 0)), "> [!note] 重点\n> 内容")
+        XCTAssertNil(NoteIllustrationPlacement.anchor(in: "重复\n\n重复", selection: NSRange(location: 1, length: 0)))
+    }
+    func testInsertionPreservesSourceAndIsIdempotent() throws {
+        let body = "开头\n\n学习方法\n\n结尾"
+        let image = asset(anchor: "学习方法")
+        let inserted = try XCTUnwrap(NoteIllustrationPlacement.inserting([image], into: body, travel: false))
+        XCTAssertTrue(inserted.hasPrefix("开头\n\n学习方法\n\n!["))
+        XCTAssertTrue(inserted.hasSuffix("\n\n结尾"))
+        XCTAssertEqual(NoteIllustrationPlacement.inserting([image], into: inserted, travel: false), inserted)
+        XCTAssertNil(NoteIllustrationPlacement.inserting([asset(anchor: "不存在")], into: body, travel: false))
+    }
+    func testTravelIllustrationsPreserveAllExistingFields() throws {
+        let body = "{\"stops\":[],\"destination\":\"杭州\",\"journal\":\"真实记录\",\"custom\":42}"
+        let result = try XCTUnwrap(NoteIllustrationPlacement.inserting([asset(anchor: "overview")], into: body, travel: true))
+        let object = try XCTUnwrap(NoteIllustrationPlacement.travelObject(result))
+        XCTAssertEqual(object["destination"] as? String, "杭州")
+        XCTAssertEqual(object["journal"] as? String, "真实记录")
+        XCTAssertEqual(object["custom"] as? Int, 42)
+        XCTAssertEqual((object["illustrations"] as? [[String: String]])?.count, 1)
+        XCTAssertNotNil(TravelPlanDocument.decode(result))
+        XCTAssertNil(NoteIllustrationPlacement.inserting([asset(anchor: "overview")], into: "普通游记", travel: true))
+    }
+    func testTravelJournalCodeFencesSurviveOuterJSONFence() throws {
+        let journal = "```swift\nlet day = 1\n```"
+        let body = try XCTUnwrap(NoteIllustrationPlacement.json(["stops": [], "journal": journal, "dateRange": "Oct 1"]))
+        let wrapped = "```json\n" + body + "\n```"
+        XCTAssertEqual(NoteIllustrationPlacement.travelObject(wrapped)?["journal"] as? String, journal)
+        XCTAssertEqual(TravelPlanDocument.decode(wrapped)?.dateRange, "Oct 1")
+    }
+    func testUnsavedDraftPreventsAutomaticOverwrite() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "illustration-test-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let note = try XCTUnwrap(store.createNote(title: "学习", body: "原始段落"))
+        let request = NoteIllustrationRequest(noteId: note.id, requestId: "test-request", title: note.title, content: note.body,
+                                              sourceHash: NoteIllustrationPlacement.hash(note.body), mode: "auto", anchor: "", brief: "", travel: false)
+        store.illustrationJobs[note.id] = .init(request: request, originalBody: note.body,
+            response: .init(runId: String(repeating: "a", count: 32), status: "completed", message: "", assets: [asset(anchor: note.body)], failedIndices: [], errorCode: ""), message: "")
+        store.activeNoteDrafts[note.id] = "正在输入的新内容"
+        XCTAssertFalse(store.applyIllustrations(id: note.id))
+        XCTAssertEqual(store.note(id: note.id)?.body, "原始段落")
+        XCTAssertTrue(store.illustrationJobs[note.id]?.message.contains("正文已变化") == true)
+    }
+    func testCompletedManualJobResumesCachedPreviewWithoutRegenerating() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "illustration-resume-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let note = try XCTUnwrap(store.createNote(title: "学习", body: "学习方法"))
+        let data = Data("cached-image-fixture".utf8)
+        var image = asset(anchor: note.body)
+        image.sha256 = NoteIllustrationPlacement.hashData(data)
+        let path = store.vaultDirectory.appendingPathComponent(image.relativePath)
+        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: path)
+        let request = NoteIllustrationRequest(noteId: note.id, requestId: "resume-test", title: note.title, content: note.body,
+                                              sourceHash: NoteIllustrationPlacement.hash(note.body), mode: "manual", anchor: note.body, brief: "学习场景", travel: false)
+        store.illustrationJobs[note.id] = .init(request: request, originalBody: note.body,
+            response: .init(runId: image.runId, status: "completed", message: "", assets: [image], failedIndices: [], errorCode: ""), message: "恢复中")
+        store.resumeIllustrations(id: note.id)
+        for _ in 0..<50 where store.illustrationIsRunning(note.id) { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(store.illustrationJobs[note.id]?.message, "插图已生成，待插入")
+        XCTAssertEqual(store.note(id: note.id)?.body, note.body)
+        store.illustrationJobs[note.id]?.cancelled = true
+        XCTAssertFalse(store.applyIllustrations(id: note.id))
+    }
+    private func confirmedAction(_ step: KnowledgeActionStep) -> KnowledgeActionBlock {
+        .init(id: "ka-" + UUID().uuidString, summary: "笔记操作", steps: [step], actionDigest: UUID().uuidString,
+              transientCapability: "test-capability", expiresAt: Int(Date().timeIntervalSince1970) + 3600)
+    }
+
+    func testConfirmedTravelSaveQueuesOnceAfterSyncAndPreservesPreference() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "chat-travel-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let sync = FakeKnowledgeActionSynchronizer()
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: sync)
+        let action = confirmedAction(.init(kind: "create_note", title: "杭州之旅", markdown: "原始游记", tags: ["大学生活"], layout: "travel", automaticIllustrations: false))
+        let result = await executor.execute(action)
+        XCTAssertEqual(result.state, .synced)
+        let note = try XCTUnwrap(result.noteIds.first.flatMap { store.note(id: $0) })
+        XCTAssertEqual(NoteIllustrationPlacement.travelObject(note.body)?["journal"] as? String, "原始游记")
+        XCTAssertTrue(note.tags.contains("旅行"))
+        XCTAssertTrue(note.tags.contains("大学生活"))
+        XCTAssertFalse(store.automaticIllustrationsEnabled(note.id))
+        XCTAssertEqual(sync.illustrationRequests.count, 1)
+        _ = await executor.execute(action)
+        XCTAssertEqual(sync.illustrationRequests.count, 1, "Replaying a completed receipt must not enqueue another paid generation")
+    }
+
+    func testConfirmedGenerationKeepsBodyAndRejectsChangedSnapshot() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "chat-image-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let note = try XCTUnwrap(store.createNote(title: "夜读", body: "宿舍里一起读书。"))
+        let sync = FakeKnowledgeActionSynchronizer()
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: sync)
+        let step = KnowledgeActionStep(kind: "illustrate_note", targetNoteId: note.id, originalContentHash: store.contentHash(for: note),
+            illustrationAction: "generate", illustrationAnchor: note.body, illustrationBrief: "暖灯与同学", illustrationInsert: false)
+        let result = await executor.execute(confirmedAction(step))
+        XCTAssertEqual(result.state, .synced)
+        XCTAssertEqual(store.note(id: note.id)?.body, note.body)
+        XCTAssertEqual(sync.illustrationRequests.count, 1)
+        XCTAssertEqual(sync.illustrationRequests[0].1.illustrationBrief, "暖灯与同学")
+        _ = store.save(id: note.id, title: note.title, body: "后来修改了正文", tags: [], isPinned: false)
+        let stale = await executor.execute(confirmedAction(step))
+        XCTAssertEqual(stale.state, .stale)
+        XCTAssertEqual(sync.illustrationRequests.count, 1)
+    }
+
+    func testChangedBodyDuringSyncDoesNotStartPaidGeneration() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "chat-race-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let note = try XCTUnwrap(store.createNote(title: "夜读", body: "一起读书。"))
+        let sync = FakeKnowledgeActionSynchronizer()
+        sync.afterSync = { _ = store.save(id: note.id, title: note.title, body: "同步期间编辑的正文", tags: [], isPinned: false) }
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: sync)
+        let step = KnowledgeActionStep(kind: "illustrate_note", targetNoteId: note.id, originalContentHash: store.contentHash(for: note), illustrationAction: "generate")
+        let result = await executor.execute(confirmedAction(step))
+        XCTAssertEqual(result.state, .stale)
+        XCTAssertTrue(sync.illustrationRequests.isEmpty)
+        XCTAssertEqual(store.note(id: note.id)?.body, "同步期间编辑的正文")
+    }
+
+    func testChatApplyAndUndoKeepLaterWritingAndBindRun() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "chat-apply-\(UUID())", userId: "test")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let note = try XCTUnwrap(store.createNote(title: "阅读", body: "学习方法"))
+        let image = asset(anchor: note.body)
+        let request = NoteIllustrationRequest(noteId: note.id, requestId: "chat-test", title: note.title, content: note.body,
+            sourceHash: NoteIllustrationPlacement.hash(note.body), mode: "manual", anchor: note.body, brief: "读书", travel: false)
+        store.illustrationJobs[note.id] = .init(request: request, originalBody: note.body,
+            response: .init(runId: image.runId, status: "completed", message: "", assets: [image], failedIndices: [], errorCode: ""), message: "")
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: FakeKnowledgeActionSynchronizer())
+        let bad = KnowledgeActionStep(kind: "illustrate_note", targetNoteId: note.id, originalContentHash: store.contentHash(for: note), illustrationAction: "apply", illustrationRunId: String(repeating: "c", count: 32))
+        XCTAssertFalse(store.canApplyIllustrationStep(bad))
+        let apply = KnowledgeActionStep(kind: "illustrate_note", targetNoteId: note.id, originalContentHash: store.contentHash(for: note), illustrationAction: "apply", illustrationRunId: image.runId)
+        let applied = await executor.execute(confirmedAction(apply))
+        XCTAssertEqual(applied.state, .synced)
+        let withImage = try XCTUnwrap(store.note(id: note.id))
+        XCTAssertTrue(withImage.body.contains(image.relativePath))
+        let changed = try XCTUnwrap(store.save(id: note.id, title: note.title, body: withImage.body + "\n\n后续文字", tags: [], isPinned: false))
+        let undo = KnowledgeActionStep(kind: "illustrate_note", targetNoteId: note.id, originalContentHash: store.contentHash(for: changed), illustrationAction: "undo", illustrationRunId: image.runId)
+        let undone = await executor.execute(confirmedAction(undo))
+        XCTAssertEqual(undone.state, .synced)
+        XCTAssertEqual(store.note(id: note.id)?.body, "学习方法\n\n后续文字")
+        XCTAssertEqual(store.illustrationJobs[note.id]?.undone, true)
+    }
+
+    func testChatProposalPreservesIllustrationFields() throws {
+        let event: [String: Any] = ["type": "knowledge_action_draft", "action_id": "image-action", "steps": [[
+            "kind": "illustrate_note", "target_note_id": "note-a", "illustration_action": "generate",
+            "illustration_anchor": "宿舍夜读。", "illustration_brief": "清新暖灯", "illustration_insert": false,
+            "automatic_illustrations": false, "layout": "travel"
+        ]]]
+        guard case .knowledgeActionDraft(let action) = APIClient.StreamEvent.parse(event) else {
+            return XCTFail("Expected a signed note proposal event")
+        }
+        let step = try XCTUnwrap(action.steps.first)
+        XCTAssertEqual(step.illustrationAnchor, "宿舍夜读。")
+        XCTAssertEqual(step.illustrationBrief, "清新暖灯")
+        XCTAssertEqual(step.illustrationInsert, false)
+        XCTAssertEqual(step.automaticIllustrations, false)
+        XCTAssertEqual(step.layout, "travel")
+        let restored = try JSONDecoder().decode(KnowledgeActionStep.self, from: JSONEncoder().encode(step))
+        XCTAssertEqual(restored, step)
+    }
+
+    func testGeneratedAssetFilenameIsStrict() {
+        let image = asset(anchor: "x")
+        XCTAssertEqual(NoteIllustrationPlacement.asset(from: (image.relativePath as NSString).lastPathComponent)?.sha256, image.sha256)
+        XCTAssertNil(NoteIllustrationPlacement.asset(from: "../../secret.jpg"))
+        XCTAssertNil(NoteIllustrationPlacement.asset(from: "ai-user-9-bad.jpg"))
+    }
 }

@@ -94,12 +94,12 @@ def preview_note_merge(body: KnowledgeMergePreviewRequest, payload: dict[str, An
 
 async def propose_local_note_capability(
     capability_id: str, data: dict[str, Any], *, local_notes: list[dict[str, Any]],
-    payload: dict[str, Any], session_id: str, request_id: str,
+    payload: dict[str, Any], session_id: str, request_id: str, note_illustration_v1: bool = False,
 ) -> dict[str, Any]:
     """Use the chat action ledger and executor for an explicit PCM button intent."""
     from backend.api.chat import _authorize_knowledge_action_event
     from backend.services.capability_catalog import CapabilityContractError
-    from backend.services.knowledge_action_capability import note_capability_step
+    from backend.services.knowledge_action_capability import note_capability_step, note_action_summary
 
     step = note_capability_step(capability_id, data)
     if step is None:
@@ -123,15 +123,16 @@ async def propose_local_note_capability(
             raise CapabilityContractError("local note lifecycle conflict")
     if target:
         step["original_content_hash"] = by_id[target]["content_hash"]
-        step["title"] = by_id[target]["title"]
-        step["tags"] = by_id[target]["tags"]
+        step.setdefault("title", by_id[target]["title"])
+        step.setdefault("tags", by_id[target]["tags"])
     if len(str(step.get("markdown") or "")) > 120_000:
         raise CapabilityContractError("revised note exceeds bounds")
     labels = {"archive_note": "归档笔记", "restore_note": "恢复笔记", "merge_notes": "合并笔记",
-              "update_note": "更新笔记", "create_note": "新建笔记"}
+              "update_note": "更新笔记", "create_note": "新建笔记", "illustrate_note": "调整笔记配图"}
     event = {
         "type": "knowledge_action_draft", "action_id": "ka-" + uuid.uuid4().hex,
-        "summary": labels[step["kind"]], "steps": [step],
+        "summary": (note_action_summary(step)
+                    if step.get("illustration_action") or step.get("layout") else labels[step["kind"]]), "steps": [step],
         "before_preview": "\n\n".join(note["markdown"] for note in notes)[:2000],
         "after_preview": str(step.get("markdown") or "内容保留，可在归档中恢复。")[:4000],
         "markdown_diff": "", "risk_level": "high" if sources else "medium",
@@ -141,7 +142,7 @@ async def propose_local_note_capability(
     authorized = await _authorize_knowledge_action_event(
         event, payload=payload, session_id=session_id, request_id=request_id,
         policy_version=str(payload.get("knowledge_policy_version") or "unknown"),
-        client_context={"local_notes": notes},
+        client_context={"local_notes": notes, "note_illustration_v1": note_illustration_v1},
     )
     return {"status": "awaiting_confirmation", "capability_id": capability_id,
             "events": [{"type": "knowledge_action_draft", "version": 1,

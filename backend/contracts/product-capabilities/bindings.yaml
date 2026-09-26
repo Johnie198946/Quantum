@@ -1,4 +1,6 @@
 bindings:
+  - id: knowledge.compare
+    handler: knowledge.compare
   - id: knowledge.search
     handler: knowledge.search
   - id: knowledge.read
@@ -153,6 +155,11 @@ bindings:
     handler: task.execute
   - id: conversation.lifecycle
     handler: conversation.lifecycle
+
+  - id: knowledge.illustration.action
+    handler: knowledge.illustration.action
+  - id: knowledge.illustration.status
+    handler: knowledge.illustration.status
   - id: learning.resume
     handler: learning.resume
   - id: learning.exercise.read
@@ -165,5 +172,3 @@ bindings:
     handler: learning.exercise.answer
   - id: learning.exercise.submit
     handler: learning.exercise.submit
-  - id: knowledge.compare
-    handler: knowledge.compare

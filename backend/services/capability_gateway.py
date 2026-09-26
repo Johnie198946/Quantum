@@ -146,11 +146,14 @@ async def create_capability_proposal(
         if "source_client_session_id" in properties:
             canonical_input["source_client_session_id"] = session_id
         validate_instance(canonical_input, capability["input_schema"])
+        if capability_id.startswith("knowledge.note.illustration.") and capability["effect"] != "read" and local_notes is None:
+            raise CapabilityContractError("local_note_snapshot_required")
         if local_notes is not None:
             from backend.api.knowledge_actions import propose_local_note_capability
             return await propose_local_note_capability(
                 capability_id, canonical_input, local_notes=local_notes,
                 payload=payload, session_id=session_id, request_id=request_id,
+                note_illustration_v1=renderer_version == "qcp-ios-notes@1",
             )
         versions = dict(resource_versions or {})
         if len(versions) > 64 or any(

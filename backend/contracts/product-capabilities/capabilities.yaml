@@ -65,7 +65,7 @@ capabilities:
     description: Create a stable personal Markdown note after confirmation.
     positive_examples: ["Save this as a note"]
     negative_examples: ["Draft text without saving"]
-    input_schema: {type: object, properties: {markdown: {type: string, minLength: 1}}, required: [markdown], additionalProperties: false}
+    input_schema: {type: object, properties: {markdown: {type: string, minLength: 1, description: 'Complete note body. Supports Markdown images, fenced code, > [!NOTE] callouts, > [!abstract] cards, and fenced chart JSON with title/type/points(label,value)/summary. Use only actual user data; never invent image paths.'}, title: {type: string, minLength: 1, maxLength: 200}, tags: {type: array, items: {type: string}, maxItems: 64}, layout: {type: string, enum: [standard, travel]}, automatic_illustrations: {type: boolean}}, required: [markdown], additionalProperties: false}
     output_schema: {type: object, required: [note_id, content_hash]}
     effect: write
     risk: low
@@ -86,7 +86,7 @@ capabilities:
     description: Replace a note with complete Markdown using compare-and-set.
     positive_examples: ["Update this note from its current version"]
     negative_examples: ["Blindly overwrite a note"]
-    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, markdown: {type: string, minLength: 1}, base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}}, required: [note_id, markdown, base_hash], additionalProperties: false}
+    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, markdown: {type: string, minLength: 1, description: 'Complete replacement body, preserving unrelated content and existing image references. Supports Markdown images, callouts, cards, fenced code and chart JSON. Preserve travel JSON unless explicitly changing layout; never invent travel details or image paths.'}, base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}, title: {type: string, minLength: 1, maxLength: 200}, tags: {type: array, items: {type: string}, maxItems: 64}, layout: {type: string, enum: [standard, travel]}, automatic_illustrations: {type: boolean}}, required: [note_id, markdown, base_hash], additionalProperties: false}
     output_schema: {type: object, required: [note_id, content_hash]}
     effect: write
     risk: medium

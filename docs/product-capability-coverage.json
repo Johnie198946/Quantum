@@ -192,6 +192,54 @@
       ]
     },
     {
+      "id": "knowledge.note.illustration.apply",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.illustration.cancel",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.illustration.configure",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.illustration.generate",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.illustration.status",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
+      "id": "knowledge.note.illustration.undo",
+      "status": "implemented",
+      "tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
       "id": "knowledge.note.merge",
       "status": "implemented",
       "tests": [
@@ -616,7 +664,7 @@
       ]
     }
   ],
-  "catalog_digest": "df0760f09c98a71b18c51a789f0328a57e0d910601bdadc3706b72c2d0a4ac7a",
+  "catalog_digest": "f6d61b36f3a342e72a9eb53cf12d25d7817317f412dfe6b59aeae725e9e68af8",
   "consumptions": [
     {
       "gates": [
@@ -661,7 +709,7 @@
     }
   ],
   "counts": {
-    "implemented": 84,
+    "implemented": 90,
     "partial": 0,
     "unverified": 0
   },
@@ -3108,6 +3156,126 @@
       },
       {
         "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.generate",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.action@1",
+        "handler": "knowledge.illustration.action",
+        "ios_user_function": "Generate contextual note illustrations after one confirmation. Read the complete note first. Empty anchor chooses positions automatically; otherwise use the exact unique paragraph, or overview/stop:N for travel. insert=true only when the user requests insertion; false previews. Retry uses retry_run_id and reuses successes. Never invent image paths.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-confirmed-mutation",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "knowledge_action@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.status",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.note@1",
+        "handler": "knowledge.illustration.status",
+        "ios_user_function": "Read the current user’s latest durable illustration generation status for a note. Generation completion does not prove insertion on a device. Use returned run_id for cancel/retry/apply/undo.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "answer@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.cancel",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.action@1",
+        "handler": "knowledge.illustration.action",
+        "ios_user_function": "Stop a specific note illustration job; an in-flight provider request may still finish but its result must not be applied.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-confirmed-mutation",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "knowledge_action@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.apply",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.action@1",
+        "handler": "knowledge.illustration.action",
+        "ios_user_function": "Insert the reviewed illustrations from the specified completed job using note version checks.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-confirmed-mutation",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "knowledge_action@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.undo",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.action@1",
+        "handler": "knowledge.illustration.action",
+        "ios_user_function": "Remove only image references from the specified previously applied batch; preserve subsequent writing.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-confirmed-mutation",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "knowledge_action@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_note_illustration_capabilities.py",
+          "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+        ],
+        "capability": "knowledge.note.illustration.configure",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+        "event": "knowledge.action@1",
+        "handler": "knowledge.illustration.action",
+        "ios_user_function": "Enable or disable automatic illustrations for this note on the current device. Does not generate an image.",
+        "notes": "Local iOS implementation; new write fields require note_illustration_v1. QWS without this negotiation fails closed. No deployment or production receipt.",
+        "policy": "personal-knowledge-confirmed-mutation",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+        "renderer": "knowledge_action@1",
+        "status": "partial"
+      },
+      {
+        "automated_tests": [
           "tests/test_cleanup_capabilities.py",
           "ios/AIPlatformAppTests/CleanupMergeTests.swift",
           "ios/AIPlatformAppUITests/CleanupMergeUITests.swift"
@@ -3136,6 +3304,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 84,
+  "total": 90,
   "version": "1.0.0"
 }

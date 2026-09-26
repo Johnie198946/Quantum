@@ -136,6 +136,12 @@ def _register_routes() -> None:
     app.add_api_route("/v1/owner-sessions/delete", session_runtime.owner_session_delete, methods=["POST"])
     app.add_api_route("/v1/skills", knowledge.create_skill, methods=["POST"])
     app.add_api_route("/v1/skills/{name}", knowledge.update_skill, methods=["PUT"])
+    from scripts.hermes_bridge_runtime import note_illustrations
+    app.add_api_route("/v1/note-illustrations", note_illustrations.start, methods=["POST"])
+    app.add_api_route("/v1/note-illustrations/by-note/{note_id}", note_illustrations.latest, methods=["GET"])
+    app.add_api_route("/v1/note-illustrations/{run_id}", note_illustrations.status, methods=["GET"])
+    app.add_api_route("/v1/note-illustrations/{run_id}/cancel", note_illustrations.cancel, methods=["POST"])
+    app.add_api_route("/v1/note-illustrations/{run_id}/assets/{index}", note_illustrations.asset, methods=["GET"])
     app.add_api_route("/health", endpoints.health, methods=["GET"])
 
 

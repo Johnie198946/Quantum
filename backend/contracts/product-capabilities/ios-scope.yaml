@@ -74,6 +74,12 @@ capabilities:
   - schedule.create
   - schedule.update
   - schedule.delete
+  - knowledge.note.illustration.generate
+  - knowledge.note.illustration.status
+  - knowledge.note.illustration.cancel
+  - knowledge.note.illustration.apply
+  - knowledge.note.illustration.undo
+  - knowledge.note.illustration.configure
   - learning.resume
   - learning.exercise.read
   - learning.exercise.create
@@ -300,6 +306,30 @@ annotations:
   presentation.create_from_text:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+
+  knowledge.note.illustration.generate:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+
+  knowledge.note.illustration.status:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+
+  knowledge.note.illustration.cancel:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+
+  knowledge.note.illustration.apply:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+
+  knowledge.note.illustration.undo:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+
+  knowledge.note.illustration.configure:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+    qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
   learning.resume:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
     qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js

@@ -42,6 +42,157 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testNotesCreateEditSearchAndRecover() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.buttons["note-create"].waitForExistence(timeout: 15))
+        attachScreenshot(named: "notes-home")
+        app.buttons["note-create"].tap()
+        let title = app.descendants(matching: .any).matching(identifier: "note-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText("Notes UX")
+        let body = app.textViews["Markdown 正文"]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.tap()
+        body.typeText("A clear note.")
+        app.buttons["note-done"].tap()
+        XCTAssertTrue(app.buttons["note-edit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["已保存到本地"].exists)
+        attachScreenshot(named: "notes-reading")
+        app.buttons["note-edit"].tap()
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["编辑正文"].exists)
+        attachScreenshot(named: "notes-editing")
+        app.buttons["note-back"].tap()
+        let search = app.textFields["note-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Notes UX")
+        let row = app.buttons.containing(NSPredicate(format: "identifier BEGINSWITH %@", "note-row-")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.buttons["note-edit"].waitForExistence(timeout: 5))
+        app.buttons["更多笔记操作"].tap()
+        app.buttons["移到废纸篓"].tap()
+        app.buttons["移到废纸篓"].tap()
+        XCTAssertTrue(app.buttons["knowledge-more"].waitForExistence(timeout: 5))
+        app.buttons["knowledge-more"].tap()
+        app.buttons["最近删除（本机）"].tap()
+        XCTAssertTrue(app.buttons["恢复"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "notes-recovery")
+        app.buttons["恢复"].tap()
+        app.buttons["完成"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+    }
+
+    func testNotesScopeFiltersInsideMainNavigation() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview", "-tabBarPreview", "-knowledgeTab"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.buttons["note-create"].waitForExistence(timeout: 15))
+        let reading = app.buttons["note-row-preview-reading"]
+        XCTAssertTrue(reading.waitForExistence(timeout: 5))
+        app.buttons["已置顶"].tap()
+        XCTAssertFalse(reading.exists)
+        XCTAssertTrue(app.buttons["已置顶"].isSelected)
+        app.buttons["全部"].tap()
+        XCTAssertTrue(reading.waitForExistence(timeout: 5))
+        app.buttons["#阅读"].tap()
+        XCTAssertTrue(reading.exists)
+        XCTAssertFalse(app.buttons["note-row-preview-design"].exists)
+        app.buttons["全部标签"].tap()
+        XCTAssertTrue(app.buttons["note-row-preview-design"].exists)
+        attachScreenshot(named: "notes-system-navigation")
+    }
+
+    func testRichNoteToolsAndIllustrationSheet() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.buttons["note-row-preview-reading"].waitForExistence(timeout: 15))
+        app.buttons["note-row-preview-reading"].tap()
+        app.buttons["note-edit"].tap()
+        app.buttons["格式"].tap()
+        XCTAssertTrue(app.buttons["提示块"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["卡片"].exists)
+        XCTAssertTrue(app.buttons["代码块"].exists)
+        app.buttons["提示块"].tap()
+        app.buttons["note-done"].tap()
+        attachScreenshot(named: "note-rich-callout")
+        app.buttons["note-edit"].tap()
+        let body = app.textViews["Markdown 正文"]
+        body.tap()
+        app.buttons["note-illustrate"].tap()
+        XCTAssertTrue(app.textFields["note-illustration-brief"].waitForExistence(timeout: 5) || app.textViews["note-illustration-brief"].exists)
+        XCTAssertFalse(app.buttons["note-illustration-generate"].isEnabled)
+        attachScreenshot(named: "note-illustration-sheet")
+    }
+
+    func testChatIllustrationPreviewInsertAndUndoPreserveOriginalNote() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview", "-noteIllustrationChatPreview"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        let insert = app.buttons["插入笔记"]
+        XCTAssertTrue(insert.waitForExistence(timeout: 15))
+        for _ in 0..<5 where !insert.isHittable { app.swipeUp() }
+        attachScreenshot(named: "chat-illustration-preview")
+        insert.tap()
+        let undo = app.buttons["撤销本批配图"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        for _ in 0..<5 where !undo.isHittable { app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["插图已插入，原文保留"].exists)
+        attachScreenshot(named: "chat-illustration-inserted")
+        undo.tap()
+        XCTAssertTrue(app.staticTexts["原文保持不变"].waitForExistence(timeout: 5))
+    }
+
+    func testTravelNoteKeepsItsLayoutWithoutExampleData() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.buttons["knowledge-more"].waitForExistence(timeout: 15))
+        app.buttons["knowledge-more"].tap()
+        app.buttons["新建旅行笔记"].tap()
+        XCTAssertTrue(app.buttons["note-edit"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["日本 · 京都"].exists)
+        XCTAssertFalse(app.staticTexts["18° 晴"].exists)
+        app.buttons["note-edit"].tap()
+        XCTAssertTrue(app.textFields["目的地"].waitForExistence(timeout: 5))
+        app.textFields["目的地"].tap()
+        app.textFields["目的地"].typeText("Hangzhou")
+        let journal = app.textViews["Markdown 正文"]
+        journal.tap()
+        journal.typeText("A real travel journal.")
+        app.buttons["note-done"].tap()
+        XCTAssertTrue(app.staticTexts["Hangzhou"].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(app.staticTexts["Hangzhou"].frame.minX, app.frame.minX)
+        XCTAssertLessThanOrEqual(app.staticTexts["Hangzhou"].frame.maxX, app.frame.maxX)
+        attachScreenshot(named: "note-travel-overview")
+    }
+
+    func testNotesLargeTextAndBookshelfSeparation() {
+        app.terminate()
+        app.launchArguments = ["-knowledgeHomePreview", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launchEnvironment["AI_LAB_E2E_NOTE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+        XCTAssertTrue(app.buttons["note-create"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["note-create"].isHittable)
+        XCTAssertGreaterThanOrEqual(app.buttons["今日日记"].frame.minY, app.buttons["note-create"].frame.maxY,
+                                    "Accessibility sizes must stack the primary actions")
+        attachScreenshot(named: "notes-large-text")
+        app.segmentedControls["knowledge-section"].buttons["书架"].tap()
+        XCTAssertFalse(app.textFields["note-search"].exists)
+        XCTAssertFalse(app.buttons["note-create"].exists)
+        attachScreenshot(named: "notes-bookshelf")
+    }
+
     func testExerciseHintExpandsAndKeepsAssistedWhenCollapsed() {
         app.terminate()
         app.launchArguments = ["-exerciseHintPreview"]

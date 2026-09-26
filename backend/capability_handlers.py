@@ -1129,6 +1129,16 @@ async def _task_execute(data, payload, key):
 
 
 
+async def _knowledge_illustration_status(data, payload, key):
+    from backend.api.knowledge_sync import _illustration_bridge
+    return await _illustration_bridge(payload, f"/by-note/{data['note_id']}")
+
+
+async def _knowledge_illustration_action(data, payload, key):
+    # Mutations use the existing signed local-note proposal/executor, just as
+    # unsynced note edits do. A server-only caller cannot bypass that receipt.
+    raise HTTPException(409, detail={"code": "local_note_executor_required"})
+
 
 def _learning_chat_snapshot(item):
     # Unrequested hints are withheld from Chat; the exercise screen uses its domain API.
@@ -1216,6 +1226,9 @@ async def _learning_submit(data, payload, key):
 
 
 HANDLERS: dict[str, Handler] = {
+    "knowledge.illustration.action": _knowledge_illustration_action,
+    "knowledge.illustration.status": _knowledge_illustration_status,
+    "knowledge.compare": _knowledge_compare,
     "learning.resume": _learning_resume,
     "learning.exercise.read": _learning_read,
     "learning.exercise.create": _learning_create,
@@ -1223,7 +1236,6 @@ HANDLERS: dict[str, Handler] = {
     "learning.exercise.answer": _learning_answer,
     "learning.exercise.submit": _learning_submit,
 
-    "knowledge.compare": _knowledge_compare,
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
     "knowledge.create": _knowledge_create,

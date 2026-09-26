@@ -34,9 +34,25 @@ def note_capability_step(capability_id: str, data: dict[str, Any]) -> dict[str, 
         "knowledge.note.merge": "merge_notes", "knowledge.note.archive": "archive_note",
         "knowledge.note.restore": "restore_note",
     }.get(capability_id)
+    illustration_action = capability_id.removeprefix("knowledge.note.illustration.") if capability_id.startswith("knowledge.note.illustration.") else None
+    if illustration_action in {"generate", "cancel", "apply", "undo", "configure"}:
+        kind = "illustrate_note"
     if kind is None:
         return None
+    presentation = {key: data[key] for key in ("title", "tags", "layout", "automatic_illustrations") if key in data}
+    if kind == "illustrate_note":
+        presentation.update(illustration_action=illustration_action,
+                            illustration_anchor=data.get("anchor", ""), illustration_brief=data.get("brief", ""))
+        if "insert" in data or not data.get("retry_run_id"):
+            presentation["illustration_insert"] = data.get("insert", False)
+        if data.get("retry_run_id"):
+            presentation["illustration_action"] = "retry"
+        if data.get("run_id") or data.get("retry_run_id"):
+            presentation["illustration_run_id"] = data.get("run_id") or data["retry_run_id"]
+        if "enabled" in data:
+            presentation["automatic_illustrations"] = data["enabled"]
     return {
+        **presentation,
         "kind": kind,
         "target_note_id": data.get("note_id") or data.get("target_note_id"),
         "source_note_ids": list((data.get("source_versions") or {}).keys()),
@@ -44,6 +60,56 @@ def note_capability_step(capability_id: str, data: dict[str, Any]) -> dict[str, 
         "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
         "source_content_hashes": data.get("source_versions") or {},
     }
+
+
+
+
+def note_action_summary(step: dict[str, Any]) -> str:
+    action = step.get("illustration_action")
+    if action == "configure":
+        return "开启本篇自动配图" if step.get("automatic_illustrations") else "关闭本篇自动配图"
+    if action == "retry" and "illustration_insert" not in step:
+        return "重试原配图任务，保留原插入方式"
+    if action in {"generate", "retry"}:
+        return ("重试" if action == "retry" else "生成") + ("插图并插入笔记" if step.get("illustration_insert") else "插图供预览")
+    if action:
+        return {"cancel": "停止本篇配图", "apply": "将候选插图插入笔记", "undo": "撤销本批配图"}[action]
+    if step.get("layout") == "travel":
+        return "保存旅行笔记"
+    return {"merge_notes": "合并笔记", "archive_note": "归档笔记", "restore_note": "恢复笔记"}.get(step.get("kind"), "保存笔记")
+
+
+def note_presentation_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """Validate the additive note UI fields before signing any proposal."""
+    from backend.services.capability_catalog import validate_instance, CapabilityContractError
+    schema = {"type": "object", "properties": {
+        "layout": {"type": "string", "enum": ["standard", "travel"]},
+        "automatic_illustrations": {"type": "boolean"},
+        "illustration_action": {"type": "string", "enum": ["generate", "retry", "cancel", "apply", "undo", "configure"]},
+        "illustration_anchor": {"type": "string", "maxLength": 16000},
+        "illustration_brief": {"type": "string", "maxLength": 2000},
+        "illustration_run_id": {"type": "string", "pattern": r"^[a-f0-9]{32}$"},
+        "illustration_insert": {"type": "boolean"},
+    }, "additionalProperties": False}
+    value = {key: raw[key] for key in schema["properties"] if key in raw and raw[key] is not None}
+    validate_instance(value, schema)
+    action = value.get("illustration_action")
+    if raw.get("kind") == "illustrate_note" and not action:
+        raise CapabilityContractError("illustration_action_required")
+    if action and raw.get("kind") != "illustrate_note":
+        raise CapabilityContractError("illustration_step_required")
+    if action and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", str(raw.get("target_note_id") or ""))
+                   or not re.fullmatch(r"[a-f0-9]{64}", str(raw.get("original_content_hash") or ""))):
+        raise CapabilityContractError("illustration_target_version_required")
+    if action in {"retry", "cancel", "apply", "undo"} and not value.get("illustration_run_id"):
+        raise CapabilityContractError("illustration_run_required")
+    if action == "configure" and "automatic_illustrations" not in value:
+        raise CapabilityContractError("illustration_preference_required")
+    if action == "generate" and value.get("illustration_anchor") and not value.get("illustration_brief", "").strip():
+        raise CapabilityContractError("illustration_brief_required")
+    if value.get("layout") and raw.get("kind") not in {"create_note", "update_note"}:
+        raise CapabilityContractError("layout_requires_note_content")
+    return value
 
 
 def canonical_digest(value: Any) -> str:

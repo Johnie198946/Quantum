@@ -3621,11 +3621,12 @@ private struct WorkflowArtifactPreview: View {
             }
             .sheet(isPresented: $showingTravelNoteSave) {
                 TravelNoteSaveSheet(title: artifact.title, content: content ?? "") { title, body in
-                    if KnowledgeNoteStore.shared.createNote(
+                    if let note = KnowledgeNoteStore.shared.createNote(
                         title: title,
                         body: body,
                         tags: ["旅行", "workflow"]
-                    ) != nil {
+                    ) {
+                        KnowledgeNoteStore.shared.startIllustrations(id: note.id)
                         savedTravelNote = true
                     }
                 }

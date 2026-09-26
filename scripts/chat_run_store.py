@@ -564,7 +564,7 @@ class DurableChatRunStore:
             run_type = str(json.loads(row["execution_payload_json"] or "{}").get("run_type") or "")
         except (json.JSONDecodeError, TypeError):
             return False
-        return run_type == "chat_prewarm" or run_type.startswith("knowledge_")
+        return run_type in {"chat_prewarm", "note_illustration"} or run_type.startswith("knowledge_")
 
     def heartbeat(self, run_id: str, worker_id: str, *, lease_seconds: int = 120) -> bool:
         now = time.time()

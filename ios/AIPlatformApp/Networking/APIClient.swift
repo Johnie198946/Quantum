@@ -903,8 +903,8 @@ public struct KnowledgeNoteSyncStatusDTO: Codable, Hashable, Sendable {
 public enum KnowledgeNoteStatusPolicy {
     public static func message(for status: KnowledgeNoteSyncStatusDTO, expectedContentHash: String) -> String {
         status.syncStatus == "synced" && status.contentHash == expectedContentHash
-            ? "已保存并同步原始笔记，Wiki 状态待确认"
-            : "已保存到本地，原始笔记同步待确认"
+            ? "已同步"
+            : "已保存到本地，云端同步待确认"
     }
 }
 
@@ -953,6 +953,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
     /// Local-first notes are signed into the request context so Hermes can
     /// compare notes that have not completed background sync yet.
     public let localNotes: [ChatLocalNoteDTO]
+    public let noteIllustrationV1: Bool
     public let learningExerciseId: String?
 
     public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], learningExerciseId: String? = nil) {
@@ -961,6 +962,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         self.truncated = truncated
         self.sourceSessions = sourceSessions
         self.localNotes = localNotes
+        self.noteIllustrationV1 = true
         self.learningExerciseId = learningExerciseId
     }
 
@@ -969,6 +971,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         case messages, truncated
         case sourceSessions = "source_sessions"
         case localNotes = "local_notes"
+        case noteIllustrationV1 = "note_illustration_v1"
         case learningExerciseId = "learning_exercise_id"
     }
 
@@ -979,6 +982,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
         sourceSessions = try container.decodeIfPresent([ClientSourceSessionDTO].self, forKey: .sourceSessions) ?? []
         localNotes = try container.decodeIfPresent([ChatLocalNoteDTO].self, forKey: .localNotes) ?? []
+        noteIllustrationV1 = try container.decodeIfPresent(Bool.self, forKey: .noteIllustrationV1) ?? false
         learningExerciseId = try container.decodeIfPresent(String.self, forKey: .learningExerciseId)
     }
 }
@@ -2198,7 +2202,7 @@ public final class CapabilityClient {
             body: QCPProposalRequestDTO(
                 capabilityId: capabilityId, input: input, sessionId: sessionId,
                 requestId: requestId, idempotencyKey: requestId, resourceVersions: [:],
-                rendererVersion: "qcp-ios@1", localNotes: notes
+                rendererVersion: "qcp-ios-notes@1", localNotes: notes
             )
         )
         guard response.error == nil, let event = response.events.first else {
@@ -4294,7 +4298,14 @@ public final class APIClient: ObservableObject {
                         linkTitle: item["link_title"] as? String,
                         originalContentHash: item["original_content_hash"] as? String,
                         sourceContentHashes: (item["source_content_hashes"] as? [String: Any] ?? [:])
-                            .mapValues { $0 as? String }
+                            .mapValues { $0 as? String },
+                        layout: item["layout"] as? String,
+                        automaticIllustrations: item["automatic_illustrations"] as? Bool,
+                        illustrationAction: item["illustration_action"] as? String,
+                        illustrationAnchor: item["illustration_anchor"] as? String,
+                        illustrationBrief: item["illustration_brief"] as? String,
+                        illustrationRunId: item["illustration_run_id"] as? String,
+                        illustrationInsert: item["illustration_insert"] as? Bool
                     )
                 }
                 let navigationJSON = json["suggested_navigation"] as? [String: Any]
@@ -4812,5 +4823,56 @@ public final class APIClient: ObservableObject {
             body: Body(ticket: ticket),
             reauthOn401: false
         )
+    }
+}
+
+// Note illustration requests share the existing authenticated note transport.
+struct NoteIllustrationRequest: Codable {
+    var noteId: String
+    var requestId: String
+    var title: String
+    var content: String
+    var sourceHash: String
+    var mode: String
+    var anchor: String
+    var brief: String
+    var travel: Bool
+    var retryRunId: String?
+    enum CodingKeys: String, CodingKey {
+        case noteId = "note_id", requestId = "request_id", sourceHash = "source_hash", retryRunId = "retry_run_id"
+        case title, content, mode, anchor, brief, travel
+    }
+}
+
+struct NoteIllustrationAsset: Codable, Identifiable, Equatable {
+    var runId: String
+    var index: Int
+    var anchor: String
+    var alt: String
+    var sha256: String
+    var provider: String
+    var model: String
+    var id: String { "\(runId)-\(index)" }
+    var relativePath: String { "Attachments/ai-\(runId)-\(index)-\(sha256).jpg" }
+    var downloadPath: String { "me/knowledge-notes/illustrations/\(runId)/assets/\(index)" }
+}
+
+struct NoteIllustrationResponse: Codable {
+    var runId: String
+    var status: String
+    var message: String
+    var assets: [NoteIllustrationAsset]
+    var failedIndices: [Int]
+    var errorCode: String
+}
+
+extension APIClient {
+    func generateNoteIllustrations(_ body: NoteIllustrationRequest, generation: UInt64) async throws -> NoteIllustrationResponse {
+        try await request(NoteIllustrationResponse.self, path: "me/knowledge-notes/illustrations/generate", method: "POST", body: body, credentialGeneration: generation)
+    }
+    func noteIllustrations(runId: String, generation: UInt64, cancel: Bool = false) async throws -> NoteIllustrationResponse {
+        try await request(NoteIllustrationResponse.self,
+                          path: "me/knowledge-notes/illustrations/\(runId)" + (cancel ? "/cancel" : ""),
+                          method: cancel ? "POST" : "GET", credentialGeneration: generation)
     }
 }
