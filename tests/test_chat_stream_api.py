@@ -32,13 +32,13 @@ def effective_agent(agent_id: str, name: str) -> EffectiveAgent:
     )
 
 
-def auth_headers() -> dict:
+def auth_headers(user_id: str = "1") -> dict:
     from datetime import datetime, timedelta, timezone
     import jwt as jose_jwt
 
     token = jose_jwt.encode(
         {
-            "sub": "1",
+            "sub": user_id,
             "username": "tester",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         },
@@ -728,7 +728,7 @@ async def test_stream_records_exact_usage(app: FastAPI, transport: httpx.ASGITra
         response = await client.post(
             "/api/chat/stream",
             json={"question": "统计这次调用", "request_id": "synthetic-stream-usage-0001"},
-            headers=auth_headers(),
+            headers=auth_headers("stream-usage-test"),
         )
 
     assert response.status_code == 200
@@ -739,7 +739,7 @@ async def test_stream_records_exact_usage(app: FastAPI, transport: httpx.ASGITra
         records = (await db.scalars(select(LLMUsageRecord).where(
             LLMUsageRecord.request_id == "synthetic-stream-usage-0001"))).all()
         reservation = await db.get(InferenceReservation, {
-            "user_id": "1", "request_id": "synthetic-stream-usage-0001"})
+            "user_id": "stream-usage-test", "request_id": "synthetic-stream-usage-0001"})
         assert len(records) == 1 and records[0].success
         assert reservation.actual_tokens == records[0].total_tokens == 15
 
@@ -760,10 +760,10 @@ async def test_stream_cancel_keeps_reservation_pending(app, transport, monkeypat
     # final body. The important effect is the shielded accounting transaction.
     with pytest.raises((AssertionError, asyncio.CancelledError)):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            await client.post("/api/chat/stream", headers=auth_headers(), json={
+            await client.post("/api/chat/stream", headers=auth_headers("stream-cancel-test"), json={
                 "question": "synthetic cancellation", "request_id": "synthetic-cancel-0001"})
     async with SessionLocal() as db:
-        row = await db.get(InferenceReservation, {"user_id": "1", "request_id": "synthetic-cancel-0001"})
+        row = await db.get(InferenceReservation, {"user_id": "stream-cancel-test", "request_id": "synthetic-cancel-0001"})
         records = (await db.scalars(select(LLMUsageRecord).where(
             LLMUsageRecord.request_id == "synthetic-cancel-0001"))).all()
         assert row.state == "pending_reconcile" and row.actual_tokens is None

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from unittest.mock import patch
 
@@ -58,6 +59,38 @@ class TestChatResponseModel(unittest.TestCase):
 
 
 class TestCallHermes(unittest.TestCase):
+    def test_nonstream_query_obeys_bridge_contract_and_keeps_full_exercise_goal(self):
+        from backend.api.learning import GeneratedSet
+        from scripts.hermes_bridge_runtime.contracts import GoalRequest
+
+        goal = "生成混合练习：" + json.dumps(GeneratedSet.model_json_schema(), ensure_ascii=False)
+        self.assertGreater(len(goal), 200)
+        observed = []
+
+        class Client(_FakeAsyncClient):
+            async def post(self, *args, **kwargs):
+                request = GoalRequest.model_validate(kwargs["json"])
+                observed.append(request)
+                return self._response
+
+        with patch("backend.api.chat.httpx.AsyncClient", return_value=Client(_FakeResponse({"reply": "ok"}))):
+            for query in (None, "查" * 200, "查" * 201, goal):
+                asyncio.run(_call_hermes(goal, knowledge_query=query))
+                self.assertEqual(observed[-1].goal, goal)
+                self.assertEqual(observed[-1].knowledge_query, query[:200] if query else None)
+
+    def test_bridge_failure_is_an_error_instead_of_an_answer(self):
+        from fastapi import HTTPException
+
+        response = _FakeResponse({"detail": "private upstream payload"})
+        response.status_code = 422
+        with patch("backend.api.chat.httpx.AsyncClient", return_value=_FakeAsyncClient(response)):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(_call_hermes("generate"))
+        self.assertEqual(raised.exception.status_code, 502)
+        self.assertIn("HTTP 422", raised.exception.detail)
+        self.assertNotIn("private", raised.exception.detail)
+
     def test_call_hermes_parses_reasoning(self):
         fake_resp = _FakeResponse(
             {

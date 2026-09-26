@@ -478,7 +478,7 @@ async def _call_hermes(
     if knowledge_query:
         # Compatibility hint only. Hermes selects and queries a source through
         # capability-protected tools; the platform does not prefetch evidence.
-        payload["knowledge_query"] = knowledge_query
+        payload["knowledge_query"] = _bounded_knowledge_query(knowledge_query)
     if agent_config:
         payload["agent_config"] = agent_config
     if request_id:
@@ -509,7 +509,9 @@ async def _call_hermes(
                 for s in data.get("reasoning", [])
             ]
             return reply, reasoning
-        return f"⚠️ Hermes 桥接失败（HTTP {r.status_code}）", []
+        raise HTTPException(
+            status_code=502, detail=f"Hermes 服务请求失败（HTTP {r.status_code}）"
+        )
 
 
 async def _call_hermes_recorded(
@@ -1162,6 +1164,8 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
         else:
             await release_inference(payload, effective_request_id)
         if isinstance(e, asyncio.CancelledError):
+            raise
+        if isinstance(e, HTTPException):
             raise
         raise HTTPException(
             status_code=502, detail=f"Hermes 调用失败: {e}"
