@@ -32,3 +32,16 @@ origin=https://github.com/Johnie198946/Quantum.git；source=https://github.com/J
 - 与出版任务协调：其工作在独立worktree，当前尚无生产代码修改；双方部署前核验expected-current-SHA与发布锁，不覆盖彼此发布。
 
 证据目录：/private/tmp/cleanup-exercise-testflight-20260927/。后续更新生产部署、Archive、上传及Apple回执。
+
+## 2026-09-27 后续发布实录（覆盖上方初始待办状态）
+
+用户已明确授权“推送和部署配套后端”。联合提交 52222059ce1750891d07635366826480392a9d4d 已推送 origin/main，并以 git ls-remote 核对一致。
+Release 1.0.3(65) Archive /private/tmp/Quantumn-1.0.3-65.xcarchive 构建成功、codesign 验证通过、已安装真机；可执行文件 SHA256 f4d1dd45aeaf34d28e5887f1259f09996b0613469b5c9d731711f5be814e39f0。TestFlight 尚未上传。
+
+首次标准部署失败并自动回滚，不能标记 DEPLOYED/VERIFIED：generated_artifacts.py 顶层引用 reportlab，但 requirements.txt 与哈希锁缺少此依赖，导致 API 无法启动。旧 release 90c889469c91b2e73a70ddadbaee8cbfcbdae9dc 已恢复，/ready=ready，Bridge /health=ok，全部 Compose 容器 healthy。
+回滚点 /opt/ai-lab-shared/rollbacks/cleanup-exercise-52222059：release.before、api-image.before、offline-images.attested.before、database-before.sql.gz；数据库备份 SHA256 d2f0e48446024fb1bb3fcf7813e9248250653a9bdec7c71e25ed1f149b73c43f。旧 API 镜像 sha256:ee27040979967d06024b7b8786cfc9230e5b6ddee4eee1d51310ea0eaa581940。
+
+依赖修复只添加已使用的 reportlab==4.4.5 及 resolver 生成的 wheel/sdist 哈希，保持全部原锁版本。wheel SHA256 849773d7cd5dde2072fedbac18c8bc909506c8befba8f088ba7b09243c6684cc。补充依赖契约测试；答题路由检查从 app.routes 内部枚举改为真实 HTTP 未认证请求返回401，兼容生产嵌套路由并验证实际入口。
+隔离镜像 ai-lab-platform-api:cleanup-deps-check 已通过 pip check、import backend.main、5项清理测试、11项PDF/依赖测试、2项实际学习路由/提示测试。完整仓库测试首次因 API 镜像不含架构上独立的 hermes_cli 而不能收集；不得宣称全仓库通过。跨 Bridge 回归采用已有 Hermes 源模块只读挂载，网络禁用、空临时DB/vault/HOME，无生产数据挂载；发布相关完整回归结果随后补记。
+
+此次修复开工盘点：HEAD/main=52222059；origin/main一致；唯一worktree为规范路径；origin/source见上；保留 AGENTS.md、既有hermes manifest以及并行笔记UX任务五个Swift文件和其manifest，不暂存或混入Build65。本修复只涉及requirements.txt、requirements.lock、tests/test_backend_dependency_contract.py、tests/test_learning_exercises.py及本manifest。
