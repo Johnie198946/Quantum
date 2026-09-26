@@ -71,6 +71,11 @@ class ExecutionAuthorityError(RuntimeError):
     """A stable binding/policy denial that must not be retried as an outage."""
 
 
+def _restrict_requested_knowledge_scope(policy, requested_scope: list[str]) -> list[str]:
+    """Re-authorize only the frozen request; empty never expands to tenant defaults."""
+    return list(policy.restrict(requested_scope)) if requested_scope else []
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -287,9 +292,14 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
             catalog=compute_catalog(),
             allow_admin_bypass=False,
         )
-        allowed_scope = policy.restrict(plan.knowledge_scope or [])
+        requested_scope = list(plan.knowledge_scope or [])
+        # An empty frozen scope means this Workflow has no knowledge authority.
+        # TenantPolicy.restrict([]) expands to the tenant's default readable
+        # categories, which must not be mistaken for requested authority during
+        # execution-time re-authorization.
+        allowed_scope = _restrict_requested_knowledge_scope(policy, requested_scope)
         workflow = await policy_db.get(WorkflowDefinition, execution.workflow_id)
-        if sorted(allowed_scope) != sorted(plan.knowledge_scope or []):
+        if sorted(allowed_scope) != sorted(requested_scope):
             raise ExecutionAuthorityError(
                 "workflow knowledge scope is no longer authorized"
             )

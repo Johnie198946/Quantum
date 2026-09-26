@@ -323,6 +323,23 @@ def test_execution_constraints_are_tenant_scoped_and_prevent_two_active_runs():
             )
 
 
+def test_empty_knowledge_scope_does_not_expand_to_tenant_defaults():
+    class Policy:
+        calls = 0
+
+        def restrict(self, scope):
+            self.calls += 1
+            return ["green-default"] if not scope else list(scope)
+
+    policy = Policy()
+    assert workflow_executor._restrict_requested_knowledge_scope(policy, []) == []
+    assert policy.calls == 0
+    assert workflow_executor._restrict_requested_knowledge_scope(policy, ["green"]) == [
+        "green"
+    ]
+    assert policy.calls == 1
+
+
 @pytest.mark.asyncio
 async def test_plan_drift_and_archived_or_disabled_workflows_fail_closed(schedule_db):
     drift_workflow = await seed_ready_workflow(schedule_db, "drift")
