@@ -25,6 +25,13 @@ def approve_fixture(store, value, *, record=True, draft=None):
         review["chapters"].append({"id": c["id"], "body_hash": c["body_hash"], "decision": "approved",
             "checks": {name: {"quote": c["paragraphs"][0][:30] if c["paragraphs"] else "",
                 "finding": "合成测试说明，不是真实审核。仅用于检查字段、长度与签名绑定是否满足测试约定。"} for name in CHAPTER_CHECKS}})
+    if any(gap.get("state") == "open" for gap in contract["research_gaps"]):
+        review["gap_resolutions"] = [
+            {"id": gap["id"], "disposition": "resolved",
+             "quote": editorial_metrics(value["body"])["chapters"][0]["paragraphs"][0][:30],
+             "finding": "合成独立审核测试逐项处置，只验证签名与缺口映射，不表示任何真实内容已经补证。"}
+            for gap in contract["research_gaps"] if gap.get("state") == "open"
+        ]
     if validate_editorial(value["body"], contract, review, value["source_receipts"]):
         return value
     path = store.root / "fixture-inputs" / (contract["attempt_id"] + ".json")

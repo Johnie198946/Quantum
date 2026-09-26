@@ -342,3 +342,31 @@ def test_receipts_order_canonicalization_and_non_json_fail_closed():
     other = {"source_url": "https://example.org/other", "sha256": "b" * 64}
     assert editorial_target_hash(body, c, receipts + [other]) == editorial_target_hash(body, c, [other] + receipts)
     assert "contract.target_hash" in validate_editorial(body, c, r, [{"not_json": float("nan")}])
+
+
+@pytest.mark.parametrize("disposition", ["resolved", "scope_removed"])
+def test_open_gap_requires_independent_per_gap_disposition(disposition):
+    body, contract, review, receipts = synthetic_fixture("chapter")
+    quote = "本文仅验证离线预检流程，没有执行在线调用，也不声称在线调用两次成功。"
+    body += "\n\n" + quote
+    contract = make_editorial_contract(body, format="chapter", writer_sessions=contract["writer_sessions"],
+        revision=2, previous_body_hash="b" * 64, learning_objectives=contract["learning_objectives"],
+        editorial_brief=contract["editorial_brief"], source_receipts=receipts,
+        research_gaps=[{"id": "online", "question": "两次在线调用成功是否有原始执行证据？", "state": "open",
+                        "resolution": "等待独立审稿核验两次在线成功的证据或明确删除相关主张。", "source_urls": []}])
+    review.update(revision=2, editorial_target_hash=contract["target_hash"])
+    review["chapters"][0]["body_hash"] = contract["chapters"][0]["body_hash"]
+    assert "research_gaps.open" in validate_editorial(body, contract, None, receipts)
+    assert "review.gap_resolutions" in validate_editorial(body, contract, review, receipts)
+    resolution = {"id": "online", "disposition": disposition, "quote": quote,
+                  "finding": "独立合成审核已核对正文明确收缩为离线预检，原在线成功主张已被删除，未把未执行的在线任务描述成成功。"}
+    review["gap_resolutions"] = [resolution]
+    assert validate_editorial(body, contract, review, receipts) == []
+    for mutation in ([], [resolution, resolution], [{**resolution, "id": "foreign"}],
+                     [{**resolution, "quote": "正文不存在的句子不能作为范围收缩的有效证据或通过审核。"}],
+                     [{**resolution, "finding": "已解决"}], [{**resolution, "disposition": "waived"}]):
+        changed = {**review, "gap_resolutions": mutation}
+        assert "review.gap_resolutions" in validate_editorial(body, contract, changed, receipts)
+    rejected = {**review, "decision": "rejected", "gap_resolutions": []}
+    assert "research_gaps.open" not in validate_editorial(body, contract, rejected, receipts)
+    assert contract["research_gaps"][0]["state"] == "open"

@@ -211,7 +211,7 @@ def flow(tmp_path, monkeypatch):
     )
 
 
-def native(flow, decision="approved", ended=True):
+def native(flow, decision="approved", ended=True, *, gap_disposition="resolved", omit_gap_resolutions=False, rejection_gap=None):
     local, manifest, remote, _, key, _, _ = flow
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     from unittest.mock import patch
@@ -253,8 +253,15 @@ def native(flow, decision="approved", ended=True):
                 },
             }
         )
+    if decision == "approved" and not omit_gap_resolutions and any(g.get("state") == "open" for g in c["research_gaps"]):
+        review["gap_resolutions"] = [
+            {"id": gap["id"], "disposition": gap_disposition,
+             "quote": editorial_metrics((local / "body.md").read_text())["chapters"][-1]["paragraphs"][-1][:40],
+             "finding": "合成独立审核：修订正文明确删除两次在线成功的主张，当前范围仅限离线预检，不再声称在线执行完成。"}
+            for gap in c["research_gaps"] if gap.get("state") == "open"
+        ]
     if decision == "rejected":
-        review["research_gaps"] = [
+        review["research_gaps"] = [rejection_gap or
             {
                 "id": "need-primary",
                 "question": "需要查阅一手原始来源以补充缺少的历史证据",
@@ -1026,7 +1033,7 @@ def test_content_only_revision_builds_and_prepares_all_platform_fields(flow, tmp
         gap["id"] for gap in bundle["quality_contract"]["research_gaps"]
     }
     assert all(
-        gap["state"] == "resolved"
+        gap["state"] == "open" and gap["source_urls"] == []
         for gap in bundle["quality_contract"]["research_gaps"]
     )
     assert rights["body_sha256"] == pending["body_sha256"]
@@ -1305,11 +1312,15 @@ def test_review_input_does_not_offer_default_request_to_supervision(flow, monkey
     assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
 
 
-def test_rejected_native_content_enters_revision_two_and_independent_approval(flow, tmp_path, monkeypatch):
+@pytest.mark.parametrize("review_mode", ["scope_removed", "missing", "tampered"])
+def test_rejected_native_content_enters_revision_two_and_independent_approval(flow, tmp_path, monkeypatch, review_mode):
     from backend.services.knowledge_publication_store import SERIES
     from scripts import publication_workflow_handoff as handoff
     local, old_manifest, remote, calls, key, store, intake = flow
-    databases, _ = native(flow, "rejected")
+    databases, _ = native(flow, "rejected", rejection_gap={
+        "id": "need-primary", "question": "原稿所宣称的两次在线成功是否具有完整可追溯证据？",
+        "required_evidence": "提供两次在线执行成功的原始记录，或删除在线成功主张并明确当前范围。",
+    })
     relay.finalize(local, remote, db=databases, key=key)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setitem(SERIES, "ai-history", {**SERIES["ai-history"], "author_job_id": "historyjob", "author_profile": "story"})
@@ -1335,7 +1346,7 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     relay.save(historical / old_manifest.name, old)
     with pytest.raises(ValueError, match="all five publication media"):
         relay.load_manifest(historical / old_manifest.name)
-    body = (local / "body.md").read_text() + "\n### 证据补充\n补充核验一手来源，澄清历史背景，并由独立审稿重新确认缺口得到解决。\n"
+    body = (local / "body.md").read_text() + "\n### 明确范围\n本文仅验证离线预检流程，不代表已经完成两次在线调用，也不主张远端运行成功。读者仍需自行验证在线账号与权限。\n"
     content = {"schema_version": "publication-content-v1", "title": "修订后的合成历史文章",
         "summary": "合成测试内容，用于核验真实拒稿进入下一轮审核。", "body": body,
         "source_documents": [{"kind": "source_snapshot", "content": "https://example.com/source"}], "execution_documents": []}
@@ -1363,18 +1374,59 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     item = json.loads(manifest.read_text())["items"][0]
     bundle = json.loads((base / item["bundle_file"]).read_text())
     assert bundle["quality_contract"]["research_gaps"][0]["id"] == "need-primary"
-    assert bundle["quality_contract"]["research_gaps"][0]["state"] == "resolved"
+    assert bundle["quality_contract"]["research_gaps"][0]["state"] == "open"
+    assert bundle["quality_contract"]["research_gaps"][0]["source_urls"] == []
+    assert "两次在线执行成功" in bundle["quality_contract"]["research_gaps"][0]["resolution"]
     assert bundle["quality_contract"]["writer_sessions"] == ["hermes:writer", f"hermes:{sid}"]
     new_flow = (base, manifest, remote, calls, key, store, intake)
-    review_dbs, _ = native(new_flow)
+    review_dbs, _ = native(new_flow, gap_disposition="scope_removed", omit_gap_resolutions=review_mode == "missing")
+    if review_mode == "tampered":
+        changed = json.loads((base / "review.json").read_text())
+        changed["gap_resolutions"][0]["finding"] += "篡改已签名的审核意见。"
+        relay.save(base / "review.json", changed)
     current_item = json.loads(manifest.read_text())["items"][0]
     shutil.copyfile(base / "review.json", base / current_item["review_file"])
     with sqlite3.connect(review_dbs["story"]) as db:
         db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", (sid, "story", None, "cron", 100, "cron_complete", 90))
     assert json.loads(manifest.read_text())["items"][0]["quality_contract"]["revision"] == 2
-    assert relay.finalize(base, remote, db=review_dbs, key=key)["items"][0]["status"] == "staged"
+    if review_mode == "tampered":
+        with pytest.raises(ValueError, match="does not bind actual review bytes"):
+            relay.finalize(base, remote, db=review_dbs, key=key)
+        return
+    if review_mode == "missing":
+        with pytest.raises(ValueError, match="attempt ID/hash/state readback mismatch"):
+            relay.finalize(base, remote, db=review_dbs, key=key)
+        with sqlite3.connect(store / "publication.sqlite3") as db:
+            assert db.execute("SELECT state FROM editorial_attempts WHERE attempt_id=?",
+                              (current_item["quality_contract"]["attempt_id"],)).fetchone()[0] == "failed"
+            assert db.execute("SELECT COUNT(*) FROM editions WHERE state IN ('published','scheduled','staged')").fetchone()[0] == 0
+        return
+    result = relay.finalize(base, remote, db=review_dbs, key=key)
+    assert result["items"][0]["status"] == "staged"
+    frozen = json.loads((base / current_item["bundle_file"]).read_text())["quality_contract"]
+    assert all(gap["state"] == "open" for gap in frozen["research_gaps"])
+    with sqlite3.connect(store / "publication.sqlite3") as db:
+        recorded = db.execute("SELECT contract_json,gaps_json FROM editorial_attempts WHERE attempt_id=?",
+                              (frozen["attempt_id"],)).fetchone()
+    assert json.loads(recorded[0]) == frozen
+    assert all(gap["state"] == "resolved" and gap["resolution"].startswith("scope_removed:")
+               for gap in json.loads(recorded[1]))
 
 
+
+
+def test_rejected_revision_reopens_unverified_resolved_gap_and_retains_requirement():
+    prior = {"research_gaps": [{"id": "online", "question": "原稿是否有两次在线运行成功的完整证据？",
+        "state": "resolved", "resolution": "Revised manuscript submitted for independent verification against: 两次在线运行成功。",
+        "source_urls": ["https://example.com/source"]}]}
+    gaps = relay._revision_gaps(prior, [{"id": "contradiction",
+        "question": "程序的已解决声明是否与只有离线预检的证据相矛盾？",
+        "required_evidence": "需要独立核验在线证据，或删除在线成功主张并明确收缩范围。"}])
+    assert {gap["id"] for gap in gaps} == {"online", "contradiction"}
+    assert all(gap["state"] == "open" and gap["source_urls"] == [] for gap in gaps)
+    assert "两次在线运行成功" in gaps[0]["resolution"]
+    assert "删除在线成功主张" in gaps[1]["resolution"]
+    assert prior["research_gaps"][0]["state"] == "resolved"  # frozen historical contract is untouched
 
 @pytest.mark.parametrize("damage", ["hash", "contract", "review", "missing"])
 def test_native_rejected_revision_fails_closed_for_damaged_same_occurrence(flow, damage):

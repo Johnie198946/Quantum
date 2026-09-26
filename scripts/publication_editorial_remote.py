@@ -518,9 +518,11 @@ def _copy_revision_input(
     return str(target.relative_to(target_base))
 
 
-def _resolved_revision_gaps(prior_contract: dict, review_gaps: list, brief: dict) -> list:
+def _revision_gaps(prior_contract: dict, review_gaps: list) -> list:
     gaps = {
-        gap["id"]: dict(gap)
+        gap["id"]: {"id": gap["id"], "question": gap["question"], "state": "open",
+                    "resolution": "Pending independent verification of prior finding: " + str(gap.get("resolution") or gap["question"]),
+                    "source_urls": []}
         for gap in prior_contract.get("research_gaps", [])
         if isinstance(gap, dict)
         and isinstance(gap.get("id"), str)
@@ -533,12 +535,10 @@ def _resolved_revision_gaps(prior_contract: dict, review_gaps: list, brief: dict
         gaps[gap["id"]] = {
             "id": gap["id"],
             "question": gap["question"],
-            "state": "resolved",
-            "resolution": "Revised manuscript submitted for independent verification against: " + acceptance,
-            "source_urls": list(brief["evidence_urls"]),
+            "state": "open",
+            "resolution": "Pending independent verification against: " + acceptance,
+            "source_urls": [],
         }
-    if any(gap.get("state") != "resolved" for gap in gaps.values()):
-        raise ValueError("rejected review did not describe every inherited open gap")
     return list(gaps.values())
 
 
@@ -589,7 +589,7 @@ def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_h
             or review.get("editorial_target_hash") != contract.get("target_hash")
             or review.get("content_hash") != item["body_sha256"]):
         raise ValueError("rejected review does not bind prior contract")
-    gaps = _resolved_revision_gaps(contract, review.get("research_gaps", []), brief)
+    gaps = _revision_gaps(contract, review.get("research_gaps", []))
     return contract, gaps
 
 
@@ -636,11 +636,11 @@ def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str
     brief = prior_contract.get("editorial_brief")
     if not isinstance(brief, dict) or not isinstance(brief.get("evidence_urls"), list) or not brief["evidence_urls"]:
         raise ValueError("revision source URLs unavailable")
-    resolved_gaps = _resolved_revision_gaps(prior_contract, review_gaps, brief)
+    revision_gaps = _revision_gaps(prior_contract, review_gaps)
     draft = {key: prior_contract[key] for key in (
         "format", "learning_objectives", "editorial_brief",
     )}
-    draft.update(writer_sessions=writers, research_gaps=resolved_gaps)
+    draft.update(writer_sessions=writers, research_gaps=revision_gaps)
 
     prior_bundle = json.loads(read(local_path(prior_base, item["bundle_file"])))
     bundle = dict(prior_bundle)

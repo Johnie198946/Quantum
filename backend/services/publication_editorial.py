@@ -286,6 +286,7 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
         reasons.add("quality.duplicate_ratio")
     gaps = contract.get("research_gaps")
     gap_ids = set()
+    open_gaps = set()
     if not isinstance(gaps, list):
         reasons.add("contract.research_gaps")
     else:
@@ -313,13 +314,19 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
                 reasons.add("contract.research_gaps")
             else:
                 gap_ids.add(gid)
-            if gap.get("state") == "open":
-                reasons.add("research_gaps.open")
+            is_open = gap.get("state") == "open"
+            if is_open and isinstance(gid, str):
+                open_gaps.add(gid)
             if (set(gap) != {"id", "question", "state", "resolution", "source_urls"}
-                    or not _text(gap.get("question"), 10) or gap.get("state") != "resolved"
-                    or not _text(gap.get("resolution"), MIN_FINDING_LENGTH)
-                    or not isinstance(gap.get("source_urls"), list) or not gap["source_urls"]
-                    or any(not _https(u) for u in gap["source_urls"])):
+                    or not _text(gap.get("question"), 10)
+                    or gap.get("state") not in ("open", "resolved")
+                    or not isinstance(gap.get("resolution"), str)
+                    or not isinstance(gap.get("source_urls"), list)
+                    or (is_open and gap.get("source_urls") != [])
+                    or (not is_open and (not _text(gap.get("resolution"), MIN_FINDING_LENGTH)
+                                         or not gap.get("source_urls")))
+                    or (isinstance(gap.get("source_urls"), list)
+                        and any(not _https(u) for u in gap["source_urls"]))):
                 reasons.add("contract.research_gaps")
     try:
         target = editorial_target_hash(body, contract, source_receipts)
@@ -329,6 +336,8 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
         reasons.add("contract.target_hash")
         target = None
     if not isinstance(review, dict):
+        if open_gaps:
+            reasons.add("research_gaps.open")
         reasons.add("review.required")
         return sorted(reasons)
     if target is None or review.get("editorial_target_hash") != target:
@@ -343,6 +352,26 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
         reasons.add("review.decision")
     if review.get("research_gaps") != []:
         reasons.add("review.research_gaps")
+    if open_gaps and review.get("decision") == "approved":
+        resolutions = review.get("gap_resolutions")
+        closed = set()
+        valid_resolutions = isinstance(resolutions, list)
+        for resolution in resolutions if isinstance(resolutions, list) else []:
+            if not isinstance(resolution, dict):
+                valid_resolutions = False
+                continue
+            gid = resolution.get("id")
+            quote = resolution.get("quote")
+            if (set(resolution) != {"id", "disposition", "quote", "finding"}
+                    or not isinstance(gid, str) or gid not in open_gaps or gid in closed
+                    or resolution.get("disposition") not in ("resolved", "scope_removed")
+                    or not _text(quote, MIN_QUOTE_LENGTH) or quote not in body
+                    or not _text(resolution.get("finding"), MIN_FINDING_LENGTH)):
+                valid_resolutions = False
+            if isinstance(gid, str):
+                closed.add(gid)
+        if not valid_resolutions or closed != open_gaps:
+            reasons.update({"research_gaps.open", "review.gap_resolutions"})
     reviewed = review.get("chapters")
     if (not isinstance(reviewed, list) or len(reviewed) != len(chapters)
             or any(not isinstance(r, dict) for r in reviewed)):

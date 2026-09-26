@@ -924,15 +924,25 @@ class PublicationStore:
             if len(proposed_by_id) != len(proposed):
                 raise PublicationError("duplicate research gaps")
             by_id = dict(proposed_by_id)
-            inherited_open = []
             if current:
                 for gap in json.loads(current["gaps_json"]):
-                    if gap.get("state") != "open":
+                    if gap.get("id") == "review.rejected":
                         continue
-                    inherited_open.append(gap)
+                    if gap.get("state") != "open" and current["state"] not in {"rejected", "failed"}:
+                        continue
                     if gap["id"] in by_id and by_id[gap["id"]].get("question") != gap.get("question"):
                         raise PublicationError("research gap question cannot be replaced")
-                    by_id.setdefault(gap["id"], gap)
+                    # A writer or packager cannot certify a prior review gap.
+                    # Keep its exact obligation open until the signed reviewer
+                    # supplies a gap_resolutions finding on the new target.
+                    by_id[gap["id"]] = {
+                        "id": gap["id"], "question": gap["question"], "state": "open",
+                        "resolution": (gap.get("resolution") if gap.get("state") == "open" and gap.get("resolution") else
+                                       "Pending independent verification against: " + str(
+                                           gap.get("acceptance_criterion") or gap.get("required_evidence")
+                                           or gap.get("resolution") or gap["question"])),
+                        "source_urls": [],
+                    }
             options["research_gaps"] = list(by_id.values())
             input_material = {"body_hash": normalized["body_hash"], "options": options,
                               "source_receipts": normalized["source_receipts"]}
@@ -954,29 +964,7 @@ class PublicationStore:
                     SELECT MAX(revision) FROM editorial_attempts WHERE issue_id=? AND state='approved'
                 ), 0)""", (issue_id, issue_id)).fetchone()[0]
             if failures >= 4:
-                # Past the normal retry budget, admit only a materially changed
-                # candidate that closes every exact open gap from the latest
-                # terminal review.  This keeps identical retry loops blocked
-                # while allowing reviewer-requested manuscript or asset fixes to
-                # proceed through a new independently reviewed revision.
-                closes_inherited_gaps = (
-                    current is not None
-                    and current["state"] in {"failed", "rejected"}
-                    and input_hash != current["input_hash"]
-                    and bool(inherited_open)
-                    and all(
-                        (replacement := proposed_by_id.get(gap["id"])) is not None
-                        and replacement.get("question") == gap.get("question")
-                        and replacement.get("state") == "resolved"
-                        and isinstance(replacement.get("resolution"), str)
-                        and bool(replacement["resolution"].strip())
-                        and isinstance(replacement.get("source_urls"), list)
-                        and bool(replacement["source_urls"])
-                        for gap in inherited_open
-                    )
-                )
-                if not closes_inherited_gaps:
-                    raise PublicationError("editorial retry limit reached")
+                raise PublicationError("editorial retry limit reached")
             contract = make_editorial_contract(normalized["body"], **options,
                 revision=current["revision"] + 1 if current else 1,
                 issue_id=issue_id, attempt_id="attempt-" + uuid.uuid4().hex,
@@ -1058,6 +1046,16 @@ class PublicationStore:
                 reasons.append("editorial_review_not_recorded")
             if not binding_reasons and verified is not None:
                 verified["proof_json"] = _canonical(proof).decode()
+                if not reasons:
+                    dispositions = ({entry["id"]: entry for entry in review["gap_resolutions"]}
+                                    if any(g.get("state") == "open" and g.get("id") != "review.rejected"
+                                           for g in contract["research_gaps"]) else {})
+                    verified["gaps"] = [
+                        {**gap, "state": "resolved",
+                         "resolution": dispositions[gap["id"]]["disposition"] + ": " + dispositions[gap["id"]]["finding"]}
+                        if gap.get("state") == "open" and gap.get("id") in dispositions else gap
+                        for gap in contract["research_gaps"] if gap.get("id") != "review.rejected"
+                    ]
             return sorted(set(reasons))
         except (OSError, ValueError, TypeError, KeyError, AttributeError, ImportError):
             return ["editorial_proof_or_review_invalid"]
@@ -1101,10 +1099,7 @@ class PublicationStore:
                             db, checked, require_approved=False, verified=verified,
                             allow_failed_revalidation=True,
                         ):
-                            healed_gaps = [
-                                gap for gap in contract.get("research_gaps", [])
-                                if gap.get("id") != "review.rejected"
-                            ]
+                            healed_gaps = verified["gaps"]
                             db.execute(
                                 "UPDATE editorial_attempts SET state='approved',gaps_json=?,proof_json=?,closed_at=? WHERE attempt_id=?",
                                 (json.dumps(healed_gaps, ensure_ascii=False), verified["proof_json"], _iso(_now()), previous["attempt_id"]),
@@ -1158,6 +1153,8 @@ class PublicationStore:
             ]
             gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps, *reason_gaps]}.values())
             state = "approved" if not reasons else ("rejected" if review.get("decision") in {"reject", "rejected"} else "failed")
+            if state == "approved":
+                gaps = verified["gaps"]
             proof = verified.get("proof_json") if state in {"approved", "rejected"} else None
             db.execute("UPDATE editorial_attempts SET state=?,gaps_json=?,review_hash=?,proof_json=?,closed_at=? WHERE attempt_id=?",
                 (state, json.dumps(gaps, ensure_ascii=False), receipt["sha256"], proof, _iso(_now()), row["attempt_id"]))

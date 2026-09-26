@@ -14,16 +14,16 @@
 
 ### 输入和范围
 
-只操作用户已授权的 `~/.hermes/outputs/quantumn-daily/` 出版产物和本期隔离教学 sandbox。先读当前日期、部署 SHA、现有出版状态、本协议、质量验证器和 `scripts/publication_operator.py`，禁止从旧示例猜字段。只用原生 Hermes 工具，不裸调模型 API、不改 Cron、源码、部署和发布状态。
+只操作程序分配且用户已授权的本期输出目录、原生作者独立内容目录和本期隔离教学 sandbox。先读当前日期、部署 SHA、现有出版状态、本协议、质量验证器和 `scripts/publication_operator.py`，禁止从旧示例猜字段。只用原生 Hermes 工具，不裸调模型 API、不改 Cron、源码、部署和发布状态。
 
-授权政策为既有 `~/.hermes/outputs/publication-20260908/recurring-publication-policy.json`。私人 Wiki 可指导选题，但原始私有内容不得公开；需引用私人材料时必须有独立脱敏/授权证据，否则换公开来源。用户自己的产品、产品规划、开发过程、内部工作流和未公开案例只可作为编辑边界或反例，禁止成为公开选题、教程案例或产品映射；匿名、改名或删去源码不构成公开授权。
+授权政策使用本次已安装任务指定、已获用户授权的 owner policy；作者不创建或修改权利控制字段。私人 Wiki 可指导选题，但原始私有内容不得公开；需引用私人材料时必须有独立脱敏/授权证据，否则换公开来源。用户自己的产品、产品规划、开发过程、内部工作流和未公开案例只可作为编辑边界或反例，禁止成为公开选题、教程案例或产品映射；匿名、改名或删去源码不构成公开授权。
 
 ### 内容与控制面责任边界
 
 - 作者只负责标题、摘要、新正文，以及独立审稿明确要求补充的真实来源和实验材料；视觉由独立素材任务负责。作者不得创建、猜测、复制或修补 revision、issue、attempt、target、previous-body、material hash、prepare receipt、review identity/decision、stage identity、publication identity 或 execution claim。
 - 上述字段必须由确定性打包器、服务端和调度器从冻结输入自动生成、传递、校验和回读。缺字段属于流水线故障，不得转成作者返工要求。
 - 采集任务只负责交付可用候选内容和来源证据，不承担“每一期覆盖全部门类”的义务。零个可用候选才阻塞；一个已核验、已授权且能支撑本期的候选即可进入其编译与写作链，其他候选缺失或失败不得阻塞本期。
-- `ai-toolkit` 固定时序为：01:00 采集并在至少一个可用候选后写 `CONTENT_AVAILABLE` 回执 → 新增材料按原有 Writer 路径异步编译到 canonical Wiki → 08:05 作者复用原有 `knowledge_search → Knowledge Gateway → canonical Wiki` 通路，优先使用已编译的本期新增材料，否则使用仍有效的既有 Wiki → 确定性打包器冻结实际使用的来源、rights 与 SHA-256 → 独立审稿 → finalize/release → 生产与阅读端回读。作者及 Cron 禁止直接读取 Desktop/Vault，也不得建立 publication-specific Wiki、复制 Vault 或私有 fallback。本期新增编译不是采集成功或整期写作的普遍硬门禁；未选候选、可选门类或单项失败不得阻塞本期。
+- `ai-toolkit` 固定时序为：01:00 采集并在至少一个可用候选后写 `CONTENT_AVAILABLE` 回执 → 新增材料按原有 Writer 路径异步编译到 canonical Wiki → watchdog 按配置期次提前派发、作者实际开工时冻结本期输入（08:05 等固定作者 cron 只是额外唤醒），复用原有 `knowledge_search → Knowledge Gateway → canonical Wiki` 通路，优先使用已编译的本期新增材料，否则使用仍有效的既有 Wiki → 确定性打包器冻结实际使用的来源、rights 与 SHA-256 → 独立审稿 → finalize/release → 生产与阅读端回读。作者及 Cron 禁止直接读取 Desktop/Vault，也不得建立 publication-specific Wiki、复制 Vault 或私有 fallback。本期新增编译不是采集成功或整期写作的普遍硬门禁；未选候选、可选门类或单项失败不得阻塞本期。
 
 ### 每次执行
 
@@ -31,7 +31,7 @@
 2. 先履行主编职责：结合新增来源、已授权 Wiki、历史目录和未关闭缺口提出候选选题，去除复述原文、已有内容改标题和证据不足的候选。没有能给读者带来明确新价值的选题时，输出 `NO_WORTHY_TOPIC`，不得创建稿件或凑刊。
 3. 把候选及取舍作为内容编辑资料记录，按本次分配的主题和发行 slot 选择一个选题，不假设固定四个主题或每天每主题只有一期。主题、读者与体裁以 `config/quantumn-daily-publication.json` 和调度输入为准。选题应有明确问题、可反驳论点、读者价值、反方与不确定性，这些应写进正文；`editorial_brief` 与 `learning_objectives` 系统字段由程序生成，作者不补字段。新增研究经受控 `research_deposit` 登记并由 Wiki Writer 编译，作者不得直写 canonical Wiki。独立长篇沿用既有 collection，不新建平行书架。
 4. 在每系列长期 `book-plan.json` 维护目标读者、学习目标、有序章次、前置知识、已讲内容、下一章增量、已用案例。它是出版业务资料，不保存第二份 Agent 会话或执行上下文。
-5. 为当前章节列出研究问题：为什么重要、概念与前置条件、因果原理、完整例子/操作、失败反例、限制、读者可能追问。逐项写 `research_gaps`，不以“内容需完善”代替具体问题。
+5. 为当前章节列出研究问题：为什么重要、概念与前置条件、因果原理、完整例子/操作、失败反例、限制、读者可能追问。在正文或研究材料中逐项记录待证问题，不以“内容需完善”代替具体问题；作者不填写合同 `research_gaps` 的状态或解决结论。
 6. Wiki-first 收集获授权知识；不足则核验公开一手来源，必要时用自有隔离样本实测。对数字、时间、原理、版本/操作和因果说法留原始位置。无法补证就删除或明确未知，不能以“据说”扩写。
 7. 实际写章。每日单篇的用户可见标题使用 `## 标题`，正文使用“本文”，不得出现无连续计划支撑的“第N章/第N节/本章”；协议内部 `chapter-001` 只是校验标识，不是用户可见章号。只有同一交付物已声明且实际包含连续多章时，才可显示连续章号。用 H3 小节组织，每篇有连续讲解，不只有列表。具体告诉读者为什么、如何、做完观察什么、出错怎么办。正文自然但必须能区分已核实事实、来源观点、Quantumn 推论、最强反例、不确定性和行动含义；不得把模型推论冒充来源事实。教学人物/资料必须标示为例子，不能伪装客户案例。未测 UI 不称 UI 已通过。结尾附“来源与延伸阅读”，只放必要短引、来源说明和原文链接，未经许可不复制第三方全文。`ai-toolkit` 的每个核心步骤都必须同时写清“操作、可复制输入、预期结果、失败恢复”，命令、界面步骤或样例必须在隔离环境实测并记录成功或失败的真实输出，不能仅凭文档宣称可用。正文完成后交给独立素材任务。`concept-fables` 必须先讲寓言，直到故事接近结束才揭示概念；故事后单列“概念解释”和“隐喻对应表”，覆盖关键角色、场景、规则与转折，并明确来源事实、编辑部推演和未验证边界。
 8. 返工时作者只修改新正文以及审稿明确要求的真实内容证据，不得手写或复制 `revision / attempt_id / issue_id / target_hash / previous_body_hash / material hash / review / stage / publication` 等控制面字段，也不得手工拼装 manifest。旧正文、旧证据和旧拒稿保持不可变；正文无实质变化不得冒充修复。
@@ -46,12 +46,12 @@
 
 - 已发布旧版本保持正文不可变，只标为历史文章；发现问题走勘误或新版本，不回写旧正文。
 - 未发布的 `editorial-v1`、旧短稿和无 `editorial_brief` 稿件不得 stage/release；保留原稿，建立新 revision，重新选定体裁和论点后补研。
-- 已拒稿必须先关闭原 `research_gaps`，不得换标题、换 issue 或重置重试次数逃避审稿。
+- 已拒稿必须保留原 `research_gaps` 交独立审核逐项处置，不得换 issue 或重置重试次数。证据限制需要收窄选题时，正文和标题应明确同步收缩主张；仅换标题不能关闭缺口。
 - 内容重复的稿件合并为一个选题；其余稿件在治理清单中标为 `rewrite_required / research_blocked / duplicate / keep_published`，禁止静默删除。
 
 ### 返工闭环
 
-审核拒绝后，下一次作者执行必须读取同一目标 revision 的审稿缺口，而不是换题逃避。不超过三轮返工；三轮仍有实质缺口则 `blocked` 并给出需要的证据/操作，不能以日期到点自动通过。基础设施失败不算内容修改轮次，也不应丢弃已有章节。支持跨日续写原期，不默默换 issue ID 隐藏缺刊。
+审核拒绝后，下一次作者执行必须读取同一目标 revision 的审稿缺口，修改正文和真实证据。收窄主张须在正文明确交代，并由独立审核确认原要求是否不再适用；作者不得修补合同或把缺口标为已解决。不超过三轮返工；三轮仍有实质缺口则 `blocked` 并给出需要的证据/操作，不能以日期到点自动通过。基础设施失败不算内容修改轮次，也不应丢弃已有章节。支持跨日续写原期，不默默换 issue ID 隐藏缺刊。
 
 ## 独立审稿任务
 
@@ -64,7 +64,7 @@
 5. **结构连续性审校**：用户可见标题或正文出现“第N章/第N节/本章”时，必须核对同一交付物的显式连续计划与实际章节；没有连续计划、孤立编号或跳号一律拒绝。`concept-fables` 还必须拒绝开头直接泄题、故事结束后缺概念解释、关键隐喻未逐项映射或把推演冒充来源事实的稿件。
 6. 每章记录实际正文摘录锚点、审稿发现和结论；整书记录连贯性、非重复性、新手可读性、论点、反方、不确定性、读者价值与体裁匹配判断。批准绑定当前正文、format、editorial_brief、章节顺序/hash、来源集、合同版本与 revision 的联合目标 hash，不允许只复用旧正文 approved。
 7. 未通过：写 `review-report.json`，包括 `reviewed_revision`、正文/联合目标 hash、`decision=rejected`、逐项 `research_gaps`（id、chapter、question、why_reader_needs_it、required_evidence、acceptance_criterion）。审稿不改作者正文、不伪造通过；下一轮由作者补研。
-8. 通过：生成真实独立 review 文件，调用当前本地验证器确认全部必要门禁。最后仅输出协议要求的 `publication_review_result` JSON，绑定服务端 issue/revision/attempt/target 和实际 review 文件 hash。不得自行 stage 或签名；签名必须等待本原生会话已结束。
+8. 通过：合同中的 `open` 缺口是待独立核验的要求，程序提交新稿不代表缺口已解决。存在 `open` 缺口时，审核 JSON 必须增加 `gap_resolutions`，逐项恰好覆盖每个原缺口 ID，不得遗漏、重复或增加未知 ID。每项精确字段为 `id`、`disposition`（`resolved` 或 `scope_removed`）、`quote`（当前正文中至少 20 字符的真实连续摘录）、`finding`（至少 30 字符的实际证据或范围收缩依据）。`resolved` 要求证据确实补齐；`scope_removed` 要求正文已明确移除相关主张，且当前较窄的结论有足够证据，不能把未完成的在线步骤写成已成功。原要求不能满足且主张仍保留时继续拒绝。没有新缺口时 `research_gaps=[]`，此空列表不能代替逐项处置。审核者不修改冻结合同或其哈希，程序仅在完整签名审核通过后更新服务端缺口账本。生成真实独立 review 文件，调用当前本地验证器确认全部必要门禁。最后仅输出协议要求的 `publication_review_result` JSON，绑定服务端 issue/revision/attempt/target 和实际 review 文件 hash。不得自行 stage 或签名；签名必须等待本原生会话已结束。
 9. 后续确定性发行接力从原生 Hermes DB 只读验证实际全文输入、有效最终输出、成功终态、owner/profile 与作者/审稿会话不同，签名回执绑定当前稿件与审核字节。签名证明输入/输出绑定，不代替事实审稿，也不声称抵御修改原生 DB 或掌握私钥的可信管理员。
 10. 接力仅为通过项明列上传 review/proof/bundle，前后 hash 相等、冲突隔离不覆盖，再调用唯一 `publication_operator.py stage` 并逐 ID 回读。拒稿由同一接力将 gaps 记录到当前服务端 attempt；当前审核未终结时不得开新稿次绕过预算。审核 Agent 不负责 stage/release。
 

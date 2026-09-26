@@ -229,7 +229,7 @@ def test_retry_budget_resets_after_latest_approval_and_stays_issue_scoped(tmp_pa
         "learning_objectives": ["验证批准前历史失败不会耗尽下一审核周期的重试预算"],
         "editorial_brief": synthetic_brief(), "research_gaps": []}
     value["quality_contract"] = options
-    for _ in range(4):
+    for _ in range(3):
         rejected = reject(store, value, store.prepare_editorial(value))
 
     approved_options = copy.deepcopy(options)
@@ -238,13 +238,13 @@ def test_retry_budget_resets_after_latest_approval_and_stays_issue_scoped(tmp_pa
         "source_urls": ["https://example.com/source"],
     } for gap in rejected["gaps"] if gap["state"] == "open"]
     approved = approve_fixture(store, value, draft=approved_options)
-    assert approved["quality_contract"]["revision"] == 5
+    assert approved["quality_contract"]["revision"] == 4
     assert store.stage(approved, now=at(3))["state"] == "scheduled"
     assert store.release_due(now=at(4))["released"]
 
     next_value = ready(store, bundle(series="concept-fables", body=value["body"] + "\n\n新视觉资产版次。"), editorial=False)
     next_value["quality_contract"] = {**options, "writer_sessions": ["hermes:visual-assets-writer"]}
-    for revision in range(6, 10):
+    for revision in range(5, 9):
         attempt = store.prepare_editorial(next_value)
         assert attempt["revision"] == revision
         reject(store, next_value, attempt)
@@ -256,76 +256,25 @@ def test_retry_budget_resets_after_latest_approval_and_stays_issue_scoped(tmp_pa
     other_attempt = store.prepare_editorial(other)
     assert other_attempt["revision"] == 1
     attempts = store.status_report()["editorial_attempts"]
-    assert sum(attempt["issue_id"] == approved["quality_contract"]["issue_id"] for attempt in attempts) == 9
+    assert sum(attempt["issue_id"] == approved["quality_contract"]["issue_id"] for attempt in attempts) == 8
     assert sum(attempt["issue_id"] == other_attempt["issue_id"] for attempt in attempts) == 1
 
 
-def test_retry_limit_allows_material_gap_closure_after_each_terminal_review(tmp_path):
+@pytest.mark.parametrize("claimed_state", ["open", "resolved"])
+def test_retry_limit_cannot_be_bypassed_by_changed_body_and_gap_claims(tmp_path, claimed_state):
     store = PublicationStore(tmp_path)
     value = draft(store)
-    last = None
     for _ in range(4):
         last = reject(store, value, store.prepare_editorial(value))
-
-    open_gaps = [gap for gap in last["gaps"] if gap["state"] == "open"]
-    assert open_gaps
-    closure = copy.deepcopy(value)
-    closure["quality_contract"]["research_gaps"] = [
-        {
-            "id": gap["id"],
-            "question": gap["question"],
-            "state": "resolved",
-            "resolution": "该合成回归明确关闭继承缺口并保留原问题文本，仅验证受控恢复契约。",
-            "source_urls": ["https://example.org/source"],
-        }
-        for gap in open_gaps
+    changed = draft(store, "## 修订稿\n\n改变正文不代表审核已经解决了原来的证据要求。")
+    changed["quality_contract"]["research_gaps"] = [
+        {**gap, "state": claimed_state,
+         "resolution": "程序或作者声称已经补齐全部证据不能替代独立审核，也不能解锁重试预算。",
+         "source_urls": ["https://example.org/source"]}
+        for gap in last["gaps"]
     ]
-    recovered = store.prepare_editorial(closure)
-    assert recovered["revision"] == 5
-    assert not [gap for gap in recovered["quality_contract"]["research_gaps"] if gap["state"] == "open"]
-
-    fifth = reject(store, closure, recovered)
-    with pytest.raises(PublicationError, match="retry limit"):
-        store.prepare_editorial(closure)
-
-    revised = draft(store, closure["body"] + "\n\n根据第五轮审稿补充可追溯证据。")
-    revised["quality_contract"] = copy.deepcopy(closure["quality_contract"])
-    revised["quality_contract"]["research_gaps"] = [
-        {
-            "id": gap["id"],
-            "question": gap["question"],
-            "state": "resolved",
-            "resolution": "第五轮审稿后的新修订逐项关闭最新缺口，并产生不同输入哈希。",
-            "source_urls": ["https://example.org/revision-6"],
-        }
-        for gap in fifth["gaps"] if gap["state"] == "open"
-    ]
-    sixth = store.prepare_editorial(revised)
-    assert sixth["revision"] == 6
-    assert not [gap for gap in sixth["quality_contract"]["research_gaps"] if gap["state"] == "open"]
-
-
-def test_retry_limit_changed_body_requires_exact_gap_closure(tmp_path):
-    store = PublicationStore(tmp_path)
-    value = draft(store)
-    last = None
-    for _ in range(4):
-        last = reject(store, value, store.prepare_editorial(value))
-    changed = draft(store, "## 变更正文\n\n只有同时关闭最新审核缺口，重试上限后的正文修订才可进入下一轮。")
     with pytest.raises(PublicationError, match="retry limit"):
         store.prepare_editorial(changed)
-    changed["quality_contract"]["research_gaps"] = [
-        {
-            "id": gap["id"],
-            "question": gap["question"],
-            "state": "resolved",
-            "resolution": "修订正文只用于落实最新审核要求，完整保留缺口标识和问题原文。",
-            "source_urls": ["https://example.org/source"],
-        }
-        for gap in last["gaps"] if gap["state"] == "open"
-    ]
-    recovered = store.prepare_editorial(changed)
-    assert recovered["revision"] == 5
 
 
 def test_gaps_cannot_be_dropped_or_reworded(tmp_path):
@@ -378,9 +327,17 @@ def test_new_pending_invalidates_prior_approved_and_reversion(tmp_path):
 
 
 @pytest.mark.parametrize("tamper", ["proof", "review", "contract", "key"])
-def test_release_rechecks_proof_review_and_contract(tmp_path, tamper):
+@pytest.mark.parametrize("prior_gap", [False, True])
+def test_release_rechecks_proof_review_and_contract(tmp_path, tamper, prior_gap):
     store = PublicationStore(tmp_path)
-    value = ready(store, bundle())
+    if prior_gap:
+        from publication_editorial_fixture import approve_fixture
+        previous = draft(store)
+        reject(store, previous, store.prepare_editorial(previous))
+        value = approve_fixture(store, ready(store, bundle(), editorial=False))
+        assert value["quality_contract"]["research_gaps"][0]["state"] == "open"
+    else:
+        value = ready(store, bundle())
     edition = store.stage(value, now=at(3))
     if tamper == "proof":
         Path(value["editorial_proof_file"]).write_text("{}")
@@ -396,6 +353,8 @@ def test_release_rechecks_proof_review_and_contract(tmp_path, tamper):
         db.close()
     result = store.release_due(now=at(4))
     assert result["released"] == [] and result["blocked"]
+    if tamper != "contract":
+        assert store.stage(value, now=at(4))["state"] == "blocked"
 
 
 def test_legacy_published_is_readable_pending_is_not_and_restage_frozen(tmp_path):
@@ -510,7 +469,8 @@ def test_research_resolution_reaudit_then_publish(tmp_path):
     assert store.status_report()["editorial_attempts"][0]["state"] == "rejected"
 
 
-def test_resolved_prior_topic_gaps_do_not_pollute_replacement_contract(tmp_path):
+@pytest.mark.parametrize("submission", ["omit", "resolved"])
+def test_unapproved_prior_resolved_gap_cannot_be_dropped_by_direct_prepare(tmp_path, submission):
     store = PublicationStore(tmp_path)
     value = draft(store)
     value["quality_contract"]["research_gaps"] = [{
@@ -523,11 +483,12 @@ def test_resolved_prior_topic_gaps_do_not_pollute_replacement_contract(tmp_path)
     next_value["quality_contract"]["research_gaps"] = [{
         **gap, "state": "resolved", "resolution": "新稿已按审稿意见补齐机制、证据和完整示例并重新提交独立复核。",
         "source_urls": ["https://example.com/new-topic"],
-    } for gap in rejected["gaps"] if gap["state"] == "open"]
+    } for gap in rejected["gaps"]] if submission == "resolved" else []
     attempt = store.prepare_editorial(next_value)
-    ids = {gap["id"] for gap in attempt["quality_contract"]["research_gaps"]}
-    assert "old-topic" not in ids
-    assert "mechanism" in ids
+    gaps = attempt["quality_contract"]["research_gaps"]
+    assert {gap["id"] for gap in gaps} == {"old-topic", "mechanism"}
+    assert all(gap["state"] == "open" and gap["source_urls"] == [] for gap in gaps)
+    assert "旧选题已按当时来源完成核验" in next(gap["resolution"] for gap in gaps if gap["id"] == "old-topic")
 
 
 def test_new_published_cannot_acquire_legacy_exemption(tmp_path):
