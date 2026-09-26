@@ -520,7 +520,7 @@ class PublicationStore:
           source_snapshot_hash TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, author TEXT NOT NULL,
           institution TEXT NOT NULL, release_at TEXT NOT NULL, actual_release_at TEXT, state TEXT NOT NULL,
           body_ref TEXT NOT NULL, bundle_json TEXT NOT NULL, blocked_reasons TEXT NOT NULL, created_at TEXT NOT NULL,
-          withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition), UNIQUE(issue_id, content_hash));
+          withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition));
         CREATE INDEX IF NOT EXISTS editions_public ON editions(state, release_at);
         CREATE TABLE IF NOT EXISTS editorial_attempts (
           issue_id TEXT NOT NULL, revision INTEGER NOT NULL, attempt_id TEXT NOT NULL UNIQUE,
@@ -532,8 +532,35 @@ class PublicationStore:
         CREATE TABLE IF NOT EXISTS legacy_published_editions (
           edition_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, bundle_hash TEXT NOT NULL);
         """)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(editions)")}
+        if "issue_key" not in columns:
+            db.execute("ALTER TABLE editions ADD COLUMN issue_key TEXT NOT NULL DEFAULT ''")
+            db.execute("UPDATE editions SET issue_key=issue_date WHERE issue_key='' ")
         db.execute("BEGIN IMMEDIATE")
         try:
+            if not db.execute("SELECT 1 FROM publication_migrations WHERE name='edition-material-revisions-v1'").fetchone():
+                table_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='editions'").fetchone()[0]
+                if "UNIQUE(issue_id, content_hash)" in table_sql:
+                    db.execute("""CREATE TABLE editions_material_revisions (
+                      edition_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, issue_id TEXT NOT NULL, issue_key TEXT NOT NULL,
+                      series_id TEXT NOT NULL, issue_date TEXT NOT NULL, edition INTEGER NOT NULL, content_hash TEXT NOT NULL,
+                      source_snapshot_hash TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, author TEXT NOT NULL,
+                      institution TEXT NOT NULL, release_at TEXT NOT NULL, actual_release_at TEXT, state TEXT NOT NULL,
+                      body_ref TEXT NOT NULL, bundle_json TEXT NOT NULL, blocked_reasons TEXT NOT NULL, created_at TEXT NOT NULL,
+                      withdrawn_at TEXT, UNIQUE(series_id, issue_key, edition))""")
+                    edition_columns = (
+                        "edition_id,publication_id,issue_id,issue_key,series_id,issue_date,edition,content_hash,"
+                        "source_snapshot_hash,title,summary,author,institution,release_at,actual_release_at,state,"
+                        "body_ref,bundle_json,blocked_reasons,created_at,withdrawn_at"
+                    )
+                    db.execute(
+                        f"INSERT INTO editions_material_revisions ({edition_columns}) "
+                        f"SELECT {edition_columns} FROM editions"
+                    )
+                    db.execute("DROP TABLE editions")
+                    db.execute("ALTER TABLE editions_material_revisions RENAME TO editions")
+                    db.execute("CREATE INDEX editions_public ON editions(state, release_at)")
+                db.execute("INSERT INTO publication_migrations VALUES ('edition-material-revisions-v1')")
             if not db.execute("SELECT 1 FROM publication_migrations WHERE name='editorial-v1'").fetchone():
                 for row in db.execute("SELECT edition_id,content_hash,bundle_json FROM editions WHERE state='published'").fetchall():
                     db.execute("INSERT OR IGNORE INTO legacy_published_editions VALUES (?,?,?)",
@@ -544,10 +571,6 @@ class PublicationStore:
             db.rollback()
             db.close()
             raise
-        columns = {row[1] for row in db.execute("PRAGMA table_info(editions)")}
-        if "issue_key" not in columns:
-            db.execute("ALTER TABLE editions ADD COLUMN issue_key TEXT NOT NULL DEFAULT ''")
-            db.execute("UPDATE editions SET issue_key=issue_date WHERE issue_key='' ")
         return db
 
     @staticmethod
@@ -743,7 +766,7 @@ class PublicationStore:
         value.pop("proof_json", None)
         return value
 
-    def prepare_editorial(self, bundle: dict[str, Any]) -> dict[str, Any]:
+    def prepare_editorial(self, bundle: dict[str, Any], *, review_policy=None) -> dict[str, Any]:
         normalized, _ = validate_bundle(bundle)
         if normalized["content_kind"] != "commentary":
             raise PublicationError("editorial workflow requires commentary")
@@ -754,6 +777,10 @@ class PublicationStore:
         options = {k: draft.get(k) for k in (
             "format", "writer_sessions", "learning_objectives", "editorial_brief", "research_gaps",
         )}
+        if review_policy is not None:
+            options["review_policy"] = review_policy
+        if review_policy not in {None, "story-supervision-v2"}:
+            raise PublicationError("invalid trusted review policy")
         if (not isinstance(options["format"], str) or options["format"] not in {"book", "chapter"}
                 or not isinstance(options["writer_sessions"], list) or not options["writer_sessions"]
                 or any(not isinstance(w, str) or not w.startswith("hermes:") for w in options["writer_sessions"])
@@ -788,8 +815,11 @@ class PublicationStore:
                         raise PublicationError("research gap question cannot be replaced")
                     by_id.setdefault(gap["id"], gap)
             options["research_gaps"] = list(by_id.values())
-            input_hash = _metadata_hash({"body_hash": normalized["body_hash"], "options": options,
-                                         "source_receipts": normalized["source_receipts"]})
+            input_material = {"body_hash": normalized["body_hash"], "options": options,
+                              "source_receipts": normalized["source_receipts"]}
+            if review_policy == "story-supervision-v2":
+                input_material["assets"] = normalized["assets"]
+            input_hash = _metadata_hash(input_material)
             assigned = any(k in draft for k in ("revision", "attempt_id", "issue_id", "target_hash"))
             if current and current["input_hash"] == input_hash and current["state"] in {"await_review", "approved"}:
                 if assigned and draft != json.loads(current["contract_json"]):
@@ -862,7 +892,7 @@ class PublicationStore:
                if frozen else db.execute("SELECT * FROM editorial_attempts WHERE issue_id=? ORDER BY revision DESC LIMIT 1", (issue_id,)).fetchone())
         if not row or contract != json.loads(row["contract_json"]):
             return ["editorial_attempt_not_current"]
-        allowed_states = {"approved"} if require_approved else {"await_review", "approved"}
+        allowed_states = {"approved"} if require_approved else {"await_review", "approved", "rejected"}
         if allow_failed_revalidation:
             allowed_states.add("failed")
         if row["state"] not in allowed_states:
@@ -887,18 +917,27 @@ class PublicationStore:
                 return ["editorial_proof_hash_mismatch"]
             proof = json.loads(proof_raw)
             from backend.services.publication_review_provenance import verify_review_proof
-            reasons = verify_review_proof(proof, (self.root / "editorial-review-public.pem").read_bytes(),
+            binding_reasons = verify_review_proof(proof, (self.root / "editorial-review-public.pem").read_bytes(),
                 issue_id=issue_id, revision=contract["revision"], attempt_id=contract["attempt_id"],
                 target_hash=contract["target_hash"], review_file_hash=review_hash,
-                reviewer_session=review.get("reviewer_session"), writer_sessions=contract["writer_sessions"])
-            reasons += validate_editorial(bundle["body"], contract, review, bundle["source_receipts"])
+                reviewer_session=review.get("reviewer_session"), writer_sessions=contract["writer_sessions"],
+                required_policy=contract.get("review_policy"),
+                assets=([{"role" if "role" in item else "url": item.get("role", item.get("url")),
+                          "sha256": item["receipt"]["sha256"]} for item in bundle.get("assets", [])]
+                        if contract.get("review_policy") else None))
             if proof.get("decision") != review.get("decision"):
-                reasons.append("editorial_proof_decision_mismatch")
+                binding_reasons.append("editorial_proof_decision_mismatch")
+            if (contract.get("review_policy")
+                    and proof.get("publication_material_hash") != review.get("publication_material_hash")):
+                binding_reasons.append("editorial_review_material_hash")
             if review.get("content_hash") != bundle["body_hash"]:
-                reasons.append("editorial_review_body_hash")
+                binding_reasons.append("editorial_review_body_hash")
+            reasons = binding_reasons + validate_editorial(
+                bundle["body"], contract, review, bundle["source_receipts"]
+            )
             if require_approved and (row["review_hash"] != review_hash or row["proof_json"] != _canonical(proof).decode()):
                 reasons.append("editorial_review_not_recorded")
-            if not reasons and verified is not None:
+            if not binding_reasons and verified is not None:
                 verified["proof_json"] = _canonical(proof).decode()
             return sorted(set(reasons))
         except (OSError, ValueError, TypeError, KeyError, AttributeError, ImportError):
@@ -921,6 +960,11 @@ class PublicationStore:
         contract = normalized.get("quality_contract") or {}
         if editorial_target_hash(normalized["body"], contract, normalized["source_receipts"]) != contract.get("target_hash"):
             raise PublicationError("editorial target mismatch")
+        checked = {**normalized, "review": {
+            "content_hash": review.get("content_hash"), "decision": review.get("decision"),
+            "reviewed_by": review.get("reviewer_session"), "reviewed_at": review.get("reviewed_at"),
+            "receipt": receipt,
+        }}
         _, issue_id, _ = self.ids(normalized["series_id"], normalized["issue_key"], 1)
         db = self._connect()
         try:
@@ -935,7 +979,7 @@ class PublicationStore:
                         # identical, and the complete current gate must pass.
                         verified: dict[str, Any] = {}
                         if not self._editorial_check(
-                            db, normalized, require_approved=False, verified=verified,
+                            db, checked, require_approved=False, verified=verified,
                             allow_failed_revalidation=True,
                         ):
                             healed_gaps = [
@@ -950,7 +994,12 @@ class PublicationStore:
                                 "SELECT * FROM editorial_attempts WHERE attempt_id=?",
                                 (previous["attempt_id"],),
                             ).fetchone()
-                    if previous["state"] == "approved" and self._editorial_check(db, normalized, frozen=True):
+                    if contract.get("review_policy"):
+                        verified = {}
+                        self._editorial_check(db, checked, require_approved=False, frozen=True, verified=verified)
+                        if previous["proof_json"] != verified.get("proof_json"):
+                            raise PublicationError("recorded review proof no longer valid")
+                    elif previous["state"] == "approved" and self._editorial_check(db, normalized, frozen=True):
                         raise PublicationError("recorded approval proof no longer valid")
                     db.commit()
                     result = self._attempt_record(previous)
@@ -968,7 +1017,14 @@ class PublicationStore:
                     or review.get("content_hash") != normalized["body_hash"]):
                 raise PublicationError("review identity or body hash mismatch")
             verified = {}
-            reasons = self._editorial_check(db, normalized, require_approved=False, verified=verified) if review.get("decision") == "approved" else ["review.rejected"]
+            reasons = (self._editorial_check(db, checked, require_approved=False, verified=verified)
+                       if review.get("decision") == "approved" or contract.get("review_policy")
+                       else ["review.rejected"])
+            if contract.get("review_policy") and any(
+                reason.startswith(("provenance.", "editorial_proof_", "editorial_review_"))
+                for reason in reasons
+            ):
+                raise PublicationError("review proof invalid")
             gaps = review.get("research_gaps", [])
             if not isinstance(gaps, list) or any(not isinstance(g, dict) or not isinstance(g.get("id"), str)
                     or not isinstance(g.get("question"), str) or len(g["question"].strip()) < 10 for g in gaps):
@@ -981,7 +1037,7 @@ class PublicationStore:
             ]
             gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps, *reason_gaps]}.values())
             state = "approved" if not reasons else ("rejected" if review.get("decision") in {"reject", "rejected"} else "failed")
-            proof = verified.get("proof_json") if state == "approved" else None
+            proof = verified.get("proof_json") if state in {"approved", "rejected"} else None
             db.execute("UPDATE editorial_attempts SET state=?,gaps_json=?,review_hash=?,proof_json=?,closed_at=? WHERE attempt_id=?",
                 (state, json.dumps(gaps, ensure_ascii=False), receipt["sha256"], proof, _iso(_now()), row["attempt_id"]))
             if reasons:
@@ -1014,7 +1070,19 @@ class PublicationStore:
             if not self._wiki_valid(normalized, vault):
                 blocked.append("unauthorized_or_changed_wiki_reference")
             _, issue_id, _ = self.ids(normalized["series_id"], normalized["issue_key"], 1)
-            existing = db.execute("SELECT * FROM editions WHERE issue_id=? AND content_hash=?", (issue_id, normalized["body_hash"])).fetchone()
+            candidates = db.execute(
+                "SELECT * FROM editions WHERE issue_id=? AND content_hash=? ORDER BY edition DESC",
+                (issue_id, normalized["body_hash"]),
+            ).fetchall()
+            attempt_id = (normalized.get("quality_contract") or {}).get("attempt_id")
+            existing = next((row for row in candidates
+                             if (json.loads(row["bundle_json"]).get("quality_contract") or {}).get("attempt_id") == attempt_id), None)
+            if existing is None and candidates and (
+                not attempt_id
+                or candidates[0]["state"] not in {"published", "withdrawn"}
+                or not (json.loads(candidates[0]["bundle_json"]).get("quality_contract") or {}).get("attempt_id")
+            ):
+                existing = candidates[0]
             state = "blocked" if blocked else normalized.get("state", "staged")
             payload = json.dumps({key: value for key, value in normalized.items() if key != "body"}, ensure_ascii=False, sort_keys=True)
             if existing:

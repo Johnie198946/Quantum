@@ -136,6 +136,8 @@ def main() -> int:
         command.add_argument("--shelf-cover-file", type=Path)
         command.add_argument("--reader-cover-file", type=Path)
         command.add_argument("--illustration-file", action="append", type=_illustration_file, default=[])
+        if name == "prepare-editorial":
+            command.add_argument("--review-policy", choices=("story-supervision-v2",))
         if name == "record-editorial-review":
             command.add_argument("--review-file", type=Path, required=True)
     stage = commands.add_parser("stage")
@@ -197,8 +199,10 @@ def main() -> int:
                 bundle["editorial_proof_file"] = f"evidence/{receipt['sha256']}.bin"
                 bundle["editorial_proof_sha256"] = receipt["sha256"]
             _ingest_media(store, bundle, args)
-            result = (store.prepare_editorial(bundle) if args.command == "prepare-editorial"
+            result = (store.prepare_editorial(bundle, review_policy=args.review_policy) if args.command == "prepare-editorial"
                       else store.record_editorial_review(bundle, args.review_file))
+            if args.command == "prepare-editorial":
+                result["assets"] = bundle.get("assets", [])
         elif args.command == "stage-source-index":
             bundle, body_file, record_files = load_candidate(args.package)
             bundle["body"] = body_file.read_text(encoding="utf-8")

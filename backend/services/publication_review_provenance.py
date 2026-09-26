@@ -22,6 +22,7 @@ from backend.services.publication_editorial import editorial_target_hash
 REQUEST_START = "PUBLICATION_REVIEW_REQUEST\n"
 REQUEST_END = "\nEND_PUBLICATION_REVIEW_REQUEST"
 IDENTITY_FIELDS = ("issue_id", "revision", "attempt_id", "editorial_target_hash")
+STORY_REVIEW_POLICY = "story-supervision-v2"
 
 
 def _canonical(value) -> bytes:
@@ -30,6 +31,35 @@ def _canonical(value) -> bytes:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _assets(value: list[dict]) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("invalid publication assets")
+    normalized = []
+    identities = set()
+    for item in value:
+        if not isinstance(item, dict) or len(item) != 2 or "sha256" not in item:
+            raise ValueError("invalid publication assets")
+        identity = "role" if "role" in item else "url" if "url" in item else None
+        locator, digest = item.get(identity) if identity else None, item.get("sha256")
+        if (identity is None or set(item) != {identity, "sha256"}
+                or not isinstance(locator, str) or not locator
+                or not isinstance(digest, str) or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or (identity, locator) in identities):
+            raise ValueError("invalid publication assets")
+        identities.add((identity, locator))
+        normalized.append({identity: locator, "sha256": digest})
+    return sorted(normalized, key=lambda item: _canonical(item))
+
+
+def publication_material_hash(target_hash: str, assets: list[dict]) -> str:
+    if (not isinstance(target_hash, str) or len(target_hash) != 64
+            or any(character not in "0123456789abcdef" for character in target_hash)):
+        raise ValueError("invalid publication material hashes")
+    return _sha(_canonical({"editorial_target_hash": target_hash,
+                            "assets": _assets(assets)}))
 
 
 def _request(content: str) -> dict:
@@ -46,8 +76,15 @@ def _request(content: str) -> dict:
 
 
 def attest_native_review(db_path: Path, review_path: Path, private_key_pem: bytes, *,
-                         profile: str = "default", user_id: str | None = None) -> dict:
+                         profile: str = "default", user_id: str | None = None,
+                         writer_profile: str | None = None,
+                         writer_db_path: Path | None = None) -> dict:
     """Read only the review's exact session. Reject unrelated/unfinished outputs."""
+    cross_profile = writer_profile is not None or writer_db_path is not None
+    if cross_profile and (profile, writer_profile) != ("supervision", "story"):
+        raise ValueError("unsupported native review profiles")
+    if cross_profile != (writer_db_path is not None):
+        raise ValueError("cross-profile writer database required")
     raw_review = review_path.read_bytes()
     review = json.loads(raw_review)
     reviewer = review.get("reviewer_session", "")
@@ -81,8 +118,18 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
             if result.get(field) != request.get(field) or request.get(field) is None:
                 raise ValueError("native request/final target mismatch")
         if (request.get("purpose") != "publication_editorial_review"
-                or request.get("owner") != "local_owner"
-                or request.get("profile") != profile):
+                or request.get("owner") != "local_owner"):
+            raise ValueError("native review scope mismatch")
+        if cross_profile:
+            if set(request) & {"state_db", "state_db_path", "writer_db", "writer_db_path",
+                               "reviewer_db", "reviewer_db_path", "owner_user_id"}:
+                raise ValueError("native request cannot select authority paths or owner")
+            expected_scope = {"review_policy": STORY_REVIEW_POLICY,
+                              "writer_profile": "story", "reviewer_profile": "supervision",
+                              "writer_role": "story_author", "reviewer_role": "supervision_reviewer"}
+            if any(request.get(field) != value for field, value in expected_scope.items()):
+                raise ValueError("native review scope mismatch")
+        elif request.get("profile") != profile:
             raise ValueError("native review scope mismatch")
         if (result.get("review_file_hash") != _sha(raw_review)
                 or result.get("reviewer_session") != reviewer
@@ -118,17 +165,31 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
                 or _sha(manuscript.encode()) != review.get("content_hash")
                 or editorial_target_hash(manuscript, contract, request.get("source_receipts")) != request["editorial_target_hash"]):
             raise ValueError("native actual review material mismatch")
-        for writer in writers:
-            if not isinstance(writer, str) or not writer.startswith("hermes:"):
-                raise ValueError("invalid native writer session")
-            author = db.execute("SELECT profile_name,user_id,source FROM sessions WHERE id=?", (writer[7:],)).fetchone()
-            local_owner_bridge = (user_id is None and profile == "default"
-                                  and author is not None and author["source"] in {"feishu", "lark"})
-            if (author is None or author["profile_name"] != profile
-                    or (author["user_id"] != user_id and not local_owner_bridge)):
-                raise ValueError("native writer owner/profile mismatch")
+        if cross_profile:
+            assets = _assets(request.get("assets"))
+            material_hash = publication_material_hash(request["editorial_target_hash"], assets)
+            if (request.get("publication_material_hash") != material_hash
+                    or result.get("publication_material_hash") != material_hash
+                    or review.get("publication_material_hash") != material_hash):
+                raise ValueError("native actual publication material mismatch")
+        author_path = writer_db_path if cross_profile else db_path
+        author_uri = Path(author_path).resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(author_uri, uri=True) as author_db:
+            author_db.row_factory = sqlite3.Row
+            author_db.execute("BEGIN")
+            for writer in writers:
+                if (not isinstance(writer, str) or not writer.startswith("hermes:")
+                        or writer == reviewer):
+                    raise ValueError("invalid or non-independent native writer session")
+                author = author_db.execute("SELECT profile_name,user_id,source FROM sessions WHERE id=?", (writer[7:],)).fetchone()
+                expected_profile = writer_profile if cross_profile else profile
+                local_owner_bridge = (not cross_profile and user_id is None and profile == "default"
+                                      and author is not None and author["source"] in {"feishu", "lark"})
+                if (author is None or author["profile_name"] != expected_profile
+                        or (author["user_id"] != user_id and not local_owner_bridge)):
+                    raise ValueError("native writer owner/profile mismatch")
         payload = {
-            "proof_version": "native-editorial-review-v1",
+            "proof_version": "native-editorial-review-v2" if cross_profile else "native-editorial-review-v1",
             "purpose": "quantumn-production-publication",
             **{field: request[field] for field in IDENTITY_FIELDS},
             "review_file_hash": _sha(raw_review), "reviewer_session": reviewer,
@@ -140,6 +201,14 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
             "native_request_id": first["id"], "native_request_hash": _sha((first["content"] or "").encode()),
             "native_final_id": final["id"], "native_final_hash": _sha((final["content"] or "").encode()),
         }
+        if cross_profile:
+            payload.update({
+                "review_policy": STORY_REVIEW_POLICY,
+                "writer_profile": "story", "reviewer_profile": "supervision",
+                "writer_role": "story_author", "reviewer_role": "supervision_reviewer",
+                "assets": assets,
+                "publication_material_hash": material_hash,
+            })
     key = serialization.load_pem_private_key(private_key_pem, password=None)
     if not isinstance(key, Ed25519PrivateKey):
         raise ValueError("Ed25519 signing key required")
@@ -147,7 +216,8 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
 
 
 def verify_review_proof(proof, public_key_pem: bytes, *, issue_id, revision, attempt_id,
-                        target_hash, review_file_hash, reviewer_session, writer_sessions) -> list[str]:
+                        target_hash, review_file_hash, reviewer_session, writer_sessions,
+                        required_policy=None, assets=None, now=None) -> list[str]:
     """Pinned-key verification at the existing trusted publication ingress."""
     if not isinstance(proof, dict):
         return ["provenance.invalid"]
@@ -159,14 +229,20 @@ def verify_review_proof(proof, public_key_pem: bytes, *, issue_id, revision, att
         key.verify(base64.b64decode(proof["signature"], validate=True), _canonical(payload))
     except (ValueError, TypeError, KeyError, InvalidSignature):
         return ["provenance.signature"]
+    version = "native-editorial-review-v2" if required_policy == STORY_REVIEW_POLICY else "native-editorial-review-v1"
     expected = {
-        "proof_version": "native-editorial-review-v1", "issue_id": issue_id,
+        "proof_version": version, "issue_id": issue_id,
         "purpose": "quantumn-production-publication",
         "revision": revision, "attempt_id": attempt_id, "editorial_target_hash": target_hash,
         "review_file_hash": review_file_hash, "reviewer_session": reviewer_session,
-        "writer_sessions": writer_sessions, "owner": "local_owner", "profile": "default",
+        "writer_sessions": writer_sessions, "owner": "local_owner",
+        "profile": "supervision" if version.endswith("v2") else "default",
         "native_finish_reason": "stop",
     }
+    if version.endswith("v2"):
+        expected.update({"review_policy": STORY_REVIEW_POLICY,
+                         "writer_profile": "story", "reviewer_profile": "supervision",
+                         "writer_role": "story_author", "reviewer_role": "supervision_reviewer"})
     reasons = [f"provenance.{field}" for field, value in expected.items() if payload.get(field) != value]
     if payload.get("decision") not in {"approved", "rejected"}:
         reasons.append("provenance.decision")
@@ -179,4 +255,14 @@ def verify_review_proof(proof, public_key_pem: bytes, *, issue_id, revision, att
     start, end = payload.get("native_started_at"), payload.get("native_ended_at")
     if (not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or end <= start):
         reasons.append("provenance.native_terminal")
+    if version.endswith("v2"):
+        try:
+            signed_assets = _assets(payload["assets"])
+            material_hash = publication_material_hash(target_hash, signed_assets)
+            if payload.get("publication_material_hash") != material_hash:
+                reasons.append("provenance.publication_material_hash")
+            if assets is not None and _assets(assets) != signed_assets:
+                reasons.append("provenance.assets")
+        except (KeyError, TypeError, ValueError):
+            reasons.append("provenance.publication_material_hash")
     return sorted(set(reasons))

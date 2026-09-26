@@ -166,7 +166,8 @@ def make_editorial_contract(body: str, *, format: str, writer_sessions: list[str
                             revision: int, learning_objectives: list[str],
                             editorial_brief: dict,
                             research_gaps=None, previous_body_hash=None,
-                            source_receipts=None, issue_id=None, attempt_id=None) -> dict:
+                            source_receipts=None, issue_id=None, attempt_id=None,
+                            review_policy=None) -> dict:
     """Generate a hash-bound DRAFT, including every measured chapter.
     Validate after generation; this helper intentionally does not manufacture
     review findings, approvals, source receipts or authenticated session IDs.
@@ -182,6 +183,8 @@ def make_editorial_contract(body: str, *, format: str, writer_sessions: list[str
         contract["issue_id"] = issue_id
     if attempt_id is not None:
         contract["attempt_id"] = attempt_id
+    if review_policy is not None:
+        contract["review_policy"] = review_policy
     if previous_body_hash is not None:
         contract["previous_body_hash"] = previous_body_hash
     contract["target_hash"] = editorial_target_hash(body, contract, source_receipts)
@@ -235,8 +238,10 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
         return ["contract.invalid"]
     required = {"version", "format", "writer_sessions", "revision", "learning_objectives",
                 "editorial_brief", "chapters", "research_gaps", "target_hash"}
-    if not required <= contract.keys() or contract.keys() - required - {"previous_body_hash", "issue_id", "attempt_id"}:
+    if not required <= contract.keys() or contract.keys() - required - {"previous_body_hash", "issue_id", "attempt_id", "review_policy"}:
         reasons.add("contract.fields")
+    if "review_policy" in contract and contract["review_policy"] != "story-supervision-v2":
+        reasons.add("contract.review_policy")
     for field in ("issue_id", "attempt_id"):
         if field in contract and not _text(contract[field]):
             reasons.add(f"contract.{field}")

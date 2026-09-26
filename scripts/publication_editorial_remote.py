@@ -30,6 +30,7 @@ import stat
 import sqlite3
 import sys
 import uuid
+from collections.abc import Mapping
 
 from PIL import Image, UnidentifiedImageError
 
@@ -657,7 +658,7 @@ def attempt(remote, contract, states):
     return latest
 
 
-def prepare(path, remote):
+def prepare(path, remote, *, review_policy=None):
     path, value = load_manifest(path)
     for item in value["items"]:
         if item["status"] != "prepared":
@@ -665,10 +666,10 @@ def prepare(path, remote):
         item.setdefault("batch", uuid.uuid4().hex)
         save(path, value)  # Stable upload namespace even after transport interruption.
         bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
-        result = remote.operator(
-            "prepare-editorial",
-            *arguments(remote, path.parent, item, bundle, stage=True),
-        )
+        args = arguments(remote, path.parent, item, bundle, stage=True)
+        if review_policy is not None:
+            args += ["--review-policy", review_policy]
+        result = remote.operator("prepare-editorial", *args)
         contract = result.get("quality_contract")
         if not isinstance(contract, dict) or any(key not in contract for key in ("issue_id", "revision", "attempt_id", "target_hash", "writer_sessions")):
             raise ValueError("server contract missing")
@@ -677,22 +678,7 @@ def prepare(path, remote):
             if item[group]:
                 bundle[field] = [{"artifact_id": f"receipt-{e['kind']}-{e['sha256']}", "sha256": e["sha256"], "kind": e["kind"]} for e in item[group]]
         bundle["source_snapshot_hash"] = sha("\n".join(sorted(e["sha256"] for e in bundle.get("source_receipts", []))).encode())
-        bundle["assets"] = []
-        for role in MEDIA_ROLES:
-            kind, width, height = MEDIA_CONTRACT[role]
-            path_value = local_path(path.parent, item[f"{role}_file"])
-            digest = item[f"{role}_sha256"]
-            bundle["assets"].append({
-                "role": role,
-                "receipt": {
-                    "artifact_id": f"receipt-{kind}-{digest}",
-                    "sha256": digest,
-                    "kind": kind,
-                },
-                "media_type": media_type(path_value),
-                "width": width,
-                "height": height,
-            })
+        bundle["assets"] = result.get("assets", bundle.get("assets", []))
         bundle["quality_contract"] = contract
         verify_target(bundle, read(local_path(path.parent, item["body_file"])).decode())
         # Publish a new frozen bundle pointer and manifest atomically; never
@@ -719,6 +705,21 @@ def verify_target(bundle, manuscript):
     contract = bundle["quality_contract"]
     if editorial_target_hash(manuscript, contract, bundle.get("source_receipts", [])) != contract["target_hash"]:
         raise ValueError("full manuscript/contract/source receipt target mismatch")
+
+
+def material_assets(item, bundle):
+    assets = []
+    for asset in bundle.get("assets", []):
+        identity = "role" if "role" in asset else "url" if "url" in asset else None
+        digest = asset.get("receipt", {}).get("sha256") if isinstance(asset, dict) else None
+        if identity is None or not isinstance(digest, str) or not HASH.fullmatch(digest):
+            raise ValueError("invalid publication asset mapping")
+        assets.append({identity: asset[identity], "sha256": digest})
+    by_role = {asset["role"]: asset["sha256"] for asset in assets if "role" in asset}
+    for role in ("shelf_cover", "reader_cover"):
+        if item.get(f"{role}_file") and by_role.get(role) != item.get(f"{role}_sha256"):
+            raise ValueError("signed proof does not bind manifest assets")
+    return assets
 
 
 def review_input(root, remote):
@@ -763,12 +764,25 @@ def review_input(root, remote):
             # JSON strings also prevent a secret-like sequence from existing in
             # any individual string. The reviewer still reads the frozen body_file.
             compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
-            request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 12] for i in range(0, len(compressed), 12)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner", "profile": "default",
+            request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 12] for i in range(0, len(compressed), 12)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner",
                        **{k: contract[k] for k in ("issue_id", "revision", "attempt_id", "writer_sessions")},
                        "editorial_target_hash": contract["target_hash"]}
+            if contract.get("review_policy") == "story-supervision-v2":
+                from backend.services.publication_review_provenance import publication_material_hash
+                assets = material_assets(item, bundle)
+                request.update({"review_policy": "story-supervision-v2", "writer_profile": "story", "reviewer_profile": "supervision",
+                                "writer_role": "story_author", "reviewer_role": "supervision_reviewer",
+                                "assets": assets, "publication_material_hash": publication_material_hash(contract["target_hash"], assets)})
+            else:
+                request["profile"] = "default"
             files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
             files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
-            return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": "Read inputs only; write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
+            files["assets"] = [str(local_path(path.parent, item[f"{role}_file"]))
+                               for role in MEDIA_ROLES if item.get(f"{role}_file")]
+            instruction = ("Read inputs only; write only review_file. Bind publication_material_hash in the review bytes. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,publication_material_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."
+                           if contract.get("review_policy") == "story-supervision-v2" else
+                           "Read inputs only; write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign.")
+            return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": instruction}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
     if invalid_pending:
         raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
     return json.dumps({"status": "no_await_review"})
@@ -779,6 +793,12 @@ def native_attest(db, review, key):
     from backend.services.publication_review_provenance import attest_native_review
     secure = transport._secure_file(str(key), "editorial signing key", private=True)
     try:
+        if isinstance(db, Mapping):
+            if set(db) != {"story", "supervision"}:
+                raise ValueError("trusted story/supervision databases required")
+            return attest_native_review(Path(db["supervision"]).expanduser(), review, Path(secure).read_bytes(),
+                                        profile="supervision", writer_profile="story",
+                                        writer_db_path=Path(db["story"]).expanduser())
         return attest_native_review(Path(db).expanduser(), review, Path(secure).read_bytes())
     except sqlite3.Error as exc:
         raise ValueError("native review database unavailable or invalid") from exc
@@ -789,14 +809,15 @@ def native_running(db, review):
     if not isinstance(sid, str) or not sid.startswith("hermes:"):
         return False
     try:
-        with sqlite3.connect(Path(db).expanduser().resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        path = db["supervision"] if isinstance(db, Mapping) else db
+        with sqlite3.connect(Path(path).expanduser().resolve().as_uri() + "?mode=ro", uri=True) as conn:
             row = conn.execute("SELECT ended_at FROM sessions WHERE id=?", (sid[7:],)).fetchone()
         return row is not None and row[0] is None
     except sqlite3.Error as exc:
         raise ValueError("native review database unavailable or invalid") from exc
 
 
-def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes/config/publication-editorial-private.pem"), attest=native_attest):
+def finalize(root, remote, *, db=None, key=Path("~/.hermes/config/publication-editorial-private.pem"), attest=native_attest):
     results = []
     invalid_pending: list[tuple[str, str]] = []
     failures: list[dict] = []
@@ -825,23 +846,34 @@ def finalize(root, remote, *, db=Path("~/.hermes/state.db"), key=Path("~/.hermes
             try:
                 raw = read(review_path)
                 review = json.loads(raw)
+                c = item["quality_contract"]
+                databases = db
+                if databases is None:
+                    databases = ({"story": Path("~/.hermes/profiles/story/state.db"),
+                                  "supervision": Path("~/.hermes/profiles/supervision/state.db")}
+                                 if c.get("review_policy") == "story-supervision-v2"
+                                 else Path("~/.hermes/state.db"))
                 proof_path = local_path(path.parent, item["proof_file"], output=True)
                 if proof_path.exists():
                     proof = json.loads(read(proof_path))
                 else:
                     try:
-                        proof = attest(db, review_path, key)
+                        proof = attest(databases, review_path, key)
                     except ValueError as exc:
-                        if str(exc) == "native review is not completed" and native_running(db, review):
+                        if str(exc) == "native review is not completed" and native_running(databases, review):
                             results.append({"status": "pending", "manifest": str(path)})
                             continue
                         raise
                 if read(review_path) != raw:
                     raise ValueError("review changed during attestation")
-                c = item["quality_contract"]
                 expected = {"issue_id": c["issue_id"], "revision": c["revision"], "attempt_id": c["attempt_id"],
                             "editorial_target_hash": c["target_hash"], "writer_sessions": c["writer_sessions"],
                             "review_file_hash": sha(raw), "decision": review.get("decision")}
+                if c.get("review_policy") == "story-supervision-v2":
+                    bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
+                    from backend.services.publication_review_provenance import publication_material_hash
+                    expected["publication_material_hash"] = publication_material_hash(
+                        c["target_hash"], material_assets(item, bundle))
                 if any(proof.get(k) != v for k, v in expected.items()) or proof.get("decision") not in {"approved", "rejected"}:
                     raise ValueError("signed proof does not bind manifest")
                 # Revalidate every frozen input after native DB work and before upload.
@@ -899,7 +931,9 @@ def main(argv=None):
     parser.add_argument("--identity-file")
     parser.add_argument("--known-hosts-file")
     sub = parser.add_subparsers(dest="action", required=True)
-    sub.add_parser("prepare").add_argument("--manifest", required=True, type=Path)
+    prepare_parser = sub.add_parser("prepare")
+    prepare_parser.add_argument("--manifest", required=True, type=Path)
+    prepare_parser.add_argument("--review-policy", choices=("story-supervision-v2",))
     start_parser = sub.add_parser("start")
     start_parser.add_argument("--submission", required=True, type=Path)
     start_parser.add_argument("--body-dir", required=True, type=Path)
@@ -927,7 +961,7 @@ def main(argv=None):
         with os.fdopen(fd, "w") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if args.action == "prepare":
-                result = prepare(args.manifest, remote)
+                result = prepare(args.manifest, remote, review_policy=args.review_policy)
             elif args.action == "start":
                 initial_manifest = build_initial(
                     args.submission, args.body_dir, series_id=args.series_id,
