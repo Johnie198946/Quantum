@@ -23,13 +23,23 @@
 - `reader_cover`：2560×1440；
 - `illustration_01/02/03`：各 1600×900。
 
-图片必须与本期正文的真实主题、步骤和验收结果相符，不得伪造产品界面、执行结果、用户数据或“LIVE”状态。不得用空白图、纯色占位、拉伸截图或整页文字代替视觉设计。每张图写入目标目录后回读格式、尺寸与 SHA-256。
+图片必须与本期正文的真实主题、步骤和验收结果相符，不得伪造产品界面、执行结果、用户数据或“LIVE”状态。不得用空白图、纯色占位、拉伸截图或整页文字代替视觉设计。最终供构建读取的每张图片不得超过 2 MiB（现有输入契约限制）；优先输出高质量 JPEG，并保留原始生成图作证据。尺寸、视觉质量和内容不得因压缩而降级为占位图。每个角色在目标目录只保留一个同名最终文件，原图放 image-generation-originals 子目录。每张图写入目标目录后回读格式、尺寸、字节数与 SHA-256。
 
 若这是同一 Workflow execution 的审稿修订 Artifact：
 
 - 仅当独立审稿明确指出视觉缺陷，或修订正文改变视觉论点时重做相关图片；
 - 否则可复用上一修订中已通过格式/hash 验证的五图，但必须重新回读并记录来源目录与 hash；
 - 不得复用被审稿明确否定的图片。
+
+## 固定图片工具入口与证据
+
+Mac 当前已验证入口为 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`。使用该绝对路径的 `exec --json`，以 stdin 传入完整的本期生成请求，`-C` 指定本期目录，`-o` 保存最终回执；将 JSONL 事件和 stderr 分别保存在本期目录。沿用用户模型配置，不自动升级 CLI、安装全局包或修改全局配置。入口不存在或工具明确不支持生成时失败退出，让运行维护处理。
+
+只启动一次生成进程，持续等待同一个进程并回读事件。活动 writer 未退出时禁止重复 `resume` 同一 thread；尚无最终文件不等于进程已失败。仅当进程明确结束且输出不完整时报告缺口，不以复制旧刊图片或伪造日志兜底。
+
+保存原始生成图与每图调用记录。生成 `image-manifest.json`，记录每个角色的 prompt、实际模型（工具没有返回则标未知，不猜测）、生成 thread/调用记录、原图路径和 SHA-256、最终文件名、尺寸与 SHA-256。该文件由 builder 自动登记为 `publication_image_generation` 来源证据，供独立审核核验；不得改作者 source/execution documents，也不得把图片生成成功写成教程执行成功。
+
+官方非交互接口约定：https://developers.openai.com/codex/noninteractive/ 。五图和证据全部完成后再构建，单张成功不能报告素材任务完成。
 
 ## 确定性构建
 
@@ -54,7 +64,7 @@ python3 ~/.hermes/scripts/publication_editorial_remote.py start \
 - 不得自审、写 review/proof、finalize、stage、release、withdraw 或发布；
 - 不得调用 Workflow acknowledgement 或 revision API；这些由无 Agent 的确定性 watchdog 在独立审稿/最终 stage 后执行；
 - 不得改代码、Git、Cron、生产配置或无关 series；
-- 不得把命令退出 0 当业务成功。
+- 不得把命令退出 0 当业务成功；构建遇历史记录、合同或权限错误时报告具体错误，不得通过 monkeypatch、临时 sandbox 拒读、隐藏/移动旧 manifest 或修改程序来绕过校验。
 
 ## 完成回执
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 import base64
-from datetime import date
+from datetime import date, datetime
 import fcntl
 import gzip
 import hashlib
@@ -546,27 +546,39 @@ def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_h
     """Reuse the latest genuine rejected attempt for the same native occurrence."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from backend.services.knowledge_publication_store import PublicationStore
+    expected_issue_id = PublicationStore.ids(series_id, issue_key, 1)[1]
     candidates = []
     for path in manifests(base.parent):
         if path.parent == base:
             continue
-        try:
-            _, manifest = load_manifest(path)
-            for item in manifest["items"]:
-                if item["status"] != "rejected":
-                    continue
-                prior = json.loads(read(local_path(path.parent, item["bundle_file"])))
-                if prior.get("series_id") != series_id:
-                    continue
-                slot = prior.get("issue_slot") or datetime.fromisoformat(prior["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
-                if publication_slot(series_id, prior["issue_date"], slot)["issue_key"] != issue_key:
-                    continue
-                contract = item.get("quality_contract")
-                if not isinstance(contract, dict) or type(contract.get("revision")) is not int:
-                    raise ValueError("rejected manifest contract unavailable")
-                candidates.append((contract["revision"], path, item, contract))
-        except (KeyError, OSError):
+        raw = json.loads(read(path))
+        matching = []
+        for index, item in enumerate(raw.get("items", [])):
+            if not isinstance(item, dict) or item.get("status") != "rejected":
+                continue
+            contract = item.get("quality_contract")
+            # A known same-occurrence contract must reach full validation even
+            # when its bundle is missing, corrupt, or relabelled.
+            if isinstance(contract, dict) and contract.get("issue_id") == expected_issue_id:
+                matching.append(index)
+                continue
+            prior = json.loads(read(local_path(path.parent, item["bundle_file"])))
+            if prior.get("series_id") != series_id or prior.get("issue_date") != issue_key.split("T", 1)[0]:
+                continue
+            slot = prior.get("issue_slot") or datetime.fromisoformat(prior["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+            if publication_slot(series_id, prior["issue_date"], slot)["issue_key"] == issue_key:
+                matching.append(index)
+        if not matching:
             continue
+        _, manifest = load_manifest(path)
+        for index in matching:
+            item = manifest["items"][index]
+            contract = item.get("quality_contract")
+            if (not isinstance(contract, dict) or type(contract.get("revision")) is not int
+                    or contract.get("issue_id") != expected_issue_id):
+                raise ValueError("rejected manifest contract unavailable or occurrence mismatch")
+            candidates.append((contract["revision"], path, item, contract))
     if not candidates:
         return None
     _, path, item, contract = max(candidates, key=lambda value: value[0])
@@ -871,10 +883,13 @@ def material_assets(item, bundle):
 
 
 def review_input(root, remote):
+    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims, _material_hash
+    recovery = Claims(Path.home() / ".hermes/cron/publication-recovery.db")
     profile = os.environ.get("HERMES_PROFILE", "default")
     if profile not in {"default", "supervision"}:
         raise ValueError("unsupported native reviewer profile")
     invalid_pending: list[str] = []
+    candidates = []
     for path in manifests(root):
         # Historical output roots can contain pre-v2 or abandoned manifests.
         # They are irrelevant unless they explicitly claim a pending review;
@@ -908,37 +923,54 @@ def review_input(root, remote):
             # server state has already advanced to approved or rejected.
             if local_path(path.parent, item["review_file"], output=True).exists():
                 continue
-            attempt(remote, contract, {"await_review"})
             bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
-            manuscript = read(local_path(path.parent, item["body_file"])).decode()
-            verify_target(bundle, manuscript)
-            # Cron injects stdout into Markdown and the gateway may redact long
-            # token-like strings. Compress first, then split Base64 below the
-            # gateway's generic high-entropy-token threshold. Twelve-character
-            # JSON strings also prevent a secret-like sequence from existing in
-            # any individual string. The reviewer still reads the frozen body_file.
-            compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
-            request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 12] for i in range(0, len(compressed), 12)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner",
-                       **{k: contract[k] for k in ("issue_id", "revision", "attempt_id", "writer_sessions")},
-                       "editorial_target_hash": contract["target_hash"]}
-            if contract.get("review_policy") == "story-supervision-v2":
-                from backend.services.publication_review_provenance import publication_material_hash
-                assets = material_assets(item, bundle)
-                request.update({"review_policy": "story-supervision-v2", "writer_profile": "story", "reviewer_profile": "supervision",
-                                "writer_role": "story_author", "reviewer_role": "supervision_reviewer",
-                                "assets": assets, "publication_material_hash": publication_material_hash(contract["target_hash"], assets)})
-            else:
-                request["profile"] = "default"
-            files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
-            files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
-            files["assets"] = [str(local_path(path.parent, item[f"{role}_file"]))
-                               for role in MEDIA_ROLES if item.get(f"{role}_file")]
-            files["assets"] += [str(local_path(path.parent, entry["path"])) for entry in item["asset_files"]]
-            visual = "Use visual tools to inspect every actual image in read_only_inputs.assets; hashes and prompts are not substitutes for visual inspection. "
-            instruction = ("Read inputs only; " + visual + "write only review_file. Bind publication_material_hash in the review bytes. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,publication_material_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."
-                           if contract.get("review_policy") == "story-supervision-v2" else
-                           "Read inputs only; " + visual + "write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign.")
-            return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": instruction}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
+            release_at = datetime.fromisoformat(bundle["release_at"])
+            if release_at.tzinfo is None:
+                raise ValueError("publication release_at must include timezone")
+            from zoneinfo import ZoneInfo
+            issue_key = bundle.get("issue_key") or publication_slot(
+                bundle["series_id"], bundle["issue_date"],
+                bundle.get("issue_slot") or release_at.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M"),
+            )["issue_key"]
+            barrier = Barrier(bundle["series_id"], _material_hash(item), issue_key)
+            if recovery.exhausted(bundle["issue_date"], Action(
+                "review", (barrier,), job_id=SERIES[bundle["series_id"]].get("review_job_id")
+            )):
+                continue
+            candidates.append((release_at, bundle["series_id"], path, item, bundle))
+    if candidates:
+        _, _, path, item, bundle = min(candidates, key=lambda candidate: candidate[:2])
+        contract = item["quality_contract"]
+        attempt(remote, contract, {"await_review"})
+        manuscript = read(local_path(path.parent, item["body_file"])).decode()
+        verify_target(bundle, manuscript)
+        # Cron injects stdout into Markdown and the gateway may redact long
+        # token-like strings. Compress first, then split Base64 below the
+        # gateway's generic high-entropy-token threshold. Twelve-character
+        # JSON strings also prevent a secret-like sequence from existing in
+        # any individual string. The reviewer still reads the frozen body_file.
+        compressed = base64.b64encode(gzip.compress(manuscript.encode(), mtime=0)).decode()
+        request = {"manuscript_gzip_b64_chunks": [compressed[i:i + 12] for i in range(0, len(compressed), 12)], "quality_contract": contract, "source_receipts": bundle.get("source_receipts", []), "purpose": "publication_editorial_review", "owner": "local_owner",
+                   **{k: contract[k] for k in ("issue_id", "revision", "attempt_id", "writer_sessions")},
+                   "editorial_target_hash": contract["target_hash"]}
+        if contract.get("review_policy") == "story-supervision-v2":
+            from backend.services.publication_review_provenance import publication_material_hash
+            assets = material_assets(item, bundle)
+            request.update({"review_policy": "story-supervision-v2", "writer_profile": "story", "reviewer_profile": "supervision",
+                            "writer_role": "story_author", "reviewer_role": "supervision_reviewer",
+                            "assets": assets, "publication_material_hash": publication_material_hash(contract["target_hash"], assets)})
+        else:
+            request["profile"] = "default"
+        files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
+        files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
+        files["assets"] = [str(local_path(path.parent, item[f"{role}_file"]))
+                           for role in MEDIA_ROLES if item.get(f"{role}_file")]
+        files["assets"] += [str(local_path(path.parent, entry["path"])) for entry in item["asset_files"]]
+        visual = "Use visual tools to inspect every actual image in read_only_inputs.assets; hashes and prompts are not substitutes for visual inspection. "
+        instruction = ("Read inputs only; " + visual + "write only review_file. Bind publication_material_hash in the review bytes. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,publication_material_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."
+                       if contract.get("review_policy") == "story-supervision-v2" else
+                       "Read inputs only; " + visual + "write only review_file. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign.")
+        return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": instruction}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
     if invalid_pending:
         raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
     return json.dumps({"status": "no_await_review"})

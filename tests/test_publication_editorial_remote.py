@@ -78,6 +78,7 @@ def fixture_bundle():
 
 @pytest.fixture
 def flow(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_PROFILE", "default")
     local = tmp_path / "local"
     local.mkdir()
@@ -424,6 +425,72 @@ def test_global_review_scan_isolates_invalid_pending_manifest(flow):
 
     assert envelope["manifest"] == str(manifest)
 
+
+
+@pytest.mark.parametrize("late_attempt_stale", [False, True])
+def test_review_input_selects_earliest_release_across_manifest_directories(flow, monkeypatch, late_attempt_stale):
+    local, manifest, remote, *_ = flow
+    early = local.parent / "zz-early"
+    shutil.copytree(local, early)
+    early_manifest = early / manifest.name
+    for directory, slot in ((local, "20:00"), (early, "08:00")):
+        bundle = json.loads((directory / "bundle.json").read_text())
+        bundle.update(series_id="tang-history", issue_date="2026-09-26", issue_slot=slot,
+                      release_at=f"2026-09-26T{slot}:00+08:00")
+        relay.save(directory / "bundle.json", bundle)
+        relay.prepare(directory / manifest.name, remote, review_policy="story-supervision-v2")
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
+    original_attempt = relay.attempt
+    attempted = []
+    late_contract = json.loads(manifest.read_text())["items"][0]["quality_contract"]
+
+    def checked_attempt(remote, contract, statuses):
+        attempted.append(contract["attempt_id"])
+        if late_attempt_stale and contract["attempt_id"] == late_contract["attempt_id"]:
+            raise ValueError("late historical attempt is no longer awaiting review")
+        return original_attempt(remote, contract, statuses)
+
+    monkeypatch.setattr(relay, "attempt", checked_attempt)
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert envelope["manifest"] == str(early_manifest)
+    item = json.loads(early_manifest.read_text())["items"][0]
+    assert attempted == [item["quality_contract"]["attempt_id"]]
+    # A completed early review no longer occupies the shared reviewer input.
+    (early / item["review_file"]).write_text("{}")
+    if late_attempt_stale:
+        with pytest.raises(ValueError, match="late historical attempt"):
+            relay.review_input(local.parent, remote)
+        return
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert envelope["manifest"] == str(manifest)
+
+
+def test_review_input_skips_exact_exhausted_material_until_rearmed(flow, monkeypatch, tmp_path):
+    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims, _material_hash
+    local, manifest, remote, *_ = flow
+    later = local.parent / "later"
+    shutil.copytree(local, later)
+    bundle = json.loads((later / "bundle.json").read_text())
+    bundle.update(issue_date="2026-09-09", release_at="2026-09-09T12:00:00+08:00")
+    relay.save(later / "bundle.json", bundle)
+    relay.prepare(manifest, remote)
+    relay.prepare(later / manifest.name, remote)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    item = json.loads(manifest.read_text())["items"][0]
+    barrier = Barrier("ai-history", _material_hash(item), "2026-09-08")
+    action = Action("review", (barrier,))
+    ledger = Claims(tmp_path / ".hermes/cron/publication-recovery.db")
+    with ledger._connect() as db:
+        db.execute("INSERT INTO recovery_claims (idempotency_key,day,series,material_hash,phase,state,owner_pid,owner_started_at,created_at,attempts) VALUES (?,?,?,?,?,'failed',0,0,?,?)",
+                   (ledger.key("2026-09-08", action.phase, barrier), "2026-09-08", barrier.series,
+                    barrier.material_hash, action.phase, "2026-09-08T12:00:00+08:00", ledger.MAX_ATTEMPTS))
+    monkeypatch.setattr("scripts.publication_scheduler_watchdog._owner_alive", lambda *_: False)
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert envelope["manifest"] == str(later / manifest.name)
+    ledger.rearm(ledger.key("2026-09-08", "review", barrier), ledger.MAX_ATTEMPTS,
+                 barrier.material_hash, "synthetic repair", blockers=lambda _: [])
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert envelope["manifest"] == str(manifest)
 
 def test_global_finalize_isolates_invalid_pending_manifest(flow):
     local, manifest, remote, *_ = flow
@@ -1249,6 +1316,25 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     root = handoff.native_output_root()
     root.mkdir(parents=True)
     shutil.copytree(local, root / "prior-rejected")
+    # Real historical shape: a rejected legacy draft whose bundle identifies a
+    # different occurrence, but whose manifest predates the five-media gate.
+    historical = root / "00-legacy"
+    shutil.copytree(local, historical)
+    old = json.loads((historical / old_manifest.name).read_text())
+    old_item = old["items"][0]
+    old_bundle = json.loads((historical / old_item["bundle_file"]).read_text())
+    old_bundle["issue_date"] = "2026-09-07"
+    old_bundle["release_at"] = "2026-09-07T12:00:00+08:00"
+    old_bundle["quality_contract"]["issue_id"] = "issue-historical"
+    old_item["quality_contract"] = old_bundle["quality_contract"]
+    relay.save(historical / old_item["bundle_file"], old_bundle)
+    old_item["bundle_sha256"] = relay.sha((historical / old_item["bundle_file"]).read_bytes())
+    for role in relay.MEDIA_ROLES:
+        old_item.pop(f"{role}_file")
+        old_item.pop(f"{role}_sha256")
+    relay.save(historical / old_manifest.name, old)
+    with pytest.raises(ValueError, match="all five publication media"):
+        relay.load_manifest(historical / old_manifest.name)
     body = (local / "body.md").read_text() + "\n### 证据补充\n补充核验一手来源，澄清历史背景，并由独立审稿重新确认缺口得到解决。\n"
     content = {"schema_version": "publication-content-v1", "title": "修订后的合成历史文章",
         "summary": "合成测试内容，用于核验真实拒稿进入下一轮审核。", "body": body,
@@ -1288,6 +1374,29 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     assert json.loads(manifest.read_text())["items"][0]["quality_contract"]["revision"] == 2
     assert relay.finalize(base, remote, db=review_dbs, key=key)["items"][0]["status"] == "staged"
 
+
+
+@pytest.mark.parametrize("damage", ["hash", "contract", "review", "missing"])
+def test_native_rejected_revision_fails_closed_for_damaged_same_occurrence(flow, damage):
+    local, manifest, remote, _, key, *_ = flow
+    databases, _ = native(flow, "rejected")
+    relay.finalize(local, remote, db=databases, key=key)
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    if damage == "hash":
+        (local / item["body_file"]).write_text("tampered prior body")
+    elif damage == "contract":
+        item["quality_contract"]["target_hash"] = "0" * 64
+        relay.save(manifest, value)
+    elif damage == "missing":
+        (local / item["bundle_file"]).unlink()
+    else:
+        review = json.loads((local / item["review_file"]).read_text())
+        review["editorial_target_hash"] = "0" * 64
+        relay.save(local / item["review_file"], review)
+    with pytest.raises((ValueError, OSError)):
+        relay._native_rejected_revision(local.parent / "new-native", "ai-history", "2026-09-08",
+                                        "f" * 64, synthetic_brief())
 
 def test_initial_builder_binds_asset_generation_evidence_without_author_mutation_or_execution_claim(flow, tmp_path):
     _, _, remote, _, *_ = flow

@@ -1,0 +1,13 @@
+........................................................................ [ 35%]
+........................................................................ [ 71%]
+..........................................................               [100%]
+=============================== warnings summary ===============================
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+tests/test_publication_scheduler_watchdog.py::test_staged_item_may_be_absent_from_missing_issue_rows
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+202 passed, 4 warnings in 200.94s (0:03:20)

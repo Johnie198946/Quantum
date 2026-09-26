@@ -1211,3 +1211,90 @@ def test_current_workflow_route_still_requires_verified_handoff(native_author, m
     (target / "workflow-handoff-state.json").write_bytes(canonical_json({"status": "waiting_assets", "series_id": "ai-toolkit"}))
     with pytest.raises(ValueError, match="file missing"):
         handoff.assets_input()
+
+
+def test_shared_author_skips_exact_exhausted_issue_and_rearm_restores_it(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+    from scripts import publication_scheduler_watchdog as watchdog
+    handoff, root, _, _ = native_author
+    day = "2026-09-27"
+    for name in ["ai-history", "ai-practice"]:
+        monkeypatch.setitem(SERIES, name, {**SERIES[name], "author_job_id": "shared-author", "author_profile": "default", "release_times": ["12:00"]})
+    slots = [{"series_id": name, "issue_date": day, **publication_slot(name, day, "12:00")}
+             for name in ["ai-history", "ai-practice"]]
+    class Remote:
+        def operator(self, action):
+            return {"expected_issues": slots, "items": []}
+    now = datetime.fromisoformat(day + "T01:00:00+08:00")
+    ledger = watchdog.Claims(Path.home() / ".hermes/cron/publication-recovery.db")
+    barrier = watchdog.Barrier("ai-history", watchdog._absent_hash(day, "ai-history", []), day)
+    action = watchdog.Action("author", (barrier,), job_id="shared-author")
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(day, action)
+        ledger.finish(day, action, "failed")
+    packet = handoff.author_input("shared-author", "default", Remote(), now=now)
+    assert json.loads(packet.splitlines()[1])["series_id"] == "ai-practice"
+    # Changed terminal material creates a new key; old exhaustion never follows it.
+    changed = watchdog.Item(root / "rejected/draft-manifest.json", "ai-history", day, "b" * 64, "rejected", issue_key=day)
+    with monkeypatch.context() as patch:
+        patch.setattr(watchdog, "_manifest_items", lambda _: [changed])
+        packet = handoff.author_input("shared-author", "default", Remote(), now=now)
+        assert json.loads(packet.splitlines()[1])["series_id"] == "ai-history"
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
+    ledger.rearm(ledger.key(day, "author", barrier), 6, barrier.material_hash, "configuration repaired", lambda _: [])
+    packet = handoff.author_input("shared-author", "default", Remote(), now=now)
+    assert json.loads(packet.splitlines()[1])["series_id"] == "ai-history"
+    with sqlite3.connect(ledger.path) as db:
+        attempts, history = db.execute("SELECT attempts,rearm_history FROM recovery_claims").fetchone()
+    assert attempts == 0 and json.loads(history)[0]["previous"]["attempts"] == 6
+
+
+def test_shared_assets_selects_earliest_release_not_directory_name(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+    handoff, root, database, artifact = native_author
+    day = "2026-09-26"
+    directories = {}
+    for index, (name, slot) in enumerate([("a-late", "18:00"), ("z-early", "08:00")], 1):
+        monkeypatch.setitem(SERIES, name, {**SERIES["ai-toolkit"], "id": name, "release_times": [slot]})
+        occurrence = publication_slot(name, day, slot)
+        session = f"cron_nativejob_{name}"
+        request = {"series_id": name, "issue_date": day, **occurrence, "author_job_id": "nativejob"}
+        packet = "PUBLICATION_CONTENT_REQUEST\n" + json.dumps(request) + "\nEND_PUBLICATION_CONTENT_REQUEST"
+        final = {"publication_content_result": {"series_id": name, "issue_date": day, "issue_slot": slot, "artifact_file": str(artifact)}}
+        with sqlite3.connect(database) as db:
+            db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)", (session, "default", None, "cron", 100 + index, "cron_complete"))
+            db.execute("INSERT INTO messages VALUES(?,?,?,?,?,?,1,0)", (index * 10, session, "user", packet, None, None))
+            db.execute("INSERT INTO messages VALUES(?,?,?,?,?,?,1,0)", (index * 10 + 1, session, "assistant", json.dumps(final), "stop", None))
+        directories[name] = handoff.fetch_native(name, occurrence["issue_key"], root)["output_directory"]
+    assert directories["a-late"] < directories["z-early"]
+    request = json.loads(handoff.assets_input())["publication_asset_request"]
+    assert request["series_id"] == "z-early" and request["issue_slot"] == "08:00"
+    from scripts import publication_scheduler_watchdog as watchdog
+    ledger = watchdog.Claims(Path.home() / ".hermes/cron/publication-recovery.db")
+    state = json.loads((Path(directories["z-early"]) / "native-content-state.json").read_text())
+    barrier = watchdog.Barrier("z-early", state["artifact_sha256"], state["issue_key"])
+    action = watchdog.Action("assets", (barrier,))
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(day, action)
+        ledger.finish(day, action, "failed")
+    assert json.loads(handoff.assets_input())["publication_asset_request"]["series_id"] == "a-late"
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
+    ledger.rearm(ledger.key(day, "assets", barrier), 6, barrier.material_hash, "asset configuration fixed", lambda _: [])
+    assert json.loads(handoff.assets_input())["publication_asset_request"]["series_id"] == "z-early"
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(day, action)
+        ledger.finish(day, action, "failed")
+    content = json.loads(artifact.read_text())
+    content["body"] += "\n新增经过核实的操作证据。\n"
+    artifact.write_bytes(canonical_json(content))
+    replacement = handoff.fetch_native("z-early", state["issue_key"], root)
+    request = json.loads(handoff.assets_input())["publication_asset_request"]
+    assert request["output_directory"] == replacement["output_directory"] != directories["z-early"]
+    with sqlite3.connect(ledger.path) as db:
+        attempts, history = db.execute("SELECT attempts,rearm_history FROM recovery_claims").fetchone()
+    assert attempts == 6 and json.loads(history)[0]["previous"]["attempts"] == 6
+    # Sorting and recovery filtering must retain immutable byte validation.
+    body = Path(replacement["output_directory"]) / "body.md"
+    body.write_text(body.read_text() + "tampered")
+    with pytest.raises(ValueError, match="existing native content output conflicts"):
+        handoff.assets_input()

@@ -583,6 +583,11 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
             _validate_export({"envelope": envelope, "envelope_sha256": state["envelope_sha256"], "artifact_b64": base64.b64encode(artifact_raw).decode("ascii")}, configured_handoff_schedule(state["series_id"]))
             _verify_existing_output(state_path.parent, envelope, envelope_raw, artifact_raw)
         occupied.add((state.get("series_id"), state.get("issue_key", state.get("issue_date"))))
+    # Share the controller's exact material-scoped key; this lookup never
+    # creates or migrates the default profile's recovery ledger from an author.
+    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims, _absent_hash, _manifest_items
+    recovery = Claims(Path.home() / ".hermes/cron/publication-recovery.db")
+    material_items = _manifest_items(native_output_root()) if native_output_root().exists() else []
     candidates = []
     for row in expected:
         if row.get("series_id") not in configured or row.get("issue_date") != day:
@@ -591,6 +596,11 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
         if any(row.get(key) != value for key, value in occurrence.items()):
             raise PublicationHandoffError("server occurrence conflicts with configured release slots")
         if (row["series_id"], row["issue_key"]) not in occupied:
+            materials = [item for item in material_items if item.series == row["series_id"] and item.day == day
+                         and (item.issue_key or item.day) == row["issue_key"]]
+            barrier = Barrier(row["series_id"], _absent_hash(row["issue_key"], row["series_id"], materials), row["issue_key"])
+            if recovery.exhausted(day, Action("author", (barrier,), job_id=job_id)):
+                continue
             candidates.append({"series_id": row["series_id"], "issue_date": day,
                                **occurrence, "author_job_id": job_id})
     if not candidates:
@@ -604,14 +614,21 @@ def assets_input() -> str:
     root = native_output_root()
     if not root.exists():
         return "NO_NEW_DRAFT"
-    states = sorted([*root.glob("*/native-content-state.json"), *root.glob("*/workflow-handoff-state.json")])
-    for state_path in states:
+    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims
+    recovery = Claims(Path.home() / ".hermes/cron/publication-recovery.db")
+    pending = []
+    for state_path in [*root.glob("*/native-content-state.json"), *root.glob("*/workflow-handoff-state.json")]:
         base = state_path.parent
         if base.is_symlink() or not base.resolve().is_relative_to(root.resolve()):
             raise PublicationHandoffError("asset handoff directory is unsafe")
         state = json.loads(editorial.read(state_path))
-        if state.get("status") != "waiting_assets" or not _current_handoff_route(state, state_path):
-            continue
+        if state.get("status") == "waiting_assets" and _current_handoff_route(state, state_path):
+            pending.append((state_path, state))
+    pending.sort(key=lambda row: (row[1].get("release_at") or
+        f"{row[1].get('issue_date', '')}T{row[1].get('issue_slot', '12:00')}:00+08:00",
+        row[1]["series_id"], str(row[0])))
+    for state_path, state in pending:
+        base = state_path.parent
         manifest_path = base / "draft-manifest.json"
         if manifest_path.exists():
             _, manifest = editorial.load_manifest(manifest_path)
@@ -629,6 +646,13 @@ def assets_input() -> str:
                               "artifact_b64": base64.b64encode(artifact_raw).decode("ascii")},
                              configured_handoff_schedule(state["series_id"]))
             _verify_existing_output(base, envelope, envelope_raw, artifact_raw)
+        # Same material barrier as the watchdog: skip only this exhausted
+        # handoff, never the entire shared asset job or a replacement artifact.
+        material_hash = state["artifact_sha256"] if state_path.name == "native-content-state.json" else hashlib.sha256(
+            f"{state['artifact_id']}:{state['artifact_sha256']}:{state['envelope_sha256']}".encode()).hexdigest()
+        barrier = Barrier(state["series_id"], material_hash, state.get("issue_key", state["issue_date"]))
+        if recovery.exhausted(state["issue_date"], Action("assets", (barrier,))):
+            continue
         request = {"output_directory": str(base), "series_id": state["series_id"],
                    "issue_date": state["issue_date"], "issue_slot": state.get("issue_slot", "12:00"),
                    "artifact_sha256": state["artifact_sha256"]}

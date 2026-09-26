@@ -264,7 +264,12 @@ def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
                         review_ready = _read_json(review_path).get("decision") in {"approved", "rejected"}
                     except (OSError, ValueError, json.JSONDecodeError):
                         review_ready = False
-            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready, bundle.get("issue_key", "")))
+            slot = bundle.get("issue_slot")
+            if slot is None and bundle.get("release_at"):
+                slot = datetime.fromisoformat(bundle["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+            # Historical slots remain identities even after the catalog changes.
+            issue_key = bundle.get("issue_key") or (day if slot in {None, "12:00"} else f"{day}T{slot}")
+            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready, issue_key))
     return found
 
 
@@ -414,6 +419,7 @@ def _plan(
     handoffs: Sequence[Handoff] = (),
     platform_enabled: bool = False,
     issue_key: str = "",
+    claims: Claims | None = None,
 ) -> tuple[Action | None, str]:
     today = [item for item in items if item.day == day and item.series in SERIES
              and (not issue_key or (item.issue_key or item.day) == issue_key)]
@@ -533,11 +539,19 @@ def _plan(
         return Action("author", tuple(b for a in same_job for b in a.barriers), job_id=first.job_id), "ready"
     action = phase_actions[0]
     if phase == "review":
+        if claims is not None and claims.exhausted(day, action):
+            # Keep this failure visible to the caller's existing error ledger;
+            # another item-scoped plan can select the next eligible review.
+            return action, "ready"
         global_pending = sorted(
             (i for i in items if i.status == "await_review" and not i.review_ready
              and i.series in SERIES and _role_profile(i.series, "review") == _action_profile(action)
-             and SERIES[i.series].get("review_job_id") == action.job_id),
-            key=lambda item: str(item.manifest),
+             and SERIES[i.series].get("review_job_id") == action.job_id
+             and (claims is None or not claims.exhausted(i.day, Action(
+                 "review", (Barrier(i.series, i.material_hash, i.issue_key or i.day),), job_id=action.job_id)))),
+            key=lambda item: (datetime.fromisoformat(
+                item.issue_key if "T" in item.issue_key else item.day + "T12:00"
+            ).replace(tzinfo=ZoneInfo("Asia/Shanghai")), item.series, str(item.manifest)),
         )
         if not global_pending:
             return None, "review_scope_not_unique"
@@ -652,8 +666,10 @@ class Claims:
         return f"publication-recovery-v1:{barrier.issue_key or day}:{barrier.series}:{barrier.material_hash}:{phase}"
 
     def exhausted(self, day: str, action: Action) -> list[str]:
+        if not self.path.exists():
+            return []
         exhausted = []
-        with self._connect() as db:
+        with sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True) as db:
             for barrier in action.barriers:
                 key = self.key(day, action.phase, barrier)
                 row = db.execute("SELECT state,owner_pid,owner_started_at,finished_at FROM recovery_claims WHERE idempotency_key=? AND attempts>=? AND state!='completed'",
@@ -913,24 +929,26 @@ def supervise(
     # Legacy single-slot summaries keep grouped author dispatch. Explicit slot
     # summaries are planned separately so published siblings cannot hide work.
     plans = []
-    for series in sorted(missing):
-        slots = snapshot["today"]["by_series"][series].get("slots")
-        if slots is not None:
-            for slot in slots:
-                if not slot["published"]:
-                    plans.append(_plan(day, {series}, items, prerequisite(day), handoffs,
-                                       platform_enabled=bool(_schedule_id(series)), issue_key=slot["issue_key"]))
+    ledger = claims or Claims()
+    occurrences = [(series, slot) for series in missing
+                   for slot in snapshot["today"]["by_series"][series].get("slots", [])
+                   if not slot["published"]]
+    # Match author_input's shared-job selection: earliest release, then series.
+    occurrences.sort(key=lambda row: (row[1].get("release_at") or
+        f"{row[1]['issue_key'] if 'T' in row[1]['issue_key'] else day + 'T12:00'}:00+08:00", row[0]))
+    for series, slot in occurrences:
+        plans.append(_plan(day, {series}, items, prerequisite(day), handoffs,
+                           platform_enabled=bool(_schedule_id(series)), issue_key=slot["issue_key"], claims=ledger))
     if not plans:
         plans = [_plan(day, missing, items, prerequisite(day), handoffs,
-                       platform_enabled=False)]
+                       platform_enabled=False, claims=ledger)]
     if len(plans) == 1 and len(missing) > 1 and not any(
         snapshot["today"]["by_series"][name].get("slots") is not None for name in missing
     ):
         plans.extend(_plan(day, {name}, items, prerequisite(day), handoffs,
-                           platform_enabled=bool(_schedule_id(name))) for name in sorted(missing))
+                           platform_enabled=bool(_schedule_id(name)), claims=ledger) for name in sorted(missing))
     errors = []
     eligible = []
-    ledger = claims or Claims()
     for candidate, candidate_reason in plans:
         if candidate is None:
             continue
@@ -947,53 +965,79 @@ def supervise(
                                "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key"})
                 continue
         eligible.append(candidate)
-    action = min(eligible, key=lambda candidate: PHASE_ORDER[candidate.phase]) if eligible else None
-    if action is not None and action.phase == "author":
-        same_job = [candidate for candidate in eligible if candidate.phase == "author" and candidate.job_id == action.job_id and _action_profile(candidate) == _action_profile(action)]
-        action = Action("author", tuple(dict.fromkeys(barrier for candidate in same_job for barrier in candidate.barriers)), job_id=action.job_id)
     reason = next((reason for candidate, reason in plans if candidate is None
                    and reason not in {"complete", "awaiting_release", "awaiting_platform_author"}), plans[0][1])
-    if action is None and errors:
-        return errors[0]
-    if action is None:
-        return {"ok": reason in {"complete", "awaiting_release", "awaiting_platform_author"}, "action": "none", "reason": reason, "missing": sorted(missing)}
-    active = blockers(day)
-    relevant_jobs = {_profile_job_key(_role_profile(b.series, phase), SERIES[b.series][f"{phase}_job_id"])
-                     for b in action.barriers for phase in ROLE_PROFILES if SERIES[b.series].get(f"{phase}_job_id")}
-    hard_blockers = [entry for entry in active if not entry.endswith(":unknown-dead")
-                     and entry.split(":", 1)[0] in relevant_jobs]
-    # Dead unknown executions are reconciled from immutable item/production
-    # state. The durable dispatch claim supplies the bounded retry cooldown;
-    # live or unverifiable owners block their own publication job scope.
-    if hard_blockers:
-        return {"ok": True, "action": "none", "reason": "execution_blocked", "executions": sorted(set(hard_blockers))}
-    if action.phase in {"handoff_fetch", "native_fetch"}:
-        # Immutable materialization makes input polling safe without a claim.
-        try:
-            run_action(action)
-        except ActionPending as exc:
-            if action.phase == "native_fetch" and exc.reason == "awaiting_native_author":
-                input_feedback = {"author_feedback": exc.details} if exc.details else {}
-                action = Action("author", action.barriers, job_id=SERIES[action.barriers[0].series].get("author_job_id"))
+    eligible = sorted(dict.fromkeys(eligible), key=lambda candidate: PHASE_ORDER[candidate.phase])
+    active = blockers(day) if eligible else []
+    exhausted_author_routes = set()
+    while eligible:
+        action = eligible.pop(0)
+        input_feedback = {}
+        if action.phase == "author":
+            same_job = [candidate for candidate in eligible if candidate.phase == "author"
+                        and candidate.job_id == action.job_id and _action_profile(candidate) == _action_profile(action)]
+            action = Action("author", tuple(dict.fromkeys(barrier for candidate in [action, *same_job]
+                                                        for barrier in candidate.barriers)), job_id=action.job_id)
+            eligible = [candidate for candidate in eligible if candidate not in same_job]
+        relevant_jobs = {_profile_job_key(_role_profile(b.series, phase), SERIES[b.series][f"{phase}_job_id"])
+                         for b in action.barriers for phase in ROLE_PROFILES if SERIES[b.series].get(f"{phase}_job_id")}
+        hard_blockers = [entry for entry in active if not entry.endswith(":unknown-dead")
+                         and entry.split(":", 1)[0] in relevant_jobs]
+        # Preserve the live-owner fence even while skipping terminal failures.
+        if hard_blockers:
+            return {"ok": True, "action": "none", "reason": "execution_blocked", "executions": sorted(set(hard_blockers)),
+                    **({"blocked": errors} if errors else {})}
+        if action.phase in {"handoff_fetch", "native_fetch"}:
+            try:
+                run_action(action)
+            except ActionPending as exc:
+                if action.phase == "native_fetch" and exc.reason == "awaiting_native_author":
+                    input_feedback = {"author_feedback": exc.details} if exc.details else {}
+                    action = Action("author", action.barriers, job_id=SERIES[action.barriers[0].series].get("author_job_id"))
+                else:
+                    return {"ok": True, "action": "none", "reason": exc.reason, "phase": action.phase,
+                            **({"blocked": errors} if errors else {})}
+            except Exception as exc:
+                failure = {"ok": False, "action": "none", "reason": exc.reason if isinstance(exc, ActionFailure) else "action_exception",
+                           "phase": action.phase, "series": [barrier.series for barrier in action.barriers]}
+                if action.phase == "native_fetch" and failure["reason"] == "native_content_revision_exhausted":
+                    errors.append(failure)
+                    series = action.barriers[0].series
+                    exhausted_author_routes.add((_role_profile(series, "author"), SERIES[series].get("author_job_id")))
+                    continue
+                return {**failure, **({"blocked": errors} if errors else {})}
             else:
-                return {"ok": True, "action": "none", "reason": exc.reason, "phase": action.phase}
-        except Exception as exc:
-            reason = exc.reason if isinstance(exc, ActionFailure) else "action_exception"
-            return {"ok": False, "action": "none", "reason": reason, "phase": action.phase}
-        else:
-            return {"ok": True, "action": "triggered", "phase": action.phase,
-                    "series": [barrier.series for barrier in action.barriers]}
-    try:
-        preflight(action)
-    except ActionFailure as exc:
-        return {"ok": False, "action": "none", "reason": exc.reason,
-                "phase": action.phase, "job_id": action.job_id}
-    if not ledger.claim(day, action):
+                return {"ok": True, "action": "triggered", "phase": action.phase,
+                        "series": [barrier.series for barrier in action.barriers],
+                        **({"blocked": errors} if errors else {})}
+        try:
+            preflight(action)
+        except ActionFailure as exc:
+            errors.append({"ok": False, "action": "none", "reason": exc.reason,
+                           "phase": action.phase, "job_id": action.job_id})
+            continue
+        route = (_action_profile(action), action.job_id) if action.phase == "author" else None
+        if route in exhausted_author_routes:
+            # Shared author-input selects its own oldest issue. Dispatching it
+            # for a sibling would silently bypass the exhausted issue's limit.
+            errors.append({"ok": False, "action": "none", "reason": "shared_author_scope_exhausted",
+                           "phase": action.phase, "job_id": action.job_id,
+                           "series": [barrier.series for barrier in action.barriers]})
+            continue
+        if ledger.claim(day, action):
+            break
         exhausted = ledger.exhausted(day, action)
         if exhausted:
-            return {"ok": False, "action": "none", "reason": "retry_exhausted", "phase": action.phase,
-                    "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key", **input_feedback}
-        return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase, **input_feedback}
+            errors.append({"ok": False, "action": "none", "reason": "retry_exhausted", "phase": action.phase,
+                           "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key", **input_feedback})
+            continue
+        return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase, **input_feedback,
+                **({"blocked": errors} if errors else {})}
+    else:
+        if errors:
+            return {**errors[0], **({"blocked": errors[1:]} if len(errors) > 1 else {})}
+        return {"ok": reason in {"complete", "awaiting_release", "awaiting_platform_author"},
+                "action": "none", "reason": reason, "missing": sorted(missing)}
     try:
         run_action(action)
     except Exception as exc:

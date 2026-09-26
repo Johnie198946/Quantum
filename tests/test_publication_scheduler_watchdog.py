@@ -1120,3 +1120,137 @@ def test_native_revision_budget_failure_is_actionable(monkeypatch):
                         subprocess.CompletedProcess(args[0], 1, "", "publication workflow handoff failed: native content revision budget exhausted"))
     with pytest.raises(watchdog.ActionFailure, match="native_content_revision_exhausted"):
         watchdog._run_action(action)
+
+
+@pytest.mark.parametrize("shared_job", [False, True])
+def test_exhausted_native_author_skips_to_another_job_without_reset(tmp_path, monkeypatch, shared_job):
+    next_job = "history-author" if shared_job else "practice-author"
+    for name, job in [("ai-history", "history-author"), ("ai-practice", next_job)]:
+        monkeypatch.setitem(watchdog.SERIES, name, {**watchdog.SERIES[name], "author_job_id": job, "assets_job_id": "assets"})
+    watchdog.JOBS_FILE.write_text(json.dumps({"jobs": [{"id": name} for name in ["history-author", "practice-author"]]}))
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    native, _ = watchdog._plan(DAY, {"ai-history"}, [])
+    author = watchdog.Action("author", native.barriers, job_id="history-author")
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(DAY, author)
+        ledger.finish(DAY, author, "failed")
+    calls = []
+    def runner(action):
+        calls.append(action)
+        if action.phase == "native_fetch":
+            raise watchdog.ActionPending("awaiting_native_author", {"reason": "deterministic_preflight"})
+    result = watchdog.supervise(DAY, status=lambda: summary("ai-history", "ai-practice"), load_items=lambda: [],
+                                blockers=lambda _: [], run_action=runner, claims=ledger)
+    assert result["action"] == "triggered" and result["series"] == ["ai-practice"]
+    assert result["blocked"][0]["reason"] == "retry_exhausted"
+    assert result["blocked"][0]["idempotency_keys"] == [ledger.key(DAY, "author", native.barriers[0])]
+    assert [action.job_id for action in calls if action.phase == "author"] == [next_job]
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT state,attempts FROM recovery_claims WHERE series='ai-history'").fetchone() == ("failed", 6)
+
+
+def test_native_revision_exhaustion_skips_independent_job_but_fences_shared_job(tmp_path, monkeypatch):
+    for name in ["ai-history", "ai-practice", "concept-fables"]:
+        monkeypatch.setitem(watchdog.SERIES, name, {**watchdog.SERIES[name], "assets_job_id": "assets"})
+    monkeypatch.setitem(watchdog.SERIES, "concept-fables", {**watchdog.SERIES["concept-fables"], "author_job_id": "independent"})
+    watchdog.JOBS_FILE.write_text(json.dumps({"jobs": [{"id": "5a3f2a2eb988"}, {"id": "independent"}]}))
+    calls = []
+    def runner(action):
+        calls.append(action)
+        if action.phase == "native_fetch":
+            if action.barriers[0].series == "ai-history":
+                raise watchdog.ActionFailure("native_content_revision_exhausted")
+            raise watchdog.ActionPending("awaiting_native_author")
+    result = watchdog.supervise(DAY, status=lambda: summary("ai-history", "ai-practice", "concept-fables"),
+                                load_items=lambda: [], blockers=lambda _: [], run_action=runner,
+                                claims=watchdog.Claims(tmp_path / "claims.db"))
+    assert result["series"] == ["concept-fables"]
+    assert {item["reason"] for item in result["blocked"]} == {"native_content_revision_exhausted", "shared_author_scope_exhausted"}
+    assert [action.job_id for action in calls if action.phase == "author"] == ["independent"]
+
+
+def test_exhaustion_readback_is_readonly_and_does_not_create_missing_db(tmp_path, monkeypatch):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("author", (watchdog.Barrier("ai-history", "a" * 64),))
+    assert ledger.exhausted(DAY, action) == [] and not ledger.path.exists()
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "failed")
+    monkeypatch.setattr(ledger, "_connect", lambda: pytest.fail("readback must not open writer connection"))
+    assert ledger.exhausted(DAY, action) == []
+
+
+@pytest.mark.parametrize("include_release_at", [True, False])
+def test_shared_native_job_claim_matches_author_earliest_slot(tmp_path, monkeypatch, include_release_at):
+    from backend.services.knowledge_publication_store import SERIES as catalog, publication_slot
+    from scripts import publication_workflow_handoff as handoff
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(handoff, "native_output_root", lambda: tmp_path / "outputs")
+    slots = []
+    for name, time in [("ai-history", "18:00"), ("ai-practice", "08:00")]:
+        spec = {**watchdog.SERIES[name], "author_job_id": "shared-author", "assets_job_id": "assets", "release_times": [time]}
+        monkeypatch.setitem(watchdog.SERIES, name, spec)
+        monkeypatch.setitem(catalog, name, {**catalog[name], **spec})
+        slots.append({"series_id": name, "issue_date": DAY, **publication_slot(name, DAY, time)})
+    watchdog.JOBS_FILE.write_text(json.dumps({"jobs": [{"id": "shared-author"}]}))
+    snapshot = summary("ai-history", "ai-practice")
+    for row in slots:
+        slot = {**row, "published": 0}
+        if not include_release_at:
+            del slot["release_at"]
+        snapshot["today"]["by_series"][row["series_id"]]["slots"] = [slot]
+    class Remote:
+        def operator(self, action):
+            return {"expected_issues": slots, "items": []}
+    requests = []
+    claims = []
+    def runner(action):
+        if action.phase == "native_fetch":
+            raise watchdog.ActionPending("awaiting_native_author")
+        packet = handoff.author_input(action.job_id, "default", Remote(), now=datetime.fromisoformat(DAY + "T01:00:00+08:00"))
+        requests.append(json.loads(packet.splitlines()[1]))
+        claims.append(action.barriers[0])
+    result = watchdog.supervise(DAY, status=lambda: snapshot, load_items=lambda: [], blockers=lambda _: [],
+                                run_action=runner, claims=watchdog.Claims(tmp_path / "claims.db"))
+    assert result["series"] == ["ai-practice"]
+    assert (claims[0].series, claims[0].issue_key) == (requests[0]["series_id"], requests[0]["issue_key"])
+    assert requests[0]["issue_slot"] == "08:00"
+
+
+def test_manifest_scan_preserves_retired_nonnoon_slot_without_blocking_current(tmp_path):
+    path = local_manifest(tmp_path)
+    bundle_path = path.parent / "bundle.json"
+    bundle = json.loads(bundle_path.read_text())
+    bundle["release_at"] = DAY + "T00:01:00+08:00"
+    bundle_path.write_text(json.dumps(bundle))
+    assert watchdog.SERIES["ai-history"]["release_times"] == ["12:00"]
+    historical = watchdog._manifest_items(tmp_path)
+    assert historical[0].issue_key == DAY + "T00:01"
+    current = item("ai-history", "prepared", digest="d" * 64)
+    action, reason = watchdog._plan(DAY, {"ai-history"}, [*historical, current], issue_key=DAY)
+    assert reason == "ready" and action.manifest == current.manifest
+
+
+def test_shared_review_uses_release_order_and_skips_exact_exhaustion(tmp_path, monkeypatch):
+    from dataclasses import replace
+    for name, slot in [("ai-history", "18:00"), ("ai-practice", "08:00")]:
+        monkeypatch.setitem(watchdog.SERIES, name, {**watchdog.SERIES[name], "release_times": [slot]})
+    late = replace(item("ai-history", "await_review"), manifest=Path("/a-late/draft-manifest.json"), issue_key=DAY + "T18:00")
+    early = replace(item("ai-practice", "await_review"), manifest=Path("/z-early/draft-manifest.json"), issue_key=DAY + "T08:00")
+    snapshot = summary("ai-history", "ai-practice")
+    for row in [late, early]:
+        snapshot["today"]["by_series"][row.series]["slots"] = [{"issue_key": row.issue_key, "published": 0}]
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    calls = []
+    def invoke():
+        return watchdog.supervise(DAY, status=lambda: snapshot, load_items=lambda: [late, early],
+                                   blockers=lambda _: [], run_action=lambda action: calls.append(action), claims=ledger)
+    result = invoke()
+    assert result["series"] == ["ai-practice"] and calls[-1].manifest == early.manifest
+    key = ledger.key(DAY, "review", calls[-1].barriers[0])
+    with sqlite3.connect(ledger.path) as db:
+        db.execute("UPDATE recovery_claims SET state='failed',attempts=? WHERE idempotency_key=?", (ledger.MAX_ATTEMPTS, key))
+    result = invoke()
+    assert result["series"] == ["ai-history"] and calls[-1].manifest == late.manifest
+    assert any(error.get("idempotency_keys") == [key] for error in result["blocked"])
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts,state FROM recovery_claims WHERE idempotency_key=?", (key,)).fetchone() == (6, "failed")
