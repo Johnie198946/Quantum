@@ -61,7 +61,21 @@
   },
   "tutorial_supply": {
     "collection_schedule": "0 1 * * *",
-    "compilation_deadline": "03:00:00",
+    "collection_contract": "success_when_at_least_one_usable_candidate_exists",
+    "collection_category_coverage": "optional_per_issue",
+    "collection_receipt_deadline": "02:00:00",
+    "wiki_compilation_window": {
+      "starts_after_collection_receipt": true,
+      "target_complete_by": "03:00:00",
+      "blocks_authoring": false,
+      "truth_states": ["saved", "queued", "compiled"]
+    },
+    "author_input_freeze_time": "08:05:00",
+    "author_input_precedence": [
+      "current_cycle_candidates_compiled_to_canonical_wiki",
+      "existing_authorized_current_canonical_wiki"
+    ],
+    "author_must_not_read_collection_receipt_as_content": true,
     "author_schedule": "5 8,14,18 * * *",
     "minimum_usable_candidates": 1,
     "category_coverage_is_optional": true,

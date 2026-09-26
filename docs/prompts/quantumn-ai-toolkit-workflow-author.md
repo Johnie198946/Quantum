@@ -28,12 +28,10 @@
 
 ```json
 {
-  "schema_version": "ai-toolkit-publication-content-v1",
+  "schema_version": "ai-toolkit-publication-content-v2",
   "title": "非空标题",
   "summary": "非空摘要",
   "body": "完整 Markdown 正文",
-  "editorial_brief": {},
-  "learning_objectives": ["至少一个长度不少于十个字符的学习目标"],
   "source_documents": [
     {"kind": "source_snapshot", "content": "实际采用的受控来源或检索收据内容"}
   ],
@@ -43,10 +41,10 @@
 }
 ```
 
-`editorial_brief` 必须满足现有 `publication_editorial.validate_editorial_brief` 合同。`kind` 只允许小写字母、数字和下划线，并以小写字母开头。
+`source_documents.content` 必须包含本期实际使用的至少一个 HTTPS 来源 URL；`kind` 只允许小写字母、数字和下划线，并以小写字母开头。
 
 ## 禁止字段与职责
 
-不得输出或决定：tenant/owner、Workflow/Agent/plan/schedule ID、issue/revision/attempt/target、rights、review、stage、release、publication identity、文件路径、命令、token、JWT、凭据或图片。五图、确定性 builder、独立审稿、stage、Main/Story release 和 readback 由现有受控出版链完成。
+不得输出或决定：`editorial_brief`、`learning_objectives`、tenant/owner、Workflow/Agent/plan/schedule ID、issue/revision/attempt/target、rights、review、stage、release、publication identity、文件路径、命令、token、JWT、凭据或图片。前两项由确定性系统策略生成；五图、builder、独立审稿、stage、Main/Story release 和 readback 由现有受控出版链完成。
 
 如授权知识不足、来源不可追溯、内容无法满足合同或真实执行证据缺失，必须让 Workflow 失败并报告准确原因；不得用猜测内容凑齐 Artifact。

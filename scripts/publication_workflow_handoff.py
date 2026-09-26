@@ -32,6 +32,7 @@ except ImportError:
 from backend.services.publication_workflow_handoff import (
     PublicationHandoffError,
     canonical_json,
+    publication_system_fields,
     validate_ai_toolkit_artifact,
 )
 
@@ -179,6 +180,7 @@ def _verify_existing_output(
     if target.is_symlink() or not target.is_dir():
         raise PublicationHandoffError("handoff output path conflicts")
     content = validate_ai_toolkit_artifact(artifact_raw)
+    system_fields = publication_system_fields(content)
     source_entries = []
     execution_entries = []
     expected = {
@@ -205,8 +207,8 @@ def _verify_existing_output(
         {
             "title": content["title"],
             "summary": content["summary"],
-            "editorial_brief": content["editorial_brief"],
-            "learning_objectives": content["learning_objectives"],
+            "editorial_brief": system_fields["editorial_brief"],
+            "learning_objectives": system_fields["learning_objectives"],
             "source_files": source_entries,
             "execution_files": execution_entries,
         }
@@ -229,6 +231,7 @@ def materialize_export(
         return value
     envelope, envelope_raw, artifact_raw = _validate_export(value, expected_schedule_id)
     content = validate_ai_toolkit_artifact(artifact_raw)
+    system_fields = publication_system_fields(content)
     root = Path(output_root).expanduser().absolute()
     if root.is_symlink():
         raise PublicationHandoffError("output root must not be a symlink")
@@ -297,8 +300,8 @@ def materialize_export(
             submission = {
                 "title": content["title"],
                 "summary": content["summary"],
-                "editorial_brief": content["editorial_brief"],
-                "learning_objectives": content["learning_objectives"],
+                "editorial_brief": system_fields["editorial_brief"],
+                "learning_objectives": system_fields["learning_objectives"],
                 "source_files": source_entries,
                 "execution_files": execution_entries,
             }

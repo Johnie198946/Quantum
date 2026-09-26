@@ -13,7 +13,7 @@
 - 文件字节与 state/envelope 中的 SHA-256 一致；
 - 同一天存在多个不同 active artifact 时停止并报告冲突，不猜测。
 
-禁止直接读取 Desktop/Vault，禁止重新研究、重写、补写或润色正文。标题、摘要、正文、editorial brief、learning objectives 和来源/执行材料必须保持 Workflow Artifact 的确定性投影。
+禁止直接读取 Desktop/Vault，禁止重新研究、重写、补写或润色正文。标题、摘要、正文和来源/执行材料必须保持 Workflow Artifact 的确定性投影；editorial brief 与 learning objectives 由已安装的确定性系统策略生成，资产 Agent 不得填写或修改。
 
 ## 资产职责
 

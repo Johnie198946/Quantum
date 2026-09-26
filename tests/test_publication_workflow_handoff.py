@@ -35,6 +35,7 @@ from backend.services.publication_workflow_handoff import (
     acknowledge_publication_handoff,
     canonical_json,
     export_publication_handoff,
+    publication_system_fields,
     request_publication_revision,
     validate_ai_toolkit_artifact,
 )
@@ -42,19 +43,19 @@ from backend.services.workflow_artifacts import store_artifact
 from scripts import publication_editorial_remote
 from scripts.publication_workflow_handoff import DB_FILE, materialize_export
 from publication_editorial_fixture import approve_fixture
-from test_publication_editorial import synthetic_brief
 from test_publication_editorial_workflow import draft
 
 
 def artifact_value() -> dict:
     return {
-        "schema_version": "ai-toolkit-publication-content-v1",
+        "schema_version": "ai-toolkit-publication-content-v2",
         "title": "合成工具教程",
         "summary": "仅用于验证工作流到出版系统的内容交接。",
         "body": "## 合成工具教程\n\n" + "本段只用于自动化契约验证。" * 300,
-        "editorial_brief": synthetic_brief("tutorial"),
-        "learning_objectives": ["仅供合成测试验证内容交接，不代表真实教程质量"],
-        "source_documents": [{"kind": "source_snapshot", "content": '{"synthetic":true}'}],
+        "source_documents": [{
+            "kind": "source_snapshot",
+            "content": "Synthetic source: https://example.org/ai-toolkit-source",
+        }],
         "execution_documents": [{"kind": "execution_log", "content": "synthetic execution only"}],
     }
 
@@ -220,10 +221,14 @@ def prepare_publication(store: PublicationStore, export: dict, tmp_path):
     value["series_id"] = "ai-toolkit"
     value["title"] = content["title"]
     value["summary"] = content["summary"]
+    system_fields = publication_system_fields(content)
+    value["references"] = [
+        {"title": f"Evidence {index}", "url": url}
+        for index, url in enumerate(system_fields["editorial_brief"]["evidence_urls"], 1)
+    ]
     value["quality_contract"] = {
         **value["quality_contract"],
-        "editorial_brief": content["editorial_brief"],
-        "learning_objectives": content["learning_objectives"],
+        **system_fields,
     }
     value["source_receipts"].extend(
         [
@@ -249,10 +254,14 @@ def reject_publication(store: PublicationStore, export: dict, tmp_path):
     content = validate_ai_toolkit_artifact(artifact_raw)
     value = draft(store, body=content["body"])
     value.update(series_id="ai-toolkit", title=content["title"], summary=content["summary"])
+    system_fields = publication_system_fields(content)
+    value["references"] = [
+        {"title": f"Evidence {index}", "url": url}
+        for index, url in enumerate(system_fields["editorial_brief"]["evidence_urls"], 1)
+    ]
     value["quality_contract"] = {
         **value["quality_contract"],
-        "editorial_brief": content["editorial_brief"],
-        "learning_objectives": content["learning_objectives"],
+        **system_fields,
     }
     value["source_receipts"].extend([
         store.ingest_file(envelope_path, "workflow_handoff_envelope"),
@@ -288,6 +297,26 @@ def test_content_schema_rejects_unknown_authority_fields_and_non_json():
         validate_ai_toolkit_artifact(canonical_json(value))
     with pytest.raises(PublicationHandoffError, match="UTF-8 JSON"):
         validate_ai_toolkit_artifact(b"not-json")
+
+
+def test_system_fields_are_deterministic_and_forbidden_in_writer_artifact():
+    content = artifact_value()
+    first = publication_system_fields(validate_ai_toolkit_artifact(canonical_json(content)))
+    second = publication_system_fields(copy.deepcopy(content))
+    assert first == second
+    assert first["editorial_brief"]["evidence_urls"] == [
+        "https://example.org/ai-toolkit-source"
+    ]
+    assert len(first["learning_objectives"]) == 3
+
+    content["editorial_brief"] = first["editorial_brief"]
+    with pytest.raises(PublicationHandoffError, match="forbidden"):
+        validate_ai_toolkit_artifact(canonical_json(content))
+
+    no_source = artifact_value()
+    no_source["source_documents"][0]["content"] = "no URL"
+    with pytest.raises(PublicationHandoffError, match="no HTTPS source"):
+        validate_ai_toolkit_artifact(canonical_json(no_source))
 
 
 @pytest.mark.asyncio

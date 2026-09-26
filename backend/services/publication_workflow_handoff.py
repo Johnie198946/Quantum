@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +39,7 @@ from backend.services.workflow_scheduler import (
     SCHEDULE_HANDLER_VERSION,
 )
 
-SCHEMA_VERSION = "ai-toolkit-publication-content-v1"
+SCHEMA_VERSION = "ai-toolkit-publication-content-v2"
 MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 KIND = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
@@ -47,8 +48,6 @@ TOP_LEVEL_FIELDS = {
     "title",
     "summary",
     "body",
-    "editorial_brief",
-    "learning_objectives",
     "source_documents",
     "execution_documents",
 }
@@ -92,16 +91,6 @@ def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
         item = value[field]
         if not isinstance(item, str) or not item.strip() or len(item.encode("utf-8")) > limit:
             raise PublicationHandoffError(f"workflow artifact {field} is invalid")
-    objectives = value["learning_objectives"]
-    if (
-        not isinstance(objectives, list)
-        or not 1 <= len(objectives) <= 32
-        or any(not isinstance(item, str) or len(item.strip()) < 10 or len(item) > 1000 for item in objectives)
-    ):
-        raise PublicationHandoffError("workflow artifact learning objectives are invalid")
-    brief = value["editorial_brief"]
-    if validate_editorial_brief(brief):
-        raise PublicationHandoffError("workflow artifact editorial brief is invalid")
     for field, require_item in (("source_documents", True), ("execution_documents", False)):
         documents = value[field]
         if (
@@ -121,7 +110,53 @@ def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
                 or len(document["content"].encode("utf-8")) > MAX_ARTIFACT_BYTES
             ):
                 raise PublicationHandoffError(f"workflow artifact {field} entry is invalid")
+    publication_system_fields(value)
     return value
+
+
+def publication_system_fields(content: dict[str, Any]) -> dict[str, Any]:
+    """Generate publication policy fields without involving the writing Agent."""
+    urls: list[str] = []
+    for document in content.get("source_documents", []):
+        for token in re.findall(r"https://[^\s<>\]\[(){}\"']+", document.get("content", "")):
+            candidate = token.rstrip(".,;:!?，。；：！？")
+            try:
+                parsed = urlsplit(candidate)
+            except ValueError:
+                continue
+            if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password:
+                if candidate not in urls:
+                    urls.append(candidate)
+    if not urls:
+        raise PublicationHandoffError("workflow artifact has no HTTPS source evidence")
+    title = content["title"].strip()
+    brief = {
+        "genre": "tutorial",
+        "question": f"普通读者如何按照《{title}》完成一个可复现、可验收的真实任务？",
+        "thesis": "本教程必须用逐步操作、可复制输入、预期结果和验收标准证明任务可完成，并明确失败恢复路径。",
+        "reader_value": "读者可以在不依赖隐含配置的前提下复现流程、核对结果，并判断何时应停止或改用其他方案。",
+        "novelty": "价值不在罗列功能，而在把真实任务、操作步骤、证据、边界条件和验收方法编排成闭环。",
+        "counterargument": "工具能力、账号权限、地区供应、成本与界面可能变化，因此教程不能把单次结果承诺为普遍结论。",
+        "uncertainties": [
+            "厂商界面、套餐、模型能力和地区可用性可能在发表后发生变化。",
+            "未由执行证据覆盖的步骤只能作为操作说明，不能宣称已经实测成功。",
+        ],
+        "evidence_urls": urls[:20],
+        "selection_reason": "候选材料至少包含一个可追溯来源，且能够支撑面向普通读者的完整任务教程。",
+    }
+    reasons = validate_editorial_brief(brief)
+    if reasons:
+        raise PublicationHandoffError(
+            f"deterministic editorial brief is invalid: {','.join(reasons)}"
+        )
+    return {
+        "editorial_brief": brief,
+        "learning_objectives": [
+            "按教程步骤完成一个真实任务，并得到可以回读和核对的输出结果。",
+            "使用明确的验收标准判断结果是否合格，而不是把命令成功当成任务成功。",
+            "识别失败恢复、隐私、成本、账号权限和地区可用性边界。",
+        ],
+    }
 
 
 def _schedule_contract_valid(schedule: WorkflowSchedule) -> bool:
@@ -277,13 +312,14 @@ def verify_publication_staged(
         contract = normalized.get("quality_contract")
         if not isinstance(contract, dict) or contract.get("attempt_id") != attempt_id:
             raise PublicationHandoffError("publication attempt binding mismatch")
+        system_fields = publication_system_fields(workflow_content)
         if (
             normalized.get("series_id") != "ai-toolkit"
             or normalized.get("title") != workflow_content["title"]
             or normalized.get("summary") != workflow_content["summary"]
             or normalized.get("body") != workflow_content["body"]
-            or contract.get("editorial_brief") != workflow_content["editorial_brief"]
-            or contract.get("learning_objectives") != workflow_content["learning_objectives"]
+            or contract.get("editorial_brief") != system_fields["editorial_brief"]
+            or contract.get("learning_objectives") != system_fields["learning_objectives"]
         ):
             raise PublicationHandoffError("publication content does not match the workflow artifact")
         expected_receipts = {
@@ -505,13 +541,14 @@ def _verify_terminal_rejection(
         contract = normalized.get("quality_contract")
         if not isinstance(contract, dict) or contract.get("attempt_id") != attempt_id:
             raise PublicationHandoffError("publication attempt binding mismatch")
+        system_fields = publication_system_fields(workflow_content)
         if (
             normalized.get("series_id") != "ai-toolkit"
             or normalized.get("title") != workflow_content["title"]
             or normalized.get("summary") != workflow_content["summary"]
             or normalized.get("body") != workflow_content["body"]
-            or contract.get("editorial_brief") != workflow_content["editorial_brief"]
-            or contract.get("learning_objectives") != workflow_content["learning_objectives"]
+            or contract.get("editorial_brief") != system_fields["editorial_brief"]
+            or contract.get("learning_objectives") != system_fields["learning_objectives"]
         ):
             raise PublicationHandoffError("publication content does not match the workflow artifact")
         required_receipts = {
