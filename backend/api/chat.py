@@ -301,6 +301,7 @@ class ClientSessionContext(BaseModel):
     # a tenant Wiki source.
     local_notes: List[LocalNoteContext] = Field(default_factory=list, max_length=50)
     active_document_note_id: Optional[str] = Field(None, min_length=1, max_length=128)
+    note_illustration_v1: bool = False
     learning_exercise_id: Optional[str] = Field(None, pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
@@ -1504,6 +1505,9 @@ async def _authorize_knowledge_action_event(
     action_id = str(event.get("action_id") or "")
     if not action_id:
         raise ValueError("knowledge_action_draft missing action_id")
+    steps = event.get("steps") or []
+    if any(isinstance(step, dict) and step.get("kind") == "illustrate_note" for step in steps) and len(steps) != 1:
+        raise ValueError("illustration_requires_single_step")
     known_hashes = {
         str(note.get("id")): note.get("content_hash")
         for note in (client_context or {}).get("local_notes") or []
@@ -1513,6 +1517,10 @@ async def _authorize_knowledge_action_event(
     for step in event.get("steps") or []:
         if not isinstance(step, dict):
             continue
+        from backend.services.knowledge_action_capability import note_presentation_fields
+        presentation = note_presentation_fields(step)
+        if presentation and not (client_context or {}).get("note_illustration_v1"):
+            raise ValueError("note_client_upgrade_required")
         note_id = step.get("target_note_id")
         if step.get("kind") == "merge_notes":
             # Do not sign legacy source-only merges, even when an event bypasses

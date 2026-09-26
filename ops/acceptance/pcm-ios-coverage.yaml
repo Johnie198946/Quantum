@@ -2094,6 +2094,124 @@ features:
     evidence: null
   status: partial
 
+- ios_user_function: Generate contextual note illustrations after one confirmation.
+    Read the complete note first. Empty anchor chooses positions automatically; otherwise
+    use the exact unique paragraph, or overview/stop:N for travel. insert=true only
+    when the user requests insertion; false previews. Retry uses retry_run_id and
+    reuses successes. Never invent image paths.
+  capability: knowledge.note.illustration.generate
+  event: knowledge.action@1
+  renderer: knowledge_action@1
+  handler: knowledge.illustration.action
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-confirmed-mutation
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
+- ios_user_function: Read the current user’s latest durable illustration generation
+    status for a note. Generation completion does not prove insertion on a device.
+    Use returned run_id for cancel/retry/apply/undo.
+  capability: knowledge.note.illustration.status
+  event: knowledge.note@1
+  renderer: answer@1
+  handler: knowledge.illustration.status
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-owner
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
+- ios_user_function: Stop a specific note illustration job; an in-flight provider
+    request may still finish but its result must not be applied.
+  capability: knowledge.note.illustration.cancel
+  event: knowledge.action@1
+  renderer: knowledge_action@1
+  handler: knowledge.illustration.action
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-confirmed-mutation
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
+- ios_user_function: Insert the reviewed illustrations from the specified completed
+    job using note version checks.
+  capability: knowledge.note.illustration.apply
+  event: knowledge.action@1
+  renderer: knowledge_action@1
+  handler: knowledge.illustration.action
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-confirmed-mutation
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
+- ios_user_function: Remove only image references from the specified previously applied
+    batch; preserve subsequent writing.
+  capability: knowledge.note.illustration.undo
+  event: knowledge.action@1
+  renderer: knowledge_action@1
+  handler: knowledge.illustration.action
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-confirmed-mutation
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
+- ios_user_function: Enable or disable automatic illustrations for this note on the
+    current device. Does not generate an image.
+  capability: knowledge.note.illustration.configure
+  event: knowledge.action@1
+  renderer: knowledge_action@1
+  handler: knowledge.illustration.action
+  consumer: ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus
+  qws_consumer: scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool
+  policy: personal-knowledge-confirmed-mutation
+  automated_tests:
+  - tests/test_note_illustration_capabilities.py
+  - ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial
+  notes: Local iOS implementation; new write fields require note_illustration_v1.
+    QWS without this negotiation fails closed. No deployment or production receipt.
+
 - ios_user_function: Compare two selected personal notes and review an explicit merge result in Chat or cleanup.
   capability: knowledge.note.compare
   event: knowledge.results@1

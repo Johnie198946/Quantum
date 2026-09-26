@@ -293,3 +293,12 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 - 自然语言仍走现有 Hermes/JEV 与 PCM 原生工具；按钮已表达明确意图，无须另建 JEV 或关键词分类器。Bridge 已实现的只读能力同样走统一授权 handler。
 
 生产回执仍标为 unverified；本地测试不替代部署后的功能验收。
+
+
+### 笔记版式与配图
+
+`knowledge.note.create/update` 接受可选 `title`、`tags`、`layout`、`automatic_illustrations`。普通富内容复用 Markdown 提示块（`> [!note]`）、卡片（`> [!abstract]`）、代码围栏和现有 chart 结构；不得编造图表数据或生成图片地址。`layout=travel` 保留结构化行程和未知字段；普通游记可装入可选 journal。必须提供完整目标内容并校验版本。
+
+配图在独立 `note_illustrations.yaml` 注册。生成可自动选位或使用读到的完整唯一段落／旅行 overview、stop:N 锚点；`insert=false` 仅预览，明确要求插入时可为 true。重试绑定原 run_id，停止、应用、撤销均绑定具体 run_id。配置开关只影响当前设备的该笔记。不得将生成完成等同于笔记已插入。
+
+Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和现有笔记配图 Store；普通保存配图在确认、同步与回执成功之后开始。客户端以签名上下文中的 `note_illustration_v1` 声明支持，旧客户端遇到新字段失败关闭。服务端-only 调用不得绕过 local-note executor；通过 Gateway 提交本地快照时使用 `qcp-ios-notes@1` 协议标识。结果卡复用笔记的持久任务状态、候选预览和按钮，不另建聊天生图状态机。

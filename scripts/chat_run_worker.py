@@ -231,6 +231,21 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
         })
         _run_context.run_id = ""
         return
+    if run_type == "note_illustration":
+        from backend.services.note_illustrations import execute_illustrations
+        done = threading.Event()
+        monitor = threading.Thread(target=_watch_run, args=(store, run_id, [None], done), daemon=True)
+        monitor.start()
+        try:
+            execute_illustrations(store, run)
+        except Exception:
+            if store.get_unchecked(run_id)["status"] not in {"completed", "failed", "cancelled"}:
+                store.append_event(run_id, {"type": "error", "code": "illustration_failed"})
+        finally:
+            done.set()
+            monitor.join(timeout=1)
+            _run_context.run_id = ""
+        return
     stage_spec = None
     if "knowledge_stage" in payload or run_type.startswith("knowledge_"):
         from backend.services.knowledge_run_adapter import validate_execution, KnowledgeRunAdapter

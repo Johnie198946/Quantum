@@ -21,6 +21,7 @@ REQUIRED_CAPABILITY_FIELDS = {
     "implementation_status", "receipt",
 }
 IMPLEMENTED_HANDLERS = {
+    "knowledge.illustration.action", "knowledge.illustration.status",
     "knowledge.compare", "knowledge.search", "knowledge.read", "knowledge.create", "knowledge.update",
     "knowledge.merge", "knowledge.archive", "knowledge.restore",
     "client.knowledge.navigation", "workflow.open", "workflow.status",

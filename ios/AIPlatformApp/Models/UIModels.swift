@@ -585,11 +585,27 @@ public struct KnowledgeActionStep: Codable, Sendable, Hashable, Identifiable {
     public let originalContentHash: String?
     public let sourceContentHashes: [String: String?]?
 
-    public init(kind: String, targetNoteId: String? = nil, sourceNoteIds: [String] = [], title: String? = nil, markdown: String? = nil, tags: [String] = [], pinned: Bool? = nil, linkTitle: String? = nil, originalContentHash: String? = nil, sourceContentHashes: [String: String?]? = nil) {
+    public let layout: String?
+    public let automaticIllustrations: Bool?
+    public let illustrationAction: String?
+    public let illustrationAnchor: String?
+    public let illustrationBrief: String?
+    public let illustrationRunId: String?
+    public let illustrationInsert: Bool?
+
+    public init(kind: String, targetNoteId: String? = nil, sourceNoteIds: [String] = [], title: String? = nil, markdown: String? = nil, tags: [String] = [], pinned: Bool? = nil, linkTitle: String? = nil, originalContentHash: String? = nil, sourceContentHashes: [String: String?]? = nil, layout: String? = nil, automaticIllustrations: Bool? = nil, illustrationAction: String? = nil, illustrationAnchor: String? = nil, illustrationBrief: String? = nil, illustrationRunId: String? = nil, illustrationInsert: Bool? = nil) {
         self.kind = kind; self.targetNoteId = targetNoteId; self.sourceNoteIds = sourceNoteIds
         self.title = title; self.markdown = markdown; self.tags = tags; self.pinned = pinned
         self.linkTitle = linkTitle; self.originalContentHash = originalContentHash
         self.sourceContentHashes = sourceContentHashes
+        self.layout = layout
+        self.automaticIllustrations = automaticIllustrations
+        self.illustrationAction = illustrationAction
+        self.illustrationAnchor = illustrationAnchor
+        self.illustrationBrief = illustrationBrief
+        self.illustrationRunId = illustrationRunId
+        self.illustrationInsert = illustrationInsert
+
     }
 }
 

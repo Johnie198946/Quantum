@@ -1344,7 +1344,30 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "automatic_illustrations": {
+              "type": "boolean"
+            },
+            "layout": {
+              "enum": [
+                "standard",
+                "travel"
+              ],
+              "type": "string"
+            },
             "markdown": {
+              "description": "Complete note body. Supports Markdown images, fenced code, > [!NOTE] callouts, > [!abstract] cards, and fenced chart JSON with title/type/points(label,value)/summary. Use only actual user data; never invent image paths.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "title": {
+              "maxLength": 200,
               "minLength": 1,
               "type": "string"
             }
@@ -1408,16 +1431,39 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "automatic_illustrations": {
+              "type": "boolean"
+            },
             "base_hash": {
               "pattern": "^[0-9a-f]{64}$",
               "type": "string"
             },
+            "layout": {
+              "enum": [
+                "standard",
+                "travel"
+              ],
+              "type": "string"
+            },
             "markdown": {
+              "description": "Complete replacement body, preserving unrelated content and existing image references. Supports Markdown images, callouts, cards, fenced code and chart JSON. Preserve travel JSON unless explicitly changing layout; never invent travel details or image paths.",
               "minLength": 1,
               "type": "string"
             },
             "note_id": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
               "type": "string"
             }
           },
@@ -5411,6 +5457,339 @@
     },
     {
       "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.generate",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches",
+          "note_illustration_v1_client"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.illustration.action",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "anchor": {
+              "maxLength": 16000,
+              "type": "string"
+            },
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "brief": {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            "insert": {
+              "type": "boolean"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            "retry_run_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.status",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "knowledge.note",
+      "handler": "knowledge.illustration.status",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.cancel",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches",
+          "note_illustration_v1_client"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.illustration.action",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            "run_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash",
+            "run_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.apply",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches",
+          "note_illustration_v1_client"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.illustration.action",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            "run_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash",
+            "run_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.undo",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches",
+          "note_illustration_v1_client"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.illustration.action",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            "run_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash",
+            "run_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_note_illustration_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ],
+      "capability": "knowledge.note.illustration.configure",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "base_hash_matches",
+          "note_illustration_v1_client"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "knowledge.action",
+      "handler": "knowledge.illustration.action",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus",
+      "policy": "personal-knowledge-confirmed-mutation",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "scripts/hermes_bridge_runtime/knowledge.py:_app_capability_invoke_tool",
+      "renderer": "knowledge_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "base_hash": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "note_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "note_id",
+            "base_hash",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
         "tests/test_learning_exercises.py",
         "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
       ],
@@ -5781,7 +6160,7 @@
   "counts": {
     "absent": 0,
     "implemented": 67,
-    "partial": 11,
+    "partial": 17,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
@@ -5801,5 +6180,5 @@
   ],
   "scope_version": 2,
   "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
-  "total": 78
+  "total": 84
 }

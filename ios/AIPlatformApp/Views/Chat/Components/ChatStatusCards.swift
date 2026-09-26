@@ -1116,10 +1116,13 @@ public struct KnowledgeActionCard: View {
 
     private var completionView: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            statusStrip("已保存到书架", icon: "checkmark", color: AppTheme.Icons.success)
+            statusStrip("笔记操作已完成", icon: "checkmark", color: AppTheme.Icons.success)
             notePreview
+            ForEach(action.resultNoteIds, id: \.self) { id in
+                ChatNoteIllustrationStatus(noteID: id)
+            }
             HStack(spacing: AppTheme.Spacing.sm) {
-                decisionButton("保存", detail: "已存入书架", icon: "bookmark.fill", selected: true, action: onOpenResult)
+                decisionButton("保存", detail: "已存入笔记", icon: "bookmark.fill", selected: true, action: onOpenResult)
                 decisionButton(
                     "合并",
                     detail: didMerge ? "已与现有笔记合并" : "未执行合并",
@@ -1266,7 +1269,7 @@ public struct KnowledgeActionCard: View {
     }
 
     private func stepLabel(_ kind: String) -> String {
-        ["create_note":"创建笔记", "create_daily_note":"创建日记", "update_note":"修改正文",
+        ["illustrate_note":"笔记配图", "create_note":"创建笔记", "create_daily_note":"创建日记", "update_note":"修改正文",
          "rename_note":"重命名", "set_tags":"修改标签", "set_pinned":"置顶状态",
          "add_wikilink":"增加双链", "remove_wikilink":"移除双链", "merge_notes":"合并笔记",
          "archive_note":"归档", "restore_note":"恢复", "move_to_trash":"移入废纸篓"][kind] ?? kind
@@ -1706,5 +1709,91 @@ struct V4TravelPrototypeHost: View {
         ),
         summary: "创建旅行计划", risk: "将创建新的工作流"
     )
+}
+#endif
+
+
+/// The same persisted job drives the note editor and its Chat result card.
+private struct ChatNoteIllustrationStatus: View {
+    let noteID: String
+    @ObservedObject private var store = KnowledgeNoteStore.shared
+    var body: some View {
+        if let job = store.illustrationJobs[noteID], !job.message.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(job.message, systemImage: store.illustrationIsRunning(noteID) ? "hourglass" : "sparkles")
+                    .font(.subheadline)
+                if !job.applied {
+                    ForEach(job.response?.assets ?? []) { asset in
+                        NoteReadingImage(url: store.vaultDirectory.appendingPathComponent(asset.relativePath), caption: asset.alt)
+                    }
+                }
+                if store.illustrationIsRunning(noteID) {
+                    Button("停止配图", role: .destructive) { store.cancelIllustrations(id: noteID) }
+                } else if !(job.response?.failedIndices.isEmpty ?? true) || job.response?.status == "failed" {
+                    Button("重试失败的配图") {
+                        store.startIllustrations(id: noteID, mode: job.request.mode, retry: true,
+                            insert: job.insertsAutomatically, explicit: true)
+                    }
+                } else if job.response == nil && !job.cancelled {
+                    Button("继续配图") { store.resumeIllustrations(id: noteID) }
+                }
+                if !job.applied, !job.cancelled, !(job.response?.assets.isEmpty ?? true) {
+                    Button("插入笔记") { _ = store.applyIllustrations(id: noteID) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppTheme.Colors.primary)
+                        .foregroundStyle(AppTheme.Colors.onPrimary)
+                }
+                if job.applied && job.undone != true {
+                    Button("撤销本批配图") { store.undoIllustrations(id: noteID) }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(AppTheme.Colors.mistMint.opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
+            .controlSize(.large)
+            .accessibilityIdentifier("chat-note-illustration-status")
+            .task(id: noteID) { store.resumeIllustrations(id: noteID) }
+        }
+    }
+}
+
+#if DEBUG
+struct NoteIllustrationChatPreview: View {
+    @ObservedObject private var store = KnowledgeNoteStore.shared
+    @State private var action: KnowledgeActionBlock?
+    private let noteID = "preview-chat-illustration"
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("为夜读笔记生成插图，先让我看看。")
+                        .font(.body).padding(16).background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: 16))
+                    if let action {
+                        KnowledgeActionCard(action: action, onApply: {}, onDiscard: {}, onOpenResult: {})
+                        Text(store.note(id: noteID)?.body.contains("Attachments/") == true ? "插图已插入，原文保留" : "原文保持不变")
+                            .accessibilityIdentifier("chat-illustration-fixture-result")
+                    }
+                }.padding(20)
+            }
+            .background(AppTheme.Colors.background)
+            .navigationTitle("Chat 配图验收")
+        }
+        .task {
+            guard action == nil,
+                  let image = UIImage(named: "reading_open_book")?.jpegData(compressionQuality: 0.8),
+                  let note = store.createNote(id: noteID, title: "宿舍夜读", body: "在温暖的灯光下，一起读书和交流。") else { return }
+            let asset = NoteIllustrationAsset(runId: String(repeating: "a", count: 32), index: 0, anchor: note.body,
+                alt: "界面验收图片", sha256: NoteIllustrationPlacement.hashData(image), provider: "fixture", model: "fixture")
+            let path = store.vaultDirectory.appendingPathComponent(asset.relativePath)
+            try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? image.write(to: path)
+            let request = NoteIllustrationRequest(noteId: noteID, requestId: "preview-request", title: note.title, content: note.body,
+                sourceHash: NoteIllustrationPlacement.hash(note.body), mode: "manual", anchor: note.body, brief: "暖灯与读书", travel: false)
+            store.illustrationJobs[noteID] = .init(request: request, originalBody: note.body,
+                response: .init(runId: asset.runId, status: "completed", message: "", assets: [asset], failedIndices: [], errorCode: ""), message: "插图已生成，待插入")
+            action = .init(id: "preview-action", summary: "生成插图供预览", steps: [.init(kind: "illustrate_note", targetNoteId: noteID, title: note.title, illustrationAction: "generate")],
+                actionDigest: "preview", transientCapability: nil, expiresAt: 0, state: .synced, resultNoteIds: [noteID])
+        }
+    }
 }
 #endif

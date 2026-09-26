@@ -962,7 +962,7 @@ def _note_draft_tool(args: dict[str, Any], **_kwargs) -> str:
 _KNOWLEDGE_MUTATION_KINDS = {
     "create_note", "create_daily_note", "update_note", "rename_note",
     "set_tags", "set_pinned", "add_wikilink", "remove_wikilink",
-    "merge_notes", "archive_note", "restore_note", "move_to_trash",
+    "merge_notes", "archive_note", "restore_note", "move_to_trash", "illustrate_note",
 }
 
 
@@ -1186,7 +1186,22 @@ def _knowledge_action_propose_tool(args: dict[str, Any], **_kwargs) -> str:
                 }
             ),
         }
+        from backend.services.knowledge_action_capability import note_presentation_fields
+        from backend.services.capability_catalog import CapabilityContractError
+        try:
+            presentation = note_presentation_fields(raw)
+            if presentation and not (context.get("transcript") or {}).get("note_illustration_v1"):
+                return json.dumps({"success": False, "error": "note_client_upgrade_required"})
+            if presentation and target_id:
+                snapshot = notes.get(target_id, {})
+                if snapshot.get("archived") or step.get("original_content_hash") != snapshot.get("content_hash"):
+                    return json.dumps({"success": False, "error": "note_version_conflict"})
+            step.update(presentation)
+        except CapabilityContractError as exc:
+            return json.dumps({"success": False, "error": str(exc)})
         normalized.append(step)
+    if any(step["kind"] == "illustrate_note" for step in normalized) and len(normalized) != 1:
+        return json.dumps({"success": False, "error": "illustration_requires_single_step"})
     summary = str((args or {}).get("summary") or "").strip()[:500]
     if not summary:
         return json.dumps({"success": False, "error": "summary_required"})
@@ -1528,14 +1543,19 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     step = note_capability_step(capability_id, data)
     if step:
         target_id = str(step["target_note_id"] or "")
+        before = ""
         if step["kind"] != "create_note":
             read = json.loads(_knowledge_workspace_read_tool({
                 "operation": "read", "note_id": target_id,
             }))
             if not read.get("success"):
                 return json.dumps(read, ensure_ascii=False)
+            step.setdefault("title", read["note"].get("title"))
+            before = str(read["note"].get("markdown") or "")
+        from backend.services.knowledge_action_capability import note_action_summary
         return _knowledge_action_propose_tool({
-            "summary": f"执行 {capability_id}", "steps": [step],
+            "summary": note_action_summary(step), "steps": [step], "before_preview": before[:2000],
+            "after_preview": (step.get("illustration_brief") or step.get("markdown") or "")[:4000],
             "suggested_navigation": {
                 "destination": "note" if target_id else "knowledge_home",
                 **({"note_id": target_id} if target_id else {}),

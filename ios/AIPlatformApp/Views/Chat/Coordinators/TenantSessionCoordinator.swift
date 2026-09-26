@@ -3528,6 +3528,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("无法保存笔记，请检查本地存储")
             return
         }
+        KnowledgeNoteStore.shared.startIllustrations(id: note.id)
         draft.state = .savedLocally
         draft.savedNoteId = note.id
         messages[messageIndex].blocks[blockIndex] = .noteDraft(draft)

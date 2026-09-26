@@ -830,3 +830,60 @@ async def trash_note(
         "note_id": note_id, "trash_status": "trashed", "changed": True,
         "withdrawn_contribution_event_ids": withdrawn,
     }
+
+
+# Generated media stays private and follows the same authenticated note owner.
+# The Bridge owns durable execution and provider credentials; this API is transport.
+from backend.services.note_illustrations import NoteIllustrationRequest
+
+
+async def _illustration_bridge(payload: dict, path: str, method: str = "GET", body=None):
+    import httpx
+    from fastapi.responses import Response
+    token = os.environ.get("HERMES_BRIDGE_INTERNAL_TOKEN", "")
+    if not token:
+        raise HTTPException(503, "illustration_service_unavailable")
+    tenant, user = str(payload.get("tenant_key") or ""), str(payload.get("user_id") or payload.get("sub") or "")
+    if not tenant or not user:
+        raise HTTPException(403, "owner_context_required")
+    base = os.environ.get("HERMES_BRIDGE_NOTE_ILLUSTRATION_URL", "http://host.docker.internal:9118/v1/note-illustrations").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.request(method, base + path, json=body, headers={
+                "X-Hermes-Internal-Token": token, "X-Tenant-ID": tenant, "X-User-ID": user,
+            })
+    except httpx.HTTPError:
+        raise HTTPException(503, "illustration_service_unavailable") from None
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, "illustration_request_failed")
+    if "/assets/" in path:
+        if len(response.content) > 12 * 1024 * 1024:
+            raise HTTPException(502, "illustration_asset_too_large")
+        return Response(response.content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+    return response.json()
+
+
+@router.post("/illustrations/generate", status_code=202)
+async def generate_note_illustrations(body: NoteIllustrationRequest, payload: dict = Depends(require_auth)):
+    return await _illustration_bridge(payload, "", "POST", body.model_dump())
+
+
+@router.get("/illustrations/{run_id}")
+async def note_illustration_status(run_id: str, payload: dict = Depends(require_auth)):
+    if not re.fullmatch(r"[a-f0-9]{32}", run_id):
+        raise HTTPException(404, "illustration_not_found")
+    return await _illustration_bridge(payload, f"/{run_id}")
+
+
+@router.post("/illustrations/{run_id}/cancel")
+async def cancel_note_illustration(run_id: str, payload: dict = Depends(require_auth)):
+    if not re.fullmatch(r"[a-f0-9]{32}", run_id):
+        raise HTTPException(404, "illustration_not_found")
+    return await _illustration_bridge(payload, f"/{run_id}/cancel", "POST")
+
+
+@router.get("/illustrations/{run_id}/assets/{index}")
+async def note_illustration_asset(run_id: str, index: int, payload: dict = Depends(require_auth)):
+    if not re.fullmatch(r"[a-f0-9]{32}", run_id) or index not in range(3):
+        raise HTTPException(404, "illustration_asset_not_found")
+    return await _illustration_bridge(payload, f"/{run_id}/assets/{index}")

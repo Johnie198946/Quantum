@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `df0760f09c98a71b18c51a789f0328a57e0d910601bdadc3706b72c2d0a4ac7a`
+Catalog digest: `f6d61b36f3a342e72a9eb53cf12d25d7817317f412dfe6b59aeae725e9e68af8`
 
 ## Gateway 核心模块规范
 
@@ -301,6 +301,15 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 
 生产回执仍标为 unverified；本地测试不替代部署后的功能验收。
 
+
+### 笔记版式与配图
+
+`knowledge.note.create/update` 接受可选 `title`、`tags`、`layout`、`automatic_illustrations`。普通富内容复用 Markdown 提示块（`> [!note]`）、卡片（`> [!abstract]`）、代码围栏和现有 chart 结构；不得编造图表数据或生成图片地址。`layout=travel` 保留结构化行程和未知字段；普通游记可装入可选 journal。必须提供完整目标内容并校验版本。
+
+配图在独立 `note_illustrations.yaml` 注册。生成可自动选位或使用读到的完整唯一段落／旅行 overview、stop:N 锚点；`insert=false` 仅预览，明确要求插入时可为 true。重试绑定原 run_id，停止、应用、撤销均绑定具体 run_id。配置开关只影响当前设备的该笔记。不得将生成完成等同于笔记已插入。
+
+Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和现有笔记配图 Store；普通保存配图在确认、同步与回执成功之后开始。客户端以签名上下文中的 `note_illustration_v1` 声明支持，旧客户端遇到新字段失败关闭。服务端-only 调用不得绕过 local-note executor；通过 Gateway 提交本地快照时使用 `qcp-ios-notes@1` 协议标识。结果卡复用笔记的持久任务状态、候选预览和按钮，不另建聊天生图状态机。
+
 ## Capability inventory
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
@@ -331,6 +340,12 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `knowledge.note.archive@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.compare@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.create@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.illustration.apply@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.illustration.cancel@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.illustration.configure@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.illustration.generate@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.illustration.status@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
+| `knowledge.note.illustration.undo@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.merge@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.read@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
@@ -473,6 +488,12 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | Propose replacement dates for one scheduled canonical QWS task. | `schedule.update` | `schedule.change_proposed@1` | `answer@1` | `schedule.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Propose clearing dates from one scheduled canonical QWS task. | `schedule.delete` | `schedule.change_proposed@1` | `answer@1` | `schedule.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Archive or restore versioned conversations on the current device. | `conversation.lifecycle` | `client.action.requested@1` | `client_action@1` | `conversation.lifecycle` | `ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift` | client-action-owner | `tests/test_cleanup_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
+| Generate contextual note illustrations after one confirmation. Read the complete note first. Empty anchor chooses positions automatically; otherwise use the exact unique paragraph, or overview/stop:N for travel. insert=true only when the user requests insertion; false previews. Retry uses retry_run_id and reuses successes. Never invent image paths. | `knowledge.note.illustration.generate` | `knowledge.action@1` | `knowledge_action@1` | `knowledge.illustration.action` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-confirmed-mutation | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
+| Read the current user’s latest durable illustration generation status for a note. Generation completion does not prove insertion on a device. Use returned run_id for cancel/retry/apply/undo. | `knowledge.note.illustration.status` | `knowledge.note@1` | `answer@1` | `knowledge.illustration.status` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-owner | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
+| Stop a specific note illustration job; an in-flight provider request may still finish but its result must not be applied. | `knowledge.note.illustration.cancel` | `knowledge.action@1` | `knowledge_action@1` | `knowledge.illustration.action` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-confirmed-mutation | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
+| Insert the reviewed illustrations from the specified completed job using note version checks. | `knowledge.note.illustration.apply` | `knowledge.action@1` | `knowledge_action@1` | `knowledge.illustration.action` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-confirmed-mutation | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
+| Remove only image references from the specified previously applied batch; preserve subsequent writing. | `knowledge.note.illustration.undo` | `knowledge.action@1` | `knowledge_action@1` | `knowledge.illustration.action` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-confirmed-mutation | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
+| Enable or disable automatic illustrations for this note on the current device. Does not generate an image. | `knowledge.note.illustration.configure` | `knowledge.action@1` | `knowledge_action@1` | `knowledge.illustration.action` | `ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:ChatNoteIllustrationStatus` | personal-knowledge-confirmed-mutation | `tests/test_note_illustration_capabilities.py`, `ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift` | unverified | partial |
 | Compare two selected personal notes and review an explicit merge result in Chat or cleanup. | `knowledge.note.compare` | `knowledge.results@1` | `answer@1` | `knowledge.compare` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation` | personal-knowledge-owner | `tests/test_cleanup_capabilities.py`, `ios/AIPlatformAppTests/CleanupMergeTests.swift`, `ios/AIPlatformAppUITests/CleanupMergeUITests.swift` | unverified | partial |
 
 PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.

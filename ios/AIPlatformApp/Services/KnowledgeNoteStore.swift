@@ -83,10 +83,14 @@ public final class KnowledgeNoteStore: ObservableObject {
 
     @Published public private(set) var notes: [KnowledgeNote] = []
     @Published public private(set) var archivedNotes: [KnowledgeNote] = []
+    @Published public private(set) var trashedNotes: [KnowledgeNote] = []
     @Published public private(set) var index = KnowledgeNoteIndex()
     @Published public private(set) var isLoading = false
     @Published public private(set) var lastError: String?
 
+    @Published var illustrationJobs: [String: NoteIllustrationJob] = [:]
+    var activeNoteDrafts: [String: String] = [:]
+    private var illustrationTasks: [String: Task<Void, Never>] = [:]
     private let fileManager = FileManager.default
     private var tenantNamespace = "unconfigured"
     private var userNamespace = "unconfigured"
@@ -126,18 +130,29 @@ public final class KnowledgeNoteStore: ObservableObject {
         let tenant = Self.namespace(tenantKey)
         let user = Self.namespace(userId)
         guard tenant != tenantNamespace || user != userNamespace else { return }
+        illustrationTasks.values.forEach { $0.cancel() }
+        illustrationTasks.removeAll()
+        illustrationJobs.removeAll()
+        activeNoteDrafts.removeAll()
         notes.removeAll()
         archivedNotes.removeAll()
+        trashedNotes.removeAll()
         index = KnowledgeNoteIndex()
         tenantNamespace = tenant
         userNamespace = user
         accountFingerprint = "\(tenant):\(user)"
         reload()
+        loadIllustrationJobs()
     }
 
     public func deactivate() {
+        illustrationTasks.values.forEach { $0.cancel() }
+        illustrationTasks.removeAll()
+        illustrationJobs.removeAll()
+        activeNoteDrafts.removeAll()
         notes.removeAll()
         archivedNotes.removeAll()
+        trashedNotes.removeAll()
         index = KnowledgeNoteIndex()
         tenantNamespace = "unconfigured"
         userNamespace = "unconfigured"
@@ -158,15 +173,17 @@ public final class KnowledgeNoteStore: ObservableObject {
             try fileManager.createDirectory(at: vaultDirectory, withIntermediateDirectories: true)
             var loaded: [KnowledgeNote] = []
             var archived: [KnowledgeNote] = []
+            var trashed: [KnowledgeNote] = []
             if let enumerator = fileManager.enumerator(
                 at: vaultDirectory,
                 includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
                 options: []
             ) {
                 for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
-                    guard !url.path.contains("/.trash/") else { continue }
                     if let note = try parseNote(at: url) {
-                        if url.path.contains("/.archive/") {
+                        if url.path.contains("/.trash/") {
+                            trashed.append(note)
+                        } else if url.path.contains("/.archive/") {
                             archived.append(note)
                         } else {
                             loaded.append(note)
@@ -177,6 +194,7 @@ public final class KnowledgeNoteStore: ObservableObject {
 
             notes = sorted(loaded)
             archivedNotes = sorted(archived)
+            trashedNotes = sorted(trashed)
             rebuildIndex()
             lastError = nil
         } catch {
@@ -214,6 +232,8 @@ public final class KnowledgeNoteStore: ObservableObject {
     }
 
     private func applyCloudSnapshot(_ snapshot: CloudKnowledgeNoteDTO) throws {
+        // A refresh must not undo a deletion on this device. Restore explicitly.
+        guard !trashedNotes.contains(where: { $0.id == snapshot.noteId }) else { return }
         let sameState = (snapshot.archived ? archivedNotes : notes).filter { $0.id == snapshot.noteId }
         let oppositeState = (snapshot.archived ? notes : archivedNotes).filter { $0.id == snapshot.noteId }
         if let preferred = sameState.first {
@@ -262,6 +282,7 @@ public final class KnowledgeNoteStore: ObservableObject {
     @discardableResult
     public func createNote(id: String = UUID().uuidString.lowercased(), title: String = "无标题", body: String = "", tags: [String] = []) -> KnowledgeNote? {
         if let existing = note(id: id) { return existing }
+        guard !trashedNotes.contains(where: { $0.id == id }) else { return nil }
         let now = Date()
         let note = KnowledgeNote(
             id: id,
@@ -326,9 +347,11 @@ public final class KnowledgeNoteStore: ObservableObject {
         note.title = cleanedTitle.isEmpty ? "无标题" : cleanedTitle
         note.body = body
         note.tags = normalized(tags + extractInlineTags(from: body))
+        if Set(note.tags) == Set(notes[index].tags) { note.tags = notes[index].tags }
         note.isPinned = isPinned
-        note.updatedAt = Date()
         note.outgoingLinks = extractWikiLinks(from: body)
+        guard note != notes[index] else { return notes[index] }
+        note.updatedAt = Date()
 
         if oldTitle != note.title {
             note.fileURL = uniqueURL(for: note.title, excluding: note.fileURL)
@@ -359,8 +382,9 @@ public final class KnowledgeNoteStore: ObservableObject {
     }
 
     /// Recoverable deletion: notes are moved into KnowledgeVault/.trash.
-    public func moveToTrash(id: String) {
-        guard let note = note(id: id) else { return }
+    @discardableResult
+    public func moveToTrash(id: String) -> Bool {
+        guard var note = note(id: id) else { return false }
         do {
             let trash = vaultDirectory.appendingPathComponent(".trash", isDirectory: true)
             try fileManager.createDirectory(at: trash, withIntermediateDirectories: true)
@@ -369,12 +393,47 @@ public final class KnowledgeNoteStore: ObservableObject {
                 destination = trash.appendingPathComponent("\(UUID().uuidString)-\(note.fileURL.lastPathComponent)")
             }
             try fileManager.moveItem(at: note.fileURL, to: destination)
+            note.fileURL = destination
             notes.removeAll { $0.id == id }
+            trashedNotes = sorted(trashedNotes + [note])
             rebuildIndex()
             lastError = nil
+            return true
         } catch {
             lastError = "无法移到废纸篓：\(error.localizedDescription)"
+            return false
         }
+    }
+
+    /// Restores this device's copy without overwriting another note or changing its edit time.
+    @discardableResult
+    public func restoreTrashedNote(id: String) -> KnowledgeNote? {
+        guard let index = trashedNotes.firstIndex(where: { $0.id == id }) else { return nil }
+        guard anyNote(id: id) == nil else {
+            lastError = "已有同一篇笔记，未覆盖现有内容。"
+            return nil
+        }
+        var note = trashedNotes[index]
+        do {
+            let destination = uniqueURL(for: note.title)
+            try fileManager.moveItem(at: note.fileURL, to: destination)
+            note.fileURL = destination
+            trashedNotes.remove(at: index)
+            notes = sorted(notes + [note])
+            rebuildIndex()
+            lastError = nil
+            return note
+        } catch {
+            lastError = "无法恢复笔记：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    public static func parseTags(_ text: String) -> [String] {
+        Array(Set(text.split(whereSeparator: { ",，、".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#")) }
+            .filter { !$0.isEmpty })).sorted()
     }
 
     /// Merged source notes remain recoverable but are excluded from active search and sync.
@@ -760,6 +819,7 @@ private struct KnowledgeActionReceipt: Codable {
 
 @MainActor
 protocol KnowledgeActionSynchronizing: AnyObject {
+    func enqueueIllustrations(store: KnowledgeNoteStore, id: String, step: KnowledgeActionStep, requestID: String)
     func fetchKnowledgeNotes(includeArchived: Bool) async throws -> CloudKnowledgeNotesResponse
     func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, credentialGeneration: UInt64) async throws
     func archiveKnowledgeNote(id: String, mergedIntoNoteId: String?, expectedContentHash: String?) async throws
@@ -774,6 +834,14 @@ protocol KnowledgeActionSynchronizing: AnyObject {
 @MainActor
 private final class LiveKnowledgeActionSynchronizer: KnowledgeActionSynchronizing {
     static let shared = LiveKnowledgeActionSynchronizer()
+
+    func enqueueIllustrations(store: KnowledgeNoteStore, id: String, step: KnowledgeActionStep, requestID: String) {
+        let explicit = step.kind == "illustrate_note"
+        let anchor = step.illustrationAnchor ?? ""
+        store.startIllustrations(id: id, mode: anchor.isEmpty ? "auto" : "manual", anchor: anchor,
+            brief: step.illustrationBrief ?? "", retry: step.illustrationAction == "retry",
+            insert: explicit ? (step.illustrationAction == "retry" ? step.illustrationInsert : step.illustrationInsert ?? false) : nil, requestID: requestID, explicit: explicit)
+    }
 
     func fetchKnowledgeNotes(includeArchived: Bool) async throws -> CloudKnowledgeNotesResponse {
         try await APIClient.shared.fetchKnowledgeNotes(includeArchived: includeArchived)
@@ -864,7 +932,9 @@ public final class KnowledgeActionExecutor {
         guard let capability = validCapability(for: action) else {
             return .init(state: .stale, noteIds: [], message: "确认凭证已失效，请重新生成操作")
         }
-        guard validateTargets(action.steps) else {
+        guard action.steps.filter({ $0.kind == "illustrate_note" }).isEmpty || action.steps.count == 1,
+              action.steps.allSatisfy({ $0.kind != "illustrate_note" || store.canApplyIllustrationStep($0) }),
+              validateTargets(action.steps) else {
             return .init(state: .stale, noteIds: [], message: "笔记已变化，请重新生成修改方案")
         }
 
@@ -966,9 +1036,10 @@ public final class KnowledgeActionExecutor {
             let stableID = Self.stableNoteID(actionId: actionId, index: index)
             switch step.kind {
             case "create_note", "create_daily_note":
-                let body = markdownBody(step.markdown ?? "")
-                let tags = step.kind == "create_daily_note" ? step.tags + ["daily"] : step.tags
+                let presentation = NoteIllustrationPlacement.presented(body: markdownBody(step.markdown ?? ""), tags: step.kind == "create_daily_note" ? step.tags + ["daily"] : step.tags, layout: step.layout)
+                let body = presentation.body, tags = presentation.tags
                 guard let note = store.createNote(id: stableID, title: step.title ?? inferredTitle(step.markdown), body: body, tags: tags) else { throw ActionError.writeFailed }
+                if let enabled = step.automaticIllustrations { store.setAutomaticIllustrations(enabled, id: note.id) }
                 changed.append(note.id)
             case "update_note", "rename_note", "set_tags", "set_pinned", "add_wikilink", "remove_wikilink":
                 guard let id = step.targetNoteId, let note = store.note(id: id) else { throw ActionError.targetMissing }
@@ -978,11 +1049,25 @@ public final class KnowledgeActionExecutor {
                 } else if step.kind == "remove_wikilink", let link = step.linkTitle {
                     body = body.replacingOccurrences(of: "[[\(link)]]", with: link)
                 }
+                let presentation = NoteIllustrationPlacement.presented(body: body,
+                    tags: step.kind == "set_tags" ? step.tags : (step.tags.isEmpty ? note.tags : step.tags), layout: step.layout)
                 guard store.save(
-                    id: id, title: step.title ?? note.title, body: body,
-                    tags: step.kind == "set_tags" ? step.tags : (step.tags.isEmpty ? note.tags : step.tags),
+                    id: id, title: step.title ?? note.title, body: presentation.body,
+                    tags: presentation.tags,
                     isPinned: step.pinned ?? note.isPinned
                 ) != nil else { throw ActionError.writeFailed }
+                if let enabled = step.automaticIllustrations { store.setAutomaticIllustrations(enabled, id: id) }
+                changed.append(id)
+            case "illustrate_note":
+                guard let id = step.targetNoteId else { throw ActionError.targetMissing }
+                switch step.illustrationAction {
+                case "generate", "retry": break // enqueue only after the confirmed receipt is durable
+                case "cancel": store.cancelIllustrations(id: id)
+                case "configure": store.setAutomaticIllustrations(step.automaticIllustrations!, id: id)
+                case "apply": guard store.applyIllustrations(id: id, synchronize: false) else { throw ActionError.targetChanged }
+                case "undo": guard store.undoIllustrations(id: id, synchronize: false) else { throw ActionError.targetChanged }
+                default: throw ActionError.unsupported
+                }
                 changed.append(id)
             case "merge_notes":
                 let body = markdownBody(step.markdown ?? "")
@@ -1062,11 +1147,28 @@ public final class KnowledgeActionExecutor {
                     try await synchronizer.syncKnowledgeNote(id: id, markdown: store.markdown(for: note), updatedAt: note.updatedAt, baseHash: baseHash, credentialGeneration: credentialGeneration)
                 }
             }
+            for step in action.steps where step.kind == "illustrate_note" && ["generate", "retry"].contains(step.illustrationAction ?? "") {
+                guard store.canApplyIllustrationStep(step) else { throw ActionError.targetChanged }
+            }
             try await finalizeLedger(
                 action, capability: capability, status: "synced", noteIds: noteIds
             )
+            for (index, step) in action.steps.enumerated() {
+                let creates = ["create_note", "create_daily_note"].contains(step.kind)
+                let explicit = step.kind == "illustrate_note" && ["generate", "retry"].contains(step.illustrationAction ?? "")
+                if creates || step.kind == "update_note" || explicit {
+                    let id = creates ? Self.stableNoteID(actionId: action.id, index: index) : step.targetNoteId ?? ""
+                    if store.note(id: id) != nil {
+                        synchronizer.enqueueIllustrations(store: store, id: id, step: step, requestID: "action-" + action.id + "-" + String(index))
+                    }
+                }
+            }
             updateReceipt(action, state: .synced, ids: noteIds)
             return .init(state: .synced, noteIds: noteIds, message: nil)
+        } catch ActionError.targetChanged where action.steps.contains(where: { $0.kind == "illustrate_note" }) {
+            try? await finalizeLedger(action, capability: capability, status: "failed", noteIds: noteIds, errorCode: "note_version_changed")
+            updateReceipt(action, state: .stale, ids: noteIds)
+            return .init(state: .stale, noteIds: noteIds, message: "正文已变化，配图尚未开始，请重新确认。")
         } catch {
             guard store.accountFingerprint == expectedFingerprint else {
                 return .init(state: .stale, noteIds: noteIds, message: "账号已切换，旧账号同步已取消")
@@ -1257,5 +1359,311 @@ public final class KnowledgeActionExecutor {
             case .primaryArchived: return "主笔记不能被归档"
             }
         }
+    }
+}
+
+struct NoteIllustrationJob: Codable {
+    var request: NoteIllustrationRequest
+    var originalBody: String
+    var response: NoteIllustrationResponse?
+    var message: String
+    var applied = false
+    var appliedBody: String?
+    var cancelled = false
+    var automaticDisabled = false
+    var insertsAutomatically: Bool?
+    var userRequested: Bool?
+    var undone: Bool?
+}
+
+enum NoteIllustrationPlacement {
+    static func presented(body: String, tags: [String], layout: String?) -> (body: String, tags: [String]) {
+        guard let layout else { return (body, tags) }
+        var updated = tags.filter { !["旅行", "travel", "trip"].contains($0.lowercased()) }
+        if layout == "travel" {
+            updated.append("旅行")
+            let content = travelObject(body) == nil ? json(["stops": [], "journal": body]) ?? body : body
+            return (content, updated)
+        }
+        return (body, updated)
+    }
+    static func hash(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func travelPayload(_ body: String) -> String {
+        let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.hasPrefix("```"), clean.hasSuffix("```"), let newline = clean.firstIndex(of: "\n") else { return clean }
+        return String(clean[clean.index(after: newline)...].dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func travelObject(_ body: String) -> [String: Any]? {
+        let clean = travelPayload(body)
+        guard let data = clean.data(using: .utf8), let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any], value["stops"] is [[String: Any]] else { return nil }
+        return value
+    }
+    static func json(_ value: [String: Any]) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func anchor(in body: String, selection: NSRange) -> String? {
+        let text = body as NSString
+        guard text.length > 0,
+              let expression = try? NSRegularExpression(pattern: #"(?s)(?:^|\n[ \t]*\n)(.+?)(?=\n[ \t]*\n|$)"#) else { return nil }
+        let location = min(max(0, selection.location), text.length - 1)
+        guard let match = expression.matches(in: body, range: NSRange(location: 0, length: text.length)).first(where: { NSLocationInRange(location, $0.range(at: 1)) }) else { return nil }
+        let range = match.range(at: 1)
+        let anchor = text.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = text.substring(to: range.location)
+        let fences = prefix.components(separatedBy: .newlines).filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") || $0.trimmingCharacters(in: .whitespaces).hasPrefix("~~~") }.count
+        guard fences % 2 == 0, !anchor.isEmpty, !anchor.contains("```"), !anchor.contains("~~~"),
+              !anchor.hasPrefix("!["), body.components(separatedBy: anchor).count == 2 else { return nil }
+        return anchor
+    }
+    static func inserting(_ assets: [NoteIllustrationAsset], into body: String, travel: Bool) -> String? {
+        if travel {
+            guard var object = travelObject(body) else { return nil }
+            var images = object["illustrations"] as? [[String: String]] ?? []
+            for asset in assets where !images.contains(where: { $0["path"] == asset.relativePath }) {
+                images.append(["anchor": asset.anchor, "path": asset.relativePath, "alt": asset.alt])
+            }
+            object["illustrations"] = images
+            return json(object)
+        }
+        var result = body
+        for asset in assets {
+            if result.contains(asset.relativePath) { continue }
+            guard !asset.anchor.isEmpty, result.components(separatedBy: asset.anchor).count == 2,
+                  let range = result.range(of: asset.anchor) else { return nil }
+            let alt = asset.alt.replacingOccurrences(of: "[", with: "（").replacingOccurrences(of: "]", with: "）").replacingOccurrences(of: "\n", with: " ")
+            result.insert(contentsOf: "\n\n![\(alt)](\(asset.relativePath))", at: range.upperBound)
+        }
+        return result
+    }
+}
+
+extension KnowledgeNoteStore {
+    private var illustrationLedger: URL { vaultDirectory.appendingPathComponent(".illustrations.json") }
+    private func persistIllustrationJobs() {
+        do {
+            try fileManager.createDirectory(at: vaultDirectory, withIntermediateDirectories: true)
+            try JSONEncoder().encode(illustrationJobs).write(to: illustrationLedger, options: [.atomic, .completeFileProtection])
+        } catch { lastError = "配图进度保存失败，请检查存储空间。" }
+    }
+    func loadIllustrationJobs() {
+        if let data = try? Data(contentsOf: illustrationLedger), let values = try? JSONDecoder().decode([String: NoteIllustrationJob].self, from: data) { illustrationJobs = values }
+        for id in illustrationJobs.keys where note(id: id) != nil { resumeIllustrations(id: id) }
+    }
+    func illustrationIsRunning(_ id: String) -> Bool { illustrationTasks[id] != nil }
+    func automaticIllustrationsEnabled(_ id: String) -> Bool { !(illustrationJobs[id]?.automaticDisabled ?? false) }
+    func setAutomaticIllustrations(_ enabled: Bool, id: String) {
+        guard let note = note(id: id) else { return }
+        if illustrationJobs[id] == nil {
+            var preference = makeIllustrationJob(note, mode: "auto", anchor: "", brief: "")
+            preference.cancelled = true
+            preference.message = ""
+            illustrationJobs[id] = preference
+        }
+        illustrationJobs[id]?.automaticDisabled = !enabled
+        if !enabled && illustrationJobs[id]?.request.mode == "auto" && illustrationTasks[id] != nil { cancelIllustrations(id: id) }
+        persistIllustrationJobs()
+    }
+    private func makeIllustrationJob(_ note: KnowledgeNote, mode: String, anchor: String, brief: String) -> NoteIllustrationJob {
+        let travel = note.tags.contains { ["旅行", "travel", "trip"].contains($0.lowercased()) }
+        let content = travel ? NoteIllustrationPlacement.travelObject(note.body).flatMap(NoteIllustrationPlacement.json) ?? note.body : note.body
+        let hash = NoteIllustrationPlacement.hash(content)
+        return NoteIllustrationJob(request: .init(noteId: note.id, requestId: mode == "auto" ? "auto-" + hash : UUID().uuidString,
+            title: note.title, content: content, sourceHash: hash, mode: mode, anchor: anchor, brief: brief, travel: travel),
+            originalBody: note.body, message: "正在挑选配图位置")
+    }
+    func startIllustrations(id: String, mode: String = "auto", anchor: String = "", brief: String = "", retry: Bool = false, insert: Bool? = nil, requestID: String? = nil, explicit: Bool = false) {
+        guard let note = note(id: id), !note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, illustrationTasks[id] == nil else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-knowledgeHomePreview") { return }
+        #endif
+        if mode == "auto" && !explicit && !automaticIllustrationsEnabled(id) { return }
+        if let requestID, illustrationJobs[id]?.request.requestId == requestID { resumeIllustrations(id: id); return }
+        var job = makeIllustrationJob(note, mode: mode, anchor: anchor, brief: brief)
+        if job.request.travel && NoteIllustrationPlacement.travelObject(note.body) == nil { return }
+        if note.body.count > 48000 {
+            job.message = "笔记超过配图长度上限，请先拆分章节。"
+            illustrationJobs[id] = job; persistIllustrationJobs(); return
+        }
+        if retry, let previous = illustrationJobs[id] {
+            job = previous
+            job.request.retryRunId = previous.response?.runId
+            job.request.requestId = UUID().uuidString
+            job.response = nil
+            job.applied = false
+            job.cancelled = false
+            job.originalBody = note.body
+            job.message = "正在重试配图"
+        } else if mode == "auto", !explicit, let previous = illustrationJobs[id],
+                  (previous.response != nil && previous.request.sourceHash == job.request.sourceHash) || previous.appliedBody == note.body || previous.applied && previous.originalBody == note.body { return }
+        if let requestID { job.request.requestId = requestID }
+        if !retry || insert != nil { job.insertsAutomatically = insert }
+        job.userRequested = explicit
+        job.automaticDisabled = illustrationJobs[id]?.automaticDisabled ?? false
+        illustrationJobs[id] = job
+        persistIllustrationJobs()
+        resumeIllustrations(id: id)
+    }
+    func resumeIllustrations(id: String) {
+        guard illustrationTasks[id] == nil, let job = illustrationJobs[id], !job.applied, !job.cancelled,
+              job.response?.status != "cancelled" else { return }
+        if job.request.mode == "auto" && job.automaticDisabled && job.userRequested != true { return }
+        let account = accountFingerprint
+        let generation = APIClient.shared.currentCredentialGeneration()
+        illustrationTasks[id] = Task { @MainActor in
+            defer { if self.accountFingerprint == account && APIClient.shared.currentCredentialGeneration() == generation && self.illustrationJobs[id]?.request.requestId == job.request.requestId { self.illustrationTasks[id] = nil; self.objectWillChange.send() } }
+            do {
+                var response = job.response
+                if response == nil { response = try await APIClient.shared.generateNoteIllustrations(job.request, generation: generation) }
+                while let current = response {
+                    try Task.checkCancellation()
+                    guard self.accountFingerprint == account, APIClient.shared.currentCredentialGeneration() == generation, self.note(id: id) != nil else { return }
+                    self.illustrationJobs[id]?.response = current
+                    self.illustrationJobs[id]?.message = current.message
+                    self.persistIllustrationJobs()
+                    if ["completed", "failed", "cancelled"].contains(current.status) { break }
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    response = try await APIClient.shared.noteIllustrations(runId: current.runId, generation: generation)
+                }
+                guard let result = response, self.accountFingerprint == account, self.note(id: id) != nil else { return }
+                for asset in result.assets {
+                    _ = try await self.illustrationImage(asset, account: account)
+                }
+                try Task.checkCancellation()
+                guard self.accountFingerprint == account, APIClient.shared.currentCredentialGeneration() == generation else { return }
+                if result.status == "completed" {
+                    self.illustrationJobs[id]?.message = result.assets.isEmpty && result.failedIndices.isEmpty ? "当前内容无需配图" : result.failedIndices.isEmpty ? "插图已生成，待插入" : "部分插图未完成，可重试"
+                    if (job.insertsAutomatically ?? (job.request.mode == "auto")) && !result.assets.isEmpty { _ = self.applyIllustrations(id: id) }
+                } else {
+                    self.illustrationJobs[id]?.message = result.status == "cancelled" ? "已停止配图" : "配图未完成，请重试"
+                }
+                self.persistIllustrationJobs()
+            } catch is CancellationError { } catch {
+                guard self.accountFingerprint == account else { return }
+                self.illustrationJobs[id]?.message = "配图连接未完成，正文已保存。可重试继续。"
+                self.persistIllustrationJobs()
+            }
+        }
+    }
+    func cancelIllustrations(id: String) {
+        illustrationTasks[id]?.cancel(); illustrationTasks[id] = nil
+        if let runId = illustrationJobs[id]?.response?.runId {
+            let generation = APIClient.shared.currentCredentialGeneration()
+            Task { _ = try? await APIClient.shared.noteIllustrations(runId: runId, generation: generation, cancel: true) }
+        }
+        illustrationJobs[id]?.cancelled = true
+        illustrationJobs[id]?.response?.status = "cancelled"
+        illustrationJobs[id]?.message = "已停止配图"
+        persistIllustrationJobs()
+    }
+    @discardableResult
+    func applyIllustrations(id: String, synchronize: Bool = true) -> Bool {
+        guard var job = illustrationJobs[id], let note = note(id: id), let response = job.response,
+              !job.applied, !job.cancelled, response.status == "completed", !response.assets.isEmpty else { return false }
+        guard note.body == job.originalBody, activeNoteDrafts[id].map({ $0 == note.body }) ?? true,
+              let body = NoteIllustrationPlacement.inserting(response.assets, into: note.body, travel: job.request.travel) else {
+            illustrationJobs[id]?.message = "正文已变化，插图已保留。请在配图面板重新选择位置。"
+            persistIllustrationJobs(); return false
+        }
+        guard let saved = save(id: id, title: note.title, body: body, tags: note.tags, isPinned: note.isPinned) else { return false }
+        job.applied = true
+        job.appliedBody = body
+        job.message = "已添加 \(response.assets.count) 张插图" + (response.failedIndices.isEmpty ? "" : "，其余可重试")
+        illustrationJobs[id] = job
+        persistIllustrationJobs()
+        if synchronize { syncIllustratedNote(saved) }
+        return true
+    }
+    func relocateIllustrations(id: String, anchor: String) -> Bool {
+        guard let note = note(id: id), var job = illustrationJobs[id], !job.applied else { return false }
+        job.originalBody = note.body
+        let relocated: [NoteIllustrationAsset] = (job.response?.assets ?? []).map { asset in
+            var value = asset
+            value.anchor = anchor
+            return value
+        }
+        job.response?.assets = relocated
+        illustrationJobs[id] = job
+        return applyIllustrations(id: id)
+    }
+    @discardableResult
+    func undoIllustrations(id: String, synchronize: Bool = true) -> Bool {
+        guard let job = illustrationJobs[id], job.applied, job.undone != true, let note = note(id: id), let assets = job.response?.assets else { return false }
+        var body = note.body
+        if job.request.travel, var object = NoteIllustrationPlacement.travelObject(body) {
+            object["illustrations"] = (object["illustrations"] as? [[String: String]] ?? []).filter { item in !assets.contains { $0.relativePath == item["path"] } }
+            body = NoteIllustrationPlacement.json(object) ?? body
+        } else {
+            for asset in assets {
+                let pattern = #"\n*\!\[[^\]]*\]\("# + NSRegularExpression.escapedPattern(for: asset.relativePath) + #"\)"#
+                body = body.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+            }
+        }
+        if let saved = save(id: id, title: note.title, body: body, tags: note.tags, isPinned: note.isPinned) {
+            illustrationJobs[id]?.message = "已撤销本批配图"
+            illustrationJobs[id]?.undone = true
+            persistIllustrationJobs()
+            if synchronize { syncIllustratedNote(saved) }
+            return true
+        }
+        return false
+    }
+    private func syncIllustratedNote(_ note: KnowledgeNote) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-noteIllustrationChatPreview") { return }
+        #endif
+        let account = accountFingerprint, generation = APIClient.shared.currentCredentialGeneration(), markdown = markdown(for: note)
+        Task { @MainActor in
+            do { _ = try await APIClient.shared.syncKnowledgeNote(id: note.id, markdown: markdown, updatedAt: note.updatedAt, credentialGeneration: generation) }
+            catch { if accountFingerprint == account { illustrationJobs[note.id]?.message = "插图已存本机，云端同步待重试"; persistIllustrationJobs() } }
+        }
+    }
+    func canApplyIllustrationStep(_ step: KnowledgeActionStep) -> Bool {
+        guard let id = step.targetNoteId, let note = note(id: id), let version = step.originalContentHash,
+              contentHash(for: note) == version,
+              activeNoteDrafts[id].map({ $0 == note.body }) ?? true else { return false }
+        switch step.illustrationAction {
+        case "configure": return step.automaticIllustrations != nil
+        case "generate":
+            guard !illustrationIsRunning(id), !note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, note.body.count <= 48000 else { return false }
+            if note.tags.contains(where: { ["旅行", "travel", "trip"].contains($0.lowercased()) }), NoteIllustrationPlacement.travelObject(note.body) == nil { return false }
+            let anchor = step.illustrationAnchor ?? ""
+            if anchor.isEmpty { return true }
+            guard !(step.illustrationBrief ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            if let travel = NoteIllustrationPlacement.travelObject(note.body) {
+                let stops = travel["stops"] as? [[String: Any]] ?? []
+                return anchor == "overview" || stops.indices.contains(where: { "stop:\($0)" == anchor })
+            }
+            let position = (note.body as NSString).range(of: anchor)
+            return position.location != NSNotFound && NoteIllustrationPlacement.anchor(in: note.body, selection: position) == anchor
+        case "retry", "cancel", "apply", "undo":
+            guard let job = illustrationJobs[id], let run = step.illustrationRunId,
+                  job.response?.runId == run else { return false }
+            if step.illustrationAction == "apply" { return !job.applied && !job.cancelled && job.response?.status == "completed" && job.originalBody == note.body && !(job.response?.assets.isEmpty ?? true) }
+            if step.illustrationAction == "undo" { return job.applied && job.undone != true }
+            if step.illustrationAction == "retry" { return !illustrationIsRunning(id) && (note.body == job.originalBody || note.body == job.appliedBody) }
+            return true
+        default: return false
+        }
+    }
+    func illustrationImage(_ asset: NoteIllustrationAsset, account: String) async throws -> Data {
+        let path = vaultDirectory.appendingPathComponent(asset.relativePath)
+        if let data = try? Data(contentsOf: path), NoteIllustrationPlacement.hashData(data) == asset.sha256 { return data }
+        let generation = APIClient.shared.currentCredentialGeneration()
+        let data = try await APIClient.shared.downloadAuthenticated(path: asset.downloadPath, expectedHash: asset.sha256)
+        guard generation == APIClient.shared.currentCredentialGeneration(), accountFingerprint == account else { throw CancellationError() }
+        try fileManager.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: path, options: [.atomic, .completeFileProtection])
+        return data
+    }
+}
+
+extension NoteIllustrationPlacement {
+    static func hashData(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    static func asset(from filename: String) -> NoteIllustrationAsset? {
+        guard let match = filename.wholeMatch(of: /ai-([a-f0-9]{32})-([0-2])-([a-f0-9]{64})\.jpg/) else { return nil }
+        return .init(runId: String(match.1), index: Int(match.2)!, anchor: "", alt: "AI 插图", sha256: String(match.3), provider: "unknown", model: "unknown")
     }
 }
