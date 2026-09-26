@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 STATUS_CLIENT = Path(__file__).with_name("publication_release_remote.py")
 EDITORIAL_CLIENT = Path(__file__).with_name("publication_editorial_remote.py")
+HANDOFF_CLIENT = Path(__file__).with_name("publication_workflow_handoff.py")
 OUTPUT_ROOT = Path.home() / ".hermes/outputs/quantumn-editorial-v2"
 EXECUTIONS_DB = Path.home() / ".hermes/cron/executions.db"
 DISPATCH_CONFIRM_SECONDS = 30.0
@@ -45,7 +46,17 @@ SERIES = tuple(AUTHOR_JOBS)
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
 EVIDENCE_GROUPS = ("source_files", "rights_files", "execution_files")
-PHASE_ORDER = {"finalize": 0, "review": 1, "prepare": 2, "author": 3, "prerequisite": 4}
+PHASE_ORDER = {
+    "finalize": 0,
+    "handoff_acknowledge": 1,
+    "handoff_revision": 1,
+    "review": 2,
+    "prepare": 3,
+    "assets": 4,
+    "handoff_fetch": 5,
+    "author": 6,
+    "prerequisite": 7,
+}
 
 
 @dataclass(frozen=True)
@@ -56,6 +67,15 @@ class Item:
     material_hash: str
     status: str
     review_ready: bool = False
+
+
+@dataclass(frozen=True)
+class Handoff:
+    directory: Path
+    day: str
+    artifact_id: str
+    material_hash: str
+    status: str
 
 
 @dataclass(frozen=True)
@@ -73,6 +93,12 @@ class Action:
 
 
 class ActionFailure(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class ActionPending(RuntimeError):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
@@ -197,6 +223,53 @@ def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
     return found
 
 
+def _handoff_items(root: Path = OUTPUT_ROOT) -> list[Handoff]:
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("editorial root must be a real directory")
+    found: list[Handoff] = []
+    for state_path in sorted(root.glob("ai-toolkit-*/workflow-handoff-state.json")):
+        directory = state_path.parent.resolve()
+        value: dict = {}
+        try:
+            if state_path.is_symlink() or root.resolve() not in directory.parents:
+                raise ValueError("workflow handoff state path is unsafe")
+            value = _read_json(state_path)
+            artifact_id = value.get("artifact_id")
+            artifact_hash = value.get("artifact_sha256")
+            envelope_hash = value.get("envelope_sha256")
+            status = value.get("status")
+            if (
+                value.get("version") != "publication-workflow-consumption-v1"
+                or value.get("series_id") != "ai-toolkit"
+                or not isinstance(value.get("issue_date"), str)
+                or not isinstance(artifact_id, str)
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", artifact_id) is None
+                or not isinstance(artifact_hash, str)
+                or HASH.fullmatch(artifact_hash) is None
+                or not isinstance(envelope_hash, str)
+                or HASH.fullmatch(envelope_hash) is None
+                or status not in {"waiting_assets", "revision_requested", "acknowledged"}
+            ):
+                raise ValueError("workflow handoff state is invalid")
+            material_hash = hashlib.sha256(
+                f"{artifact_id}:{artifact_hash}:{envelope_hash}".encode()
+            ).hexdigest()
+            found.append(
+                Handoff(directory, value["issue_date"], artifact_id, material_hash, status)
+            )
+        except (OSError, ValueError, json.JSONDecodeError):
+            marker = hashlib.sha256(str(state_path.resolve()).encode()).hexdigest()
+            candidate_day = value.get("issue_date")
+            invalid_day = (
+                candidate_day
+                if isinstance(candidate_day, str)
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate_day)
+                else ""
+            )
+            found.append(Handoff(directory, invalid_day, "invalid", marker, "invalid"))
+    return found
+
+
 def _missing(summary: dict, day: str) -> set[str]:
     today, issues = summary.get("today"), summary.get("issues")
     if not isinstance(today, dict) or not isinstance(issues, dict) or today.get("date") != day:
@@ -260,8 +333,13 @@ def _plan(
     missing: set[str],
     items: Sequence[Item],
     prerequisite: Barrier | None = None,
+    handoffs: Sequence[Handoff] = (),
+    platform_enabled: bool = False,
 ) -> tuple[Action | None, str]:
     today = [item for item in items if item.day == day and item.series in SERIES]
+    if any(item.status == "invalid" and item.day in {"", day} for item in handoffs):
+        return None, "invalid_workflow_handoff"
+    today_handoffs = [item for item in handoffs if item.day == day]
     desired: dict[str, Action] = {}
     invalid_series: set[str] = set()
     for series in sorted(missing):
@@ -269,6 +347,30 @@ def _plan(
         if any(item.status == "invalid" for item in rows):
             invalid_series.add(series)
             continue
+        linked = {
+            item.directory: item
+            for item in today_handoffs
+            if item.status in {"waiting_assets", "revision_requested", "acknowledged"}
+        }
+        if series in PLATFORM_AUTHOR_SERIES and platform_enabled:
+            workflow_rows = [item for item in rows if item.manifest.parent.resolve() in linked]
+            if len(workflow_rows) != len(rows):
+                return None, "workflow_handoff_binding_missing"
+            rejected = [
+                item for item in workflow_rows
+                if item.status == "rejected"
+                and linked[item.manifest.parent.resolve()].status == "waiting_assets"
+            ]
+            if len(rejected) > 1:
+                return None, "ambiguous_manifests"
+            if rejected:
+                item = rejected[0]
+                desired[series] = Action(
+                    "handoff_revision",
+                    (Barrier(series, item.material_hash),),
+                    manifest=item.manifest,
+                )
+                continue
         active = [item for item in rows if item.status in {"prepared", "await_review", "staged"}]
         groups = {item.material_hash for item in active}
         if len(groups) > 1:
@@ -276,16 +378,7 @@ def _plan(
         if active and any((item.status, item.review_ready) != (active[0].status, active[0].review_ready) for item in active[1:]):
             return None, "ambiguous_manifests"
         barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(day, series, rows))
-        if not active and series == "ai-toolkit" and prerequisite is not None:
-            desired[series] = Action("prerequisite", (prerequisite,), job_id=PREREQUISITE_JOB)
-        elif not active and series in PLATFORM_AUTHOR_SERIES:
-            # Authorship is owned by the governed platform Workflow schedule.
-            # The local watchdog resumes at prepare/review once its immutable
-            # manifest appears; it must not revive the retired Mac author job.
-            continue
-        elif not active:
-            desired[series] = Action("author", (barrier,), job_id=AUTHOR_JOBS[series])
-        else:
+        if active:
             item = active[0]
             if item.status == "prepared":
                 desired[series] = Action("prepare", (barrier,), manifest=item.manifest)
@@ -293,11 +386,37 @@ def _plan(
                 desired[series] = Action("review", (barrier,), job_id=REVIEW_JOB, manifest=item.manifest)
             elif item.status == "await_review":
                 desired[series] = Action("finalize", (barrier,), manifest=item.manifest)
+            elif series in PLATFORM_AUTHOR_SERIES and platform_enabled:
+                state = linked.get(item.manifest.parent.resolve())
+                if state is None:
+                    return None, "workflow_handoff_binding_missing"
+                if state.status == "waiting_assets":
+                    desired[series] = Action(
+                        "handoff_acknowledge", (barrier,), manifest=item.manifest
+                    )
+            # Staged non-Workflow items, and acknowledged Workflow items, remain
+            # owned by the existing deterministic release job.
+        elif series in PLATFORM_AUTHOR_SERIES and platform_enabled:
+            waiting = [item for item in today_handoffs if item.status == "waiting_assets"]
+            if len(waiting) > 1:
+                return None, "ambiguous_workflow_handoffs"
+            if waiting:
+                item = waiting[0]
+                desired[series] = Action(
+                    "assets",
+                    (Barrier(series, item.material_hash),),
+                    job_id=AUTHOR_JOBS[series],
+                )
             else:
-                # Staged items have passed five-image and signed editorial gates.
-                # The normal deterministic release job remains the only publisher;
-                # recovery must not start a second publisher.
-                continue
+                desired[series] = Action(
+                    "handoff_fetch", (barrier,), manifest=None
+                )
+        elif not active and series == "ai-toolkit" and prerequisite is not None:
+            desired[series] = Action("prerequisite", (prerequisite,), job_id=PREREQUISITE_JOB)
+        elif not active and series in PLATFORM_AUTHOR_SERIES:
+            continue
+        elif not active:
+            desired[series] = Action("author", (barrier,), job_id=AUTHOR_JOBS[series])
     if not desired:
         if invalid_series:
             return None, "invalid_manifest"
@@ -485,13 +604,21 @@ class Claims:
 
 
 def _run_action(action: Action) -> None:
-    if action.phase in {"author", "review"}:
+    if action.phase in {"author", "assets", "review"}:
         assert action.job_id is not None
         _dispatch_job(action.job_id)
         return
     elif action.phase == "prerequisite":
         _dispatch_job(PREREQUISITE_JOB)
         return
+    elif action.phase == "handoff_fetch":
+        commands = [[str(HANDOFF_CLIENT), "fetch", "--output-root", str(OUTPUT_ROOT)]]
+        timeout = 600
+    elif action.phase in {"handoff_acknowledge", "handoff_revision"}:
+        assert action.manifest is not None
+        command = "acknowledge" if action.phase == "handoff_acknowledge" else "request-revision"
+        commands = [[str(HANDOFF_CLIENT), command, "--manifest", str(action.manifest)]]
+        timeout = 600
     elif action.phase == "prepare":
         assert action.manifest is not None
         commands = [[str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]]
@@ -512,6 +639,15 @@ def _run_action(action: Action) -> None:
             raise ActionFailure("action_timeout") from exc
         if completed.returncode:
             raise ActionFailure("action_exit_nonzero")
+        if action.phase == "handoff_fetch":
+            try:
+                result = json.loads(completed.stdout.strip().splitlines()[-1])
+            except (IndexError, json.JSONDecodeError) as exc:
+                raise ActionFailure("handoff_fetch_invalid_result") from exc
+            if result == {"available": False, "status": "waiting_workflow"}:
+                raise ActionPending("awaiting_platform_schedule")
+            if not isinstance(result, dict) or result.get("status") != "waiting_assets":
+                raise ActionFailure("handoff_fetch_invalid_result")
 
 
 def _dispatch_job(job_id: str) -> None:
@@ -561,6 +697,7 @@ def supervise(
     *,
     status: Callable[[], dict] = _status,
     load_items: Callable[[], list[Item]] = _manifest_items,
+    load_handoffs: Callable[[], list[Handoff]] | None = None,
     blockers: Callable[[str], list[str]] = _execution_blockers,
     prerequisite: Callable[[str], Barrier | None] = _toolkit_prerequisite_barrier,
     run_action: Callable[[Action], None] = _run_action,
@@ -569,7 +706,20 @@ def supervise(
     _default_profile_only()
     missing = _missing(status(), day)
     items = load_items()
-    action, reason = _plan(day, missing, items, prerequisite(day))
+    if load_handoffs is not None:
+        handoffs = load_handoffs()
+    elif load_items is _manifest_items:
+        handoffs = _handoff_items()
+    else:
+        handoffs = []
+    action, reason = _plan(
+        day,
+        missing,
+        items,
+        prerequisite(day),
+        handoffs,
+        platform_enabled=bool(os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID")),
+    )
     if action is None:
         return {"ok": True, "action": "none", "reason": reason, "missing": sorted(missing)}
     active = blockers(day)
@@ -579,6 +729,28 @@ def supervise(
     # live or unverifiable owners still block every action.
     if hard_blockers:
         return {"ok": True, "action": "none", "reason": "execution_blocked", "executions": sorted(set(hard_blockers))}
+    if action.phase == "handoff_fetch":
+        # No candidate is a normal state between the local polling time and the
+        # platform schedule completing. Do not consume a bounded claim: the
+        # immutable materialization ledger makes a later successful fetch safe.
+        try:
+            run_action(action)
+        except ActionPending as exc:
+            return {
+                "ok": True,
+                "action": "none",
+                "reason": exc.reason,
+                "phase": action.phase,
+            }
+        except Exception as exc:
+            reason = exc.reason if isinstance(exc, ActionFailure) else "action_exception"
+            return {"ok": False, "action": "none", "reason": reason, "phase": action.phase}
+        return {
+            "ok": True,
+            "action": "triggered",
+            "phase": action.phase,
+            "series": ["ai-toolkit"],
+        }
     ledger = claims or Claims()
     if not ledger.claim(day, action):
         return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase}
@@ -600,7 +772,11 @@ def supervise(
         ledger.finish(day, action, "failed")
         reason = exc.reason if isinstance(exc, ActionFailure) else "action_exception"
         return {"ok": False, "action": "none", "reason": reason, "phase": action.phase}
-    ledger.finish(day, action, "dispatched" if action.phase in {"author", "review", "prerequisite"} else "completed")
+    ledger.finish(
+        day,
+        action,
+        "dispatched" if action.phase in {"author", "assets", "review", "prerequisite"} else "completed",
+    )
     return {
         "ok": True, "action": "triggered", "phase": action.phase,
         "series": sorted(barrier.series for barrier in action.barriers),

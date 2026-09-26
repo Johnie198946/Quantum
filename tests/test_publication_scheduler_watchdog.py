@@ -567,6 +567,160 @@ def test_toolkit_author_is_owned_by_platform_workflow_not_local_cron(tmp_path):
     assert calls == []
 
 
+def workflow_handoff(tmp_path: Path, status: str = "waiting_assets"):
+    directory = tmp_path / "ai-toolkit-artifact-1"
+    return watchdog.Handoff(directory, DAY, "wfa_artifact1", "f" * 64, status)
+
+
+def workflow_item(tmp_path: Path, status: str, *, review_ready: bool = False):
+    return watchdog.Item(
+        tmp_path / "ai-toolkit-artifact-1/draft-manifest.json",
+        "ai-toolkit",
+        DAY,
+        "e" * 64,
+        status,
+        review_ready,
+    )
+
+
+def test_handoff_state_scan_is_strict_and_material_bound(tmp_path):
+    directory = tmp_path / "ai-toolkit-artifact-1"
+    directory.mkdir()
+    state = {
+        "version": "publication-workflow-consumption-v1",
+        "status": "waiting_assets",
+        "execution_id": "wfe_execution1",
+        "schedule_id": "wfsched_schedule1",
+        "series_id": "ai-toolkit",
+        "issue_date": DAY,
+        "artifact_id": "wfa_artifact1",
+        "artifact_sha256": "a" * 64,
+        "envelope_sha256": "b" * 64,
+        "next_action": "assets",
+    }
+    path = directory / "workflow-handoff-state.json"
+    path.write_text(json.dumps(state), encoding="utf-8")
+    rows = watchdog._handoff_items(tmp_path)
+    assert len(rows) == 1 and rows[0].status == "waiting_assets"
+    first_hash = rows[0].material_hash
+
+    state["artifact_sha256"] = "c" * 64
+    path.write_text(json.dumps(state), encoding="utf-8")
+    assert watchdog._handoff_items(tmp_path)[0].material_hash != first_hash
+
+    state["artifact_sha256"] = "not-a-hash"
+    path.write_text(json.dumps(state), encoding="utf-8")
+    assert watchdog._handoff_items(tmp_path)[0].status == "invalid"
+
+
+def test_enabled_platform_chain_fetches_then_dispatches_only_assets(tmp_path):
+    action, reason = watchdog._plan(
+        DAY, {"ai-toolkit"}, [], handoffs=[], platform_enabled=True
+    )
+    assert reason == "ready"
+    assert action is not None and action.phase == "handoff_fetch"
+
+    handoff = workflow_handoff(tmp_path)
+    action, reason = watchdog._plan(
+        DAY, {"ai-toolkit"}, [], handoffs=[handoff], platform_enabled=True
+    )
+    assert reason == "ready"
+    assert action is not None and action.phase == "assets"
+    assert action.job_id == watchdog.AUTHOR_JOBS["ai-toolkit"]
+
+
+@pytest.mark.parametrize(
+    ("manifest_status", "review_ready", "expected_phase"),
+    [
+        ("prepared", False, "prepare"),
+        ("await_review", False, "review"),
+        ("await_review", True, "finalize"),
+        ("staged", False, "handoff_acknowledge"),
+        ("rejected", True, "handoff_revision"),
+    ],
+)
+def test_enabled_platform_chain_preserves_review_and_workflow_gates(
+    tmp_path, manifest_status, review_ready, expected_phase
+):
+    row = workflow_item(tmp_path, manifest_status, review_ready=review_ready)
+    action, reason = watchdog._plan(
+        DAY,
+        {"ai-toolkit"},
+        [row],
+        handoffs=[workflow_handoff(tmp_path)],
+        platform_enabled=True,
+    )
+    assert reason == "ready"
+    assert action is not None and action.phase == expected_phase
+    assert action.manifest == row.manifest
+
+
+def test_revision_requested_handoff_polls_for_replacement_artifact(tmp_path):
+    rejected = workflow_item(tmp_path, "rejected", review_ready=True)
+    action, reason = watchdog._plan(
+        DAY,
+        {"ai-toolkit"},
+        [rejected],
+        handoffs=[workflow_handoff(tmp_path, "revision_requested")],
+        platform_enabled=True,
+    )
+    assert reason == "ready"
+    assert action is not None and action.phase == "handoff_fetch"
+
+
+def test_fetch_waiting_for_platform_is_nonfatal_and_does_not_consume_claim(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", "wfsched_schedule1")
+    calls = []
+
+    def pending(action):
+        calls.append(action)
+        raise watchdog.ActionPending("awaiting_platform_schedule")
+
+    result = watchdog.supervise(
+        DAY,
+        status=lambda: summary("ai-toolkit"),
+        load_items=lambda: [],
+        load_handoffs=lambda: [],
+        blockers=lambda _: [],
+        prerequisite=lambda _: None,
+        run_action=pending,
+        claims=watchdog.Claims(tmp_path / "claims.db"),
+    )
+    assert result == {
+        "ok": True,
+        "action": "none",
+        "reason": "awaiting_platform_schedule",
+        "phase": "handoff_fetch",
+    }
+    assert len(calls) == 1
+    assert not (tmp_path / "claims.db").exists()
+
+
+def test_handoff_fetch_parser_distinguishes_waiting_from_invalid_result(monkeypatch):
+    action = watchdog.Action(
+        "handoff_fetch", (watchdog.Barrier("ai-toolkit", "f" * 64),)
+    )
+    monkeypatch.setattr(
+        watchdog.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, '{"available":false,"status":"waiting_workflow"}\n', ""
+        ),
+    )
+    with pytest.raises(watchdog.ActionPending, match="awaiting_platform_schedule"):
+        watchdog._run_action(action)
+
+    monkeypatch.setattr(
+        watchdog.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "{}\n", ""),
+    )
+    with pytest.raises(watchdog.ActionFailure, match="handoff_fetch_invalid_result"):
+        watchdog._run_action(action)
+
+
 def test_author_shared_scope_claims_each_item_atomically(tmp_path):
     missing = ("ai-history", "ai-practice", "concept-fables")
     result, calls = run(tmp_path, summary(*missing), [])
