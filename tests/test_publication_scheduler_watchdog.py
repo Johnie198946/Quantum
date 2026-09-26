@@ -528,6 +528,38 @@ def test_toolkit_blocked_prerequisite_recovers_supply_before_author(tmp_path, mo
     ]
 
 
+def test_toolkit_ready_requires_one_selected_compiled_candidate(tmp_path, monkeypatch):
+    monkeypatch.setattr(watchdog, "OUTPUT_ROOT", tmp_path)
+    receipt = tmp_path / "prerequisites/ai-toolkit" / f"{DAY}.json"
+    receipt.parent.mkdir(parents=True)
+    value = {
+        "status": "READY_FOR_AI_TOOLKIT",
+        "selected_candidates": [{"id": "selected-one"}],
+        "deposit": {"storage_verified": True, "manifest_registered": True},
+        "compilation": {"compile_verified": False, "wiki_compiled": False},
+    }
+    receipt.write_text(json.dumps(value), encoding="utf-8")
+    assert watchdog._toolkit_prerequisite_barrier(DAY) is not None
+
+    value["compilation"] = {"compile_verified": True, "wiki_compiled": True}
+    receipt.write_text(json.dumps(value), encoding="utf-8")
+    assert watchdog._toolkit_prerequisite_barrier(DAY) is None
+
+
+def test_toolkit_ready_does_not_require_unselected_candidates(tmp_path, monkeypatch):
+    monkeypatch.setattr(watchdog, "OUTPUT_ROOT", tmp_path)
+    receipt = tmp_path / "prerequisites/ai-toolkit" / f"{DAY}.json"
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({
+        "status": "READY_FOR_AI_TOOLKIT",
+        "selected_candidates": [{"id": "selected-one"}],
+        "non_blocking_unselected": [{"id": "failed-two", "status": "failed"}],
+        "deposit": {"storage_verified": True, "manifest_registered": True},
+        "compilation": {"compile_verified": True, "wiki_compiled": True},
+    }), encoding="utf-8")
+    assert watchdog._toolkit_prerequisite_barrier(DAY) is None
+
+
 def test_author_shared_scope_claims_each_item_atomically(tmp_path):
     missing = ("ai-history", "ai-practice", "concept-fables")
     result, calls = run(tmp_path, summary(*missing), [])
