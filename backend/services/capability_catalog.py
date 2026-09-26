@@ -47,7 +47,7 @@ IMPLEMENTED_HANDLERS = {
     "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
     "file.upload", "file.download", "voice.transcribe",
     "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create",
-    "task.execute",
+    "task.execute", "conversation.lifecycle",
 }
 
 
@@ -249,9 +249,12 @@ def validate_instance(value: Any, schema: dict[str, Any], path: str = "input") -
         for key, item in value.items():
             if key in properties:
                 validate_instance(item, properties[key], f"{path}.{key}")
-    if isinstance(value, list) and schema.get("items"):
-        for index, item in enumerate(value):
-            validate_instance(item, schema["items"], f"{path}[{index}]")
+    if isinstance(value, list):
+        if len(value) < int(schema.get("minItems", 0)) or len(value) > int(schema.get("maxItems", len(value))):
+            raise CapabilityContractError(f"{path}: outside item bounds")
+        if schema.get("items"):
+            for index, item in enumerate(value):
+                validate_instance(item, schema["items"], f"{path}[{index}]")
 
 
 def catalog_digest() -> str:

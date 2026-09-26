@@ -117,6 +117,7 @@ async def create_capability_proposal(
     idempotency_key: str | None,
     resource_versions: dict[str, Any] | None = None,
     renderer_version: str = "qcp-ios@1",
+    local_notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Persist a non-executing proposal and return its one-time opaque token."""
     capability = describe_capability(capability_id)
@@ -145,6 +146,12 @@ async def create_capability_proposal(
         if "source_client_session_id" in properties:
             canonical_input["source_client_session_id"] = session_id
         validate_instance(canonical_input, capability["input_schema"])
+        if local_notes is not None:
+            from backend.api.knowledge_actions import propose_local_note_capability
+            return await propose_local_note_capability(
+                capability_id, canonical_input, local_notes=local_notes,
+                payload=payload, session_id=session_id, request_id=request_id,
+            )
         versions = dict(resource_versions or {})
         if len(versions) > 64 or any(
             not isinstance(key, str)

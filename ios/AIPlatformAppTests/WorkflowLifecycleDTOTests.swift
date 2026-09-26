@@ -92,6 +92,10 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         var responseError: URLError?
         var responseHeaders = ["Content-Type": "application/json"]
         switch (isContractOrigin, method, path) {
+        case (true, "POST", "/api/v1/capabilities/confirm") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("cleanup-proposal") == true:
+            responseBody = Data(#"{"status":"failed","capability_id":"task.update","events":[],"receipt":null,"error":{"code":"confirmation_invalid","message":"already consumed"}}"#.utf8)
+        case (true, "GET", "/api/v1/capabilities/proposals/cleanup-proposal/status"):
+            responseBody = Data(#"{"status":"verified","result":{"status":"succeeded","capability_id":"task.update","events":[{"type":"task.change_proposed","version":1,"payload":{"applied":true}}],"receipt":null,"error":null}}"#.utf8)
         case (true, "GET", let reviewPath) where reviewPath.contains("/structured-reviews/final-draft"):
             if reviewPath.contains("missing-review") {
                 responseStatus = 404
@@ -217,6 +221,25 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class WorkflowLifecycleDTOTests: XCTestCase {
+    func testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try ChatHistoryStore(databaseURL: root.appendingPathComponent("history.sqlite"), performLegacyMigration: false)
+        defer { try? store.close() }
+        for id in ["first", "second"] { try store.createSession(id: id, agentId: "main", agentName: "Main") }
+        let first = ClientSessionVersionDTO(sessionId: "first", version: try store.lifecycleVersion(sessionId: "first"))
+        let second = ClientSessionVersionDTO(sessionId: "second", version: try store.lifecycleVersion(sessionId: "second"))
+        XCTAssertThrowsError(try store.applyLifecycleAction(id: "conflict", digest: "one", sessions: [first, .init(sessionId: "second", version: String(repeating: "0", count: 64))], status: .archived))
+        XCTAssertEqual(try store.summary(sessionId: "first")?.lifecycleStatus, .active)
+        try store.applyLifecycleAction(id: "archive", digest: "two", sessions: [first, second], status: .archived)
+        try store.applyLifecycleAction(id: "archive", digest: "two", sessions: [first, second], status: .archived)
+        XCTAssertEqual(try store.summary(sessionId: "second")?.lifecycleStatus, .archived)
+        XCTAssertThrowsError(try store.applyLifecycleAction(id: "archive", digest: "changed", sessions: [first], status: .active))
+        let restore = ClientSessionVersionDTO(sessionId: "first", version: try store.lifecycleVersion(sessionId: "first"))
+        try store.applyLifecycleAction(id: "restore", digest: "three", sessions: [restore], status: .active)
+        XCTAssertEqual(try store.summary(sessionId: "first")?.lifecycleStatus, .active)
+    }
+
     func testStructuredReviewDTOsPreserveMixedScalarValues() throws {
         let payload = Data(#"{"workflow_id":"workflow-1","review_key":"final-draft","schema_id":"workflow.structured-review.v1","version":2,"parent_version":1,"content_hash":"hash","document":{"title":"最终文稿","fields":[{"id":"title","label":"标题","type":"text","required":true},{"id":"sequence","label":"序号","type":"number","required":false},{"id":"score","label":"评分","type":"number","required":false},{"id":"approved","label":"确认","type":"toggle","required":false},{"id":"notes","label":"备注","type":"textarea","required":false}],"values":{"title":"真实标题","sequence":9007199254740991,"score":4.5,"approved":true,"notes":null}},"action":"save","receipt_id":"receipt-2","source_client_session_id":null,"created_at":"2026-09-15T08:00:00Z"}"#.utf8)
         let decoder = JSONDecoder()
@@ -263,6 +286,21 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let encoded = try JSONEncoder().encode(revision.document)
         let roundTrip = try decoder.decode(StructuredReviewDocumentDTO.self, from: encoded)
         XCTAssertEqual(roundTrip, revision.document)
+    }
+
+    @MainActor
+    func testCleanupConfirmationRecoversConsumedTokenFromExistingReceipt() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                            sessionConfiguration: configuration, inMemoryToken: "token")
+        let response: QCPInvokeResponseDTO<JSONScalar> = try await CapabilityClient(apiClient: api)
+            .confirm(proposalId: "cleanup-proposal", confirmationToken: "consumed", sessionId: "cleanup")
+        XCTAssertNil(response.error)
+        XCTAssertEqual(response.events.first?.payload, .object(["applied": .bool(true)]))
+        XCTAssertEqual(APIContractURLProtocol.requests().map { $0.request.httpMethod }, ["POST", "GET"])
     }
 
     @MainActor

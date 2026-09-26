@@ -25,6 +25,25 @@ class KnowledgeActionDenied(ValueError):
     code = "knowledge_action_denied"
 
 
+def note_capability_step(capability_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Project the existing PCM note contract onto the local-first executor."""
+    kind = {
+        "knowledge.note.create": "create_note", "knowledge.note.update": "update_note",
+        "knowledge.note.merge": "merge_notes", "knowledge.note.archive": "archive_note",
+        "knowledge.note.restore": "restore_note",
+    }.get(capability_id)
+    if kind is None:
+        return None
+    return {
+        "kind": kind,
+        "target_note_id": data.get("note_id") or data.get("target_note_id"),
+        "source_note_ids": list((data.get("source_versions") or {}).keys()),
+        "markdown": data.get("markdown") or data.get("revised_content"),
+        "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
+        "source_content_hashes": data.get("source_versions") or {},
+    }
+
+
 def canonical_digest(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

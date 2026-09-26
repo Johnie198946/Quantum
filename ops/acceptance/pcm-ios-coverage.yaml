@@ -1009,6 +1009,9 @@ features:
   automated_tests:
   - tests/test_project_task_capabilities.py
   production_receipt:
+    status: unverified
+    evidence: null
+  previous_production_receipt:
     status: implemented
     evidence:
       kind: authenticated_describe
@@ -1025,7 +1028,7 @@ features:
       batch_receipt: ops/acceptance/receipts/20260919-production-capability-describe.json
       batch_receipt_sha256: ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16
       captured_at: '2026-09-18T19:09:17.235101+00:00'
-  status: implemented
+  status: partial
 - ios_user_function: Propose a new canonical task in an owned QWS project.
   capability: task.create
   event: task.change_proposed@1
@@ -1065,6 +1068,9 @@ features:
   automated_tests:
   - tests/test_project_task_capabilities.py
   production_receipt:
+    status: unverified
+    evidence: null
+  previous_production_receipt:
     status: implemented
     evidence:
       kind: authenticated_describe
@@ -1081,7 +1087,7 @@ features:
       batch_receipt: ops/acceptance/receipts/20260919-production-capability-describe.json
       batch_receipt_sha256: ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16
       captured_at: '2026-09-18T19:09:17.235101+00:00'
-  status: implemented
+  status: partial
 - ios_user_function: Soft-delete a canonical QWS task through the governed archive proposal path.
   capability: task.delete
   event: task.change_proposed@1
@@ -1093,6 +1099,9 @@ features:
   automated_tests:
   - tests/test_project_task_capabilities.py
   production_receipt:
+    status: unverified
+    evidence: null
+  previous_production_receipt:
     status: implemented
     evidence:
       kind: authenticated_describe
@@ -1109,7 +1118,7 @@ features:
       batch_receipt: ops/acceptance/receipts/20260919-production-capability-describe.json
       batch_receipt_sha256: ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16
       captured_at: '2026-09-18T19:09:17.235101+00:00'
-  status: implemented
+  status: partial
 - ios_user_function: Queue an owner-bound QWS task conversation using an ephemeral delegated user token.
   capability: task.execute
   event: task.execution_queued@1
@@ -2068,3 +2077,19 @@ features:
       batch_receipt_sha256: ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16
       captured_at: '2026-09-18T19:09:17.235101+00:00'
   status: implemented
+
+- ios_user_function: Archive or restore versioned conversations on the current device.
+  capability: conversation.lifecycle
+  event: client.action.requested@1
+  renderer: client_action@1
+  handler: conversation.lifecycle
+  consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
+  qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  policy: client-action-owner
+  automated_tests:
+  - tests/test_cleanup_capabilities.py
+  - ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial

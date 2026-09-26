@@ -151,3 +151,5 @@ bindings:
     handler: media.create
   - id: task.execute
     handler: task.execute
+  - id: conversation.lifecycle
+    handler: conversation.lifecycle

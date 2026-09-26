@@ -813,11 +813,33 @@ async def _task_list(data: dict[str, Any], payload: dict[str, Any], _key: str | 
     from backend.api.quantum_workspace import get_project_process
 
     process = jsonable_encoder(await get_project_process(data["project_id"], payload))
-    return {
+    result = {
         "project_id": process["project_id"],
         "process_revision": process["process_revision"],
         "tasks": process.get("tasks") or [],
     }
+    if data.get("include_cleanup"):
+        from backend.services.task_operating_loop import find_duplicate_candidates, create_merge_preview
+        active = [{**item, "project_id": data["project_id"]} for item in result["tasks"]
+                  if not item.get("archived_at") and item.get("status") not in {"MERGED", "CANCELLED"}]
+        # ponytail: bounded quadratic scan; use indexed candidates if projects exceed this window.
+        scanned = active[:100]
+        candidates, seen = [], set()
+        by_id = {str(item["id"]): item for item in scanned}
+        for task in scanned:
+            for candidate in find_duplicate_candidates(task, scanned, trigger="CLEANUP"):
+                pair = tuple(sorted((str(task["id"]), str(candidate["target_task_id"]))))
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                preview = create_merge_preview(task, by_id[str(candidate["target_task_id"])], created_by="preview")
+                candidates.append({**candidate, "source_task_id": task["id"], "preview": preview})
+        result.update(cleanup_candidates=candidates[:50], cleanup_truncated=len(active) > 100 or len(candidates) > 50)
+        result["cleanup_merges"] = [
+            {key: item[key] for key in ("id", "primary_task_id", "secondary_task_id")}
+            for item in process.get("task_merges") or [] if item.get("status") == "APPLIED"
+        ]
+    return result
 
 
 async def _task_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
@@ -835,6 +857,26 @@ async def _task_update(data: dict[str, Any], payload: dict[str, Any], key: str |
     from backend.api.quantum_workspace import EditProjectTaskRequest, edit_project_task
 
     assert key
+    if "operations" in data:
+        from backend.api.quantum_workspace import (
+            TaskOrganizationRequest, propose_project_task_organization,
+            DecideProjectChangeProposalRequest, decide_project_change_proposal,
+        )
+        if set(data) != {"project_id", "expected_revision", "operations"}:
+            raise HTTPException(status_code=422, detail="mixed_task_update_modes")
+        proposed = await propose_project_task_organization(
+            data["project_id"], TaskOrganizationRequest(
+                expected_revision=data["expected_revision"], request_id=key, operations=data["operations"],
+            ), payload,
+        )
+        result = await decide_project_change_proposal(
+            data["project_id"], proposed["proposal"]["id"],
+            DecideProjectChangeProposalRequest(expected_process_revision=data["expected_revision"], decision="APPROVE"),
+            payload,
+        )
+        if result["proposal"]["status"] != "APPROVED":
+            raise HTTPException(status_code=409, detail="task_changes_not_applied")
+        return _response_payload({**result, "task_preview": None, "applied": True})
     body = dict(data)
     project_id = str(body.pop("project_id"))
     task_id = str(body.pop("task_id"))
@@ -980,6 +1022,10 @@ async def _client_action(capability_id, data, payload, key):
 
 async def _file_pick(data, payload, key):
     return await _client_action("file.pick", data, payload, key)
+
+
+async def _conversation_lifecycle(data, payload, key):
+    return await _client_action("conversation.lifecycle", data, payload, key)
 
 
 async def _photo_capture(data, payload, key):
@@ -1134,6 +1180,7 @@ HANDLERS: dict[str, Handler] = {
     "hermes.session.resume": _hermes_session_resume,
     "hermes.session.delete": _hermes_session_delete,
     "file.pick": _file_pick,
+    "conversation.lifecycle": _conversation_lifecycle,
     "photo.capture": _photo_capture,
     "photo.import": _photo_import,
     "voice.record": _voice_record,

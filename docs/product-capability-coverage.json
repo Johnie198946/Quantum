@@ -88,6 +88,14 @@
       ]
     },
     {
+      "id": "conversation.lifecycle",
+      "status": "implemented",
+      "tests": [
+        "tests/test_cleanup_capabilities.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ]
+    },
+    {
       "id": "data.analyze",
       "status": "implemented",
       "tests": [
@@ -552,7 +560,7 @@
       ]
     }
   ],
-  "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
+  "catalog_digest": "1513d198550c7cb4bb334605da2262b99fdd6636b0ffc3a70295bf171fa23b5f",
   "consumptions": [
     {
       "gates": [
@@ -597,7 +605,7 @@
     }
   ],
   "counts": {
-    "implemented": 76,
+    "implemented": 77,
     "partial": 0,
     "unverified": 0
   },
@@ -1776,7 +1784,7 @@
         "handler": "task.list",
         "ios_user_function": "List canonical tasks in a tenant-visible QWS project.",
         "policy": "qws-project-access",
-        "production_receipt": {
+        "previous_production_receipt": {
           "evidence": {
             "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
             "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
@@ -1795,9 +1803,13 @@
           },
           "status": "implemented"
         },
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
         "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
         "renderer": "answer@1",
-        "status": "implemented"
+        "status": "partial"
       },
       {
         "automated_tests": [
@@ -1842,7 +1854,7 @@
         "handler": "task.update",
         "ios_user_function": "Propose edits to a canonical QWS task contract.",
         "policy": "qws-project-access",
-        "production_receipt": {
+        "previous_production_receipt": {
           "evidence": {
             "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
             "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
@@ -1861,9 +1873,13 @@
           },
           "status": "implemented"
         },
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
         "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
         "renderer": "answer@1",
-        "status": "implemented"
+        "status": "partial"
       },
       {
         "automated_tests": [
@@ -1875,7 +1891,7 @@
         "handler": "task.delete",
         "ios_user_function": "Soft-delete a canonical QWS task through the governed archive proposal path.",
         "policy": "qws-project-access",
-        "production_receipt": {
+        "previous_production_receipt": {
           "evidence": {
             "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
             "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
@@ -1894,9 +1910,13 @@
           },
           "status": "implemented"
         },
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
         "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
         "renderer": "answer@1",
-        "status": "implemented"
+        "status": "partial"
       },
       {
         "automated_tests": [
@@ -3010,6 +3030,25 @@
         "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
         "renderer": "answer@1",
         "status": "implemented"
+      },
+      {
+        "automated_tests": [
+          "tests/test_cleanup_capabilities.py",
+          "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+        ],
+        "capability": "conversation.lifecycle",
+        "consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift",
+        "event": "client.action.requested@1",
+        "handler": "conversation.lifecycle",
+        "ios_user_function": "Archive or restore versioned conversations on the current device.",
+        "policy": "client-action-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+        "renderer": "client_action@1",
+        "status": "partial"
       }
     ],
     "source": "ops/acceptance/pcm-ios-coverage.yaml",
@@ -3021,6 +3060,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 76,
+  "total": 77,
   "version": "1.0.0"
 }

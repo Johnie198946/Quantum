@@ -16,6 +16,7 @@ from backend.db import SessionLocal
 from backend.models.capability_gateway import ClientActionInvocation
 
 _ACTIONS = {
+    "conversation.lifecycle": "conversation_lifecycle",
     "file.pick": "file_picker",
     "photo.capture": "camera_capture",
     "photo.import": "photo_library",
@@ -49,6 +50,12 @@ async def issue_client_action(
     if not idempotency_key:
         raise HTTPException(status_code=422, detail={"code": "idempotency_key_required"})
     tenant_key, user_id = _identity(payload)
+    if capability_id == "conversation.lifecycle":
+        sessions = data.get("sessions") or []
+        if len({item["session_id"] for item in sessions}) != len(sessions):
+            raise HTTPException(status_code=422, detail={"code": "duplicate_session"})
+        data = {**data, "account_scope": hashlib.sha256(tenant_key.encode()).hexdigest()[:16]
+                + ":" + hashlib.sha256(user_id.encode()).hexdigest()[:16]}
     key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
     input_digest = _canonical_digest(data)
     async with SessionLocal() as db:
@@ -91,6 +98,7 @@ def _render(row: ClientActionInvocation) -> dict[str, Any]:
         "action_type": row.action_type,
         "state": row.state,
         "payload": row.request_payload,
+        "input_digest": row.input_digest,
         "result_metadata": row.result_metadata,
         "error_code": row.error_code,
     }

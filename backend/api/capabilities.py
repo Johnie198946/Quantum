@@ -39,6 +39,7 @@ class CapabilityProposalRequest(BaseModel):
     idempotency_key: str | None = Field(None, min_length=8, max_length=160)
     resource_versions: dict[str, Any] = Field(default_factory=dict)
     renderer_version: str = Field("qcp-ios@1", min_length=1, max_length=64)
+    local_notes: list[dict[str, Any]] | None = Field(None, max_length=17)
 
 
 class CapabilityConfirmRequest(BaseModel):
@@ -85,6 +86,7 @@ async def propose(
         idempotency_key=body.idempotency_key,
         resource_versions=body.resource_versions,
         renderer_version=body.renderer_version,
+        local_notes=body.local_notes,
     )
 
 

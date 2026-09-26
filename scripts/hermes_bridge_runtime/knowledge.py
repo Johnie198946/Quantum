@@ -1500,29 +1500,16 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         return _knowledge_workspace_read_tool({"operation": "read", **data})
     if capability_id == "knowledge.navigation":
         return _knowledge_ui_navigate_tool(data)
-    kind = {
-        "knowledge.note.create": "create_note",
-        "knowledge.note.update": "update_note",
-        "knowledge.note.merge": "merge_notes",
-        "knowledge.note.archive": "archive_note",
-        "knowledge.note.restore": "restore_note",
-    }.get(capability_id)
-    if kind:
-        target_id = str(data.get("note_id") or data.get("target_note_id") or "")
-        if kind != "create_note":
+    from backend.services.knowledge_action_capability import note_capability_step
+    step = note_capability_step(capability_id, data)
+    if step:
+        target_id = str(step["target_note_id"] or "")
+        if step["kind"] != "create_note":
             read = json.loads(_knowledge_workspace_read_tool({
                 "operation": "read", "note_id": target_id,
             }))
             if not read.get("success"):
                 return json.dumps(read, ensure_ascii=False)
-        step = {
-            "kind": kind,
-            "target_note_id": target_id or None,
-            "source_note_ids": list((data.get("source_versions") or {}).keys()),
-            "markdown": data.get("markdown") or data.get("revised_content"),
-            "original_content_hash": data.get("base_hash") or data.get("target_base_hash"),
-            "source_content_hashes": data.get("source_versions"),
-        }
         return _knowledge_action_propose_tool({
             "summary": f"执行 {capability_id}", "steps": [step],
             "suggested_navigation": {
@@ -1579,7 +1566,7 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             for event in result.get("events") or []:
                 emit(event)
         return json.dumps(result, ensure_ascii=False)
-    if capability_id not in {
+    if capability.get("effect") != "read" and capability_id not in {
         "workflow.create", "workflow.open", "workflow.status", "workflow.start",
         "presentation.create_from_document", "artifact.open", "artifact.download",
         "artifact.consume_structured",

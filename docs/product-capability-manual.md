@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104`
+Catalog digest: `1513d198550c7cb4bb334605da2262b99fdd6636b0ffc3a70295bf171fa23b5f`
 
 ## Gateway 核心模块规范
 
@@ -287,6 +287,20 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 
 完成声明必须同时给出：规范/契约版本、目标测试与结果、生成和防漂移检查、性能口径、旁路扫描、实际调用入口、durable run 终态、结构化 receipt、部署 revision（如发布）及剩余风险。模拟器、真机、测试环境和生产环境必须分别表述；测试通过不能替代生产回执，部署成功不能替代业务结果回读。
 
+
+### iOS 帮我清理（2026-09）
+
+清理页仅保存本次建议与确认状态，业务数据仍以 ChatHistoryStore、KnowledgeNoteStore 和 QWS 项目为准。沿用首页 PaperCard、筛选条、插画及确认面板；不新建清理服务或状态仓库。
+
+- 对话：现有 SQLite 会话生命周期通过 `conversation.lifecycle` 客户端能力执行。PCM 先确认，当前账号设备校验会话版本并原子归档/恢复，SQLite 动作收据防止重复执行，再回传现有 client-action receipt。当前对话不参与整理；归档不删除消息。
+- 笔记：按钮调用现有 `knowledge.note.*` 提案入口并附带受限本地快照；适配至与 Hermes 相同的签名 knowledge-action ledger / KnowledgeActionExecutor，避免云端旧副本覆盖本地内容。内容哈希和来源集合必须匹配。合并先编辑、核对目标内容，来源归档；恢复来源不会回退目标。同步失败沿用现有待同步动作恢复。
+- 待办：`task.list(include_cleanup=true)` 复用现有查重与合并预览；`task.update(operations=...)` 将同一项目操作组合进现有 project-change proposal，只在 PCM 确认后批准，并以同一项目 revision 原子落库。原单项归档入口复用同一实现。支持归档、恢复、逐字段合并、无后续修改时撤销合并；不移除审计和来源。
+- 一次最多选择 32 项，跨领域分别执行并逐项显示结果，不承诺跨设备/跨项目事务。已发送操作锁定确认内容；网络响应丢失时查询现有 proposal status/result，不重复使用确认令牌执行副作用。
+- 建议来源透明：已整理对话/已完成待办建议归档；超过 30 天未更新的内容交由用户决定；同名笔记仅作合并候选，不等于内容重复。当前覆盖前 20 个项目；每项目查重前 100 个有效任务，最多 50 对候选；超限与加载失败显示明确信息。单篇笔记快照超过 20,000 字符时提示去详情处理。
+- 自然语言仍走现有 Hermes/JEV 与 PCM 原生工具；按钮已表达明确意图，无须另建 JEV 或关键词分类器。Bridge 已实现的只读能力同样走统一授权 handler。
+
+生产回执仍标为 unverified；本地测试不替代部署后的功能验收。
+
 ## Capability inventory
 
 | Capability | Domain | Effect | Confirmation | Receipt | Event | Renderer | Status |
@@ -303,6 +317,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `bookshelf.open@1.0.0` | bookshelf | read | none | none | `bookshelf.opened` | `bookshelf@1` | implemented |
 | `bookshelf.search@1.0.0` | bookshelf | read | none | none | `bookshelf.results` | `bookshelf@1` | implemented |
 | `bookshelf.subscribe@1.0.0` | bookshelf | write | required | required | `bookshelf.subscription_changed` | `bookshelf@1` | implemented |
+| `conversation.lifecycle@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `data.analyze@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `data_analysis_card@1` | implemented |
 | `document.word.create_from_text@1.0.0` | document | write | required | required | `document.created` | `workflow@1` | implemented |
 | `file.download@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
@@ -353,11 +368,11 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `skill.list@1.0.0` | skill | read | none | none | `skill.snapshot` | `answer@1` | implemented |
 | `skill.update@1.0.0` | skill | write | required | required | `skill.changed` | `answer@1` | implemented |
 | `task.create@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
-| `task.delete@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `task.delete@1.1.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `task.execute@1.0.0` | task | execute | required | required | `task.execution_queued` | `task_execution_card@1` | implemented |
-| `task.list@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
+| `task.list@1.1.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
-| `task.update@1.0.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `task.update@1.1.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
 | `voice.record@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `voice.transcribe@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `workflow.approve@1.0.0` | workflow | write | required | required | `workflow.approved` | `workflow@1` | implemented |
@@ -415,10 +430,10 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | Open a tenant-visible QWS project snapshot. | `project.open` | `project.snapshot@1` | `answer@1` | `project.open` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
 | Propose definition changes to an owned QWS project using revision CAS. | `project.update` | `project.change_proposed@1` | `answer@1` | `project.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
 | Archive an owned QWS project while preserving immutable audit history. | `project.delete` | `project.change_proposed@1` | `answer@1` | `project.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
-| List canonical tasks in a tenant-visible QWS project. | `task.list` | `task.snapshot@1` | `answer@1` | `task.list` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
+| List canonical tasks in a tenant-visible QWS project. | `task.list` | `task.snapshot@1` | `answer@1` | `task.list` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | unverified | partial |
 | Propose a new canonical task in an owned QWS project. | `task.create` | `task.change_proposed@1` | `answer@1` | `task.create` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
-| Propose edits to a canonical QWS task contract. | `task.update` | `task.change_proposed@1` | `answer@1` | `task.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
-| Soft-delete a canonical QWS task through the governed archive proposal path. | `task.delete` | `task.change_proposed@1` | `answer@1` | `task.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
+| Propose edits to a canonical QWS task contract. | `task.update` | `task.change_proposed@1` | `answer@1` | `task.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | unverified | partial |
+| Soft-delete a canonical QWS task through the governed archive proposal path. | `task.delete` | `task.change_proposed@1` | `answer@1` | `task.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | unverified | partial |
 | Queue an owner-bound QWS task conversation using an ephemeral delegated user token. | `task.execute` | `task.execution_queued@1` | `task_execution_card@1` | `task.execute` | `ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry` | qws-project-access | `tests/test_task_execute_capability.py` | implemented | implemented |
 | Read a canonical QWS task and its current status. | `task.status` | `task.snapshot@1` | `answer@1` | `task.status` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-project-access | `tests/test_project_task_capabilities.py` | implemented | implemented |
 | Generate, revise, and download a multi-page Word document | `document.word.create_from_text` | `document.created@1` | `workflow@1` | `backend/capability_handlers.py:_word_create_from_text` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | workflow-owner + artifact-owner | `tests/e2e/test_word_workflow.py`, `tests/test_product_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | implemented | implemented |
@@ -450,5 +465,6 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | Propose dates for one currently unscheduled canonical QWS task. | `schedule.create` | `schedule.change_proposed@1` | `answer@1` | `schedule.create` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Propose replacement dates for one scheduled canonical QWS task. | `schedule.update` | `schedule.change_proposed@1` | `answer@1` | `schedule.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Propose clearing dates from one scheduled canonical QWS task. | `schedule.delete` | `schedule.change_proposed@1` | `answer@1` | `schedule.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
+| Archive or restore versioned conversations on the current device. | `conversation.lifecycle` | `client.action.requested@1` | `client_action@1` | `conversation.lifecycle` | `ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift` | client-action-owner | `tests/test_cleanup_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
 
 PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.

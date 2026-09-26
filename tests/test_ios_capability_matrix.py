@@ -17,7 +17,7 @@ SPEC.loader.exec_module(module)
 def test_ios_scope_is_pcm_manifest_driven_and_has_required_columns():
     result = module.generate()
     assert result["source"] == "backend/contracts/product-capabilities/manifest.yaml#ios_scope"
-    assert result["total"] == 70
+    assert result["total"] == 71
     assert len({row["capability"] for row in result["capabilities"]}) == result["total"]
     for row in result["capabilities"]:
         assert set(result["required_columns"]).issubset(row)
@@ -39,8 +39,8 @@ def test_ios_scope_covers_every_required_product_family():
 def test_ios_matrix_truthfully_reports_release_closure():
     result = module.generate()
     assert result["counts"] == {
-        "implemented": 70,
-        "partial": 0,
+        "implemented": 67,
+        "partial": 4,
         "absent": 0,
         "unverified": 0,
     }

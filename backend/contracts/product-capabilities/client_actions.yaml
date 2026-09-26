@@ -209,3 +209,41 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_client_action_capabilities.py, tests/test_voice_transcription_capability.py]
     implementation_status: implemented
+
+  - id: conversation.lifecycle
+    version: 1.0.0
+    domain: client_action
+    description: Archive or restore explicit versioned conversations on the confirming device; preserve messages and return a native execution receipt.
+    positive_examples: [Archive these selected local conversations after review.]
+    negative_examples: [Delete Hermes sessions or claim this changes another device.]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [lifecycle, sessions]
+      properties:
+        lifecycle: {type: string, enum: [archived, active]}
+        sessions:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required: [session_id, version]
+            properties:
+              session_id: {type: string, minLength: 1, maxLength: 100}
+              version: {type: string, pattern: '^[0-9a-f]{64}$'}
+    output_schema: {type: object, required: [action_id, action_type, state, payload, input_digest]}
+    effect: client_action
+    risk: medium
+    confirmation: required
+    preconditions: [authenticated_client_action_owner, local_session_versions_match]
+    policy_ref: client-action-owner
+    handler_binding: conversation.lifecycle
+    idempotency: required
+    receipt: required
+    result_event: client.action.requested
+    renderer: client_action
+    renderer_version: 1
+    tests: [tests/test_cleanup_capabilities.py, ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift]
+    implementation_status: implemented

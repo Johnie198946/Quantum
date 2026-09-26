@@ -29,6 +29,11 @@ private enum NativeClientActionRegistry {
         onComplete: @escaping (String, [String: String]) -> Void
     ) -> some View {
         switch action.actionType {
+        case "conversation_lifecycle":
+            ProgressView("正在整理对话…").task(id: action.id) { @MainActor in
+                do { onComplete("SUCCEEDED", try SessionManager.shared.applyLifecycleAction(action)) }
+                catch { onComplete("FAILED", ["error_code": "session_version_conflict"]) }
+            }
         case "file_picker":
             NativeFilePickerAction(action: action, onComplete: onComplete)
         case "photo_library":

@@ -49,6 +49,69 @@ class KnowledgeActionResumeRequest(BaseModel):
     error_code: str | None = Field(None, max_length=80)
 
 
+async def propose_local_note_capability(
+    capability_id: str, data: dict[str, Any], *, local_notes: list[dict[str, Any]],
+    payload: dict[str, Any], session_id: str, request_id: str,
+) -> dict[str, Any]:
+    """Use the chat action ledger and executor for an explicit PCM button intent."""
+    from backend.api.chat import LocalNoteContext, _authorize_knowledge_action_event
+    from backend.services.capability_catalog import CapabilityContractError
+    from backend.services.knowledge_action_capability import note_capability_step
+    from pydantic import ValidationError
+
+    step = note_capability_step(capability_id, data)
+    if step is None:
+        raise CapabilityContractError("local_notes require a personal note capability")
+    try:
+        notes = [LocalNoteContext.model_validate(item).model_dump() for item in local_notes]
+    except ValidationError as exc:
+        raise CapabilityContractError("invalid local note snapshot") from exc
+    if len(notes) > 17 or sum(len(note["markdown"]) for note in notes) > 120_000:
+        raise CapabilityContractError("local note snapshot exceeds bounds")
+    by_id = {note["id"]: note for note in notes}
+    target = step["target_note_id"]
+    sources = step["source_note_ids"]
+    referenced = ({target} if target else set()) | set(sources)
+    if len(by_id) != len(notes) or set(by_id) != referenced or target in sources:
+        raise CapabilityContractError("local note targets must match the reviewed snapshot")
+    if step["kind"] == "merge_notes" and not 1 <= len(sources) <= 16:
+        raise CapabilityContractError("merge requires explicit sources")
+    for note in notes:
+        digest = hashlib.sha256(note["markdown"].encode()).hexdigest()
+        expected = (step["original_content_hash"] if note["id"] == target
+                    else step["source_content_hashes"].get(note["id"]))
+        if note["content_hash"] != digest or (expected is not None and expected != digest):
+            raise CapabilityContractError("local note version mismatch")
+        if note["archived"] != (step["kind"] == "restore_note"):
+            raise CapabilityContractError("local note lifecycle conflict")
+    if target:
+        step["original_content_hash"] = by_id[target]["content_hash"]
+        step["title"] = by_id[target]["title"]
+        step["tags"] = by_id[target]["tags"]
+    if len(str(step.get("markdown") or "")) > 120_000:
+        raise CapabilityContractError("revised note exceeds bounds")
+    labels = {"archive_note": "归档笔记", "restore_note": "恢复笔记", "merge_notes": "合并笔记",
+              "update_note": "更新笔记", "create_note": "新建笔记"}
+    event = {
+        "type": "knowledge_action_draft", "action_id": "ka-" + uuid.uuid4().hex,
+        "summary": labels[step["kind"]], "steps": [step],
+        "before_preview": "\n\n".join(note["markdown"] for note in notes)[:2000],
+        "after_preview": str(step.get("markdown") or "内容保留，可在归档中恢复。")[:4000],
+        "markdown_diff": "", "risk_level": "high" if sources else "medium",
+        "suggested_navigation": {"destination": "knowledge_home"},
+        "confirmation_status": "unsigned",
+    }
+    authorized = await _authorize_knowledge_action_event(
+        event, payload=payload, session_id=session_id, request_id=request_id,
+        policy_version=str(payload.get("knowledge_policy_version") or "unknown"),
+        client_context={"local_notes": notes},
+    )
+    return {"status": "awaiting_confirmation", "capability_id": capability_id,
+            "events": [{"type": "knowledge_action_draft", "version": 1,
+                        "renderer": "knowledge_action", "renderer_version": 1,
+                        "payload": authorized}], "receipt": None, "error": None}
+
+
 def _identity(payload: dict[str, Any]) -> tuple[str, str]:
     return (
         str(payload.get("tenant_key") or ""),

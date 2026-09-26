@@ -2015,6 +2015,10 @@ public struct QCPInvokeResponseDTO<Payload: Decodable>: Decodable {
     public let error: QCPErrorDTO?
 }
 
+private struct QCPProposalStatusDTO<Payload: Decodable>: Decodable {
+    let result: QCPInvokeResponseDTO<Payload>?
+}
+
 private struct QCPInvokeRequestDTO<Input: Encodable>: Encodable {
     let capabilityId: String
     let input: Input
@@ -2034,6 +2038,7 @@ private struct QCPProposalRequestDTO<Input: Encodable>: Encodable {
     let idempotencyKey: String?
     let resourceVersions: [String: String]
     let rendererVersion: String
+    var localNotes: [[String: JSONScalar]]? = nil
     enum CodingKeys: String, CodingKey {
         case capabilityId = "capability_id"
         case input
@@ -2042,6 +2047,7 @@ private struct QCPProposalRequestDTO<Input: Encodable>: Encodable {
         case idempotencyKey = "idempotency_key"
         case resourceVersions = "resource_versions"
         case rendererVersion = "renderer_version"
+        case localNotes = "local_notes"
     }
 }
 
@@ -2065,6 +2071,14 @@ public struct ClientActionPayloadDTO: Codable, Hashable {
     public let text: String?
     public let artifactId: String?
     public let sourceId: String?
+    public var lifecycle: SessionLifecycleStatus? = nil
+    public var sessions: [ClientSessionVersionDTO]? = nil
+    public var accountScope: String? = nil
+}
+
+public struct ClientSessionVersionDTO: Codable, Hashable {
+    public let sessionId: String
+    public let version: String
 }
 
 public struct VoiceTranscriptionDTO: Codable, Hashable {
@@ -2079,6 +2093,7 @@ public struct ClientActionDTO: Codable, Identifiable, Hashable {
     public let actionType: String
     public let state: String
     public let payload: ClientActionPayloadDTO
+    public var inputDigest: String? = nil
     public var id: String { actionId }
 }
 
@@ -2096,6 +2111,29 @@ public final class CapabilityClient {
     private let apiClient: APIClient
 
     public init(apiClient: APIClient? = nil) { self.apiClient = apiClient ?? .shared }
+
+    public func proposeLocalNote(
+        _ capabilityId: String, input: [String: JSONScalar],
+        notes: [[String: JSONScalar]], sessionId: String, requestId: String
+    ) async throws -> KnowledgeActionBlock {
+        let response = try await apiClient.request(
+            QCPInvokeResponseDTO<JSONScalar>.self, path: "capabilities/proposals", method: "POST",
+            body: QCPProposalRequestDTO(
+                capabilityId: capabilityId, input: input, sessionId: sessionId,
+                requestId: requestId, idempotencyKey: requestId, resourceVersions: [:],
+                rendererVersion: "qcp-ios@1", localNotes: notes
+            )
+        )
+        guard response.error == nil, let event = response.events.first else {
+            throw APIError.network(response.error?.message ?? "无法生成笔记确认单")
+        }
+        let bytes = try JSONEncoder().encode(event.payload)
+        guard let json = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              case .knowledgeActionDraft(let action) = APIClient.StreamEvent.parse(json) else {
+            throw APIError.network("笔记确认单格式无效")
+        }
+        return action
+    }
 
     public func invoke<Input: Encodable, Output: Decodable>(
         _ capabilityId: String,
@@ -2144,16 +2182,25 @@ public final class CapabilityClient {
         sessionId: String,
         as outputType: Output.Type = Output.self
     ) async throws -> QCPInvokeResponseDTO<Output> {
-        try await apiClient.request(
-            QCPInvokeResponseDTO<Output>.self,
-            path: "capabilities/confirm",
-            method: "POST",
-            body: QCPConfirmRequestDTO(
-                proposalId: proposalId,
-                confirmationToken: confirmationToken,
-                sessionId: sessionId
+        do {
+            let response = try await apiClient.request(
+                QCPInvokeResponseDTO<Output>.self,
+                path: "capabilities/confirm", method: "POST",
+                body: QCPConfirmRequestDTO(proposalId: proposalId,
+                    confirmationToken: confirmationToken, sessionId: sessionId)
             )
-        )
+            if response.error != nil,
+               let saved = try? await apiClient.request(QCPProposalStatusDTO<Output>.self,
+                   path: "capabilities/proposals/\(proposalId)/status"),
+               let result = saved.result { return result }
+            return response
+        } catch {
+            // A lost response may follow a committed write. Recover its existing receipt.
+            if let saved = try? await apiClient.request(QCPProposalStatusDTO<Output>.self,
+                path: "capabilities/proposals/\(proposalId)/status"),
+               let result = saved.result { return result }
+            throw error
+        }
     }
 
     public func recordClientActionReceipt(

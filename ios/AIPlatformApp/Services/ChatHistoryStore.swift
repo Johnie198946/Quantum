@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SQLite3
 
 public struct StoredMessagePage: Sendable {
@@ -216,6 +217,40 @@ public final class ChatHistoryStore: @unchecked Sendable {
             bind(sessionId, s, 4)
         }
     }
+
+    public func lifecycleVersion(sessionId: String) throws -> String {
+        guard let item = try summary(sessionId: sessionId) else { throw error("session missing") }
+        let bytes = try JSONSerialization.data(withJSONObject: [
+            "id": item.id, "title": item.title, "updated": item.updatedAt.timeIntervalSince1970,
+            "count": item.messageCount, "lifecycle": item.lifecycleStatus.rawValue,
+            "archived": item.archivedAt?.timeIntervalSince1970 ?? 0,
+            "organized": item.organizedAt?.timeIntervalSince1970 ?? 0,
+        ], options: [.sortedKeys])
+        return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    public func applyLifecycleAction(
+        id: String, digest: String, sessions: [ClientSessionVersionDTO], status: SessionLifecycleStatus
+    ) throws {
+        try transaction {
+            let prior = try query("SELECT input_digest FROM session_actions WHERE id=?", { bind(id, $0, 1) }) { text($0, 0) }.first
+            if let prior {
+                guard prior == digest else { throw error("action payload changed") }
+                return
+            }
+            guard !sessions.isEmpty, sessions.count <= 32, status != .trashed,
+                  Set(sessions.map(\.sessionId)).count == sessions.count else { throw error("invalid lifecycle action") }
+            for session in sessions {
+                guard try lifecycleVersion(sessionId: session.sessionId) == session.version,
+                      let summary = try summary(sessionId: session.sessionId),
+                      summary.lifecycleStatus == (status == .archived ? .active : .archived) else {
+                    throw error("对话已变化，请重新生成确认单")
+                }
+            }
+            for session in sessions { try setLifecycle(status, sessionId: session.sessionId) }
+            try run("INSERT INTO session_actions(id,input_digest) VALUES(?,?)") { bind(id, $0, 1); bind(digest, $0, 2) }
+        }
+    }
     public func markOrganized(_ sessionIds: [String]) throws {
         let now = Date().timeIntervalSince1970
         try transaction {
@@ -270,6 +305,7 @@ public final class ChatHistoryStore: @unchecked Sendable {
 
     private func schema() throws {
         try exec("CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,title TEXT NOT NULL,updated_at REAL NOT NULL,message_count INTEGER NOT NULL DEFAULT 0,next_sequence INTEGER NOT NULL DEFAULT 0,agent_id TEXT NOT NULL,agent_name TEXT NOT NULL)")
+        try exec("CREATE TABLE IF NOT EXISTS session_actions(id TEXT PRIMARY KEY,input_digest TEXT NOT NULL)")
         if !tableColumns("sessions").contains("topic_payload") {
             try exec("ALTER TABLE sessions ADD COLUMN topic_payload BLOB")
         }

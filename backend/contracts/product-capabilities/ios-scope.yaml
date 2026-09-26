@@ -2,6 +2,7 @@ version: 2
 scope: ios-all-capabilities-gate-3-5
 status_values: [implemented, partial, absent, unverified]
 capabilities:
+  - conversation.lifecycle
   - bookshelf.search
   - bookshelf.subscribe
   - bookshelf.open
@@ -73,6 +74,9 @@ capabilities:
   - schedule.update
   - schedule.delete
 annotations:
+  conversation.lifecycle:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
   task.execute:
     ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx

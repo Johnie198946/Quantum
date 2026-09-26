@@ -426,6 +426,22 @@ class TaskArchiveProposalRequest(BaseModel):
     action: Literal["ARCHIVE", "RESTORE"]
 
 
+class TaskOrganizationOperation(BaseModel):
+    model_config = {"extra": "forbid"}
+    action: Literal["ARCHIVE", "RESTORE", "MERGE", "REVERT_MERGE"]
+    task_id: str = Field(min_length=1, max_length=80)
+    secondary_task_id: str | None = Field(None, min_length=1, max_length=80)
+    field_choices: dict[str, Literal["primary", "secondary", "union"]] = Field(default_factory=dict)
+    merge_id: str | None = Field(None, max_length=80)
+
+
+class TaskOrganizationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    expected_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=8, max_length=100)
+    operations: list[TaskOrganizationOperation] = Field(min_length=1, max_length=32)
+
+
 class ProjectScheduleProposalRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=8, max_length=100)
     expected_revision: int = Field(ge=0)
@@ -1000,6 +1016,7 @@ async def _create_project_change_proposal(
     db, *, project: WorkspaceProject, user_id: str, change_kind: str,
     request_id: str, proposed_process: dict[str, Any],
     project_fields: dict[str, Any] | None = None, title: str,
+    request_payload: dict[str, Any] | None = None,
 ) -> WorkspaceProjectChangeProposal:
     if classify_project_change(change_kind) != "INTENT":
         raise ValueError("project change proposal requires an intent-impacting kind")
@@ -1035,6 +1052,7 @@ async def _create_project_change_proposal(
             and idempotency_projection(operation.get("process"))
             == idempotency_projection(proposed_process)
             and (operation.get("project_fields") or {}) == (project_fields or {})
+            and operation.get("request_payload") == request_payload
         )
 
     existing = await db.scalar(
@@ -1077,6 +1095,7 @@ async def _create_project_change_proposal(
             "op": "replace_project_state",
             "process": proposed_process,
             "project_fields": project_fields or {},
+            **({"request_payload": request_payload} if request_payload is not None else {}),
         }],
         impact=impact,
         requested_by=user_id,
@@ -4384,40 +4403,100 @@ async def propose_project_schedule(
         return JSONResponse(status_code=202, content={"proposal": _proposal_out(proposal)})
 
 
+async def propose_project_task_organization(
+    project_id: str, body: TaskOrganizationRequest, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Compose reviewed task operations into the existing single project CAS proposal."""
+    from backend.services.task_operating_loop import _has_active_execution_lease
+
+    tenant_key, user_id = _scope(payload)
+    _require_interactive_human(payload)
+    requested = body.model_dump(exclude={"request_id"})
+    async with SessionLocal() as db:
+        project = await _project_for_human_approval(db, project_id, tenant_key, user_id, payload)
+        existing = await db.scalar(select(WorkspaceProjectChangeProposal).where(
+            WorkspaceProjectChangeProposal.project_id == project.id,
+            WorkspaceProjectChangeProposal.request_id == body.request_id,
+        ))
+        if existing is not None:
+            if not existing.operations or existing.operations[0].get("request_payload") != requested:
+                raise HTTPException(status_code=409, detail="task_operation_idempotency_conflict")
+            return {"proposal": _proposal_out(existing)}
+        if project.process_revision != body.expected_revision:
+            raise HTTPException(status_code=409, detail="project_revision_conflict")
+        process = deepcopy(project.process_snapshot or {})
+        tasks = [initialize_task_contract(item) for item in process.get("tasks", [])]
+        by_id = {str(item["id"]): item for item in tasks}
+        merges = process.setdefault("task_merges", [])
+        touched: set[str] = set()
+        for operation in body.operations:
+            ids = {operation.task_id}
+            if operation.secondary_task_id:
+                ids.add(operation.secondary_task_id)
+            if ids & touched or any(key not in by_id for key in ids):
+                raise HTTPException(status_code=409, detail="overlapping_or_missing_task")
+            if any(_has_active_execution_lease(by_id[key]) for key in ids):
+                raise HTTPException(status_code=409, detail="active_execution_lease_blocks_organization")
+            task = by_id[operation.task_id]
+            try:
+                if operation.action == "MERGE":
+                    if not operation.secondary_task_id or any(by_id[key].get("archived_at") for key in ids):
+                        raise ValueError("merge_requires_active_sources")
+                    secondary = by_id[operation.secondary_task_id]
+                    merge = create_merge_preview(task, secondary, created_by=f"user:{user_id}")
+                    merge["id"] = "merge_" + hashlib.sha256(f"{project.id}:{body.request_id}:{operation.task_id}".encode()).hexdigest()[:32]
+                    apply_task_merge(merge, task, secondary, field_choices=operation.field_choices, actor_id=f"user:{user_id}")
+                    merges.append(merge)
+                elif operation.action == "REVERT_MERGE":
+                    merge = next((item for item in merges if item["id"] == operation.merge_id), None)
+                    if merge is None or merge["primary_task_id"] != operation.task_id or merge["secondary_task_id"] != operation.secondary_task_id:
+                        raise ValueError("merge_sources_mismatch")
+                    revert_task_merge(merge, task, by_id[operation.secondary_task_id], actor_id=f"user:{user_id}")
+                else:
+                    if operation.secondary_task_id or operation.field_choices or operation.merge_id:
+                        raise ValueError("archive_contains_merge_fields")
+                    if task.get("status") == "MERGED":
+                        raise ValueError("merged_source_requires_merge_revert")
+                    if operation.action == "ARCHIVE":
+                        if task.get("archived_at"):
+                            raise ValueError("task_already_archived")
+                        task["pre_archive_status"] = task.get("status")
+                        if task.get("status") != "DONE":
+                            task["status"] = "CANCELLED"
+                        task["archived_at"] = datetime.now(timezone.utc).isoformat()
+                    else:
+                        if not task.get("archived_at"):
+                            raise ValueError("task_not_archived")
+                        task["status"] = task.pop("pre_archive_status", task.get("status") or "TODO")
+                        task.pop("archived_at", None)
+                    task["task_revision"] = int(task.get("task_revision") or 1) + 1
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            touched.update(ids)
+        process["tasks"] = tasks
+        _sync_task_status_projections(process, tasks, touched)
+        proposal = await _create_project_change_proposal(
+            db, project=project, user_id=user_id, change_kind="TASK_DELETE",
+            request_id=body.request_id, proposed_process=process,
+            request_payload=requested, title=f"整理 {len(touched)} 个任务（内容与记录保留）",
+        )
+        return {"proposal": _proposal_out(proposal)}
+
+
 @router.post("/projects/{project_id}/tasks/{task_id}/archive-proposal", status_code=202)
 async def propose_project_task_archive(
     project_id: str, task_id: str, body: TaskArchiveProposalRequest,
     payload=Depends(require_auth),
 ) -> JSONResponse:
-    tenant_key, user_id = _scope(payload)
-    _require_interactive_human(payload)
-    async with SessionLocal() as db:
-        project = await _project_for_access(
-            db, project_id, tenant_key, user_id, "project:write"
-        )
-        if project.process_revision != body.expected_revision:
-            raise HTTPException(status_code=409, detail={"error": "project_revision_conflict", "server_revision": project.process_revision})
-        process = deepcopy(project.process_snapshot or {})
-        task = next((
-            item for item in process.get("tasks") or []
-            if isinstance(item, dict) and str(item.get("id")) == task_id
-        ), None)
-        if task is None:
-            raise HTTPException(status_code=404, detail="project task not found")
-        if body.action == "ARCHIVE":
-            task["status"] = "CANCELLED"
-            task["archived_at"] = datetime.now(timezone.utc).isoformat()
-        else:
-            task["status"] = "TODO"
-            task.pop("archived_at", None)
-        task["task_revision"] = int(task.get("task_revision") or 1) + 1
-        _sync_task_status_projections(process, process.get("tasks") or [], {task_id})
-        proposal = await _create_project_change_proposal(
-            db, project=project, user_id=user_id, change_kind="TASK_DELETE",
-            request_id=body.request_id, proposed_process=process,
-            title=(f"归档任务：{task.get('title')}" if body.action == "ARCHIVE" else f"恢复任务：{task.get('title')}"),
-        )
-        return JSONResponse(status_code=202, content={"proposal": _proposal_out(proposal), "task_preview": task})
+    result = await propose_project_task_organization(
+        project_id, TaskOrganizationRequest(
+            expected_revision=body.expected_revision, request_id=body.request_id,
+            operations=[TaskOrganizationOperation(action=body.action, task_id=task_id)],
+        ), payload,
+    )
+    process = result["proposal"]["operations"][0]["process"]
+    result["task_preview"] = next(item for item in process["tasks"] if item["id"] == task_id)
+    return JSONResponse(status_code=202, content=result)
 
 
 @router.post("/projects/{project_id}/tasks/{task_id}/execution-lease")

@@ -647,11 +647,6 @@ struct HomeJourneyView: View {
     @State private var learningPlan = LearningPlanResponse.fallback
     @State private var isResettingPlan = false
     @State private var notes: [CloudKnowledgeNoteDTO] = []
-    @State private var selectedCleanupIDs: Set<String> = ["archive-chat", "archive-note", "merge-preview", "selected-4", "selected-5", "selected-6"]
-    @State private var cleanupFilter = 0
-    @State private var showCleanupConfirmation = false
-    @State private var showArchiveConfirmation = false
-    @State private var cleanupMessage: String?
     @State private var readerBusy = false
     @State private var hiddenAttentionTitles: Set<String> = []
     @State private var attentionFilter = 0
@@ -755,31 +750,6 @@ struct HomeJourneyView: View {
             )
             .environmentObject(APIClient.shared)
         }
-        .fullScreenCover(isPresented: $showArchiveConfirmation) {
-            ArchiveConfirmationView(
-                sessionIDs: Array(cleanupSessions.prefix(3)),
-                onLater: { showArchiveConfirmation = false },
-                onContinue: { sessionID in
-                    if let sessionID { sessionManager.switchTo(sessionID) }
-                    showArchiveConfirmation = false
-                    closeJourney()
-                },
-                onConfirm: { sessionIDs in
-                    sessionIDs.forEach { sessionManager.setLifecycle(.archived, for: $0) }
-                    showArchiveConfirmation = false
-                    cleanupMessage = "已归档 \(sessionIDs.count) 个对话；归档内容仍可在会话历史中恢复。"
-                }
-            )
-        }
-        .alert("确认整理所选内容？", isPresented: $showCleanupConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("确认归档") { performCleanup() }
-        } message: {
-            Text("所选对话会移入归档；笔记不会自动删除或覆盖。之后仍可恢复。")
-        }
-        .alert("整理结果", isPresented: Binding(
-            get: { cleanupMessage != nil }, set: { if !$0 { cleanupMessage = nil } }
-        )) { Button("知道了") { cleanupMessage = nil } } message: { Text(cleanupMessage ?? "") }
         .alert("清空已读提醒？", isPresented: $showClearReadConfirmation) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive) {
@@ -886,33 +856,7 @@ struct HomeJourneyView: View {
     }
 
     private var cleanupPage: some View {
-        Group {
-            CleanupHero(count: 12)
-            CleanupFilterBar(selection: $cleanupFilter)
-            CleanupArchiveCard(
-                chatSelected: selectedCleanupIDs.contains("archive-chat"),
-                noteSelected: selectedCleanupIDs.contains("archive-note"),
-                onChat: { toggle("archive-chat") },
-                onNote: { toggle("archive-note") },
-                onArchiveChat: { showArchiveConfirmation = true },
-                onArchiveNote: { onPrompt("请先展示毕业论文资料整理阶段记录的归档确认单。") }
-            )
-            CleanupMergeCard(selected: selectedCleanupIDs.contains("merge-preview")) {
-                toggle("merge-preview")
-            } onReview: {
-                onPrompt("请展示“线性代数复习”和“线性代数重点整理”的合并差异，确认后再合并。")
-            }
-            CleanupDecisionCard(selected: selectedCleanupIDs.contains("duplicate-task")) {
-                toggle("duplicate-task")
-            } onReview: {
-                onPrompt("请展示 2 条重复待办的内容差异，不要直接删除。")
-            }
-            CleanupSelectionBar(
-                count: selectedCleanupIDs.count,
-                onLater: closeJourney,
-                onConfirm: { showCleanupConfirmation = true }
-            )
-        }
+        CleanupWorkspaceView(onLater: closeJourney)
     }
 
     private var attentionPage: some View {
@@ -1240,21 +1184,8 @@ struct HomeJourneyView: View {
         attentionFilter == 0 || (attentionFilter == 1 && kind == .study) || (attentionFilter == 2 && kind == .inspiration) || (attentionFilter == 3 && kind == .pending)
     }
 
-    private var cleanupSessions: [String] {
-        sessionManager.sortedSessionIDs().filter { $0 != sessionManager.activeSessionId }
-    }
-    private func toggle(_ id: String) {
-        if selectedCleanupIDs.contains(id) { selectedCleanupIDs.remove(id) } else { selectedCleanupIDs.insert(id) }
-    }
-
-    private func performCleanup() {
-        let sessions = selectedCleanupIDs.intersection(Set(cleanupSessions))
-        sessions.forEach { sessionManager.setLifecycle(.archived, for: $0) }
-        selectedCleanupIDs.subtract(sessions)
-        cleanupMessage = sessions.isEmpty ? "没有直接执行删除或覆盖。合并和待办仍需在确认卡中继续。" : "已归档 \(sessions.count) 个对话；其余建议未改动。"
-    }
-
     @MainActor private func loadData() async {
+        guard action.id != "help-me-clean" else { return }
         async let fetchedResume = try? APIClient.shared.fetchLearningResume()
         async let fetchedNotes = try? APIClient.shared.fetchKnowledgeNotes(includeArchived: true)
         learningResume = await fetchedResume
@@ -1275,7 +1206,7 @@ struct HomeJourneyView: View {
             subscription = nil
             selectedBook = nil
         } catch {
-            cleanupMessage = "暂时无法更新书架，请稍后重试。"
+            learningPlanNotice = "暂时无法更新书架，请稍后重试。"
         }
     }
 }
@@ -1705,7 +1636,8 @@ private struct CleanupHero: View {
 
 private struct CleanupFilterBar: View {
     @Binding var selection: Int
-    private let items = ["全部  12", "对话  4", "笔记  5", "待办  3"]
+    let counts: [Int]
+    private var items: [String] { zip(["全部", "对话", "笔记", "待办"], counts).map { "\($0.0)  \($0.1)" } }
     var body: some View {
         HStack(spacing: 4) {
             ForEach(items.indices, id: \.self) { index in
@@ -1735,84 +1667,6 @@ private struct CleanupSectionHeader: View {
     }
 }
 
-private struct CleanupArchiveCard: View {
-    let chatSelected: Bool; let noteSelected: Bool
-    let onChat: () -> Void; let onNote: () -> Void; let onArchiveChat: () -> Void; let onArchiveNote: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CleanupSectionHeader(icon: "folder.fill", tint: Color(hex: "2FC393"), title: "建议归档", subtitle: "这些内容仍有参考价值，建议归档保存。")
-            CleanupArchiveRow(selected: chatSelected, icon: "bubble.left.and.bubble.right.fill", title: "3 个已完成的学习对话", detail: "原因：话题已完成，且超过 30 天未继续讨论，\n建议归档以保持对话列表整洁。", date: "2024 年 5 月 12 日", onToggle: onChat, onArchive: onArchiveChat)
-            CleanupArchiveRow(selected: noteSelected, icon: "doc.text.fill", title: "毕业论文资料整理 · 阶段记录", detail: "原因：已完成该阶段的资料收集，建议归档\n便于后续查阅。", date: "2024 年 6 月 3 日", onToggle: onNote, onArchive: onArchiveNote)
-        }.padding(12).background(Color(hex: "F2FCF8").opacity(0.86), in: RoundedRectangle(cornerRadius: 22))
-            .overlay { RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1) }
-    }
-}
-
-private struct CleanupArchiveRow: View {
-    let selected: Bool; let icon: String; let title: String; let detail: String; let date: String
-    let onToggle: () -> Void; let onArchive: () -> Void
-    var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Button(action: onToggle) { Image(systemName: selected ? "checkmark.square.fill" : "square").font(.title3).foregroundStyle(selected ? HomePalette.blue : HomePalette.secondary) }.buttonStyle(.plain).padding(.top, 8)
-            Image(systemName: icon).foregroundStyle(HomePalette.blue).frame(width: 42, height: 42).background(HomePalette.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.bold)).foregroundStyle(HomePalette.ink)
-                Text(detail).font(.caption).foregroundStyle(HomePalette.secondary).lineSpacing(2)
-                Text(date).font(.caption2).foregroundStyle(HomePalette.secondary)
-            }
-            Spacer(minLength: 2)
-            Button("归档", action: onArchive).font(.caption.weight(.semibold)).foregroundStyle(HomePalette.blue)
-                .padding(.horizontal, 15).frame(height: 36).background(HomePalette.blue.opacity(0.10), in: Capsule())
-        }.padding(10).background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 17))
-    }
-}
-
-private struct CleanupMergeCard: View {
-    let selected: Bool; let onToggle: () -> Void; let onReview: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CleanupSectionHeader(icon: "arrow.triangle.merge", tint: Color(hex: "7569EA"), title: "建议合并", subtitle: "这些内容主题相近，合并后更清晰。")
-            HStack(alignment: .top, spacing: 9) {
-                Button(action: onToggle) { Image(systemName: selected ? "checkmark.square.fill" : "square").font(.title3).foregroundStyle(selected ? HomePalette.blue : HomePalette.secondary) }.buttonStyle(.plain).padding(.top, 7)
-                Image(systemName: "doc.text.fill").foregroundStyle(HomePalette.blue).frame(width: 42, height: 42).background(HomePalette.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack { Text("线性代数复习").font(.subheadline.weight(.bold)); Spacer(); Button("合并为 1 条", action: onReview).font(.caption.weight(.semibold)).foregroundStyle(Color(hex: "6757E8")).padding(.horizontal, 10).frame(height: 30).background(HomePalette.lilac, in: Capsule()); Image(systemName: "chevron.right").font(.caption).foregroundStyle(HomePalette.secondary) }
-                    Text("线性代数重点整理").font(.caption).foregroundStyle(HomePalette.secondary)
-                    HStack(spacing: 7) {
-                        CleanupPreview(title: "线性代数复习", lines: "· 向量空间的定义…\n· 矩阵的特征值…")
-                        Image(systemName: "arrow.left.arrow.right").foregroundStyle(HomePalette.secondary)
-                        CleanupPreview(title: "线性代数重点整理", lines: "· 特征值与特征向量…\n· 相似矩阵的性质…")
-                    }
-                    Text("2024 年 5 月 28 日").font(.caption2).foregroundStyle(HomePalette.secondary)
-                }.foregroundStyle(HomePalette.ink)
-            }.padding(10).background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 17))
-        }.padding(12).background(Color(hex: "F4F5FF").opacity(0.88), in: RoundedRectangle(cornerRadius: 22))
-            .overlay { RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1) }
-    }
-}
-
-private struct CleanupPreview: View {
-    let title: String; let lines: String
-    var body: some View { VStack(alignment: .leading, spacing: 2) { Text(title).font(.caption2.weight(.medium)); Text(lines).font(.system(size: 9)).foregroundStyle(HomePalette.secondary).lineLimit(2) }.padding(7).frame(maxWidth: .infinity, alignment: .leading).background(Color(hex: "EEF4FF"), in: RoundedRectangle(cornerRadius: 8)) }
-}
-
-private struct CleanupDecisionCard: View {
-    let selected: Bool; let onToggle: () -> Void; let onReview: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CleanupSectionHeader(icon: "exclamationmark", tint: HomePalette.coral, title: "需要你决定", subtitle: "这些内容可能不再需要，请确认后再处理。")
-            HStack(alignment: .top, spacing: 9) {
-                Button(action: onToggle) { Image(systemName: selected ? "checkmark.square.fill" : "square").font(.title3).foregroundStyle(selected ? HomePalette.blue : HomePalette.secondary) }.buttonStyle(.plain).padding(.top, 8)
-                Image(systemName: "calendar.badge.exclamationmark").foregroundStyle(HomePalette.coral).frame(width: 42, height: 42).background(HomePalette.coral.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 3) { HStack(spacing: 6) { Text("2 条重复待办").font(.subheadline.weight(.bold)); Text("可能删除").font(.caption2).foregroundStyle(HomePalette.coral).padding(.horizontal, 7).padding(.vertical, 3).background(HomePalette.coral.opacity(0.1), in: Capsule()) }; Text("原因：内容高度相似，可能是重复创建。").font(.caption).foregroundStyle(HomePalette.secondary); Text("2024 年 6 月 1 日").font(.caption2).foregroundStyle(HomePalette.secondary) }
-                Spacer(minLength: 2)
-                Button(action: onReview) { HStack(spacing: 6) { Text("查看内容"); Image(systemName: "chevron.right").font(.caption) } }.font(.caption.weight(.semibold)).foregroundStyle(HomePalette.ink).padding(.horizontal, 12).frame(height: 36).background(Color.white.opacity(0.80), in: Capsule())
-            }.padding(10).background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 17))
-        }.padding(12).background(Color(hex: "FFF4F2").opacity(0.88), in: RoundedRectangle(cornerRadius: 22))
-            .overlay { RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1) }
-    }
-}
-
 private struct CleanupSelectionBar: View {
     let count: Int; let onLater: () -> Void; let onConfirm: () -> Void
     var body: some View {
@@ -1827,347 +1681,399 @@ private struct CleanupSelectionBar: View {
     }
 }
 
-private struct ArchiveConfirmationView: View {
-    let sessionIDs: [String]
-    let onLater: () -> Void
-    let onContinue: (String?) -> Void
-    let onConfirm: ([String]) -> Void
-
-    @State private var selected: Set<Int>
-    @State private var expanded: Set<Int> = []
-    @State private var isAdjusting = false
-
-    init(
-        sessionIDs: [String],
-        onLater: @escaping () -> Void,
-        onContinue: @escaping (String?) -> Void,
-        onConfirm: @escaping ([String]) -> Void
-    ) {
-        self.sessionIDs = sessionIDs
-        self.onLater = onLater
-        self.onContinue = onContinue
-        self.onConfirm = onConfirm
-        _selected = State(initialValue: [0, 1])
-    }
-
-    var body: some View {
-        ZStack {
-            QuantumMistBackground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    header
-                    hero
-                    summary
-                    sectionTitle("建议归档", subtitle: "已完成且证据完整的学习对话")
-                    archiveCard(index: 0)
-                    archiveCard(index: 1)
-                    sectionTitle("暂不归档", subtitle: "仍在进行中的内容")
-                    pendingCard
-                    reassurance
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 20)
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
-        .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private var header: some View {
-        HStack {
-            Button(action: onLater) {
-                Image(systemName: "chevron.left")
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 44, height: 44)
-            }
-            Spacer()
-            Text("归档确认")
-                .font(.headline.weight(.bold))
-            Spacer()
-            Button(selected.isEmpty ? "全选" : "全不选") {
-                selected = selected.isEmpty ? [0, 1] : []
-            }
-            .font(.subheadline.weight(.semibold))
-            .frame(width: 58, height: 44)
-        }
-        .foregroundStyle(HomePalette.ink)
-        .padding(.top, 4)
-    }
-
-    private var hero: some View {
-        ZStack(alignment: .leading) {
-            LinearGradient(
-                colors: [Color.white.opacity(0.96), HomePalette.mint.opacity(0.88)],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            Image("home_attention_botanical")
-                .resizable().scaledToFit()
-                .frame(width: 210, height: 132)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .offset(x: 36, y: 5)
-                .accessibilityHidden(true)
-            Image("home_cleanup_art")
-                .resizable().scaledToFit()
-                .frame(width: 92, height: 92)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .offset(x: 6, y: 14)
-                .opacity(0.88)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 7) {
-                Image(systemName: "folder.badge.checkmark")
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(Color(hex: "27B98C"))
-                    .frame(width: 46, height: 46)
-                    .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 14))
-                Text("整理前，再确认一次")
-                    .font(.system(size: 23, weight: .bold, design: .serif))
-                    .foregroundStyle(HomePalette.ink)
-                Text("已找到 2 条可以安全归档的学习对话")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color(hex: "56718D"))
-                Label("归档后仍可恢复，不会删除内容。", systemImage: "arrow.uturn.backward.circle")
-                    .font(.caption)
-                    .foregroundStyle(HomePalette.secondary)
-            }
-            .padding(18)
-        }
-        .frame(height: 192)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 26).stroke(Color.white, lineWidth: 1) }
-        .shadow(color: HomePalette.shadow, radius: 16, y: 7)
-    }
-
-    private var summary: some View {
-        HStack(spacing: 8) {
-            ArchiveSummaryPill(title: "待归档", value: "\(selected.count)", tint: Color(hex: "36C69C"))
-            ArchiveSummaryPill(title: "暂不处理", value: "1", tint: HomePalette.coral)
-            ArchiveSummaryPill(title: "可恢复", value: "", tint: HomePalette.blue, icon: "arrow.uturn.backward")
-        }
-    }
-
-    private func sectionTitle(_ title: String, subtitle: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 22, weight: .bold, design: .serif))
-                .foregroundStyle(HomePalette.ink)
-            Spacer()
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(HomePalette.secondary)
-        }
-        .padding(.top, 2)
-    }
-
-    private func archiveCard(index: Int) -> some View {
-        let content = ArchiveConfirmationContent.archive[index]
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 11) {
-                Button { toggle(index) } label: {
-                    Image(systemName: selected.contains(index) ? "checkmark.square.fill" : "square")
-                        .font(.title2)
-                        .foregroundStyle(selected.contains(index) ? HomePalette.blue : Color(hex: "A9B8C8"))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(selected.contains(index) ? "取消选择" : "选择归档")
-                Image(systemName: "bubble.left.and.bubble.right.fill")
-                    .foregroundStyle(HomePalette.blue)
-                    .frame(width: 44, height: 44)
-                    .background(HomePalette.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(content.title)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(HomePalette.ink)
-                    Text(content.purpose)
-                        .font(.subheadline)
-                        .foregroundStyle(HomePalette.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 7) {
-                ArchiveTag("已完成", color: Color(hex: "29B889"))
-                ArchiveTag(index == 0 ? "证据完整" : "可随时恢复", color: HomePalette.blue)
-                if index == 0 { ArchiveTag("可信度 96%", color: Color(hex: "7B68E8")) }
-                Spacer(minLength: 0)
-            }
-            if expanded.contains(index) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("学习目标与对话结果一致", systemImage: "checkmark.seal.fill")
-                    Label(index == 0 ? "关键结论已有来源记录" : "已完成复核且无待执行步骤", systemImage: "doc.text.magnifyingglass")
-                    Label("归档不会移除笔记或学习记录", systemImage: "lock.open")
-                }
-                .font(.caption)
-                .foregroundStyle(Color(hex: "58708A"))
-                .padding(11)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(hex: "F1F8FF"), in: RoundedRectangle(cornerRadius: 13))
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            HStack {
-                Label(index == 0 ? "5 月 12 日" : "6 月 3 日", systemImage: "calendar")
-                Text(index == 0 ? "4 轮对话" : "2 轮对话")
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(expanded.contains(index) ? "收起依据" : "查看依据")
-                        Image(systemName: expanded.contains(index) ? "chevron.up" : "chevron.right")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(HomePalette.blue)
-                    .padding(.horizontal, 13)
-                    .frame(height: 34)
-                    .background(HomePalette.blue.opacity(0.10), in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-            .font(.caption)
-            .foregroundStyle(HomePalette.secondary)
-        }
-        .padding(15)
-        .background(
-            selected.contains(index) ? Color(hex: "F3FAFF").opacity(0.95) : Color.white.opacity(0.78),
-            in: RoundedRectangle(cornerRadius: 22)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(selected.contains(index) ? HomePalette.blue.opacity(0.38) : Color.white, lineWidth: 1)
-        }
-        .shadow(color: HomePalette.shadow, radius: 13, y: 5)
-    }
-
-    private var pendingCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "hourglass")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(HomePalette.coral)
-                .frame(width: 44, height: 44)
-                .background(HomePalette.coral.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("第三个学习对话仍未完成")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(HomePalette.ink)
-                Text("还有待核验内容，暂不生成归档确认单。")
-                    .font(.subheadline)
-                    .foregroundStyle(HomePalette.secondary)
-                ArchiveTag("暂不归档", color: HomePalette.coral)
-            }
-            Spacer(minLength: 4)
-            Button("继续学习") { onContinue(sessionIDs.indices.contains(2) ? sessionIDs[2] : nil) }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(HomePalette.ink)
-                .padding(.horizontal, 13)
-                .frame(height: 36)
-                .background(Color.white.opacity(0.86), in: Capsule())
-                .buttonStyle(.plain)
-        }
-        .padding(15)
-        .background(Color(hex: "FFF4F1").opacity(0.92), in: RoundedRectangle(cornerRadius: 22))
-        .overlay { RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1) }
-    }
-
-    private var reassurance: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.shield.fill")
-                .font(.title2)
-                .foregroundStyle(Color(hex: "2DBE91"))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("这次操作不会删除任何内容")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(HomePalette.ink)
-                Text("归档后可在会话历史中恢复。")
-                    .font(.caption)
-                    .foregroundStyle(HomePalette.secondary)
-            }
-            Spacer()
-            Image("home_attention_botanical")
-                .resizable().scaledToFit().frame(width: 92, height: 54).opacity(0.65)
-                .accessibilityHidden(true)
-        }
-        .padding(14)
-        .background(HomePalette.mint.opacity(0.88), in: RoundedRectangle(cornerRadius: 20))
-    }
-
-    private var actionBar: some View {
-        VStack(spacing: 8) {
-            if isAdjusting {
-                Text("点选卡片左上角，可逐项保留或取消归档。")
-                    .font(.caption)
-                    .foregroundStyle(HomePalette.secondary)
-                    .transition(.opacity)
-            }
-            HStack(spacing: 10) {
-                Button("稍后处理", action: onLater)
-                    .foregroundStyle(HomePalette.ink)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Color.white.opacity(0.82), in: Capsule())
-                Button { onConfirm(selected.compactMap { sessionIDs.indices.contains($0) ? sessionIDs[$0] : nil }) } label: {
-                    Text("确认归档 \(selected.count) 条")
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .background(HomePalette.ink, in: Capsule())
-                }
-                .disabled(selected.isEmpty)
-                .opacity(selected.isEmpty ? 0.45 : 1)
-            }
-            .font(.subheadline.weight(.semibold))
-            Button(isAdjusting ? "完成调整" : "逐项调整") {
-                withAnimation(.easeInOut(duration: 0.2)) { isAdjusting.toggle() }
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(HomePalette.blue)
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 6)
-        .background(.ultraThinMaterial)
-    }
-
-    private func toggle(_ index: Int) {
-        if selected.contains(index) { selected.remove(index) } else { selected.insert(index) }
-    }
-}
-
-private enum ArchiveConfirmationContent {
-    static let archive = [
-        (title: "人工智能输出核验必要性", purpose: "理解为什么需要核验 AI 输出"),
-        (title: "AI 说完成了，为什么你还要看收据", purpose: "训练证据意识与结果复核")
-    ]
-}
-
-private struct ArchiveSummaryPill: View {
+private struct CleanupCandidate: Identifiable {
+    let id: String
+    let domain: Int
+    let section: String
     let title: String
-    let value: String
-    let tint: Color
-    var icon: String? = nil
-    var body: some View {
-        HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.caption.weight(.bold)) }
-            Text(title).font(.caption)
-            if !value.isEmpty { Text(value).font(.caption.weight(.bold)) }
-        }
-        .foregroundStyle(tint)
-        .frame(maxWidth: .infinity, minHeight: 38)
-        .background(tint.opacity(0.09), in: Capsule())
-        .overlay { Capsule().stroke(Color.white, lineWidth: 1) }
-    }
+    let reason: String
+    let capability: String
+    var input: [String: JSONScalar]
+    var localNotes: [[String: JSONScalar]] = []
+    var before = ""
+    var after = ""
+    var conflicts: [CleanupConflict] = []
+    var choices: [String: String] = [:]
+    var reviewed = false
+    var outcome: String?
+    var completed = false
+    var projectID: String? = nil
+    var revision: Int? = nil
+    var resourceIDs: Set<String> = []
+    var ready: Bool { (conflicts.allSatisfy { !(choices[$0.field] ?? "").isEmpty }) && (capability != "knowledge.note.merge" || reviewed) }
 }
 
-private struct ArchiveTag: View {
-    let text: String
-    let color: Color
-    init(_ text: String, color: Color) { self.text = text; self.color = color }
+private struct CleanupConflict: Decodable, Identifiable {
+    let field: String
+    let primary: JSONScalar?
+    let secondary: JSONScalar?
+    let allowedChoices: [String]
+    var id: String { field }
+}
+private struct CleanupProject: Decodable { let id: String; let name: String }
+private struct CleanupProjects: Decodable { let projects: [CleanupProject] }
+private struct CleanupTask: Decodable {
+    let id: String; let title: String; let summary: String?; let status: String
+    let archivedAt: String?
+}
+private struct CleanupTaskSnapshot: Decodable {
+    let processRevision: Int
+    let tasks: [CleanupTask]
+    let cleanupCandidates: [CleanupTaskDuplicate]?
+    let cleanupTruncated: Bool?
+    let cleanupMerges: [CleanupTaskMerge]?
+}
+private struct CleanupTaskMerge: Decodable { let id: String; let primaryTaskId: String; let secondaryTaskId: String }
+private struct CleanupTaskDuplicate: Decodable {
+    let sourceTaskId: String; let targetTaskId: String
+    let preview: Preview
+    struct Preview: Decodable { let conflicts: [CleanupConflict]; let blockers: [[String: String]] }
+}
+
+/// This view holds reviewed projections only. Existing domain stores and PCM own all writes.
+private struct CleanupWorkspaceView: View {
+    @EnvironmentObject private var sessions: SessionManager
+    @ObservedObject private var notes = KnowledgeNoteStore.shared
+    @State private var candidates: [CleanupCandidate] = []
+    @State private var selected: Set<String> = []
+    @State private var filter = 0
+    @State private var archived = false
+    @State private var loading = false
+    @State private var executing = false
+    @State private var reviewing = false
+    @State private var notices: [String] = []
+    @State private var scope = ""
+    @State private var sessionID = UUID().uuidString
+    @State private var proposals: [String: CapabilityProposalBlock] = [:]
+    @State private var noteActions: [String: KnowledgeActionBlock] = [:]
+    @State private var clientActions: [String: ClientActionDTO] = [:]
+    @State private var requestIDs: [String: String] = [:]
+    let onLater: () -> Void
+
+    private var visible: [CleanupCandidate] { candidates.filter { filter == 0 || $0.domain == filter } }
+    private var counts: [Int] { [candidates.count] + (1...3).map { domain in candidates.filter { $0.domain == domain }.count } }
+    private var reviewLocked: Bool { executing || !requestIDs.isEmpty }
+    private var selectedItems: [CleanupCandidate] { candidates.filter { selected.contains($0.id) } }
+    private var hasOverlaps: Bool {
+        var seen = Set<String>()
+        for item in selectedItems {
+            if !seen.isDisjoint(with: item.resourceIDs) { return true }
+            seen.formUnion(item.resourceIDs)
+        }
+        return false
+    }
+
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.09), in: Capsule())
+        Group {
+            CleanupHero(count: candidates.count)
+            CleanupFilterBar(selection: $filter, counts: counts)
+            Toggle("查看已归档内容并恢复", isOn: $archived).font(.subheadline)
+                .onChange(of: archived) { _, _ in Task { await refresh() } }
+                .disabled(loading || executing)
+            if loading { ProgressView("正在读取当前账号的内容…") }
+            ForEach(notices, id: \.self) { Text($0).font(.caption).foregroundStyle(HomePalette.coral) }
+            if !loading && visible.isEmpty {
+                PaperCard {
+                    Label(archived ? "没有可恢复的内容" : "当前没有符合条件的建议", systemImage: "checkmark.circle")
+                    Text("未置顶且超过 30 天未更新的内容仅建议人工复核；合并依据实际重复内容，不代表可以直接删除。")
+                        .font(.caption).foregroundStyle(HomePalette.secondary)
+                }
+            }
+            ForEach(["建议归档", "建议合并", "需要你决定", "归档内容"], id: \.self) { section in
+                let items = visible.filter { $0.section == section }
+                if !items.isEmpty {
+                    PaperCard {
+                        CleanupSectionHeader(icon: section == "建议合并" ? "arrow.triangle.merge" : "folder",
+                            tint: HomePalette.blue, title: section, subtitle: "共 \(items.count) 条建议 · 操作前逐项确认")
+                        ForEach(items) { item in candidateRow(item) }
+                    }
+                }
+            }
+            Button("刷新建议") { Task { await refresh() } }.disabled(loading || executing)
+            CleanupSelectionBar(count: selected.count, onLater: onLater, onConfirm: { reviewing = true })
+        }
+        .task { await refresh() }
+        .onChange(of: notes.authorizationScope) { _, _ in
+            reviewing = false; candidates = []; selected = []; proposals = [:]; noteActions = [:]; clientActions = [:]
+            Task { await refresh() }
+        }
+        .sheet(isPresented: $reviewing) { confirmation }
+    }
+
+    private func candidateRow(_ item: CleanupCandidate) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Button {
+                if selected.contains(item.id) { selected.remove(item.id) }
+                else if selected.count < 32 { selected.insert(item.id) }
+            } label: {
+                Image(systemName: selected.contains(item.id) ? "checkmark.square.fill" : "square")
+                    .font(.title2).frame(width: 44, height: 44)
+            }.disabled(item.completed || reviewLocked)
+                .accessibilityLabel("\(selected.contains(item.id) ? "取消选择" : "选择")\(item.title)")
+            VStack(alignment: .leading, spacing: 5) {
+                Text(item.title).font(.headline)
+                Text(item.reason).font(.caption).foregroundStyle(HomePalette.secondary)
+                if let outcome = item.outcome { Text(outcome).font(.caption).foregroundStyle(item.completed ? HomePalette.green : HomePalette.coral) }
+                Button("查看内容与差异") { selected.insert(item.id); reviewing = true }.font(.caption)
+                    .disabled(!selected.contains(item.id) && (reviewLocked || selected.count >= 32))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var confirmation: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("对话仅整理当前设备；笔记先本地执行再同步；同一项目的待办在一个版本上整体确认。")
+                        .font(.subheadline).foregroundStyle(HomePalette.secondary)
+                    ForEach(candidates.indices.filter { selected.contains(candidates[$0].id) }, id: \.self) { index in
+                        reviewCard(index)
+                    }
+                    if hasOverlaps { Text("同一内容被多个操作引用，请取消其中一个，避免归档与合并互相冲突。").foregroundStyle(HomePalette.coral) }
+                    Button(executing ? "正在执行…" : "确认执行所选操作") { Task { await execute() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(executing || selectedItems.isEmpty || hasOverlaps || !selectedItems.allSatisfy(\.ready) || selectedItems.allSatisfy(\.completed))
+                    Text("执行失败会保留逐项结果。已完成项不会重复执行；版本冲突须关闭确认单并刷新。每次最多选择 32 条。")
+                        .font(.caption).foregroundStyle(HomePalette.secondary)
+                }.padding()
+            }
+            .navigationTitle("整理确认单").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { reviewing = false }.disabled(executing) } }
+            .interactiveDismissDisabled(executing)
+        }
+    }
+
+    @ViewBuilder private func reviewCard(_ index: Int) -> some View {
+        let item = candidates[index]
+        PaperCard {
+            HStack {
+                Text(item.title).font(.headline)
+                Spacer()
+                Button("取消此项") { selected.remove(item.id) }.disabled(reviewLocked || item.completed)
+            }
+            Text(item.reason).font(.caption)
+            if !item.before.isEmpty { DisclosureGroup("查看原内容") { Text(item.before).font(.caption).textSelection(.enabled) } }
+            if item.capability == "knowledge.note.merge" {
+                Text("合并到第一条笔记，其他来源归档并保留来源关系。请核对完整内容：").font(.caption)
+                TextEditor(text: $candidates[index].after).frame(minHeight: 180).disabled(reviewLocked || item.completed)
+                    .onChange(of: candidates[index].after) { _, _ in candidates[index].reviewed = false }
+                Toggle("我已核对合并结果与来源归档范围", isOn: $candidates[index].reviewed).disabled(reviewLocked || item.completed)
+            }
+            ForEach(item.conflicts) { conflict in
+                VStack(alignment: .leading) {
+                    Text("字段：\(conflict.field)").font(.subheadline.bold())
+                    Text("保留项：\(display(conflict.primary))\n来源项：\(display(conflict.secondary))").font(.caption)
+                    Picker("保留哪一项", selection: Binding(
+                        get: { candidates[index].choices[conflict.field] ?? "" },
+                        set: { candidates[index].choices[conflict.field] = $0 }
+                    )) {
+                        Text("请决定").tag("")
+                        ForEach(conflict.allowedChoices, id: \.self) { choice in
+                            Text(choice == "primary" ? "保留项" : choice == "secondary" ? "来源项" : "合并列表").tag(choice)
+                        }
+                    }.disabled(reviewLocked || item.completed)
+                }
+            }
+            if let outcome = item.outcome { Text(outcome).font(.subheadline).foregroundStyle(item.completed ? HomePalette.green : HomePalette.coral) }
+        }
+    }
+
+    private func display(_ value: JSONScalar?) -> String {
+        guard let value else { return "（空）" }
+        if case .string(let text) = value { return text }
+        return (try? String(data: JSONEncoder().encode(value), encoding: .utf8)) ?? "（空）"
+    }
+
+    @MainActor private func refresh() async {
+        guard !loading && !executing else { return }
+        let account = notes.authorizationScope
+        loading = true
+        defer {
+            loading = false
+            if notes.authorizationScope != account { Task { await refresh() } }
+        }
+        scope = account; candidates = []; selected = []; notices = []
+        proposals = [:]; noteActions = [:]; clientActions = [:]; requestIDs = [:]; sessionID = UUID().uuidString
+        notes.reload()
+        var result: [CleanupCandidate] = []
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+        for id in sessions.sortedSessionIDs(status: archived ? .archived : .active) where id != sessions.activeSessionId {
+            let updated = sessions.sessionUpdatedAt[id] ?? .distantPast
+            let organized = (sessions.sessionOrganizedAt[id] ?? .distantPast) >= updated
+            guard archived || updated < cutoff || organized else { continue }
+            guard let version = try? sessions.lifecycleVersion(for: id) else { continue }
+            let before = sessions.latestPage(for: id).messages.map { $0.content }.joined(separator: "\n\n")
+            result.append(.init(id: "chat:\(id)", domain: 1, section: archived ? "归档内容" : organized ? "建议归档" : "需要你决定",
+                title: sessions.sessionTitles[id] ?? "对话", reason: archived ? "恢复到当前设备的对话列表。" : organized ? "本轮内容已有整理记录；归档不删除消息。" : "超过 30 天未继续，是否仍需保留在列表中由你决定。",
+                capability: "conversation.lifecycle", input: ["session_id": .string(id), "version": .string(version)],
+                before: before, resourceIDs: ["chat:\(id)"]))
+        }
+        let local = archived ? notes.archivedNotes : notes.notes
+        let mergeGroups = archived ? [] : Dictionary(grouping: local, by: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }).values.filter { $0.count > 1 }
+        var mergeIDs = Set<String>()
+        for group in mergeGroups {
+            let pair = Array(group.sorted { $0.updatedAt > $1.updatedAt }.prefix(2))
+            guard pair.allSatisfy({ notes.markdown(for: $0).count <= 20_000 }) else {
+                notices.append("同名笔记“\(pair[0].title)”超过单次上下文上限，请在笔记详情中核对完整内容。")
+                continue
+            }
+            let target = pair[0], source = pair[1]
+            mergeIDs.formUnion(pair.map(\.id))
+            result.append(.init(id: "merge:\(target.id):\(source.id)", domain: 2, section: "建议合并",
+                title: "\(target.title) / \(source.title)", reason: "标题相同，仅作为候选。先核对差异；保留第一条，来源归档。",
+                capability: "knowledge.note.merge", input: ["target_note_id": .string(target.id), "target_base_hash": .string(notes.contentHash(for: target)), "source_versions": .object([source.id: .string(notes.contentHash(for: source))])],
+                localNotes: pair.map(noteSnapshot), before: pair.map { "# \($0.title)\n\n\($0.body)" }.joined(separator: "\n\n---\n\n"),
+                after: "# \(target.title)\n\n\(target.body)\n\n## 合并来源：\(source.title)\n\n\(source.body)", resourceIDs: Set(pair.map { "note:\($0.id)" })))
+        }
+        for note in local where archived || (!note.isPinned && note.updatedAt < cutoff && !mergeIDs.contains(note.id)) {
+            guard notes.markdown(for: note).count <= 20_000 else {
+                notices.append("笔记“\(note.title)”超过单次上下文上限，请在笔记详情中整理完整内容。")
+                continue
+            }
+            result.append(.init(id: "note:\(note.id)", domain: 2, section: archived ? "归档内容" : "需要你决定",
+                title: note.title, reason: archived ? (note.mergedIntoNoteId == nil ? "恢复笔记，随后同步云端。" : "恢复合并来源为独立笔记；已合并的目标内容不会回退。") : "未置顶且超过 30 天未更新；归档仍可恢复。",
+                capability: archived ? "knowledge.note.restore" : "knowledge.note.archive",
+                input: archived ? ["note_id": .string(note.id)] : ["note_id": .string(note.id), "base_hash": .string(notes.contentHash(for: note))],
+                localNotes: [noteSnapshot(note)], before: note.body, resourceIDs: ["note:\(note.id)"]))
+        }
+        do {
+            let client = CapabilityClient()
+            let response: QCPInvokeResponseDTO<CleanupProjects> = try await client.invoke("project.list", input: [String: String]())
+            guard response.error == nil, let projects = response.events.first?.payload.projects else { throw APIError.network(response.error?.message ?? "无法读取项目") }
+            for project in projects.prefix(20) {
+                guard notes.authorizationScope == account else { return }
+                do {
+                    let response: QCPInvokeResponseDTO<CleanupTaskSnapshot> = try await client.invoke("task.list", input: ["project_id": JSONScalar.string(project.id), "include_cleanup": .bool(true)])
+                    guard response.error == nil, let snapshot = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "无法读取待办") }
+                    result += taskCandidates(project, snapshot)
+                    if snapshot.cleanupTruncated == true { notices.append("\(project.name)：本次查重只覆盖前 100 个有效任务、最多 50 对候选。") }
+                } catch { notices.append("\(project.name)待办加载失败：\(error.localizedDescription)") }
+            }
+            if projects.count > 20 { notices.append("本次读取前 20 个项目；其他项目请从项目详情整理。") }
+        } catch { notices.append("待办暂时无法加载：\(error.localizedDescription)。本页仍可整理设备中的对话和笔记。") }
+        guard notes.authorizationScope == account else { return }
+        candidates = result
+    }
+
+    private func noteSnapshot(_ note: KnowledgeNote) -> [String: JSONScalar] {
+        ["id": .string(note.id), "title": .string(note.title), "markdown": .string(notes.markdown(for: note)),
+         "content_hash": .string(notes.contentHash(for: note)), "tags": .array(note.tags.map(JSONScalar.string)),
+         "archived": .bool(note.archivedAt != nil)]
+    }
+
+    private func taskCandidates(_ project: CleanupProject, _ snapshot: CleanupTaskSnapshot) -> [CleanupCandidate] {
+        var result: [CleanupCandidate] = []
+        if archived {
+            for merge in snapshot.cleanupMerges ?? [] {
+                result.append(.init(id: "revert:\(project.id):\(merge.id)", domain: 3, section: "归档内容",
+                    title: "\(project.name) · 恢复合并前的两条待办", reason: "仅在合并后两条任务均未发生后续修改时可恢复；否则会阻止回退，保留新改动。",
+                    capability: "task.update", input: ["action": .string("REVERT_MERGE"), "task_id": .string(merge.primaryTaskId), "secondary_task_id": .string(merge.secondaryTaskId), "merge_id": .string(merge.id)],
+                    before: snapshot.tasks.filter { [merge.primaryTaskId, merge.secondaryTaskId].contains($0.id) }.map { "\($0.title)\n\($0.summary ?? "")" }.joined(separator: "\n\n"),
+                    projectID: project.id, revision: snapshot.processRevision,
+                    resourceIDs: ["task:\(project.id):\(merge.primaryTaskId)", "task:\(project.id):\(merge.secondaryTaskId)"]))
+            }
+        }
+        for task in snapshot.tasks where archived ? task.archivedAt != nil : task.archivedAt == nil && task.status == "DONE" {
+            result.append(.init(id: "task:\(project.id):\(task.id)", domain: 3, section: archived ? "归档内容" : "建议归档",
+                title: "\(project.name) · \(task.title)", reason: archived ? "恢复归档前状态。" : "任务已完成；归档保留完成状态与审计记录。",
+                capability: "task.update", input: ["action": .string(archived ? "RESTORE" : "ARCHIVE"), "task_id": .string(task.id)],
+                before: task.summary ?? "", projectID: project.id, revision: snapshot.processRevision,
+                resourceIDs: ["task:\(project.id):\(task.id)"]))
+        }
+        if !archived {
+            for pair in snapshot.cleanupCandidates ?? [] {
+                guard pair.preview.blockers.isEmpty,
+                      let left = snapshot.tasks.first(where: { $0.id == pair.sourceTaskId }),
+                      let right = snapshot.tasks.first(where: { $0.id == pair.targetTaskId }) else { continue }
+                result.append(.init(id: "task-merge:\(project.id):\(left.id):\(right.id)", domain: 3, section: "需要你决定",
+                    title: "\(project.name) · \(left.title) / \(right.title)", reason: "现有任务查重发现相似项；逐字段选择保留内容，来源任务和审计记录仍可追溯。",
+                    capability: "task.update", input: ["action": .string("MERGE"), "task_id": .string(left.id), "secondary_task_id": .string(right.id)],
+                    before: "\(left.summary ?? "")\n\n---\n\n\(right.summary ?? "")", conflicts: pair.preview.conflicts,
+                    projectID: project.id, revision: snapshot.processRevision, resourceIDs: ["task:\(project.id):\(left.id)", "task:\(project.id):\(right.id)"]))
+            }
+        }
+        return result
+    }
+
+    @MainActor private func execute() async {
+        guard !executing, !hasOverlaps, selectedItems.allSatisfy(\.ready), notes.authorizationScope == scope else { return }
+        executing = true; defer { executing = false }
+        let work = selectedItems.filter { !$0.completed }
+        var groups = Dictionary(grouping: work.filter { $0.domain != 2 }, by: { $0.projectID ?? "device" })
+        for item in work where item.domain == 2 { groups[item.id] = [item] }
+        for key in groups.keys.sorted() {
+            guard notes.authorizationScope == scope else { return }
+            let items = groups[key]!
+            do {
+                let client = CapabilityClient()
+                let requestID = requestIDs[key] ?? "cleanup-" + UUID().uuidString
+                requestIDs[key] = requestID
+                if let item = items.first, item.domain == 2 {
+                    var input = item.input
+                    if item.capability == "knowledge.note.merge" { input["revised_content"] = .string(item.after) }
+                    let action: KnowledgeActionBlock
+                    if let existing = noteActions[key] { action = existing }
+                    else {
+                        action = try await client.proposeLocalNote(item.capability, input: input, notes: item.localNotes, sessionId: sessionID, requestId: requestID)
+                        noteActions[key] = action
+                    }
+                    guard notes.authorizationScope == scope else { return }
+                    let result = await KnowledgeActionExecutor.shared.execute(action)
+                    let done = result.state == .synced
+                    mark(items, done: done, message: done ? "已完成并同步" : result.message ?? (result.state == .syncPending ? "本地已完成，云端同步待重试" : "未完成，请刷新后复核"))
+                    continue
+                }
+                let input: [String: JSONScalar]
+                let capability: String
+                if key == "device" {
+                    capability = "conversation.lifecycle"
+                    input = ["lifecycle": .string(archived ? "active" : "archived"), "sessions": .array(items.map { .object($0.input) })]
+                } else {
+                    capability = "task.update"
+                    input = ["project_id": .string(key), "expected_revision": .integer(Int64(items[0].revision!)),
+                             "operations": .array(items.map { item in
+                                 var operation = item.input
+                                 if !item.choices.isEmpty { operation["field_choices"] = .object(item.choices.mapValues(JSONScalar.string)) }
+                                 return .object(operation)
+                             })]
+                }
+                var proposal: CapabilityProposalBlock
+                if let existing = proposals[key] { proposal = existing }
+                else {
+                    let response = try await client.propose(capability, input: input, sessionId: sessionID, requestId: requestID, idempotencyKey: requestID)
+                    guard response.error == nil, let value = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "无法生成确认单") }
+                    proposal = value; proposals[key] = value
+                }
+                guard notes.authorizationScope == scope, let token = proposal.confirmationToken else { throw APIError.network("确认凭证已失效") }
+                if key == "device" {
+                    let action: ClientActionDTO
+                    if let existing = clientActions[key] { action = existing }
+                    else {
+                        let response: QCPInvokeResponseDTO<ClientActionDTO> = try await client.confirm(proposalId: proposal.id, confirmationToken: token, sessionId: sessionID)
+                        guard response.error == nil, let value = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "对话操作未获确认") }
+                        action = value; clientActions[key] = value
+                    }
+                    guard notes.authorizationScope == scope else { return }
+                    let metadata = try sessions.applyLifecycleAction(action)
+                    _ = try await client.recordClientActionReceipt(actionId: action.id, status: "SUCCEEDED", resultMetadata: metadata)
+                    mark(items, done: true, message: "当前设备已\(archived ? "恢复" : "归档")，回执已记录")
+                } else {
+                    let response: QCPInvokeResponseDTO<JSONScalar> = try await client.confirm(proposalId: proposal.id, confirmationToken: token, sessionId: sessionID)
+                    guard response.error == nil, case .object(let payload) = response.events.first?.payload,
+                          payload["applied"] == .bool(true) else { throw APIError.network(response.error?.message ?? "项目变更尚未执行") }
+                    mark(items, done: true, message: "项目变更已确认并执行")
+                }
+            } catch { mark(items, done: false, message: "未完成：\(error.localizedDescription)") }
+        }
+    }
+
+    @MainActor private func mark(_ items: [CleanupCandidate], done: Bool, message: String) {
+        guard notes.authorizationScope == scope else { return }
+        let ids = Set(items.map(\.id))
+        for index in candidates.indices where ids.contains(candidates[index].id) {
+            candidates[index].completed = done; candidates[index].outcome = message
+        }
     }
 }
 

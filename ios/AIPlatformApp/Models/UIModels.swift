@@ -1484,6 +1484,24 @@ public final class SessionManager: ObservableObject {
         }
     }
 
+    public func lifecycleVersion(for id: String) throws -> String {
+        try store.lifecycleVersion(sessionId: id)
+    }
+
+    public func applyLifecycleAction(_ action: ClientActionDTO) throws -> [String: String] {
+        guard action.actionType == "conversation_lifecycle", action.state == "PENDING",
+              action.payload.accountScope == KnowledgeNoteStore.shared.authorizationScope,
+              action.payload.accountScope == accountFingerprint.split(separator: "-").map({ String($0.prefix(16)) }).joined(separator: ":"),
+              let sessions = action.payload.sessions, let status = action.payload.lifecycle,
+              let digest = action.inputDigest, digest.count == 64,
+              !sessions.contains(where: { $0.sessionId == activeSessionId }) else {
+            throw APIError.network("账号或对话状态已变化，请重新生成确认单")
+        }
+        try store.applyLifecycleAction(id: action.id, digest: digest, sessions: sessions, status: status)
+        loadMetadata()
+        return ["scope": "local_device", "count": String(sessions.count), "lifecycle": status.rawValue]
+    }
+
     public func markOrganized(_ ids: [String]) {
         let valid = ids.filter { sessionTitles[$0] != nil }
         guard !valid.isEmpty else { return }

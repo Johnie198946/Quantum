@@ -2,6 +2,86 @@
   "capabilities": [
     {
       "automated_tests": [
+        "tests/test_cleanup_capabilities.py",
+        "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
+      ],
+      "capability": "conversation.lifecycle",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_client_action_owner",
+          "local_session_versions_match"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "client.action.requested",
+      "handler": "conversation.lifecycle",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift",
+      "policy": "client-action-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "client_action@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "lifecycle": {
+              "enum": [
+                "archived",
+                "active"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "version": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "lifecycle",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "action_id",
+            "action_type",
+            "state",
+            "payload",
+            "input_digest"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
         "tests/test_bookshelf_capabilities.py",
         "ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift"
       ],
@@ -2485,23 +2565,8 @@
       "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "qws-project-access",
       "production_receipt": {
-        "evidence": {
-          "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
-          "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
-          "captured_at": "2026-09-18T19:09:17.235101+00:00",
-          "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
-          "endpoint": "/api/v1/capabilities/task.list",
-          "event": "task.snapshot",
-          "http_status": 200,
-          "implementation_status": "implemented",
-          "kind": "authenticated_describe",
-          "production_sha": "30e5f4a94a40ad36effa592e7ccce0786a40fbb0",
-          "renderer": "answer",
-          "renderer_version": 1,
-          "response_sha256": "c2d550fc4103fc60d1a242aff80ce3125ecb1a033c4b3f0eb8d6da5d671314de",
-          "version": "1.0.0"
-        },
-        "status": "implemented"
+        "evidence": null,
+        "status": "unverified"
       },
       "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "answer@1",
@@ -2509,6 +2574,9 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "include_cleanup": {
+              "type": "boolean"
+            },
             "project_id": {
               "maxLength": 80,
               "minLength": 1,
@@ -2528,9 +2596,9 @@
           ],
           "type": "object"
         },
-        "version": "1.0.0"
+        "version": "1.1.0"
       },
-      "status": "implemented"
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -2641,23 +2709,8 @@
       "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "qws-project-access",
       "production_receipt": {
-        "evidence": {
-          "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
-          "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
-          "captured_at": "2026-09-18T19:09:17.235101+00:00",
-          "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
-          "endpoint": "/api/v1/capabilities/task.update",
-          "event": "task.change_proposed",
-          "http_status": 200,
-          "implementation_status": "implemented",
-          "kind": "authenticated_describe",
-          "production_sha": "30e5f4a94a40ad36effa592e7ccce0786a40fbb0",
-          "renderer": "answer",
-          "renderer_version": 1,
-          "response_sha256": "5d83edb6c41468bc5b60597200158fb1a0a0f02f3a5cff26473593727c153cd5",
-          "version": "1.0.0"
-        },
-        "status": "implemented"
+        "evidence": null,
+        "status": "unverified"
       },
       "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
       "renderer": "answer@1",
@@ -2672,6 +2725,48 @@
             "expected_revision": {
               "minimum": 0,
               "type": "integer"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "ARCHIVE",
+                      "RESTORE",
+                      "MERGE",
+                      "REVERT_MERGE"
+                    ],
+                    "type": "string"
+                  },
+                  "field_choices": {
+                    "type": "object"
+                  },
+                  "merge_id": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "secondary_task_id": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "task_id": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action",
+                  "task_id"
+                ],
+                "type": "object"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
             },
             "project_id": {
               "maxLength": 80,
@@ -2701,11 +2796,7 @@
           },
           "required": [
             "project_id",
-            "task_id",
-            "expected_revision",
-            "stage_id",
-            "title",
-            "summary"
+            "expected_revision"
           ],
           "type": "object"
         },
@@ -2716,9 +2807,9 @@
           ],
           "type": "object"
         },
-        "version": "1.0.0"
+        "version": "1.1.0"
       },
-      "status": "implemented"
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -2738,23 +2829,8 @@
       "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent",
       "policy": "qws-project-access",
       "production_receipt": {
-        "evidence": {
-          "batch_receipt": "ops/acceptance/receipts/20260919-production-capability-describe.json",
-          "batch_receipt_sha256": "ecca4fffcc967bf41f2fcd69661893256b353a0ac6814e95201d96d76b0c7c16",
-          "captured_at": "2026-09-18T19:09:17.235101+00:00",
-          "catalog_digest": "441637f924351eca81f1a7d30894eaaf4d535b443b2e72fa865db8e81090d104",
-          "endpoint": "/api/v1/capabilities/task.delete",
-          "event": "task.change_proposed",
-          "http_status": 200,
-          "implementation_status": "implemented",
-          "kind": "authenticated_describe",
-          "production_sha": "30e5f4a94a40ad36effa592e7ccce0786a40fbb0",
-          "renderer": "answer",
-          "renderer_version": 1,
-          "response_sha256": "f171ac50561634aa06ac8ead4068d740188daa19014ba96917158b7b8d45e423",
-          "version": "1.0.0"
-        },
-        "status": "implemented"
+        "evidence": null,
+        "status": "unverified"
       },
       "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx:consumeQCPEvent",
       "renderer": "answer@1",
@@ -2791,9 +2867,9 @@
           ],
           "type": "object"
         },
-        "version": "1.0.0"
+        "version": "1.1.0"
       },
-      "status": "implemented"
+      "status": "partial"
     },
     {
       "automated_tests": [
@@ -5277,8 +5353,8 @@
   ],
   "counts": {
     "absent": 0,
-    "implemented": 70,
-    "partial": 0,
+    "implemented": 67,
+    "partial": 4,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
@@ -5298,5 +5374,5 @@
   ],
   "scope_version": 2,
   "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
-  "total": 70
+  "total": 71
 }
