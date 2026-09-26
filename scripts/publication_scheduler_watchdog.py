@@ -223,6 +223,15 @@ def _absent_hash(day: str, series: str, terminal: Sequence[Item]) -> str:
 
 
 def _toolkit_prerequisite_barrier(day: str) -> Barrier | None:
+    receipt = OUTPUT_ROOT / "prerequisites" / "ai-toolkit" / f"{day}.json"
+    if receipt.is_file() and not receipt.is_symlink():
+        try:
+            value = _read_json(receipt)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return Barrier("ai-toolkit", hashlib.sha256(receipt.read_bytes()).hexdigest())
+        if value.get("status") == "READY_FOR_AI_TOOLKIT":
+            return None
+        return Barrier("ai-toolkit", hashlib.sha256(receipt.read_bytes()).hexdigest())
     marker = OUTPUT_ROOT / f"{day}-ai-toolkit-blocked" / "blocked-tutorial-prerequisite.json"
     if not marker.is_file() or marker.is_symlink():
         return None
@@ -458,14 +467,11 @@ class Claims:
 def _run_action(action: Action) -> None:
     if action.phase in {"author", "review"}:
         assert action.job_id is not None
-        commands = [["hermes", "cron", "run", action.job_id]]
-        timeout = 1800
+        _dispatch_job(action.job_id)
+        return
     elif action.phase == "prerequisite":
-        commands = [
-            ["hermes", "cron", "run", PREREQUISITE_JOB],
-            ["hermes", "cron", "run", AUTHOR_JOBS["ai-toolkit"]],
-        ]
-        timeout = 1800
+        _dispatch_job(PREREQUISITE_JOB)
+        return
     elif action.phase == "prepare":
         assert action.manifest is not None
         commands = [[str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]]
@@ -486,6 +492,33 @@ def _run_action(action: Action) -> None:
             raise ActionFailure("action_timeout") from exc
         if completed.returncode:
             raise ActionFailure("action_exit_nonzero")
+
+
+def _dispatch_job(job_id: str) -> None:
+    started = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+    command = ["hermes", "cron", "run", job_id]
+    try:
+        completed = subprocess.run(
+            command, text=True, capture_output=True, timeout=30,
+            check=False, env=_default_env(),
+        )
+    except subprocess.TimeoutExpired:
+        completed = None
+    if completed is not None and completed.returncode == 0:
+        return
+    uri = EXECUTIONS_DB.expanduser().resolve().as_uri() + "?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True) as connection:
+            row = connection.execute(
+                "SELECT status FROM executions WHERE job_id=? AND started_at>=? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (job_id, started),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise ActionFailure("dispatch_readback_failed") from exc
+    if row and row[0] in {"claimed", "running", "completed", "unknown"}:
+        return
+    raise ActionFailure("action_timeout" if completed is None else "action_exit_nonzero")
 
 
 def supervise(

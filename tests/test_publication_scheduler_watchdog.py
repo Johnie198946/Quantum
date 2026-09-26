@@ -378,6 +378,25 @@ def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     assert all(not any("release" in word for word in command) for command, _ in calls)
 
 
+def test_dispatch_timeout_reconciles_persisted_execution(tmp_path, monkeypatch):
+    database = tmp_path / "executions.db"
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, started_at TEXT)")
+        db.execute(
+            "INSERT INTO executions VALUES (?,?,?,?)",
+            ("dispatch-1", watchdog.REVIEW_JOB, "running", "9999-01-01T00:00:00+08:00"),
+        )
+    monkeypatch.setattr(watchdog, "EXECUTIONS_DB", database)
+    monkeypatch.setattr(
+        watchdog.subprocess,
+        "run",
+        lambda command, **kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(command, kwargs.get("timeout", 30))
+        ),
+    )
+    watchdog._dispatch_job(watchdog.REVIEW_JOB)
+
+
 def test_action_timeout_is_classified_for_bounded_retry(tmp_path):
     claims = watchdog.Claims(tmp_path / "claims.db")
 
@@ -443,9 +462,8 @@ def test_toolkit_blocked_prerequisite_recovers_supply_before_author(tmp_path, mo
         claims=watchdog.Claims(tmp_path / "claims.db"),
     )
     assert result["phase"] == "prerequisite"
-    assert calls[-2:] == [
+    assert calls[-1:] == [
         ["hermes", "cron", "run", watchdog.PREREQUISITE_JOB],
-        ["hermes", "cron", "run", watchdog.AUTHOR_JOBS["ai-toolkit"]],
     ]
 
 

@@ -16,6 +16,7 @@ Observed failures:
 4. Once an approved item became `staged`, the status API correctly removed it from `issues.missing` while `by_series.published` remained false. The watchdog incorrectly required those two different projections to be equal and stopped all later recovery.
 5. The installed watchdog launched the editorial client without a verified repository module path, so automatic prepare/finalize failed with `No module named 'backend'` while foreground commands that explicitly set `PYTHONPATH=.` succeeded.
 6. Shared author jobs judged only production `published` state. They could therefore rewrite a sibling series already handed off as `prepared`, `await_review`, or `staged`, so the watchdog had to stop with `ambiguous_author_scope` instead of repairing a rejected sibling.
+7. `hermes cron run` waits for the whole Agent execution. After a scheduler restart had already terminalized the owner as `unknown`, the CLI could still wait and keep the watchdog lock held, making every native 10-minute recovery tick return `locked`.
 
 ## Change
 
@@ -26,7 +27,9 @@ Observed failures:
 - Treat `by_series.published` as the complete unpublished-set truth and validate `issues.missing` as a non-contradictory subset, allowing staged items to proceed to the deterministic release schedule.
 - Resolve and validate the repository root, then replace inherited `PYTHONPATH` with that exact root for every watchdog subprocess.
 - Claim only series that actually require author work. Persisted author-job guards now skip immutable `prepared`, `await_review`, and `staged` handoffs even while production still reports unpublished.
-- When `ai-toolkit` carries a machine-readable `BLOCKED_TUTORIAL_PREREQUISITE` marker, automatically run the governed tutorial-supply job and then the toolkit author under the watchdog's exclusive lock; use the marker hash for bounded idempotent retries without blocking unrelated series while a separately scheduled supply run is active.
+- Bound Agent dispatch to 30 seconds and reconcile timeout/non-zero returns against a newly persisted execution row. The watchdog releases its lock after verified dispatch instead of waiting for long author/reviewer completion.
+- When `ai-toolkit` carries a machine-readable `BLOCKED_TUTORIAL_PREREQUISITE` marker, automatically dispatch the governed tutorial-supply job using the marker hash for bounded idempotent retries, without blocking unrelated series while a separately scheduled supply run is active.
+- Dispatch tutorial supply first; only a later machine receipt with `READY_FOR_AI_TOOLKIT` allows the toolkit author phase. Supply and author no longer run concurrently.
 - Pin the tutorial-supply job to `gpt-5.6-sol` / `openai-codex`, require every adopted URL to be opened and verified, and require a machine-readable `READY_FOR_AI_TOOLKIT` or `BLOCKED_DEPOSIT` receipt. Cron configuration was read back after the edit.
 - Add regression tests for stdin upload, timeout classification, and prerequisite-before-author recovery ordering.
 
@@ -38,7 +41,7 @@ Observed failures:
 
 ## Verification
 
-- Publication test modules: `280 passed`.
+- Publication test modules: `281 passed`.
 - Ruff: passed.
 - `git diff --check`: passed.
 - Installed runtime scripts were hash-compared with repository copies.
