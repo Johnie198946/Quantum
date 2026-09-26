@@ -593,7 +593,9 @@ public struct KnowledgeActionStep: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-public struct KnowledgeNavigationTarget: Codable, Sendable, Hashable {
+public struct KnowledgeNavigationTarget: Codable, Sendable, Hashable, Identifiable {
+    public var id: String { "\(destination):\(noteId ?? ""):\(sourceNoteId ?? "")" }
+    public var sourceNoteId: String? = nil
     public let destination: String
     public let noteId: String?
     public let query: String?
@@ -3087,4 +3089,59 @@ public enum MockData {
             summary: "全员公开通用条目，介绍高并发清结算系统幂等性设计与三方对账差异核销机制。"
         )
     ]
+}
+
+/// Read-only projection from the existing knowledge-action preview endpoint.
+struct KnowledgeMergePreview: Codable, Sendable, Equatable {
+    struct Run: Codable, Sendable, Equatable {
+        let text: String
+        let changed: Bool
+    }
+    struct Segment: Codable, Identifiable, Sendable, Equatable {
+        let id: String
+        let kind: String
+        let before: String
+        let after: String
+        let beforeRuns: [Run]
+        let afterRuns: [Run]
+        let targetBlocks: Int
+        let sourceBlocks: Int
+    }
+    let targetNoteId: String
+    let sourceNoteId: String
+    let targetHash: String
+    let sourceHash: String
+    let coarse: Bool
+    let segments: [Segment]
+
+    var commonCount: Int { segments.filter { $0.kind == "equal" }.reduce(0) { $0 + $1.targetBlocks } }
+    var addedCount: Int { segments.filter { $0.kind == "insert" }.reduce(0) { $0 + $1.sourceBlocks } }
+    var choiceCount: Int { segments.filter { $0.kind == "replace" }.count }
+
+    func mergedMarkdown(choices: [String: String]) -> String? {
+        var parts: [String] = []
+        for segment in segments {
+            switch segment.kind {
+            case "equal", "delete": parts.append(segment.before)
+            case "insert": parts.append(segment.after)
+            case "replace":
+                switch choices[segment.id] {
+                case "target": parts.append(segment.before)
+                case "source": parts.append(segment.after)
+                case "both": parts.append(segment.before + (segment.before.hasSuffix("\n\n") ? "" : "\n\n") + segment.after)
+                default: return nil
+                }
+            default: return nil
+            }
+        }
+        let result = parts.joined()
+        return result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : result
+    }
+}
+
+/// An unavailable or empty task projection must not advertise a dead tab.
+enum CleanupFilterPolicy {
+    static func domains(taskAvailable: Bool, taskCount: Int) -> [Int] {
+        taskAvailable && taskCount > 0 ? [0, 1, 2, 3] : [0, 1, 2]
+    }
 }

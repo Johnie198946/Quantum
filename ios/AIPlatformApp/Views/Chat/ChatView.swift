@@ -179,6 +179,10 @@ public struct ChatView: View {
                     onKnowledgeReferenced: { item in coordinator.referenceKnowledge(item) }
                 )
             }
+            .sheet(item: $coordinator.pendingCleanupNavigation) { target in
+                ChatCleanupReviewSheet(target: target, coordinator: coordinator)
+                    .environmentObject(coordinator.sessionManager)
+            }
             .sheet(item: $coordinator.pendingClientAction) { action in
                 NativeClientActionHost(action: action) { status, metadata in
                     coordinator.completeClientAction(

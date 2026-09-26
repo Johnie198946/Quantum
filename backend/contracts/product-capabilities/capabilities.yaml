@@ -101,11 +101,32 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_product_capabilities.py, ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift]
     implementation_status: implemented
+  - id: knowledge.note.compare
+    version: 1.0.0
+    domain: knowledge
+    description: 只读比较两篇已明确选择的个人笔记，展示相同内容、新增内容和不同表述；不执行合并。
+    positive_examples: ["比较这两篇笔记", "查看笔记差异", "Compare these two notes"]
+    negative_examples: ["直接覆盖或归档笔记", "比较未授权用户的笔记"]
+    input_schema: {type: object, properties: {target_note_id: {type: string, minLength: 1, maxLength: 128}, source_note_id: {type: string, minLength: 1, maxLength: 128}}, required: [target_note_id, source_note_id], additionalProperties: false}
+    output_schema: {type: object, required: [target_note_id, source_note_id, target_hash, source_hash, segments]}
+    effect: read
+    risk: low
+    confirmation: none
+    preconditions: [authenticated_owner, two_distinct_active_notes]
+    policy_ref: personal-knowledge-owner
+    handler_binding: knowledge.compare
+    idempotency: none
+    receipt: none
+    result_event: knowledge.results
+    renderer: answer
+    renderer_version: 1
+    tests: [tests/test_cleanup_capabilities.py, tests/test_product_capabilities.py]
+    implementation_status: implemented
   - id: knowledge.note.merge
     version: 1.0.0
     domain: knowledge
     description: CAS-update a target and archive only explicit merge sources.
-    positive_examples: ["Merge these two versioned notes into the selected target"]
+    positive_examples: ["合并笔记", "合并这两篇笔记", "Merge these two versioned notes into the selected target"]
     negative_examples: ["Archive the target into itself"]
     input_schema: {type: object, properties: {target_note_id: {type: string}, target_base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}, source_versions: {type: object}, revised_content: {type: string, minLength: 1}}, required: [target_note_id, target_base_hash, source_versions, revised_content], additionalProperties: false}
     output_schema: {type: object, required: [target_note_id, status]}
@@ -126,7 +147,7 @@ capabilities:
     version: 1.0.0
     domain: knowledge
     description: Ordinarily archive one note without inventing a merge target.
-    positive_examples: ["Archive this note"]
+    positive_examples: ["归档笔记", "把这篇笔记归档", "Archive this note"]
     negative_examples: ["Merge and archive source notes"]
     input_schema: {type: object, properties: {note_id: {type: string}, base_hash: {type: string, pattern: '^[0-9a-f]{64}$'}}, required: [note_id, base_hash], additionalProperties: false}
     output_schema: {type: object, required: [note_id, archive_status]}
@@ -147,7 +168,7 @@ capabilities:
     version: 1.0.0
     domain: knowledge
     description: Restore one ordinarily archived personal note.
-    positive_examples: ["Restore this archived note"]
+    positive_examples: ["恢复笔记", "恢复刚才归档的笔记", "Restore this archived note"]
     negative_examples: ["Restore a trashed note"]
     input_schema: {type: object, properties: {note_id: {type: string}}, required: [note_id], additionalProperties: false}
     output_schema: {type: object, required: [note_id, archive_status]}
@@ -168,9 +189,9 @@ capabilities:
     version: 1.0.0
     domain: knowledge
     description: Emit a semantic knowledge destination for the client.
-    positive_examples: ["Open my archive"]
+    positive_examples: ["帮我清理", "清理笔记", "整理重复笔记", "打开整理建议", "Open my archive"]
     negative_examples: ["Instantiate a SwiftUI view"]
-    input_schema: {type: object, properties: {destination: {type: string, enum: [knowledge_home, note, daily_note, search, archive]}, note_id: {type: string}, query: {type: string}}, required: [destination], additionalProperties: false}
+    input_schema: {type: object, properties: {destination: {type: string, enum: [knowledge_home, note, daily_note, search, archive, cleanup, note_comparison]}, note_id: {type: string}, source_note_id: {type: string}, query: {type: string}}, required: [destination], additionalProperties: false}
     output_schema: {type: object, required: [destination]}
     effect: client
     risk: low

@@ -28,6 +28,8 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var toastMessage: String? = nil
     @Published public private(set) var persistenceFailureMessage: String? = nil
     @Published public private(set) var persistenceFailureCanRetry: Bool = true
+    @Published public var pendingCleanupNavigation: KnowledgeNavigationTarget? = nil
+    @Published public var cleanupProposalBusy = false
     @Published public var pendingClientAction: ClientActionDTO? = nil
     @Published public var demoMode: Bool = false
     @Published public private(set) var hasOlderMessages: Bool = false
@@ -137,6 +139,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         guard accountFingerprint != loadedAccountFingerprint else { return }
         loadedAccountFingerprint = accountFingerprint
         tenantEpoch += 1
+        pendingCleanupNavigation = nil
         cancelAllTasksAndAnimations()
         for task in backgroundRunMonitors.values { task.cancel() }
         backgroundRunMonitors.removeAll()
@@ -191,8 +194,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                 self?.appState?.openWorkflow(workflowId)
             },
             onKnowledgeNavigation: { [weak self] target in
-                self?.appState?.pendingKnowledgeNavigation = target
-                self?.appState?.activeTab = 2
+                self?.handleKnowledgeNavigation(target)
             },
             onLoadAnswerBlocks: { [weak self] messageId in
                 self?.loadNextAnswerBlocks(messageId: messageId)
@@ -433,6 +435,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                                }
                                return false
                            }) {
+                            self.supersedeKnowledgeProposals(action, through: outputMessageId)
                             self.messages[eventIndex].blocks.append(.knowledgeAction(action))
                         } else if case .capability(let capabilityEvent) = event {
                             guard await self.dispatchCapabilityEvent(
@@ -1160,6 +1163,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             return
         }
 
+        if handleNaturalConfirmation(text) { return }
         if !isLatestPage { returnToLatestMessages() }
 
         #if os(iOS)
@@ -1288,7 +1292,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         lastCheckpointCharacterCount = 0
         let sid = sessionManager.activeSessionID()
         let runtimeClientContext = clientSessionContext ?? (
-            Self.requiresKnowledgeActionProposal(text)
+            (Self.requiresKnowledgeWorkspace(text) || hasKnowledgeContext)
                 ? ClientSessionContextDTO(sessionId: sid, messages: [], truncated: false)
                 : nil
         )
@@ -1410,6 +1414,122 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
+    static func requiresKnowledgeWorkspace(_ text: String) -> Bool {
+        let value = text.lowercased()
+        return requiresKnowledgeActionProposal(text)
+            || ["帮我清理", "清理笔记", "整理重复", "整理一下这些内容"].contains(where: value.contains)
+            || (["比较", "对比", "差异", "compare", "difference"].contains(where: value.contains)
+                && ["笔记", "两篇", "note"].contains(where: value.contains))
+    }
+
+    static func naturalConfirmationVerb(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if ["确认", "确认执行", "确认合并", "确认归档", "确认恢复", "按这个方案执行"].contains(value) { return "apply" }
+        if ["取消", "取消这次操作", "放弃这个方案"].contains(value) { return "discard" }
+        return nil
+    }
+
+    private var hasKnowledgeContext: Bool {
+        messages.contains { message in
+            message.sessionId == sessionManager.activeSessionID() && message.blocks.contains {
+                if case .knowledgeAction = $0 { return true }
+                if case .knowledgeNavigation = $0 { return true }
+                return false
+            }
+        }
+    }
+
+    static func pendingConfirmationActions(in messages: [ChatMessage], sessionID: String) -> [(messageID: String, actionID: String, knowledge: Bool, kinds: Set<String>)] {
+        var pending: [(String, String, Bool, Set<String>)] = []
+        for message in messages where message.sessionId == sessionID {
+            for block in message.blocks {
+                if case .knowledgeAction(let action) = block, action.state == .proposed {
+                    pending.append((message.id, action.id, true, Set(action.steps.map(\.kind))))
+                } else if case .capabilityProposal(let proposal) = block, proposal.state == .awaitingConfirmation {
+                    pending.append((message.id, proposal.id, false, [proposal.capabilityId]))
+                }
+            }
+        }
+        return pending
+    }
+
+    private func handleNaturalConfirmation(_ text: String) -> Bool {
+        guard let verb = Self.naturalConfirmationVerb(text) else { return false }
+        let sid = sessionManager.activeSessionID()
+        let pending = Self.pendingConfirmationActions(in: messages, sessionID: sid)
+        guard !pending.isEmpty else { return false }
+        guard !isGenerating, !cleanupProposalBusy else { showToast("请等待当前方案生成完成"); return true }
+        guard pending.count == 1 else {
+            showToast("有多个待确认方案，请在对应卡片上确认")
+            return true
+        }
+        let expected = ["确认合并": "merge_notes", "确认归档": "archive_note", "确认恢复": "restore_note"][text.trimmingCharacters(in: .whitespacesAndNewlines)]
+        if let expected, pending[0].kinds != [expected] {
+            showToast("当前方案与要确认的操作不一致，请核对卡片")
+            return true
+        }
+        messages.append(ChatMessage(sessionId: sid, role: .user, content: text))
+        inputText = ""
+        commitSession()
+        let item = pending[0]
+        if item.2 { handleKnowledgeAction(messageId: item.0, actionId: item.1, verb: verb) }
+        else { handleCapabilityProposal(messageId: item.0, proposalId: item.1, verb: verb == "apply" ? "confirm" : "discard") }
+        return true
+    }
+
+    public func handleKnowledgeNavigation(_ target: KnowledgeNavigationTarget) {
+        if ["cleanup", "note_comparison"].contains(target.destination) {
+            pendingCleanupNavigation = target
+        } else {
+            appState?.pendingKnowledgeNavigation = target
+            appState?.activeTab = 2
+        }
+    }
+
+    private func supersedeKnowledgeProposals(_ action: KnowledgeActionBlock, through messageID: String?) {
+        let resources = Set(action.steps.flatMap { ($0.targetNoteId.map { [$0] } ?? []) + $0.sourceNoteIds })
+        let end = messageID.flatMap { id in messages.firstIndex { $0.id == id } } ?? messages.count
+        for i in messages.indices where i <= end && messages[i].sessionId == sessionManager.activeSessionID() {
+            for j in messages[i].blocks.indices {
+                guard case .knowledgeAction(var old) = messages[i].blocks[j], old.id != action.id, old.state == .proposed else { continue }
+                let oldResources = Set(old.steps.flatMap { ($0.targetNoteId.map { [$0] } ?? []) + $0.sourceNoteIds })
+                if !resources.isDisjoint(with: oldResources) {
+                    old.state = .discarded
+                    old.transientCapability = nil
+                    messages[i].blocks[j] = .knowledgeAction(old)
+                }
+            }
+        }
+    }
+
+    func proposeComparedMerge(targetID: String, sourceID: String, snapshots: [[String: JSONScalar]], markdown: String, sessionID: String, accountScope: String) async -> Bool {
+        guard !cleanupProposalBusy, sessionManager.activeSessionID() == sessionID,
+              KnowledgeNoteStore.shared.authorizationScope == accountScope,
+              let targetHash = snapshots.first(where: { $0["id"] == .string(targetID) })?["content_hash"],
+              let sourceHash = snapshots.first(where: { $0["id"] == .string(sourceID) })?["content_hash"] else { return false }
+        cleanupProposalBusy = true
+        defer { cleanupProposalBusy = false }
+        let epoch = tenantEpoch
+        do {
+            let action = try await CapabilityClient().proposeLocalNote("knowledge.note.merge", input: [
+                "target_note_id": .string(targetID), "target_base_hash": targetHash,
+                "source_versions": .object([sourceID: sourceHash]), "revised_content": .string(markdown)
+            ], notes: snapshots, sessionId: sessionID, requestId: UUID().uuidString)
+            guard epoch == tenantEpoch, sessionManager.activeSessionID() == sessionID,
+                  KnowledgeNoteStore.shared.authorizationScope == accountScope else { return false }
+            supersedeKnowledgeProposals(action, through: nil)
+            var message = ChatMessage(sessionId: sessionID, role: .assistant, content: "合并结果已重新生成，请核对后确认。")
+            message.blocks.append(.knowledgeAction(action))
+            messages.append(message)
+            commitSession()
+            pendingCleanupNavigation = nil
+            return true
+        } catch {
+            showToast("无法生成确认单，请刷新笔记后重试；没有改动笔记")
+            return false
+        }
+    }
+
     static func requiresKnowledgeActionProposal(_ text: String) -> Bool {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !value.isEmpty else { return false }
@@ -1438,7 +1558,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         hasRecoveryContext: Bool,
         hasLocalNotes: Bool
     ) -> Bool {
-        hasRecoveryContext || hasLocalNotes || requiresKnowledgeActionProposal(userText)
+        hasRecoveryContext || hasLocalNotes || requiresKnowledgeWorkspace(userText)
     }
 
     static func shouldShowKnowledgeProposalRetry(
@@ -1455,6 +1575,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         guard messages.indices.contains(messageIndex) else { return }
         let hasProposal = messages[messageIndex].blocks.contains(where: {
             if case .knowledgeAction = $0 { return true }
+            if case .knowledgeNavigation(let target) = $0, ["cleanup", "note_comparison"].contains(target.destination) { return true }
             return false
         })
         guard Self.shouldShowKnowledgeProposalRetry(
@@ -1609,7 +1730,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         deltaBuffer = ""
         flushScheduled = false
         var clientSessionContext = req.clientSessionContext
-        if Self.requiresKnowledgeActionProposal(req.text) {
+        if Self.requiresKnowledgeWorkspace(req.text) || hasKnowledgeContext {
             clientSessionContext = await knowledgeWorkspaceContext(
                 base: clientSessionContext,
                 request: req,
@@ -1848,6 +1969,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                            if case .knowledgeAction(let existing) = $0 { return existing.id == action.id }
                            return false
                        }) {
+                        supersedeKnowledgeProposals(action, through: outputId)
                         messages[idx].blocks.append(.knowledgeAction(action))
                         messages[idx].pending = false
                     }
@@ -1862,8 +1984,9 @@ public final class TenantSessionCoordinator: ObservableObject {
                         messages[idx].pending = false
                         commitSession()
                     }
-                    appState?.pendingKnowledgeNavigation = target
-                    appState?.activeTab = 2
+                    if target.destination != "note_comparison" && target.destination != "cleanup" {
+                        handleKnowledgeNavigation(target)
+                    }
 
                 case .answerPage(let page):
                     drainDeltaBuffer(messageId: outputId)
@@ -3494,6 +3617,11 @@ public final class TenantSessionCoordinator: ObservableObject {
                   return false
               }), case .knowledgeAction(var action) = messages[messageIndex].blocks[blockIndex]
         else { return }
+        if verb == "compare", let step = action.steps.first(where: { $0.kind == "merge_notes" }),
+           let targetID = step.targetNoteId, step.sourceNoteIds.count == 1 {
+            handleKnowledgeNavigation(KnowledgeNavigationTarget(sourceNoteId: step.sourceNoteIds[0], destination: "note_comparison", noteId: targetID, query: nil))
+            return
+        }
         if verb == "open" {
             if var target = action.suggestedNavigation, target.noteId == nil {
                 target = KnowledgeNavigationTarget(

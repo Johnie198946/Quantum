@@ -49,25 +49,62 @@ class KnowledgeActionResumeRequest(BaseModel):
     error_code: str | None = Field(None, max_length=80)
 
 
-async def propose_local_note_capability(
-    capability_id: str, data: dict[str, Any], *, local_notes: list[dict[str, Any]],
-    payload: dict[str, Any], session_id: str, request_id: str,
-) -> dict[str, Any]:
-    """Use the chat action ledger and executor for an explicit PCM button intent."""
-    from backend.api.chat import LocalNoteContext, _authorize_knowledge_action_event
+def _validated_local_notes(local_notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from backend.api.chat import LocalNoteContext
     from backend.services.capability_catalog import CapabilityContractError
-    from backend.services.knowledge_action_capability import note_capability_step
     from pydantic import ValidationError
 
-    step = note_capability_step(capability_id, data)
-    if step is None:
-        raise CapabilityContractError("local_notes require a personal note capability")
     try:
         notes = [LocalNoteContext.model_validate(item).model_dump() for item in local_notes]
     except ValidationError as exc:
         raise CapabilityContractError("invalid local note snapshot") from exc
     if len(notes) > 17 or sum(len(note["markdown"]) for note in notes) > 120_000:
         raise CapabilityContractError("local note snapshot exceeds bounds")
+    if len({note["id"] for note in notes}) != len(notes):
+        raise CapabilityContractError("duplicate local note identity")
+    for note in notes:
+        if note["content_hash"] != hashlib.sha256(note["markdown"].encode()).hexdigest():
+            raise CapabilityContractError("local note version mismatch")
+    return notes
+
+
+class KnowledgeMergePreviewRequest(BaseModel):
+    target_note_id: str = Field(..., min_length=1, max_length=128)
+    source_note_id: str = Field(..., min_length=1, max_length=128)
+    local_notes: list[dict[str, Any]] = Field(..., min_length=2, max_length=2)
+
+
+@router.post("/merge-preview")
+def preview_note_merge(body: KnowledgeMergePreviewRequest, payload: dict[str, Any] = Depends(require_auth)):
+    """Read-only local snapshot comparison; creates neither a proposal nor a write."""
+    from backend.services.capability_catalog import CapabilityContractError
+    from backend.services.knowledge_action_capability import note_merge_preview
+
+    try:
+        notes = _validated_local_notes(body.local_notes)
+        by_id = {note["id"]: note for note in notes}
+        if (body.target_note_id == body.source_note_id
+                or set(by_id) != {body.target_note_id, body.source_note_id}
+                or any(note["archived"] for note in notes)):
+            raise CapabilityContractError("preview requires two distinct active snapshots")
+        return note_merge_preview(by_id[body.target_note_id], by_id[body.source_note_id])
+    except CapabilityContractError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+async def propose_local_note_capability(
+    capability_id: str, data: dict[str, Any], *, local_notes: list[dict[str, Any]],
+    payload: dict[str, Any], session_id: str, request_id: str,
+) -> dict[str, Any]:
+    """Use the chat action ledger and executor for an explicit PCM button intent."""
+    from backend.api.chat import _authorize_knowledge_action_event
+    from backend.services.capability_catalog import CapabilityContractError
+    from backend.services.knowledge_action_capability import note_capability_step
+
+    step = note_capability_step(capability_id, data)
+    if step is None:
+        raise CapabilityContractError("local_notes require a personal note capability")
+    notes = _validated_local_notes(local_notes)
     by_id = {note["id"]: note for note in notes}
     target = step["target_note_id"]
     sources = step["source_note_ids"]

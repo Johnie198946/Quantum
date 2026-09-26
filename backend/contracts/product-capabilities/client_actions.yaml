@@ -214,7 +214,7 @@ capabilities:
     version: 1.0.0
     domain: client_action
     description: Archive or restore explicit versioned conversations on the confirming device; preserve messages and return a native execution receipt.
-    positive_examples: [Archive these selected local conversations after review.]
+    positive_examples: ["归档对话", "恢复对话", "Archive these selected local conversations after review."]
     negative_examples: [Delete Hermes sessions or claim this changes another device.]
     input_schema:
       type: object

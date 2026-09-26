@@ -177,6 +177,14 @@
       ]
     },
     {
+      "id": "knowledge.note.compare",
+      "status": "implemented",
+      "tests": [
+        "tests/test_cleanup_capabilities.py",
+        "tests/test_product_capabilities.py"
+      ]
+    },
+    {
       "id": "knowledge.note.create",
       "status": "implemented",
       "tests": [
@@ -608,7 +616,7 @@
       ]
     }
   ],
-  "catalog_digest": "7c10019b7820c0565f201713ec13e518efef1fae494010aaa833e874ba8a3bbe",
+  "catalog_digest": "df0760f09c98a71b18c51a789f0328a57e0d910601bdadc3706b72c2d0a4ac7a",
   "consumptions": [
     {
       "gates": [
@@ -653,7 +661,7 @@
     }
   ],
   "counts": {
-    "implemented": 83,
+    "implemented": 84,
     "partial": 0,
     "unverified": 0
   },
@@ -3097,6 +3105,26 @@
         "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
         "renderer": "client_action@1",
         "status": "partial"
+      },
+      {
+        "automated_tests": [
+          "tests/test_cleanup_capabilities.py",
+          "ios/AIPlatformAppTests/CleanupMergeTests.swift",
+          "ios/AIPlatformAppUITests/CleanupMergeUITests.swift"
+        ],
+        "capability": "knowledge.note.compare",
+        "consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation",
+        "event": "knowledge.results@1",
+        "handler": "knowledge.compare",
+        "ios_user_function": "Compare two selected personal notes and review an explicit merge result in Chat or cleanup.",
+        "policy": "personal-knowledge-owner",
+        "production_receipt": {
+          "evidence": null,
+          "status": "unverified"
+        },
+        "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+        "renderer": "answer@1",
+        "status": "partial"
       }
     ],
     "source": "ops/acceptance/pcm-ios-coverage.yaml",
@@ -3108,6 +3136,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 83,
+  "total": 84,
   "version": "1.0.0"
 }

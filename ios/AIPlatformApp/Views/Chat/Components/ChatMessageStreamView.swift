@@ -2312,14 +2312,16 @@ private struct CleanupHero: View {
 private struct CleanupFilterBar: View {
     @Binding var selection: Int
     let counts: [Int]
+    let taskAvailable: Bool
+    private var domains: [Int] { CleanupFilterPolicy.domains(taskAvailable: taskAvailable, taskCount: counts[3]) }
     private var items: [String] { zip(["全部", "对话", "笔记", "待办"], counts).map { "\($0.0)  \($0.1)" } }
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(items.indices, id: \.self) { index in
+            ForEach(domains, id: \.self) { index in
                 Button { selection = index } label: {
                     Text(items[index]).font(.subheadline.weight(selection == index ? .semibold : .regular))
                         .foregroundStyle(selection == index ? HomePalette.ink : HomePalette.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 42)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .background(selection == index ? HomePalette.mint : Color.clear, in: Capsule())
                 }.buttonStyle(.plain)
             }
@@ -2406,7 +2408,7 @@ private struct CleanupTaskDuplicate: Decodable {
 }
 
 /// This view holds reviewed projections only. Existing domain stores and PCM own all writes.
-private struct CleanupWorkspaceView: View {
+struct CleanupWorkspaceView: View {
     @EnvironmentObject private var sessions: SessionManager
     @ObservedObject private var notes = KnowledgeNoteStore.shared
     @State private var candidates: [CleanupCandidate] = []
@@ -2416,6 +2418,8 @@ private struct CleanupWorkspaceView: View {
     @State private var loading = false
     @State private var executing = false
     @State private var reviewing = false
+    @State private var reviewItemID: String?
+    @State private var tasksAvailable = false
     @State private var notices: [String] = []
     @State private var scope = ""
     @State private var sessionID = UUID().uuidString
@@ -2441,7 +2445,7 @@ private struct CleanupWorkspaceView: View {
     var body: some View {
         Group {
             CleanupHero(count: candidates.count)
-            CleanupFilterBar(selection: $filter, counts: counts)
+            CleanupFilterBar(selection: $filter, counts: counts, taskAvailable: tasksAvailable)
             Toggle("查看已归档内容并恢复", isOn: $archived).font(.subheadline)
                 .onChange(of: archived) { _, _ in Task { await refresh() } }
                 .disabled(loading || executing)
@@ -2465,14 +2469,18 @@ private struct CleanupWorkspaceView: View {
                 }
             }
             Button("刷新建议") { Task { await refresh() } }.disabled(loading || executing)
-            CleanupSelectionBar(count: selected.count, onLater: onLater, onConfirm: { reviewing = true })
+            CleanupSelectionBar(count: selected.count, onLater: onLater, onConfirm: { reviewItemID = nil; reviewing = true })
         }
         .task { await refresh() }
         .onChange(of: notes.authorizationScope) { _, _ in
             reviewing = false; candidates = []; selected = []; proposals = [:]; noteActions = [:]; clientActions = [:]
             Task { await refresh() }
         }
-        .sheet(isPresented: $reviewing) { confirmation }
+        .sheet(isPresented: $reviewing) {
+            if let id = reviewItemID, let index = candidates.firstIndex(where: { $0.id == id }) {
+                inspection(index)
+            } else { confirmation }
+        }
     }
 
     private func candidateRow(_ item: CleanupCandidate) -> some View {
@@ -2489,8 +2497,12 @@ private struct CleanupWorkspaceView: View {
                 Text(item.title).font(.headline).lineLimit(3)
                 Text(item.reason).font(.caption).foregroundStyle(HomePalette.secondary)
                 if let outcome = item.outcome { Text(outcome).font(.caption).foregroundStyle(item.completed ? HomePalette.green : HomePalette.coral) }
-                Button("查看内容与差异") { selected.insert(item.id); reviewing = true }.font(.caption)
-                    .disabled(!selected.contains(item.id) && (reviewLocked || selected.count >= 32))
+                Button {
+                    reviewItemID = item.id; reviewing = true
+                } label: {
+                    Label(item.capability == "knowledge.note.merge" ? "查看差异" : "查看内容", systemImage: item.capability == "knowledge.note.merge" ? "text.badge.checkmark" : "doc.text.magnifyingglass")
+                        .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                }.tint(HomePalette.blue)
             }
             Spacer(minLength: 0)
         }
@@ -2528,12 +2540,17 @@ private struct CleanupWorkspaceView: View {
                 Button("取消此项") { selected.remove(item.id) }.disabled(reviewLocked || item.completed)
             }
             Text(item.reason).font(.caption)
-            if !item.before.isEmpty { DisclosureGroup("查看原内容") { Text(item.before).font(.caption).textSelection(.enabled) } }
             if item.capability == "knowledge.note.merge" {
-                Text("合并到第一条笔记，其他来源归档并保留来源关系。请核对完整内容：").font(.caption)
-                TextEditor(text: $candidates[index].after).frame(minHeight: 180).disabled(reviewLocked || item.completed)
-                    .onChange(of: candidates[index].after) { _, _ in candidates[index].reviewed = false }
-                Toggle("我已核对合并结果与来源归档范围", isOn: $candidates[index].reviewed).disabled(reviewLocked || item.completed)
+                Label(item.reviewed ? "差异已核对 · 合并结果已确认" : "请先逐处核对差异", systemImage: item.reviewed ? "checkmark.seal" : "arrow.left.arrow.right")
+                    .font(.subheadline).foregroundStyle(item.reviewed ? HomePalette.green : HomePalette.secondary)
+                Button(item.reviewed ? "重新核对差异" : "查看差异") { reviewItemID = item.id }
+                    .frame(minHeight: 44).disabled(reviewLocked || item.completed)
+                if item.reviewed {
+                    DisclosureGroup("已确认的合并全文") { Text(item.after).font(.body).textSelection(.enabled) }
+                }
+                Text("保留较新的笔记，合并来源归档；不会删除原始记录。").font(.caption)
+            } else if !item.before.isEmpty {
+                Text(item.before).font(.body).textSelection(.enabled)
             }
             ForEach(item.conflicts) { conflict in
                 VStack(alignment: .leading) {
@@ -2554,6 +2571,38 @@ private struct CleanupWorkspaceView: View {
         }
     }
 
+    @ViewBuilder private func inspection(_ index: Int) -> some View {
+        let item = candidates[index]
+        if item.capability == "knowledge.note.merge",
+           case .string(let targetID) = item.input["target_note_id"],
+           case .object(let versions) = item.input["source_versions"], let sourceID = versions.keys.sorted().first {
+            CleanupMergeReviewView(title: item.title, targetID: targetID, sourceID: sourceID,
+                                   snapshots: item.localNotes, locked: reviewLocked || item.completed || (!selected.contains(item.id) && selected.count >= 32)) { markdown in
+                guard !reviewLocked, notes.authorizationScope == scope,
+                      let current = candidates.firstIndex(where: { $0.id == item.id }) else { return }
+                candidates[current].after = markdown
+                candidates[current].reviewed = true
+                selected.insert(item.id)
+                reviewing = false; reviewItemID = nil
+            }
+        } else {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(item.title).font(.title2.bold())
+                        Text(item.reason).font(.subheadline).foregroundStyle(HomePalette.secondary)
+                        Text(item.before.isEmpty ? "这条内容没有正文。" : item.before).font(.body).textSelection(.enabled)
+                        Button("加入确认单") {
+                            selected.insert(item.id); reviewing = false; reviewItemID = nil
+                        }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                            .disabled(reviewLocked || item.completed || (!selected.contains(item.id) && selected.count >= 32))
+                    }.padding(20)
+                }.navigationTitle("内容预览").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { reviewing = false } } }
+            }
+        }
+    }
+
     private func display(_ value: JSONScalar?) -> String {
         guard let value else { return "（空）" }
         if case .string(let text) = value { return text }
@@ -2568,10 +2617,12 @@ private struct CleanupWorkspaceView: View {
             loading = false
             if notes.authorizationScope != account { Task { await refresh() } }
         }
-        scope = account; candidates = []; selected = []; notices = []
+        scope = account; candidates = []; selected = []; notices = []; tasksAvailable = false; reviewItemID = nil
+        if filter == 3 { filter = 0 }
         proposals = [:]; noteActions = [:]; clientActions = [:]; requestIDs = [:]; sessionID = UUID().uuidString
         notes.reload()
         var result: [CleanupCandidate] = []
+        var taskProjectionAvailable = false
         let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
         for id in sessions.sortedSessionIDs(status: archived ? .archived : .active) where id != sessions.activeSessionId {
             let updated = sessions.sessionUpdatedAt[id] ?? .distantPast
@@ -2596,10 +2647,10 @@ private struct CleanupWorkspaceView: View {
             let target = pair[0], source = pair[1]
             mergeIDs.formUnion(pair.map(\.id))
             result.append(.init(id: "merge:\(target.id):\(source.id)", domain: 2, section: "建议合并",
-                title: "\(target.title)（2 篇同名笔记）", reason: "标题相同，仅作为候选。先核对差异；保留第一条，来源归档。",
+                title: "\(target.title)（2 篇同名笔记）", reason: "标题相同，内容是否重复还需核对。点击直接比较，选择要保留的表述。",
                 capability: "knowledge.note.merge", input: ["target_note_id": .string(target.id), "target_base_hash": .string(notes.contentHash(for: target)), "source_versions": .object([source.id: .string(notes.contentHash(for: source))])],
                 localNotes: pair.map(noteSnapshot), before: pair.map { "# \($0.title)\n\n\($0.body)" }.joined(separator: "\n\n---\n\n"),
-                after: "# \(target.title)\n\n\(target.body)\n\n## 合并来源：\(source.title)\n\n\(source.body)", resourceIDs: Set(pair.map { "note:\($0.id)" })))
+                after: "", resourceIDs: Set(pair.map { "note:\($0.id)" })))
         }
         for note in local where archived || (!note.isPinned && note.updatedAt < cutoff && !mergeIDs.contains(note.id)) {
             guard notes.markdown(for: note).count <= 20_000 else {
@@ -2621,14 +2672,16 @@ private struct CleanupWorkspaceView: View {
                 do {
                     let response: QCPInvokeResponseDTO<CleanupTaskSnapshot> = try await client.invoke("task.list", input: ["project_id": JSONScalar.string(project.id), "include_cleanup": .bool(true)])
                     guard response.error == nil, let snapshot = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "无法读取待办") }
+                    taskProjectionAvailable = true
                     result += taskCandidates(project, snapshot)
                     if snapshot.cleanupTruncated == true { notices.append("\(project.name)：本次查重只覆盖前 100 个有效任务、最多 50 对候选。") }
                 } catch { notices.append("\(project.name)待办加载失败：\(error.localizedDescription)") }
             }
             if projects.count > 20 { notices.append("本次读取前 20 个项目；其他项目请从项目详情整理。") }
-        } catch { notices.append("待办暂时无法加载：\(error.localizedDescription)。本页仍可整理设备中的对话和笔记。") }
+        } catch { notices.append("待办服务暂不可用，已隐藏入口。可继续整理对话和笔记，稍后刷新重试。") }
         guard notes.authorizationScope == account else { return }
         candidates = result
+        tasksAvailable = taskProjectionAvailable
     }
 
     private func noteSnapshot(_ note: KnowledgeNote) -> [String: JSONScalar] {

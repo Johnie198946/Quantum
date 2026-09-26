@@ -165,3 +165,5 @@ bindings:
     handler: learning.exercise.answer
   - id: learning.exercise.submit
     handler: learning.exercise.submit
+  - id: knowledge.compare
+    handler: knowledge.compare

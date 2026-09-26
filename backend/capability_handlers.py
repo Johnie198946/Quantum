@@ -181,6 +181,19 @@ async def _knowledge_read(data: dict[str, Any], payload: dict[str, Any], _key: s
     return {"note": note, "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
 
 
+async def _knowledge_compare(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    from backend.services.knowledge_action_capability import note_merge_preview
+
+    notes = []
+    for note_id in (data["target_note_id"], data["source_note_id"]):
+        result = await _knowledge_read({"note_id": note_id}, payload, key)
+        notes.append({**result["note"], "id": note_id})
+    try:
+        return note_merge_preview(*notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 async def _knowledge_create(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
     assert key
     owner = f"{payload.get('tenant_key')}:{payload.get('user_id') or payload.get('sub')}:{key}"
@@ -1210,6 +1223,7 @@ HANDLERS: dict[str, Handler] = {
     "learning.exercise.answer": _learning_answer,
     "learning.exercise.submit": _learning_submit,
 
+    "knowledge.compare": _knowledge_compare,
     "knowledge.search": _knowledge_search,
     "knowledge.read": _knowledge_read,
     "knowledge.create": _knowledge_create,

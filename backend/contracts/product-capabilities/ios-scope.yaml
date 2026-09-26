@@ -23,6 +23,7 @@ capabilities:
   - knowledge.note.read
   - knowledge.note.create
   - knowledge.note.update
+  - knowledge.note.compare
   - knowledge.note.merge
   - knowledge.note.archive
   - knowledge.note.restore
@@ -253,6 +254,9 @@ annotations:
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   knowledge.note.update:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  knowledge.note.compare:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   knowledge.note.merge:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent

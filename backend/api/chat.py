@@ -1543,6 +1543,8 @@ async def _authorize_knowledge_action_event(
             target_hashes[source_id] = (
                 source_hashes.get(source_id) if isinstance(source_hashes, dict) else None
             ) or known_hashes.get(source_id)
+    from backend.services.knowledge_action_capability import note_action_diff
+    event = {**event, "markdown_diff": note_action_diff(event.get("steps") or [], (client_context or {}).get("local_notes") or [])}
     action_hash = knowledge_action_digest(event)
     vault_revision = _knowledge_action_vault_revision(client_context)
     tenant_key = str(payload.get("tenant_key") or "public")

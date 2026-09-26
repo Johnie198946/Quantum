@@ -2755,7 +2755,7 @@ public final class APIClient: ObservableObject {
         self.session = URLSession(configuration: config)
 
         // 对话专用会话：超时 200s（后端 HERMES_TIMEOUT=180s 兜底），避免被默认 15s resource 超时截断
-        let chatConfig = URLSessionConfiguration.default
+        let chatConfig = sessionConfiguration.copy() as! URLSessionConfiguration
         chatConfig.timeoutIntervalForRequest = 200
         chatConfig.timeoutIntervalForResource = 220
         chatConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -2764,7 +2764,7 @@ public final class APIClient: ObservableObject {
 
         // Drill-me 是一个持续连接：用户思考时间 + 多轮模型推理可能明显超过 220 秒。
         // request timeout 只约束连续无数据时长；resource timeout 给完整工作流 1 小时。
-        let streamConfig = URLSessionConfiguration.default
+        let streamConfig = sessionConfiguration.copy() as! URLSessionConfiguration
         streamConfig.timeoutIntervalForRequest = 75
         streamConfig.timeoutIntervalForResource = 3_600
         streamConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -4327,6 +4327,7 @@ public final class APIClient: ObservableObject {
             case "knowledge_navigation":
                 guard let destination = json["destination"] as? String else { return nil }
                 return .knowledgeNavigation(KnowledgeNavigationTarget(
+                    sourceNoteId: json["source_note_id"] as? String,
                     destination: destination,
                     noteId: json["note_id"] as? String,
                     query: json["query"] as? String

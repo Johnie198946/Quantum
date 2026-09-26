@@ -101,6 +101,7 @@ public struct BlockCardDispatcher: View {
             KnowledgeActionCard(
                 action: action,
                 onApply: { onKnowledgeAction?(action.id, "apply") },
+                onCompare: { onKnowledgeAction?(action.id, "compare") },
                 onDiscard: { onKnowledgeAction?(action.id, "discard") },
                 onOpenResult: { onKnowledgeAction?(action.id, "open") }
             )
@@ -141,7 +142,7 @@ private struct KnowledgeNavigationMessageCard: View {
                 .frame(width: 44, height: 44)
                 .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             VStack(alignment: .leading, spacing: 3) {
-                Text(target.destination == "note" ? "继续阅读笔记" : "打开知识书架")
+                Text(target.destination == "cleanup" ? "查看整理建议" : target.destination == "note_comparison" ? "查看两篇笔记差异" : target.destination == "note" ? "继续阅读笔记" : "打开知识书架")
                     .font(AppTheme.Typography.cardTitle)
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                 Text(target.query?.isEmpty == false ? target.query! : "相关内容已经整理到你的知识空间")

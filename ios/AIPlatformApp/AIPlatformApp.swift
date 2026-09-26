@@ -66,7 +66,9 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
+                if ProcessInfo.processInfo.arguments.contains("-cleanupMergePreview") {
+                    CleanupMergeReviewPreview()
+                } else if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
                     LearningExerciseHintPreview()
                 } else if showStructuredReviewE2E {
                     StructuredReviewE2EHost()

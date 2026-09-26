@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import difflib
+import re
 import hashlib
 import hmac
 import json
@@ -127,3 +129,76 @@ def verify_knowledge_action_capability(token: str) -> dict[str, Any]:
         return payload
     except Exception as exc:
         raise KnowledgeActionDenied("knowledge action capability denied") from exc
+
+
+def note_action_diff(steps: list[dict[str, Any]], notes: list[dict[str, Any]]) -> str:
+    snapshots = {str(note.get("id")): note for note in notes if isinstance(note, dict)}
+    changes = []
+    for step in steps:
+        if step.get("kind") not in {"create_note", "update_note", "merge_notes"} or not isinstance(step.get("markdown"), str):
+            continue
+        target = str(step.get("target_note_id") or "new")
+        note = snapshots.get(target)
+        if step.get("kind") != "create_note" and (not note or hashlib.sha256(str(note.get("markdown", "")).encode()).hexdigest() != step.get("original_content_hash")):
+            # A partial/missing snapshot cannot substantiate a content diff.
+            continue
+        changes.append("".join(difflib.unified_diff(
+            str((note or {}).get("markdown", "")).splitlines(keepends=True),
+            step["markdown"].splitlines(keepends=True), fromfile=f"{target}:before", tofile=f"{target}:after",
+        )))
+    return "\n".join(changes)[:20_000]
+
+
+def note_merge_preview(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    """Exact paragraph comparison; changed wording always needs a human choice."""
+    if target["id"] == source["id"] or any(note.get("archived") for note in (target, source)):
+        raise KnowledgeActionDenied("comparison requires two distinct active notes")
+    for note in (target, source):
+        if len(note["markdown"]) > 120_000 or hashlib.sha256(note["markdown"].encode()).hexdigest() != note["content_hash"]:
+            raise KnowledgeActionDenied("comparison snapshot invalid or incomplete")
+    def blocks(text: str) -> list[str]:
+        from markdown_it import MarkdownIt
+
+        lines = text.splitlines(keepends=True)
+        # Keep top-level Markdown blocks intact, including fenced code and lists.
+        starts = sorted({0, len(lines)} | {
+            token.map[0] for token in MarkdownIt("commonmark").parse(text)
+            if token.level == 0 and token.map
+        })
+        return ["".join(lines[a:b]) for a, b in zip(starts, starts[1:])]
+
+    from backend.services.user_note_context import _frontmatter_value
+
+    def body(note: dict[str, Any]) -> str:
+        text = note["markdown"]
+        header = re.match(r"\A---\r?\n.*?\r?\n---(?:\r?\n|$)", text, re.S)
+        # Only remove our identified note metadata, never an arbitrary Markdown divider.
+        if header and _frontmatter_value(text, "id") == note["id"]:
+            return text[header.end():].lstrip("\r\n")
+        return text
+
+    target_body, source_body = body(target), body(source)
+    before, after = blocks(target_body), blocks(source_body)
+    # ponytail: bound quadratic matching; very fragmented documents use one explicit choice.
+    coarse = max(len(before), len(after)) > 256
+    if coarse:
+        before, after = [target_body], [source_body]
+    segments = []
+    for kind, a, b, c, d in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        left, right = "".join(before[a:b]), "".join(after[c:d])
+        left_runs, right_runs = [], []
+        if kind == "replace" and max(len(left), len(right)) <= 2000:
+            for tag, i, j, k, m in difflib.SequenceMatcher(None, left, right).get_opcodes():
+                if i != j:
+                    left_runs.append({"text": left[i:j], "changed": tag != "equal"})
+                if k != m:
+                    right_runs.append({"text": right[k:m], "changed": tag != "equal"})
+        else:
+            left_runs = [{"text": left, "changed": kind != "equal"}] if left else []
+            right_runs = [{"text": right, "changed": kind != "equal"}] if right else []
+        segments.append({"id": str(len(segments)), "kind": kind, "before": left, "after": right,
+                         "before_runs": left_runs, "after_runs": right_runs,
+                         "target_blocks": b - a, "source_blocks": d - c})
+    return {"target_note_id": target["id"], "source_note_id": source["id"],
+            "target_hash": target["content_hash"], "source_hash": source["content_hash"],
+            "coarse": coarse, "segments": segments}

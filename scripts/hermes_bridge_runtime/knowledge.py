@@ -967,11 +967,15 @@ _KNOWLEDGE_MUTATION_KINDS = {
 
 
 _KNOWLEDGE_NAV_DESTINATIONS = {
-    "knowledge_home", "note", "daily_note", "search", "archive",
+    "knowledge_home", "note", "daily_note", "search", "archive", "cleanup", "note_comparison",
 }
 
 
 _KNOWLEDGE_MERGE_DIRECTIVE = (
+    "\n清理入口：用户只说帮我清理或要求批量整理时，先明确笔记/对话/待办范围；可用knowledge.navigation的cleanup展示现有建议，不自行编造候选规则。"
+    "用户明确两篇笔记后先调用knowledge.note.compare查看差异，再按用户指定的保留方式生成完整合并提案；不要把比较当成写入。"
+    "用户修改方案必须重新调用knowledge_action_propose生成新提案，不复用旧签名；确认只能由客户端对具体提案执行。"
+    "当前设备对话归档必须有客户端实际提供的session_id和version，缺少时打开cleanup让用户选取，不猜测。"
     "\n个人知识整理规则：合并主题不等于目标笔记。主题依次取用户明确主题、明确目标标题，"
     "否则只从保存指令前最近五轮提取唯一主要实质主题；仍有多个主题时必须询问。"
     "围绕主题依次搜索精确主题、关键实体/别名、上层主题；搜索结果只用于定位，先看摘要，"
@@ -1237,6 +1241,12 @@ def _knowledge_ui_navigate_tool(args: dict[str, Any], **_kwargs) -> str:
         "note_id": str((args or {}).get("note_id") or "").strip()[:128] or None,
         "query": str((args or {}).get("query") or "").strip()[:200] or None,
     }
+    if destination == "note_comparison":
+        source_id = str((args or {}).get("source_note_id") or "").strip()
+        known = {str(note.get("id")) for note in _workspace_notes(context) if not note.get("archived")}
+        if not source_id or source_id == event["note_id"] or not {source_id, event["note_id"]} <= known:
+            return json.dumps({"success": False, "error": "comparison_notes_required"})
+        event["source_note_id"] = source_id
     emitter = context.get("emit")
     if callable(emitter):
         emitter(event)
@@ -1286,7 +1296,7 @@ def _ensure_knowledge_workspace_tools_registered() -> None:
                     "markdown_diff": {"type": "string"},
                     "suggested_navigation": {"type": "object", "properties": {
                         "destination": {"type": "string", "enum": sorted(_KNOWLEDGE_NAV_DESTINATIONS)},
-                        "note_id": {"type": "string"}, "query": {"type": "string"},
+                        "note_id": {"type": "string"}, "source_note_id": {"type": "string"}, "query": {"type": "string"},
                     }, "required": ["destination"]},
                 }, "required": ["summary", "steps", "suggested_navigation"]},
             }, handler=lambda args, **kwargs: _knowledge_action_propose_tool(args, **kwargs),
@@ -1298,7 +1308,7 @@ def _ensure_knowledge_workspace_tools_registered() -> None:
                 "description": "Navigate the iOS knowledge UI using a controlled destination; never simulates taps.",
                 "parameters": {"type": "object", "properties": {
                     "destination": {"type": "string", "enum": sorted(_KNOWLEDGE_NAV_DESTINATIONS)},
-                    "note_id": {"type": "string"}, "query": {"type": "string"},
+                    "note_id": {"type": "string"}, "source_note_id": {"type": "string"}, "query": {"type": "string"},
                 }, "required": ["destination"]},
             }, handler=lambda args, **kwargs: _knowledge_ui_navigate_tool(args, **kwargs),
         )
@@ -1494,6 +1504,20 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         validate_instance(data, capability["input_schema"])
     except CapabilityContractError as exc:
         return json.dumps({"success": False, "error": "contract_invalid", "detail": str(exc)[:200]})
+    if capability_id == "knowledge.note.compare":
+        from backend.services.knowledge_action_capability import note_merge_preview
+        notes = []
+        for note_id in (data["target_note_id"], data["source_note_id"]):
+            read = json.loads(_knowledge_workspace_read_tool({"operation": "read", "note_id": note_id}))
+            if not read.get("success"):
+                return json.dumps(read, ensure_ascii=False)
+            notes.append(read["note"])
+        try:
+            preview = note_merge_preview(*notes)
+        except (ValueError, KeyError):
+            return json.dumps({"success": False, "error": "comparison_snapshot_invalid"})
+        _knowledge_ui_navigate_tool({"destination": "note_comparison", "note_id": data["target_note_id"], "source_note_id": data["source_note_id"]})
+        return json.dumps({"success": True, **preview}, ensure_ascii=False)
     if capability_id == "knowledge.note.search":
         return _knowledge_workspace_read_tool({"operation": "search", **data})
     if capability_id == "knowledge.note.read":
@@ -1625,7 +1649,6 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-from . import contracts as _contracts
 
 
 def _app_capability_native_tool_name(capability_id: str) -> str:
@@ -1729,7 +1752,6 @@ def _skill_sandbox(capability: str) -> TenantHermesSandbox:
     )
 
 
-from . import persistence as _persistence
 
 
 def _write_skill_and_verify(

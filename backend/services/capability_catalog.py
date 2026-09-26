@@ -21,7 +21,7 @@ REQUIRED_CAPABILITY_FIELDS = {
     "implementation_status", "receipt",
 }
 IMPLEMENTED_HANDLERS = {
-    "knowledge.search", "knowledge.read", "knowledge.create", "knowledge.update",
+    "knowledge.compare", "knowledge.search", "knowledge.read", "knowledge.create", "knowledge.update",
     "knowledge.merge", "knowledge.archive", "knowledge.restore",
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "workflow.approve", "workflow.revise",
@@ -198,6 +198,8 @@ def search_capabilities(query: str, *, limit: int = 5) -> list[dict[str, Any]]:
             *capability["positive_examples"],
         ]).casefold()
         score = sum(term in haystack for term in terms)
+        score += sum(2 for example in capability["positive_examples"]
+                     if re.search(r"[\u4e00-\u9fff]", example) and example.casefold() in query.casefold())
         if not terms or score:
             ranked.append((score, capability["id"], capability))
     ranked.sort(key=lambda item: (-item[0], item[1]))

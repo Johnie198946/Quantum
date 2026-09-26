@@ -2093,3 +2093,20 @@ features:
     status: unverified
     evidence: null
   status: partial
+
+- ios_user_function: Compare two selected personal notes and review an explicit merge result in Chat or cleanup.
+  capability: knowledge.note.compare
+  event: knowledge.results@1
+  renderer: answer@1
+  handler: knowledge.compare
+  consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation
+  qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  policy: personal-knowledge-owner
+  automated_tests:
+  - tests/test_cleanup_capabilities.py
+  - ios/AIPlatformAppTests/CleanupMergeTests.swift
+  - ios/AIPlatformAppUITests/CleanupMergeUITests.swift
+  production_receipt:
+    status: unverified
+    evidence: null
+  status: partial

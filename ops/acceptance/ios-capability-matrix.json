@@ -1441,6 +1441,65 @@
     },
     {
       "automated_tests": [
+        "tests/test_cleanup_capabilities.py",
+        "tests/test_product_capabilities.py"
+      ],
+      "capability": "knowledge.note.compare",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "two_distinct_active_notes"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "knowledge.results",
+      "handler": "knowledge.compare",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation",
+      "policy": "personal-knowledge-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/TaskChatDrawer.jsx",
+      "renderer": "answer@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "source_note_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "target_note_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_note_id",
+            "source_note_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "target_note_id",
+            "source_note_id",
+            "target_hash",
+            "source_hash",
+            "segments"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
         "tests/test_product_capabilities.py",
         "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
       ],
@@ -5722,7 +5781,7 @@
   "counts": {
     "absent": 0,
     "implemented": 67,
-    "partial": 10,
+    "partial": 11,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
@@ -5742,5 +5801,5 @@
   ],
   "scope_version": 2,
   "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
-  "total": 77
+  "total": 78
 }

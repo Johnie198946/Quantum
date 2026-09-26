@@ -991,6 +991,7 @@ public struct OrphanPendingCardView: View {
 public struct KnowledgeActionCard: View {
     public let action: KnowledgeActionBlock
     public let onApply: () -> Void
+    public var onCompare: (() -> Void)? = nil
     public let onDiscard: () -> Void
     public let onOpenResult: () -> Void
     public var body: some View {
@@ -1035,6 +1036,20 @@ public struct KnowledgeActionCard: View {
                 "输出形式", icon: "doc.badge.gearshape",
                 value: action.steps.map { stepLabel($0.kind) }.joined(separator: " · ")
             )
+            if action.steps.contains(where: { $0.kind == "merge_notes" && $0.sourceNoteIds.count == 1 }), let onCompare {
+                Button("查看差异并调整", action: onCompare).frame(minHeight: 44)
+            }
+            if !action.afterPreview.isEmpty {
+                requirementSection("执行后的内容", icon: "doc.text", value: action.afterPreview)
+            }
+            ForEach(action.steps.filter { $0.markdown?.isEmpty == false }) { step in
+                DisclosureGroup("完整结果 · \(step.title ?? "笔记")") {
+                    Text(step.markdown ?? "").textSelection(.enabled)
+                }
+            }
+            if !action.markdownDiff.isEmpty {
+                DisclosureGroup("修改明细") { Text(action.markdownDiff).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+            }
             cardButton("确认并开始", filled: true, action: onApply)
             Button("修改需求", action: onDiscard)
                 .font(AppTheme.Typography.supporting)

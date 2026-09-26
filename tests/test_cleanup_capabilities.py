@@ -144,3 +144,116 @@ async def test_task_organization_commits_replays_and_restores_through_pcm(monkey
     await apply([{"action": "REVERT_MERGE", "task_id": "a", "secondary_task_id": "b", "merge_id": state["task_merges"][0]["id"]}], "revert-" + project_id)
     _, state = await snapshot()
     assert all(t["status"] == "TODO" for t in state["tasks"])
+
+
+def test_merge_preview_highlights_changes_without_persisting_or_losing_text():
+    from backend.api.knowledge_actions import KnowledgeMergePreviewRequest, preview_note_merge
+
+    def note(id, body):
+        markdown = f'---\nid: "{id}"\ntitle: "笔记"\n---\n\n{body}'
+        return dict(id=id, title="笔记", markdown=markdown, content_hash=hashlib.sha256(markdown.encode()).hexdigest())
+
+    left = note("target", "共同开头\n\n预算为 300 元。\n\n共同结尾\n\n")
+    right = note("source", "共同开头\n\n预算为 500 元。\n\n共同结尾\n\n新增路线\n")
+    req = KnowledgeMergePreviewRequest(target_note_id="target", source_note_id="source", local_notes=[left, right])
+    preview = preview_note_merge(req, AUTH)
+    segments = preview["segments"]
+    assert "".join(s["before"] for s in segments) == "共同开头\n\n预算为 300 元。\n\n共同结尾\n\n"
+    assert "".join(s["after"] for s in segments) == "共同开头\n\n预算为 500 元。\n\n共同结尾\n\n新增路线\n"
+    changed = next(s for s in segments if s["kind"] == "replace")
+    assert "".join(run["text"] for run in changed["before_runs"] if run["changed"]) == "3"
+    assert "".join(run["text"] for run in changed["after_runs"] if run["changed"]) == "5"
+    assert preview["target_hash"] == left["content_hash"]
+    assert "action_id" not in preview and "knowledge_action_capability" not in preview
+    for snapshots in [[left, {**right, "markdown": "drift"}], [left, left], [left, {**right, "archived": True}]]:
+        with pytest.raises(HTTPException) as error:
+            preview_note_merge(req.model_copy(update={"local_notes": snapshots}), AUTH)
+        assert error.value.status_code == 422
+
+
+def test_merge_preview_identical_unicode_and_fragment_limit_preserve_full_text():
+    from backend.services.knowledge_action_capability import note_merge_preview
+    text = "你好🙂\n\n- [x] 完成\n\n![图](attachment://image.png)\n"
+    def note(id, body):
+        return dict(id=id, markdown=body, content_hash=hashlib.sha256(body.encode()).hexdigest())
+    result = note_merge_preview(note("a", text), note("b", text))
+    assert all(s["kind"] == "equal" for s in result["segments"])
+    code = "```python\nfirst = 1\n\nsecond = 2\n```\n\n结尾"
+    result = note_merge_preview(note("a", code), note("b", code.replace("second = 2", "second = 3")))
+    changed = next(s for s in result["segments"] if s["kind"] == "replace")
+    assert changed["before"].count("```") == 2
+    assert "".join(s["before"] for s in result["segments"]) == code
+    fragmented = "\n\n".join(str(i) for i in range(300))
+    result = note_merge_preview(note("a", fragmented), note("b", "different"))
+    assert result["coarse"] is True
+    assert result["segments"][0]["before"] == fragmented
+    assert result["segments"][0]["kind"] == "replace"
+
+
+@pytest.mark.asyncio
+async def test_merge_preview_http_requires_auth_and_valid_snapshots():
+    import httpx
+    from backend.main import app
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        response = await client.post("/api/v1/me/knowledge-actions/merge-preview", json={})
+    assert response.status_code == 401
+
+
+def test_chat_compare_is_read_only_owner_scoped_and_rejects_incomplete_snapshots():
+    import json
+    from scripts import hermes_bridge as bridge
+    from backend.services.capability_catalog import describe_capability, search_capabilities
+    events = []
+    notes = [{"id": key, "markdown": text, "content_hash": hashlib.sha256(text.encode()).hexdigest(), "archived": False}
+             for key, text in [("target", "预算300元\n"), ("source", "预算500元\n")]]
+    context = {"knowledge_action_v1": True, "inline_notes": notes, "emit": events.append}
+    previous = getattr(bridge._client_context_tool_context, "value", None)
+    bridge._client_context_tool_context.value = context
+    def compare(source="source"):
+        return json.loads(bridge._app_capability_invoke_tool({"capability_id": "knowledge.note.compare", "input": {"target_note_id": "target", "source_note_id": source}}))
+    try:
+        result = compare()
+        assert result["success"] and result["segments"][0]["kind"] == "replace"
+        assert events == [{"type": "knowledge_navigation", "destination": "note_comparison", "note_id": "target", "source_note_id": "source", "query": None}]
+        events.clear()
+        assert not compare("other-owner")["success"]
+        assert not compare("target")["success"]
+        notes[1]["markdown"] = "truncated"
+        assert not compare()["success"]
+        assert events == []
+    finally:
+        bridge._client_context_tool_context.value = previous
+    assert describe_capability("knowledge.note.compare")["effect"] == "read"
+    assert "knowledge.note.compare" in {item["id"] for item in search_capabilities("帮我比较这两篇笔记", limit=5)}
+
+
+@pytest.mark.asyncio
+async def test_signed_chat_diff_is_derived_from_snapshot_not_model_claim(monkeypatch):
+    import importlib
+    api = importlib.import_module("backend.api.chat")
+    monkeypatch.setattr(api, "persist_knowledge_action_proposal", AsyncMock())
+    original = "预算300元\n"
+    note = {"id": "target", "markdown": original, "content_hash": hashlib.sha256(original.encode()).hexdigest()}
+    step = {"kind": "merge_notes", "target_note_id": "target", "original_content_hash": note["content_hash"], "source_note_ids": [], "source_content_hashes": {}, "markdown": "预算500元\n"}
+    event = {"action_id": "diff-check", "steps": [step], "markdown_diff": "没有任何变化"}
+    kwargs = dict(payload=AUTH, session_id="diff-session", request_id="diff-request", policy_version="p", client_context={"local_notes": [note]})
+    signed = await api._authorize_knowledge_action_event(event, **kwargs)
+    assert "-预算300元" in signed["markdown_diff"] and "+预算500元" in signed["markdown_diff"]
+    changed = await api._authorize_knowledge_action_event({**event, "steps": [{**step, "markdown": "预算600元\n"}]}, **kwargs)
+    assert signed["action_digest"] != changed["action_digest"]
+    assert "没有任何变化" not in signed["markdown_diff"]
+
+
+@pytest.mark.asyncio
+async def test_pcm_compare_uses_authenticated_sync_reader(monkeypatch):
+    from backend import capability_handlers as handlers
+    notes = [{"note_id": key, "markdown": value, "content_hash": hashlib.sha256(value.encode()).hexdigest(), "archived": False}
+             for key, value in [("a", "before"), ("b", "after")]]
+    reader = AsyncMock(return_value={"items": notes, "compile_status": "ready"})
+    monkeypatch.setattr(handlers, "list_synced_notes", reader)
+    result = await handlers._knowledge_compare({"target_note_id": "a", "source_note_id": "b"}, AUTH, None)
+    assert result["target_note_id"] == "a"
+    assert all(call.args == (True, AUTH) for call in reader.call_args_list)
+    with pytest.raises(HTTPException) as denied:
+        await handlers._knowledge_compare({"target_note_id": "a", "source_note_id": "foreign"}, AUTH, None)
+    assert denied.value.status_code == 404

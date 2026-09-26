@@ -218,7 +218,7 @@ capabilities:
     version: 1.1.0
     domain: task
     description: Update a canonical task contract; alternatively apply an explicitly confirmed batch of archive, restore or merge operations at one project revision.
-    positive_examples: [Update this task title and summary.]
+    positive_examples: ["归档待办", "合并重复待办", "恢复待办", "Update this task title and summary."]
     negative_examples: [Overwrite a stale or cross-tenant task.]
     input_schema:
       type: object

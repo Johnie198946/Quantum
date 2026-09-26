@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `7c10019b7820c0565f201713ec13e518efef1fae494010aaa833e874ba8a3bbe`
+Catalog digest: `df0760f09c98a71b18c51a789f0328a57e0d910601bdadc3706b72c2d0a4ac7a`
 
 ## Gateway 核心模块规范
 
@@ -329,6 +329,7 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | `hermes.session.resume@1.0.0` | hermes_session | write | required | required | `hermes.session.resumed` | `hermes_session_detail@1` | implemented |
 | `knowledge.navigation@1.0.0` | knowledge | client | none | none | `knowledge.navigation` | `knowledge_action@1` | implemented |
 | `knowledge.note.archive@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
+| `knowledge.note.compare@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.create@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.merge@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.read@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
@@ -472,5 +473,6 @@ Debug 必须按以下证据顺序进行，后层不得替代前层：
 | Propose replacement dates for one scheduled canonical QWS task. | `schedule.update` | `schedule.change_proposed@1` | `answer@1` | `schedule.update` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Propose clearing dates from one scheduled canonical QWS task. | `schedule.delete` | `schedule.change_proposed@1` | `answer@1` | `schedule.delete` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:dispatchCapabilityEvent` | qws-schedule-access | `tests/test_schedule_capabilities.py` | implemented | implemented |
 | Archive or restore versioned conversations on the current device. | `conversation.lifecycle` | `client.action.requested@1` | `client_action@1` | `conversation.lifecycle` | `ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift` | client-action-owner | `tests/test_cleanup_capabilities.py`, `ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift` | unverified | partial |
+| Compare two selected personal notes and review an explicit merge result in Chat or cleanup. | `knowledge.note.compare` | `knowledge.results@1` | `answer@1` | `knowledge.compare` | `ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift:handleKnowledgeNavigation` | personal-knowledge-owner | `tests/test_cleanup_capabilities.py`, `ios/AIPlatformAppTests/CleanupMergeTests.swift`, `ios/AIPlatformAppUITests/CleanupMergeUITests.swift` | unverified | partial |
 
 PCM compiles every implemented, client-supported capability into a native Hermes tool at session assembly. Normal business execution does not depend on capability search or describe. QCP validates every invocation against the allowlisted contract; domain handlers remain the authorization truth.
