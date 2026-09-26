@@ -1,3 +1,29 @@
+# 当前交付记录（2026-09-26 第二轮修复）
+
+task_id: learning-resume-exercise-fix-20260926
+status: TESTED（第二轮本地测试通过；首轮 6129442 已 DEPLOYED，真机发现后续 schema 规则遗漏，尚未 VERIFIED）
+branch: codex/learning-resume-exercise-fix-20260926
+worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/learning-resume-exercise-fix-20260926
+head/local_commit: 首轮 6129442f6d72b45adb56152f2afa55c9eb54b96b；已 fast-forward 到并行任务 2d893130d629615144a8319e7ca25b04073dc7e5，待提交第二轮
+remote_sha: 首轮 git ls-remote origin refs/heads/main=6129442f6d72b45adb56152f2afa55c9eb54b96b；后续主线=2d893130d629615144a8319e7ca25b04073dc7e5
+server_before: 9d45436c1474c79583090fcf7a19e5f2f706b7b8
+server_after: 首轮部署 6129442f6d72b45adb56152f2afa55c9eb54b96b，/opt/releases/ai-lab-platform-6129442f6d72.OqURKC
+health_check: 标准 update.sh 成功退出；API ready、Bridge ok、runtime contract audit passed、全部 8 容器 healthy
+functional_check: 真机 Build 63 恢复书籍与16%进度；读取题组200；出题 Bridge200，但判断题缺失 options/correct_ids/option_explanations 导致校验502，第二轮待验收
+rollback_point: /opt/releases/ai-lab-platform-9d45436c1474.s7PYde；旧镜像 bdd366f914fd；备份 /opt/ai-lab-shared/rollbacks/learning-6129442.IZjzeC 与 update-6129442f6d72-units.1790433992.2784724
+remaining_risks: 第二轮待推送部署真机验证；AI计划生成耗时保留；首轮验收被另一项部署/回滚打断，用户现已暂停其他部署。
+
+## 第二轮依据与验证
+
+- 首轮发布精确源码归档 SHA256=dad0cd1d5ecf5803ca861de6bf97c7b182bbbdbb288ba9e9c35eecff5d307abd；镜像 sha256:e2d8d0b52e678bd0d1266bcff68709268a1eacb7c0b5d5052653b832632ce581，三处运行时文件哈希与 Git 一致。
+- UTC14:56:16 真机 GET learning-exercises 200；14:57:19 Bridge POST /v1/chat 200；14:57:20 出题502。模型输出3196字、finish_reason=stop，非截断；GeneratedSet 对 questions[1] 报 invalid options/key。
+- 真实输出 judgement 缺少三个默认空字段。JSON schema 没有表达 Python after-validator 的条件要求。第二轮仅给既有 Question 四个字段补描述，显式说明选择/判断选项与答案、逐选项解释、主观题评分规则；严格校验保持不变。
+- 追加 backend/api/learning.py、tests/test_learning_exercises.py。回归模拟真实缺字段错误并验证失败记录可重试，检查实际发送给模型的 schema 带规则；39项 learning/chat_reasoning/publication_handoff 测试通过，包含最大prompt预算；全仓库Ruff和diff检查通过。
+- 第二轮修改前盘点：工作区干净，branch如上，HEAD=6129442；origin仍为Quantum仓库；worktree列表与历史记录一致。Fast-forward到2d89313，保留其他任务的publication_handoff改动，不改写历史。
+
+---
+以下为第一轮各阶段历史记录；当前状态以上方及后续实际验收记录为准。
+
 # 修复学习恢复慢与混合练习 502
 
 task_id: learning-resume-exercise-fix-20260926

@@ -58,12 +58,12 @@ class Question(StrictModel):
     difficulty: int = Field(ge=1, le=3)
     minutes: int = Field(ge=1, le=12)
     source_excerpt: str = Field(min_length=8, max_length=500)
-    options: list[Option] = Field(default_factory=list, max_length=6)
-    correct_ids: list[str] = Field(default_factory=list, max_length=6)
+    options: list[Option] = Field(default_factory=list, max_length=6, description='choice 必填2至6项，id依次为A、B、C…；judgement 必填且固定为 [{"id":"T","text":"正确"},{"id":"F","text":"错误"}]；solution/response 必须为空数组。')
+    correct_ids: list[str] = Field(default_factory=list, max_length=6, description='choice 必填正确选项id，不重复；judgement 必填且只能为 ["T"] 或 ["F"]；solution/response 必须为空数组。')
     reference_answer: str = Field(min_length=1, max_length=6000)
     explanation: str = Field(min_length=10, max_length=6000)
-    option_explanations: dict[str, str] = Field(default_factory=dict)
-    rubric: list[Criterion] = Field(default_factory=list, max_length=6)
+    option_explanations: dict[str, str] = Field(default_factory=dict, description='choice/judgement 必填，键必须恰好覆盖所有选项id，每项给出非空解释；solution/response 必须为空对象。')
+    rubric: list[Criterion] = Field(default_factory=list, max_length=6, description='solution/response 必填至少一条评分规则；choice/judgement 必须为空数组。')
 
     @model_validator(mode="after")
     def valid_answer(self):

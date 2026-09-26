@@ -155,6 +155,31 @@ def test_bad_mark_keeps_answers_and_allows_retry(env, monkeypatch):
     assert restored["revision"] > created["revision"]
 
 
+def test_judgement_contract_is_sent_to_model_and_missing_options_can_retry(env, monkeypatch):
+    request = create()
+    async def missing_options(prompt, payload):
+        # Real model failure: optional JSON-schema fields omitted for judgement.
+        data = generated()
+        for key in ("options", "correct_ids", "option_explanations"):
+            del data["questions"][1][key]
+        return json.dumps(data)
+    monkeypatch.setattr(learning, "model_json", missing_options)
+    with pytest.raises(HTTPException) as exc:
+        run(learning.create_exercise(request, AUTH))
+    assert exc.value.status_code == 502
+
+    async def instructed_model(prompt, payload):
+        schema = json.loads(prompt.split("只返回一个完整 JSON 对象，符合此 schema，不加任何额外说明：\n", 1)[1].split("\n证据及限制：\n", 1)[0])
+        fields = schema["$defs"]["Question"]["properties"]
+        assert '[{"id":"T","text":"正确"},{"id":"F","text":"错误"}]' in fields["options"]["description"]
+        assert '["T"] 或 ["F"]' in fields["correct_ids"]["description"]
+        assert "所有选项id" in fields["option_explanations"]["description"]
+        assert "至少一条评分规则" in fields["rubric"]["description"]
+        return json.dumps(generated())
+    monkeypatch.setattr(learning, "model_json", instructed_model)
+    assert run(learning.retry_generation(request.id, AUTH))["status"] == "draft"
+
+
 def test_independent_accuracy_excludes_repeats_and_assistance(env):
     first = create()
     created = run(learning.create_exercise(first, AUTH))
