@@ -1556,7 +1556,21 @@ if ! command -v flock >/dev/null 2>&1; then
   exit 1
 fi
 install -d -o root -g root -m 0755 /run/lock
-exec 9>/run/lock/ai-lab-platform-update.lock
+# An offline image preparer may hold this same lock across metadata and cutover.
+# Accept only inherited fd 8 pointing to the exact deployment lock; flock below
+# still proves/acquires exclusivity on its shared open-file description.
+if [ "${AI_LAB_DEPLOY_LOCK_FD:-}" = "8" ]; then
+  if [ "$(readlink /proc/$$/fd/8 2>/dev/null)" != "/run/lock/ai-lab-platform-update.lock" ]; then
+    echo "ERROR: invalid inherited deployment lock" >&2
+    exit 1
+  fi
+  exec 9>&8
+elif [ -n "${AI_LAB_DEPLOY_LOCK_FD:-}" ]; then
+  echo "ERROR: invalid inherited deployment lock descriptor" >&2
+  exit 1
+else
+  exec 9>/run/lock/ai-lab-platform-update.lock
+fi
 if ! flock -n 9; then
   echo "ERROR: another AI Lab deployment is already running" >&2
   exit 1

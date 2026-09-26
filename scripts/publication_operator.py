@@ -21,24 +21,23 @@ from backend.services.knowledge_publication_store import (
 from backend.services.follow_builders_publication import load_candidate
 from backend.services.publication_workflow_handoff import (
     PublicationHandoffError,
+    configured_handoff_schedule,
     acknowledge_publication_handoff,
     export_publication_handoff,
     request_publication_revision,
 )
 
 
-def _handoff_schedule_id() -> str:
-    value = os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", "")
-    if not value or len(value) > 48:
-        raise PublicationHandoffError("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID is required")
-    return value
+def _handoff_schedule_id(series_id: str = "ai-toolkit") -> str:
+    return configured_handoff_schedule(series_id or "ai-toolkit")
 
 
-async def _export_handoff() -> dict:
+async def _export_handoff(args) -> dict:
     from backend.db import SessionLocal
 
     async with SessionLocal() as db:
-        return await export_publication_handoff(db, _handoff_schedule_id())
+        return await export_publication_handoff(db, _handoff_schedule_id(args.series_id),
+                                                 series_id=args.series_id, issue_key=args.issue_key)
 
 
 async def _ack_handoff(store: PublicationStore, args) -> dict:
@@ -49,13 +48,13 @@ async def _ack_handoff(store: PublicationStore, args) -> dict:
         result = await acknowledge_publication_handoff(
             db,
             store,
-            _handoff_schedule_id(),
+            _handoff_schedule_id(args.series_id),
             execution_id=args.execution_id,
             artifact_id=args.artifact_id,
             artifact_hash=args.artifact_sha256,
             envelope_hash=args.envelope_sha256,
             attempt_id=args.attempt_id,
-            bundle=bundle,
+            bundle=bundle, series_id=args.series_id,
         )
         await db.commit()
         return result
@@ -69,9 +68,9 @@ async def _request_handoff_revision(store: PublicationStore, args) -> dict:
     review_raw = args.review_file.read_bytes()
     async with SessionLocal() as db:
         result = await request_publication_revision(
-            db, store, _handoff_schedule_id(), envelope=envelope,
+            db, store, _handoff_schedule_id(args.series_id), envelope=envelope,
             envelope_hash=args.envelope_sha256, attempt_id=args.attempt_id,
-            bundle=bundle, review_raw=review_raw,
+            bundle=bundle, series_id=args.series_id, review_raw=review_raw,
         )
         await db.commit()
         return result
@@ -196,8 +195,11 @@ def main() -> int:
     status = commands.add_parser("status")
     status.add_argument("--publication-id")
     commands.add_parser("release-due")
-    commands.add_parser("export-workflow-handoff")
+    export = commands.add_parser("export-workflow-handoff")
+    export.add_argument("--series-id", default="ai-toolkit")
+    export.add_argument("--issue-key")
     acknowledge = commands.add_parser("acknowledge-workflow-handoff")
+    acknowledge.add_argument("--series-id")
     acknowledge.add_argument("--bundle", required=True, type=Path)
     acknowledge.add_argument("--execution-id", required=True)
     acknowledge.add_argument("--artifact-id", required=True)
@@ -205,6 +207,7 @@ def main() -> int:
     acknowledge.add_argument("--envelope-sha256", required=True)
     acknowledge.add_argument("--attempt-id", required=True)
     revision = commands.add_parser("request-workflow-revision")
+    revision.add_argument("--series-id")
     revision.add_argument("--envelope", required=True, type=Path)
     revision.add_argument("--envelope-sha256", required=True)
     revision.add_argument("--bundle", required=True, type=Path)
@@ -284,7 +287,7 @@ def main() -> int:
             vault = Path(os.environ.get("AI_LAB_HOME", Path(__file__).resolve().parent.parent / "data" / "vault"))
             result = store.stage(bundle, vault=vault)
         elif args.command == "export-workflow-handoff":
-            result = asyncio.run(_export_handoff())
+            result = asyncio.run(_export_handoff(args))
         elif args.command == "acknowledge-workflow-handoff":
             result = asyncio.run(_ack_handoff(store, args))
         elif args.command == "request-workflow-revision":

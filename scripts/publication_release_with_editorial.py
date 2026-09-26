@@ -7,7 +7,11 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT = Path("/Users/dengzhaoyu/Projects/quantum-2.0-publication-main")
+PROJECT = Path(__file__).resolve().parents[1]
+if not (PROJECT / "backend/services/knowledge_publication_store.py").is_file():
+    PROJECT = Path.cwd().resolve()
+if not (PROJECT / "backend/services/knowledge_publication_store.py").is_file():
+    raise RuntimeError("publication repository root is unavailable")
 ROOT = Path("/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2")
 
 sys.path.insert(0, str(PROJECT))

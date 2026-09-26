@@ -4,9 +4,19 @@
   "test_serial": true,
   "free_subscription": true,
   "editorial_selection": {
-    "genres": ["tutorial", "research_report", "popular_science", "feature", "critical_essay"],
-    "candidate_sources": ["follow_builders", "authorized_wiki", "published_catalog", "open_research_gaps"],
-    "destinations": ["ai-history", "ai-practice", "concept-fables", "ai-toolkit", "quantumn-originals"],
+    "genres": [
+      "tutorial",
+      "research_report",
+      "popular_science",
+      "feature",
+      "critical_essay"
+    ],
+    "candidate_sources": [
+      "follow_builders",
+      "authorized_wiki",
+      "published_catalog",
+      "open_research_gaps"
+    ],
     "publish_nothing_when_no_reader_value": true,
     "required_brief": true
   },
@@ -15,25 +25,97 @@
       "id": "ai-history",
       "title": "AI的前世今生",
       "editorial_mode": "historical_causal_narrative",
-      "audience": "非技术中文读者"
+      "audience": "非技术中文读者",
+      "kind": "daily",
+      "enabled": true,
+      "release_times": [
+        "12:00"
+      ],
+      "cover_theme": "history",
+      "genre": "popular_science",
+      "execution_enabled": false,
+      "author_job_id": "5a3f2a2eb988",
+      "review_job_id": "fbd1cd1217d7",
+      "assets_job_id": "171a125ddb63"
     },
     {
       "id": "ai-practice",
       "title": "趣味AI落地经历",
       "editorial_mode": "evidence_led_practical_tutorial",
-      "audience": "非技术中文读者"
+      "audience": "非技术中文读者",
+      "kind": "daily",
+      "enabled": true,
+      "release_times": [
+        "12:00"
+      ],
+      "cover_theme": "practice",
+      "genre": "tutorial",
+      "execution_enabled": true,
+      "author_job_id": "5a3f2a2eb988",
+      "review_job_id": "fbd1cd1217d7",
+      "assets_job_id": "171a125ddb63"
     },
     {
       "id": "concept-fables",
       "title": "概念寓言",
       "editorial_mode": "delayed_reveal_allegory_with_explicit_mapping",
-      "audience": "非技术中文读者"
+      "audience": "非技术中文读者",
+      "kind": "daily",
+      "enabled": true,
+      "release_times": [
+        "12:00"
+      ],
+      "cover_theme": "methodology",
+      "genre": "popular_science",
+      "execution_enabled": false,
+      "author_job_id": "5a3f2a2eb988",
+      "review_job_id": "fbd1cd1217d7",
+      "starts_on": "2026-09-19",
+      "assets_job_id": "171a125ddb63"
     },
     {
       "id": "ai-toolkit",
       "title": "AI工具实战",
       "editorial_mode": "novice_step_by_step_tool_building_tutorial",
-      "audience": "希望用AI完成工作并开发小工具的入门读者"
+      "audience": "希望用AI完成工作并开发小工具的入门读者",
+      "kind": "daily",
+      "enabled": true,
+      "release_times": [
+        "00:01",
+        "12:00"
+      ],
+      "cover_theme": "practice",
+      "genre": "tutorial",
+      "execution_enabled": true,
+      "author_job_id": "b52aa900ac12",
+      "review_job_id": "fbd1cd1217d7",
+      "starts_on": "2026-09-24",
+      "assets_job_id": "171a125ddb63",
+      "prerequisite_job_id": "b8c4c5e40bb1"
+    },
+    {
+      "id": "tang-history",
+      "title": "趣味说唐史",
+      "kind": "daily",
+      "enabled": true,
+      "release_times": [
+        "00:01",
+        "08:00",
+        "13:00",
+        "20:00"
+      ],
+      "cover_theme": "history",
+      "genre": "feature",
+      "audience": "普通中文读者",
+      "editorial_mode": "evidence_led_historical_narrative",
+      "execution_enabled": false,
+      "author_profile": "story",
+      "review_policy": "story-supervision-v2",
+      "author_job_id": "d3e461e0578c",
+      "review_job_id": "0dd3884f173c",
+      "assets_job_id": "171a125ddb63",
+      "starts_on": "2026-09-27",
+      "review_profile": "supervision"
     }
   ],
   "original_collections": [
@@ -42,7 +124,11 @@
       "title": "Anthropic 原作",
       "daily_slot": false,
       "requires_source_publication_id": true,
-      "requires_verified_redistribution_evidence": true
+      "requires_verified_redistribution_evidence": true,
+      "kind": "original_collection",
+      "enabled": true,
+      "cover_theme": "original",
+      "execution_enabled": false
     },
     {
       "id": "quantumn-originals",
@@ -50,14 +136,27 @@
       "daily_slot": false,
       "requires_source_publication_id": true,
       "requires_local_owner_policy_evidence": true,
-      "requires_editorial_contract": true
+      "requires_editorial_contract": true,
+      "kind": "original_collection",
+      "enabled": true,
+      "cover_theme": "original",
+      "execution_enabled": true
+    },
+    {
+      "id": "follow-builders-sources",
+      "title": "Follow Builders 公开来源索引",
+      "kind": "source_index",
+      "enabled": true,
+      "cover_theme": "external",
+      "execution_enabled": false
     }
   ],
   "writer_job": {
     "schedule": "0 8,14,18 * * *",
     "no_agent": false,
     "prompt_template": "docs/prompts/quantumn-editorial-v2.md",
-    "per_series_max_issue_count": 1
+    "per_series_max_issue_count": 1,
+    "count_scope": "per_configured_issue_slot"
   },
   "tutorial_supply": {
     "collection_schedule": "0 1 * * *",
@@ -68,7 +167,11 @@
       "starts_after_collection_receipt": true,
       "target_complete_by": "03:00:00",
       "blocks_authoring": false,
-      "truth_states": ["saved", "queued", "compiled"]
+      "truth_states": [
+        "saved",
+        "queued",
+        "compiled"
+      ]
     },
     "author_input_freeze_time": "08:05:00",
     "author_input_precedence": [
@@ -85,10 +188,20 @@
     "direct_vault_read_forbidden": true,
     "current_cycle_compilation_is_preferred_not_required": true,
     "unselected_candidate_failure_blocks_issue": false,
-    "sequence": ["collect", "publish_content_available_receipt", "writer_compiles_canonical_wiki", "author_queries_knowledge_gateway", "freeze_publication_inputs", "review", "finalize", "release", "reader_readback"]
+    "sequence": [
+      "collect",
+      "publish_content_available_receipt",
+      "writer_compiles_canonical_wiki",
+      "author_queries_knowledge_gateway",
+      "freeze_publication_inputs",
+      "review",
+      "finalize",
+      "release",
+      "reader_readback"
+    ]
   },
   "release_job": {
-    "schedule": "0 12 * * *",
+    "schedule": "*/5 * * * *",
     "no_agent": true,
     "command": "scripts/publication_release_remote.py",
     "finalize_native_review_before_release": true
@@ -107,7 +220,7 @@
     "semantic_review_required": true
   },
   "reviewer_job": {
-    "schedule": "0,30 10,16,20 * * *",
+    "schedule": "*/10 * * * *",
     "no_agent": false,
     "prompt_template": "docs/prompts/quantumn-editorial-v2.md",
     "input_command": "scripts/publication_editorial_remote.py review-input",

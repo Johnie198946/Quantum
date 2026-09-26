@@ -262,7 +262,7 @@ def test_targeted_publication_reads_one_verified_record(monkeypatch, tmp_path):
 def test_missing_daily_series_are_reported(tmp_path):
     store = PublicationStore(tmp_path)
     stage(store, now=at(3))
-    assert store.status_report(now=at(3))["missing"] == [{"series_id": "ai-practice", "series_title": "趣味AI落地经历", "issue_date": "2026-09-08", "status": "missing"}]
+    assert store.status_report(now=at(3))["missing"] == [{"series_id": "ai-practice", "series_title": "趣味AI落地经历", "issue_date": "2026-09-08", "issue_key": "2026-09-08", "issue_slot": "12:00", "release_at": "2026-09-08T12:00:00+08:00", "status": "missing"}]
 
 
 def test_concept_fables_becomes_required_on_launch_date(tmp_path):

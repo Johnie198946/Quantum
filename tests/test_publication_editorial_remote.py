@@ -78,6 +78,7 @@ def fixture_bundle():
 
 @pytest.fixture
 def flow(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_PROFILE", "default")
     local = tmp_path / "local"
     local.mkdir()
     intake = tmp_path / "intake"
@@ -212,7 +213,9 @@ def flow(tmp_path, monkeypatch):
 def native(flow, decision="approved", ended=True):
     local, manifest, remote, _, key, _, _ = flow
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
-    request = relay.review_input(local, remote)
+    from unittest.mock import patch
+    with patch.dict("os.environ", {"HERMES_PROFILE": "supervision"}):
+        request = relay.review_input(local, remote)
     request_value = json.loads(request.split("PUBLICATION_REVIEW_REQUEST\n", 1)[1].split("\nEND_PUBLICATION_REVIEW_REQUEST", 1)[0])
     item = json.loads(manifest.read_text())["items"][0]
     c = item["quality_contract"]
@@ -293,7 +296,8 @@ def native(flow, decision="approved", ended=True):
     return NativeDatabases(story=writer_db, supervision=reviewer_db), key
 
 
-def test_prepare_is_private_intake_and_request_contains_full_material(flow):
+def test_prepare_is_private_intake_and_request_contains_full_material(flow, monkeypatch):
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
     local, manifest, remote, calls, *_ = flow
     result = relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     assert result["statuses"] == ["await_review"]
@@ -331,7 +335,8 @@ def test_prepare_is_private_intake_and_request_contains_full_material(flow):
     assert not (local / "proof.json").exists()
 
 
-def test_prepare_ingests_manifest_bound_inline_image_bytes(flow):
+def test_prepare_ingests_manifest_bound_inline_image_bytes(flow, monkeypatch):
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
     local, manifest, remote, *_ = flow
     image_url = "https://example.com/figure.png"
     body_path = local / "body.md"
@@ -1060,7 +1065,7 @@ def test_content_only_initial_builder_generates_and_prepares_control_fields(flow
     body_dir, submission = initial_submission(tmp_path)
 
     manifest = relay.build_initial(
-        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24", issue_slot="12:00",
         format="chapter", owner_policy_id="synthetic-owner-policy",
         writer_session="initial-writer",
     )
@@ -1084,7 +1089,7 @@ def test_content_only_initial_builder_generates_and_prepares_control_fields(flow
     assert not ({"revision", "issue_id", "attempt_id", "target_hash"}
                 & set(bundle["quality_contract"]))
     assert relay.build_initial(
-        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24", issue_slot="12:00",
         format="chapter", owner_policy_id="synthetic-owner-policy",
         writer_session="initial-writer",
     ).read_bytes() == before
@@ -1092,7 +1097,7 @@ def test_content_only_initial_builder_generates_and_prepares_control_fields(flow
     assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
     assert relay.prepare(manifest, remote)["statuses"] == ["await_review"]
     assert relay.build_initial(
-        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24",
+        submission, body_dir, series_id="ai-toolkit", issue_date="2026-09-24", issue_slot="12:00",
         format="chapter", owner_policy_id="synthetic-owner-policy",
         writer_session="retry-in-another-session",
     ) == manifest
@@ -1106,7 +1111,7 @@ def test_start_cli_builds_then_uses_existing_prepare_path(flow, tmp_path, monkey
     monkeypatch.setattr(relay, "Remote", lambda *_args: remote)
     args = [
         "start", "--submission", str(submission), "--body-dir", str(body_dir),
-        "--series-id", "ai-toolkit", "--issue-date", "2026-09-24",
+        "--series-id", "ai-toolkit", "--issue-date", "2026-09-24", "--issue-slot", "12:00",
         "--format", "chapter", "--owner-policy-id", "synthetic-owner-policy",
     ]
 
@@ -1158,3 +1163,127 @@ def test_content_only_initial_builder_rejects_unsafe_or_invalid_material(tmp_pat
             format="chapter", owner_policy_id="synthetic-owner-policy",
             writer_session="initial-writer",
         )
+
+
+def test_four_field_content_submission_derives_history_system_fields(tmp_path):
+    body_dir, path = initial_submission(tmp_path)
+    value = json.loads(path.read_text())
+    value.pop("editorial_brief")
+    value.pop("learning_objectives")
+    (body_dir / "source.json").write_text('{"source":"https://example.com/history"}')
+    relay.save(path, value)
+    manifest = relay.build_initial(path, body_dir, series_id="ai-history", issue_date="2026-09-24",
+        format="chapter", owner_policy_id="synthetic-policy", writer_session="original-author")
+    item = json.loads(manifest.read_text())["items"][0]
+    bundle = json.loads((body_dir / item["bundle_file"]).read_text())
+    contract = bundle["quality_contract"]
+    assert contract["editorial_brief"]["genre"] == relay.SERIES["ai-history"]["genre"]
+    assert contract["editorial_brief"]["evidence_urls"] == ["https://example.com/history"]
+    assert contract["learning_objectives"]
+    assert "教程" not in contract["editorial_brief"]["thesis"]
+
+
+@pytest.mark.parametrize("mutation", [None, "writer", "body", "title", "summary"])
+def test_v2_initial_builder_preserves_original_author_and_exact_content(tmp_path, monkeypatch, mutation):
+    from backend.services.publication_workflow_handoff import canonical_json
+    body_dir, path = initial_submission(tmp_path)
+    value = json.loads(path.read_text())
+    artifact = {"schema_version": "publication-content-v1", "title": value["title"],
+                "summary": value["summary"], "body": (body_dir / "body.md").read_text(),
+                "source_documents": [{"kind": "source_snapshot", "content": "https://example.com/history"}],
+                "execution_documents": []}
+    raw = canonical_json(artifact)
+    (body_dir / "workflow-artifact.json").write_bytes(raw)
+    envelope = {"version": "publication-workflow-handoff-v2", "series_id": "ai-history",
+                "issue_date": "2026-09-24", "issue_key": "2026-09-24", "issue_slot": "12:00",
+                "release_at": "2026-09-24T12:00:00+08:00", "artifact_sha256": relay.sha(raw),
+                "writer_session": "original-author"}
+    envelope_raw = canonical_json(envelope)
+    (body_dir / "workflow-envelope.json").write_bytes(envelope_raw)
+    relay.save(body_dir / "workflow-handoff-state.json", {"envelope_sha256": relay.sha(envelope_raw)})
+    monkeypatch.setenv("HERMES_SESSION_ID", "asset-generator")
+    if mutation == "body":
+        (body_dir / "body.md").write_text(artifact["body"] + "\n未经作者确认的新正文。\n")
+    elif mutation in {"title", "summary"}:
+        value[mutation] += "未经作者确认的变化"
+        relay.save(path, value)
+    kwargs = dict(series_id="ai-history", issue_date="2026-09-24", format="chapter", owner_policy_id="synthetic-policy")
+    if mutation == "writer":
+        kwargs["writer_session"] = "asset-generator"
+    if mutation:
+        with pytest.raises(ValueError, match="cannot be replaced|content conflicts"):
+            relay.build_initial(path, body_dir, **kwargs)
+        assert not (body_dir / "candidate-bundle.json").exists()
+    else:
+        manifest = relay.build_initial(path, body_dir, **kwargs)
+        item = json.loads(manifest.read_text())["items"][0]
+        bundle = json.loads((body_dir / item["bundle_file"]).read_text())
+        assert bundle["quality_contract"]["writer_sessions"] == ["hermes:original-author"]
+        assert bundle["body"] == artifact["body"]
+
+
+def test_review_input_does_not_offer_story_request_to_default_profile(flow, monkeypatch):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote, review_policy="story-supervision-v2")
+    monkeypatch.setenv("HERMES_PROFILE", "default")
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
+    assert "PUBLICATION_REVIEW_REQUEST" in relay.review_input(local, remote)
+
+
+def test_review_input_does_not_offer_default_request_to_supervision(flow, monkeypatch):
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+
+
+def test_rejected_native_content_enters_revision_two_and_independent_approval(flow, tmp_path, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    from scripts import publication_workflow_handoff as handoff
+    local, old_manifest, remote, calls, key, store, intake = flow
+    databases, _ = native(flow, "rejected")
+    relay.finalize(local, remote, db=databases, key=key)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setitem(SERIES, "ai-history", {**SERIES["ai-history"], "author_job_id": "historyjob", "author_profile": "story"})
+    root = handoff.native_output_root()
+    root.mkdir(parents=True)
+    shutil.copytree(local, root / "prior-rejected")
+    body = (local / "body.md").read_text() + "\n### 证据补充\n补充核验一手来源，澄清历史背景，并由独立审稿重新确认缺口得到解决。\n"
+    content = {"schema_version": "publication-content-v1", "title": "修订后的合成历史文章",
+        "summary": "合成测试内容，用于核验真实拒稿进入下一轮审核。", "body": body,
+        "source_documents": [{"kind": "source_snapshot", "content": "https://example.com/source"}], "execution_documents": []}
+    artifact = root / "revised-content.json"
+    artifact.write_bytes(handoff.canonical_json(content))
+    db_path = tmp_path / ".hermes/profiles/story/state.db"
+    db_path.parent.mkdir(parents=True)
+    shutil.copyfile(databases["story"], db_path)
+    sid = "cron_historyjob_revised"
+    request = {"series_id": "ai-history", "issue_date": "2026-09-08", "issue_slot": "12:00",
+        "issue_key": "2026-09-08", "release_at": "2026-09-08T12:00:00+08:00", "author_job_id": "historyjob"}
+    packet = "PUBLICATION_CONTENT_REQUEST\n" + json.dumps(request) + "\nEND_PUBLICATION_CONTENT_REQUEST"
+    result = {"publication_content_result": {"series_id": "ai-history", "issue_date": "2026-09-08",
+        "issue_slot": "12:00", "artifact_file": str(artifact)}}
+    with sqlite3.connect(db_path) as db:
+        db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", (sid, "story", None, "cron", 100, "cron_complete", 90))
+        db.execute("INSERT INTO messages VALUES(1,?,'user',?,NULL,NULL,1,0)", (sid, packet))
+        db.execute("INSERT INTO messages VALUES(2,?,'assistant',?,NULL,'stop',1,0)", (sid, json.dumps(result)))
+    material = handoff.fetch_native("ai-history", "2026-09-08", root)
+    base = Path(material["output_directory"])
+    for role in relay.MEDIA_ROLES:
+        shutil.copyfile(local / f"{role}.jpg", base / f"{role}.jpg")
+    manifest = relay.build_initial(base / "content-submission.json", base, series_id="ai-history",
+        issue_date="2026-09-08", issue_slot="12:00", format="chapter", owner_policy_id="fixture-policy")
+    item = json.loads(manifest.read_text())["items"][0]
+    bundle = json.loads((base / item["bundle_file"]).read_text())
+    assert bundle["quality_contract"]["research_gaps"][0]["id"] == "need-primary"
+    assert bundle["quality_contract"]["research_gaps"][0]["state"] == "resolved"
+    assert bundle["quality_contract"]["writer_sessions"] == ["hermes:writer", f"hermes:{sid}"]
+    new_flow = (base, manifest, remote, calls, key, store, intake)
+    review_dbs, _ = native(new_flow)
+    current_item = json.loads(manifest.read_text())["items"][0]
+    shutil.copyfile(base / "review.json", base / current_item["review_file"])
+    with sqlite3.connect(review_dbs["story"]) as db:
+        db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?,?)", (sid, "story", None, "cron", 100, "cron_complete", 90))
+    assert json.loads(manifest.read_text())["items"][0]["quality_contract"]["revision"] == 2
+    assert relay.finalize(base, remote, db=review_dbs, key=key)["items"][0]["status"] == "staged"

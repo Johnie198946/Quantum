@@ -59,7 +59,10 @@ MEDIA_CONTRACT = {
     "illustration_02": ("publication_illustration", 1600, 900),
     "illustration_03": ("publication_illustration", 1600, 900),
 }
-DAILY_SERIES = {"ai-history", "ai-practice", "concept-fables", "ai-toolkit"}
+from backend.services.knowledge_publication_store import SERIES, publication_slot
+
+DAILY_SERIES = {key for key, value in SERIES.items() if value["kind"] == "daily"}
+CONTENT_SUBMISSION_FIELDS = {"title", "summary", "source_files", "execution_files"}
 SUBMISSION_FIELDS = {
     "title", "summary", "editorial_brief", "learning_objectives",
     "source_files", "execution_files",
@@ -207,7 +210,7 @@ def _same_initial_item(existing: dict, expected: dict) -> bool:
 
 def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
                   issue_date: str, format: str, owner_policy_id: str,
-                  writer_session: str | None = None) -> Path:
+                  writer_session: str | None = None, issue_slot: str | None = None) -> Path:
     """Build one initial draft from content-only author files.
 
     Publication identity, dates, format and policy are operator inputs. The
@@ -221,10 +224,10 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
     if submission_path.name != "content-submission.json" or submission_path.parent != base:
         raise ValueError("content-submission.json must be directly inside body directory")
     submission = json.loads(read(local_path(base, str(submission_path))))
-    if not isinstance(submission, dict) or set(submission) != SUBMISSION_FIELDS:
+    if not isinstance(submission, dict) or set(submission) not in (SUBMISSION_FIELDS, CONTENT_SUBMISSION_FIELDS):
         raise ValueError("content submission has missing, unknown or forbidden fields")
-    if series_id not in DAILY_SERIES:
-        raise ValueError("initial builder requires a daily editorial series")
+    if series_id not in DAILY_SERIES or not SERIES[series_id].get("enabled", True):
+        raise ValueError("initial builder requires an enabled daily editorial series")
     try:
         parsed_issue_date = date.fromisoformat(issue_date)
     except (TypeError, ValueError) as exc:
@@ -238,6 +241,70 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
     for field in ("title", "summary"):
         if not isinstance(submission[field], str) or not submission[field].strip():
             raise ValueError(f"nonempty {field} required")
+    occurrence = publication_slot(series_id, issue_date, issue_slot)
+    if set(submission) == CONTENT_SUBMISSION_FIELDS:
+        from backend.services.publication_workflow_handoff import publication_system_fields
+        documents = []
+        for entry in submission["source_files"]:
+            normalized, source_path = _submission_entry(base, entry, group="source_files")
+            documents.append({"kind": normalized["kind"], "content": read(source_path).decode("utf-8")})
+        submission.update(publication_system_fields(
+            {"title": submission["title"], "source_documents": documents}, series_id=series_id))
+    # A Workflow author identity must come from the verified content envelope,
+    # never from the later asset-generation session.
+    envelope_path = base / "workflow-envelope.json"
+    workflow_writer = None
+    workflow_content = None
+    if envelope_path.exists():
+        envelope = json.loads(read(local_path(base, "workflow-envelope.json")))
+        if envelope.get("version") == "publication-workflow-handoff-v2":
+            state = json.loads(read(local_path(base, "workflow-handoff-state.json")))
+            if (state.get("envelope_sha256") != sha(read(envelope_path))
+                    or envelope.get("series_id") != series_id
+                    or envelope.get("issue_date") != issue_date
+                    or envelope.get("issue_key") != occurrence["issue_key"]
+                    or envelope.get("release_at") != occurrence["release_at"]
+                    or envelope.get("artifact_sha256") != sha(read(local_path(base, "workflow-artifact.json")))):
+                raise ValueError("workflow author binding conflicts")
+            if not isinstance(envelope.get("writer_session"), str) or not envelope["writer_session"].strip():
+                raise ValueError("workflow author session missing")
+            from backend.services.publication_workflow_handoff import validate_publication_artifact
+            workflow_content = validate_publication_artifact(read(local_path(base, "workflow-artifact.json")))
+            workflow_writer = _writer_session(envelope["writer_session"])
+            if writer_session is not None and _writer_session(writer_session) != workflow_writer:
+                raise ValueError("workflow author cannot be replaced by asset session")
+    native_path = base / "native-author.json"
+    if native_path.exists():
+        if workflow_writer is not None:
+            raise ValueError("publication has conflicting author authorities")
+        try:
+            from scripts.publication_workflow_handoff import native_content_binding
+        except ImportError:
+            from publication_workflow_handoff import native_content_binding
+        native_binding = json.loads(read(local_path(base, "native-author.json")))
+        found = native_content_binding(series_id, occurrence["issue_key"], writer_session=native_binding.get("writer_session"))
+        if found is None or found[0] != native_binding or read(local_path(base, "native-content.json")) != found[1]:
+            raise ValueError("native author binding conflicts with terminal session")
+        workflow_content = found[2]
+        from backend.services.publication_workflow_handoff import publication_system_fields
+        expected_fields = publication_system_fields(workflow_content, series_id)
+        if any(submission.get(key) != value for key, value in expected_fields.items()):
+            raise ValueError("native content system fields conflict")
+        native_receipts = [{"kind": "native_author_binding", "path": "native-author.json"},
+                           {"kind": "native_author_content", "path": "native-content.json"}]
+        if submission["source_files"][-2:] != native_receipts:
+            raise ValueError("native author source receipts missing")
+        for field, content_key in (("source_files", "source_documents"), ("execution_files", "execution_documents")):
+            documents = []
+            entries = submission[field][:-2] if field == "source_files" else submission[field]
+            for entry in entries:
+                normalized, source_path = _submission_entry(base, entry, group=field)
+                documents.append({"kind": normalized["kind"], "content": read(source_path).decode("utf-8")})
+            if documents != workflow_content[content_key]:
+                raise ValueError("native content source evidence conflicts")
+        workflow_writer = native_binding["writer_session"]
+        if writer_session is not None and _writer_session(writer_session) != workflow_writer:
+            raise ValueError("native author cannot be replaced by asset session")
     objectives = submission["learning_objectives"]
     if (not isinstance(objectives, list) or not objectives
             or any(not isinstance(value, str) or len(value.strip()) < 10 for value in objectives)):
@@ -253,6 +320,16 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
         body = body_raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError("body must be UTF-8") from exc
+    if workflow_content is not None and (body != workflow_content["body"]
+            or any(submission[field] != workflow_content[field] for field in ("title", "summary"))):
+        raise ValueError("publication content conflicts with workflow artifact")
+    research_gaps = []
+    expected_writers = [workflow_writer] if workflow_writer is not None else None
+    if native_path.exists():
+        prior_revision = _native_rejected_revision(base, series_id, occurrence["issue_key"], sha(body_raw), brief)
+        if prior_revision is not None:
+            prior_contract, research_gaps = prior_revision
+            expected_writers = list(dict.fromkeys([*prior_contract["writer_sessions"], workflow_writer]))
     groups = {}
     input_paths = {submission_path, body_path}
     for field in ("source_files", "execution_files"):
@@ -306,7 +383,9 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
         if assigned is not None and assigned.get("writer_sessions") != writer_sessions:
             raise ValueError("existing initial writer session conflicts with server contract")
     else:
-        writer_sessions = [_writer_session(writer_session)]
+        writer_sessions = expected_writers or [_writer_session(writer_session)]
+    if expected_writers is not None and writer_sessions != expected_writers:
+        raise ValueError("existing manifest conflicts with workflow author")
     references = [{"title": f"Evidence {index}", "url": url}
                   for index, url in enumerate(brief["evidence_urls"], 1)]
     bundle = {
@@ -317,20 +396,22 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
         "rights_scope": "local_owner_original", "rights_reference": owner_policy_id,
         "rights_valid_until": None, "rights_perpetual": True, "rights_evidence": [],
         "rights_evidence_status": "operator_attested", "owner_policy_id": owner_policy_id,
-        "release_at": issue_date + "T12:00:00+08:00", "state": "draft", "is_test": True,
+        "release_at": occurrence["release_at"], "state": "draft", "is_test": True,
         "source_snapshot_hash": "0" * 64, "source_receipts": [], "body_hash": digest,
         "body_receipt": {"artifact_id": f"receipt-publication_body-{digest}",
                          "sha256": digest, "kind": "publication_body"},
         "references": references, "wiki_references": [], "assets": [], "completeness": "full",
         "review": {"content_hash": "", "decision": "pending", "reviewed_by": "",
                    "reviewed_at": "", "receipt": None},
-        "execution_claim": ("success" if series_id in {"ai-practice", "ai-toolkit"}
+        "execution_claim": ("success" if SERIES[series_id].get("execution_enabled", False)
                             and groups["execution_files"] else "not_run"),
         "execution_evidence": [], "warnings": [],
         "quality_contract": {"format": format, "writer_sessions": writer_sessions,
                              "learning_objectives": objectives, "editorial_brief": brief,
-                             "research_gaps": []},
+                             "research_gaps": research_gaps},
     }
+    if issue_slot is not None:
+        bundle["issue_slot"] = occurrence["issue_slot"]
     write_bytes(candidate_path, encoded(bundle))
     item["bundle_sha256"] = sha(read(candidate_path))
     if existing is not None:
@@ -429,6 +510,69 @@ def _copy_revision_input(
     return str(target.relative_to(target_base))
 
 
+def _resolved_revision_gaps(prior_contract: dict, review_gaps: list, brief: dict) -> list:
+    gaps = {
+        gap["id"]: dict(gap)
+        for gap in prior_contract.get("research_gaps", [])
+        if isinstance(gap, dict)
+        and isinstance(gap.get("id"), str)
+        and gap.get("id") != "review.rejected"
+    }
+    for gap in review_gaps:
+        if not isinstance(gap, dict) or not isinstance(gap.get("id"), str) or not isinstance(gap.get("question"), str):
+            raise ValueError("invalid rejected review gap")
+        acceptance = str(gap.get("acceptance_criterion") or gap.get("required_evidence") or gap["question"]).strip()
+        gaps[gap["id"]] = {
+            "id": gap["id"],
+            "question": gap["question"],
+            "state": "resolved",
+            "resolution": "Revised manuscript submitted for independent verification against: " + acceptance,
+            "source_urls": list(brief["evidence_urls"]),
+        }
+    if any(gap.get("state") != "resolved" for gap in gaps.values()):
+        raise ValueError("rejected review did not describe every inherited open gap")
+    return list(gaps.values())
+
+
+def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_hash: str, brief: dict):
+    """Reuse the latest genuine rejected attempt for the same native occurrence."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    candidates = []
+    for path in manifests(base.parent):
+        if path.parent == base:
+            continue
+        try:
+            _, manifest = load_manifest(path)
+            for item in manifest["items"]:
+                if item["status"] != "rejected":
+                    continue
+                prior = json.loads(read(local_path(path.parent, item["bundle_file"])))
+                if prior.get("series_id") != series_id:
+                    continue
+                slot = prior.get("issue_slot") or datetime.fromisoformat(prior["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+                if publication_slot(series_id, prior["issue_date"], slot)["issue_key"] != issue_key:
+                    continue
+                contract = item.get("quality_contract")
+                if not isinstance(contract, dict) or type(contract.get("revision")) is not int:
+                    raise ValueError("rejected manifest contract unavailable")
+                candidates.append((contract["revision"], path, item, contract))
+        except (KeyError, OSError):
+            continue
+    if not candidates:
+        return None
+    _, path, item, contract = max(candidates, key=lambda value: value[0])
+    if body_hash == item["body_sha256"]:
+        raise ValueError("revised body must materially change")
+    review = json.loads(read(local_path(path.parent, item["review_file"])))
+    if (review.get("decision") != "rejected" or review.get("attempt_id") not in {None, contract.get("attempt_id")}
+            or review.get("editorial_target_hash") != contract.get("target_hash")
+            or review.get("content_hash") != item["body_sha256"]):
+        raise ValueError("rejected review does not bind prior contract")
+    gaps = _resolved_revision_gaps(contract, review.get("research_gaps", []), brief)
+    return contract, gaps
+
+
 def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str | None = None) -> Path:
     """Package one rejected manuscript revision from content-only author output.
 
@@ -472,30 +616,11 @@ def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str
     brief = prior_contract.get("editorial_brief")
     if not isinstance(brief, dict) or not isinstance(brief.get("evidence_urls"), list) or not brief["evidence_urls"]:
         raise ValueError("revision source URLs unavailable")
-    gaps = {
-        gap["id"]: dict(gap)
-        for gap in prior_contract.get("research_gaps", [])
-        if isinstance(gap, dict)
-        and isinstance(gap.get("id"), str)
-        and gap.get("id") != "review.rejected"
-    }
-    for gap in review_gaps:
-        if not isinstance(gap, dict) or not isinstance(gap.get("id"), str) or not isinstance(gap.get("question"), str):
-            raise ValueError("invalid rejected review gap")
-        acceptance = str(gap.get("acceptance_criterion") or gap.get("required_evidence") or gap["question"]).strip()
-        gaps[gap["id"]] = {
-            "id": gap["id"],
-            "question": gap["question"],
-            "state": "resolved",
-            "resolution": "Revised manuscript submitted for independent verification against: " + acceptance,
-            "source_urls": list(brief["evidence_urls"]),
-        }
-    if any(gap.get("state") != "resolved" for gap in gaps.values()):
-        raise ValueError("rejected review did not describe every inherited open gap")
+    resolved_gaps = _resolved_revision_gaps(prior_contract, review_gaps, brief)
     draft = {key: prior_contract[key] for key in (
         "format", "learning_objectives", "editorial_brief",
     )}
-    draft.update(writer_sessions=writers, research_gaps=list(gaps.values()))
+    draft.update(writer_sessions=writers, research_gaps=resolved_gaps)
 
     prior_bundle = json.loads(read(local_path(prior_base, item["bundle_file"])))
     bundle = dict(prior_bundle)
@@ -738,6 +863,9 @@ def material_assets(item, bundle):
 
 
 def review_input(root, remote):
+    profile = os.environ.get("HERMES_PROFILE", "default")
+    if profile not in {"default", "supervision"}:
+        raise ValueError("unsupported native reviewer profile")
     invalid_pending: list[str] = []
     for path in manifests(root):
         # Historical output roots can contain pre-v2 or abandoned manifests.
@@ -763,6 +891,9 @@ def review_input(root, remote):
             if item["status"] != "await_review":
                 continue
             contract = item["quality_contract"]
+            expected_profile = "supervision" if contract.get("review_policy") == "story-supervision-v2" else "default"
+            if profile != expected_profile:
+                continue
             # A completed local review may precede the deterministic finalizer.
             # Skip it before requiring the remote attempt to remain await_review;
             # otherwise a global scan is blocked by historical manifests whose
@@ -956,6 +1087,7 @@ def main(argv=None):
     start_parser.add_argument("--body-dir", required=True, type=Path)
     start_parser.add_argument("--series-id", required=True, choices=sorted(DAILY_SERIES))
     start_parser.add_argument("--issue-date", required=True)
+    start_parser.add_argument("--issue-slot")
     start_parser.add_argument("--format", required=True, choices=("book", "chapter"))
     start_parser.add_argument("--owner-policy-id", required=True)
     revise_parser = sub.add_parser("revise")
@@ -983,12 +1115,14 @@ def main(argv=None):
                 initial_manifest = build_initial(
                     args.submission, args.body_dir, series_id=args.series_id,
                     issue_date=args.issue_date, format=args.format,
-                    owner_policy_id=args.owner_policy_id,
+                    owner_policy_id=args.owner_policy_id, issue_slot=args.issue_slot,
                 )
-                result = prepare(initial_manifest, remote)
+                result = prepare(initial_manifest, remote, review_policy=SERIES[args.series_id].get("review_policy"))
             elif args.action == "revise":
                 revision_manifest = build_revision(args.manifest, args.body_file)
-                result = prepare(revision_manifest, remote)
+                revision_path, revision_value = load_manifest(revision_manifest)
+                revision_bundle = json.loads(read(local_path(revision_path.parent, revision_value["items"][0]["bundle_file"])))
+                result = prepare(revision_manifest, remote, review_policy=SERIES[revision_bundle["series_id"]].get("review_policy"))
             elif args.action == "review-input":
                 result = review_input(args.root, remote)
             else:

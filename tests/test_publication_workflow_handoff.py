@@ -237,6 +237,11 @@ def prepare_publication(store: PublicationStore, export: dict, tmp_path):
         ]
     )
     value["source_snapshot_hash"] = receipt_set_hash(value["source_receipts"])
+    if export["envelope"].get("version") == "publication-workflow-handoff-v2":
+        value["issue_date"] = export["envelope"]["issue_date"]
+        value["issue_slot"] = export["envelope"]["issue_slot"]
+        value["release_at"] = export["envelope"]["release_at"]
+        value["quality_contract"]["writer_sessions"] = [export["envelope"]["writer_session"]]
     draft_contract = copy.deepcopy(value["quality_contract"])
     value = approve_fixture(store, value, draft=draft_contract)
     value["state"] = "staged"
@@ -460,6 +465,7 @@ def test_materialized_handoff_enters_existing_initial_builder(tmp_path):
         issue_date="2026-09-26",
         format="chapter",
         owner_policy_id="workflow-owner-policy",
+        issue_slot="12:00",
         writer_session="workflow-assets-session",
     )
     item = json.loads(manifest.read_text(encoding="utf-8"))["items"][0]
@@ -802,3 +808,371 @@ async def test_second_artifact_same_execution_materializes_without_overwrite(han
         assert {approval.plan_id for approval in approvals} == {
             "wfa_toolkit", "wfa_toolkit_revision_2",
         }
+
+
+def test_generic_series_schedule_and_history_fields(monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    from backend.services.publication_workflow_handoff import configured_handoff_schedule, publication_occurrence
+    monkeypatch.setitem(SERIES, "history-test", {
+        "kind": "daily", "enabled": True, "format": "chapter", "genre": "feature",
+        "release_times": ["09:00", "12:00", "18:00"], "workflow_schedule_id": "history_schedule",
+    })
+    assert configured_handoff_schedule("history-test") == "history_schedule"
+    fields = publication_system_fields(artifact_value(), "history-test")
+    assert fields["editorial_brief"]["genre"] == "feature"
+    assert "教程" not in fields["editorial_brief"]["thesis"]
+    occurrence = publication_occurrence("history-test", datetime.fromisoformat("2026-09-26T12:01:00+08:00"))
+    assert occurrence["issue_key"] == "2026-09-26T18:00"
+    monkeypatch.setitem(SERIES, "other", {"enabled": True, "workflow_schedule_id": "history_schedule"})
+    with pytest.raises(PublicationHandoffError, match="exactly one"):
+        configured_handoff_schedule("history-test")
+
+
+@pytest.mark.asyncio
+async def test_generic_preflight_revises_before_images_and_recovers_outbox(handoff_db, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    from backend.services import workflow_executor
+    maker, _ = handoff_db
+    monkeypatch.setitem(SERIES, "history-test", {
+        "kind": "daily", "enabled": True, "format": "chapter", "genre": "feature",
+        "release_times": ["12:00"], "workflow_schedule_id": "wfsched_toolkit",
+    })
+    calls = []
+    async def retry(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            raise OSError("temporary transport failure")
+    monkeypatch.setattr(workflow_executor, "retry_remote", retry)
+    async with maker() as db:
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.hermes_session_id = "native-author-session"
+        from backend.services.workflow_artifacts import run_root
+        artifact = (await db.execute(select(WorkflowArtifact).where(
+            WorkflowArtifact.execution_id == execution.id))).scalar_one()
+        content = {**artifact_value(), "schema_version": "publication-content-v1", "body": "## 太短的历史正文\n\n材料不足，需要补充证据和细节。"}
+        raw = canonical_json(content)
+        (run_root(execution) / artifact.relative_path).write_bytes(raw)
+        artifact.content_hash = hashlib.sha256(raw).hexdigest()
+        execution.scheduled_for = datetime.fromisoformat("2026-09-26T00:05:00+00:00")
+        await db.commit()
+    async with maker() as db:
+        with pytest.raises(PublicationHandoffError, match="remains prepared"):
+            await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test")
+    async with maker() as db:
+        result = await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test")
+        assert result["status"] == "preflight_revision_requested"
+        assert result["revision"] == 1
+        await db.commit()
+    assert len(calls) == 2
+    assert "quality.effective_cjk" in calls[0][2]
+    async with maker() as db:
+        assert await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test") == {
+            "status": "waiting_workflow", "available": False}
+        requests = list((await db.execute(select(WorkflowApproval).where(
+            WorkflowApproval.approval_type == "publication_revision"))).scalars())
+        assert len(requests) == 1
+        assert json.loads(requests[0].comment)["source"] == "deterministic_preflight"
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.status = "awaiting_review"
+        artifact = (await db.execute(select(WorkflowArtifact).where(
+            WorkflowArtifact.execution_id == execution.id))).scalar_one()
+        artifact.selected_for_publish = True
+        for index in range(2):
+            db.add(WorkflowApproval(id=f"budget_{index}", workflow_id=execution.workflow_id,
+                execution_id=execution.id, plan_id=f"prior_{index}", plan_hash="a" * 64,
+                activation_revision=1, approval_type="publication_revision", decision="requested",
+                actor_id="owner-a", comment="{}"))
+        await db.commit()
+    async with maker() as db:
+        with pytest.raises(PublicationHandoffError, match="revision budget exhausted"):
+            await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test")
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_generic_export_requires_author_and_exact_occurrence(handoff_db, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    maker, _ = handoff_db
+    monkeypatch.setitem(SERIES, "history-test", {
+        "kind": "daily", "enabled": True, "format": "chapter", "genre": "feature",
+        "release_times": ["12:00", "18:00"], "workflow_schedule_id": "wfsched_toolkit",
+    })
+    async with maker() as db:
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.scheduled_for = datetime.fromisoformat("2026-09-26T00:05:00+00:00")
+        await db.commit()
+    async with maker() as db:
+        assert await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test", issue_key="2026-09-26T18:00") == {
+            "status": "waiting_workflow", "available": False}
+        with pytest.raises(PublicationHandoffError, match="author native session"):
+            await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test")
+        with pytest.raises(PublicationHandoffError, match="schedule binding"):
+            await export_publication_handoff(db, "injected", series_id="history-test")
+
+
+@pytest.mark.asyncio
+async def test_generic_export_materializes_bound_slot_and_rejects_tampering(handoff_db, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    maker, tmp_path = handoff_db
+    monkeypatch.setitem(SERIES, "history-test", {
+        "kind": "daily", "enabled": True, "format": "chapter", "genre": "feature",
+        "release_times": ["12:00", "18:00"], "workflow_schedule_id": "wfsched_toolkit",
+    })
+    async with maker() as db:
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.hermes_session_id = "native-author-session"
+        execution.scheduled_for = datetime.fromisoformat("2026-09-26T06:05:00+00:00")
+        await db.commit()
+    async with maker() as db:
+        exported = await export_publication_handoff(db, "wfsched_toolkit", series_id="history-test", issue_key="2026-09-26T18:00")
+    assert exported["envelope"]["writer_session"] == "hermes:native-author-session"
+    result = materialize_export(exported, tmp_path / "generic", expected_schedule_id="wfsched_toolkit",
+                                expected_series_id="history-test", expected_issue_key="2026-09-26T18:00")
+    state = json.loads((Path(result["output_directory"]) / "workflow-handoff-state.json").read_text())
+    assert state["issue_slot"] == "18:00"
+    assert state["issue_key"] == "2026-09-26T18:00"
+    assert state["series_id"] == "history-test"
+    forged = json.loads(json.dumps(exported))
+    forged["envelope"]["issue_slot"] = "12:00"
+    forged["envelope_sha256"] = hashlib.sha256(canonical_json(forged["envelope"])).hexdigest()
+    with pytest.raises(PublicationHandoffError, match="occurrence binding"):
+        materialize_export(forged, tmp_path / "forged", expected_schedule_id="wfsched_toolkit")
+
+
+@pytest.mark.asyncio
+async def test_generic_prior_slot_remains_recoverable_and_registry_format_defaults(handoff_db, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    maker, _ = handoff_db
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"],
+        "release_times": ["12:00", "18:00"], "workflow_schedule_id": "wfsched_toolkit"})
+    async with maker() as db:
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.hermes_session_id = "original-author"
+        execution.scheduled_for = datetime.fromisoformat("2026-09-26T00:05:00+00:00")
+        next_execution = WorkflowExecution(id="wfr_evening", workflow_id=execution.workflow_id,
+            plan_id=execution.plan_id, tenant_key=execution.tenant_key, status="completed", progress=100,
+            idempotency_key="evening", trigger_schedule_id="wfsched_toolkit",
+            scheduled_for=datetime.fromisoformat("2026-09-26T06:05:00+00:00"))
+        db.add(next_execution)
+        schedule = await db.get(WorkflowSchedule, "wfsched_toolkit")
+        schedule.last_execution_id = next_execution.id
+        await db.commit()
+    async with maker() as db:
+        exported = await export_publication_handoff(db, "wfsched_toolkit", series_id="ai-toolkit", issue_key="2026-09-26")
+        assert exported["envelope"]["execution_id"] == "wfr_toolkit"
+        assert exported["envelope"]["issue_slot"] == "12:00"
+        assert await export_publication_handoff(db, "wfsched_toolkit", series_id="ai-toolkit", issue_key="2026-09-26T18:00") == {
+            "status": "waiting_workflow", "available": False}
+
+
+def test_operator_reports_unconfigured_series_as_structured_error(tmp_path, monkeypatch, capsys):
+    from scripts import publication_operator
+    monkeypatch.setattr("sys.argv", ["publication_operator", "--root", str(tmp_path),
+        "export-workflow-handoff", "--series-id", "unconfigured-series"])
+    assert publication_operator.main() == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is False
+    assert "unknown or disabled" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generic_author_binding_survives_approved_staged_ack(handoff_db, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    maker, tmp_path = handoff_db
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "workflow_schedule_id": "wfsched_toolkit"})
+    async with maker() as db:
+        execution = await db.get(WorkflowExecution, "wfr_toolkit")
+        execution.hermes_session_id = "native-author"
+        execution.scheduled_for = datetime.fromisoformat("2026-09-26T00:05:00+00:00")
+        await db.commit()
+    async with maker() as db:
+        exported = await export_publication_handoff(db, "wfsched_toolkit", series_id="ai-toolkit", issue_key="2026-09-26")
+    store = PublicationStore(tmp_path / "generic-store")
+    bundle, contract = prepare_publication(store, exported, tmp_path)
+    assert contract["writer_sessions"] == ["hermes:native-author"]
+    async with maker() as db:
+        result = await acknowledge_publication_handoff(db, store, "wfsched_toolkit",
+            execution_id=exported["envelope"]["execution_id"], artifact_id=exported["envelope"]["artifact_id"],
+            artifact_hash=exported["envelope"]["artifact_sha256"], envelope_hash=exported["envelope_sha256"],
+            attempt_id=contract["attempt_id"], bundle=bundle, series_id="ai-toolkit")
+        assert result["status"] == "completed"
+
+
+@pytest.fixture
+def native_author(tmp_path, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    from scripts import publication_workflow_handoff as handoff
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "author_profile": "default", "author_job_id": "nativejob", "release_times": ["12:00"]})
+    root = handoff.native_output_root()
+    root.mkdir(parents=True)
+    artifact = root / "author-content.json"
+    artifact.write_bytes(canonical_json({**artifact_value(), "schema_version": "publication-content-v1"}))
+    db_path = tmp_path / ".hermes/state.db"
+    with sqlite3.connect(db_path) as db:
+        db.executescript("CREATE TABLE sessions(id TEXT,profile_name TEXT,user_id TEXT,source TEXT,ended_at REAL,end_reason TEXT); CREATE TABLE messages(id INTEGER,session_id TEXT,role TEXT,content TEXT,finish_reason TEXT,tool_calls TEXT,active INTEGER,compacted INTEGER);")
+        db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)", ("cron_nativejob_20260926", "default", None, "cron", 100, "cron_complete"))
+        final = {"publication_content_result": {"series_id": "ai-toolkit", "issue_date": "2026-09-26", "issue_slot": "12:00", "artifact_file": str(artifact)}}
+        request = {"series_id": "ai-toolkit", "issue_date": "2026-09-26", "issue_slot": "12:00",
+                   "issue_key": "2026-09-26", "release_at": "2026-09-26T12:00:00+08:00", "author_job_id": "nativejob"}
+        packet = "PUBLICATION_CONTENT_REQUEST\n" + json.dumps(request) + "\nEND_PUBLICATION_CONTENT_REQUEST"
+        db.execute("INSERT INTO messages VALUES(0,?,?,?,?,?,1,0)", ("cron_nativejob_20260926", "user", packet, None, None))
+        db.execute("INSERT INTO messages VALUES(1,?,?,?,?,?,1,0)", ("cron_nativejob_20260926", "assistant", json.dumps(final), "stop", None))
+    return handoff, root, db_path, artifact
+
+
+def test_native_terminal_content_materializes_and_builder_binds_author(native_author, monkeypatch):
+    from PIL import Image
+    handoff, root, db_path, artifact = native_author
+    result = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    base = Path(result["output_directory"])
+    assert result["writer_session"] == "hermes:cron_nativejob_20260926"
+    assert handoff.fetch_native("ai-toolkit", "2026-09-26", root) == result
+    for role, (_, width, height) in publication_editorial_remote.MEDIA_CONTRACT.items():
+        Image.new("RGB", (width, height), "#456789").save(base / f"{role}.jpg", "JPEG")
+    monkeypatch.setenv("HERMES_SESSION_ID", "asset-session")
+    manifest = publication_editorial_remote.build_initial(base / "content-submission.json", base,
+        series_id="ai-toolkit", issue_date="2026-09-26", format="chapter", owner_policy_id="test-native")
+    bundle = json.loads((base / "candidate-bundle.json").read_text())
+    assert bundle["quality_contract"]["writer_sessions"] == [result["writer_session"]]
+    (base / "body.md").write_text("篡改作者正文")
+    with pytest.raises(ValueError, match="content conflicts"):
+        publication_editorial_remote.build_initial(base / "content-submission.json", base,
+            series_id="ai-toolkit", issue_date="2026-09-26", format="chapter", owner_policy_id="test-native")
+    value = json.loads(manifest.read_text())
+    value["items"][0]["status"] = "rejected"
+    manifest.write_text(json.dumps(value))
+    assert handoff.fetch_native("ai-toolkit", "2026-09-26", root)["status"] == "waiting_author"
+
+
+@pytest.mark.parametrize("mutation", ["profile", "owner", "job", "unfinished", "tool_final", "escape", "symlink"])
+def test_native_intake_rejects_foreign_or_nonterminal_author(native_author, mutation, tmp_path):
+    handoff, root, db_path, artifact = native_author
+    with sqlite3.connect(db_path) as db:
+        if mutation == "profile": db.execute("UPDATE sessions SET profile_name='story'")
+        elif mutation == "owner": db.execute("UPDATE sessions SET user_id='other'")
+        elif mutation == "job": db.execute("UPDATE sessions SET id='cron_foreign_run'")
+        elif mutation == "unfinished": db.execute("UPDATE sessions SET ended_at=NULL")
+        elif mutation == "tool_final": db.execute("UPDATE messages SET tool_calls='[]'")
+        elif mutation == "escape":
+            final = json.loads(db.execute("SELECT content FROM messages WHERE role='assistant'").fetchone()[0])
+            final["publication_content_result"]["artifact_file"] = str(tmp_path / "outside.json")
+            db.execute("UPDATE messages SET content=? WHERE role='assistant'", (json.dumps(final),))
+        elif mutation == "symlink":
+            original = artifact.read_bytes(); artifact.unlink()
+            outside = tmp_path / "outside.json"; outside.write_bytes(original); artifact.symlink_to(outside)
+    if mutation in {"escape", "symlink"}:
+        with pytest.raises(ValueError): handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    else:
+        assert handoff.fetch_native("ai-toolkit", "2026-09-26", root)["status"] == "waiting_author"
+
+
+def test_native_preflight_feedback_is_bounded_and_repeats_do_not_spend_budget(native_author):
+    handoff, root, _, artifact = native_author
+    content = json.loads(artifact.read_text())
+    content["body"] = "## 证据不足\n\n太短的正文。"
+    artifact.write_bytes(canonical_json(content))
+    first = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    assert first["reason"] == "deterministic_preflight"
+    assert "quality.effective_cjk" in first["reasons"]
+    assert handoff.fetch_native("ai-toolkit", "2026-09-26", root)["revision_count"] == 1
+    content["body"] += "修订仍然不足。"
+    artifact.write_bytes(canonical_json(content))
+    assert handoff.fetch_native("ai-toolkit", "2026-09-26", root)["revision_count"] == 2
+    content["body"] += "第三次仍然不足。"
+    artifact.write_bytes(canonical_json(content))
+    with pytest.raises(ValueError, match="revision budget exhausted"):
+        handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    feedback = json.loads(Path(first["feedback_file"]).read_text())
+    assert feedback["source"] == "deterministic_preflight"
+    assert feedback["status"] == "blocked" and len(feedback["submissions"]) == 3
+
+
+def test_native_story_intake_reads_only_story_profile_database(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    handoff, root, db_path, _ = native_author
+    story_db = db_path.parent / "profiles/story/state.db"
+    story_db.parent.mkdir(parents=True)
+    db_path.rename(story_db)
+    with sqlite3.connect(story_db) as db:
+        db.execute("UPDATE sessions SET profile_name='story'")
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "author_profile": "story"})
+    result = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    assert result["author_profile"] == "story"
+    assert result["writer_session"] == "hermes:cron_nativejob_20260926"
+
+
+def test_native_final_cannot_choose_occurrence_without_matching_request(native_author):
+    handoff, root, db_path, _ = native_author
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE messages SET content='no program request' WHERE role='user'")
+    with pytest.raises(ValueError, match="occurrence request"):
+        handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+
+
+def test_author_input_selects_earliest_unpublished_bound_occurrence(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+    handoff, root, _, _ = native_author
+    monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "release_times": ["00:01", "12:00"]})
+    day = "2026-09-27"
+    slots = [{"series_id": "ai-toolkit", "issue_date": day, **publication_slot("ai-toolkit", day, slot)} for slot in ["00:01", "12:00"]]
+    class Remote:
+        def operator(self, action):
+            assert action == "status"
+            return {"expected_issues": slots, "items": []}
+    remote = Remote()
+    now = datetime.fromisoformat("2026-09-27T00:05:00+08:00")
+    packet = handoff.author_input("nativejob", "default", remote, now=now)
+    assert json.loads(packet.splitlines()[1])["issue_key"] == day + "T00:01"
+    with pytest.raises(ValueError, match="not configured"):
+        handoff.author_input("nativejob", "story", remote, now=now)
+    remote.operator = lambda action: {"expected_issues": slots, "items": [dict(slots[0], state="published")]}
+    assert json.loads(handoff.author_input("nativejob", "default", remote, now=now).splitlines()[1])["issue_slot"] == "12:00"
+    remote.operator = lambda action: {"expected_issues": slots, "items": [dict(slot, state="published") for slot in slots]}
+    assert handoff.author_input("nativejob", "default", remote, now=now) == "NO_NEW_DRAFT"
+
+
+def test_assets_input_skips_progressed_directory_and_selects_next_native(native_author):
+    from PIL import Image
+    handoff, root, _, artifact = native_author
+    first = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    base = Path(first["output_directory"])
+    for role, (_, width, height) in publication_editorial_remote.MEDIA_CONTRACT.items():
+        Image.new("RGB", (width, height), "#567890").save(base / f"{role}.jpg", "JPEG")
+    publication_editorial_remote.build_initial(base / "content-submission.json", base,
+        series_id="ai-toolkit", issue_date="2026-09-26", issue_slot="12:00", format="chapter", owner_policy_id="test-native")
+    progressed = root / "00-progressed"
+    base.rename(progressed)
+    content = json.loads(artifact.read_text())
+    content["body"] += "\n新增证据说明正文变化。\n"
+    artifact.write_bytes(canonical_json(content))
+    second = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    request = json.loads(handoff.assets_input())["publication_asset_request"]
+    assert request["output_directory"] == second["output_directory"]
+    assert request["output_directory"] != str(progressed)
+
+
+def test_native_materialized_directory_symlink_is_rejected(native_author, tmp_path):
+    handoff, root, _, _ = native_author
+    result = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    target = Path(result["output_directory"])
+    outside = tmp_path / "relocated"
+    target.rename(outside)
+    target.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="directory is unsafe"):
+        handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+
+
+def test_author_input_does_not_reassign_native_content_waiting_for_assets(native_author):
+    from backend.services.knowledge_publication_store import publication_slot
+    handoff, root, _, _ = native_author
+    day = "2026-09-26"
+    class Remote:
+        def operator(self, _action):
+            return {"items": [], "expected_issues": [{"series_id": "ai-toolkit", "issue_date": day,
+                **publication_slot("ai-toolkit", day, "12:00")}]}
+    remote = Remote()
+    now = datetime.fromisoformat("2026-09-26T12:01:00+08:00")
+    assert "PUBLICATION_CONTENT_REQUEST" in handoff.author_input("nativejob", "default", remote, now=now)
+    handoff.fetch_native("ai-toolkit", day, root)
+    assert handoff.author_input("nativejob", "default", remote, now=now) == "NO_NEW_DRAFT"

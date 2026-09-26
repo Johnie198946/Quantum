@@ -162,6 +162,28 @@ def _status(stdout: str, returncode: int, label: str = "status") -> dict:
             or item.get("status") not in {"missing", "overdue_missing", *(f"overdue_{state}" for state in STATES)}
         ):
             raise ValueError(f"{label} returned an invalid missing issue")
+    expected = result.get("expected_issues")
+    if expected is not None:
+        if not isinstance(expected, list):
+            raise ValueError("invalid expected publication occurrences")
+        keys = set()
+        for occurrence in expected:
+            if (not isinstance(occurrence, dict)
+                    or not _valid_id(occurrence.get("series_id"))
+                    or not _valid_date(occurrence.get("issue_date"))
+                    or not isinstance(occurrence.get("issue_key"), str)
+                    or not re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d)?", occurrence["issue_key"])
+                    or not isinstance(occurrence.get("issue_slot"), str)
+                    or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", occurrence["issue_slot"])):
+                raise ValueError("invalid expected publication occurrence")
+            day, slot = occurrence["issue_date"], occurrence["issue_slot"]
+            expected_key = day if slot == "12:00" else f"{day}T{slot}"
+            if occurrence["issue_key"] != expected_key or occurrence.get("release_at") != f"{day}T{slot}:00+08:00":
+                raise ValueError("publication occurrence identity mismatch")
+            key = (occurrence["series_id"], occurrence["issue_key"])
+            if key in keys:
+                raise ValueError("duplicate expected publication occurrence")
+            keys.add(key)
     return result
 
 
@@ -253,21 +275,42 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
             "totals": {**{state: UNKNOWN for state in STATES}, "missing": UNKNOWN},
         }
     items, missing = status["items"], status["missing"]
-    daily_series = tuple(sorted(
-        {item["series_id"] for item in items if item["issue_date"] == day}
-        | {item["series_id"] for item in missing if item["issue_date"] == day}
-    ))
+    occurrences = status.get("expected_issues")
+    if occurrences is None:
+        # Compatibility with the old server: each observed series had one daily issue.
+        daily_series = sorted(
+            {item["series_id"] for item in items if item["issue_date"] == day}
+            | {item["series_id"] for item in missing if item["issue_date"] == day}
+        )
+        occurrences = [{"series_id": series, "issue_key": day, "issue_date": day,
+                        "issue_slot": "12:00", "release_at": f"{day}T12:00:00+08:00"}
+                       for series in daily_series]
+    else:
+        occurrences = [item for item in occurrences if item["issue_date"] == day]
+        daily_series = sorted({item["series_id"] for item in occurrences})
     totals = {state: sum(item["state"] == state for item in items) for state in STATES}
     totals["missing"] = len(missing)
     published = {}
     for series in daily_series:
-        rows = [item for item in items if item.get("state") == "published"
-                and item.get("issue_date") == day and item.get("series_id") == series]
+        slots = []
+        for occurrence in (value for value in occurrences if value["series_id"] == series):
+            rows = [item for item in items if item.get("state") == "published"
+                    and item.get("issue_date") == day and item.get("series_id") == series
+                    and item.get("issue_key", item["issue_date"]) == occurrence["issue_key"]]
+            slots.append({
+                **{key: occurrence[key] for key in ("issue_key", "issue_slot", "release_at")},
+                "published": len(rows),
+                "body_available": len(rows) == 1 and rows[0].get("body_available") is True,
+                "media_roles": rows[0].get("media_roles", []) if len(rows) == 1 else [],
+            })
+        good_media = all(set(slot["media_roles"]) == REQUIRED_DAILY_MEDIA for slot in slots)
         published[series] = {
-            "published": len({item["publication_id"] for item in rows}),
-            "body_available": len(rows) == 1 and rows[0].get("body_available") is True,
-            "media_roles": rows[0].get("media_roles", []) if len(rows) == 1 else [],
+            "published": sum(slot["published"] for slot in slots),
+            "body_available": bool(slots) and all(slot["body_available"] for slot in slots),
+            "media_roles": sorted(REQUIRED_DAILY_MEDIA) if good_media else (slots[0]["media_roles"] if len(slots) == 1 else []),
         }
+        if "expected_issues" in status:
+            published[series].update(expected=len(slots), slots=slots)
     before_ids = {
         item["publication_id"] for item in (before or {}).get("items", []) if item.get("state") == "published"
     }
@@ -285,14 +328,14 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
                 for item in items if item.get("state") in {"blocked", "failed"}
             ],
             "missing": [
-                {key: item[key] for key in ("series_id", "issue_date", "status")}
+                {key: item[key] for key in ("series_id", "issue_date", "status", "issue_key", "issue_slot", "release_at") if key in item}
                 for item in missing
             ],
         },
         "observed_published_publication_id_delta": sorted(after_ids - before_ids) if before is not None else UNKNOWN,
         "released_edition_ids": UNKNOWN,
         "today": {
-            "date": day, "expected": len(daily_series),
+            "date": day, "expected": len(occurrences),
             "published": sum(item["published"] for item in published.values()),
             "by_series": published,
         },

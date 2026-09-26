@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import fcntl
 import hashlib
 import importlib.util
@@ -21,8 +22,41 @@ watchdog = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = watchdog
 SPEC.loader.exec_module(watchdog)
 
+ACTIVATED_SERIES = copy.deepcopy(watchdog.SERIES)
 DAY = "2026-09-25"
 DIGESTS = {name: format(index, "064x") for index, name in enumerate(watchdog.SERIES, 1)}
+
+
+def install_catalog(monkeypatch, catalog):
+    # Independent dictionaries prevent tests mutating the application catalog.
+    catalog = copy.deepcopy(catalog)
+    monkeypatch.setattr(watchdog, "SERIES", catalog)
+    monkeypatch.setattr(watchdog, "AUTHOR_JOBS", {name: spec.get("author_job_id") for name, spec in catalog.items()})
+    monkeypatch.setattr(watchdog, "PLATFORM_AUTHOR_SERIES", frozenset(
+        name for name, spec in catalog.items()
+        if spec.get("workflow_schedule_id") or (spec.get("assets_job_id") and not spec.get("author_job_id"))))
+    monkeypatch.setattr(watchdog, "TARGET_JOBS", tuple(dict.fromkeys(
+        spec[field] for spec in catalog.values()
+        for field in ("author_job_id", "assets_job_id", "review_job_id", "prerequisite_job_id") if spec.get(field))))
+
+
+@pytest.fixture(autouse=True)
+def runnable_job_registry(tmp_path, monkeypatch):
+    # Explicit historical baseline; production topics, dates and routing evolve.
+    baseline = {name: {"kind": "daily", "enabled": True, "release_times": ["12:00"],
+                       "author_job_id": "5a3f2a2eb988", "review_job_id": "fbd1cd1217d7"}
+                for name in ("ai-history", "ai-practice", "concept-fables", "ai-toolkit")}
+    baseline["ai-toolkit"].update(author_job_id="", assets_job_id="171a125ddb63", prerequisite_job_id="b8c4c5e40bb1")
+    install_catalog(monkeypatch, baseline)
+    monkeypatch.setattr(watchdog, "REVIEW_JOB", "fbd1cd1217d7")
+    monkeypatch.setattr(watchdog, "PREREQUISITE_JOB", "b8c4c5e40bb1")
+    monkeypatch.delenv("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", raising=False)
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    path = tmp_path / "jobs.json"
+    path.write_text(json.dumps({"jobs": [{"id": job_id, "enabled": True} for job_id in watchdog.TARGET_JOBS]}))
+    monkeypatch.setattr(watchdog, "JOBS_FILE", path)
+    monkeypatch.setattr(watchdog, "PROFILES_ROOT", tmp_path / "profiles")
 
 
 def summary(*missing: str) -> dict:
@@ -626,7 +660,7 @@ def test_enabled_platform_chain_fetches_then_dispatches_only_assets(tmp_path):
     )
     assert reason == "ready"
     assert action is not None and action.phase == "assets"
-    assert action.job_id == watchdog.AUTHOR_JOBS["ai-toolkit"]
+    assert action.job_id == watchdog.SERIES["ai-toolkit"]["assets_job_id"]
 
 
 @pytest.mark.parametrize(
@@ -781,5 +815,308 @@ def test_material_hash_requires_all_five_images():
 def test_main_does_not_use_release_job_as_failure_alert(monkeypatch, capsys):
     # Exercise the ordinary error path instead; no alert/release callback exists.
     monkeypatch.setattr(watchdog, "_exclusive_lock", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    assert watchdog.main() == 1
+    assert watchdog.main([]) == 1
     assert json.loads(capsys.readouterr().out) == {"action": "none", "ok": False, "reason": "error"}
+
+
+@pytest.mark.parametrize(("patch", "reason"), [
+    ({"state": "paused", "enabled": True}, "job_paused"),
+    ({"paused_at": "2026-09-25T08:00:00+08:00"}, "job_paused"),
+    ({"enabled": False}, "job_disabled"),
+])
+def test_native_pause_flags_prevent_claim_and_dispatch(tmp_path, patch, reason):
+    watchdog.JOBS_FILE.write_text(json.dumps({"jobs": [{"id": watchdog.REVIEW_JOB, **patch}]}))
+    result, calls = run(tmp_path, summary("ai-history"), [item("ai-history", "await_review")])
+    assert result["ok"] is False and result["reason"] == reason
+    assert calls == []
+    assert not (tmp_path / "claims.db").exists()
+
+
+def test_missing_cron_job_is_structured_before_claim(tmp_path):
+    watchdog.JOBS_FILE.write_text('{"jobs":[]}')
+    result, calls = run(tmp_path, summary("ai-history"), [item("ai-history", "await_review")])
+    assert result["reason"] == "job_missing" and result["job_id"] == watchdog.REVIEW_JOB
+    assert calls == []
+
+
+def test_exhaustion_is_actionable_and_exact_rearm_preserves_history(tmp_path, monkeypatch):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    row = item("ai-history", "await_review")
+    action, _ = watchdog._plan(DAY, {"ai-history"}, [row])
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(DAY, action)
+        ledger.finish(DAY, action, "failed")
+    result, calls = run(tmp_path, summary("ai-history"), [row])
+    assert result["ok"] is False and result["reason"] == "retry_exhausted"
+    assert calls == []
+    key = result["idempotency_keys"][0]
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
+    with pytest.raises(ValueError, match="compare-and-set"):
+        ledger.rearm(key, 5, row.material_hash, "fixed configuration", lambda _: [])
+    with pytest.raises(ValueError, match="compare-and-set"):
+        ledger.rearm(key, 6, "f" * 64, "fixed configuration", lambda _: [])
+    ledger.rearm(key, 6, row.material_hash, "fixed job configuration", lambda _: [])
+    result, calls = run(tmp_path, summary("ai-history"), [row])
+    assert result["action"] == "triggered" and len(calls) == 1
+    with sqlite3.connect(ledger.path) as db:
+        attempts, history = db.execute("SELECT attempts,rearm_history FROM recovery_claims").fetchone()
+    assert attempts == 1
+    audit = json.loads(history)[0]
+    assert audit["previous"]["attempts"] == 6 and audit["previous"]["state"] == "failed"
+    assert audit["reason"] == "fixed job configuration"
+
+
+@pytest.mark.parametrize("state", ["running", "dispatched", "completed"])
+def test_rearm_rejects_active_or_completed_claim(tmp_path, monkeypatch, state):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("review", (watchdog.Barrier("ai-history", "a" * 64),))
+    assert ledger.claim(DAY, action)
+    if state != "running":
+        ledger.finish(DAY, action, state)
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
+    with pytest.raises(ValueError, match="failed claim"):
+        ledger.rearm(ledger.key(DAY, "review", action.barriers[0]), 1, "a" * 64, "repair", lambda _: [])
+
+
+def test_rearm_rejects_live_failed_owner_and_execution(tmp_path, monkeypatch):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("review", (watchdog.Barrier("ai-history", "a" * 64),))
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "failed")
+    key = ledger.key(DAY, "review", action.barriers[0])
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: True)
+    with pytest.raises(ValueError, match="proven-dead"):
+        ledger.rearm(key, 1, "a" * 64, "repair", lambda _: [])
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: False)
+    with pytest.raises(ValueError, match="execution"):
+        ledger.rearm(key, 1, "a" * 64, "repair", lambda _: ["job:execution:live"])
+
+
+def test_exhausted_item_does_not_block_unrelated_preparation(tmp_path):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    first = item("ai-history", "await_review", review_ready=True)
+    other = item("ai-practice", "prepared")
+    action, _ = watchdog._plan(DAY, {"ai-history"}, [first])
+    for _ in range(ledger.MAX_ATTEMPTS):
+        assert ledger.claim(DAY, action)
+        ledger.finish(DAY, action, "failed")
+    result, calls = run(tmp_path, summary("ai-history", "ai-practice"), [first, other])
+    assert result["phase"] == "prepare" and calls[0].manifest == other.manifest
+
+
+def test_paused_author_does_not_block_another_series(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-practice", {**watchdog.SERIES["ai-practice"], "author_job_id": "new-author"})
+    monkeypatch.setitem(watchdog.AUTHOR_JOBS, "ai-practice", "new-author")
+    watchdog.JOBS_FILE.write_text(json.dumps({"jobs": [
+        {"id": watchdog.AUTHOR_JOBS["ai-history"], "state": "paused"},
+        {"id": "new-author", "enabled": True},
+    ]}))
+    result, calls = run(tmp_path, summary("ai-history", "ai-practice"), [])
+    assert result["phase"] == "author" and calls[0].job_id == "new-author"
+
+
+def test_multi_slot_readback_and_claim_identity(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "release_times": ["09:00", "12:00", "18:00"]})
+    value = summary("ai-history")
+    value["today"].update(expected=6, published=4)
+    value["today"]["by_series"]["ai-history"] = {"published": 1, "expected": 3, "slots": [
+        {"issue_key": DAY + "T09:00", "published": 1},
+        {"issue_key": DAY, "published": 0},
+        {"issue_key": DAY + "T18:00", "published": 0},
+    ]}
+    rows = [watchdog.Item(Path("/noon/draft-manifest.json"), "ai-history", DAY, "a" * 64, "staged", issue_key=DAY),
+            watchdog.Item(Path("/evening/draft-manifest.json"), "ai-history", DAY, "b" * 64, "prepared", issue_key=DAY + "T18:00")]
+    result, calls = run(tmp_path, value, rows)
+    assert result["phase"] == "prepare" and calls[0].manifest == rows[1].manifest
+    assert calls[0].barriers[0].issue_key == DAY + "T18:00"
+    with sqlite3.connect(tmp_path / "claims.db") as db:
+        assert DAY + "T18:00" in db.execute("SELECT idempotency_key FROM recovery_claims").fetchone()[0]
+
+
+def test_disallowed_role_profile_is_blocked_not_sent_to_default_cron(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "author_profile": "supervision"})
+    with pytest.raises(watchdog.ActionFailure, match="job_profile_not_allowed_for_role"):
+        run(tmp_path, summary("ai-history"), [])
+    calls = []
+    assert calls == [] and not (tmp_path / "claims.db").exists()
+
+
+def test_future_enabled_series_does_not_block_todays_recovery(tmp_path, monkeypatch):
+    value = summary("ai-history")
+    monkeypatch.setitem(watchdog.SERIES, "future-topic", {
+        "kind": "daily", "enabled": True, "starts_on": "2099-01-01", "release_times": ["09:00", "18:00"],
+    })
+    assert watchdog._missing(value, DAY) == {"ai-history"}
+    result, calls = run(tmp_path, value, [item("ai-history", "prepared")])
+    assert result["phase"] == "prepare" and len(calls) == 1
+
+
+def test_final_dispatched_attempt_is_pending_during_cooldown(tmp_path):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    row = item("ai-history", "await_review")
+    action, _ = watchdog._plan(DAY, {"ai-history"}, [row])
+    for _ in range(ledger.MAX_ATTEMPTS - 1):
+        assert ledger.claim(DAY, action)
+        ledger.finish(DAY, action, "failed")
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "dispatched")
+    result, calls = run(tmp_path, summary("ai-history"), [row])
+    assert result["ok"] is True and result["reason"] == "already_claimed"
+    assert calls == []
+
+
+@pytest.mark.parametrize(("phase", "profile"), [("author", "story"), ("review", "supervision")])
+def test_profile_preflight_uses_own_registry(tmp_path, monkeypatch, phase, profile):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], f"{phase}_profile": profile})
+    job_id = watchdog.SERIES["ai-history"][f"{phase}_job_id"]
+    action = watchdog.Action(phase, (watchdog.Barrier("ai-history", "a" * 64),), job_id=job_id)
+    path = watchdog.PROFILES_ROOT / profile / "cron/jobs.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"jobs": [{"id": job_id, "state": "paused"}]}))
+    with pytest.raises(watchdog.ActionFailure, match="job_paused"):
+        watchdog._job_preflight(action)
+    path.write_text(json.dumps({"jobs": [{"id": job_id, "enabled": True}]}))
+    watchdog.JOBS_FILE.write_text('{"jobs":[]}')
+    watchdog._job_preflight(action)
+
+
+@pytest.mark.parametrize("profile", ["story", "supervision"])
+def test_dispatch_selects_profile_and_reads_its_execution_ledger(tmp_path, monkeypatch, profile):
+    job_id = "profile-job"
+    path = watchdog.PROFILES_ROOT / profile / "cron/executions.db"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE executions (id TEXT,job_id TEXT,status TEXT,started_at TEXT)")
+        db.execute("INSERT INTO executions VALUES (?,?,?,?)", ("run", job_id, "running", "9999-01-01T00:00:00+08:00"))
+    calls = []
+    class Process:
+        def poll(self):
+            return None
+        def terminate(self):
+            raise AssertionError("Accepted owner must keep running")
+    monkeypatch.setenv("STORY_API_KEY", "must-not-copy")
+    monkeypatch.setattr(watchdog.subprocess, "Popen", lambda command, **kw: calls.append((command, kw)) or Process())
+    watchdog._dispatch_job(job_id, profile)
+    assert calls[0][0] == ["hermes", "-p", profile, "cron", "run", job_id]
+    assert "STORY_API_KEY" not in calls[0][1]["env"]
+    assert calls[0][1]["env"]["HERMES_HOME"] == str(Path.home() / ".hermes")
+
+
+def test_profile_execution_blockers_cannot_collide_with_default_job_ids(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "author_profile": "story"})
+    job_id = watchdog.SERIES["ai-history"]["author_job_id"]
+    default = tmp_path / "default-executions.db"
+    execution_db(default, [])
+    monkeypatch.setattr(watchdog, "EXECUTIONS_DB", default)
+    path = watchdog.PROFILES_ROOT / "story/cron/executions.db"
+    path.parent.mkdir(parents=True)
+    execution_db(path, [("live", job_id, "running", 123, 100, DAY + "T10:00:00+08:00", None)])
+    blockers = watchdog._execution_blockers(DAY, owner_alive=lambda *_: True)
+    assert blockers == [f"story/{job_id}:live:live"]
+
+
+def test_native_fetch_waiting_author_dispatches_through_profile(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "author_profile": "story", "assets_job_id": "assets-job"})
+    job_id = watchdog.SERIES["ai-history"]["author_job_id"]
+    path = watchdog.PROFILES_ROOT / "story/cron/jobs.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"jobs": [{"id": job_id, "enabled": True}]}))
+    calls = []
+    def run_action(action):
+        calls.append(action)
+        if action.phase == "native_fetch":
+            raise watchdog.ActionPending("awaiting_native_author")
+    result = watchdog.supervise(DAY, status=lambda: summary("ai-history"), load_items=lambda: [],
+                                 blockers=lambda _: [], run_action=run_action,
+                                 claims=watchdog.Claims(tmp_path / "claims.db"))
+    assert result["phase"] == "author"
+    assert [action.phase for action in calls] == ["native_fetch", "author"]
+    assert watchdog._action_profile(calls[-1]) == "story"
+
+
+def test_native_content_state_advances_assets_without_workflow_ack(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "assets_job_id": "assets-job"})
+    directory = tmp_path / "native-one"
+    directory.mkdir()
+    (directory / "native-content-state.json").write_text(json.dumps({
+        "status": "waiting_assets", "series_id": "ai-history", "issue_date": DAY,
+        "issue_key": DAY, "artifact_sha256": "a" * 64,
+    }))
+    handoffs = watchdog._handoff_items(tmp_path)
+    assert handoffs[0].native is True
+    action, reason = watchdog._plan(DAY, {"ai-history"}, [], handoffs=handoffs, issue_key=DAY)
+    assert action.phase == "assets" and action.job_id == "assets-job"
+    staged = watchdog.Item(directory / "draft-manifest.json", "ai-history", DAY, "a" * 64, "staged", issue_key=DAY)
+    action, reason = watchdog._plan(DAY, {"ai-history"}, [staged], handoffs=handoffs, issue_key=DAY)
+    assert action is None and reason == "awaiting_release"
+
+
+def test_review_queue_is_filtered_to_configured_reviewer_profile(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "review_profile": "supervision", "review_job_id": "story-review"})
+    current = item("ai-history", "await_review")
+    older_default = item("ai-practice", "await_review", day="2026-09-24")
+    action, reason = watchdog._plan(DAY, {"ai-history"}, [current, older_default])
+    assert reason == "ready" and action.job_id == "story-review"
+    assert watchdog._action_profile(action) == "supervision"
+
+
+def test_same_job_id_in_two_profiles_never_forms_shared_claim(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "author_profile": "story"})
+    assert watchdog.AUTHOR_JOBS["ai-history"] == watchdog.AUTHOR_JOBS["ai-practice"]
+    action, reason = watchdog._plan(DAY, {"ai-history", "ai-practice"}, [])
+    assert reason == "ready"
+    assert len(action.barriers) == 1 and action.barriers[0].series == "ai-history"
+    assert watchdog._action_profile(action) == "story"
+
+
+def test_activated_catalog_routes_current_main_and_story_without_workflow(monkeypatch):
+    install_catalog(monkeypatch, ACTIVATED_SERIES)
+    day = "2026-09-27"
+    active = {name: spec for name, spec in watchdog.SERIES.items() if spec.get("starts_on", day) <= day}
+    by_series = {name: {"expected": len(spec["release_times"]), "published": 0,
+                       "slots": [{"issue_key": day if slot == "12:00" else f"{day}T{slot}", "published": 0}
+                                 for slot in spec["release_times"]]} for name, spec in active.items()}
+    value = {"today": {"date": day, "expected": sum(row["expected"] for row in by_series.values()),
+                       "published": 0, "by_series": by_series}, "issues": {"missing": []}}
+    assert watchdog._missing(value, day) == set(active)
+    assert {"ai-toolkit", "tang-history"} <= set(active)
+    for name in ("ai-toolkit", "tang-history"):
+        key = by_series[name]["slots"][0]["issue_key"]
+        action, reason = watchdog._plan(day, {name}, [], issue_key=key)
+        assert reason == "ready" and action.phase == "native_fetch"
+        author = watchdog.Action("author", action.barriers, job_id=active[name]["author_job_id"])
+        assert watchdog._action_profile(author) == ("story" if name == "tang-history" else "default")
+    assert watchdog._role_profile("tang-history", "review") == "supervision"
+    assert ACTIVATED_SERIES == {name: spec for name, spec in watchdog.PUBLICATION_SERIES.items()
+                                if spec.get("kind") == "daily" and spec.get("enabled", True)}
+
+
+def test_native_preflight_feedback_survives_author_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setitem(watchdog.SERIES, "ai-history", {**watchdog.SERIES["ai-history"], "assets_job_id": "assets"})
+    feedback = {"reason": "deterministic_preflight", "reasons": ["quality.body_too_short"],
+                "revision_count": 1, "feedback_file": "/safe/native-content-feedback.json"}
+    def action_runner(action):
+        if action.phase == "native_fetch":
+            raise watchdog.ActionPending("awaiting_native_author", feedback)
+    result = watchdog.supervise(DAY, status=lambda: summary("ai-history"), load_items=lambda: [],
+                                blockers=lambda _: [], run_action=action_runner,
+                                claims=watchdog.Claims(tmp_path / "claims.db"))
+    assert result["phase"] == "author" and result["author_feedback"] == feedback
+
+
+def test_obsolete_workflow_state_does_not_block_native_route(tmp_path, monkeypatch):
+    install_catalog(monkeypatch, ACTIVATED_SERIES)
+    directory = tmp_path / "ai-toolkit-old-workflow"
+    directory.mkdir()
+    (directory / "workflow-handoff-state.json").write_text(json.dumps({
+        "series_id": "ai-toolkit", "issue_date": "2026-09-27", "status": "waiting_assets",
+    }))
+    assert watchdog._handoff_items(tmp_path) == []
+
+
+def test_native_revision_budget_failure_is_actionable(monkeypatch):
+    action = watchdog.Action("native_fetch", (watchdog.Barrier("ai-history", "a" * 64, DAY),))
+    monkeypatch.setattr(watchdog.subprocess, "run", lambda *args, **kwargs:
+                        subprocess.CompletedProcess(args[0], 1, "", "publication workflow handoff failed: native content revision budget exhausted"))
+    with pytest.raises(watchdog.ActionFailure, match="native_content_revision_exhausted"):
+        watchdog._run_action(action)

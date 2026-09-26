@@ -7,9 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT = Path("/Users/dengzhaoyu/Projects/quantum-2.0-publication-main")
-STATUS_CLIENT = PROJECT / "scripts/publication_release_remote.py"
-SERIES = ("ai-history", "ai-practice", "concept-fables", "ai-toolkit")
+PROJECT = Path(__file__).resolve().parents[1]
+STATUS_CLIENT = Path(__file__).resolve().with_name("publication_release_remote.py")
 REQUIRED_MEDIA = {
     "shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03",
 }
@@ -25,16 +24,32 @@ def evaluate(summary: dict) -> tuple[dict, int]:
     missing = issues.get("missing") if isinstance(issues.get("missing"), list) else []
     by_series = today.get("by_series") if isinstance(today.get("by_series"), dict) else {}
     failures = []
-    for series in SERIES:
-        item = by_series.get(series)
+    declared_expected = 0
+    for series, item in by_series.items():
+        count = item.get("expected", 1) if isinstance(item, dict) else None
+        if type(count) is not int or count < 1:
+            failures.append(series)
+            continue
+        declared_expected += count
         roles = set(item.get("media_roles", [])) if isinstance(item, dict) else set()
-        if (not isinstance(item, dict) or item.get("published") != 1
+        if (not isinstance(item, dict) or item.get("published") != count
                 or item.get("body_available") is not True or roles != REQUIRED_MEDIA):
             failures.append(series)
+        slots = item.get("slots") if isinstance(item, dict) else None
+        if slots is not None and (
+            not isinstance(slots, list) or len(slots) != count
+            or any(not isinstance(slot, dict) or slot.get("published") != 1
+                   or slot.get("body_available") is not True
+                   or set(slot.get("media_roles", [])) != REQUIRED_MEDIA for slot in slots)
+            or len({slot.get("issue_key") for slot in slots if isinstance(slot, dict)}) != count
+        ):
+            failures.append(series)
     complete = (
-        isinstance(expected, int)
-        and expected == len(SERIES)
-        and published == len(SERIES)
+        type(expected) is int
+        and expected >= 0
+        and expected == declared_expected
+        and type(published) is int
+        and published == expected
         and not missing
         and not failures
         and not summary.get("global_attention")
@@ -47,7 +62,7 @@ def evaluate(summary: dict) -> tuple[dict, int]:
         "by_series": by_series,
         "missing": missing,
         "bot_message": (
-            f"今日四个每日连载均已发布，正文及双封面、三张正文插图校验通过（{today.get('date')}）。"
+            f"今日计划的 {expected} 期连载均已发布，正文及双封面、三张正文插图校验通过（{today.get('date')}）。"
             if complete else
             f"今日连载验收失败，未通过正文或五媒体检查：{', '.join(failures) or '全局状态异常'}；请勿发送完成通知。"
         ),

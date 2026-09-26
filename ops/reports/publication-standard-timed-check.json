@@ -1,0 +1,9 @@
+{
+  "kind": "native_cron_isolated_integration",
+  "production_acceptance": false,
+  "started_at": "2026-09-26T16:20:07.980212+00:00",
+  "finished_at": "2026-09-26T16:20:21.819738+00:00",
+  "exit_code": 0,
+  "stdout": "........................................................................ [ 75%]\n.......................                                                  [100%]\n=============================== warnings summary ===============================\ntests/test_publication_topics.py::test_config_added_topic_has_three_independent_idempotent_publications\ntests/test_publication_topics.py::test_config_added_topic_has_three_independent_idempotent_publications\ntests/test_publication_topics.py::test_config_added_topic_has_three_independent_idempotent_publications\ntests/test_publication_topics.py::test_config_added_topic_has_three_independent_idempotent_publications\n  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/\n    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n95 passed, 4 warnings in 11.23s\n",
+  "stderr": ""
+}

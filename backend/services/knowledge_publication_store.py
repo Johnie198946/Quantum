@@ -24,17 +24,81 @@ from backend.services.publication_editorial import (
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-SERIES = {
-    "ai-history": {"title": "AI的前世今生", "cover_theme": "history", "kind": "daily"},
-    "ai-practice": {"title": "趣味AI落地经历", "cover_theme": "practice", "kind": "daily"},
-    "concept-fables": {"title": "概念寓言", "cover_theme": "methodology", "kind": "daily",
-                       "starts_on": "2026-09-19"},
-    "ai-toolkit": {"title": "AI工具实战", "cover_theme": "practice", "kind": "daily",
-                   "starts_on": "2026-09-24"},
-    "quantumn-originals": {"title": "Quantumn 原创书籍", "cover_theme": "original", "kind": "original_collection"},
-    "anthropic-originals": {"title": "Anthropic 原作", "cover_theme": "original", "kind": "original_collection"},
-    "follow-builders-sources": {"title": "Follow Builders 公开来源索引", "cover_theme": "external", "kind": "source_index"},
-}
+# One operator-owned catalog for both scheduling and publication. Restart the
+# runtime after a reviewed config change; disabling a series preserves history.
+SERIES_CONFIG = Path(__file__).resolve().parents[2] / "config/quantumn-daily-publication.json"
+
+
+def load_publication_series(path: Path = SERIES_CONFIG) -> dict[str, dict[str, Any]]:
+    config = json.loads(path.read_text(encoding="utf-8"))
+    result = {}
+    schedules = set()
+    for row in [*config["series"], *config.get("original_collections", [])]:
+        if not isinstance(row, dict):
+            raise ValueError("publication series must be an object")
+        key = row.get("id")
+        if (not isinstance(key, str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,95}", key)
+                or key in result or not isinstance(row.get("title"), str) or not row["title"].strip()
+                or row.get("kind") not in {"daily", "original_collection", "source_index"}
+                or type(row.get("enabled", True)) is not bool):
+            raise ValueError("invalid or duplicate publication series")
+        slots = row.get("release_times", ["12:00"])
+        if row["kind"] == "daily" and (
+            not isinstance(slots, list) or not slots or len(slots) > 24
+            or any(not isinstance(slot, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", slot) for slot in slots)
+            or len(set(slots)) != len(slots)
+        ):
+            raise ValueError("invalid publication release times")
+        for name in ("workflow_schedule_id", "author_job_id", "assets_job_id", "review_job_id", "prerequisite_job_id"):
+            value = row.get(name)
+            if value and (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", value)):
+                raise ValueError(f"invalid publication {name}")
+        schedule = row.get("workflow_schedule_id")
+        if schedule:
+            if schedule in schedules:
+                raise ValueError("publication schedule must bind exactly one series")
+            schedules.add(schedule)
+        if row.get("genre", "feature") not in {"tutorial", "research_report", "popular_science", "feature", "critical_essay"}:
+            raise ValueError("invalid publication genre")
+        if row.get("author_profile", "default") not in {"default", "story"}:
+            raise ValueError("unsupported publication author profile")
+        if row.get("author_profile") == "story" and row.get("review_policy") != "story-supervision-v2":
+            raise ValueError("story author requires independent supervision policy")
+        for field, allowed in (("review_profile", {"default", "supervision"}), ("assets_profile", {"default"}), ("prerequisite_profile", {"default"})):
+            if row.get(field, "default") not in allowed:
+                raise ValueError(f"unsupported publication {field}")
+        if row.get("review_policy") not in {None, "story-supervision-v2"}:
+            raise ValueError("invalid publication review policy")
+        if type(row.get("execution_enabled", False)) is not bool:
+            raise ValueError("invalid execution policy")
+        if row.get("starts_on"):
+            date.fromisoformat(row["starts_on"])
+        if row.get("author_release_slot") and row["author_release_slot"] not in slots:
+            raise ValueError("author release slot must be a configured release time")
+        result[key] = {**row, "release_times": sorted(slots)}
+    return result
+
+
+SERIES = load_publication_series()
+
+
+def publication_slot(series_id: str, issue_date: str, slot: str | None = None) -> dict[str, str]:
+    series = SERIES.get(series_id)
+    if not series or series["kind"] != "daily" or not series.get("enabled", True):
+        raise PublicationError("unknown or disabled daily series")
+    day = date.fromisoformat(issue_date).isoformat()
+    slots = series.get("release_times", ["12:00"])
+    if slot is None:
+        if len(slots) != 1:
+            raise PublicationError("multi-slot series requires an explicit issue slot")
+        slot = slots[0]
+    if slot not in slots:
+        raise PublicationError("issue slot is not configured")
+    # Preserve every historical noon identity, including when adding slots.
+    return {"issue_key": day if slot == "12:00" else f"{day}T{slot}",
+            "issue_slot": slot, "release_at": f"{day}T{slot}:00+08:00"}
+
+
 PUBLICATION_CATEGORY = "knowledge/publication/public"
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _SAFE_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
@@ -310,7 +374,7 @@ def _receipts(value: Any, field: str, maximum: int = 100) -> list[dict[str, str]
 
 def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> tuple[dict[str, Any], list[str]]:
     allowed = {
-        "series_id", "source_publication_id", "issue_date", "title", "summary", "body", "author",
+        "series_id", "source_publication_id", "issue_date", "issue_slot", "title", "summary", "body", "author",
         "institution", "authored_by", "content_kind", "rights_scope", "rights_reference",
         "rights_valid_until", "rights_perpetual", "rights_evidence", "rights_evidence_status", "owner_policy_id", "release_at",
         "state", "is_test", "source_snapshot_hash", "source_receipts", "body_hash", "body_receipt",
@@ -330,6 +394,8 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
     series = SERIES.get(series_id)
     if not series:
         raise PublicationError("unknown series_id")
+    if not series.get("enabled", True):
+        raise PublicationError("publication series is disabled")
     try:
         issue_date = date.fromisoformat(_text(bundle.get("issue_date"), "issue_date", 10))
     except ValueError as exc:
@@ -338,15 +404,24 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
     if series["kind"] == "daily":
         if source_id:
             raise PublicationError("daily series cannot set source_publication_id")
-        issue_key = issue_date.isoformat()
+        slot = bundle.get("issue_slot")
+        if slot is None and isinstance(bundle.get("release_at"), str):
+            # Legacy bundles already freeze an unambiguous release timestamp.
+            # Adding another configured slot must not invalidate that bundle.
+            try:
+                slot = datetime.fromisoformat(bundle["release_at"]).astimezone(SHANGHAI).strftime("%H:%M")
+            except ValueError:
+                pass
+        occurrence = publication_slot(series_id, issue_date.isoformat(), slot)
+        issue_key = occurrence["issue_key"]
     else:
         if not _SAFE_ID.fullmatch(source_id):
             raise PublicationError("original collection requires source_publication_id")
         issue_key = source_id
     release_at = _parse_datetime(bundle.get("release_at"), "release_at")
     local_release = release_at.astimezone(SHANGHAI)
-    if series["kind"] == "daily" and (local_release.date() != issue_date or local_release.timetz().replace(tzinfo=None) != time(12)):
-        raise PublicationError("daily release_at must be exactly 12:00 Asia/Shanghai on issue_date")
+    if series["kind"] == "daily" and release_at != datetime.fromisoformat(occurrence["release_at"]):
+        raise PublicationError("daily release_at must match configured issue slot on issue_date")
     body = bundle.get("body")
     if not isinstance(body, str) or not body or len(body.encode()) > 500_000:
         raise PublicationError("invalid body")
@@ -494,10 +569,10 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         blocked.append("quantumn_commentary_cannot_impersonate_institution")
     if review.get("decision") != "approved" or review.get("content_hash") != review_target_hash or not str(review.get("reviewed_by") or "").startswith("hermes:"):
         blocked.append("review_missing_or_hash_mismatch")
-    tutorial_execution_series = {"ai-practice", "ai-toolkit", "quantumn-originals"}
-    if series_id in tutorial_execution_series and claim in {"success", "failed"} and not execution:
+    execution_enabled = series.get("execution_enabled", False)
+    if execution_enabled and claim in {"success", "failed"} and not execution:
         blocked.append("tutorial_execution_evidence_required")
-    if series_id not in tutorial_execution_series and claim != "not_run":
+    if not execution_enabled and claim != "not_run":
         blocked.append("execution_claim_not_applicable")
     if bundle.get("state", "staged") not in {"draft", "staged", "scheduled"}:
         raise PublicationError("invalid staging state")
@@ -807,6 +882,11 @@ class PublicationStore:
 
     def prepare_editorial(self, bundle: dict[str, Any], *, review_policy=None) -> dict[str, Any]:
         normalized, _ = validate_bundle(bundle)
+        configured_policy = SERIES[normalized["series_id"]].get("review_policy")
+        if configured_policy is not None:
+            if review_policy not in {None, configured_policy}:
+                raise PublicationError("review policy conflicts with series configuration")
+            review_policy = configured_policy
         if normalized["content_kind"] != "commentary":
             raise PublicationError("editorial workflow requires commentary")
         draft = bundle.get("quality_contract")
@@ -1073,6 +1153,8 @@ class PublicationStore:
                 {"id": r, "question": "需要补充研究并解决审核失败项：" + r,
                  "state": "open", "resolution": "", "source_urls": []}
                 for r in reasons
+                if not (gaps and review.get("decision") in {"reject", "rejected"}
+                        and r in {"review.rejected", "review.decision", "review.research_gaps"})
             ]
             gaps = list({g["id"]: g for g in [*contract["research_gaps"], *gaps, *reason_gaps]}.values())
             state = "approved" if not reasons else ("rejected" if review.get("decision") in {"reject", "rejected"} else "failed")
@@ -1176,6 +1258,9 @@ class PublicationStore:
                 else:
                     newest[row["issue_id"]] = row
             for row in newest.values():
+                if row["series_id"] not in SERIES or not SERIES[row["series_id"]].get("enabled", True):
+                    blocked.append({"edition_id": row["edition_id"], "reasons": ["publication_series_disabled"]})
+                    continue
                 reasons = self._access_reasons(db, row, actual, vault)
                 if db.execute("SELECT 1 FROM editions WHERE issue_id=? AND edition>? AND state='published'", (row["issue_id"], row["edition"])).fetchone():
                     reasons.append("newer_edition_already_published")
@@ -1219,24 +1304,31 @@ class PublicationStore:
         finally:
             db.close()
 
-    def missing(self, now: datetime | None = None) -> list[dict[str, str]]:
+    def expected_issues(self, now: datetime | None = None) -> list[dict[str, str]]:
         local = (now or _now()).astimezone(SHANGHAI)
-        day, overdue = local.date().isoformat(), local.timetz().replace(tzinfo=None) >= time(12)
-        rows = [item for item in self.status() if item["issue_date"] == day]
+        day = local.date().isoformat()
+        return [
+            {"series_id": key, "series_title": value["title"], "issue_date": day,
+             **publication_slot(key, day, slot)}
+            for key, value in SERIES.items()
+            if value["kind"] == "daily" and value.get("enabled", True)
+            and (not value.get("starts_on") or day >= value["starts_on"])
+            for slot in value.get("release_times", ["12:00"])
+        ]
+
+    def missing(self, now: datetime | None = None) -> list[dict[str, str]]:
+        actual = now or _now()
+        rows = self.status()
         result = []
-        for key, value in SERIES.items():
-            if value["kind"] != "daily":
-                continue
-            starts_on = value.get("starts_on")
-            if starts_on and local.date() < date.fromisoformat(starts_on):
-                continue
-            editions = [item for item in rows if item["series_id"] == key]
+        for occurrence in self.expected_issues(actual):
+            editions = [item for item in rows if item["series_id"] == occurrence["series_id"]
+                        and item["issue_key"] == occurrence["issue_key"]]
             if any(item["state"] == "published" for item in editions):
                 continue
+            overdue = actual >= datetime.fromisoformat(occurrence["release_at"])
             state = max(editions, key=lambda item: item["edition"])["state"] if editions else "missing"
             if not editions or overdue:
-                result.append({"series_id": key, "series_title": value["title"], "issue_date": day,
-                               "status": f"overdue_{state}" if overdue else "missing"})
+                result.append({**occurrence, "status": f"overdue_{state}" if overdue else "missing"})
         return result
 
     def status_report(self, publication_id: str | None = None, *, now: datetime | None = None) -> dict[str, Any]:
@@ -1259,7 +1351,8 @@ class PublicationStore:
                     asset["role"] for asset in item["bundle"].get("assets", [])
                     if asset.get("role") in PUBLICATION_MEDIA and self._media_asset_valid(db, asset)
                 ) if published else []
-            return {"items": items, "missing": self.missing(now), "editorial_attempts": attempts, "open_gaps": gaps}
+            return {"items": items, "missing": self.missing(now), "expected_issues": self.expected_issues(now),
+                    "editorial_attempts": attempts, "open_gaps": gaps}
         finally:
             db.close()
 

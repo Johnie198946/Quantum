@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,7 +77,7 @@ def canonical_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
+def validate_publication_artifact(raw: bytes) -> dict[str, Any]:
     """Validate the exact content-only artifact contract; reject control fields."""
     if not raw or len(raw) > MAX_ARTIFACT_BYTES:
         raise PublicationHandoffError("workflow artifact size is invalid")
@@ -85,7 +87,7 @@ def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
         raise PublicationHandoffError("workflow artifact must be UTF-8 JSON") from exc
     if not isinstance(value, dict) or set(value) != TOP_LEVEL_FIELDS:
         raise PublicationHandoffError("workflow artifact has missing, unknown, or forbidden fields")
-    if value["schema_version"] != SCHEMA_VERSION:
+    if value["schema_version"] not in {SCHEMA_VERSION, "publication-content-v1"}:
         raise PublicationHandoffError("workflow artifact schema version is invalid")
     for field, limit in (("title", 300), ("summary", 2000), ("body", MAX_ARTIFACT_BYTES)):
         item = value[field]
@@ -114,7 +116,49 @@ def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
     return value
 
 
-def publication_system_fields(content: dict[str, Any]) -> dict[str, Any]:
+def validate_ai_toolkit_artifact(raw: bytes) -> dict[str, Any]:
+    """Compatibility name for the original content-only contract."""
+    return validate_publication_artifact(raw)
+
+
+def configured_handoff_schedule(series_id: str = "ai-toolkit") -> str:
+    from backend.services.knowledge_publication_store import SERIES
+
+    config = SERIES.get(series_id)
+    if not config or not config.get("enabled", True):
+        raise PublicationHandoffError("publication series is unknown or disabled")
+    value = config.get("workflow_schedule_id")
+    if not value and series_id == "ai-toolkit":
+        value = os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", "")
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,47}", value):
+        raise PublicationHandoffError("publication series has no configured workflow schedule")
+    for other_id, other in SERIES.items():
+        other_schedule = other.get("workflow_schedule_id") or (os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID") if other_id == "ai-toolkit" else None)
+        if other_id != series_id and other.get("enabled", True) and other_schedule == value:
+            raise PublicationHandoffError("publication schedule must belong to exactly one series")
+    return value
+
+
+def publication_occurrence(series_id: str, scheduled_for: datetime) -> dict[str, Any]:
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+
+    config = SERIES[series_id]
+    if scheduled_for is None:
+        raise PublicationHandoffError("scheduled publication occurrence is missing")
+    if scheduled_for.tzinfo is None:
+        scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
+    local = scheduled_for.astimezone(ZoneInfo("Asia/Shanghai"))
+    slot = config.get("author_release_slot")
+    if not slot:
+        slot = next((item for item in sorted(config.get("release_times", ["12:00"]))
+                     if item >= local.strftime("%H:%M")), None)
+    if not slot:
+        raise PublicationHandoffError("workflow occurrence has no same-day release slot")
+    return {"series_id": series_id, "issue_date": local.date().isoformat(),
+            **publication_slot(series_id, local.date().isoformat(), slot)}
+
+
+def publication_system_fields(content: dict[str, Any], series_id: str = "ai-toolkit") -> dict[str, Any]:
     """Generate publication policy fields without involving the writing Agent."""
     urls: list[str] = []
     for document in content.get("source_documents", []):
@@ -144,6 +188,22 @@ def publication_system_fields(content: dict[str, Any]) -> dict[str, Any]:
         "evidence_urls": urls[:20],
         "selection_reason": "候选材料至少包含一个可追溯来源，且能够支撑面向普通读者的完整任务教程。",
     }
+    from backend.services.knowledge_publication_store import SERIES
+    config = SERIES.get(series_id)
+    if not config:
+        raise PublicationHandoffError("publication series is unknown")
+    genre = config.get("genre", "tutorial" if series_id == "ai-toolkit" else "feature")
+    if genre != "tutorial":
+        brief.update({
+            "genre": genre,
+            "question": f"《{title}》围绕哪些事实与解释展开，读者应该如何理解其背景、因果与争议？",
+            "thesis": "文章必须以可追溯材料支撑主要论点，区分已知事实、解释与推测，呈现背景、因果、反例及结论适用边界。",
+            "reader_value": "读者可以理解主题的发展脉络、关键事实与不同解释，并依据来源独立核对重要判断。",
+            "novelty": "文章的价值来自证据组织、背景解释与观点比较，而非材料堆砌或未经验证的确定性叙述。",
+            "counterargument": "材料存在选择偏差、时代背景和记录局限，单一来源不足以排除其他解释或建立普遍因果结论。",
+            "uncertainties": ["材料覆盖范围及来源立场可能限制结论，应明确记载缺失和解释分歧。"],
+            "selection_reason": "候选材料具有可追溯来源，足以围绕本系列主题提出问题、组织证据并解释其意义。",
+        })
     reasons = validate_editorial_brief(brief)
     if reasons:
         raise PublicationHandoffError(
@@ -151,11 +211,14 @@ def publication_system_fields(content: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "editorial_brief": brief,
-        "learning_objectives": [
+        "learning_objectives": ([
             "按教程步骤完成一个真实任务，并得到可以回读和核对的输出结果。",
             "使用明确的验收标准判断结果是否合格，而不是把命令成功当成任务成功。",
             "识别失败恢复、隐私、成本、账号权限和地区可用性边界。",
-        ],
+        ] if genre == "tutorial" else [
+            "梳理主题背景、关键事件与证据来源，区分事实、解释与尚未确认的推测。",
+            "比较主要观点及其反例，理解结论适用范围，并能独立核对重要判断。",
+        ]),
     }
 
 
@@ -173,11 +236,12 @@ def _envelope(
     workflow: WorkflowDefinition,
     execution: WorkflowExecution,
     artifact: WorkflowArtifact,
+    series_id: str | None = None,
 ) -> dict[str, Any]:
     scheduled_for = execution.scheduled_for
     if scheduled_for is not None and scheduled_for.tzinfo is None:
         scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
-    return {
+    envelope = {
         "version": "publication-workflow-handoff-v1",
         "schedule_id": schedule.id,
         "workflow_id": workflow.id,
@@ -191,6 +255,18 @@ def _envelope(
         "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
     }
 
+    if series_id is not None:
+        if configured_handoff_schedule(series_id) != schedule.id:
+            raise PublicationHandoffError("publication schedule binding mismatch")
+        native_session = (execution.hermes_session_id or "").strip()
+        if not native_session or native_session == "hermes:":
+            raise PublicationHandoffError("workflow author native session is unavailable")
+        writer_session = native_session if native_session.startswith("hermes:") else f"hermes:{native_session}"
+        envelope.update(version="publication-workflow-handoff-v2",
+                        writer_session=writer_session,
+                        **publication_occurrence(series_id, scheduled_for))
+    return envelope
+
 
 async def _bound_rows(
     db: AsyncSession,
@@ -201,6 +277,8 @@ async def _bound_rows(
     allow_completed: bool = False,
     allow_revision_queued: bool = False,
     missing_is_pending: bool = False,
+    occurrence_series_id: str | None = None,
+    issue_key: str | None = None,
 ) -> tuple[WorkflowSchedule, WorkflowDefinition, WorkflowExecution]:
     schedule_query = select(WorkflowSchedule).where(WorkflowSchedule.id == schedule_id)
     if lock:
@@ -226,11 +304,25 @@ async def _bound_rows(
         WorkflowExecution.tenant_key == schedule.tenant_key,
         WorkflowExecution.status.in_(statuses),
     )
+    explicit_execution = execution_id is not None
+    occurrence_requested = occurrence_series_id is not None and issue_key is not None
+    if execution_id is None and not occurrence_requested and schedule.last_execution_id:
+        execution_id = schedule.last_execution_id
     if execution_id is not None:
         execution_query = execution_query.where(WorkflowExecution.id == execution_id)
     if lock:
         execution_query = execution_query.with_for_update()
     executions = list((await db.execute(execution_query)).scalars().all())
+    if occurrence_requested:
+        matching = []
+        for candidate in executions:
+            try:
+                occurrence = publication_occurrence(occurrence_series_id, candidate.scheduled_for)
+            except PublicationHandoffError:
+                continue
+            if occurrence["issue_key"] == issue_key:
+                matching.append(candidate)
+        executions = matching
     if not executions and missing_is_pending:
         raise PublicationWorkflowPending("scheduled workflow has no awaiting-review artifact yet")
     if len(executions) != 1:
@@ -248,32 +340,12 @@ async def _bound_rows(
         )
     except WorkflowStartError as exc:
         raise PublicationHandoffError(f"workflow authority revalidation failed: {exc.detail}") from exc
-    if schedule.last_execution_id not in {None, execution.id}:
+    if not explicit_execution and not occurrence_requested and schedule.last_execution_id not in {None, execution.id}:
         raise PublicationHandoffError("schedule last execution binding conflicts")
     return schedule, workflow, execution
 
 
-async def export_publication_handoff(db: AsyncSession, schedule_id: str) -> dict[str, Any]:
-    try:
-        schedule, workflow, execution = await _bound_rows(
-            db, schedule_id, missing_is_pending=True
-        )
-    except PublicationWorkflowPending:
-        return {"status": "waiting_workflow", "available": False}
-    artifacts = list(
-        (
-            await db.execute(
-                select(WorkflowArtifact).where(
-                    WorkflowArtifact.execution_id == execution.id,
-                    WorkflowArtifact.selected_for_publish.is_(True),
-                    WorkflowArtifact.kind.in_(("final", "draft")),
-                )
-            )
-        ).scalars().all()
-    )
-    if len(artifacts) != 1:
-        raise PublicationHandoffError("execution must have exactly one selected terminal artifact")
-    artifact = artifacts[0]
+async def _validate_terminal_artifact(db, schedule, execution, artifact):
     if artifact.kind == "draft":
         plan = await db.get(WorkflowPlanVersion, schedule.plan_id)
         node_run = await db.get(WorkflowNodeRun, artifact.node_run_id) if artifact.node_run_id else None
@@ -295,6 +367,70 @@ async def export_publication_handoff(db: AsyncSession, schedule_id: str) -> dict
             or node_run.node_id not in terminal_ids
         ):
             raise PublicationHandoffError("selected draft artifact is not a terminal Workflow result")
+
+
+async def export_publication_handoff(db: AsyncSession, schedule_id: str, *, series_id: str | None = None, issue_key: str | None = None) -> dict[str, Any]:
+    if series_id is not None and configured_handoff_schedule(series_id) != schedule_id:
+        raise PublicationHandoffError("publication schedule binding mismatch")
+    try:
+        schedule, workflow, execution = await _bound_rows(
+            db, schedule_id, missing_is_pending=True, lock=series_id is not None,
+            allow_revision_queued=series_id is not None,
+            occurrence_series_id=series_id, issue_key=issue_key,
+        )
+    except PublicationWorkflowPending:
+        return {"status": "waiting_workflow", "available": False}
+    if issue_key is not None and (series_id is None or publication_occurrence(series_id, execution.scheduled_for)["issue_key"] != issue_key):
+        return {"status": "waiting_workflow", "available": False}
+    if execution.status != "awaiting_review":
+        prepared = list((await db.execute(select(WorkflowApproval).where(
+            WorkflowApproval.execution_id == execution.id,
+            WorkflowApproval.approval_type == "publication_revision",
+            WorkflowApproval.decision == "prepared",
+        ))).scalars().all())
+        if not prepared:
+            return {"status": "waiting_workflow", "available": False}
+        if len(prepared) != 1:
+            raise PublicationHandoffError("publication prepared revision state conflicts")
+        binding = json.loads(prepared[0].comment)
+        if binding.get("source") != "deterministic_preflight":
+            return {"status": "waiting_workflow", "available": False}
+        artifact = await db.get(WorkflowArtifact, binding["artifact_id"])
+        if artifact is None or artifact.execution_id != execution.id:
+            raise PublicationHandoffError("prepared preflight artifact is unavailable")
+        envelope = _envelope(schedule, workflow, execution, artifact, series_id)
+        if hashlib.sha256(canonical_json(envelope)).hexdigest() != binding["envelope_sha256"]:
+            raise PublicationHandoffError("prepared preflight authority changed")
+        await _validate_terminal_artifact(db, schedule, execution, artifact)
+        root = run_root(execution).resolve()
+        path = (root / artifact.relative_path).resolve()
+        if root not in path.parents or not path.is_file() or path.is_symlink():
+            raise PublicationHandoffError("prepared preflight artifact path is invalid")
+        try:
+            validate_publication_artifact(read_verified_artifact_bytes(path, artifact.content_hash))
+        except (OSError, ValueError) as exc:
+            raise PublicationHandoffError("prepared preflight artifact changed") from exc
+        publication = {key: binding[key] for key in ("source", "attempt_id", "issue_id", "revision", "target_hash", "review_sha256")}
+        result = await _dispatch_revision(db, schedule, workflow, execution, artifact,
+                                         binding["envelope_sha256"], binding["attempt_id"],
+                                         publication, binding["reviewer_gaps"])
+        return {"status": "preflight_revision_requested", "available": False,
+                "execution_id": execution.id, "revision": result["revision"]}
+    artifacts = list(
+        (
+            await db.execute(
+                select(WorkflowArtifact).where(
+                    WorkflowArtifact.execution_id == execution.id,
+                    WorkflowArtifact.selected_for_publish.is_(True),
+                    WorkflowArtifact.kind.in_(("final", "draft")),
+                )
+            )
+        ).scalars().all()
+    )
+    if len(artifacts) != 1:
+        raise PublicationHandoffError("execution must have exactly one selected terminal artifact")
+    artifact = artifacts[0]
+    await _validate_terminal_artifact(db, schedule, execution, artifact)
     if Path(artifact.relative_path).suffix.lower() != ".json":
         raise PublicationHandoffError("publication workflow artifact must be JSON")
     root = run_root(execution).resolve()
@@ -305,9 +441,36 @@ async def export_publication_handoff(db: AsyncSession, schedule_id: str) -> dict
         raw = read_verified_artifact_bytes(path, artifact.content_hash)
     except (OSError, ValueError) as exc:
         raise PublicationHandoffError("workflow artifact bytes do not match the registry") from exc
-    validate_ai_toolkit_artifact(raw)
-    envelope = _envelope(schedule, workflow, execution, artifact)
+    content = validate_publication_artifact(raw)
+    envelope = _envelope(schedule, workflow, execution, artifact, series_id)
     envelope_raw = canonical_json(envelope)
+    if series_id is not None:
+        from backend.services.knowledge_publication_store import SERIES
+        from backend.services.publication_editorial import make_editorial_contract, validate_editorial
+        fields = publication_system_fields(content, series_id)
+        contract = make_editorial_contract(content["body"], format=SERIES[series_id].get("format", "chapter"),
+            writer_sessions=[envelope["writer_session"]], revision=1, **fields)
+        reasons = [reason for reason in validate_editorial(content["body"], contract)
+                   if reason.startswith("quality.")]
+        if reasons:
+            previous = list((await db.execute(select(WorkflowApproval).where(
+                WorkflowApproval.execution_id == execution.id,
+                WorkflowApproval.approval_type == "publication_revision",
+            ))).scalars().all())
+            if len(previous) >= 3:
+                raise PublicationHandoffError("publication content revision budget exhausted: " + ",".join(reasons))
+            feedback = [{"id": f"preflight_{index}",
+                         "question": f"正文未通过程序质量门禁，请修订内容：{reason}",
+                         "acceptance_criterion": f"按既有出版质量标准修订正文并通过检查 {reason}；禁止重复段落凑字数。"}
+                        for index, reason in enumerate(reasons[:MAX_REVISION_GAPS], 1)]
+            digest = hashlib.sha256(canonical_json({"artifact": artifact.content_hash, "reasons": reasons})).hexdigest()
+            publication = {"source": "deterministic_preflight", "attempt_id": f"preflight_{digest}",
+                           "issue_id": f"{series_id}:{envelope['issue_key']}", "revision": len(previous) + 1,
+                           "target_hash": contract["target_hash"], "review_sha256": digest}
+            result = await _dispatch_revision(db, schedule, workflow, execution, artifact,
+                hashlib.sha256(envelope_raw).hexdigest(), publication["attempt_id"], publication, feedback)
+            return {"status": "preflight_revision_requested", "available": False,
+                    "execution_id": execution.id, "revision": result["revision"], "reasons": reasons}
     return {
         "envelope": envelope,
         "envelope_sha256": hashlib.sha256(envelope_raw).hexdigest(),
@@ -323,6 +486,7 @@ def verify_publication_staged(
     artifact_hash: str,
     envelope_hash: str,
     workflow_content: dict[str, Any],
+    series_id: str = "ai-toolkit",
 ) -> dict[str, Any]:
     if not all(HASH.fullmatch(value or "") for value in (artifact_hash, envelope_hash)):
         raise PublicationHandoffError("handoff hashes are invalid")
@@ -333,9 +497,9 @@ def verify_publication_staged(
         contract = normalized.get("quality_contract")
         if not isinstance(contract, dict) or contract.get("attempt_id") != attempt_id:
             raise PublicationHandoffError("publication attempt binding mismatch")
-        system_fields = publication_system_fields(workflow_content)
+        system_fields = publication_system_fields(workflow_content, series_id)
         if (
-            normalized.get("series_id") != "ai-toolkit"
+            normalized.get("series_id") != series_id
             or normalized.get("title") != workflow_content["title"]
             or normalized.get("summary") != workflow_content["summary"]
             or normalized.get("body") != workflow_content["body"]
@@ -396,6 +560,21 @@ def verify_publication_staged(
         raise PublicationHandoffError(str(exc)) from exc
 
 
+def _verify_occurrence_bundle(envelope: dict[str, Any], bundle: dict[str, Any]) -> None:
+    if envelope["version"] != "publication-workflow-handoff-v2":
+        return
+    from backend.services.knowledge_publication_store import publication_slot
+    try:
+        occurrence = publication_slot(bundle.get("series_id"), bundle.get("issue_date"), bundle.get("issue_slot"))
+        release_matches = datetime.fromisoformat(bundle["release_at"]) == datetime.fromisoformat(envelope["release_at"])
+    except (ValueError, TypeError, KeyError, PublicationError) as exc:
+        raise PublicationHandoffError("publication occurrence binding is invalid") from exc
+    if (bundle.get("series_id") != envelope["series_id"] or occurrence["issue_key"] != envelope["issue_key"]
+            or not release_matches
+            or bundle.get("quality_contract", {}).get("writer_sessions") != [envelope["writer_session"]]):
+        raise PublicationHandoffError("publication occurrence or author binding mismatch")
+
+
 async def acknowledge_publication_handoff(
     db: AsyncSession,
     store: PublicationStore,
@@ -407,6 +586,7 @@ async def acknowledge_publication_handoff(
     envelope_hash: str,
     attempt_id: str,
     bundle: dict[str, Any],
+    series_id: str | None = None,
 ) -> dict[str, Any]:
     schedule, workflow, execution = await _bound_rows(
         db,
@@ -421,14 +601,15 @@ async def acknowledge_publication_handoff(
         or artifact.execution_id != execution.id
         or artifact.content_hash != artifact_hash
         or not artifact.selected_for_publish
-        or artifact.kind != "final"
+        or artifact.kind not in {"final", "draft"}
     ):
         raise PublicationHandoffError("workflow artifact acknowledgement binding mismatch")
-    current_envelope_hash = hashlib.sha256(
-        canonical_json(_envelope(schedule, workflow, execution, artifact))
-    ).hexdigest()
+    current_envelope = _envelope(schedule, workflow, execution, artifact, series_id)
+    _verify_occurrence_bundle(current_envelope, bundle)
+    current_envelope_hash = hashlib.sha256(canonical_json(current_envelope)).hexdigest()
     if current_envelope_hash != envelope_hash:
         raise PublicationHandoffError("workflow handoff envelope no longer matches current authority")
+    await _validate_terminal_artifact(db, schedule, execution, artifact)
     root = run_root(execution).resolve()
     artifact_path = (root / artifact.relative_path).resolve()
     if root not in artifact_path.parents or not artifact_path.is_file() or artifact_path.is_symlink():
@@ -478,7 +659,7 @@ async def acknowledge_publication_handoff(
         attempt_id=attempt_id,
         artifact_hash=artifact_hash,
         envelope_hash=envelope_hash,
-        workflow_content=workflow_content,
+        workflow_content=workflow_content, series_id=series_id or "ai-toolkit",
     )
     binding = {**request_binding, **publication}
     comment = canonical_json(binding).decode("utf-8")
@@ -554,6 +735,7 @@ def _verify_terminal_rejection(
     artifact_hash: str,
     envelope_hash: str,
     workflow_content: dict[str, Any],
+    series_id: str = "ai-toolkit",
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     try:
         from backend.services.knowledge_publication_store import validate_bundle
@@ -562,9 +744,9 @@ def _verify_terminal_rejection(
         contract = normalized.get("quality_contract")
         if not isinstance(contract, dict) or contract.get("attempt_id") != attempt_id:
             raise PublicationHandoffError("publication attempt binding mismatch")
-        system_fields = publication_system_fields(workflow_content)
+        system_fields = publication_system_fields(workflow_content, series_id)
         if (
-            normalized.get("series_id") != "ai-toolkit"
+            normalized.get("series_id") != series_id
             or normalized.get("title") != workflow_content["title"]
             or normalized.get("summary") != workflow_content["summary"]
             or normalized.get("body") != workflow_content["body"]
@@ -665,15 +847,19 @@ async def request_publication_revision(
     attempt_id: str,
     bundle: dict[str, Any],
     review_raw: bytes,
+    series_id: str | None = None,
 ) -> dict[str, Any]:
     """Bind one terminal rejection to the same scheduled execution and retry it."""
-    if not isinstance(envelope, dict) or set(envelope) != {
+    expected_fields = {
         "version", "schedule_id", "workflow_id", "execution_id", "plan_id",
         "plan_hash", "activation_revision", "primary_agent_id", "artifact_id",
         "artifact_sha256", "scheduled_for",
-    }:
+    }
+    if series_id is not None:
+        expected_fields.update({"series_id", "issue_date", "issue_key", "issue_slot", "release_at", "writer_session"})
+    if not isinstance(envelope, dict) or set(envelope) != expected_fields:
         raise PublicationHandoffError("revision requires the exact handoff envelope")
-    if envelope.get("schedule_id") != schedule_id or envelope.get("version") != "publication-workflow-handoff-v1":
+    if envelope.get("schedule_id") != schedule_id or envelope.get("version") != ("publication-workflow-handoff-v2" if series_id is not None else "publication-workflow-handoff-v1"):
         raise PublicationHandoffError("revision envelope schedule binding mismatch")
     if hashlib.sha256(canonical_json(envelope)).hexdigest() != envelope_hash:
         raise PublicationHandoffError("revision envelope hash mismatch")
@@ -692,11 +878,12 @@ async def request_publication_revision(
         artifact is None
         or artifact.execution_id != execution.id
         or artifact.content_hash != envelope.get("artifact_sha256")
-        or artifact.kind != "final"
+        or artifact.kind not in {"final", "draft"}
         or artifact.node_run_id is None
-        or _envelope(schedule, workflow, execution, artifact) != envelope
+        or _envelope(schedule, workflow, execution, artifact, series_id) != envelope
     ):
         raise PublicationHandoffError("revision artifact is not the exact current selected final artifact")
+    await _validate_terminal_artifact(db, schedule, execution, artifact)
     root = run_root(execution).resolve()
     artifact_path = (root / artifact.relative_path).resolve()
     if root not in artifact_path.parents or not artifact_path.is_file() or artifact_path.is_symlink():
@@ -706,11 +893,18 @@ async def request_publication_revision(
     except (OSError, ValueError) as exc:
         raise PublicationHandoffError("workflow artifact changed before revision") from exc
     workflow_content = validate_ai_toolkit_artifact(raw)
+    _verify_occurrence_bundle(envelope, bundle)
     publication, feedback = _verify_terminal_rejection(
         store, bundle, review_raw, attempt_id=attempt_id,
         artifact_hash=artifact.content_hash, envelope_hash=envelope_hash,
-        workflow_content=workflow_content,
+        workflow_content=workflow_content, series_id=series_id or "ai-toolkit",
     )
+    return await _dispatch_revision(db, schedule, workflow, execution, artifact,
+                                    envelope_hash, attempt_id, publication, feedback)
+
+
+async def _dispatch_revision(db, schedule, workflow, execution, artifact,
+                             envelope_hash, attempt_id, publication, feedback):
     plan = await db.get(WorkflowPlanVersion, execution.plan_id)
     producer = await db.get(WorkflowNodeRun, artifact.node_run_id)
     if plan is None or producer is None or producer.execution_id != execution.id:
@@ -792,7 +986,7 @@ async def request_publication_revision(
         db.add(matching)
         db.add(WorkflowEvent(
             execution_id=execution.id, event_type="publication_revision_prepared",
-            message="Terminal independent-review rejection prepared for Workflow retry",
+            message="Publication content revision prepared for Workflow retry",
             payload=binding,
         ))
         await db.flush()
@@ -841,7 +1035,7 @@ async def request_publication_revision(
     prepared.decision = "requested"
     db.add(WorkflowEvent(
         execution_id=execution.id, event_type="publication_revision_requested",
-        message="Terminal independent-review rejection dispatched to producing Workflow node",
+        message="Publication content revision dispatched to producing Workflow node",
         payload=binding,
     ))
     await db.commit()

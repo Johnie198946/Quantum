@@ -6,14 +6,17 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT = Path("/Users/dengzhaoyu/Projects/quantum-2.0-publication-main")
+PROJECT = Path(__file__).resolve().parents[1]
+if not (PROJECT / "backend/services/knowledge_publication_store.py").is_file():
+    PROJECT = Path.cwd().resolve()
+if not (PROJECT / "backend/services/knowledge_publication_store.py").is_file():
+    raise RuntimeError("publication repository root is unavailable")
 OUTPUT_ROOT = Path("/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2")
-EDITORIAL_CLIENT = Path("/Users/dengzhaoyu/.hermes/scripts/publication_editorial_remote.py")
+EDITORIAL_CLIENT = PROJECT / "scripts/publication_editorial_remote.py"
 
 
 def main() -> None:
-    current = os.environ.get("PYTHONPATH")
-    os.environ["PYTHONPATH"] = str(PROJECT) + (":" + current if current else "")
+    os.environ["PYTHONPATH"] = str(PROJECT)
     os.execv(
         sys.executable,
         [

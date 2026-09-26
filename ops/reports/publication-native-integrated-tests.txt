@@ -1,0 +1,50 @@
+........................................................................ [ 17%]
+.......................F.........................................FF..... [ 35%]
+.........................F.............................................. [ 53%]
+........................................................................ [ 71%]
+........................................................................ [ 89%]
+........................................s                                [100%]
+=================================== FAILURES ===================================
+____________ test_prepare_ingests_manifest_bound_inline_image_bytes ____________
+tests/test_publication_editorial_remote.py:370: in test_prepare_ingests_manifest_bound_inline_image_bytes
+    assert str(image.resolve()) in envelope["read_only_inputs"]["assets"]
+E   KeyError: 'read_only_inputs'
+___ test_content_only_initial_builder_generates_and_prepares_control_fields ____
+tests/test_publication_editorial_remote.py:1066: in test_content_only_initial_builder_generates_and_prepares_control_fields
+    manifest = relay.build_initial(
+scripts/publication_editorial_remote.py:244: in build_initial
+    occurrence = publication_slot(series_id, issue_date, issue_slot)
+backend/services/knowledge_publication_store.py:93: in publication_slot
+    raise PublicationError("multi-slot series requires an explicit issue slot")
+E   backend.services.knowledge_publication_store.PublicationError: multi-slot series requires an explicit issue slot
+____________ test_start_cli_builds_then_uses_existing_prepare_path _____________
+tests/test_publication_editorial_remote.py:1117: in test_start_cli_builds_then_uses_existing_prepare_path
+    assert relay.main(args) == 0
+E   AssertionError: assert 1 == 0
+E    +  where 1 = <function main at 0x11940fce0>(['start', '--submission', '/private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/pytest-of-dengzhaoyu/pytest-755/te...n4c92hwt_tp2x77s80000gn/T/pytest-of-dengzhaoyu/pytest-755/test_start_cli_builds_then_use0/initial', '--series-id', ...])
+E    +    where <function main at 0x11940fce0> = relay.main
+----------------------------- Captured stderr call -----------------------------
+publication editorial failed: multi-slot series requires an explicit issue slot
+__________ test_materialized_handoff_enters_existing_initial_builder ___________
+tests/test_publication_workflow_handoff.py:461: in test_materialized_handoff_enters_existing_initial_builder
+    manifest = publication_editorial_remote.build_initial(
+scripts/publication_editorial_remote.py:244: in build_initial
+    occurrence = publication_slot(series_id, issue_date, issue_slot)
+backend/services/knowledge_publication_store.py:93: in publication_slot
+    raise PublicationError("multi-slot series requires an explicit issue slot")
+E   backend.services.knowledge_publication_store.PublicationError: multi-slot series requires an explicit issue slot
+=============================== warnings summary ===============================
+tests/test_daily_publication.py::test_all_daily_series_require_covers_and_illustration[shelf_cover-ai-history]
+tests/test_daily_publication.py::test_all_daily_series_require_covers_and_illustration[shelf_cover-ai-history]
+tests/test_daily_publication.py::test_all_daily_series_require_covers_and_illustration[shelf_cover-ai-history]
+tests/test_daily_publication.py::test_all_daily_series_require_covers_and_illustration[shelf_cover-ai-history]
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_publication_editorial_remote.py::test_prepare_ingests_manifest_bound_inline_image_bytes
+FAILED tests/test_publication_editorial_remote.py::test_content_only_initial_builder_generates_and_prepares_control_fields
+FAILED tests/test_publication_editorial_remote.py::test_start_cli_builds_then_uses_existing_prepare_path
+FAILED tests/test_publication_workflow_handoff.py::test_materialized_handoff_enters_existing_initial_builder
+4 failed, 396 passed, 1 skipped, 4 warnings in 321.76s (0:05:21)

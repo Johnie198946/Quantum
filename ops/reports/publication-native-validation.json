@@ -1,0 +1,31 @@
+{
+  "base_sha": "52222059ce1750891d07635366826480392a9d4d",
+  "integrated": {
+    "passed": 396,
+    "failed_before_fixture_fixes": 4,
+    "skipped_linux_only": 1
+  },
+  "focused_fixture_recheck": {
+    "passed": 4,
+    "duration_seconds": 9.96,
+    "executor": "handoff subagent",
+    "tests": [
+      "test_prepare_ingests_manifest_bound_inline_image_bytes",
+      "test_content_only_initial_builder_generates_and_prepares_control_fields",
+      "test_start_cli_builds_then_uses_existing_prepare_path",
+      "test_materialized_handoff_enters_existing_initial_builder"
+    ]
+  },
+  "revision_and_topics": {
+    "passed": 10
+  },
+  "linux_inherited_lock": {
+    "passed": true,
+    "cases": 6
+  },
+  "runtime_wrapper_profiles": {
+    "passed": true,
+    "cases": 6
+  },
+  "production_acceptance": false
+}

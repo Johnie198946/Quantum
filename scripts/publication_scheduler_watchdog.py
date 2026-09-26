@@ -8,6 +8,7 @@ item/material-scoped idempotency claim.
 """
 from __future__ import annotations
 
+import argparse
 import fcntl
 import hashlib
 import json
@@ -15,6 +16,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -32,17 +34,53 @@ DISPATCH_CONFIRM_SECONDS = 30.0
 DISPATCH_POLL_SECONDS = 0.25
 RECOVERY_DB = Path.home() / ".hermes/cron/publication-recovery.db"
 LOCK_FILE = Path.home() / ".hermes/cron/publication-scheduler-watchdog.lock"
-AUTHOR_JOBS = {
-    "ai-history": "5a3f2a2eb988",
-    "ai-practice": "5a3f2a2eb988",
-    "concept-fables": "5a3f2a2eb988",
-    "ai-toolkit": "171a125ddb63",
-}
-PLATFORM_AUTHOR_SERIES = frozenset({"ai-toolkit"})
-REVIEW_JOB = "fbd1cd1217d7"
-PREREQUISITE_JOB = "b8c4c5e40bb1"
-TARGET_JOBS = (*dict.fromkeys(AUTHOR_JOBS.values()), REVIEW_JOB)
-SERIES = tuple(AUTHOR_JOBS)
+_SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if not (_SOURCE_ROOT / "backend/services/knowledge_publication_store.py").is_file():
+    _SOURCE_ROOT = Path.cwd().resolve()
+sys.path.insert(0, str(_SOURCE_ROOT))
+from backend.services.knowledge_publication_store import SERIES as PUBLICATION_SERIES
+
+SERIES = {name: spec for name, spec in PUBLICATION_SERIES.items()
+          if spec.get("kind") == "daily" and spec.get("enabled", True)}
+AUTHOR_JOBS = {name: spec.get("author_job_id") for name, spec in SERIES.items()}
+PLATFORM_AUTHOR_SERIES = frozenset(name for name, spec in SERIES.items()
+                                  if spec.get("workflow_schedule_id") or (spec.get("assets_job_id") and not spec.get("author_job_id")))
+REVIEW_JOB = next((spec.get("review_job_id") for spec in SERIES.values() if spec.get("review_job_id")), None)
+PREREQUISITE_JOB = next((spec.get("prerequisite_job_id") for spec in SERIES.values() if spec.get("prerequisite_job_id")), None)
+TARGET_JOBS = tuple(dict.fromkeys(spec[field] for spec in SERIES.values()
+    for field in ("author_job_id", "assets_job_id", "review_job_id", "prerequisite_job_id") if spec.get(field)))
+JOBS_FILE = Path.home() / ".hermes/cron/jobs.json"
+PROFILES_ROOT = Path.home() / ".hermes/profiles"
+ROLE_PROFILES = {"author": {"default", "story"}, "review": {"default", "supervision"},
+                 "assets": {"default"}, "prerequisite": {"default"}}
+
+
+def _role_profile(series: str, phase: str) -> str:
+    profile = SERIES[series].get(f"{phase}_profile", "default")
+    profile = "default" if profile == "main" else profile
+    if profile not in ROLE_PROFILES[phase]:
+        raise ActionFailure("job_profile_not_allowed_for_role")
+    return profile
+
+
+def _action_profile(action: Action) -> str:
+    profiles = {_role_profile(barrier.series, action.phase) for barrier in action.barriers}
+    if len(profiles) != 1:
+        raise ActionFailure("ambiguous_job_profile")
+    return next(iter(profiles))
+
+
+def _profile_job_key(profile: str, job_id: str) -> str:
+    return job_id if profile == "default" else f"{profile}/{job_id}"
+
+
+
+def _schedule_id(series: str) -> str:
+    return SERIES[series].get("workflow_schedule_id") or (
+        os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID", "") if series == "ai-toolkit" else ""
+    )
+
+
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
 EVIDENCE_GROUPS = ("source_files", "rights_files", "execution_files")
@@ -54,6 +92,7 @@ PHASE_ORDER = {
     "prepare": 3,
     "assets": 4,
     "handoff_fetch": 5,
+    "native_fetch": 5,
     "author": 6,
     "prerequisite": 7,
 }
@@ -67,6 +106,7 @@ class Item:
     material_hash: str
     status: str
     review_ready: bool = False
+    issue_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,12 +116,16 @@ class Handoff:
     artifact_id: str
     material_hash: str
     status: str
+    series: str = "ai-toolkit"
+    issue_key: str = ""
+    native: bool = False
 
 
 @dataclass(frozen=True)
 class Barrier:
     series: str
     material_hash: str
+    issue_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,9 +143,10 @@ class ActionFailure(RuntimeError):
 
 
 class ActionPending(RuntimeError):
-    def __init__(self, reason: str):
+    def __init__(self, reason: str, details: dict | None = None):
         super().__init__(reason)
         self.reason = reason
+        self.details = details or {}
 
 
 def _default_profile_only() -> None:
@@ -202,7 +247,7 @@ def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
                     series, day = bundle.get("series_id"), bundle.get("issue_date")
                     if series in AUTHOR_JOBS and isinstance(day, str):
                         marker = hashlib.sha256(str(candidate.resolve()).encode()).hexdigest()
-                        found.append(Item(candidate.resolve(), series, day, marker, "invalid"))
+                        found.append(Item(candidate.resolve(), series, day, marker, "invalid", issue_key=bundle.get("issue_key", "")))
             except (OSError, ValueError, json.JSONDecodeError):
                 pass
             continue
@@ -219,7 +264,7 @@ def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
                         review_ready = _read_json(review_path).get("decision") in {"approved", "rejected"}
                     except (OSError, ValueError, json.JSONDecodeError):
                         review_ready = False
-            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready))
+            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready, bundle.get("issue_key", "")))
     return found
 
 
@@ -227,20 +272,22 @@ def _handoff_items(root: Path = OUTPUT_ROOT) -> list[Handoff]:
     if not root.is_dir() or root.is_symlink():
         raise ValueError("editorial root must be a real directory")
     found: list[Handoff] = []
-    for state_path in sorted(root.glob("ai-toolkit-*/workflow-handoff-state.json")):
+    for state_path in sorted(root.glob("*/workflow-handoff-state.json")):
         directory = state_path.parent.resolve()
         value: dict = {}
         try:
             if state_path.is_symlink() or root.resolve() not in directory.parents:
                 raise ValueError("workflow handoff state path is unsafe")
             value = _read_json(state_path)
+            if value.get("series_id") not in PLATFORM_AUTHOR_SERIES:
+                continue
             artifact_id = value.get("artifact_id")
             artifact_hash = value.get("artifact_sha256")
             envelope_hash = value.get("envelope_sha256")
             status = value.get("status")
             if (
                 value.get("version") != "publication-workflow-consumption-v1"
-                or value.get("series_id") != "ai-toolkit"
+                or value.get("series_id") not in PLATFORM_AUTHOR_SERIES
                 or not isinstance(value.get("issue_date"), str)
                 or not isinstance(artifact_id, str)
                 or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", artifact_id) is None
@@ -255,7 +302,7 @@ def _handoff_items(root: Path = OUTPUT_ROOT) -> list[Handoff]:
                 f"{artifact_id}:{artifact_hash}:{envelope_hash}".encode()
             ).hexdigest()
             found.append(
-                Handoff(directory, value["issue_date"], artifact_id, material_hash, status)
+                Handoff(directory, value["issue_date"], artifact_id, material_hash, status, value["series_id"], value.get("issue_key", ""))
             )
         except (OSError, ValueError, json.JSONDecodeError):
             marker = hashlib.sha256(str(state_path.resolve()).encode()).hexdigest()
@@ -266,7 +313,25 @@ def _handoff_items(root: Path = OUTPUT_ROOT) -> list[Handoff]:
                 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate_day)
                 else ""
             )
-            found.append(Handoff(directory, invalid_day, "invalid", marker, "invalid"))
+            found.append(Handoff(directory, invalid_day, "invalid", marker, "invalid", value.get("series_id", "ai-toolkit"), value.get("issue_key", "")))
+    for state_path in sorted(root.glob("*/native-content-state.json")):
+        value = {}
+        directory = state_path.parent.resolve()
+        try:
+            if state_path.is_symlink() or root.resolve() not in directory.parents:
+                raise ValueError("unsafe native content state")
+            value = _read_json(state_path)
+            if (value.get("series_id") not in SERIES or value.get("status") != "waiting_assets"
+                or not isinstance(value.get("issue_date"), str)
+                or not isinstance(value.get("issue_key"), str)
+                or not HASH.fullmatch(value.get("artifact_sha256", ""))):
+                raise ValueError("invalid native content state")
+            found.append(Handoff(directory, value["issue_date"], "native", value["artifact_sha256"],
+                                 "waiting_assets", value["series_id"], value["issue_key"], True))
+        except (OSError, ValueError, TypeError):
+            found.append(Handoff(directory, value.get("issue_date", ""), "invalid",
+                                 hashlib.sha256(str(state_path).encode()).hexdigest(), "invalid",
+                                 value.get("series_id", ""), value.get("issue_key", ""), True))
     return found
 
 
@@ -275,22 +340,35 @@ def _missing(summary: dict, day: str) -> set[str]:
     if not isinstance(today, dict) or not isinstance(issues, dict) or today.get("date") != day:
         raise ValueError("invalid or wrong-day status summary")
     by_series, missing_rows = today.get("by_series"), issues.get("missing")
-    if today.get("expected") != len(SERIES) or not isinstance(by_series, dict) or set(by_series) != set(SERIES):
+    active_series = {name: spec for name, spec in SERIES.items() if spec.get("starts_on", day) <= day}
+    expected = sum(len(spec.get("release_times", ["12:00"])) for spec in active_series.values())
+    if today.get("expected") != expected or not isinstance(by_series, dict) or set(by_series) != set(active_series):
         raise ValueError("unexpected publication series")
     if not isinstance(missing_rows, list):
         raise ValueError("invalid missing publication rows")
     inferred: set[str] = set()
+    published_total = 0
     for name, item in by_series.items():
-        if not isinstance(item, dict) or item.get("published") not in {0, 1}:
+        count = len(SERIES[name].get("release_times", ["12:00"]))
+        if not isinstance(item, dict) or type(item.get("published")) is not int or not 0 <= item["published"] <= count:
             raise ValueError("invalid publication status")
-        if item["published"] == 0:
+        published_total += item["published"]
+        slots = item.get("slots")
+        if slots is not None:
+            expected_keys = {day if slot == "12:00" else f"{day}T{slot}" for slot in SERIES[name].get("release_times", ["12:00"])}
+            if (not isinstance(slots, list) or len(slots) != count
+                or {slot.get("issue_key") for slot in slots} != expected_keys
+                or any(slot.get("published") not in {0, 1} for slot in slots)
+                or sum(slot["published"] for slot in slots) != item["published"]):
+                raise ValueError("invalid publication slots")
+        elif count != 1:
+            raise ValueError("multi-slot publication requires slot readback")
+        if item["published"] < count:
             inferred.add(name)
     reported = {row.get("series_id") for row in missing_rows if isinstance(row, dict) and row.get("issue_date") == day}
-    # `issues.missing` intentionally excludes an unpublished item once it is
-    # staged. `by_series.published` remains the complete publication truth,
-    # so the issue list may be a subset but must never contradict it.
-    if None in reported or not reported <= inferred or today.get("published") != len(SERIES) - len(inferred):
+    if None in reported or not reported <= inferred or today.get("published") != published_total:
         raise ValueError("contradictory publication status")
+
     return inferred
 
 
@@ -335,11 +413,14 @@ def _plan(
     prerequisite: Barrier | None = None,
     handoffs: Sequence[Handoff] = (),
     platform_enabled: bool = False,
+    issue_key: str = "",
 ) -> tuple[Action | None, str]:
-    today = [item for item in items if item.day == day and item.series in SERIES]
-    if any(item.status == "invalid" and item.day in {"", day} for item in handoffs):
+    today = [item for item in items if item.day == day and item.series in SERIES
+             and (not issue_key or (item.issue_key or item.day) == issue_key)]
+    if any(item.status == "invalid" and item.day in {"", day} and item.series in missing for item in handoffs):
         return None, "invalid_workflow_handoff"
-    today_handoffs = [item for item in handoffs if item.day == day]
+    today_handoffs = [item for item in handoffs if item.day == day
+                      and (not issue_key or (item.issue_key or item.day) == issue_key)]
     desired: dict[str, Action] = {}
     invalid_series: set[str] = set()
     for series in sorted(missing):
@@ -350,9 +431,9 @@ def _plan(
         linked = {
             item.directory: item
             for item in today_handoffs
-            if item.status in {"waiting_assets", "revision_requested", "acknowledged"}
+            if item.series == series and item.status in {"waiting_assets", "revision_requested", "acknowledged"}
         }
-        if series in PLATFORM_AUTHOR_SERIES and platform_enabled:
+        if series in PLATFORM_AUTHOR_SERIES and (bool(_schedule_id(series)) or platform_enabled):
             workflow_rows = [item for item in rows if item.manifest.parent.resolve() in linked]
             if len(workflow_rows) != len(rows):
                 return None, "workflow_handoff_binding_missing"
@@ -367,7 +448,7 @@ def _plan(
                 item = rejected[0]
                 desired[series] = Action(
                     "handoff_revision",
-                    (Barrier(series, item.material_hash),),
+                    (Barrier(series, item.material_hash, issue_key),),
                     manifest=item.manifest,
                 )
                 continue
@@ -377,16 +458,16 @@ def _plan(
             return None, "ambiguous_manifests"
         if active and any((item.status, item.review_ready) != (active[0].status, active[0].review_ready) for item in active[1:]):
             return None, "ambiguous_manifests"
-        barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(day, series, rows))
+        barrier = Barrier(series, next(iter(groups)) if groups else _absent_hash(issue_key or day, series, rows), issue_key)
         if active:
             item = active[0]
             if item.status == "prepared":
                 desired[series] = Action("prepare", (barrier,), manifest=item.manifest)
             elif item.status == "await_review" and not item.review_ready:
-                desired[series] = Action("review", (barrier,), job_id=REVIEW_JOB, manifest=item.manifest)
+                desired[series] = Action("review", (barrier,), job_id=SERIES[series].get("review_job_id"), manifest=item.manifest)
             elif item.status == "await_review":
                 desired[series] = Action("finalize", (barrier,), manifest=item.manifest)
-            elif series in PLATFORM_AUTHOR_SERIES and platform_enabled:
+            elif series in PLATFORM_AUTHOR_SERIES and (bool(_schedule_id(series)) or platform_enabled):
                 state = linked.get(item.manifest.parent.resolve())
                 if state is None:
                     return None, "workflow_handoff_binding_missing"
@@ -396,23 +477,34 @@ def _plan(
                     )
             # Staged non-Workflow items, and acknowledged Workflow items, remain
             # owned by the existing deterministic release job.
-        elif series in PLATFORM_AUTHOR_SERIES and platform_enabled:
-            waiting = [item for item in today_handoffs if item.status == "waiting_assets"]
+        elif series in PLATFORM_AUTHOR_SERIES and (bool(_schedule_id(series)) or platform_enabled):
+            waiting = [item for item in today_handoffs if item.series == series and item.status == "waiting_assets"]
             if len(waiting) > 1:
                 return None, "ambiguous_workflow_handoffs"
             if waiting:
                 item = waiting[0]
                 desired[series] = Action(
                     "assets",
-                    (Barrier(series, item.material_hash),),
-                    job_id=AUTHOR_JOBS[series],
+                    (Barrier(series, item.material_hash, issue_key),),
+                    job_id=SERIES[series].get("assets_job_id"),
                 )
             else:
                 desired[series] = Action(
                     "handoff_fetch", (barrier,), manifest=None
                 )
+        elif SERIES[series].get("author_job_id") and SERIES[series].get("assets_job_id"):
+            rejected_directories = {item.manifest.parent.resolve() for item in rows if item.status == "rejected"}
+            waiting = [item for item in today_handoffs if item.native and item.series == series
+                       and item.directory not in rejected_directories]
+            if len(waiting) > 1:
+                return None, "ambiguous_native_handoffs"
+            if waiting:
+                desired[series] = Action("assets", (Barrier(series, waiting[0].material_hash, issue_key),),
+                                         job_id=SERIES[series]["assets_job_id"])
+            else:
+                desired[series] = Action("native_fetch", (Barrier(series, barrier.material_hash, issue_key or day),))
         elif not active and series == "ai-toolkit" and prerequisite is not None:
-            desired[series] = Action("prerequisite", (prerequisite,), job_id=PREREQUISITE_JOB)
+            desired[series] = Action("prerequisite", (prerequisite,), job_id=SERIES[series].get("prerequisite_job_id"))
         elif not active and series in PLATFORM_AUTHOR_SERIES:
             continue
         elif not active:
@@ -427,13 +519,13 @@ def _plan(
     phase_actions = [action for action in desired.values() if action.phase == phase]
     if phase == "author":
         first = phase_actions[0]
-        same_job = [a for a in phase_actions if a.job_id == first.job_id]
+        same_job = [a for a in phase_actions if a.job_id == first.job_id and _action_profile(a) == _action_profile(first)]
         # A shared author job can touch every series in its declared scope.
         # Claim every series that actually needs author work; prepared,
         # await-review, and staged siblings are immutable handoffs and excluded.
         scope_missing = {
             series for series, candidate in desired.items()
-            if candidate.phase == "author" and candidate.job_id == first.job_id
+            if candidate.phase == "author" and candidate.job_id == first.job_id and _action_profile(candidate) == _action_profile(first)
         }
         claimed = {b.series for a in same_job for b in a.barriers}
         if claimed != scope_missing:
@@ -442,7 +534,9 @@ def _plan(
     action = phase_actions[0]
     if phase == "review":
         global_pending = sorted(
-            (i for i in items if i.status == "await_review" and not i.review_ready),
+            (i for i in items if i.status == "await_review" and not i.review_ready
+             and i.series in SERIES and _role_profile(i.series, "review") == _action_profile(action)
+             and SERIES[i.series].get("review_job_id") == action.job_id),
             key=lambda item: str(item.manifest),
         )
         if not global_pending:
@@ -482,14 +576,34 @@ def _owner_alive(pid: int, process_started_at: int | None) -> bool | None:
 
 def _execution_blockers(
     day: str,
-    database: Path = EXECUTIONS_DB,
+    database: Path | None = None,
     owner_alive: Callable[[int, int | None], bool | None] = _owner_alive,
+    target_jobs: Sequence[str] | None = None,
 ) -> list[str]:
+    if database is None:
+        routes: dict[str, set[str]] = {}
+        for series, spec in SERIES.items():
+            for phase in ROLE_PROFILES:
+                job_id = spec.get(f"{phase}_job_id")
+                if job_id:
+                    routes.setdefault(_role_profile(series, phase), set()).add(job_id)
+        result = []
+        for profile, jobs in routes.items():
+            path = EXECUTIONS_DB if profile == "default" else PROFILES_ROOT / profile / "cron/executions.db"
+            try:
+                rows = _execution_blockers(day, path, owner_alive, sorted(jobs))
+            except sqlite3.Error:
+                rows = [f"{job_id}:registry:unverified" for job_id in sorted(jobs)]
+            result.extend(entry if profile == "default" else f"{profile}/{entry}" for entry in rows)
+        return sorted(result)
+    target_jobs = TARGET_JOBS if target_jobs is None else target_jobs
+    if not target_jobs:
+        return []
     uri = database.expanduser().resolve().as_uri() + "?mode=ro"
     with sqlite3.connect(uri, uri=True) as connection:
         rows = connection.execute(
-            f"SELECT id,job_id,status,pid,process_started_at,claimed_at,finished_at FROM executions WHERE job_id IN ({','.join('?' * len(TARGET_JOBS))}) AND status IN ('claimed','running','unknown')",
-            TARGET_JOBS,
+            f"SELECT id,job_id,status,pid,process_started_at,claimed_at,finished_at FROM executions WHERE job_id IN ({','.join('?' * len(target_jobs))}) AND status IN ('claimed','running','unknown')",
+            target_jobs,
         ).fetchall()
     blockers: list[str] = []
     for execution_id, job_id, status, pid, started, claimed_at, finished_at in rows:
@@ -529,11 +643,56 @@ class Claims:
         columns = {row[1] for row in db.execute("PRAGMA table_info(recovery_claims)")}
         if "attempts" not in columns:
             db.execute("ALTER TABLE recovery_claims ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1")
+        if "rearm_history" not in columns:
+            db.execute("ALTER TABLE recovery_claims ADD COLUMN rearm_history TEXT NOT NULL DEFAULT '[]'")
         return db
 
     @staticmethod
     def key(day: str, phase: str, barrier: Barrier) -> str:
-        return f"publication-recovery-v1:{day}:{barrier.series}:{barrier.material_hash}:{phase}"
+        return f"publication-recovery-v1:{barrier.issue_key or day}:{barrier.series}:{barrier.material_hash}:{phase}"
+
+    def exhausted(self, day: str, action: Action) -> list[str]:
+        exhausted = []
+        with self._connect() as db:
+            for barrier in action.barriers:
+                key = self.key(day, action.phase, barrier)
+                row = db.execute("SELECT state,owner_pid,owner_started_at,finished_at FROM recovery_claims WHERE idempotency_key=? AND attempts>=? AND state!='completed'",
+                                 (key, self.MAX_ATTEMPTS)).fetchone()
+                if row is None:
+                    continue
+                state, pid, started, finished_at = row
+                if state == "running" and _owner_alive(pid, started) is not False:
+                    continue
+                if state == "dispatched":
+                    try:
+                        if datetime.now(ZoneInfo("Asia/Shanghai")) - datetime.fromisoformat(finished_at) < self.DISPATCH_RETRY_AFTER:
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+                exhausted.append(key)
+        return exhausted
+
+    def rearm(self, key: str, expected_attempts: int, material_hash: str, reason: str,
+              blockers: Callable[[str], list[str]] = _execution_blockers) -> dict:
+        if not reason.strip() or not HASH.fullmatch(material_hash) or expected_attempts < 1:
+            raise ValueError("rearm requires exact material, attempts and audit reason")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.row_factory = sqlite3.Row
+            row = db.execute("SELECT * FROM recovery_claims WHERE idempotency_key=?", (key,)).fetchone()
+            if row is None or row["material_hash"] != material_hash or row["attempts"] != expected_attempts:
+                raise ValueError("rearm compare-and-set mismatch")
+            if row["state"] != "failed" or _owner_alive(row["owner_pid"], row["owner_started_at"]) is not False:
+                raise ValueError("rearm requires failed claim with proven-dead owner")
+            if any(not entry.endswith(":unknown-dead") for entry in blockers(row["day"])):
+                raise ValueError("rearm blocked by live or unverified execution")
+            history = json.loads(row["rearm_history"])
+            history.append({"at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                            "reason": reason, "previous": {k: row[k] for k in row.keys() if k != "rearm_history"}})
+            db.execute("UPDATE recovery_claims SET attempts=0,rearm_history=? WHERE idempotency_key=?",
+                       (json.dumps(history, sort_keys=True), key))
+            db.commit()
+        return {"ok": True, "action": "rearmed", "idempotency_key": key, "previous_attempts": expected_attempts}
 
     def claim(self, day: str, action: Action) -> bool:
         now = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
@@ -578,7 +737,7 @@ class Claims:
                 row = rows[key]
                 if row is None:
                     db.execute(
-                        "INSERT INTO recovery_claims VALUES (?,?,?,?,?,'running',?,?,?,NULL,1)",
+                        "INSERT INTO recovery_claims (idempotency_key,day,series,material_hash,phase,state,owner_pid,owner_started_at,created_at,finished_at,attempts) VALUES (?,?,?,?,?,'running',?,?,?,NULL,1)",
                         (key, day, barrier.series, barrier.material_hash, action.phase, os.getpid(), owner_started, now),
                     )
                 else:
@@ -606,13 +765,18 @@ class Claims:
 def _run_action(action: Action) -> None:
     if action.phase in {"author", "assets", "review"}:
         assert action.job_id is not None
-        _dispatch_job(action.job_id)
+        _dispatch_job(action.job_id, _action_profile(action))
         return
     elif action.phase == "prerequisite":
-        _dispatch_job(PREREQUISITE_JOB)
+        assert action.job_id is not None
+        _dispatch_job(action.job_id, _action_profile(action))
         return
-    elif action.phase == "handoff_fetch":
-        commands = [[str(HANDOFF_CLIENT), "fetch", "--output-root", str(OUTPUT_ROOT)]]
+    elif action.phase in {"handoff_fetch", "native_fetch"}:
+        commands = [[str(HANDOFF_CLIENT), "fetch-native" if action.phase == "native_fetch" else "fetch", "--output-root", str(OUTPUT_ROOT)]]
+        barrier = action.barriers[0]
+        commands[0].extend(["--series-id", barrier.series])
+        if barrier.issue_key:
+            commands[0].extend(["--issue-key", barrier.issue_key])
         timeout = 600
     elif action.phase in {"handoff_acknowledge", "handoff_revision"}:
         assert action.manifest is not None
@@ -638,21 +802,51 @@ def _run_action(action: Action) -> None:
         except subprocess.TimeoutExpired as exc:
             raise ActionFailure("action_timeout") from exc
         if completed.returncode:
+            if action.phase == "native_fetch" and "native content revision budget exhausted" in completed.stderr:
+                raise ActionFailure("native_content_revision_exhausted")
             raise ActionFailure("action_exit_nonzero")
-        if action.phase == "handoff_fetch":
+        if action.phase in {"handoff_fetch", "native_fetch"}:
             try:
                 result = json.loads(completed.stdout.strip().splitlines()[-1])
             except (IndexError, json.JSONDecodeError) as exc:
                 raise ActionFailure("handoff_fetch_invalid_result") from exc
-            if result == {"available": False, "status": "waiting_workflow"}:
+            if isinstance(result, dict) and result.get("status") == "waiting_author":
+                raise ActionPending("awaiting_native_author", {key: result[key] for key in
+                                    ("reason", "reasons", "feedback_file", "revision_count") if key in result})
+            if isinstance(result, dict) and result.get("status") in {"waiting_workflow", "preflight_revision_requested"}:
                 raise ActionPending("awaiting_platform_schedule")
             if not isinstance(result, dict) or result.get("status") != "waiting_assets":
                 raise ActionFailure("handoff_fetch_invalid_result")
 
 
-def _dispatch_job(job_id: str) -> None:
+def _job_preflight(action: Action) -> None:
+    if action.phase not in {"author", "assets", "review", "prerequisite"}:
+        return
+    profile = _action_profile(action)
+    if not action.job_id:
+        raise ActionFailure("job_not_configured")
+    try:
+        jobs_file = JOBS_FILE if profile == "default" else PROFILES_ROOT / profile / "cron/jobs.json"
+        jobs = _read_json(jobs_file).get("jobs", [])
+        if isinstance(jobs, dict):
+            jobs = [dict(value, id=key) for key, value in jobs.items()]
+        matches = [job for job in jobs if isinstance(job, dict) and job.get("id") == action.job_id]
+    except (OSError, ValueError, TypeError):
+        raise ActionFailure("job_registry_unavailable")
+    if len(matches) != 1:
+        raise ActionFailure("job_missing" if not matches else "job_ambiguous")
+    job = matches[0]
+    if job.get("state") == "paused" or job.get("paused_at"):
+        raise ActionFailure("job_paused")
+    if not job.get("enabled", True):
+        raise ActionFailure("job_disabled")
+
+
+def _dispatch_job(job_id: str, profile: str = "default") -> None:
+    if profile not in {"default", "story", "supervision"}:
+        raise ActionFailure("job_profile_not_allowed")
     started = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
-    command = ["hermes", "cron", "run", job_id]
+    command = ["hermes", *(["-p", profile] if profile != "default" else []), "cron", "run", job_id]
     # `hermes cron run` remains attached for the full Agent execution. Killing
     # it at the dispatch-confirmation deadline also kills the execution owner
     # and leaves an `unknown` row. Detach it, then return only after the native
@@ -666,7 +860,8 @@ def _dispatch_job(job_id: str) -> None:
         close_fds=True,
         env=_default_env(),
     )
-    uri = EXECUTIONS_DB.expanduser().resolve().as_uri() + "?mode=ro"
+    database = EXECUTIONS_DB if profile == "default" else PROFILES_ROOT / profile / "cron/executions.db"
+    uri = database.expanduser().resolve().as_uri() + "?mode=ro"
     deadline = time.monotonic() + DISPATCH_CONFIRM_SECONDS
     while True:
         try:
@@ -701,10 +896,13 @@ def supervise(
     blockers: Callable[[str], list[str]] = _execution_blockers,
     prerequisite: Callable[[str], Barrier | None] = _toolkit_prerequisite_barrier,
     run_action: Callable[[Action], None] = _run_action,
+    preflight: Callable[[Action], None] = _job_preflight,
     claims: Claims | None = None,
 ) -> dict:
     _default_profile_only()
-    missing = _missing(status(), day)
+    input_feedback = {}
+    snapshot = status()
+    missing = _missing(snapshot, day)
     items = load_items()
     if load_handoffs is not None:
         handoffs = load_handoffs()
@@ -712,48 +910,90 @@ def supervise(
         handoffs = _handoff_items()
     else:
         handoffs = []
-    action, reason = _plan(
-        day,
-        missing,
-        items,
-        prerequisite(day),
-        handoffs,
-        platform_enabled=bool(os.environ.get("PUBLICATION_AI_TOOLKIT_SCHEDULE_ID")),
-    )
+    # Legacy single-slot summaries keep grouped author dispatch. Explicit slot
+    # summaries are planned separately so published siblings cannot hide work.
+    plans = []
+    for series in sorted(missing):
+        slots = snapshot["today"]["by_series"][series].get("slots")
+        if slots is not None:
+            for slot in slots:
+                if not slot["published"]:
+                    plans.append(_plan(day, {series}, items, prerequisite(day), handoffs,
+                                       platform_enabled=bool(_schedule_id(series)), issue_key=slot["issue_key"]))
+    if not plans:
+        plans = [_plan(day, missing, items, prerequisite(day), handoffs,
+                       platform_enabled=False)]
+    if len(plans) == 1 and len(missing) > 1 and not any(
+        snapshot["today"]["by_series"][name].get("slots") is not None for name in missing
+    ):
+        plans.extend(_plan(day, {name}, items, prerequisite(day), handoffs,
+                           platform_enabled=bool(_schedule_id(name))) for name in sorted(missing))
+    errors = []
+    eligible = []
+    ledger = claims or Claims()
+    for candidate, candidate_reason in plans:
+        if candidate is None:
+            continue
+        try:
+            preflight(candidate)
+        except ActionFailure as exc:
+            errors.append({"ok": False, "action": "none", "reason": exc.reason,
+                           "phase": candidate.phase, "job_id": candidate.job_id})
+            continue
+        if candidate.phase not in {"handoff_fetch", "native_fetch"}:
+            exhausted = ledger.exhausted(day, candidate)
+            if exhausted:
+                errors.append({"ok": False, "action": "none", "reason": "retry_exhausted", "phase": candidate.phase,
+                               "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key"})
+                continue
+        eligible.append(candidate)
+    action = min(eligible, key=lambda candidate: PHASE_ORDER[candidate.phase]) if eligible else None
+    if action is not None and action.phase == "author":
+        same_job = [candidate for candidate in eligible if candidate.phase == "author" and candidate.job_id == action.job_id and _action_profile(candidate) == _action_profile(action)]
+        action = Action("author", tuple(dict.fromkeys(barrier for candidate in same_job for barrier in candidate.barriers)), job_id=action.job_id)
+    reason = next((reason for candidate, reason in plans if candidate is None
+                   and reason not in {"complete", "awaiting_release", "awaiting_platform_author"}), plans[0][1])
+    if action is None and errors:
+        return errors[0]
     if action is None:
-        return {"ok": True, "action": "none", "reason": reason, "missing": sorted(missing)}
+        return {"ok": reason in {"complete", "awaiting_release", "awaiting_platform_author"}, "action": "none", "reason": reason, "missing": sorted(missing)}
     active = blockers(day)
-    hard_blockers = [entry for entry in active if not entry.endswith(":unknown-dead")]
+    relevant_jobs = {_profile_job_key(_role_profile(b.series, phase), SERIES[b.series][f"{phase}_job_id"])
+                     for b in action.barriers for phase in ROLE_PROFILES if SERIES[b.series].get(f"{phase}_job_id")}
+    hard_blockers = [entry for entry in active if not entry.endswith(":unknown-dead")
+                     and entry.split(":", 1)[0] in relevant_jobs]
     # Dead unknown executions are reconciled from immutable item/production
     # state. The durable dispatch claim supplies the bounded retry cooldown;
-    # live or unverifiable owners still block every action.
+    # live or unverifiable owners block their own publication job scope.
     if hard_blockers:
         return {"ok": True, "action": "none", "reason": "execution_blocked", "executions": sorted(set(hard_blockers))}
-    if action.phase == "handoff_fetch":
-        # No candidate is a normal state between the local polling time and the
-        # platform schedule completing. Do not consume a bounded claim: the
-        # immutable materialization ledger makes a later successful fetch safe.
+    if action.phase in {"handoff_fetch", "native_fetch"}:
+        # Immutable materialization makes input polling safe without a claim.
         try:
             run_action(action)
         except ActionPending as exc:
-            return {
-                "ok": True,
-                "action": "none",
-                "reason": exc.reason,
-                "phase": action.phase,
-            }
+            if action.phase == "native_fetch" and exc.reason == "awaiting_native_author":
+                input_feedback = {"author_feedback": exc.details} if exc.details else {}
+                action = Action("author", action.barriers, job_id=SERIES[action.barriers[0].series].get("author_job_id"))
+            else:
+                return {"ok": True, "action": "none", "reason": exc.reason, "phase": action.phase}
         except Exception as exc:
             reason = exc.reason if isinstance(exc, ActionFailure) else "action_exception"
             return {"ok": False, "action": "none", "reason": reason, "phase": action.phase}
-        return {
-            "ok": True,
-            "action": "triggered",
-            "phase": action.phase,
-            "series": ["ai-toolkit"],
-        }
-    ledger = claims or Claims()
+        else:
+            return {"ok": True, "action": "triggered", "phase": action.phase,
+                    "series": [barrier.series for barrier in action.barriers]}
+    try:
+        preflight(action)
+    except ActionFailure as exc:
+        return {"ok": False, "action": "none", "reason": exc.reason,
+                "phase": action.phase, "job_id": action.job_id}
     if not ledger.claim(day, action):
-        return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase}
+        exhausted = ledger.exhausted(day, action)
+        if exhausted:
+            return {"ok": False, "action": "none", "reason": "retry_exhausted", "phase": action.phase,
+                    "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key", **input_feedback}
+        return {"ok": True, "action": "none", "reason": "already_claimed", "phase": action.phase, **input_feedback}
     try:
         run_action(action)
     except Exception as exc:
@@ -781,6 +1021,8 @@ def supervise(
         "ok": True, "action": "triggered", "phase": action.phase,
         "series": sorted(barrier.series for barrier in action.barriers),
         "material_hashes": sorted(barrier.material_hash for barrier in action.barriers),
+        **({"blocked": errors} if errors else {}),
+        **input_feedback,
     }
 
 
@@ -800,14 +1042,26 @@ def _exclusive_lock(path: Path = LOCK_FILE) -> Iterator[bool]:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rearm-key")
+    parser.add_argument("--expected-attempts", type=int)
+    parser.add_argument("--material-hash")
+    parser.add_argument("--reason")
+    args = parser.parse_args(argv)
+    if args.rearm_key and (args.expected_attempts is None or not args.material_hash or not args.reason):
+        parser.error("rearm requires --expected-attempts, --material-hash and --reason")
     try:
+        _default_profile_only()
         with _exclusive_lock() as acquired:
             if not acquired:
                 result = {"ok": True, "action": "none", "reason": "locked"}
             else:
                 day = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-                result = supervise(day)
+                result = (Claims().rearm(args.rearm_key, args.expected_attempts, args.material_hash, args.reason)
+                          if args.rearm_key else supervise(day))
+    except ValueError as exc:
+        result = {"ok": False, "action": "none", "reason": "rearm_rejected" if args.rearm_key else "invalid_state", "detail": str(exc)}
     except Exception:
         result = {"ok": False, "action": "none", "reason": "error"}
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
