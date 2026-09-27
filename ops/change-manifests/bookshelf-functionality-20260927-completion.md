@@ -62,7 +62,7 @@ server_after: 未执行
 health_check: 未执行
 functional_check: 待测试
 rollback_point: 本轮未建立
-remote_sha: 本轮未推送
+remote_sha: 878744d9d3a2164a39409557b2de53617c279043
 remaining_risks: 尚未完成实现和验收
 
 ## 实现与复用
@@ -94,3 +94,21 @@ remaining_risks: 尚未完成实现和验收
 - clean-check.log：书单 wire contract 1 passed，空筛选/真实书单编辑/大字号书架入口/单次返回中3项 UI passed，TEST SUCCEEDED。
 - ui-navigation-final.log：长正文目录/书籍信息与两个书架交互共3项 UI passed。
 - 共享工作区最后一次编译因并行 media 未完成类型失败；未修改或混入该任务，干净候选重新构建通过。
+
+## GitHub 与不可变归档
+- branch: main
+- worktree: /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+- local_commit: 878744d9d3a2164a39409557b2de53617c279043
+- remote: https://github.com/Johnie198946/Quantum.git
+- ref: refs/heads/main
+- git push origin main: b696d13b..878744d9 main -> main
+- git ls-remote origin refs/heads/main: 878744d9d3a2164a39409557b2de53617c279043 refs/heads/main
+- 归档 SHA256: dd892888071034498ccc558b81b4b47dce50c88cbe5d339207049cf2df38ffd3
+- 产品提交文件与干净候选逐字节对比 passed；并行图片任务的依赖与源码仍留在未提交工作区，未包含。
+- server_after: 尚未切换，等待出版素材自然完成及窗口确认。
+- Build70: 已交联合客户端任务从该SHA干净归档；安装/真机验收未完成。
+
+## 书单草稿边界补查
+书单编辑页原先关闭sheet后打开书籍，会离开未保存编辑上下文。改为同一sheet内部切换既有ReaderView，返回恢复同一草稿；新增UI回归，尚待本轮结果。878候选安装/上传已暂停，服务端未切换。
+
+书单草稿回归：draft-final.log TEST SUCCEEDED；阅读前输入 Keep my draft，关闭书籍后名称仍保留。最终补丁仅Reader复用及一项UI测试。

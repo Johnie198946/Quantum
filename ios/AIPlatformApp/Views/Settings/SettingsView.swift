@@ -806,6 +806,7 @@ public struct SubscriptionCenterView: View {
     @State private var listTitle = ""
     @State private var listBookIDs: Set<String> = []
     @State private var showsListEditor = false
+    @State private var editingListBook: KnowledgeBookDTO?
     @State private var savingList = false
     @State private var listError: String?
     @State private var bookshelfSortOrder: BookshelfSortOrder = .recent
@@ -1289,6 +1290,7 @@ public struct SubscriptionCenterView: View {
     }
 
     private func editList(_ list: KnowledgeBookListDTO?) {
+        editingListBook = nil
         editingListID = list?.id ?? UUID().uuidString
         listTitle = list?.title ?? ""
         listBookIDs = Set(list?.bookIds ?? [])
@@ -1296,7 +1298,16 @@ public struct SubscriptionCenterView: View {
         showsListEditor = true
     }
 
+    @ViewBuilder
     private var bookListEditor: some View {
+        if let book = editingListBook {
+            KnowledgeBookReaderView(
+                book: book, isSubscribed: isBookSubscribed(book),
+                isBusy: subscriptionBusyBookID == book.id,
+                onToggleSubscription: { Task { await toggleBookSubscription(book) } },
+                onDismiss: { editingListBook = nil }
+            )
+        } else {
         NavigationStack {
             Form {
                 TextField("书单名称", text: $listTitle)
@@ -1307,7 +1318,7 @@ public struct SubscriptionCenterView: View {
                             Toggle(isOn: Binding(get: { listBookIDs.contains(book.id) }, set: { selected in
                                 if selected { listBookIDs.insert(book.id) } else { listBookIDs.remove(book.id) }
                             })) { Text(book.title) }
-                            Button { showsListEditor = false; inspectedBook = book } label: {
+                            Button { editingListBook = book } label: {
                                 Image(systemName: "book")
                             }.buttonStyle(.borderless).accessibilityLabel("阅读《\(book.title)》")
                         }
@@ -1328,6 +1339,7 @@ public struct SubscriptionCenterView: View {
             }
         }
         .interactiveDismissDisabled(savingList)
+        }
     }
 
     private func persistList(delete: Bool = false) async {

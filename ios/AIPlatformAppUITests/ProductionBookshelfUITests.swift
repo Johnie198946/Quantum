@@ -65,6 +65,25 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["publication-bookshelf-container"].waitForExistence(timeout: 5))
     }
 
+    func testBookListReadingPreservesUnsavedDraft() {
+        app.terminate()
+        app.launchArguments = ["-bookshelfPreview"]
+        app.launch()
+        let create = app.buttons["bookshelf-create-list"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !create.isHittable { app.swipeUp() }
+        create.tap()
+        let title = app.textFields["书单名称"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText("Keep my draft")
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "阅读《")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["关闭书籍"].waitForExistence(timeout: 8))
+        app.buttons["关闭书籍"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.value as? String, "Keep my draft")
+    }
+
     func testReaderBackClosesDirectlyToBookshelf() {
         app.terminate()
         app.launchArguments = ["-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview", "-bookReadingPreview", "-bookReadingLongFixture"]
