@@ -1471,6 +1471,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
+    func testPublicationCacheDoesNotKeepItsCredentialOwnerAlive() {
+        weak var owner: APIClient?
+        autoreleasepool {
+            let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: .ephemeral, inMemoryToken: "fixture")
+            PublicationReaderImage.cacheAPI = api
+            owner = api
+            XCTAssertTrue(PublicationReaderImage.cacheAPI === api)
+        }
+        XCTAssertNil(owner)
+        XCTAssertNil(PublicationReaderImage.cacheAPI)
+    }
+
+    @MainActor
     func testPublicationCoverAndReaderImagesRenderAuthenticatedFixture() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
@@ -1991,6 +2004,33 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             XCTAssertGreaterThan(size.height, 100)
             XCTAssertLessThan(size.height, 1_000)
         }
+    }
+
+    func testReaderFollowupAllowsSourcedExtension() {
+        let prompt = ReadingQuickAction.focusedQuestion("殷开山和刘文静几岁", excerpt: "殷开山和刘文静")
+        XCTAssertTrue(prompt.contains("优先直接回答"))
+        XCTAssertTrue(prompt.contains("补充资料"))
+        XCTAssertTrue(prompt.contains("出生年或史料不详"))
+    }
+
+    @MainActor
+    func testReaderFontRetainsEmphasisAndScales() {
+        let normal = SelectableReadingText.styledText("普通 **粗体**", color: .label,
+            traits: UITraitCollection(preferredContentSizeCategory: .large))
+        let bold = normal.attribute(.font, at: 3, effectiveRange: nil) as? UIFont
+        XCTAssertTrue(bold?.fontDescriptor.symbolicTraits.contains(.traitBold) == true)
+        let large = SelectableReadingText.styledText("普通 **粗体**", color: .label,
+            traits: UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge))
+        XCTAssertGreaterThan((large.attribute(.font, at: 3, effectiveRange: nil) as? UIFont)?.pointSize ?? 0,
+                             bold?.pointSize ?? 0)
+    }
+
+    func testPlannedIllustrationDTOAndEmptyPlan() throws {
+        let json = #"{"book_id":"b","title":"t","author":"a","content_version":"v","edition":1,"citation":"c","sections":[],"illustrations":[{"id":"illustration_05","url":"/media/illustration_05","section_id":"section-1","after_paragraph":"位置段落。","caption":"艺术示意","alt":"战场示意","width":1600,"height":900,"content_version":"v"}]}"#
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let body = try decoder.decode(KnowledgeBookBodyDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(body.illustrations?.first?.afterParagraph, "位置段落。")
+        XCTAssertEqual(body.illustrations?.first?.id, "illustration_05")
     }
 
     func testReadingSelectionQuestionPrioritizesSelectedWord() {

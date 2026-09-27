@@ -412,7 +412,7 @@ public struct IllustratedBookCover: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: width, height: width * 1.42)
+                    .frame(width: width, height: width * 16 / 9)
                     .background(colors.first ?? AppTheme.Colors.secondaryBackground)
                     .accessibilityHidden(true)
             } else if let asset = ContentAssetLibrary.publicationCoverAssetName(for: seed) {
@@ -450,7 +450,7 @@ public struct IllustratedBookCover: View {
                 .padding(width < 80 ? 7 : 10)
             }
         }
-        .frame(width: width, height: width * 1.42)
+        .frame(width: width, height: width * 16 / 9)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.74), lineWidth: 0.7) }
         .shadow(color: AppTheme.Colors.primary.opacity(0.12), radius: 12, x: 3, y: 8)
@@ -714,7 +714,7 @@ struct AuthenticatedBookImage<Content: View>: View {
     @State private var failed = false
 
     private var identity: String {
-        "\(api.currentCredentialGeneration()):\(api.baseURL.absoluteString):\(bookID):\(path ?? ""):\(legacyCover)"
+        "\(ObjectIdentifier(api)):\(api.currentCredentialGeneration()):\(api.baseURL.absoluteString):\(bookID):\(path ?? ""):\(legacyCover)"
     }
 
     var body: some View {
@@ -743,6 +743,16 @@ struct AuthenticatedBookImage<Content: View>: View {
                 failed = false
                 loadedIdentity = requestedIdentity
                 guard (path != nil || legacyCover), api.currentToken() != nil else { return }
+                let account = "\(ObjectIdentifier(api)):\(api.baseURL):\(api.currentCredentialGeneration())"
+                if PublicationReaderImage.cacheAPI !== api || PublicationReaderImage.cacheAccount != account {
+                    PublicationReaderImage.cache.removeAll()
+                    PublicationReaderImage.cacheAPI = api
+                    PublicationReaderImage.cacheAccount = account
+                }
+                if let cached = PublicationReaderImage.cache.get(tenantId: account, namespace: "publication", key: identity) {
+                    image = cached
+                    return
+                }
                 do {
                     let data: Data
                     if let path {
@@ -752,10 +762,17 @@ struct AuthenticatedBookImage<Content: View>: View {
                     }
                     try Task.checkCancellation()
                     guard identity == requestedIdentity else { return }
-                    guard let decoded = UIImage(data: data) else {
+                    let thumbnail = await Task.detached(priority: .utility) {
+                        ImageCard.thumbnailData(from: data)
+                    }.value
+                    try Task.checkCancellation()
+                    guard identity == requestedIdentity else { return }
+                    guard let thumbnail, let decoded = UIImage(data: thumbnail) else {
                         failed = true
                         return
                     }
+                    PublicationReaderImage.cache.set(tenantId: account, namespace: "publication", key: requestedIdentity,
+                        value: decoded, cost: Int(decoded.size.width * decoded.size.height * decoded.scale * decoded.scale * 4))
                     image = decoded
                 } catch {
                     guard !Task.isCancelled, identity == requestedIdentity else { return }
@@ -784,6 +801,9 @@ struct PublicationBookCover: View {
 }
 
 struct PublicationReaderImage: View {
+    static let cache = TenantScopedCache<UIImage>(countLimit: 32, totalCostLimit: 48 * 1024 * 1024)
+    static weak var cacheAPI: APIClient?
+    static var cacheAccount = ""
     let bookID: String
     let path: String
     let label: String
@@ -792,11 +812,11 @@ struct PublicationReaderImage: View {
         AuthenticatedBookImage(bookID: bookID, path: path) { image in
             Group {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFit()
+                    Image(uiImage: image).resizable().aspectRatio(16.0 / 9.0, contentMode: .fit)
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(AppTheme.Colors.secondaryBackground)
-                        .frame(height: 180)
+                        .aspectRatio(16.0 / 9.0, contentMode: .fit)
                         .overlay { Text(label).foregroundStyle(AppTheme.Colors.textSecondary) }
                 }
             }

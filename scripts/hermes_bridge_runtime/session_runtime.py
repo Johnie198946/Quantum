@@ -614,6 +614,7 @@ def _durable_status(
         "events_next_offset": events_next_offset,
         "events": bounded_semantic_events,
         "run_id": run_id,
+        "request_id": run["request_id"],
         "consumed": float(run.get("consumed_at") or 0) > 0,
         **({
             "execution_available": False,

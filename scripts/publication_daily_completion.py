@@ -33,14 +33,15 @@ def evaluate(summary: dict) -> tuple[dict, int]:
         declared_expected += count
         roles = set(item.get("media_roles", [])) if isinstance(item, dict) else set()
         if (not isinstance(item, dict) or item.get("published") != count
-                or item.get("body_available") is not True or roles != REQUIRED_MEDIA):
+                or item.get("body_available") is not True or not {"shelf_cover", "reader_cover"} <= roles or roles != set(item.get("expected_media_roles", REQUIRED_MEDIA))):
             failures.append(series)
         slots = item.get("slots") if isinstance(item, dict) else None
         if slots is not None and (
             not isinstance(slots, list) or len(slots) != count
             or any(not isinstance(slot, dict) or slot.get("published") != 1
                    or slot.get("body_available") is not True
-                   or set(slot.get("media_roles", [])) != REQUIRED_MEDIA for slot in slots)
+                   or not {"shelf_cover", "reader_cover"} <= set(slot.get("media_roles", []))
+                   or set(slot.get("media_roles", [])) != set(slot.get("expected_media_roles", REQUIRED_MEDIA)) for slot in slots)
             or len({slot.get("issue_key") for slot in slots if isinstance(slot, dict)}) != count
         ):
             failures.append(series)
@@ -62,9 +63,9 @@ def evaluate(summary: dict) -> tuple[dict, int]:
         "by_series": by_series,
         "missing": missing,
         "bot_message": (
-            f"今日计划的 {expected} 期连载均已发布，正文及双封面、三张正文插图校验通过（{today.get('date')}）。"
+            f"今日计划的 {expected} 期连载均已发布，正文、双封面及本期计划插图校验通过（{today.get('date')}）。"
             if complete else
-            f"今日连载验收失败，未通过正文或五媒体检查：{', '.join(failures) or '全局状态异常'}；请勿发送完成通知。"
+            f"今日连载验收失败，未通过正文或计划媒体检查：{', '.join(failures) or '全局状态异常'}；请勿发送完成通知。"
         ),
     }
     return receipt, 0 if complete else 2

@@ -329,6 +329,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                 guard self.tenantEpoch == taskEpoch,
                       self.sessionManager.activeAccountFingerprint == accountFingerprint,
                       self.sessionManager.activeSessionID() == sid else { return }
+                guard status.belongsTo(requestId: outputId, runId: nil) else {
+                    self.applyTerminalStatus("not_found", outputMessageId: outputId)
+                    return
+                }
                 if status.status == "completed" {
                     while !(await self.checkpointStatusEvents(
                         status, sessionId: sid, outputMessageId: outputId,
@@ -622,6 +626,12 @@ public final class TenantSessionCoordinator: ObservableObject {
         _ status: ChatStatusDTO, sessionId: String, outputMessageId: String,
         agentId: String?
     ) async -> Bool {
+        let message = sessionManager.activeSessionID() == sessionId
+            ? messages.first(where: { $0.id == outputMessageId })
+            : sessionManager.storedMessage(id: outputMessageId, sessionId: sessionId)
+        guard status.belongsTo(requestId: outputMessageId, runId: message?.runId) else {
+            return false
+        }
         let events = status.events ?? []
         let cursor = status.eventsNextOffset
             ?? events.compactMap(\.eventSequence).max()
@@ -1564,32 +1574,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         hasRecoveryContext || hasLocalNotes || requiresKnowledgeWorkspace(userText)
     }
 
-    static func shouldShowKnowledgeProposalRetry(
-        userText: String,
-        hasProposal: Bool
-    ) -> Bool {
-        requiresKnowledgeActionProposal(userText) && !hasProposal
-    }
-
-    private func markMissingKnowledgeProposalIfNeeded(
-        userText: String,
-        messageIndex: Int
-    ) {
-        guard messages.indices.contains(messageIndex) else { return }
-        let hasProposal = messages[messageIndex].blocks.contains(where: {
-            if case .knowledgeAction = $0 { return true }
-            if case .knowledgeNavigation(let target) = $0, ["cleanup", "note_comparison"].contains(target.destination) { return true }
-            return false
-        })
-        guard Self.shouldShowKnowledgeProposalRetry(
-            userText: userText, hasProposal: hasProposal
-        ) else { return }
-        messages[messageIndex].content = "未生成可确认的笔记操作方案，请重试。"
-        // ChatMessageStreamView renders degraded messages with DegradedCardView,
-        // whose retry action replays the original user message.
-        messages[messageIndex].degraded = true
-    }
-
     private func knowledgeWorkspaceContext(
         base: ClientSessionContextDTO?,
         request: InFlightRequest,
@@ -2040,9 +2024,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                                 outputMessageId: outputId
                             )
                         }
-                        markMissingKnowledgeProposalIfNeeded(
-                            userText: req.text, messageIndex: idx
-                        )
+                        // PCM completion/error events own the result. Words in the
+                        // prompt (including negated write requests) cannot invalidate it.
                         messages[idx].pending = false
                         messages[idx].isStreaming = false
                         messages[idx].settleReasoningForCompletion()
@@ -2092,7 +2075,7 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     /// SSE 结束后的唯一恢复路径：completed 回填；running 追踪；不确定状态保留恢复入口。
     @discardableResult
-    private func recoverAfterStreamEnd(_ req: InFlightRequest, outputMessageId: String) async -> Bool {
+    func recoverAfterStreamEnd(_ req: InFlightRequest, outputMessageId: String) async -> Bool {
         if sessionManager.activeSessionID() == req.sessionId,
            let index = messages.firstIndex(where: { $0.id == outputMessageId }),
            let runId = Self.durableRunId(for: messages[index]) {
@@ -2117,6 +2100,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     sessionId: req.sessionId, outputMessageId: outputMessageId
                 )
             )
+            guard status.belongsTo(requestId: req.id, runId: nil) else {
+                applyTerminalStatus("not_found", outputMessageId: outputMessageId)
+                return true
+            }
             if status.status == "completed" {
                 guard await checkpointStatusEvents(
                     status, sessionId: req.sessionId,
@@ -2129,12 +2116,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                         reasoningSteps: status.reasoning,
                         outputMessageId: outputMessageId
                     )
-                    if let index = messages.firstIndex(where: { $0.id == outputMessageId }) {
-                        markMissingKnowledgeProposalIfNeeded(
-                            userText: req.text, messageIndex: index
-                        )
-                        commitSession()
-                    }
+                    commitSession()
                 } else {
                     sessionManager.applyCompletedStatus(
                         sessionId: req.sessionId,

@@ -148,6 +148,7 @@ public struct ChatInputBar: View {
                 .buttonStyle(SoftButtonStyle())
                 .accessibilityLabel(isGenerating ? "加入消息队列" : "发送消息")
                 .accessibilityIdentifier("selected-book-chat-send")
+                .keyboardShortcut(.return, modifiers: .command)
             }
         }
         .padding(.horizontal, AppTheme.Metrics.contentGutter)

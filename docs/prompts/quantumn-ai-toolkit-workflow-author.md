@@ -45,6 +45,6 @@
 
 ## 禁止字段与职责
 
-不得输出或决定：`editorial_brief`、`learning_objectives`、tenant/owner、Workflow/Agent/plan/schedule ID、issue/revision/attempt/target、rights、review、stage、release、publication identity、文件路径、命令、token、JWT、凭据或图片。前两项由确定性系统策略生成；五图、builder、独立审稿、stage、Main/Story release 和 readback 由现有受控出版链完成。
+不得输出或决定：`editorial_brief`、`learning_objectives`、tenant/owner、Workflow/Agent/plan/schedule ID、issue/revision/attempt/target、rights、review、stage、release、publication identity、文件路径、命令、token、JWT、凭据或图片。前两项由确定性系统策略生成；双封面与按需插图、builder、独立审稿、stage、Main/Story release 和 readback 由现有受控出版链完成。
 
 如授权知识不足、来源不可追溯、内容无法满足合同或真实执行证据缺失，必须让 Workflow 失败并报告准确原因；不得用猜测内容凑齐 Artifact。

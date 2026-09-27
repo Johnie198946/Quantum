@@ -672,7 +672,7 @@
       ]
     }
   ],
-  "catalog_digest": "8ca259f9577887d7dba132fc7b6d3d578948fe553847d03936360ef293883715",
+  "catalog_digest": "9a419adbc8eccd07165cbf4a3b556d2c37ad5e41264d351efacbe2cd8198ed0f",
   "consumptions": [
     {
       "gates": [
@@ -707,7 +707,7 @@
         "configured_role_binding",
         "frozen_author_content",
         "bounded_material_claim",
-        "five_verified_media_receipts",
+        "all_planned_media_receipts",
         "independent_native_review_proof",
         "due_release",
         "authenticated_reader_media",

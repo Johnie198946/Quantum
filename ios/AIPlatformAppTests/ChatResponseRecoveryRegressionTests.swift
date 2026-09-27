@@ -3,6 +3,57 @@ import XCTest
 
 @MainActor
 final class ChatResponseRecoveryRegressionTests: XCTestCase {
+    func testReadOnlyAuditSurvivesStreamRecoveryWithoutWriteProposal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let sessionID = manager.createSession()
+        let prompt = "Scan all notes. Do not create, modify, merge, archive or delete notes."
+        manager.setMessages([
+            ChatMessage(sessionId: sessionID, role: .user, content: prompt),
+            ChatMessage(id: "audit", sessionId: sessionID, role: .assistant, content: "", pending: true)
+        ], for: sessionID)
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager,
+            hasAuthenticatedSession: { true },
+            fetchChatStatus: { _, _, _, _ in
+                let decoder = JSONDecoder()
+                return try decoder.decode(ChatStatusDTO.self, from: Data(
+                    #"{"requestId":"audit","status":"completed","answer":"133 notes, 36 groups; no notes changed."}"#.utf8
+                ))
+            }
+        )
+        _ = await coordinator.recoverAfterStreamEnd(
+            InFlightRequest(id: "audit", sessionId: sessionID, text: prompt, agentId: nil),
+            outputMessageId: "audit"
+        )
+        XCTAssertEqual(coordinator.messages[1].content, "133 notes, 36 groups; no notes changed.")
+        XCTAssertFalse(coordinator.messages[1].degraded)
+        await manager.flushPendingPersistence()
+        XCTAssertEqual(manager.storedMessage(id: "audit", sessionId: sessionID)?.content,
+                       "133 notes, 36 groups; no notes changed.")
+    }
+
+    func testStatusRecoveryRejectsPreviousRequestAndUnidentifiedLegacyAnswer() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let previous = try decoder.decode(ChatStatusDTO.self, from: Data(
+            #"{"status":"completed","request_id":"old","run_id":"old-run","answer":"Old merge answer"}"#.utf8
+        ))
+        XCTAssertFalse(previous.belongsTo(requestId: "new-audit", runId: nil))
+        XCTAssertFalse(previous.belongsTo(requestId: "old", runId: "new-run"))
+        XCTAssertTrue(previous.belongsTo(requestId: "old", runId: nil))
+        XCTAssertTrue(previous.belongsTo(requestId: "continuation", runId: "old-run"))
+        let legacy = try decoder.decode(ChatStatusDTO.self, from: Data(
+            #"{"status":"completed","answer":"Unidentified answer"}"#.utf8
+        ))
+        XCTAssertFalse(legacy.belongsTo(requestId: "new-audit", runId: nil))
+    }
+
     func testRunningBeforeFirstDeltaDoesNotLookEmpty() {
         let message = ChatMessage(
             id: "running", sessionId: "session", role: .assistant,
@@ -377,7 +428,7 @@ final class ChatResponseRecoveryRegressionTests: XCTestCase {
                         payload: Data(#"{"structured_payload":{"value":"ok"},"receipt":{"receipt_id":"acr-before-frame","artifact_id":"artifact-1","artifact_content_hash":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","schema_version":"json-schema-draft-2020-12-restricted","consumed_at":"2026-09-14T08:00:00Z","status":"completed"}}"#.utf8),
                         renderer: "artifact_consumption", rendererVersion: 1,
                         runId: "run-recovered", eventSequence: 7
-                    )] : []
+                    )] : [], requestId: "output"
                 )
             },
             fetchAnswerBlocks: { runId, cursor, _ in

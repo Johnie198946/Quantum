@@ -310,7 +310,7 @@ public struct ReadingSectionContent: Equatable {
     public let learningObjective: String?
     public let blocks: [MarkdownBlock]
 
-    public static func parse(_ markdown: String) -> Self {
+    public static func parse(_ markdown: String, cacheKey: String = "") -> Self {
         let source = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
         let seriesLabels = ["**连载：**", "**连载:**", "连载：", "连载:", "**Series:**", "Series:"]
         let objectiveLabels = [
@@ -320,7 +320,7 @@ public struct ReadingSectionContent: Equatable {
         guard let objectiveRange = objectiveLabels.compactMap({ source.range(of: $0) }).min(by: {
             $0.lowerBound < $1.lowerBound
         }) else {
-            return Self(series: nil, learningObjective: nil, blocks: MarkdownBlockParser.shared.parse(source))
+            return Self(series: nil, learningObjective: nil, blocks: MarkdownBlockParser.shared.parse(source, messageId: cacheKey))
         }
 
         var seriesText = String(source[..<objectiveRange.lowerBound])
@@ -348,7 +348,7 @@ public struct ReadingSectionContent: Equatable {
         return Self(
             series: seriesText.isEmpty ? nil : seriesText,
             learningObjective: objective.isEmpty ? nil : objective,
-            blocks: MarkdownBlockParser.shared.parse(body)
+            blocks: MarkdownBlockParser.shared.parse(body, messageId: cacheKey)
         )
     }
 }

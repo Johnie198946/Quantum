@@ -203,7 +203,12 @@ def _read_json(path: Path) -> dict:
 
 def _material_hash(item: dict) -> str:
     hashes: list[tuple[str, object]] = [("body", item.get("body_sha256"))]
-    hashes.extend((role, item.get(f"{role}_sha256")) for role in MEDIA_ROLES)
+    roles = item.get("media_roles", list(MEDIA_ROLES))
+    allowed = {"shelf_cover", "reader_cover", *(f"illustration_{i:02d}" for i in range(1, 13))}
+    if (not isinstance(roles, list) or any(not isinstance(role, str) for role in roles)
+            or len(roles) != len(set(roles)) or not {"shelf_cover", "reader_cover"} <= set(roles) <= allowed):
+        raise ValueError("invalid planned media roles")
+    hashes.extend((role, item.get(f"{role}_sha256")) for role in roles)
     for group in EVIDENCE_GROUPS:
         entries = item.get(group)
         if not isinstance(entries, list):

@@ -35,6 +35,7 @@ from backend.services.knowledge_catalog import (
 from backend.services.knowledge_publication_store import (
     PUBLICATION_CATEGORY,
     PublicationStore,
+    publication_media_spec,
     reader_sections,
 )
 from backend.services.owner_private_bookshelf import (
@@ -401,6 +402,13 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             reader_sections(item["body"], image_assets=image_assets)
             if item.get("artifact_valid") else []
         )
+        paragraph_sections = {}
+        if item["bundle"].get("illustration_plan") is not None:
+            for section in sections:
+                tokens = MarkdownIt().parse(section["markdown"])
+                paragraph_sections.update({token.content.strip(): section["id"]
+                    for previous, token in zip(tokens, tokens[1:])
+                    if token.type == "inline" and previous.type == "paragraph_open" and previous.level == 0})
         body = ({
             "book_id": book_id, "title": book["title"], "author": book["author"],
             "content_version": item["content_hash"], "edition": item["edition"],
@@ -415,6 +423,14 @@ async def _available_book_body(payload: dict[str, Any], book_id: str) -> tuple[d
             **({"reader_cover_url": f"/api/v1/knowledge-publications/{book_id}/covers/reader_cover"}
                if any(asset.get("role") == "reader_cover" for asset in item["bundle"].get("assets", [])) else {}),
             "illustration_urls": book.get("illustration_urls", []),
+            **({"illustrations": [
+                {"id": image["role"], "url": f"/api/v1/knowledge-publications/{book_id}/media/{image['role']}",
+                 "section_id": paragraph_sections[image["after_paragraph"]], "after_paragraph": image["after_paragraph"],
+                 "caption": image["caption"], "alt": image["alt"], "width": 1600, "height": 900,
+                 "content_version": item["content_hash"]}
+                for image in item["bundle"]["illustration_plan"]["illustrations"]
+                if image["after_paragraph"] in paragraph_sections
+            ]} if item["bundle"].get("illustration_plan") is not None else {}),
         } if sections else None)
     else:
         source_path = str(book["source_path"])
@@ -579,7 +595,7 @@ async def knowledge_publication_asset(publication_id: str, digest: str, payload=
 
 @router.get("/knowledge-publications/{publication_id}/media/{role}")
 async def knowledge_publication_media(publication_id: str, role: str, payload=Depends(require_auth)):
-    if role not in {f"illustration_{index:02d}" for index in range(1, 4)}:
+    if not role.startswith("illustration_") or not publication_media_spec(role):
         raise HTTPException(status_code=422, detail="unknown publication media role")
     if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
         raise HTTPException(status_code=422, detail="invalid publication_id")
