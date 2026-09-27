@@ -1,17 +1,17 @@
 # 图片处理工作流交付记录
 
 task_id: image-workflow-20260927
-status: TESTED
-branch: main
-worktree: /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
-head/local_commit: shared checkout 21250c7b；release parent d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；提交SHA见后续发布证据
-remote_sha: 图片功能未推送；共享 origin/main 已被其他任务推进，发布前必须协调同步并核验
-server_before: 本任务尚未建立部署前快照
-server_after: 本任务未部署
-health_check: 未执行生产验收
-functional_check: 干净整合版后端172/旅行35/Swift195通过；模拟器完整UI1通过；物理iPhone PNG/JPG集成各1通过；真机全UI点击未完成
-rollback_point: 尚未部署，部署前必须建立
-remaining_risks: 真机全UI点击和图库选择器未完成；生产验收待部署；TestFlight由协调任务唯一上传
+status: PUSHED（运行代码）；Build72版本元数据本地已提交、归档中
+branch: codex/knowledge-ui-refresh-20260927（联合候选；远端发布目标main）
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/knowledge-ui-refresh-20260927
+head/local_commit: e52d8a9f21bf33e56c2ef35652d071f656b0028b；已验运行代码543d328179ad40303bf1b02bd13220a46ec04ad7
+remote_sha: 7b65187aac2cf34a6eda7a4265562e42507b7495；git ls-remote origin refs/heads/main核对一致
+server_before: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7（尚未执行本轮部署前快照）
+server_after: 本轮图片联合候选尚未部署
+health_check: 本轮生产图片检查尚未执行
+functional_check: 543真机完整UI通过，PhotosPicker选图有用户协助；doc上传/Chat确认/本机处理/审核/预览/JPEG分享；1200x675、HTTP200、下载hash一致
+rollback_point: 本轮尚未部署，部署前必须建立
+remaining_risks: 生产图片验收待部署；联合笔记语义/耗时复测待额度确认；TestFlight仍未上传。以下旧测试叙述为历史过程，当前状态以上述最终真机证据为准。
 
 ## 最终架构与复用
 

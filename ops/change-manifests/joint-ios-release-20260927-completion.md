@@ -1,7 +1,7 @@
 # 联合 iOS 发布验收
 
 task_id: joint-ios-release-20260927
-status: COMMITTED（运行代码已提交，尚未推送此联合候选）
+status: PUSHED（运行代码7b65187a已核远端；Build72归档完成，发布记录待随本次推送）
 
 ## 范围与证据
 
@@ -36,3 +36,9 @@ rollback_point: 本轮未建立，部署前建立；现有生产回滚见chat-tr
 ## 联合归档准备
 
 7b65187aac2cf34a6eda7a4265562e42507b7495已推origin/main并独立ls-remote一致。运行代码仍543。统一构建号72（71曾用于本地验收，70旧归档不分发），仅更新project.yml/pbxproj两处版本定义；Apple可用性尚待validate。设备已恢复生产70并交出版新刊UI验收。后端仍d228。
+
+## Build72归档结果
+
+归档source=e52d8a9f21bf33e56c2ef35652d071f656b0028b，路径/private/tmp/Quantumn-1.0.3-72-e52d8a9f.xcarchive，Release ARCHIVE SUCCEEDED。版本1.0.3(72)，194个源文件与提交逐字节一致。codesign沙箱初次返回CSSMERR_TP_NOT_TRUSTED，在系统信任访问环境独立重试exit0通过。证据/private/tmp/note72-artifact-verification.json与note72-final-archive.log。Apple validate尚未执行，未上传。
+
+图片manifest顶部已同步当前已推/真机UI通过状态（明确用户协助选图），不再让旧历史状态覆盖最终结果。本次后续文档提交与e52运行代码完全一致。
