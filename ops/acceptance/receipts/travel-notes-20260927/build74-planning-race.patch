@@ -1,0 +1,44 @@
+diff --git a/backend/api/workflows.py b/backend/api/workflows.py
+index 50e896a6..b491be33 100644
+--- a/backend/api/workflows.py
++++ b/backend/api/workflows.py
+@@ -773,6 +773,7 @@ async def _create_workflow(
+     from backend.services.workflow_planner import build_plan
+     async with SessionLocal() as db:
+         workflow = await owned_workflow(db, workflow_id, payload)
++        await db.refresh(workflow, with_for_update=True)
+         if not workflow.active_plan_id:
+             plan = await build_plan(db, workflow)
+             if plan.validation_errors:
+@@ -964,8 +965,8 @@ async def _create_workflow_draft(
+             content=description,
+         )
+         if body.output_kind == "image":
+-            clarification.phase = "planning"
+-            row.status = "planning"
++            # The caller builds the deterministic plan synchronously; publishing
++            # "planning" here would enqueue another builder in the durable worker.
+             await db.commit()
+             await db.refresh(row)
+             await db.refresh(clarification)
+diff --git a/tests/test_image_processing.py b/tests/test_image_processing.py
+index ff039520..9af8994f 100644
+--- a/tests/test_image_processing.py
++++ b/tests/test_image_processing.py
+@@ -34,6 +34,16 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
+     stream = io.BytesIO()
+     image.save(stream, format="PNG")
+     original = stream.getvalue()
++    from backend.services import workflow_planner, workflow_planning
++    original_build_plan = workflow_planner.build_plan
++
++    async def build_without_background_race(db, workflow, **kwargs):
++        # Run the worker's orphan scan after draft commit, before API planning.
++        async with SessionLocal() as worker_db:
++            assert await workflow_planning.backfill_orphaned_planning_jobs(worker_db) == 0
++        return await original_build_plan(db, workflow, **kwargs)
++
++    monkeypatch.setattr(workflow_planner, "build_plan", build_without_background_race)
+     actor = {"tenant_key": "image-tenant", "user_id": "image-user", "sub": "image-user"}
+     app = FastAPI()
+     app.include_router(router)

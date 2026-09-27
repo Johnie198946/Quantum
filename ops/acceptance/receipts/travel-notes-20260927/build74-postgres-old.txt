@@ -1,0 +1,1 @@
+{"mode": "old", "database": "travel_old", "postgres_port": 55474, "orphan_jobs": 1, "worker_status": "completed", "error_type": "IntegrityError", "plan_constraint_conflict": true, "plan_count": 1, "job_count": 1}

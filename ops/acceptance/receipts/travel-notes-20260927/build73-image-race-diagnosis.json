@@ -1,0 +1,15 @@
+{
+  "observed_error": "asyncpg.exceptions.UniqueViolationError: duplicate key value violates unique constraint uq_workflow_plan_version",
+  "http": "POST /api/v1/capabilities/invoke -> 500",
+  "stack": [
+    "backend/api/capabilities.py:132",
+    "backend/services/capability_catalog.py:294,336",
+    "backend/capability_handlers.py:1162",
+    "backend/api/workflows.py:777",
+    "backend/services/workflow_planner.py:525,501"
+  ],
+  "scope": "first invocation with new UUID idempotency key, synthetic owner only; no replay/cancel yet",
+  "evidence": "read-only Postgres shows planning job completed version 1 while API flush attempted same unique version",
+  "production_mutation": "none during diagnosis",
+  "retry_check": "not reached"
+}

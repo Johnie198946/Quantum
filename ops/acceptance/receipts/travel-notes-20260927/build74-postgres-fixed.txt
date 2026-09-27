@@ -1,0 +1,1 @@
+{"mode": "fixed", "database": "travel_fixed", "postgres_port": 55474, "orphan_jobs": 0, "full_image_path": "passed", "plan_count": 1, "job_count": 0}

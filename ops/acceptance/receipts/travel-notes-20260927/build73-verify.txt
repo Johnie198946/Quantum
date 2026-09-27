@@ -1,0 +1,22 @@
+Original: /tmp/travel-build73-release/verify.log
+SHA256: 5cb3b78d70acd5b3aa8eea39eeb218d6c4fba1bd2e93ce2b4f99751bd3779ca4
+
+release /opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM sha c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf
+{"service": "api", "health": "healthy", "revision": "c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "workflow-worker", "health": "healthy", "revision": "c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "planning-worker", "health": "healthy", "revision": "c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "agent-evaluation-worker", "health": "healthy", "revision": "c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "frontend", "health": "healthy", "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515", "quota": []}
+{"service": "taskboard", "health": "healthy", "revision": null, "quota": []}
+{"service": "postgres", "health": "healthy", "revision": null, "quota": []}
+{"service": "redis", "health": "healthy", "revision": null, "quota": []}
+hermes-bridge.service active quota 12000000
+hermes-chat-worker.service active quota 12000000
+health http://127.0.0.1:8000/ready 200 {"status":"ready","version":"0.8.0"}
+health http://172.18.0.1:9118/health 200 {"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":98,"workflow_runs":79,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+health https://t-react.com/health 200 {"status":"ok","version":"0.8.0"}
+backup_hash database-before a68126fb230d1f48794ed2dd49fa131888450ff23a487e304e9a7457fde89648
+backup_hash publication-before 863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209
+backup_hash publication-files-before 2fc49fcb96ae4fbcb8a721660dcce87022ecc0a4592370148b8da7640ce2d394
+publication {"count": 1, "state": "published", "release_at": "2026-09-27T12:00:00+00:00", "actual_release_at": "2026-09-27T12:00:32.674400+00:00", "body_sha256": "076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f", "plan_keys": ["body_sha256", "illustrations", "reason"]}
+joint_verification=passed

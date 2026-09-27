@@ -1,18 +1,18 @@
 # Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: DEPLOYED（共同后端b9发布及版本/健康/功能检查通过；整体笔记语义、私人资料和性能门槛未全部完成）
+- status: DEPLOYED（Build73后端c533健康/出版保护通过；图片直接执行生产500，整体功能验收未完成）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: b9e4d128dd5839bae89cff39790fb8240297e23e（共同发布源码；本任务文档提交见git log）
-- remote_sha: origin refs/heads/main=b9e4d128dd5839bae89cff39790fb8240297e23e；发布前后git ls-remote独立核对一致
-- server_before: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7
-- server_after: b9e4d128dd5839bae89cff39790fb8240297e23e；/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT
-- health_check: 8容器healthy；4个Python运行镜像revision=b9；Bridge/ChatWorker active；ready/Bridge/public health均200；6进程配额12000000保持
-- functional_check: 图片上传下载/422/跨用户404/doc图片工作流/PCM确认通过；CSV/JSON/TXT/MD真实API导入原件文本私有笔记及跨用户404通过；已发布新刊正文/bundle/5媒体前后一致
-- rollback_point: /opt/releases/ai-lab-platform-d228c06d6865.CbxC2W；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-b9e4d128dd58（PG、SQLite、稿件文件、env、8旧镜像，hash和integrity通过）
+- head/local_commit: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf（共同发布源码；本任务文档提交见git log）
+- remote_sha: origin refs/heads/main=c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；部署前独立git ls-remote核对
+- server_before: b9e4d128dd5839bae89cff39790fb8240297e23e
+- server_after: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；/opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM
+- health_check: 8healthy、4Python运行revision=c533、Hermes两服务active、3 health200；6进程12000000配额不变
+- functional_check: 出版before/after全等；图片/doc原件前置断言通过，但media.process直接invoke返回500，后续重放/取消重试与四格式步骤未执行，不计通过
+- rollback_point: /opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-c5331384d0f8，备份哈希和SQLite完整性通过
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
-- remaining_risks: 笔记完整语义复测仍待额度答复；真实私人收藏/社交资料未输入；部分时延目标和完整端上性能矩阵未通过；Build72据Apple日志已上传，但整体验收未完成、可安装状态未由本任务核验；出版10cron已独立核验pin b9并恢复，active=[]
+- remaining_risks: 图片API/后台并行建计划导致生产500，负责人修复中；取消重试尚未验证；客户端42MP照片超过24MP上限，准确提示修复由Build74整合；笔记语义、私人资料、部分性能仍未完成；出版10cron已独立恢复；Build73协调方报告已上传PROCESSING
 
 本节与文末记录为当前状态；中间各节保留当时发现、失败与授权历史，不代表当前仍未部署。
 
@@ -384,3 +384,25 @@
 收据build72-deploy.txt、build72-verify.txt、build72-functional.txt、build72-publication-before/after.json以及校验脚本。没有提交图片fixture、数据库、环境或凭据。
 
 出版最终独立回执：server/API b9 healthy，读者API10章、3插图及5媒体200/hash通过；10cron和wrapper pin b9恢复原enabled，prompt/schedule/model不变，三profile active=[]。保护窗口已关闭，未留下临时暂停。
+
+## Build73部署、生产失败与调度恢复
+
+共同main c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf已独立核验；源码包SHA256=affe8b3d322f2eece818ef4d86749d5d01b9a02682d1c4a25783b4ea7eb21b70、71,396,091字节，3依赖锁与b9一致。用户根任务授权发布，协调方与出版明确10cron暂停/3profile active=[]后放行，既有完整wrapper exit0。版本、8容器健康、6进程12m和3health200独立验证通过。没有修改额度或账本。
+
+新回滚点chat-travel-pcm-c5331384d0f8：PG a68126fb230d1f48794ed2dd49fa131888450ff23a487e304e9a7457fde89648；publication SQLite 863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209（integrity=ok）；出版文件tar 2fc49fcb96ae4fbcb8a721660dcce87022ecc0a4592370148b8da7640ce2d394。完整旧镜像/env/release备份保留。
+
+已刊前后快照完整相等：唯一published、actual_release_at2026-09-27T12:00:32.674400+00:00、正文076cbb...c9f、bundle和5媒体真实SHA、3插图位置保持。出版独立读者API验证并pin c533恢复原10cron，原参数不变，保护窗口关闭。
+
+生产图片功能未通过：隔离合成用户image-release-acceptance-c5331384d0f8的第一次media.process直接invoke返回500；此前图片上传/下载/非法图422/跨用户404及doc原件私有笔记断言已走过。唯一键uq_workflow_plan_version冲突出现在API同步build_plan的flush。只读事务精确限定该合成created_by查询发现workflow wf_d18b142dabb2528369f590b92fc386b9已有后台job wfpj_d18b142dabb2528369f5_1 completed，plan wfp_1de977fa32b245e1b530fc68bfd29ba7/version1，创建时间2026-09-27 14:57:10.427735+00:00。
+
+代码追踪：image _create_workflow_draft先提交workflow.status和clarification.phase=planning，后台backfill_orphaned_planning_jobs据此补job；API与job的image分支都build_plan，生产Postgres暴露并发版本竞争。错误不能当作synthetic session未注册或仅测试脚本问题。精确栈、无敏感内容的请求合同、只读行证据已交根协调方和图片唯一负责人；旅行未改共享代码、不重跑负载、不自动回滚。取消→重试、新attempt/action、旧回执拒绝等步骤尚未到达；四格式导入也不能拿Build72结果冒充本轮已测。
+
+图片真机另有某照片上传前失败（尚无documents POST），由图片负责人查格式/大小边界；不与服务端500混为一谈。Build73据协调方已上传Apple并PROCESSING，本任务未上传；iOS203/联合后端196本地通过不能替代生产或真机验收。整体保持DEPLOYED，不报VERIFIED。
+
+### Build74候选真实PostgreSQL竞争回归（尚未部署）
+
+复用c533既有tests/test_image_processing.py的generated/chat完整路径，只在临时源码替换候选workflows.py；没有修改本任务运行代码或共享main。PostgreSQL15独立cluster `/tmp/travel-build74-pg`、仅127.0.0.1:55474，独立travel_old/travel_fixed库，合成image-user；不连接生产数据库或worker。调度钩子在API读取计划版本后调用真实backfill_orphaned_planning_jobs、claim_next、process_job，使用独立Session使worker先完成。
+
+旧c533：orphan_jobs=1、worker completed、API IntegrityError/uq_workflow_plan_version、plan_count=1/job_count=1，预期失败稳定复现。候选：orphan_jobs=0、完整图片路径passed、plan_count=1/job_count=0。覆盖invoke/replay、CANCELLED/FAILED重试、新attempt和instruction、旧成功回执409、Bridge不可用503、成品下载与跨用户404。两探针exit0；原生图片产物是既有fixture，并非本探针重新验证iPhone处理。日志与可复现探针保存在receipts/build74-postgres-*；候选patch亦存档。
+
+Build74候选当前仅TESTED，生产仍c533/DEPLOYED，等待协调方最终SHA、出版短窗口、部署和生产功能复验。已将对照证据同步授权的根发布任务。

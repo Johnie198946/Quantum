@@ -1,0 +1,9 @@
+Original: /tmp/travel-build73-release/functional.log
+SHA256: f8df59aaef5f010af8c487b58ffe486658d73176fc71c6178be6f984cde92979
+
+Traceback (most recent call last):
+  File "<stdin>", line 30, in <module>
+  File "/usr/local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '500 Internal Server Error' for url 'http://127.0.0.1:8000/api/v1/capabilities/invoke'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
