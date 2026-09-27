@@ -455,3 +455,70 @@ def test_first_workflow_registers_session_without_cross_owner_claim(tmp_path, mo
         assert other.status_code == 409, other.text
     finally:
         harness.tearDown()
+
+
+@pytest.mark.parametrize("scope", [[], ["travel-guides"]])
+@pytest.mark.parametrize("network", [False, True])
+def test_research_queries_only_selected_knowledge_without_changing_network_authority(monkeypatch, scope, network):
+    from scripts import hermes_bridge as bridge
+    runtime = bridge.workflow_runtime
+    persistence = bridge.persistence
+    artifacts = bridge.workflow_artifacts
+    plan = build_travel_plan(SimpleNamespace(requirements_snapshot={"scenario_id": "travel-planning"},
+        title="Travel", description="Tokyo"), plan_id="test", knowledge_scope=scope)
+    plan["nodes"] = plan["nodes"][:1]
+    plan["edges"] = []
+    run = {"plan": plan, "goal": "Tokyo", "deliverable": "evidence", "knowledge_scope": scope,
+           "knowledge_capability": "signed", "allow_network": network, "max_tokens": 10000, "usage": {},
+           "agent_config": {"id": "main_agent", "knowledge_scope": scope, "allow_network": network,
+                            "allowed_tools": ["web_search", "browser_navigate"]}}
+    monkeypatch.setattr(persistence, "_workflow_runs", {"test": run})
+    monkeypatch.setattr(persistence, "_workflow_sandbox", lambda *_: None)
+    monkeypatch.setattr(persistence, "_workflow_event", lambda *_a, **_k: None)
+    monkeypatch.setattr(persistence, "_save_workflow_runs", lambda: None)
+    searches, models = [], []
+    def search(*args, **kwargs):
+        searches.append(kwargs["category_scope"])
+        return []
+    def model(*args, **kwargs):
+        models.append(True)
+        return "Tokyo Station; source https://www.google.com/maps/", None, {}
+    monkeypatch.setattr(persistence, "_knowledge_gateway_search", search)
+    monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", model)
+    runtime._workflow_run_sync("test")
+    assert run["status"] == "awaiting_review", run.get("error")
+    assert searches == ([scope] if scope else [])
+    assert bool(models) == network
+
+
+@pytest.mark.parametrize("scenario,kind,expected", [
+    ("travel-planning", "KNOWLEDGE_RETRIEVAL", 12),
+    ("other", "KNOWLEDGE_RETRIEVAL", 6),
+    ("travel-planning", "LLM_INFERENCE", 6),
+])
+def test_browser_iteration_budget_is_only_expanded_for_travel_research(monkeypatch, tmp_path, scenario, kind, expected):
+    import sys
+    from scripts import hermes_bridge as bridge
+    from scripts.hermes_bridge_runtime import workflow_artifacts as module
+    class Constructed(Exception):
+        pass
+    def create(**kwargs):
+        assert kwargs["max_iterations"] == expected
+        raise Constructed()
+    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=create))
+    monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda *_: None))
+    monkeypatch.setattr(bridge.contracts, "WORKFLOW_NODE_MAX_ITERATIONS", 6)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": "test"})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda *_: {})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda *_: None)
+    monkeypatch.setattr(bridge.agent_config, "_cache_request_overrides", lambda *_: {})
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda *_: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(bridge.knowledge, "_ensure_tenant_skill_tool_registered", lambda: None)
+    monkeypatch.setattr(module, "persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr(bridge.memory, "_sandbox_hermes_home", lambda *_: tmp_path)
+    monkeypatch.setattr(module, "_load_workflow_design_skills", lambda *_: ("", []))
+    with pytest.raises(Constructed):
+        module._run_workflow_node_in_process("query", {"node_type": kind,
+            "parameters": {"scenario_id": scenario, "max_tokens": 1000}},
+            sandbox=SimpleNamespace(root=tmp_path, hermes_home=tmp_path),
+            agent_config=bridge.contracts.TrustedAgentConfig(id="main_agent"))

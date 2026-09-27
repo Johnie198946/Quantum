@@ -362,6 +362,12 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         "max_tokens": plan.max_tokens,
         "agent_config": agent_config,
     }
+    source_image = (workflow.requirements_snapshot or {}).get("source_image")
+    if source_image:
+        from backend.services.image_processing import workflow_image_source
+        verified = workflow_image_source(execution.tenant_key, str(workflow.created_by), source_image["artifact_id"])
+        if verified["content_hash"] != source_image["content_hash"]:
+            raise ExecutionAuthorityError("workflow image source changed")
     source = ((workflow.requirements_snapshot or {}).get("source_document") if workflow else None)
     if source:
         from backend.services.document_sources import document_text
@@ -576,6 +582,8 @@ def artifact_storage_contract(
     artifact: dict[str, Any], *, event_id: str, node: WorkflowNodeRun
 ) -> tuple[str, dict[str, Any]]:
     contracts = {
+        "image": ("png", "image/png"),
+        "image_edit": ("json", "application/json"),
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         "travel_plan_v2": ("json", "application/json"),
@@ -596,6 +604,11 @@ def artifact_storage_contract(
     if render_type not in contracts:
         render_type = {"md": "markdown", "docx": "word", "csv": "data", "json": "data", "htm": "html", "html": "html"}.get(extension_hint, "markdown")
     extension, mime_type = contracts[render_type]
+    if render_type == "image":
+        if extension_hint not in {"png", "jpg", "webp"}:
+            raise ValueError("unsupported image format")
+        extension = extension_hint
+        mime_type = "image/jpeg" if extension == "jpg" else f"image/{extension}"
     if render_type == "data" and extension_hint == "csv":
         extension, mime_type = "csv", "text/csv"
     metadata = {
@@ -728,9 +741,13 @@ async def project_event(
             execution.route_reason = str(route["reason"])[:500]
         _rollup_usage(execution, node_rows)
     elif event_type == "run_completed":
-        execution.status = "awaiting_review"
-        execution.progress = 100
-        execution.finished_at = utcnow()
+        workflow = await db.get(WorkflowDefinition, execution.workflow_id)
+        image_task = (workflow.requirements_snapshot or {}).get("output_kind") == "image"
+        execution.status = "awaiting_approval" if image_task else "awaiting_review"
+        execution.progress = 50 if image_task else 100
+        if image_task:
+            message = "参数已就绪，等待 iPhone 处理图片"
+        execution.finished_at = None if image_task else utcnow()
         _set_usage(execution, event.get("usage") or {})
     elif event_type == "run_awaiting_approval":
         execution.status = "awaiting_approval"

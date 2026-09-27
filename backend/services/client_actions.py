@@ -16,6 +16,7 @@ from backend.db import SessionLocal
 from backend.models.capability_gateway import ClientActionInvocation
 
 _ACTIONS = {
+    "media.process": "image_process",
     "conversation.lifecycle": "conversation_lifecycle",
     "file.pick": "file_picker",
     "photo.capture": "camera_capture",
@@ -129,6 +130,9 @@ async def record_client_action_receipt(
             if row.result_digest != result_digest:
                 raise HTTPException(status_code=409, detail={"code": "client_action_receipt_conflict"})
             return _render(row)
+        if row.capability_id == "media.process":
+            from backend.services.image_processing import finish_device_image
+            await finish_device_image(db, row, terminal, result_metadata)
         row.state = terminal
         row.result_metadata = result_metadata
         row.result_digest = result_digest

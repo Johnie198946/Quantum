@@ -1,0 +1,12 @@
+Result: /private/tmp/reading-joint-tests.xcresult
+Simulator: C284B362-5DB0-498E-A26C-BF0A128D566C
+Test Case '-[AIPlatformAppUITests.ProductionBookshelfUITests testBookListReadingPreservesUnsavedDraft]' passed (24.430 seconds).
+Test Case '-[AIPlatformAppUITests.ProductionBookshelfUITests testBookshelfEmptyScopesAndRealListEditor]' passed (15.336 seconds).
+	 Executed 2 tests, with 0 failures (0 unexpected) in 39.766 (39.770) seconds
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testBookshelfDisclosureSelectionAndDraftPreservation]' passed (18.023 seconds).
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testLargeTextAndLandscape]' passed (12.898 seconds).
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testNotesGridSearchPinAndDeleteConfirmation]' passed (12.133 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 43.054 (43.056) seconds
+	 Executed 5 tests, with 0 failures (0 unexpected) in 82.820 (82.827) seconds
+	 Executed 5 tests, with 0 failures (0 unexpected) in 82.820 (82.830) seconds
+** TEST SUCCEEDED **

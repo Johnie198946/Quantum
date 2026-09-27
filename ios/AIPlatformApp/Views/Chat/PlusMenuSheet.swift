@@ -3,7 +3,7 @@
 //  AIPlatformApp
 //
 //  对话页「+」号四入口扩展面板：
-//   1. 📸 照片图库（PhotosPicker，客户端 2048px 等比降采样 JPEG 0.85）
+//   1. 📸 照片图库（PhotosPicker，保留原图与透明度）
 //   2. 📄 文档文件（fileImporter，读取 Data 前 resourceValues(.fileSizeKey) 25 MB 前置预检）
 //   3. 💬 微信导入（WeChatLinkValidator 校验 mp.weixin.qq.com 白名单 + 非法 Toast）
 //   4. 🧠 引用知识（选取已订阅知识条目）
@@ -50,6 +50,17 @@ public struct PlusMenuSheet: View {
                 ScrollView {
                     VStack(spacing: AppTheme.Spacing.md) {
                         photosEntry
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("-imageWorkflowAcceptance") {
+                            Button("上传验收示例照片") {
+                                if let data = UIImage(named: "travel_kyoto_street")?.pngData(),
+                                   let original = ImageEditSupport.uploadData(data) {
+                                    onPhotoPicked(original)
+                                    dismiss()
+                                }
+                            }.accessibilityIdentifier("image-acceptance-upload")
+                        }
+                        #endif
                         documentEntry
                         wechatEntry
                         if showWeChatImport {
@@ -75,7 +86,7 @@ public struct PlusMenuSheet: View {
             }
             .fileImporter(
                 isPresented: $isFileImporterPresented,
-                allowedContentTypes: [.pdf, .image, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx")!, UTType(filenameExtension: "pptx")!],
+                allowedContentTypes: [.pdf, .image, .commaSeparatedText, .json, .plainText, UTType(filenameExtension: "md") ?? .plainText, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx")!, UTType(filenameExtension: "pptx")!],
                 allowsMultipleSelection: false,
                 onCompletion: handleDocumentImport
             )
@@ -97,7 +108,7 @@ public struct PlusMenuSheet: View {
             entryRow(
                 icon: "photo.on.rectangle.angled",
                 title: "照片图库",
-                subtitle: "客户端 2048px 等比降采样 · JPEG 0.85",
+                subtitle: "选一张照片，说说你想怎么改",
                 tint: AppTheme.Colors.quantumCyan
             )
         }
@@ -310,12 +321,12 @@ public struct PlusMenuSheet: View {
                 showToast("照片加载失败", isError: true)
                 return
             }
-            guard let downsampled = InboxFileManager.shared.downsampleImage(data: data) else {
+            guard let original = ImageEditSupport.uploadData(data) else {
                 showToast("图片解码失败", isError: true)
                 return
             }
-            onPhotoPicked(downsampled)
-            showToast("已降采样至 2048px 并导入", isError: false)
+            onPhotoPicked(original)
+            showToast("正在上传图片", isError: false)
             dismiss()
         }
     }

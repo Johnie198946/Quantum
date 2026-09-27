@@ -1310,7 +1310,19 @@ public struct CapabilityProposalCard: View {
                 Text(stateLabel).font(.caption.weight(.semibold))
                     .foregroundColor(AppTheme.Colors.primary)
             }
-            Text(learningTitle ?? proposal.summary).font(.system(size: 16, weight: .semibold))
+            Text(proposal.capabilityId == "media.process" ? "在本机处理图片" : (learningTitle ?? proposal.summary))
+                .font(.system(size: 16, weight: .semibold))
+            if proposal.capabilityId == "media.process" {
+                if proposal.input.hasImageParameters {
+                    Text("\(proposal.input.aspectRatio == "original" ? "保持原比例" : proposal.input.aspectRatio!) · \(proposal.input.format!.uppercased())")
+                    if proposal.input.extractSubject == true { Text("保留选中主体，背景透明") }
+                    Text("原图保留，处理完成后可预览和下载。")
+                        .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                } else {
+                    Text("图片参数未完整保留，请重新发送处理需求。")
+                        .font(.caption).foregroundStyle(.red)
+                }
+            }
             if learningTitle != nil {
                 if let question = proposal.input.questionId {
                     Text("第 \(question.dropFirst()) 题").font(.subheadline)
@@ -1361,6 +1373,7 @@ public struct CapabilityProposalCard: View {
                     Button(proposal.state == .failed ? "重试" : "确认执行", action: onConfirm)
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("capability-confirm-execute")
+                        .disabled(proposal.capabilityId == "media.process" && !proposal.input.hasImageParameters)
                     Button("放弃", action: onDiscard).buttonStyle(.bordered)
                 }
             }

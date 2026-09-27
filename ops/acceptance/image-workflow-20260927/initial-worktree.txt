@@ -1,0 +1,7 @@
+worktree /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+HEAD b696d13bdcef18cc23b1707dc00501ca012ee224
+branch refs/heads/main
+
+worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/codex/travel-notes-20260927

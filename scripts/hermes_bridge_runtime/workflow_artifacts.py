@@ -425,7 +425,9 @@ def _run_workflow_node_in_process(
             provider=runtime.get("provider"),
             api_mode=runtime.get("api_mode"),
             model=cfg_model,
-            max_iterations=_contracts.WORKFLOW_NODE_MAX_ITERATIONS,
+            max_iterations=(12 if node.get("node_type") == "KNOWLEDGE_RETRIEVAL"
+                            and (node.get("parameters") or {}).get("scenario_id") == "travel-planning"
+                            else _contracts.WORKFLOW_NODE_MAX_ITERATIONS),
             max_tokens=max_tokens,
             enabled_toolsets=_workflow_toolsets(node, agent_config),
             quiet_mode=True,
@@ -525,8 +527,9 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "illustration_svg": "illustration_svg",
         "html": "html", "htm": "html", "网页": "html", "网页工具": "html",
     }
-    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html", "travel_plan_v2"} else "markdown")
+    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html", "travel_plan_v2", "image_edit"} else "markdown")
     extension, mime_type = {
+        "image_edit": ("json", "application/json"),
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         "travel_plan_v2": ("json", "application/json"),
@@ -552,6 +555,8 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     if render_type == "travel_plan_v2":
         from backend.services.travel_plan import TRAVEL_INSTRUCTION
         return TRAVEL_INSTRUCTION
+    if render_type == "image_edit":
+        return '只输出图片编辑 JSON：{"format":"png|jpg","aspect_ratio":"original|16:9|9:16|1:1|4:3|3:4","extract_subject":false,"focus_x":0.5,"focus_y":0.5}。默认保持原比例并输出PNG；仅在要求抠图/去背景/提取主体时启用extract_subject，并用PNG。focus为用户指定目标在图片中的归一化位置，左0右1、上0下1；没有明确位置时用中心。不支持的要求必须报错，不能假装完成。'
     if render_type == "chart":
         return '只输出合法 JSON 对象：{"labels":["维度"],"values":[1]}；values 仅使用非负数字。'
     if render_type in {"topology", "flowchart"}:

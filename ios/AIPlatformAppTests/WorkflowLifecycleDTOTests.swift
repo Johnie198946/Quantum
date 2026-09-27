@@ -7085,15 +7085,17 @@ extension WorkflowLifecycleDTOTests {
         configuration.protocolClasses = [APIContractURLProtocol.self]
         let api = APIClient(baseURL: URL(string: "https://contract.invalid")!,
                             sessionConfiguration: configuration, inMemoryToken: "token")
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".docx")
-        let bytes = Data("fixture".utf8)
-        try bytes.write(to: file)
-        defer { try? FileManager.default.removeItem(at: file) }
-        let receipt = try await api.uploadDocument(at: file)
-        XCTAssertEqual(receipt.sourceId, "doc-upload")
-        let sent = try XCTUnwrap(APIContractURLProtocol.requests().last)
-        XCTAssertEqual(sent.body, bytes)
-        XCTAssertEqual(sent.request.timeoutInterval, 200)
+        for ext in ["docx", "csv", "json", "txt", "md"] {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
+            let bytes = Data("fixture".utf8)
+            try bytes.write(to: file)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let receipt = try await api.uploadDocument(at: file)
+            XCTAssertEqual(receipt.sourceId, "doc-upload")
+            let sent = try XCTUnwrap(APIContractURLProtocol.requests().last)
+            XCTAssertEqual(sent.body, bytes)
+            XCTAssertEqual(sent.request.timeoutInterval, 200)
+        }
     }
 }
 
@@ -7108,5 +7110,60 @@ extension WorkflowLifecycleDTOTests {
         XCTAssertFalse(changed.choices.contains { $0.id == selected })
         let next = ClarifyBlock(id: "message-2", question: first.question, choices: ["内容准确", "需要调整"])
         XCTAssertFalse(next.choices.contains { $0.id == selected })
+    }
+}
+
+final class ImageProposalContractTests: XCTestCase {
+    func testImageParametersSurviveHistoryWithoutGuessingDefaults() throws {
+        let raw = Data(#"{"proposal_id":"image-proposal","capability_id":"media.process","input":{"source_artifact_id":"ga_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"jpg","aspect_ratio":"16:9","extract_subject":false,"focus_x":0.5,"focus_y":0.5},"summary":"裁切转码","risk":"low","confirmation_token":"one-time"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: raw)
+        XCTAssertTrue(proposal.input.hasImageParameters)
+        let restored = try JSONDecoder().decode(CapabilityProposalBlock.self, from: JSONEncoder().encode(proposal))
+        XCTAssertEqual(restored.input, proposal.input)
+        XCTAssertEqual(restored.input.aspectRatio, "16:9")
+        XCTAssertEqual(restored.input.format, "jpg")
+        XCTAssertNil(restored.confirmationToken)
+        let old = try JSONDecoder().decode(CapabilityProposalInput.self, from: Data("{}".utf8))
+        XCTAssertFalse(old.hasImageParameters)
+    }
+}
+
+/// Opt-in real-device acceptance against an isolated backend; never uses production credentials.
+final class ImageWorkflowDeviceIntegrationTests: XCTestCase {
+    @MainActor
+    func testNativeProcessingReceiptAndDownload() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["LIVE_IMAGE_DEVICE_INTEGRATION"] == "1" else { throw XCTSkip("Opt-in device acceptance") }
+        let executionID = try XCTUnwrap(env["LIVE_IMAGE_EXECUTION_ID"])
+        guard env["AI_LAB_E2E_BASE_URL"] == "http://192.168.0.21:8878",
+              env["AI_LAB_E2E_TOKEN"]?.isEmpty == false else {
+            throw XCTSkip("Requires isolated backend and explicit test token")
+        }
+        let api = APIClient.shared
+        let action = try await api.prepareImageAction(executionId: executionID)
+        let edit = try XCTUnwrap(action.payload.imageEdit)
+        let source = try await api.fetchImageReceipt(id: XCTUnwrap(action.payload.artifactId))
+        XCTAssertEqual(source.contentHash, action.payload.sourceHash)
+        let original = try await api.downloadAuthenticated(path: source.downloadPath, expectedHash: source.contentHash)
+        let output = try await Task.detached(priority: .userInitiated) {
+            try ImageEditSupport.process(original, edit: edit)
+        }.value
+        let result = try await api.uploadImage(data: output)
+        let receipt = try await CapabilityClient().recordClientActionReceipt(
+            actionId: action.id, status: "SUCCEEDED", resultMetadata: ["artifact_id": result.artifactId])
+        XCTAssertEqual(receipt.state, "SUCCEEDED")
+        let artifacts = try await api.fetchWorkflowArtifacts(executionId: executionID)
+        let artifact = try XCTUnwrap(artifacts.first { $0.sourceKind == "ios_native" })
+        let completed = try await api.reviewPresentationStage(executionId: executionID, artifact: artifact,
+            decision: "approve", comment: "Real-device image acceptance")
+        XCTAssertEqual(completed.status, "completed")
+        let downloaded = try await api.downloadAuthenticated(
+            path: "workflow-executions/\(executionID)/artifacts/\(artifact.id)/download",
+            expectedHash: artifact.contentHash)
+        XCTAssertEqual(downloaded, output)
+        let picture = try XCTUnwrap(UIImage(data: downloaded))
+        let attachment = XCTAttachment(image: picture)
+        attachment.name = "real-device-processed-image"; attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

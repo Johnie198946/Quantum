@@ -989,8 +989,9 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
     public let localNotes: [ChatLocalNoteDTO]
     public let noteIllustrationV1: Bool
     public let learningExerciseId: String?
+    public let activeImageArtifactId: String?
 
-    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], learningExerciseId: String? = nil) {
+    public init(sessionId: String, messages: [ClientSessionMessageDTO], truncated: Bool, sourceSessions: [ClientSourceSessionDTO] = [], localNotes: [ChatLocalNoteDTO] = [], learningExerciseId: String? = nil, activeImageArtifactId: String? = nil) {
         self.sessionId = sessionId
         self.messages = messages
         self.truncated = truncated
@@ -998,6 +999,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         self.localNotes = localNotes
         self.noteIllustrationV1 = true
         self.learningExerciseId = learningExerciseId
+        self.activeImageArtifactId = activeImageArtifactId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1007,6 +1009,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         case localNotes = "local_notes"
         case noteIllustrationV1 = "note_illustration_v1"
         case learningExerciseId = "learning_exercise_id"
+        case activeImageArtifactId = "active_image_artifact_id"
     }
 
     public init(from decoder: Decoder) throws {
@@ -1018,6 +1021,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
         localNotes = try container.decodeIfPresent([ChatLocalNoteDTO].self, forKey: .localNotes) ?? []
         noteIllustrationV1 = try container.decodeIfPresent(Bool.self, forKey: .noteIllustrationV1) ?? false
         learningExerciseId = try container.decodeIfPresent(String.self, forKey: .learningExerciseId)
+        activeImageArtifactId = try container.decodeIfPresent(String.self, forKey: .activeImageArtifactId)
     }
 }
 
@@ -1837,6 +1841,15 @@ public struct WorkflowArtifactMetadataDTO: Codable, Hashable {
     public let sampleContentHash: String?
 }
 
+public struct ImageReceiptDTO: Codable, Hashable, Sendable {
+    public let artifactId: String
+    public let filename: String
+    public let contentHash: String
+    public let downloadPath: String
+    public let revision: Int
+    public let byteSize: Int
+}
+
 public struct DocumentReceiptDTO: Codable, Hashable {
     public let sourceId: String
     public let sourceRevision: Int
@@ -2035,8 +2048,10 @@ public struct WorkflowCreateRequestDTO: Encodable {
     public let sourceDocumentId: String?
     public let outputKind: String
     public var sourceClientSessionId: String? = nil
+    public var sourceImageId: String? = nil
 
     enum CodingKeys: String, CodingKey {
+        case sourceImageId = "source_image_id"
         case title, description
         case desiredOutput = "desired_output"
         case sourceDocumentId = "source_document_id"
@@ -2190,6 +2205,14 @@ private struct QCPConfirmRequestDTO: Encodable {
     }
 }
 
+public struct ImageEditDTO: Codable, Hashable, Sendable {
+    public let format: String
+    public let aspectRatio: String
+    public let extractSubject: Bool
+    public let focusX: Double
+    public let focusY: Double
+}
+
 public struct ClientActionPayloadDTO: Codable, Hashable {
     public let allowedTypes: [String]?
     public let allowsMultiple: Bool?
@@ -2202,6 +2225,8 @@ public struct ClientActionPayloadDTO: Codable, Hashable {
     public var lifecycle: SessionLifecycleStatus? = nil
     public var sessions: [ClientSessionVersionDTO]? = nil
     public var accountScope: String? = nil
+    public var imageEdit: ImageEditDTO? = nil
+    public var sourceHash: String? = nil
 }
 
 public struct ClientSessionVersionDTO: Codable, Hashable {
@@ -3563,7 +3588,8 @@ public final class APIClient: ObservableObject {
         desiredOutput: String,
         sourceDocumentId: String? = nil,
         outputKind: String = "general",
-        sourceClientSessionId: String
+        sourceClientSessionId: String,
+        sourceImageId: String? = nil
     ) async throws -> WorkflowCreateResponseDTO {
         guard !sourceClientSessionId.isEmpty else {
             throw APIError.network("当前对话会话不可用，无法创建工作流")
@@ -3574,7 +3600,7 @@ public final class APIClient: ObservableObject {
         let input = WorkflowCreateRequestDTO(
             title: title, description: description, desiredOutput: desiredOutput,
             sourceDocumentId: sourceDocumentId, outputKind: outputKind,
-            sourceClientSessionId: sourceClientSessionId
+            sourceClientSessionId: sourceClientSessionId, sourceImageId: sourceImageId
         )
         let proposal = try await client.propose(
             QCPCapabilityID.workflowCreate,
@@ -3847,6 +3873,25 @@ public final class APIClient: ObservableObject {
         let receipt = try await uploadDocument(data: data, filename: url.lastPathComponent, contentType: mime)
         guard receipt.status == "ready" else { throw APIError.network(receipt.parseError?.message ?? "附件尚未解析成功，原件已保留") }
         return receipt
+    }
+
+    public func prepareImageAction(executionId: String) async throws -> ClientActionDTO {
+        try await request(ClientActionDTO.self, path: "workflow-executions/\(encodedPath(executionId))/image-action", method: "POST")
+    }
+
+    public func uploadImage(data: Data) async throws -> ImageReceiptDTO {
+        guard data.count <= 12 * 1024 * 1024 else { throw APIError.network("请选择 12 MB 以内的图片") }
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/v1/documents/images"))
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        applyClientContract(to: &request)
+        let response = try await perform(request, session: session, canRetry: false)
+        return try decoder.decode(ImageReceiptDTO.self, from: response)
+    }
+
+    public func fetchImageReceipt(id: String) async throws -> ImageReceiptDTO {
+        try await request(ImageReceiptDTO.self, path: "documents/generated/\(encodedPath(id))")
     }
 
     public func uploadDocument(data: Data, filename: String, contentType: String, fileOptOut: Bool = false) async throws -> DocumentReceiptDTO {

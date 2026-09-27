@@ -138,7 +138,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                     str(run.get("knowledge_capability") or ""),
                     query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                     category_scope=requested_scope,
-                )
+                ) if requested_scope else []
                 node_network_allowed = bool(
                     effective_allow_network
                     and params.get("allow_network")
@@ -314,6 +314,12 @@ def _workflow_run_sync(execution_id: str) -> None:
                     if reply.startswith("⚠️"):
                         raise RuntimeError(reply)
                     reply = _workflow_artifacts._normalize_presentation_contract_reply(render_type, reply)
+            if render_type == "image_edit":
+                from backend.services.image_processing import ImageEdit
+                edit = ImageEdit.model_validate((node.get("parameters") or {}).get("image_edit") or _workflow_artifacts._extract_json_object(reply))
+                if edit.extract_subject and edit.format == "jpg":
+                    raise ValueError("主体提取需要透明 PNG")
+                reply = edit.model_dump_json()
             if render_type == "presentation":
                 reply, approved_design, approved_outline = _workflow_artifacts._bind_approved_presentation_inputs(run, reply)
             with _contracts._workflow_runs_lock:

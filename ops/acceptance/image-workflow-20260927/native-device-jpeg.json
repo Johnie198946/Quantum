@@ -1,0 +1,16 @@
+{
+  "workflow_id": "wf_a7042a3c3084771425badaac799476a9",
+  "execution_id": "wfr_1253665a0255407dba44ba61c64e22f9",
+  "source_artifact_id": "ga_80b1b8ad0ad14b68825846b61f0f6dda",
+  "artifact_id": "wfa_2b9320caaeb34c999c3ab1876edc3065",
+  "source_kind": "ios_native",
+  "http_status": 200,
+  "format": "JPEG",
+  "dimensions": [
+    656,
+    369
+  ],
+  "sha256": "80b88ed9b4ba5971591240d2d7f059b5f21c27f60724d3196609ef48e11d3a3c",
+  "platform": "Physical iPhone17Pro iOS26.6",
+  "test": "/tmp/quantum-image-device-integration-jpg.xcresult"
+}

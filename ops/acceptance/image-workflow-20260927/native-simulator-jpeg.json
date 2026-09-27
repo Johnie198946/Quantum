@@ -1,0 +1,14 @@
+{
+  "execution_id": "wfr_b0893bb8d7454ee6a64f4323e98ed38a",
+  "artifact_id": "wfa_2332be1ac1b14fb4944bf39d37a1d389",
+  "source_kind": "ios_native",
+  "http_status": 200,
+  "format": "JPEG",
+  "dimensions": [
+    656,
+    369
+  ],
+  "sha256": "aeb2a498666aae31434df04b9b43907bdf614fb78e44738eef4825eb0da21ec5",
+  "platform": "iOS Simulator 26.1",
+  "ui_test": "/tmp/quantum-image-simulator-live7.xcresult"
+}

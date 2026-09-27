@@ -83,6 +83,22 @@ async def _with_current_contribution_status(
     return receipt
 
 
+@router.post("/images", status_code=201)
+async def upload_image(request: Request, payload: dict = Depends(require_auth)):
+    from starlette.concurrency import run_in_threadpool
+    from backend.services.image_processing import MAX_IMAGE_BYTES, save_image
+
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > MAX_IMAGE_BYTES:
+            raise HTTPException(413, detail="图片不得超过 12 MB")
+        data.extend(chunk)
+    try:
+        return await run_in_threadpool(save_image, *_identity(payload), bytes(data))
+    except GeneratedArtifactError as exc:
+        raise HTTPException(422, detail={"code": exc.code, "message": str(exc)}) from exc
+
+
 @router.post("", status_code=201)
 async def upload_document(
     request: Request,
@@ -98,7 +114,8 @@ async def upload_document(
             status_code=400,
             detail={"code": "invalid_content_length", "message": "上传长度无效"},
         ) from exc
-    envelope = request.headers.get("content-type", "").split(";", 1)[0] == "application/json"
+    envelope = (request.headers.get("content-type", "").split(";", 1)[0] == "application/json"
+                and not unquote(filename).lower().endswith(".json"))
     upload_limit = MAX_DOCUMENT_BYTES * 4 // 3 + 1_000_000 if envelope else MAX_DOCUMENT_BYTES
     if length > upload_limit:
         raise HTTPException(

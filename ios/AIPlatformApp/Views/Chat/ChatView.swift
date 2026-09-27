@@ -121,6 +121,23 @@ public struct ChatView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) {
+                    if coordinator.isUploadingImage {
+                        ProgressView("正在上传原图…").padding(.vertical, 8)
+                    } else if let retryData = coordinator.failedImageUpload {
+                        Button("上传失败，点此重试", systemImage: "arrow.clockwise") { coordinator.attachPhoto(retryData) }
+                            .padding(.vertical, 8)
+                    } else if coordinator.activeImageArtifactId != nil {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(["裁成 16:9", "转换成 JPG", "抠出中间的主体"], id: \.self) { prompt in
+                                    Button(prompt) { draftText = prompt }
+                                        .font(.system(size: 13, weight: .medium))
+                                        .padding(.horizontal, 14).padding(.vertical, 10)
+                                        .background(AppTheme.Colors.surfaceTint, in: Capsule())
+                                }
+                            }.padding(.horizontal, AppTheme.Metrics.contentGutter)
+                        }.padding(.vertical, 6)
+                    }
                     ChatInputBar(
                         inputText: $draftText,
                         quotedContext: $coordinator.quotedContext,
@@ -130,6 +147,7 @@ public struct ChatView: View {
                         dismissKeyboardToken: dismissKeyboardToken,
                         placeholder: coordinator.messages.isEmpty ? "问问 Quantum…" : "发消息…",
                         onSend: {
+                            guard !coordinator.isUploadingImage else { return }
                             guard let text = ChatDraftSubmission.consume(&draftText) else { return }
                             coordinator.sendMessage(text: text)
                             dismissKeyboard()

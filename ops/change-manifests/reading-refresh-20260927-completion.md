@@ -4,7 +4,7 @@ task_id: reading-refresh-20260927
 status: COMMITTED
 branch: codex/knowledge-ui-refresh-20260927
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/knowledge-ui-refresh-20260927
-head/local_commit: d38170ce6a0c25f325245c03f66f7563f0bee21a（UI实现提交）
+head/local_commit: 本清单所属联合合并提交（父83432267423bd9c2e62ff492a4e98616b49b9f49、31f46ac4169c0e650f565368e5d39745ec3eed6f）；原UI实现d38170ce6a0c25f325245c03f66f7563f0bee21a
 remote_sha: 已授权联合发布；本任务尚未推送，统一发版任务负责主线合并与远端核验
 server_before: 不适用，本地iOS展示层
 server_after: 未部署
@@ -82,3 +82,11 @@ remaining_risks: 离线预览使用通用封面，未进行登录账号真实封
 本次检查：git diff --check通过；既有Debug编译与阅读回归见上。当前提交不包含规范源目录的未提交图片/工作流文件。TestFlight尚未上传，不宣称已发布。
 
 交接确认：联合发版线程01a0de14-6e79-7cc2-9765-5313560c4dcb已接收d38170ce并开始核对纳入，明确保留图片上传状态、Mantis依赖和统一版本号。本任务不重复上传，不直接改共享main。最终推送SHA、Apple回执与测试组可用性以联合发版记录为准，尚未完成时不得标记PUSHED或VERIFIED。
+
+## 图片＋旅行＋阅读联合候选整合
+
+共同候选：31f46ac4169c0e650f565368e5d39745ec3eed6f（旅行导出5a3b8b7f与图片167fba5c）；UI分支整合前HEAD：83432267423bd9c2e62ff492a4e98616b49b9f49，工作区干净。
+在本任务独立worktree执行git merge --no-commit --no-ff，三个重叠文件自动合并，无冲突。未操作canonical脏树、版本号、主线推送或服务器。
+完整比对确认：对共同候选没有额外后端改动；PlusMenuSheet、NativeClientActionHost、TenantSessionCoordinator、ImageCard、ios/project.yml与Package.resolved逐字相同；ChatView同时保留homeBackground与图片上传/重试/快捷操作；Mantis仍锁定且Build仍为70。
+核验记录：ops/acceptance/reading-refresh-20260927/joint-merge-check.json。
+五项阅读/书架UI回归全部通过（5 passed，0 failures，82.820s）：/private/tmp/reading-joint-tests.xcresult；证据joint-ui-tests.txt与10-joint-bookshelf.png。旅行任务负责共同候选的195项iOS与后端回归，不能把其尚未返回的结果写为通过。

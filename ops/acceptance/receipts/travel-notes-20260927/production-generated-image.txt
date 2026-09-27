@@ -1,0 +1,4 @@
+image_started ee72563062a545b1bb85feb9c190a0dc
+image_result {"run_id": "ee72563062a545b1bb85feb9c190a0dc", "status": "completed", "message": "正在生成插图 1/1", "assets": [{"index": 0, "anchor": "overview", "alt": "AI 插图：使用官网网页截图作为来源参考", "sha256": "708ca9536d1930ef4a9c3434bd8cc259008b8e7cdafef2832705bfdc8713ed88", "provider": "openai-codex", "model": "gpt-image-2-medium", "run_id": "ee72563062a545b1bb85feb9c190a0dc"}], "failed_indices": [], "error_code": ""} elapsed 48.12
+image_bytes 350327 sha256 708ca9536d1930ef4a9c3434bd8cc259008b8e7cdafef2832705bfdc8713ed88
+other_user_denied 404

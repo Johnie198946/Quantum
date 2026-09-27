@@ -1,17 +1,20 @@
-# Travel notes local implementation completion record
+# Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: COMMITTED
+- status: TESTED（导出资料补丁；此前 d228 云端发布已 VERIFIED，新补丁尚未合并部署）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1 / 未生成本地 commit
-- remote_sha: 未核验；未授权/未执行 push
-- server_before: a8cc2954e13a40732fc36444df6beaf81f05b80b（本轮云端只读盘点）
-- server_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c（外部流程更新，本任务未部署）
-- health_check: 初始服务器 /health 返回 ok/0.8.0，Bridge/Worker active；非本任务部署后验收
-- functional_check: 本地完整客户端、Office/多轮/离线测试已通过；本轮云端隔离环境 Google Maps 地点与指定日期公交查询、官网截图字节归档通过。生产客户端查询尚待发布验收；本机 Chrome 不再作为前提。
-- rollback_point: 基线 c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1；变更只在独立工作树，原 main 的他人改动未触碰
+- head/local_commit: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7（运行代码；后续文档提交单独记录）
+- remote_sha: origin refs/heads/main=d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；git ls-remote 已核对
+- server_before: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
+- server_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W
+- health_check: 8 容器 healthy；4 个 Python 运行镜像 revision=d228；Bridge/ChatWorker active；/ready、Bridge /health、公开 /health 全部 HTTP200
+- functional_check: 联合152测试通过；备份哈希/SQLite完整性/唯一staged稿校验通过；生产Bridge Maps HTTP工作流87.83秒成功；笔记任务独立136正文/5页/hash/精简/防跳页验证通过；出版10cron已由其任务pin d228恢复
+- rollback_point: /opt/releases/ai-lab-platform-f8c7d064c959.229Byr；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865（PG、SQLite、稿件媒体、env、8镜像）；浏览器配置/包清单 /opt/ai-lab-shared/rollbacks/travel-browser-20260927
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
+- remaining_risks: 生产性能仅少量样本；服务器私人收藏/社交会话未验收；本任务未发布新TestFlight二进制；临时12m配额由笔记验收任务协调恢复
+
+本节与文末记录为当前状态；中间各节保留当时发现、失败与授权历史，不代表当前仍未部署。
 
 ## 目标与复用
 
@@ -248,3 +251,74 @@
 ## 发布前整合验收
 
 旅行功能提交 2930bde8，合并最新主分支提交 56a10118；主分支全部变更保留，冲突仅为两组追加测试，均保留。整合后后端 237 passed、产品契约 36 passed、iOS WorkflowLifecycleDTOTests 194 passed，0 failures。日志 release-*.txt。服务器发布前仍为 0704ddf5a54bf9739e506652e7b60fa2f22f564c；浏览器依赖安装前的包清单和配置已备份到 /opt/ai-lab-shared/rollbacks/travel-browser-20260927。
+
+## 正式云端部署与前置检索缺陷
+
+- 用户明确授权提交、推送、部署，并进一步授权与笔记验收及出版两个任务协调。并行21250发布期间预检自动退出，无覆盖；确认其发布锁释放后，以21250为before继续。收到暂缓消息时容器切换已启动，由更新器完整结束，随后停止进一步版本切换并同步两任务。
+- 从GitHub codeload精确SHA下载，源码归档SHA256=5feeca107a7b77c5423b7cba2bd298e44b4f42d894159984eda48aab299efd84。包锁与父镜像匹配、pip check、候选导入、运行契约检查通过。
+- agent-browser=0.26.0；Chrome for Testing=154.0.8037.57；Chrome SHA256=e528b77a8b250c48a5bbd7aeeabbc2813940c0a2fe39b1b11fbaf1f01fb04f18。系统库40个新装、0升级0删除，Noto Sans CJK JP生效。调用现有prepare_browser，不修改provider配置或个人浏览器。
+- 指定日期查询：正式环境9月28日09:00条件，实际页面显示中央线09:03–09:17、14分钟、¥260，dated_route_verified=True。是服务账号的独立验收进程，尚不能代替正式Bridge完整研究流程。
+- Bridge生产研究 wfr_cloud_maps_6fa3ec745271 21.53秒失败，未执行浏览器。直接空知识范围网关请求200、27.0秒，超过已有20秒超时。最小修复在现有Workflow入口：空requested_scope不发起知识网关搜索；非空范围与联网权限保持。63项测试通过（含空/非空×联网/离线四组合），未部署此修复，等待共享窗口。
+- 今晚publication-6d65e4fff6f4ae7734d1585c3a05a80a只读验证：唯一staged，release_at=2026-09-27T12:00:00+00:00，actual_release_at=null，正文/plan SHA=076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3图计划保持；没有改变cron/额度账本。
+
+### 正式 Worker 图片验证
+
+自动模式官网截图任务 c644ba991d6241d28382d30a57a6afdb 完成：15.13秒，provider=web-reference，model=page-screenshot，JPEG223681字节，SHA256=c58a17665842b14a97e81662eef12ebb83c0456211919696585c78407fe34d89；服务端API字节读回一致，另一用户404。production-reference.jpg已目视检查：日文清晰、主照片/地图/说明完整可见，部分底部远端资源未加载，作为带来源网页截图而非精修旅行照片。
+
+前一手动模式任务 ee72563062a545b1bb85feb9c190a0dc 实际为生成图（openai-codex/gpt-image-2-medium），48.12秒，350327字节；不当作官网截图证据。两类返回provider/model区分真实，均完成跨用户404验证。
+
+### 浏览器交互预算修复（待协调发布）
+
+真实模型通过已有旅行research节点操作服务器Google Maps，在6轮工具上限触发强制摘要后失败。仅该scenario的KNOWLEDGE_RETRIEVAL节点上限提高到12，其他节点沿用原配置；提示直接进入含起终点地址的路线页，减少重复地点搜索。66项相关回归和Ruff通过，覆盖旅行研究/其他研究/旅行推理构造器实际获得的预算，正在独立服务账号进程实测12轮。未切版、未重启、未修改其他任务临时配额。
+
+### 最终候选状态与真实模型复测
+
+- 最新运行代码260d0ccb784e51fc44515e871213708ffb01adb7已推送独立分支，远端SHA一致；main/服务器仍f8c7。按最新候选状态记录PUSHED，不能把首轮DEPLOYED当成最新补丁已部署。
+- 独立云端验收进程使用原生Agent、12轮预算和最终提示，成功获取指定日期路线、地址、班次、票价、来源链接：98.85秒，12次模型调用；这是单次冷进程样本，不是p95，也不代表已发布Bridge完整HTTP通过。证据production-model-twelve-rounds.txt。
+- 已授权跨任务协调，并与笔记验收/出版任务明确共享窗口。笔记用户临时额度及账本由其任务负责；本任务不修改、不重置，不提前重启Worker。发现笔记也有待发布补丁，提议联合一次部署，尚待唯一部署方和最终窗口确认。
+- remaining_risks: 最终修复未部署，生产Bridge研究全链路待重测；单次98.85秒不能证明并发/SLO；用户私有社交登录资料未在服务器授权，未宣称访问；iOS整合构建/194测试通过，但本任务未发布新TestFlight二进制。整体旅行验收不能报全部完成。
+
+## 联合发布候选
+
+用户授权协调后，笔记任务明确由本任务作为唯一联合部署方，交付/private/tmp/note70-context-evidence.patch：仅knowledge.py和test_cleanup_capabilities.py，模型侧剔除重复snippet等字段，客户端事件/原始正文不动，逐页保留证据指令；其58项PCM回归通过、真实笔记added/removed/changed均0。已审查并应用于本隔离工作树，未接触脏主工作区。联合152项测试通过7.37秒，Ruff/git diff --check通过。
+
+部署方案增加publication SQLite原生backup、integrity_check、SHA256，以及root-only环境备份，保留既有PG dump与镜像/发布目录回滚。最终暂保持12000000月额度用于用户剩余验收，完整部署后的实际覆盖范围需回读；本任务不更改账本。等待笔记/出版确认暂停与空闲窗口，未执行联合发布。
+
+## 联合生产部署与独立验证
+
+- 收到笔记/出版正式窗口：10个cron备份暂停，三个profile active=[]。唯一部署方按已核验main SHA执行，无共享脏工作区修改。
+- GitHub精确SHA源码包SHA256：028699855e1740259c72526be6be710f5504d9c52366e680177024b215cdd535。
+- 复用已有运行镜像（依赖锁一致）构建代码层；pip check、候选导入通过。复用update.sh、部署锁与expected-current检查，exit0。前端既有镜像保持0b04edc3，不把本次后端发布宣称为新版网页或iOS发布。
+- 完整回滚点chat-travel-pcm-d228c06d6865：PG SHA256 fe855820a4881b442413f4af75126bf799e5ea027c1b4b5f5b3700bdbb010974；publication SQLite fc1c88c33cce4d28a6c51da2b32804e8e6880c1ce6f61573ca6f0f780942835c且integrity_check=ok；126M稿件媒体tar eeb1607e7ee609e79b5b9fc811172d07b96a74846731642fc023dddc64ecba84。另有root-only环境备份和8服务旧镜像标签。
+- 独立只读核验：8容器healthy；API/3worker revision=d228；Bridge/ChatWorker active；本地ready、Bridge和公开health均200。今晚唯一稿仍staged，20:00发行，actual_release_at=null，正文/content_hash/plan SHA076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f完全一致。
+- 配额实测：API、3worker、Bridge、ChatWorker均12000000。用户授权的临时12m由笔记任务设置；本任务未改该键、未改或重置账本。完整重启后范围扩大，已明确回报笔记任务，恢复10m需覆盖全部上述进程。
+- 已向两协调任务交回窗口，出版任务负责独立检查/pin/runtime/恢复10cron；旅行只继续只读Maps功能验收。
+- 回滚应先用旧release/镜像恢复代码；数据库/稿件备份用于确有数据损坏的恢复，不能盲目覆盖部署后的合法用户写入。
+
+### 正式生产 Maps HTTP 功能通过
+
+- run_id: wfr_cloud_maps_671946da0bcc，实际已发布Bridge /v1/workflow-runs；使用隔离验收tenant、合法空knowledge capability和正常旅行plan构建入口，不读取私人笔记/收藏、不改额度账本、不修改系统权限。
+- travel_research 第1次成功，完整run到awaiting_review（本测试仅包含research节点），error=null；87.83秒，10次模型调用，gpt-5.6-sol/openai-codex。真实工具事件browser_navigate、browser_click、browser_snapshot、browser_type、browser_console。
+- 实際页面日期9月28日(月)、出发09:00；东京站〒100-0005東京都千代田区丸の内1丁目；JR中央线09:03东京站→09:17新宿站，14分钟，¥260；来源URL包含8j1790586000。工具事件及最终产物已保留，不把模型单独回答替代真实工具执行。
+- 本次为空知识范围正式HTTP路径验证，先前20秒gateway超时未复现；既有12轮旅行研究上限足够完成。本次仅研究节点，不宣称重新跑完生产研究→审批→完整行程→所有客户端场景。
+- 证据：joint-production-maps-http.txt、joint-production-maps-workflow.json、joint-http-check.py；独立部署核验：joint-production-verification.txt、joint-server-verify.py。
+- 发布后再次git ls-remote确认main=d228c06d6865bdbca9329f264acfe4cf0e8fc5f7。笔记任务独立catalog验证通过；出版任务独立验证d228、备份哈希、唯一staged/20:00/actual=null、3plan/5assets保持，10cron/runtime/wrapper已pin d228恢复，active=[]。
+- 不再切换运行版本；后续只把验收文档与回执提交推送本任务分支，不推进main或重启服务。
+
+### 当前边界
+
+云端公共Maps查询及官网截图/生成图正式服务链路已验证，无本机Chrome依赖。Office实际文件、多轮修改、断网恢复及冷启动证据见此前完整回执，合并后194项iOS回归通过；本任务未发布新TestFlight二进制。私人社交登录/Google收藏未在云端建立已授权会话，不能宣称已验收；可访问分享清单和用户上传资料走现有路径。87.83秒是单样本，不能作为生产并发或p95/SLO达标结论。临时12m配额保留供笔记任务验收并由该任务协调恢复，账本从未由本任务更改。
+
+## 导出资料补齐与统一 TestFlight（后续）
+
+用户要求TestFlight合并分发并继续完成剩余项。由既有笔记任务唯一负责归档上传；旅行不单独发布Build70。最新共同main=167fba5c956ade6daba6568fc70c35d7f679406b（图片任务，未部署），将从本隔离分支整合；共享主工作区不动。
+
+架构命中：已有extract_uploaded_text支持CSV/JSON/TXT/MD，但documents白名单和客户端选择器拒绝；JSON原文件会误入OCR envelope。扩展现有documents/私有笔记/贡献编译通路，不新增服务、凭据库或第二个导入器。新增格式保留原件和哈希、按原权限入库；UTF-8 BOM去除，不用替换字符悄悄损坏资料，编码失败保留原件并提示重新导出UTF-8。
+
+改动：backend/api/documents.py、services/document_sources.py、services/upload_text_extractor.py；iOS PlusMenuSheet/NativeClientActionHost/TenantSessionCoordinator的现有选择器和后缀校验；复用test_document_presentation及WorkflowLifecycleDTOTests。
+
+验证：相关后端76 passed/1原有Office预览skip；最终编码错误回归9 passed；iOS194 passed/0 failures（20.259秒，/tmp/travel-export-ios.xcresult），实际客户端上传DOCX/CSV/JSON/TXT/MD原字节保持；Ruff、diff检查通过。API测试覆盖JSON包含data/content_type/extracted_text的普通文件不误解包、CSV BOM、原件下载哈希、同租户跨用户和跨租户404、真实贡献队列回执、编码失败原件保留。未宣称真实用户私人账号资料已读。
+
+性能：正式Bridge澄清30次/并发2，0失败，p50=5.296秒、p95=8.547秒；内部工作流读取+非法内部token拒绝30次/并发4，p95=.063秒。后者是内部认证合同，用户所有者边界由外层API验证。GoogleMaps原生浏览器30次全部读到公共路线，p50=13.694秒/p95=27.388秒；冷15次p50=17.974秒，热15次p50=5.783秒，存在长尾和两次清理超时日志，不宣传稳定低时延。尚不含端上/广域网和完整模型研究总耗时。
+
+本机独立A/B仅5对澄清样本：minimal中位5.651秒、none中位5.247秒，收益不足且小样本；没有为此改变生产模型或推理配置。局部草案30次正式HTTP验收继续执行，最多并发2，19:31后停止新增任务以避开出版窗口。

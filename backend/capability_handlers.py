@@ -1153,6 +1153,23 @@ async def _data_analyze(data, payload, key):
     return analyze_data(*_generated_owner(payload), data)
 
 
+async def _media_process(data, payload, key):
+    from backend.services.image_processing import ImageEdit
+
+    assert key
+    edit = ImageEdit.model_validate({k: v for k, v in data.items() if k not in {"source_artifact_id", "source_client_session_id"}})
+    workflow_id, request_hash = _qcp_workflow_identity("media.process", payload, key, data)
+    return await _create_workflow(
+        WorkflowCreate(title="图片处理", description="按已确认的图片编辑参数处理原图，交付可下载的真实图片。",
+                       desired_output=f"处理后的 {edit.format.upper()} 图片",
+                       output_kind="image", source_image_id=data["source_artifact_id"],
+                       source_client_session_id=data.get("source_client_session_id")),
+        payload, workflow_id=workflow_id, qcp_request_hash=request_hash,
+        requirements_explicit=True,
+        requirements_snapshot_overrides={"image_edit": edit.model_dump()},
+    )
+
+
 async def _media_create(data, payload, key):
     from backend.services.generated_artifacts import create_media
 
@@ -1372,5 +1389,6 @@ HANDLERS: dict[str, Handler] = {
     "office.pdf.create": _pdf_create,
     "data.analyze": _data_analyze,
     "media.create": _media_create,
+    "media.process": _media_process,
     "task.execute": _task_execute,
 }

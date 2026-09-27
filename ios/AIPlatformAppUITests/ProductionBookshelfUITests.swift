@@ -2278,3 +2278,116 @@ final class IstanbulPresentationLiveE2ETests: XCTestCase {
         """
     }
 }
+
+final class ImageWorkflowLiveAcceptanceTests: XCTestCase {
+    private let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        guard ProcessInfo.processInfo.environment["LIVE_IMAGE_ACCEPTANCE"] == "1" else {
+            throw XCTSkip("Requires the isolated live image acceptance environment.")
+        }
+    }
+
+    func testNativeSubjectExtractionOnDevice() throws {
+        app.launchArguments = ["-imageWorkbenchPreview"]
+        app.launch()
+        let extract = app.buttons["提取主体"]
+        XCTAssertTrue(extract.waitForExistence(timeout: 20))
+        extract.tap()
+        let compare = app.switches["对比原图"]
+        XCTAssertTrue(wait(90) { compare.exists && compare.isEnabled }, "Native Vision must produce a real edited image.")
+        attach("native-vision-subject")
+        compare.tap()
+        compare.tap()
+        app.buttons["调整构图"].tap()
+        attach("mantis-native-crop")
+    }
+
+    func testUploadChatWorkflowAndExportOnDevice() throws {
+        let env = ProcessInfo.processInfo.environment
+        app.launchArguments = ["-autoLogin", "-imageWorkflowAcceptance"]
+        app.launchEnvironment["AI_LAB_E2E_TOKEN"] = try XCTUnwrap(env["LIVE_ACCEPTANCE_JWT"])
+        app.launchEnvironment["AI_LAB_E2E_BASE_URL"] = try XCTUnwrap(env["LIVE_ACCEPTANCE_BASE_URL"])
+        app.launchEnvironment["AI_LAB_E2E_DISABLE_PREWARM"] = "1"
+        addUIInterruptionMonitor(withDescription: "Local network") { alert in
+            for label in ["允许", "好", "Allow", "OK"] where alert.buttons[label].exists {
+                alert.buttons[label].tap()
+                return true
+            }
+            return false
+        }
+        app.launch()
+        XCTAssertTrue(app.textFields["selected-book-chat-input"].waitForExistence(timeout: 30))
+        if app.buttons["更多会话操作"].exists {
+            app.buttons["更多会话操作"].tap()
+            app.buttons["新建会话"].tap()
+        }
+        app.buttons["添加附件或引用知识"].tap()
+        app.buttons["上传"].tap()
+        let upload = app.buttons["image-acceptance-upload"]
+        XCTAssertTrue(upload.waitForExistence(timeout: 10))
+        upload.tap()
+        XCTAssertTrue(app.buttons["裁成 16:9"].waitForExistence(timeout: 30))
+        attach("uploaded-original")
+        let input = app.textFields["selected-book-chat-input"]
+        input.tap()
+        input.typeText(env["LIVE_IMAGE_PROMPT"] ?? "帮我把刚上传的照片裁成16:9，并转成JPG。")
+        app.buttons["selected-book-chat-send"].tap()
+        let confirm = app.buttons["capability-confirm-execute"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 180), "Real Chat must produce a confirmed image operation.")
+        attach("chat-image-proposal")
+        if (env["LIVE_IMAGE_PROMPT"] ?? "").contains("JPG") {
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "16:9", "JPG")).firstMatch.exists)
+        }
+        confirm.tap()
+        let deadline = Date().addingTimeInterval(420)
+        var lastAction = ""
+        while Date() < deadline {
+            let export = app.buttons.matching(NSPredicate(format: "label IN %@", ["导出 JPG", "导出 PNG"])).firstMatch
+            if export.exists && export.isHittable {
+                attach("workflow-image-result")
+                export.tap()
+                attach("image-export-sheet")
+                return
+            }
+            var acted = false
+            for title in ["未选择，内容准确", "确认并生成方案", "确认，进入方案设计", "查看并确认方案", "确认并构建 Agent", "查看专属 Agent", "启动任务", "查看结果", "在本机处理图片", "image-device-process", "确认并下载"] {
+                let button = app.buttons[title]
+                if button.exists && button.isHittable && lastAction != title {
+                    if ["未选择，内容准确", "确认并生成方案"].contains(title),
+                       button.frame.maxY > app.frame.maxY - 140 {
+                        app.swipeUp()
+                        acted = true
+                        break
+                    }
+                    button.tap()
+                    lastAction = title
+                    acted = true
+                    attach("workflow-" + title)
+                    break
+                }
+            }
+            if !acted { app.swipeUp() }
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+        }
+        attach("workflow-timeout")
+        XCTFail("Image workflow did not reach a downloadable result.")
+    }
+
+    private func wait(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+        return false
+    }
+
+    private func attach(_ name: String) {
+        let item = XCTAttachment(screenshot: app.screenshot())
+        item.name = name
+        item.lifetime = .keepAlways
+        add(item)
+    }
+}

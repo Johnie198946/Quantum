@@ -974,6 +974,7 @@ _KNOWLEDGE_NAV_DESTINATIONS = {
 _KNOWLEDGE_MERGE_DIRECTIVE = (
     "\n清理入口：用户只说帮我清理或要求批量整理时，先明确笔记/对话/待办范围；可用knowledge.navigation的cleanup展示现有建议，不自行编造候选规则。"
     "用户要求全量检查/整理笔记时，先调用knowledge.note.search(mode=organize)快速检查，深度整理再用mode=catalog、include_content=true、limit=100按next_offset批量遍历完整正文；不能只看设备缓存或前两篇。仅要求快速体检或数量时，organize结果即可回复，不额外全量阅读。"
+    "每读一页catalog，先在回复中写出本页的简短证据小结（笔记标题/ID、原文短引文、关系及理由），再请求下一页；这些小结用于上下文压缩后保留审阅证据。不要等读完整库才分析，不要重复从0遍历。候选规则说明不是原文证据，不能代替语义审阅。"
     "catalog中content_complete=true的正文已读取，不重复逐篇调用read；只有缺失全文才用knowledge.note.read。遍历全部正文后，不限于快速候选，结合标题、内容和引用逐组区分：同义重复、同主题互补、不同主题相关、局部引用；"
     "同义重复建议去重；互补建议按现有章节合并；不同主题相关保留独立笔记并建议双链；局部引用仅建议具体段落链接，不归档整篇。"
     "输出已检查数、总数、未读范围、每组理由和引用段落；目录摘要不等于已读全文，预算不足必须说明尚未完成。"
@@ -1722,6 +1723,20 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             if isinstance(report, dict):
                 emit({"type": "status", "phase": "reasoning",
                       "detail": f"已检查 {report['scanned_notes']} 篇笔记，发现 {report['total_candidates']} 组候选；正在汇总核对范围。"})
+    if full_catalog and result.get("status") == "completed":
+        # Keep the client event and workspace intact; snippets duplicate the full
+        # body and can double model context, triggering evidence-destroying pruning.
+        result = {**result, "events": [
+            {**event, "payload": {**event.get("payload", {}), "items": [
+                {key: note[key] for key in ("note_id", "title", "markdown", "content_hash", "content_complete") if key in note}
+                for note in event.get("payload", {}).get("items", [])
+            ]}} if event.get("type") == "knowledge.results" else event
+            for event in result.get("events", [])
+        ], "review_instruction": (
+            "Before the next page, write a short evidence checkpoint with note IDs/titles, exact brief quotations, "
+            "relationship and reason. Preserve findings in assistant text before context compaction. "
+            "Candidate labels are not source evidence. Follow next_offset; do not restart the catalog."
+        )}
     return json.dumps(result, ensure_ascii=False)
 
 

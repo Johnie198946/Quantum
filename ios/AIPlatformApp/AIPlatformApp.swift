@@ -66,7 +66,10 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-cleanupMergePreview") {
+                if ProcessInfo.processInfo.arguments.contains("-imageWorkbenchPreview"),
+                   let photo = UIImage(named: "travel_kyoto_street")?.pngData() {
+                    ImageWorkbench(data: photo) { _ in }
+                } else if ProcessInfo.processInfo.arguments.contains("-cleanupMergePreview") {
                     CleanupMergeReviewPreview()
                 } else if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
                     LearningExerciseHintPreview()

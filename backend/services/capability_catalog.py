@@ -47,7 +47,7 @@ IMPLEMENTED_HANDLERS = {
     "hermes.session.delete",
     "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
     "file.upload", "file.download", "voice.transcribe",
-    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create",
+    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create", "media.process",
     "task.execute", "conversation.lifecycle",
     "learning.resume", "learning.exercise.read", "learning.exercise.create", "learning.exercise.hint", "learning.exercise.answer", "learning.exercise.submit",
 }
