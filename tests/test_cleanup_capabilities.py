@@ -459,3 +459,47 @@ def test_bridge_fast_audit_emits_actual_counts_before_final_answer(monkeypatch):
     assert events[-1]["detail"] == "已检查 135 篇笔记，发现 68 组候选；正在汇总核对范围。"
     assert not events[0]["payload"]["organization"]["semantic_scan_complete"]
     assert not context.get("knowledge_workspace_read_completed")
+
+
+def test_full_catalog_rejects_guessed_offsets_and_counts_actual_bodies(monkeypatch):
+    import asyncio
+    import json
+    import scripts.hermes_bridge as bridge
+    import backend.services.capability_catalog as catalog
+
+    events = []
+    context = {"inline_notes": [], "identity": AUTH, "request_id": "catalog-continuity", "emit": events.append}
+    monkeypatch.setattr(bridge._client_context_tool_context, "value", context)
+    offsets = []
+
+    async def read(_capability_id, data, **_kwargs):
+        offset = data.get("offset", 0)
+        offsets.append(offset)
+        end = min(offset + 2, 5)  # Body budget can return fewer than limit=100.
+        return {"status": "completed", "events": [{"type": "knowledge.results", "payload": {
+            "items": [{"note_id": str(i), "markdown": "body", "content_complete": True} for i in range(offset, end)],
+            "total_count": 5, "next_offset": end if end < 5 else None,
+        }}]}
+
+    monkeypatch.setattr(catalog, "invoke_capability", read)
+    monkeypatch.setattr(bridge.contracts, "_run_bridge_coroutine", lambda coroutine, **kwargs: asyncio.run(coroutine))
+
+    def page(offset, archived=False):
+        return json.loads(bridge._app_capability_invoke_tool({"capability_id": "knowledge.note.search", "input": {
+            "query": "all", "mode": "catalog", "include_content": True,
+            "offset": offset, "limit": 100, "include_archived": archived,
+        }}))
+
+    first = page(0)["catalog_progress"]
+    assert first["full_bodies_read"] == 2 and not first["all_bodies_read"]
+    skipped = page(4)
+    assert skipped["error"] == "catalog_page_out_of_sequence" and skipped["next_offset"] == 2
+    assert offsets == [0]  # No skipped page was dispatched or marked read.
+    assert page(2, archived=True)["next_offset"] == 0  # Different catalog scope starts afresh.
+    assert page(2)["catalog_progress"]["full_bodies_read"] == 4
+    complete = page(4)["catalog_progress"]
+    assert complete == {"full_bodies_read": 5, "total_count": 5, "next_offset": None,
+                        "all_bodies_read": True, "semantic_review_complete": False}
+    assert offsets == [0, 2, 4]
+    assert events[-1]["detail"] == "已读取 5/5 篇完整正文；正在核对内容。"
+    assert page(0)["catalog_progress"]["full_bodies_read"] == 2  # Explicit restart resets coverage.

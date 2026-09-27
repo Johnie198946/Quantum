@@ -1,7 +1,7 @@
 # Note quality and latency acceptance follow-up
 
 task_id: note-quality-acceptance-20260927
-status: TESTED
+status: DEPLOYED
 branch: main
 worktree: /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
 head_at_start: b696d13bdcef18cc23b1707dc00501ca012ee224
@@ -25,13 +25,13 @@ Canonical pwd; main tracking origin/main, HEAD b696d13bdcef18cc23b1707dc00501ca0
 - Production notes stayed on server; benchmarks returned only counts, relations and timing. No note body or private per-file manifest exported, no note mutation performed.
 - iOS joint tests and device acceptance pending reader task. Return the same authenticated restore response to existing view; skip only matching content hash AND lifecycle state, preserve credentials/account guards and cancellation.
 
-commit: pending
-remote_sha: pending; start b696d13bdcef18cc23b1707dc00501ca012ee224
-server_before: b696d13bdcef18cc23b1707dc00501ca012ee224
-server_after: not deployed for this follow-up
-health_check: pending exact committed deployment
-functional_check: local checks above; complete semantic review, actual UI and latency acceptance pending
-rollback_point: deployment owner must establish before new release; prior release /opt/releases/ai-lab-platform-b696d13bdcef.82EYgj
+commit: 0704ddf5a54bf9739e506652e7b60fa2f22f564c (includes ac78d723 note changes and c8713cfe cache fix)
+remote_sha: 0704ddf5a54bf9739e506652e7b60fa2f22f564c; independently verified origin/main
+server_before: a8cc2954e13a40732fc36444df6beaf81f05b80b for latest deployment
+server_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c
+health_check: eight containers healthy; API ready and Bridge healthy
+functional_check: session registration and owner/tenant isolation passed; full semantic review and actual Chat latency acceptance pending
+rollback_point: /opt/ai-lab-shared/rollbacks/bookshelf-functionality-0704ddf5a54b
 remaining_risks: pairwise integer comparisons scale quadratically with owner note count; benchmark covers135. Lexical candidates are not semantic decisions and cannot authorize archive. Full-body batches must follow next_offset; only actual read bodies count as reviewed. Build69 is already testing; Build70 will use only tested committed source. Unrelated media and publication work must be coordinated, not silently bundled.
 
 ## Joint local validation
@@ -67,3 +67,28 @@ Code inspection found a deterministic connection leak: builder opens SessionDB b
 After quick Chat and opening Notes, server hash comparison found added2 files (one Markdown+metadata),removed0,changed0. Server-only provenance check: new note has683 chars, client_updated_at2026-09-25T03:27:48.350000+00:00, no match to current quick-test or draft marker. Old local-note synchronization is the current hypothesis; synced timestamp attribution and a fresh isolated Chat baseline still required. Do not report global zero-write from this baseline.
 
 Provenance follow-up: added note synced_at2026-09-27T08:38:36.713306+00:00, source=user_markdown, source_changed_at equals client_updated_at2026-09-25T03:27:48.350000+00:00. Consistent with old device-note sync, not current Chat-generated content; retain original baseline and create a separate Chat-only baseline. Resume inventory: main c156bb50e1519154088677c8fe28884daf5bd290, origin/main a8cc2954, all unrelated media/manifest modifications preserved. Cache fix and policy compatibility regression79passed; no new dependency or cache.
+
+## Runtime acceptance follow-up 17:00
+Final candidate0704ddf5a54bf9739e506652e7b60fa2f22f564c includes shared policy fixc156bb50, cache DB fixc8713cfe, existing session registration entry fix0704ddf5. Independent tests from /private/tmp/note70-runtime-0704ddf5 (git archive only):110passed,6warnings,5.74s. Log /private/tmp/note70-runtime-clean-tests.log. Push succeeded; git ls-remote origin refs/heads/main independently returns0704ddf5a54bf9739e506652e7b60fa2f22f564c. StatusPUSHED for runtime fixes, deployment pending safe publication window. iOS tree unchanged froma8cc2954. Mirror temporarily locked; reader owns pending UI and requested user unlock. Chat-only server baseline contains280files; saved separately without overwriting prior278baseline.
+
+## Runtime deployment evidence
+status: DEPLOYED (complete note/device acceptance remains pending)
+server_before: a8cc2954e13a40732fc36444df6beaf81f05b80b
+server_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c
+release: /opt/releases/ai-lab-platform-0704ddf5a54b.IXeolO
+health_check: 8containers healthy;API health ok and ready ready;Hermes Bridge both routes ok.
+functional_check: deployed session registration, owner isolation, tenant isolation and conflicting owner rejection passed using temporary isolatedSQLite;production user writes0. Chat semantic quality and device latency remain pending.
+rollback_point: /opt/ai-lab-shared/rollbacks/bookshelf-functionality-0704ddf5a54b;database/publication SQLite backup SHA256 checks passed; prior release/opt/releases/ai-lab-platform-a8cc2954e13a.swjper retained.
+Evidence: /private/tmp/note70-runtime-deploy/{deploy.log,server-verification.json,server-functional.json}. Publication owner paused10cron and confirmed3profiles active=[] before deployment; pin/resume0704 requested after independent verification. No new iOS binary or TestFlight upload. Reader owns mirror pending user scroll to system publications; do not disrupt that UI request.
+
+Publication owner confirmed10original cron states restored and jobs/wrappers pinned0704ddf5, all3profiles active=[] after resume; Story20 staged artifact retained, original20:00schedule unchanged. Post-deploy note hash comparison against280file Chat-only baseline:added0,removed0,changed0. This does not replace still-pending newChat semantic/performance test. CLI distribution-only export failed No Accounts/No iOS Distribution certificate, despite Xcode GUI account present; opened exacta8cc Build70archive in Organizer and started Validate App (notUpload).
+
+Latest UI blocker: Computer Use explicitly reported Mac locked and automatic unlock unsuccessful while reading Xcode validation result. User asked asynchronously to unlock Mac; no credentials requested. Build70 validation outcome unknown and upload not performed. Current task is DEPLOYED, not VERIFIED; do not claim acceptance or release completion.
+
+User unlocked Mac. Xcode GUI confirms AIPlatformApp1.0.3(70) successfully passed all validation checks, validated17:27; screenshot/private/tmp/build70-validation-passed.png. Organizer correctly showsValidation succeeded, notUploaded. CLI account error did not reproduce inGUI. Device handed-off request sent to reader; no concurrent mirror actions.
+
+## Real-device semantic acceptance failure and correction
+Ordinary QuickCheck run d3fd8b1f309444e38ea2fbc1e5634102: GENERAL_QA/fast,136notes68candidates,19.886sserver; scan789.4ms, tool914.226ms, context3823.831ms. Next same-session deep run context31.97ms confirms cache reuse.
+DeepReview run47dff5d6ae6b40c688ac0e5ad597a8de failed coverage acceptance: four pages45+21+25+21=112unique bodies for136total, skippedoffset66..89; next_offset=null alone was not sufficient. All50full hash-matched inline cache notes were already in those112, so no cache compensation. Model falsely claimed136complete and no unread range. No overall acceptance claim.
+Fix extends existing owner/request-local PCM bridge context: full-body catalog pages must follow returned next_offset (explicit0restarts); differing archive scope has separate progression. Guessed skip returnscatalog_page_out_of_sequence without dispatch. Results carry actual unique-body coverage separate from semantic completion, and existing status events showread/total. No new service/store/dependency or iOSchange.101related tests passed,6warnings,4.79s;Ruff anddiffcheckpassed. Log/private/tmp/note70-page-continuity-tests.log. Changes:knowledge.py,test_cleanup_capabilities.py.
+Reader completed publication latest-reader/back and handed mirror to media for temporary71isolated test;media must restore70without uninstalling/preserving original user data before our repeatChat.
