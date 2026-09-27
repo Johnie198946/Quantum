@@ -1926,7 +1926,7 @@
               "type": "string"
             },
             "source_image_id": {
-              "pattern": "^ga_[a-f0-9]{32}$",
+              "pattern": "^(ga|doc)_[a-f0-9]{32}$",
               "type": "string"
             },
             "title": {
@@ -4118,7 +4118,7 @@
               "type": "string"
             },
             "source_artifact_id": {
-              "pattern": "^ga_[a-f0-9]{32}$",
+              "pattern": "^(ga|doc)_[a-f0-9]{32}$",
               "type": "string"
             },
             "source_client_session_id": {

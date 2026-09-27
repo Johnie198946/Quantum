@@ -73,3 +73,32 @@ remaining_risks: 真机全UI点击和图库选择器未完成；生产验收待�
 - 整合版完整图片UI1 passed/60.628秒，/tmp/quantum-image-release/ios-live2.xcresult。前一轮脚本误触附件栏已修正可见范围判断后重跑，未修改产品行为掩盖失败。
 - 真机hosted链路与模拟器全UI分别验收，不能宣称真机全UI已通过。物理设备已恢复70并交还。
 - 用户已授权push/deploy；发布仅图片独立差异，不含其他任务manifest、knowledge.py或test_cleanup_capabilities.py。TestFlight由笔记协调任务统一发布，本任务不重复上传。
+
+## 最终联合候选相册入库修复
+
+# image-workflow-20260927 相册入库修复
+status: TESTED（增量补丁尚未提交；原图片167f已PUSHED）
+base: 1914bce542cc268476a63064ddb456cd98e785c4
+source: /tmp/quantum-image-final-1914bce5（干净候选归档上的最小补丁）
+patch: /tmp/quantum-image-photo-source-fix.patch
+冻结工作树未改动，git apply --check通过。
+
+复用 uploadDocument + document_original_path；相册原件只上传/保存一次，Chat同时保留同一doc图片引用和附件来源。已有OCR、私有笔记、编译状态跟踪及source_refs沿用。图片参数和读取同时支持ga/doc；结果回传仅允许ga，避免生成结果入库。无新服务或模型依赖。
+
+验证：
+- 137 passed, 1 skipped, 90 warnings，14.21秒；/tmp/quantum-image-photo-fix-regression.log。
+- 新增参数化集成路径：HTTP上传doc→私有笔记/编译排队→PCM workflow→device action→处理结果回执→可下载结果；校验单原件、无重复ga、跨用户/跨租户拒绝、缺失原件拒绝。设备像素处理在此服务端集成测试使用测试JPEG；不能替代真机。
+- Swift ImageProposalContractTests：2 passed/0 failed；包含doc图片与附件共享引用持久化、原图字节不落消息；xcresult /tmp/quantum-image-release-derived/Logs/Test/Test-AIPlatformApp-2026.09.27_19-21-18-+0800.xcresult。
+- 两个合同生成器 --check通过。
+- 冻结1914与初版修复真机build-for-testing通过；最终修改完整模拟器test编译通过。
+
+server_before: 本增量未部署
+server_after: 本增量未部署
+health_check: 未执行生产检查
+functional_check: 本地集成通过；最终真机全UI仍未通过
+rollback_point: 未建立，未部署
+remaining_risks: 最终候选须重建并补图库→Chat→确认→处理→导出真机全UI；解析失败保留原件和失败状态，沿用既有文档合同。
+
+由联合发布任务在冻结1914bce5干净worktree审查整合。规范main脏树未动。最终真机UI未过，不推送、不部署、不上传。
+
+联合整合后独立回归：133 passed/1 skipped/6 warnings，7.21秒；图片、文档、清理、PCM、旅行模块均覆盖。Ruff与git diff --check通过。日志/private/tmp/quantum-final-photo-regression.log。

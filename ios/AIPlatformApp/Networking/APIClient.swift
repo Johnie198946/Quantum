@@ -3891,7 +3891,13 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchImageReceipt(id: String) async throws -> ImageReceiptDTO {
-        try await request(ImageReceiptDTO.self, path: "documents/generated/\(encodedPath(id))")
+        if id.hasPrefix("doc_") {
+            let source = try await request(DocumentReceiptDTO.self, path: "documents/\(encodedPath(id))")
+            return ImageReceiptDTO(artifactId: source.sourceId, filename: source.filename,
+                contentHash: source.contentHash, downloadPath: "documents/\(encodedPath(id))/download",
+                revision: source.sourceRevision, byteSize: Int(source.sizeBytes))
+        }
+        return try await request(ImageReceiptDTO.self, path: "documents/generated/\(encodedPath(id))")
     }
 
     public func uploadDocument(data: Data, filename: String, contentType: String, fileOptOut: Bool = false) async throws -> DocumentReceiptDTO {

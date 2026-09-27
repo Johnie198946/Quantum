@@ -166,7 +166,7 @@ class WorkflowCreate(BaseModel):
     showroom_session_id: str | None = Field(None, min_length=1, max_length=120)
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
-    source_image_id: str | None = Field(None, pattern=r"^ga_[a-f0-9]{32}$")
+    source_image_id: str | None = Field(None, pattern=r"^(ga|doc)_[a-f0-9]{32}$")
     output_kind: Literal["general", "presentation", "document", "html", "travel", "image"] = "general"
     source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
     presentation_review_gates: list[Literal["outline", "design"]] = Field(

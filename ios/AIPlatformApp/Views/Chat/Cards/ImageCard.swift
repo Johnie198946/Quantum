@@ -33,7 +33,7 @@ public struct ImageCard: View {
             }
             Text(block.caption).font(AppTheme.Typography.supporting)
                 .foregroundStyle(AppTheme.Colors.textSecondary)
-            if block.assetName.hasPrefix("ga_") {
+            if (block.assetName.hasPrefix("ga_") || block.assetName.hasPrefix("doc_")) {
                 HStack {
                     Button("编辑图片", systemImage: "slider.horizontal.3") { editing = true }
                         .disabled(original == nil)
@@ -72,7 +72,7 @@ public struct ImageCard: View {
     @MainActor private func load() async {
         error = nil
         image = block.imageData.flatMap(UIImage.init(data:)) ?? UIImage(named: block.assetName)
-        guard block.assetName.hasPrefix("ga_") else {
+        guard (block.assetName.hasPrefix("ga_") || block.assetName.hasPrefix("doc_")) else {
             if image == nil { error = "图片不可用" }
             return
         }

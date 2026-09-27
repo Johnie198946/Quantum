@@ -9,6 +9,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import ImageIO
 import Combine
 
 @MainActor
@@ -20,7 +21,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     @Published public var failedImageUpload: Data?
     public var activeImageArtifactId: String? {
         messages.filter { $0.sessionId == sessionManager.activeSessionID() }.flatMap(\.blocks).compactMap {
-            if case .image(let image) = $0, image.assetName.hasPrefix("ga_") { return image.assetName }; return nil
+            if case .image(let image) = $0, (image.assetName.hasPrefix("ga_") || image.assetName.hasPrefix("doc_")) { return image.assetName }; return nil
         }.last
     }
     @Published public var inputText: String = ""
@@ -3933,14 +3934,31 @@ public final class TenantSessionCoordinator: ObservableObject {
         Task {
             defer { isUploadingImage = false }
             do {
-                let receipt = try await APIClient.shared.uploadImage(data: data)
+                guard data.count <= 12 * 1024 * 1024,
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let typeID = CGImageSourceGetType(source),
+                      let type = UTType(typeID as String),
+                      let ext = type.preferredFilenameExtension,
+                      let mime = type.preferredMIMEType else { throw APIError.network("请选择 12 MB 以内的图片") }
+                let receipt = try await APIClient.shared.uploadDocument(data: data, filename: "photo.\(ext)", contentType: mime)
                 guard sessionManager.activeAccountFingerprint == account,
                       sessionManager.activeSessionID() == sid else { return }
                 let preview = InboxFileManager.shared.downsampleImage(data: data)
-                messages.append(ChatMessage(sessionId: sid, role: .user, content: "已上传图片", blocks: [
-                    .image(ImageBlock(assetName: receipt.artifactId, imageData: preview, caption: "原图已就绪 · 告诉我你想怎么改"))
-                ]))
-                commitSession()
+                let attachment = AttachmentBlock(fileName: receipt.filename, fileType: .generic,
+                    fileSize: ByteCountFormatter.string(fromByteCount: receipt.sizeBytes, countStyle: .file),
+                    state: .uploading, statusMessage: "原图已保存")
+                let message = ChatMessage(sessionId: sid, role: .user, content: "已上传图片", blocks: [
+                    .image(ImageBlock(assetName: receipt.sourceId, imageData: preview, caption: "原图已就绪 · 告诉我你想怎么改")),
+                    .attachment(attachment)
+                ])
+                messages.append(message)
+                updateAttachment(messageId: message.id, attachmentId: attachment.id, receipt: receipt)
+                if receipt.status == "ready" {
+                    Task {
+                        await KnowledgeNoteStore.shared.restoreFromCloud()
+                        await monitorDocumentCompilation(messageId: message.id, attachmentId: attachment.id, sourceId: receipt.sourceId)
+                    }
+                }
             } catch {
                 guard sessionManager.activeAccountFingerprint == account,
                       sessionManager.activeSessionID() == sid else { return }

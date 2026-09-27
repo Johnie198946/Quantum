@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `59a26bf7c3b59b964d4919ca75400ec6b81b1b1c284a4fe98ed68ab4eaba2a8e`
+Catalog digest: `c0ed3d18246260b167d8b3e5e7c3ca41eefb84dac120547c0e01aadfe1aad33d`
 
 ## Gateway 核心模块规范
 

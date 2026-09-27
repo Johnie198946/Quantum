@@ -51,11 +51,18 @@ def save_image(tenant_key: str, user_id: str, data: bytes) -> dict:
 
 
 def workflow_image_source(tenant_key: str, user_id: str, source_id: str) -> dict:
-    if not re.fullmatch(r"ga_[a-f0-9]{32}", source_id):
+    if not re.fullmatch(r"(ga|doc)_[a-f0-9]{32}", source_id):
         raise GeneratedArtifactError("invalid_image_source", "图片引用无效")
-    path, receipt = generated_artifact_path(tenant_key, user_id, source_id)
-    if receipt["kind"] not in {"image_source", "image_processed"}:
-        raise GeneratedArtifactError("invalid_image_source", "请选择已上传的图片")
+    if source_id.startswith("doc_"):
+        from backend.services.document_sources import DocumentSourceError, document_original_path
+        try:
+            path, receipt = document_original_path(tenant_key, user_id, source_id)
+        except DocumentSourceError as exc:
+            raise GeneratedArtifactError("invalid_image_source", "图片原件不可用") from exc
+    else:
+        path, receipt = generated_artifact_path(tenant_key, user_id, source_id)
+        if receipt["kind"] not in {"image_source", "image_processed"}:
+            raise GeneratedArtifactError("invalid_image_source", "请选择已上传的图片")
     raw = path.read_bytes()
     image, _ = decode_image(raw)
     return {"artifact_id": source_id, "content_hash": hashlib.sha256(raw).hexdigest(),
@@ -130,6 +137,8 @@ async def finish_device_image(db, action, status, metadata):
     if source["content_hash"] != request["source_hash"]:
         raise HTTPException(409, "原图校验失败")
     result_id = str(metadata.get("artifact_id") or "")
+    if not re.fullmatch(r"ga_[a-f0-9]{32}", result_id):
+        raise HTTPException(422, "请上传处理后的图片")
     workflow_image_source(action.tenant_key, action.user_id, result_id)
     path, receipt = generated_artifact_path(action.tenant_key, action.user_id, result_id)
     raw = path.read_bytes()

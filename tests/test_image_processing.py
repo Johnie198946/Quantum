@@ -25,7 +25,8 @@ from backend.services.workflow_executor import project_event
 
 
 @pytest.mark.asyncio
-async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch):
+@pytest.mark.parametrize("source_kind", ["generated", "document"])
+async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch, source_kind):
     monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path / "generated"))
     monkeypatch.setenv("AI_LAB_HOME", str(tmp_path / "vault"))
     image = Image.new("RGBA", (640, 480), (200, 30, 50, 0))
@@ -37,19 +38,43 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
     app.include_router(router)
     app.dependency_overrides[require_auth] = lambda: actor
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        upload = await client.post("/api/v1/documents/images", content=original)
-        assert upload.status_code == 201, upload.text
-        receipt = upload.json()
+        queued = []
+        if source_kind == "document":
+            import base64
+            from backend.api import documents
+            from backend.services import document_sources
+            monkeypatch.setattr(document_sources, "note_directory", lambda tenant, user: tmp_path / tenant / user)
+            async def enqueue(candidate, *, source_content):
+                queued.append(candidate)
+                return {"schedule_status": "scheduled", "event_id": "image-event", "run_id": "image-compile"}
+            monkeypatch.setattr(documents, "enqueue_and_schedule", enqueue)
+            upload = await client.post("/api/v1/documents", headers={"X-File-Name": "photo.png"},
+                json={"data": base64.b64encode(original).decode(), "content_type": "image/png", "extracted_text": "图片测试说明"})
+            assert upload.status_code == 201, upload.text
+            document = upload.json()
+            assert document["note_id"] == document["source_id"]
+            assert document["contribution_status"] == "queued" and len(queued) == 1
+            assert len(list(tmp_path.rglob("original.png"))) == 1
+            assert not list((tmp_path / "generated").rglob("content.*"))
+            receipt = {"artifact_id": document["source_id"], "download_path": f"documents/{document['source_id']}/download"}
+            from backend.services.image_processing import workflow_image_source
+            for tenant, user in [("other-tenant", actor["user_id"]), (actor["tenant_key"], "other")]:
+                with pytest.raises(GeneratedArtifactError):
+                    workflow_image_source(tenant, user, document["source_id"])
+        else:
+            upload = await client.post("/api/v1/documents/images", content=original)
+            assert upload.status_code == 201, upload.text
+            receipt = upload.json()
         downloaded = await client.get("/api/v1/" + receipt["download_path"])
         assert downloaded.content == original
         source_id = receipt["artifact_id"]
         edit = {"format": "jpg", "aspect_ratio": "16:9"}
         context = current_tenant.set(actor["tenant_key"])
         try:
-            result = await execute_verified_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key="image-direct-check")
+            result = await execute_verified_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
         finally:
             current_tenant.reset(context)
-        assert result["status"] == "completed", result
+        assert result["status"] == "completed", str(result)
         assert result["events"][0]["renderer"] == "workflow"
         workflow_id = result["events"][0]["payload"]["workflow"]["id"]
         async with SessionLocal() as db:
@@ -58,11 +83,11 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
             assert plan["nodes"][0]["parameters"]["image_edit"]["aspect_ratio"] == "16:9"
         async with SessionLocal() as db:
             workflow = await db.get(WorkflowDefinition, workflow_id)
-            version = WorkflowPlanVersion(id="image-plan", workflow_id=workflow_id, version=1,
+            version = WorkflowPlanVersion(id=f"image-plan-{source_kind}", workflow_id=workflow_id, version=1,
                 dsl=plan, goal="crop", deliverable="image")
-            execution = WorkflowExecution(id="image-run", workflow_id=workflow_id, plan_id=version.id,
-                tenant_key=actor["tenant_key"], status="awaiting_approval", idempotency_key="image-test")
-            node = WorkflowNodeRun(id="image-node", execution_id=execution.id, node_id="image_edit",
+            execution = WorkflowExecution(id=f"image-run-{source_kind}", workflow_id=workflow_id, plan_id=version.id,
+                tenant_key=actor["tenant_key"], status="awaiting_approval", idempotency_key=f"image-test-{source_kind}")
+            node = WorkflowNodeRun(id=f"image-node-{source_kind}", execution_id=execution.id, node_id="image_edit",
                 node_type="OUTPUT_FORMAT", name="parameters", attempt=1)
             db.add(version)
             await db.flush()
@@ -87,10 +112,12 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
             await record_client_action_receipt(action["action_id"], "SUCCEEDED", {"artifact_id": source_id}, actor)
         assert invalid.value.status_code == 422
         async with SessionLocal() as db:
-            assert (await db.get(WorkflowExecution, "image-run")).status == "awaiting_approval"
+            assert (await db.get(WorkflowExecution, f"image-run-{source_kind}")).status == "awaiting_approval"
         output = io.BytesIO()
         Image.new("RGB", (640, 360), "white").save(output, format="JPEG")
         result = (await client.post("/api/v1/documents/images", content=output.getvalue())).json()
+        assert result["artifact_id"].startswith("ga_")
+        assert len(queued) == (1 if source_kind == "document" else 0)
         metadata = {"artifact_id": result["artifact_id"]}
         with pytest.raises(HTTPException) as denied:
             await record_client_action_receipt(action["action_id"], "SUCCEEDED", metadata, {**actor, "user_id": "other"})
@@ -99,9 +126,15 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         assert accepted["state"] == "SUCCEEDED"
         assert await record_client_action_receipt(action["action_id"], "SUCCEEDED", metadata, actor) == accepted
         async with SessionLocal() as db:
-            assert (await db.get(WorkflowExecution, "image-run")).status == "awaiting_review"
-            outputs = list((await db.scalars(select(WorkflowArtifact).where(WorkflowArtifact.source_kind == "ios_native"))).all())
+            assert (await db.get(WorkflowExecution, f"image-run-{source_kind}")).status == "awaiting_review"
+            outputs = list((await db.scalars(select(WorkflowArtifact).where(WorkflowArtifact.source_kind == "ios_native", WorkflowArtifact.execution_id == f"image-run-{source_kind}"))).all())
             assert len(outputs) == 1 and outputs[0].metadata_json["operations"]["format"] == "jpg"
+        if source_kind == "document":
+            from backend.services.document_sources import document_original_path
+            path, _ = document_original_path(actor["tenant_key"], actor["user_id"], source_id)
+            path.unlink()
+            with pytest.raises(GeneratedArtifactError):
+                workflow_image_source(actor["tenant_key"], actor["user_id"], source_id)
         actor["user_id"] = "other-user"
         assert (await client.get("/api/v1/" + receipt["download_path"])).status_code == 404
 

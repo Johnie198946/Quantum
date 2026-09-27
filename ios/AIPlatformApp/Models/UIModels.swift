@@ -997,7 +997,7 @@ public struct PersistedMessage: Codable, Sendable {
 
     public init(_ m: ChatMessage) {
         self.images = m.blocks.compactMap {
-            guard case .image(var image) = $0, image.assetName.hasPrefix("ga_") else { return nil }
+            guard case .image(var image) = $0, (image.assetName.hasPrefix("ga_") || image.assetName.hasPrefix("doc_")) else { return nil }
             image.imageData = nil // Persist the private reference, not full-resolution photo bytes.
             return image
         }

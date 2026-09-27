@@ -7114,6 +7114,21 @@ extension WorkflowLifecycleDTOTests {
 }
 
 final class ImageProposalContractTests: XCTestCase {
+    func testDocumentImagePersistsOneSharedSourceWithoutPhotoBytes() throws {
+        let id = "doc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let attachment = AttachmentBlock(fileName: "photo.png", fileType: .generic, fileSize: "1 KB",
+            state: .compiling, sourceId: id, contentHash: "hash", sourceRevision: 1, noteId: id)
+        let message = ChatMessage(sessionId: "image-source", role: .user, content: "已上传图片", blocks: [
+            .image(ImageBlock(assetName: id, imageData: Data([1, 2]), caption: "原图")), .attachment(attachment)
+        ])
+        let persisted = try JSONDecoder().decode(PersistedMessage.self, from: JSONEncoder().encode(PersistedMessage(message)))
+        XCTAssertEqual(persisted.images?.first?.assetName, id)
+        XCTAssertNil(persisted.images?.first?.imageData)
+        XCTAssertEqual(persisted.attachments?.first?.sourceId, id)
+        XCTAssertEqual(persisted.attachments?.first?.noteId, id)
+        XCTAssertEqual(persisted.attachments?.first?.state, .compiling)
+    }
+
     func testImageParametersSurviveHistoryWithoutGuessingDefaults() throws {
         let raw = Data(#"{"proposal_id":"image-proposal","capability_id":"media.process","input":{"source_artifact_id":"ga_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","format":"jpg","aspect_ratio":"16:9","extract_subject":false,"focus_x":0.5,"focus_y":0.5},"summary":"裁切转码","risk":"low","confirmation_token":"one-time"}"#.utf8)
         let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: raw)

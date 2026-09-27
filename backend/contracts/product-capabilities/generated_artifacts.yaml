@@ -126,7 +126,7 @@ capabilities:
       required: [source_artifact_id]
       properties:
         source_client_session_id: {type: string, minLength: 1, maxLength: 100}
-        source_artifact_id: {type: string, pattern: '^ga_[a-f0-9]{32}$'}
+        source_artifact_id: {type: string, pattern: '^(ga|doc)_[a-f0-9]{32}$'}
         format: {type: string, enum: [png, jpg], default: png}
         aspect_ratio: {type: string, enum: [original, '16:9', '9:16', '1:1', '4:3', '3:4'], default: original}
         extract_subject: {type: boolean, default: false}
