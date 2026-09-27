@@ -163,3 +163,13 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - cron: 暂停前保存10原配置，自然active=[]后交窗；所有cron/wrapper绑定b9，原enabled全部恢复，prompt/schedule/script/model/provider/delivery逐项保持，恢复active=[]。
 - rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-b9e4d128；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-b9e4d128dd58，含PG/出版SQLite/完整稿件媒体/env/旧镜像引用。
 - status: VERIFIED（出版恢复和本期已完成验收）。remaining_risks: 真机证据来自生产Build70；Build72仅其他任务上传，不计入本轮UI验收。历史9本图片缺口、历史版权绑定及临时12m配额后续恢复保持原记录；本轮未改变这些事项。
+
+## Build73联合c533部署后的出版恢复
+
+- server_before: b9e4d128dd5839bae89cff39790fb8240297e23e；server_after/runtime_after: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；release=/opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM（协调方回执）。
+- remote_sha: 暂停前和运行时安装时均git ls-remote确认main=c533；仅验收记录更新独立任务分支。
+- health_check: 独立服务器.deployed-sha/API镜像revision=c533，healthy，/ready返回ready。三份PG/出版SQLite/媒体备份sha256sum -c均OK。
+- functional_check: 部署后实际读者API再次返回10章、正文哈希076cbb...c9f，3插图全部anchor/caption/alt/section/version一致，5媒体200且字节SHA匹配。结果/tmp/publication-body-acceptance-20260927/c533-new-plan-readback.json。协调双方只读发行快照确认唯一published、actual12:00:32.674400及bundle/5媒体保持。异步回读尚未结束时首次读取结果文件为空，待执行exit0后解析验收通过，再恢复cron；没有把空文件当成功。
+- cron: 10原配置备份暂停，自然active=[]后交窗；最终全部pin c533并恢复原enabled，prompt/schedule/script/model/provider/delivery逐项保持，active=[]，无遗留暂停。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-c5331384；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-c5331384d0f8完整备份。
+- status: VERIFIED限出版恢复与已刊完整性；不代替其他任务Build73新UI或图片场景验收。remaining_risks: 历史9本图片缺口、历史版权绑定、临时配额后续恢复保持原记录；已刊三图真机证据仍为生产Build70。
