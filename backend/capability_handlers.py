@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
@@ -21,6 +22,7 @@ from backend.api.knowledge_sync import (
     list_synced_notes,
     merge_notes,
     restore_note,
+    trash_note,
     sync_note,
 )
 from backend.api.workflows import (
@@ -50,7 +52,16 @@ async def verify_resource_versions(
     resource_versions: dict[str, Any],
 ) -> None:
     """Re-read CAS state at the domain boundary immediately before mutation."""
-    if capability_id in {"knowledge.note.update", "knowledge.note.archive"}:
+    if capability_id == "knowledge.note.trash" and data.get("note_versions"):
+        expected = data["note_versions"]
+        if resource_versions != expected:
+            raise HTTPException(409, detail={"code": "resource_conflict"})
+        snapshot = await list_synced_notes(True, payload, include_trashed=True)
+        current = {item["note_id"]: item["content_hash"] for item in snapshot["items"]
+                   if not item.get("archived") or item.get("trashed")}
+        if any(current.get(key) != value for key, value in expected.items()):
+            raise HTTPException(409, detail={"code": "resource_conflict"})
+    elif capability_id in {"knowledge.note.update", "knowledge.note.archive", "knowledge.note.trash"}:
         note_id = str(data["note_id"])
         expected = str(resource_versions.get(note_id) or "")
         if expected != str(data.get("base_hash") or ""):
@@ -152,42 +163,72 @@ async def _knowledge_mutation(
 
 
 def _note_title(markdown: str) -> str:
+    from backend.services.user_note_context import _frontmatter_value
+    if title := _frontmatter_value(markdown, "title"):
+        return title[:200]
     first = next((line.strip() for line in markdown.splitlines() if line.strip()), "无标题")
     return first.lstrip("# ")[:200] or "无标题"
 
 
 async def _knowledge_search(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
+    started = time.perf_counter()
     snapshot = await list_synced_notes(bool(data.get("include_archived", False)), payload)
+    if data.get("mode") == "organize":
+        from backend.services.user_note_context import organize_note_candidates
+        from backend.services.knowledge_catalog import run_knowledge_read
+        organization = await run_knowledge_read(organize_note_candidates, snapshot["items"], offset=int(data.get("offset", 0)), limit=int(data.get("limit", 20)))
+        organization["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return {"items": [], "organization": organization,
+                "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
     terms = data["query"].casefold().split()
-    items = [item for item in snapshot["items"] if all(
+    matched = [item for item in snapshot["items"] if data.get("mode") == "catalog" or all(
         term in str(item.get("markdown") or "").casefold() for term in terms
-    )][:int(data.get("limit", 5))]
-    return {
-        "items": [{
-            "note_id": item["note_id"], "title": _note_title(item["markdown"]),
-            "snippet": item["markdown"][:1000], "content_hash": item["content_hash"],
+    )]
+    offset, limit = max(0, int(data.get("offset", 0))), int(data.get("limit", 5))
+    items = []
+    content_chars = 0
+    for item in matched[offset:offset + limit]:
+        markdown = str(item.get("markdown") or "")
+        # One oversized note is returned whole; never label a clipped body complete.
+        if data.get("include_content") and items and content_chars + len(markdown) > 48_000:
+            break
+        projected = {
+            "note_id": item["note_id"], "title": _note_title(markdown),
+            "snippet": markdown[:1000], "content_hash": item["content_hash"],
             "updated_at": item.get("updated_at"), "archived": item["archived"],
-        } for item in items],
+        }
+        if data.get("include_content"):
+            projected.update(markdown=markdown, content_complete=True)
+            content_chars += len(markdown)
+        items.append(projected)
+    return {
+        "items": items,
+        "total_count": len(matched),
+        "next_offset": offset + len(items) if offset + len(items) < len(matched) else None,
+        "content_complete": bool(data.get("include_content")),
         "local_state": "client_managed", "cloud_state": "synced",
         "index_state": snapshot["compile_status"],
     }
 
 
 async def _knowledge_read(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
-    snapshot = await list_synced_notes(True, payload)
+    snapshot = await list_synced_notes(True, payload, include_trashed=True)
     note = next((item for item in snapshot["items"] if item["note_id"] == data["note_id"]), None)
     if note is None:
         raise HTTPException(status_code=404, detail={"code": "note_not_found"})
-    return {"note": note, "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
+    return {"note": {**note, "title": _note_title(note["markdown"])}, "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
 
 
 async def _knowledge_compare(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
     from backend.services.knowledge_action_capability import note_merge_preview
 
+    snapshot = await list_synced_notes(True, payload, include_trashed=True)
+    by_id = {item["note_id"]: item for item in snapshot["items"]}
     notes = []
     for note_id in (data["target_note_id"], data["source_note_id"]):
-        result = await _knowledge_read({"note_id": note_id}, payload, key)
-        notes.append({**result["note"], "id": note_id})
+        if note_id not in by_id:
+            raise HTTPException(status_code=404, detail={"code": "note_not_found"})
+        notes.append({**by_id[note_id], "id": note_id})
     try:
         return note_merge_preview(*notes)
     except ValueError as exc:
@@ -228,6 +269,24 @@ async def _knowledge_archive(data: dict[str, Any], payload: dict[str, Any], key:
         lambda: archive_note(data["note_id"], NoteArchiveRequest(
             expected_content_hash=data["base_hash"]
         ), payload),
+    )
+
+
+async def _knowledge_trash(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
+    if data.get("all_active"):
+        raise HTTPException(409, detail={"code": "reviewed_note_scope_required"})
+    if data.get("note_versions"):
+        results = []
+        for note_id, expected in data["note_versions"].items():
+            try:
+                results.append(await _knowledge_trash({"note_id": note_id, "base_hash": expected}, payload, f"{key}:{note_id}"))
+            except HTTPException as error:
+                raise HTTPException(error.status_code, detail={"code": "batch_trash_incomplete", "message":
+                    f"已完成{len(results)}篇，其余未完成；请重新生成提案重试，仅包含原确认范围。"}) from error
+        return {"trash_status": "trashed", "count": len(results), "results": results}
+    return await _knowledge_mutation(
+        "knowledge.note.trash", data, payload, key,
+        lambda: trash_note(data["note_id"], payload, expected_content_hash=data["base_hash"]),
     )
 
 
@@ -1243,6 +1302,7 @@ HANDLERS: dict[str, Handler] = {
     "knowledge.merge": _knowledge_merge,
     "knowledge.archive": _knowledge_archive,
     "knowledge.restore": _knowledge_restore,
+    "knowledge.trash": _knowledge_trash,
     "client.knowledge.navigation": _navigation,
     "workflow.create": _workflow_create,
     "workflow.open": _workflow_open,

@@ -409,9 +409,43 @@ def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     manifest = Path("/safe/item/draft-manifest.json")
     watchdog._run_action(watchdog.Action("prepare", (watchdog.Barrier("ai-history", "a" * 64),), manifest=manifest))
     watchdog._run_action(watchdog.Action("finalize", (watchdog.Barrier("ai-history", "a" * 64),), manifest=manifest))
-    assert calls[0][0] == [str(watchdog.EDITORIAL_CLIENT), "prepare", "--manifest", str(manifest)]
-    assert calls[1][0] == [str(watchdog.EDITORIAL_CLIENT), "finalize", "--root", str(manifest.parent)]
+    assert calls[0][0] == [sys.executable, str(watchdog.EDITORIAL_CLIENT), "prepare", "--manifest", str(manifest)]
+    assert calls[1][0] == [sys.executable, str(watchdog.EDITORIAL_CLIENT), "finalize", "--root", str(manifest.parent)]
     assert all(not any("release" in word for word in command) for command, _ in calls)
+
+
+@pytest.mark.parametrize("phase", [
+    "status", "native_fetch", "handoff_fetch", "prepare", "finalize",
+    "handoff_acknowledge", "handoff_revision",
+])
+def test_python_clients_run_without_executable_permission(tmp_path, monkeypatch, phase):
+    manifest = tmp_path / "draft-manifest.json"
+    output_root = tmp_path / "outputs"
+    expected = {
+        "status": ["--status-only"],
+        "native_fetch": ["fetch-native", "--output-root", str(output_root), "--series-id", "ai-history", "--issue-key", DAY],
+        "handoff_fetch": ["fetch", "--output-root", str(output_root), "--series-id", "ai-history", "--issue-key", DAY],
+        "prepare": ["prepare", "--manifest", str(manifest)],
+        "finalize": ["finalize", "--root", str(tmp_path)],
+        "handoff_acknowledge": ["acknowledge", "--manifest", str(manifest)],
+        "handoff_revision": ["request-revision", "--manifest", str(manifest)],
+    }[phase]
+    client = tmp_path / "client.py"
+    client.write_text(
+        "import json, sys\n"
+        f"assert sys.argv[1:] == {expected!r}, sys.argv\n"
+        "print(json.dumps({'status': 'waiting_assets'}))\n"
+    )
+    client.chmod(0o644)
+    for name in ("STATUS_CLIENT", "HANDOFF_CLIENT", "EDITORIAL_CLIENT"):
+        monkeypatch.setattr(watchdog, name, client)
+    monkeypatch.setattr(watchdog, "OUTPUT_ROOT", output_root)
+    if phase == "status":
+        assert watchdog._status() == {"status": "waiting_assets"}
+    else:
+        watchdog._run_action(watchdog.Action(
+            phase, (watchdog.Barrier("ai-history", "a" * 64, issue_key=DAY),), manifest=manifest,
+        ))
 
 
 def test_detached_dispatch_returns_after_persisted_live_execution(tmp_path, monkeypatch):
@@ -1444,3 +1478,38 @@ def test_legacy_dispatched_rearm_requires_expired_dead_verified_owner(tmp_path, 
         assert history[0]["previous"]["attempts"] == 6
     else:
         assert history == []
+
+
+@pytest.mark.parametrize("current_slot", ["12:00", "13:00"])
+@pytest.mark.parametrize("historical_kind", ["retired_slot", "disabled_series"])
+def test_review_plan_ignores_retired_candidates_but_keeps_current_identity(
+    monkeypatch, current_slot, historical_kind
+):
+    from dataclasses import replace
+    series = "ai-practice"
+    monkeypatch.setitem(watchdog.SERIES, series, {
+        **watchdog.SERIES[series], "release_times": [current_slot],
+    })
+    key = DAY if current_slot == "12:00" else DAY + "T" + current_slot
+    current = replace(item(series, "await_review"), issue_key=key)
+    if historical_kind == "retired_slot":
+        historical = replace(item(series, "await_review", suffix="retired"), issue_key=DAY + "T00:01")
+    else:
+        monkeypatch.setitem(watchdog.SERIES, "ai-history", {
+            **watchdog.SERIES["ai-history"], "enabled": False,
+        })
+        historical = item("ai-history", "await_review", day="2026-09-24")
+    action, reason = watchdog._plan(DAY, {series}, [historical, current], issue_key=key)
+    assert reason == "ready"
+    assert action.phase == "review" and action.manifest == current.manifest
+    invalid = replace(current, status="invalid")
+    action, reason = watchdog._plan(DAY, {series}, [historical, invalid], issue_key=key)
+    assert action is None and reason == "invalid_manifest"
+
+
+def test_review_plan_does_not_treat_malformed_slot_as_retired():
+    from dataclasses import replace
+    current = item("ai-practice", "await_review")
+    malformed = replace(current, manifest=Path("/malformed/draft-manifest.json"), issue_key=DAY + "Tgarbage")
+    with pytest.raises(ValueError):
+        watchdog._plan(DAY, {current.series}, [malformed, current], issue_key=DAY)

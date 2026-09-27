@@ -48,7 +48,7 @@ FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_fi
           "batch", "quality_contract", "receipt", "error", "shelf_cover_file",
           "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256",
           "illustration_01_file", "illustration_01_sha256", "illustration_02_file",
-          "illustration_02_sha256", "illustration_03_file", "illustration_03_sha256", "asset_files"}
+          "illustration_02_sha256", "illustration_03_file", "illustration_03_sha256", "asset_files", "media_roles"}
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
@@ -59,7 +59,12 @@ MEDIA_CONTRACT = {
     "illustration_02": ("publication_illustration", 1600, 900),
     "illustration_03": ("publication_illustration", 1600, 900),
 }
-from backend.services.knowledge_publication_store import SERIES, publication_slot
+from backend.services.knowledge_publication_store import (
+    SERIES, publication_slot, publication_media_spec, required_publication_media,
+    validate_illustration_plan, MAX_PUBLICATION_ILLUSTRATIONS,
+)
+ALL_MEDIA_ROLES = ("shelf_cover", "reader_cover", *(f"illustration_{i:02d}" for i in range(1, MAX_PUBLICATION_ILLUSTRATIONS + 1)))
+FIELDS.update(f"{role}_{suffix}" for role in ALL_MEDIA_ROLES for suffix in ("file", "sha256"))
 
 DAILY_SERIES = {key for key, value in SERIES.items() if value["kind"] == "daily"}
 CONTENT_SUBMISSION_FIELDS = {"title", "summary", "source_files", "execution_files"}
@@ -165,7 +170,7 @@ def _submission_entry(base: Path, entry, *, group: str) -> tuple[dict, Path]:
 
 def _validate_media(path: Path, role: str) -> None:
     expected_type = media_type(path)
-    _, width, height = MEDIA_CONTRACT[role]
+    width, height = publication_media_spec(role)["size"]
     try:
         with Image.open(path) as image:
             actual_type = Image.MIME.get(image.format)
@@ -187,7 +192,15 @@ def _initial_item(base: Path, body_raw: bytes, source_files: list[dict],
         "review_file": "editorial-review.json", "proof_file": "editorial-proof.json",
         "status": "prepared",
     }
-    for role in MEDIA_ROLES:
+    plan_path = base / "image-manifest.json"
+    generation = json.loads(read(plan_path)) if plan_path.exists() else {}
+    plan = generation.get("illustration_plan")
+    if plan is not None:
+        validate_illustration_plan(plan, body_raw.decode())
+    roles = required_publication_media({"body": body_raw.decode(), "illustration_plan": plan}) if plan is not None else set(MEDIA_ROLES)
+    if plan is not None:
+        item["media_roles"] = sorted(roles)
+    for role in sorted(roles):
         matches = [base / f"{role}{suffix}" for suffix in (".jpg", ".jpeg", ".png")
                    if (base / f"{role}{suffix}").exists()]
         if len(matches) != 1:
@@ -201,8 +214,8 @@ def _initial_item(base: Path, body_raw: bytes, source_files: list[dict],
 
 def _same_initial_item(existing: dict, expected: dict) -> bool:
     fields = {
-        "body_file", "body_sha256", "source_files", "rights_files", "execution_files",
-        "review_file", "proof_file", *(f"{role}_{suffix}" for role in MEDIA_ROLES
+        "body_file", "body_sha256", "source_files", "rights_files", "execution_files", "media_roles",
+        "review_file", "proof_file", *(f"{role}_{suffix}" for role in ALL_MEDIA_ROLES
                                         for suffix in ("file", "sha256")),
     }
     return all(existing.get(field) == expected.get(field) for field in fields)
@@ -212,14 +225,15 @@ def _validate_image_manifest(base: Path, item: dict) -> None:
     """Bind generated assets to this packet; visual/tool evidence needs review."""
     value = json.loads(read(local_path(base, "image-manifest.json")))
     images = value.get("images") if isinstance(value, dict) else None
-    if not isinstance(images, list) or len(images) != len(MEDIA_ROLES):
-        raise ValueError("image generation manifest requires all five roles")
+    roles = {role for role in ALL_MEDIA_ROLES if item.get(f"{role}_file")}
+    if not isinstance(images, list) or len(images) != len(roles):
+        raise ValueError("image generation manifest requires every planned role")
     seen = set()
     for image in images:
         if not isinstance(image, dict):
             raise ValueError("invalid image generation record")
         role = image.get("role")
-        if not isinstance(role, str) or role not in MEDIA_ROLES or role in seen:
+        if not isinstance(role, str) or role not in roles or role in seen:
             raise ValueError("image generation roles must be unique")
         seen.add(role)
         # Both existing asset agents' manifest shapes bind the same final bytes.
@@ -377,11 +391,19 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
             raise ValueError("image generation evidence must be separate from author inputs")
         input_paths.add(path)
         groups["source_files"].append(entry)
+    plan = None
+    if image_manifest.exists():
+        plan = json.loads(read(image_manifest)).get("illustration_plan")
+        if plan is not None:
+            validate_illustration_plan(plan, body_raw.decode())
+            write_bytes(base / "illustration-plan.json", encoded(plan))
+            groups["source_files"].append({"kind": "publication_illustration_plan", "path": "illustration-plan.json",
+                                           "sha256": sha(encoded(plan))})
     item = _initial_item(base, body_raw, groups["source_files"], groups["execution_files"])
-    if native_path.exists():
+    if native_path.exists() or plan is not None:
         _validate_image_manifest(base, item)
-    media_paths = {local_path(base, item[f"{role}_file"]) for role in MEDIA_ROLES}
-    if input_paths & media_paths or len(media_paths) != len(MEDIA_ROLES):
+    media_paths = {local_path(base, item[f"{role}_file"]) for role in ALL_MEDIA_ROLES if item.get(f"{role}_file")}
+    if input_paths & media_paths or len(media_paths) != sum(bool(item.get(f"{role}_file")) for role in ALL_MEDIA_ROLES):
         raise ValueError("publication media paths must be unique")
 
     digest = sha(body_raw)
@@ -446,6 +468,8 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
                              "learning_objectives": objectives, "editorial_brief": brief,
                              "research_gaps": research_gaps},
     }
+    if plan is not None:
+        bundle["illustration_plan"] = plan
     if issue_slot is not None:
         bundle["issue_slot"] = occurrence["issue_slot"]
     write_bytes(candidate_path, encoded(bundle))
@@ -474,7 +498,7 @@ def load_manifest(path):
             raise ValueError("unknown manifest fields or invalid status")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
                   (item.get("body_file"), item.get("body_sha256"))]
-        for role in MEDIA_ROLES:
+        for role in ALL_MEDIA_ROLES:
             name, digest = item.get(f"{role}_file"), item.get(f"{role}_sha256")
             if (name is None) != (digest is None):
                 raise ValueError(f"{role} file and hash must be provided together")
@@ -520,8 +544,15 @@ def load_manifest(path):
         bundle = json.loads(read(local_path(path.parent, item["bundle_file"])))
         if bundle.get("body_hash") != item["body_sha256"]:
             raise ValueError("bundle body hash mismatch")
-        if bundle.get("series_id") in DAILY_SERIES and any(item.get(f"{role}_file") is None for role in MEDIA_ROLES):
-            raise ValueError("daily editorial manifest requires all five publication media files and hashes")
+        if bundle.get("illustration_plan") is not None:
+            validate_illustration_plan(bundle["illustration_plan"], read(local_path(path.parent, item["body_file"])).decode())
+            if item.get("media_roles") != sorted(required_publication_media(bundle)):
+                raise ValueError("manifest media roles conflict with reviewed plan")
+            if {role for role in ALL_MEDIA_ROLES if item.get(f"{role}_file")} != set(item["media_roles"]):
+                raise ValueError("manifest media files conflict with reviewed plan")
+        if bundle.get("series_id") in DAILY_SERIES and any(item.get(f"{role}_file") is None for role in required_publication_media(bundle)):
+            raise ValueError("daily editorial manifest requires every planned media file and hash" if bundle.get("illustration_plan") is not None
+                             else "daily editorial manifest requires all five publication media files and hashes")
         if item["status"] != "prepared" and bundle.get("quality_contract") != item.get("quality_contract"):
             raise ValueError("immutable contract mismatch")
     return path, value
@@ -570,10 +601,27 @@ def _revision_gaps(prior_contract: dict, review_gaps: list) -> list:
     return list(gaps.values())
 
 
+def _historical_issue_key(bundle: dict) -> str:
+    """Read frozen occurrence identity without applying today's release schedule."""
+    from zoneinfo import ZoneInfo
+    day = bundle["issue_date"]
+    if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
+        raise ValueError("historical occurrence date is invalid")
+    release = datetime.fromisoformat(bundle["release_at"])
+    if release.tzinfo is None:
+        raise ValueError("publication release_at must include timezone")
+    release_slot = release.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+    slot = bundle.get("issue_slot") or release_slot
+    if not isinstance(slot, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", slot) or slot != release_slot:
+        raise ValueError("historical occurrence slot is invalid")
+    key = day if slot == "12:00" else f"{day}T{slot}"
+    if bundle.get("issue_key", key) != key:
+        raise ValueError("historical occurrence identity mismatch")
+    return key
+
+
 def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_hash: str, brief: dict):
     """Reuse the latest genuine rejected attempt for the same native occurrence."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
     from backend.services.knowledge_publication_store import PublicationStore
     expected_issue_id = PublicationStore.ids(series_id, issue_key, 1)[1]
     candidates = []
@@ -594,8 +642,7 @@ def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_h
             prior = json.loads(read(local_path(path.parent, item["bundle_file"])))
             if prior.get("series_id") != series_id or prior.get("issue_date") != issue_key.split("T", 1)[0]:
                 continue
-            slot = prior.get("issue_slot") or datetime.fromisoformat(prior["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
-            if publication_slot(series_id, prior["issue_date"], slot)["issue_key"] == issue_key:
+            if _historical_issue_key(prior) == issue_key:
                 matching.append(index)
         if not matching:
             continue
@@ -696,6 +743,8 @@ def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str
         "review_file": "editorial-review.json", "proof_file": "editorial-proof.json",
         "status": "prepared",
     }
+    if "media_roles" in item:
+        new_item["media_roles"] = item["media_roles"]
     for group in GROUPS:
         for index, entry in enumerate(item[group]):
             copied = _copy_revision_input(
@@ -710,8 +759,17 @@ def build_revision(prior_manifest: Path, body_file: Path, *, writer_session: str
                 rebound = target_base / "inputs" / ("owner-attestation-" + body_hash + ".json")
                 save(rebound, attestation)
                 new_entry.update(path=str(rebound.relative_to(target_base)), sha256=sha(read(rebound)))
+            if group == "source_files" and entry["kind"] == "publication_illustration_plan":
+                plan = {**bundle["illustration_plan"], "body_sha256": body_hash}
+                validate_illustration_plan(plan, body)
+                rebound = target_base / "inputs" / ("illustration-plan-" + body_hash + ".json")
+                save(rebound, plan)
+                bundle["illustration_plan"] = plan
+                new_entry.update(path=str(rebound.relative_to(target_base)), sha256=sha(read(rebound)))
             new_item[group].append(new_entry)
-    for role in MEDIA_ROLES:
+    for role in ALL_MEDIA_ROLES:
+        if not item.get(f"{role}_file"):
+            continue
         copied = _copy_revision_input(
             prior_base, target_base, item[f"{role}_file"], namespace=role
         )
@@ -836,7 +894,7 @@ def arguments(remote, base, item, bundle, review=None, proof=None, *, stage=Fals
             if name:
                 args += [f"--{role.replace('_', '-')}-file",
                          remote.upload(batch, read(local_path(base, name)), ".bin")]
-        for role in ("illustration_01", "illustration_02", "illustration_03"):
+        for role in ALL_MEDIA_ROLES[2:]:
             name = item.get(f"{role}_file")
             if name:
                 args += ["--illustration-file",
@@ -918,7 +976,7 @@ def material_assets(item, bundle):
             raise ValueError("invalid publication asset mapping")
         assets.append({identity: asset[identity], "sha256": digest})
     by_role = {asset["role"]: asset["sha256"] for asset in assets if "role" in asset}
-    for role in MEDIA_ROLES:
+    for role in ALL_MEDIA_ROLES:
         if item.get(f"{role}_file") and by_role.get(role) != item.get(f"{role}_sha256"):
             raise ValueError("signed proof does not bind manifest assets")
     return assets
@@ -969,11 +1027,14 @@ def review_input(root, remote):
             release_at = datetime.fromisoformat(bundle["release_at"])
             if release_at.tzinfo is None:
                 raise ValueError("publication release_at must include timezone")
-            from zoneinfo import ZoneInfo
-            issue_key = bundle.get("issue_key") or publication_slot(
-                bundle["series_id"], bundle["issue_date"],
-                bundle.get("issue_slot") or release_at.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M"),
-            )["issue_key"]
+            issue_key = _historical_issue_key(bundle)
+            from backend.services.knowledge_publication_store import PublicationStore
+            if contract.get("issue_id") != PublicationStore.ids(bundle["series_id"], issue_key, 1)[1]:
+                raise ValueError("pending review occurrence identity mismatch")
+            slot = issue_key.partition("T")[2] or "12:00"
+            series = SERIES[bundle["series_id"]]
+            if not series.get("enabled", True) or slot not in series.get("release_times", ["12:00"]):
+                continue
             barrier = Barrier(bundle["series_id"], _material_hash(item), issue_key)
             if recovery.exhausted(bundle["issue_date"], Action(
                 "review", (barrier,), job_id=SERIES[bundle["series_id"]].get("review_job_id")
@@ -1006,7 +1067,7 @@ def review_input(root, remote):
         files: dict = {key: str(local_path(path.parent, item[key], output=key == "review_file")) for key in ("bundle_file", "body_file", "review_file")}
         files.update({group: [{**entry, "path": str(local_path(path.parent, entry["path"]))} for entry in item[group]] for group in GROUPS})
         files["assets"] = [str(local_path(path.parent, item[f"{role}_file"]))
-                           for role in MEDIA_ROLES if item.get(f"{role}_file")]
+                           for role in ALL_MEDIA_ROLES if item.get(f"{role}_file")]
         files["assets"] += [str(local_path(path.parent, entry["path"])) for entry in item["asset_files"]]
         visual = "Use visual tools to inspect every actual image in read_only_inputs.assets; hashes and prompts are not substitutes for visual inspection. "
         instruction = ("Read inputs only; " + visual + "write only review_file. Bind publication_material_hash in the review bytes. End with pure JSON {publication_review_result:{issue_id,revision,attempt_id,editorial_target_hash,publication_material_hash,review_file_hash,reviewer_session,decision}}; no tools after final. Do not stage or sign."

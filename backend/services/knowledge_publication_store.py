@@ -117,6 +117,55 @@ PUBLICATION_MEDIA = {
     **{f"illustration_{index:02d}": {"size": (1600, 900), "kind": "publication_illustration"}
        for index in range(1, 4)},
 }
+# Resource ceiling, not an editorial target. Legacy editions retain their five roles.
+MAX_PUBLICATION_ILLUSTRATIONS = 12
+
+
+def publication_media_spec(role: str) -> dict | None:
+    if not isinstance(role, str):
+        return None
+    if role in PUBLICATION_COVERS:
+        return PUBLICATION_COVERS[role]
+    if isinstance(role, str) and re.fullmatch(r"illustration_(0[1-9]|1[0-2])", role):
+        return {"size": (1600, 900), "kind": "publication_illustration"}
+    return None
+
+
+def validate_illustration_plan(plan: Any, body: str) -> dict:
+    if (not isinstance(plan, dict) or set(plan) != {"body_sha256", "reason", "illustrations"}
+            or plan.get("body_sha256") != hashlib.sha256(body.encode()).hexdigest()
+            or not isinstance(plan.get("reason"), str) or not plan["reason"].strip()
+            or len(plan["reason"]) > 2000):
+        raise PublicationError("invalid illustration plan or body version")
+    images = plan["illustrations"]
+    if not isinstance(images, list) or len(images) > MAX_PUBLICATION_ILLUSTRATIONS:
+        raise PublicationError("illustration plan exceeds resource budget")
+    tokens = _MD.parse(body)
+    paragraphs = [token.content.strip() for i, token in enumerate(tokens)
+                  if token.type == "inline" and i and tokens[i - 1].type == "paragraph_open" and tokens[i - 1].level == 0]
+    seen = set()
+    for image in images:
+        if not isinstance(image, dict) or set(image) != {"role", "after_paragraph", "caption", "alt", "purpose"}:
+            raise PublicationError("illustration requires role, paragraph anchor, caption, alt and purpose")
+        role = image["role"]
+        if not publication_media_spec(role) or role in PUBLICATION_COVERS or role in seen:
+            raise PublicationError("invalid or duplicate illustration role")
+        seen.add(role)
+        for key in ("after_paragraph", "caption", "alt", "purpose"):
+            if not isinstance(image[key], str) or not image[key].strip() or len(image[key]) > 8000:
+                raise PublicationError("invalid illustration placement text")
+        if paragraphs.count(image["after_paragraph"]) != 1:
+            raise PublicationError("illustration paragraph anchor must match exactly once")
+    return plan
+
+
+def required_publication_media(bundle: dict) -> set[str]:
+    if bundle.get("illustration_plan") is None:
+        return set(PUBLICATION_MEDIA)
+    # Full plan/body/receipt validation runs at prepare and every published read.
+    return set(PUBLICATION_COVERS) | {item["role"] for item in bundle["illustration_plan"]["illustrations"]}
+
+
 # Editions released before the visual-media gate retain their frozen publication contract.
 DAILY_MEDIA_REQUIRED_FROM = datetime(2026, 9, 25, 2, 17, 28, tzinfo=timezone.utc)
 _IMAGE_MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg"}
@@ -368,7 +417,7 @@ def _receipts(value: Any, field: str, maximum: int = 100) -> list[dict[str, str]
         artifact_id, digest = str(item["artifact_id"]), str(item["sha256"])
         if not _SAFE_ID.fullmatch(artifact_id) or not _HASH.fullmatch(digest):
             raise PublicationError(f"invalid {field} receipt")
-        result.append({"artifact_id": artifact_id, "sha256": digest, "kind": _text(item["kind"], f"{field}.kind", 40)})
+        result.append({"artifact_id": artifact_id, "sha256": digest, "kind": _text(item["kind"], f"{field}.kind", 64)})
     return result
 
 
@@ -378,7 +427,7 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         "institution", "authored_by", "content_kind", "rights_scope", "rights_reference",
         "rights_valid_until", "rights_perpetual", "rights_evidence", "rights_evidence_status", "owner_policy_id", "release_at",
         "state", "is_test", "source_snapshot_hash", "source_receipts", "body_hash", "body_receipt",
-        "references", "wiki_references", "assets", "completeness", "review", "execution_claim",
+        "references", "wiki_references", "assets", "illustration_plan", "completeness", "review", "execution_claim",
         "execution_evidence", "warnings",
         "source_index",
         "source_index_review_hash",
@@ -451,9 +500,10 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
             if set(item) != {"role", "receipt", "media_type", "width", "height"}:
                 raise PublicationError("publication media require role, receipt, media_type, width and height")
             role = item.get("role")
-            if role not in PUBLICATION_MEDIA or role in media_roles:
+            if (not publication_media_spec(role) or role in media_roles
+                    or (bundle.get("illustration_plan") is None and role not in PUBLICATION_MEDIA)):
                 raise PublicationError("invalid or duplicate publication media role")
-            expected = PUBLICATION_MEDIA[role]
+            expected = publication_media_spec(role)
             receipt = _receipts([item["receipt"]], "publication media", 1)[0]
             if (receipt["kind"] != expected["kind"] or item.get("media_type") not in _IMAGE_MEDIA_TYPES.values()
                     or (item.get("width"), item.get("height")) != expected["size"]):
@@ -542,8 +592,13 @@ def validate_bundle(bundle: dict[str, Any], *, now: datetime | None = None) -> t
         blocked.append("full_original_source_receipt_mismatch")
     if any(url not in declared_assets or declared_assets[url]["status"] != "verified" for url in image_targets):
         blocked.append("missing_or_unverified_asset")
+    if bundle.get("illustration_plan") is not None:
+        plan = validate_illustration_plan(bundle["illustration_plan"], bundle.get("body", ""))
+        digest = hashlib.sha256(_canonical(plan)).hexdigest()
+        if not any(r["kind"] == "publication_illustration_plan" and r["sha256"] == digest for r in source_receipts):
+            blocked.append("illustration_plan_not_bound_to_review")
     if series["kind"] == "daily":
-        if media_roles != set(PUBLICATION_MEDIA):
+        if media_roles != required_publication_media(bundle):
             blocked.append("required_publication_media_missing")
         if not set(PUBLICATION_COVERS) <= media_roles:
             blocked.append("required_publication_covers_missing")
@@ -716,7 +771,7 @@ class PublicationStore:
 
     def _media_asset_valid(self, db: sqlite3.Connection, asset: dict[str, Any]) -> bool:
         role, receipt = asset.get("role"), asset.get("receipt")
-        expected = PUBLICATION_MEDIA.get(role)
+        expected = publication_media_spec(role)
         if not expected or not isinstance(receipt, dict) or not self._receipt_valid(db, receipt):
             return False
         row = db.execute("SELECT private_ref FROM evidence WHERE artifact_id=?", (receipt["artifact_id"],)).fetchone()
@@ -736,8 +791,8 @@ class PublicationStore:
     @staticmethod
     def _required_daily_media_present(bundle: dict[str, Any]) -> bool:
         roles = {item.get("role") for item in bundle.get("assets", [])
-                 if isinstance(item, dict) and item.get("role") in PUBLICATION_MEDIA}
-        return roles == set(PUBLICATION_MEDIA)
+                 if isinstance(item, dict) and publication_media_spec(item.get("role"))}
+        return roles == required_publication_media(bundle)
 
     def _inline_asset_valid(self, db: sqlite3.Connection, asset: dict[str, Any]) -> bool:
         receipt = asset.get("receipt")
@@ -838,6 +893,15 @@ class PublicationStore:
                 return sorted(set(reasons))
         if not self._bundle_receipts_valid(db, bundle):
             reasons.append("intake_receipt_missing_or_hash_mismatch")
+        if bundle.get("illustration_plan") is not None:
+            try:
+                plan = validate_illustration_plan(bundle["illustration_plan"], artifact_bytes.decode("utf-8"))
+                digest = hashlib.sha256(_canonical(plan)).hexdigest()
+                if not any(r["kind"] == "publication_illustration_plan" and r["sha256"] == digest
+                           for r in bundle["source_receipts"]):
+                    raise PublicationError("unbound illustration plan")
+            except (PublicationError, UnicodeError, KeyError, TypeError):
+                return sorted(set(reasons + ["illustration_plan_invalid"]))
         if not self._media_assets_valid(db, bundle):
             reasons.append("publication_media_invalid")
         try:
@@ -1372,9 +1436,10 @@ class PublicationStore:
                 row = rows[item["edition_id"]]
                 published = item["state"] == "published" and not self._access_reasons(db, row, actual, None)
                 item["body_available"] = published
+                item["expected_media_roles"] = sorted(required_publication_media(item["bundle"])) if published else []
                 item["media_roles"] = sorted(
                     asset["role"] for asset in item["bundle"].get("assets", [])
-                    if asset.get("role") in PUBLICATION_MEDIA and self._media_asset_valid(db, asset)
+                    if publication_media_spec(asset.get("role")) and self._media_asset_valid(db, asset)
                 ) if published else []
             return {"items": items, "missing": self.missing(now), "expected_issues": self.expected_issues(now),
                     "editorial_attempts": attempts, "open_gaps": gaps}
@@ -1383,13 +1448,18 @@ class PublicationStore:
 
     def published(
         self, *, now: datetime | None = None, vault: Path | None = None,
-        include_body: bool = True,
+        include_body: bool = True, content_kind: str | None = None,
     ) -> list[dict[str, Any]]:
         if not self.db_path.exists():
             return []
         db, result, actual = self._connect(), [], now or _now()
         try:
-            for row in db.execute("SELECT * FROM editions WHERE state='published' ORDER BY issue_date DESC,series_id").fetchall():
+            query = "SELECT * FROM editions WHERE state='published'"
+            parameters = ()
+            if content_kind is not None:
+                query += " AND json_extract(bundle_json, '$.content_kind')=?"
+                parameters = (content_kind,)
+            for row in db.execute(query + " ORDER BY issue_date DESC,series_id", parameters).fetchall():
                 if not self._access_reasons(db, row, actual, vault):
                     item = self._record(row, body=include_body)
                     item["artifact_valid"] = True
@@ -1417,7 +1487,7 @@ class PublicationStore:
         self, publication_id: str, role: str, *, now: datetime | None = None,
         vault: Path | None = None,
     ) -> tuple[bytes, str] | None:
-        if role not in PUBLICATION_MEDIA or not self.db_path.exists():
+        if not publication_media_spec(role) or not self.db_path.exists():
             return None
         db, actual = self._connect(), now or _now()
         try:
@@ -1492,7 +1562,7 @@ class PublicationStore:
 
     def public_source_catalog(self, *, now: datetime | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         books, collections = [], []
-        for edition in self.published(now=now, include_body=False):
+        for edition in self.published(now=now, include_body=False, content_kind="source_index"):
             index = edition["bundle"].get("source_index")
             if edition["bundle"].get("content_kind") != "source_index" or not index:
                 continue
@@ -1512,7 +1582,7 @@ class PublicationStore:
     def get_public_source(self, book_id: str, *, now: datetime | None = None) -> tuple[dict[str, Any], dict[str, Any]] | None:
         if not re.fullmatch(r"follow-builders-public-source-[a-f0-9]{24}", book_id):
             return None
-        for edition in self.published(now=now, include_body=False):
+        for edition in self.published(now=now, include_body=False, content_kind="source_index"):
             index = edition["bundle"].get("source_index")
             if edition["bundle"].get("content_kind") != "source_index" or not index:
                 continue

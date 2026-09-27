@@ -302,13 +302,17 @@ def _summary(status: dict | None = None, before: dict | None = None) -> dict:
                 "published": len(rows),
                 "body_available": len(rows) == 1 and rows[0].get("body_available") is True,
                 "media_roles": rows[0].get("media_roles", []) if len(rows) == 1 else [],
+                "expected_media_roles": rows[0].get("expected_media_roles", sorted(REQUIRED_DAILY_MEDIA)) if len(rows) == 1 else sorted(REQUIRED_DAILY_MEDIA),
             })
-        good_media = all(set(slot["media_roles"]) == REQUIRED_DAILY_MEDIA for slot in slots)
+        good_media = all({"shelf_cover", "reader_cover"} <= set(slot["media_roles"]) and set(slot["media_roles"]) == set(slot["expected_media_roles"]) for slot in slots)
         published[series] = {
             "published": sum(slot["published"] for slot in slots),
             "body_available": bool(slots) and all(slot["body_available"] for slot in slots),
-            "media_roles": sorted(REQUIRED_DAILY_MEDIA) if good_media else (slots[0]["media_roles"] if len(slots) == 1 else []),
+            "media_roles": sorted({role for slot in slots for role in slot["media_roles"]}) if good_media else [],
+            "expected_media_roles": sorted({role for slot in slots for role in slot["expected_media_roles"]}),
         }
+        if not any("expected_media_roles" in row for row in items if row.get("series_id") == series):
+            published[series].pop("expected_media_roles", None)
         if "expected_issues" in status:
             published[series].update(expected=len(slots), slots=slots)
     before_ids = {
@@ -348,7 +352,7 @@ def _attention(summary: dict) -> bool:
     current_blocked = [item for item in summary["issues"]["blocked"] if item.get("issue_date") == day]
     return bool(current_blocked or summary["issues"]["missing"] or any(
         item.get("published") != 1 or item.get("body_available") is not True
-        or set(item.get("media_roles", [])) != REQUIRED_DAILY_MEDIA
+        or set(item.get("media_roles", [])) != set(item.get("expected_media_roles", REQUIRED_DAILY_MEDIA))
         for item in summary["today"]["by_series"].values()
     ))
 

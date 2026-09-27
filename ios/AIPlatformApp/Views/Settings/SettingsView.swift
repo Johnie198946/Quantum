@@ -754,18 +754,6 @@ private enum BookshelfScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum BookshelfTopic: String, CaseIterable, Identifiable {
-    case all = "全部"
-    case literature = "文学"
-    case mathematics = "数学"
-    case ai = "AI"
-    case psychology = "心理"
-    case english = "英语"
-    case travel = "旅行"
-
-    var id: String { rawValue }
-}
-
 private enum BookshelfSortOrder: String, CaseIterable, Identifiable {
     case recent = "最近阅读"
     case added = "最近加入"
@@ -812,7 +800,15 @@ public struct SubscriptionCenterView: View {
     @State private var bookshelfQuery = ""
     @State private var bookshelfScope: BookshelfScope = .reading
     @State private var allBooksScope: BookshelfScope?
-    @State private var bookshelfTopic: BookshelfTopic = .all
+    @State private var bookshelfTopic = "全部"
+    @State private var bookLists: [KnowledgeBookListDTO] = []
+    @State private var editingListID = UUID().uuidString
+    @State private var listTitle = ""
+    @State private var listBookIDs: Set<String> = []
+    @State private var showsListEditor = false
+    @State private var editingListBook: KnowledgeBookDTO?
+    @State private var savingList = false
+    @State private var listError: String?
     @State private var bookshelfSortOrder: BookshelfSortOrder = .recent
     @State private var bookshelfContentKind: BookshelfContentKind = .all
     @State private var showsAllBooks = false
@@ -863,7 +859,7 @@ public struct SubscriptionCenterView: View {
             } else if showsAllBooks, !bookshelves.isEmpty {
                 allBooksPage(bookshelves)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if !bookshelves.isEmpty {
+            } else if !bookshelves.isEmpty || errorMessage == nil {
                 bookshelfCollections(bookshelves)
                     .transition(.opacity)
             } else if !bookSubscriptions.isEmpty {
@@ -903,6 +899,8 @@ public struct SubscriptionCenterView: View {
                     Button {
                         withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
                             showsAllBooks = false
+                            selectedShelfID = nil
+                            allBooksScope = nil
                             bookshelfQuery = ""
                         }
                     } label: {
@@ -956,9 +954,10 @@ public struct SubscriptionCenterView: View {
             guard previewCenter == nil else { return }
             await loadBookshelves()
         }
-        .fullScreenCover(item: $inspectedBook) { book in
+        .fullScreenCover(item: $inspectedBook, onDismiss: { Task { await loadBookshelves() } }) { book in
             knowledgeBookDetail(book)
         }
+        .sheet(isPresented: $showsListEditor) { bookListEditor }
         .sheet(item: $inspectedPack) { pack in
             knowledgePackDetail(pack)
                 .presentationDetents([.medium, .large])
@@ -1017,8 +1016,11 @@ public struct SubscriptionCenterView: View {
         let allBooks = uniqueBooks(in: allShelves)
         let progressByBookID = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.progress) })
         let matchingBooks = filterBooks(allBooks, progressByBookID: progressByBookID)
-        let scopedBooks = books(for: bookshelfScope, in: matchingBooks, progressByBookID: progressByBookID)
-        let recentBooks = recentBooks(from: allBooks)
+        let dates = Dictionary(uniqueKeysWithValues: bookSubscriptions.map { ($0.book.id, $0.lastReadAt) })
+        let scopedBooks = books(for: bookshelfScope, in: allBooks, progressByBookID: progressByBookID)
+            .sorted { left, right in
+                return dates[left.id, default: ""] > dates[right.id, default: ""]
+            }
         return ZStack(alignment: .top) {
             Image("home_attention_botanical")
                 .resizable()
@@ -1078,10 +1080,11 @@ public struct SubscriptionCenterView: View {
                     bookSearchResults(matchingBooks)
                 } else {
                     recentReadingSection(
-                        scopedBooks.isEmpty ? recentBooks : Array(scopedBooks.prefix(4)),
+                        Array(scopedBooks.prefix(4)),
                         progressByBookID: progressByBookID
                     )
                     bookshelfListSection(allShelves)
+                    systemPublications(allBooks)
                     topicDiscoverySection(allBooks, progressByBookID: progressByBookID)
                 }
                 if let errorMessage { inlineError(errorMessage) }
@@ -1100,23 +1103,16 @@ public struct SubscriptionCenterView: View {
         return shelves.flatMap(\.books).filter { seen.insert($0.id).inserted }
     }
 
-    private func recentBooks(from books: [KnowledgeBookDTO]) -> [KnowledgeBookDTO] {
-        let byID = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
-        let recent = bookSubscriptions.sorted { $0.lastReadAt > $1.lastReadAt }.compactMap { byID[$0.book.id] }
-        return recent.isEmpty ? Array(books.prefix(4)) : recent
-    }
-
     private func books(
         for scope: BookshelfScope,
         in allBooks: [KnowledgeBookDTO],
         progressByBookID: [String: Double]
     ) -> [KnowledgeBookDTO] {
         let owned = allBooks.filter { subscribedBookIDs.contains($0.id) }
-        let candidates = owned.isEmpty && scope == .reading ? Array(allBooks.prefix(4)) : owned
-        return candidates.filter { book in
+        return owned.filter { book in
             let progress = progressByBookID[book.id] ?? 0
             switch scope {
-            case .reading: return progress < 0.98
+            case .reading: return progress > 0 && progress < 0.98
             case .saved: return true
             case .finished: return progress >= 0.98
             }
@@ -1134,7 +1130,7 @@ public struct SubscriptionCenterView: View {
                 || book.title.localizedStandardContains(bookshelfQuery)
                 || book.author.localizedStandardContains(bookshelfQuery)
                 || book.summary.localizedStandardContains(bookshelfQuery)
-            let matchesTopic = bookshelfTopic == .all || topic(for: book) == bookshelfTopic
+            let matchesTopic = bookshelfTopic == "全部" || topic(for: book) == bookshelfTopic
             let matchesKind: Bool
             switch bookshelfContentKind {
             case .all: matchesKind = true
@@ -1154,14 +1150,13 @@ public struct SubscriptionCenterView: View {
         }
     }
 
-    private func topic(for book: KnowledgeBookDTO) -> BookshelfTopic {
-        let value = "\(book.coverTheme ?? "") \(book.title) \(book.summary)".lowercased()
-        if ["math", "数学", "代数", "分析", "定理"].contains(where: value.contains) { return .mathematics }
-        if ["ai", "人工智能", "技术", "模型", "agent"].contains(where: value.contains) { return .ai }
-        if ["psychology", "心理", "成长", "习惯"].contains(where: value.contains) { return .psychology }
-        if ["english", "英语", "英文"].contains(where: value.contains) { return .english }
-        if ["travel", "旅行", "京都", "城市"].contains(where: value.contains) { return .travel }
-        return .literature
+    private var availableTopics: [String] {
+        ["全部"] + Array(Set(uniqueBooks(in: bookshelves).map { topic(for: $0) })).sorted()
+    }
+
+    private func topic(for book: KnowledgeBookDTO) -> String {
+        if let title = book.seriesTitle, !title.isEmpty { return title }
+        return bookshelves.first { $0.books.contains { $0.id == book.id } }?.title ?? "其他"
     }
 
     private func bookshelfScopeTabs(
@@ -1202,13 +1197,13 @@ public struct SubscriptionCenterView: View {
         if !books.isEmpty {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                 HStack {
-                    Text("最近阅读")
+                    Text(bookshelfScope.rawValue)
                         .font(.system(.title3, design: .serif, weight: .bold))
                     Spacer()
                     Button {
-                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { allBooksScope = bookshelfScope; showsAllBooks = true }
                     } label: {
-                        Text("查看全部 \(uniqueBooks(in: bookshelves).count)  ›")
+                        Text("查看全部  ›")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppTheme.Colors.primary)
                             .padding(.horizontal, AppTheme.Spacing.md)
@@ -1227,6 +1222,9 @@ public struct SubscriptionCenterView: View {
                     .padding(.vertical, 2)
                 }
             }
+        } else {
+            ContentUnavailableView("暂无\(bookshelfScope.rawValue)书籍", systemImage: "books.vertical",
+                description: Text(bookshelfScope == .reading ? "打开一本书开始阅读，进度会自动保留。" : "从下方目录添加书籍或订阅刊物。"))
         }
     }
 
@@ -1268,66 +1266,124 @@ public struct SubscriptionCenterView: View {
 
     private func bookshelfListSection(_ shelves: [KnowledgeBookshelfDTO]) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                Text("我的书单")
-                    .font(.system(.title3, design: .serif, weight: .bold))
-                Spacer()
-                Button("查看更多  ›") {
-                    withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
+            Text("我的书单").font(.title3.bold())
+            ScrollView(.horizontal) {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    ForEach(bookLists) { list in
+                        Button { editList(list) } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Image(systemName: "books.vertical")
+                                Text(list.title).font(.headline).lineLimit(2)
+                                Text("\(list.bookIds.count) 本").font(.caption)
+                            }
+                            .frame(width: 132, height: 110, alignment: .leading)
+                            .padding(12)
+                            .background(AppTheme.Colors.mistMint.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain)
+                    }
+                    Button { editList(nil) } label: {
+                        Label("新建书单", systemImage: "plus").frame(width: 132, height: 134)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("bookshelf-create-list")
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppTheme.Colors.textSecondary)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: AppTheme.Spacing.md) {
-                    ForEach(shelves.filter { !$0.isSourceShelf }.prefix(6)) { shelf in
-                        Button {
-                            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) {
-                                selectedShelfID = shelf.id
-                                bookshelfQuery = ""
-                            }
-                        } label: {
-                            ZStack(alignment: .bottomTrailing) {
-                                Image(shelfArtwork(shelf))
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 92, height: 74)
-                                    .offset(x: 26, y: 16)
-                                    .opacity(0.72)
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(shelf.title).font(.subheadline.weight(.bold)).lineLimit(2)
-                                    Text("\(shelf.bookCount) 本").font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            }
-                            .foregroundStyle(AppTheme.Colors.textPrimary)
-                            .padding(AppTheme.Spacing.md)
-                            .frame(width: 132, height: 126, alignment: .leading)
-                            .background(shelfTint(shelf), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-                        }
-                        .buttonStyle(SoftButtonStyle())
-                        .accessibilityLabel("打开书单 \(shelf.title)，\(shelf.bookCount) 本")
-                    }
-                    Button {
-                        withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { showsAllBooks = true }
-                    } label: {
-                        VStack(spacing: 8) {
-                            Image(systemName: "plus").font(.title2)
-                            Text("新建书单").font(.caption.weight(.semibold))
-                        }
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                        .frame(width: 112, height: 126)
-                        .background(Color.white.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                                .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+        }
+    }
+
+    private func editList(_ list: KnowledgeBookListDTO?) {
+        editingListBook = nil
+        editingListID = list?.id ?? UUID().uuidString
+        listTitle = list?.title ?? ""
+        listBookIDs = Set(list?.bookIds ?? [])
+        listError = nil
+        showsListEditor = true
+    }
+
+    @ViewBuilder
+    private var bookListEditor: some View {
+        if let book = editingListBook {
+            KnowledgeBookReaderView(
+                book: book, isSubscribed: isBookSubscribed(book),
+                isBusy: subscriptionBusyBookID == book.id,
+                onToggleSubscription: { Task { await toggleBookSubscription(book) } },
+                onDismiss: { editingListBook = nil }
+            )
+        } else {
+        NavigationStack {
+            Form {
+                TextField("书单名称", text: $listTitle)
+                if let listError { Text(listError).foregroundStyle(.red) }
+                Section("选择书籍") {
+                    ForEach(uniqueBooks(in: bookshelves)) { book in
+                        HStack {
+                            Toggle(isOn: Binding(get: { listBookIDs.contains(book.id) }, set: { selected in
+                                if selected { listBookIDs.insert(book.id) } else { listBookIDs.remove(book.id) }
+                            })) { Text(book.title) }
+                            Button { editingListBook = book } label: {
+                                Image(systemName: "book")
+                            }.buttonStyle(.borderless).accessibilityLabel("阅读《\(book.title)》")
                         }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("打开全部书籍选择内容")
                 }
-                .padding(.vertical, 2)
+                if bookLists.contains(where: { $0.id == editingListID }) {
+                    Button("删除书单", role: .destructive) { Task { await persistList(delete: true) } }
+                }
+            }
+            .disabled(savingList)
+            .navigationTitle("我的书单")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { showsListEditor = false } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { Task { await persistList() } }
+                        .disabled(savingList || listTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .interactiveDismissDisabled(savingList)
+        }
+    }
+
+    private func persistList(delete: Bool = false) async {
+        savingList = true
+        defer { savingList = false }
+        do {
+            if delete {
+                try await api.deleteBookList(id: editingListID)
+                bookLists.removeAll { $0.id == editingListID }
+            } else {
+                let saved = try await api.saveBookList(id: editingListID, title: listTitle, bookIds: listBookIDs.sorted())
+                bookLists.removeAll { $0.id == saved.id }
+                bookLists.insert(saved, at: 0)
+            }
+            showsListEditor = false
+        } catch { listError = actionableMessage(for: error) }
+    }
+
+    private func systemPublications(_ books: [KnowledgeBookDTO]) -> some View {
+        let series = Dictionary(grouping: books.filter { $0.seriesId != nil }, by: { $0.seriesId! })
+        let latest = series.values.compactMap { issues in
+            issues.max { ($0.issueDate ?? "") < ($1.issueDate ?? "") }
+        }.sorted { ($0.seriesTitle ?? $0.title) < ($1.seriesTitle ?? $1.title) }
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            if !latest.isEmpty {
+                Text("系统刊物").font(.title3.bold())
+                Text("订阅后加入我的书架，新一期会自动出现。")
+                    .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                ForEach(latest) { book in
+                    HStack {
+                        Button { inspectedBook = book } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(book.seriesTitle ?? book.title).font(.headline)
+                                Text(book.title).font(.caption).lineLimit(2)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain)
+                        Button(isBookSubscribed(book) ? "已订阅" : "订阅") {
+                            Task { await toggleBookSubscription(book) }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(subscriptionBusyBookID != nil || isBookSubscribed(book))
+                        .accessibilityIdentifier("bookshelf-subscribe.\(book.id)")
+                    }.padding(.vertical, 6)
+                }
             }
         }
     }
@@ -1342,11 +1398,11 @@ public struct SubscriptionCenterView: View {
                 .font(.system(.title3, design: .serif, weight: .bold))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppTheme.Spacing.sm) {
-                    ForEach(BookshelfTopic.allCases) { topic in
+                    ForEach(availableTopics, id: \.self) { topic in
                         Button {
                             withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { bookshelfTopic = topic }
                         } label: {
-                            Text(topic.rawValue)
+                            Text(topic)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(bookshelfTopic == topic ? .white : AppTheme.Colors.textSecondary)
                                 .padding(.horizontal, AppTheme.Spacing.md)
@@ -1381,7 +1437,7 @@ public struct SubscriptionCenterView: View {
                     if progress > 0 {
                         ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
                     } else {
-                        Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                        Text(book.publicationTypeLabel ?? topic(for: book))
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(AppTheme.Colors.statusCompleted)
                     }
@@ -1416,7 +1472,7 @@ public struct SubscriptionCenterView: View {
                 if progress > 0 {
                     ProgressView(value: min(max(progress, 0), 1)).tint(AppTheme.Colors.statusCompleted)
                 } else {
-                    Text(book.publicationTypeLabel ?? topic(for: book).rawValue)
+                    Text(book.publicationTypeLabel ?? topic(for: book))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AppTheme.Colors.primary)
                 }
@@ -1471,7 +1527,7 @@ public struct SubscriptionCenterView: View {
                 HStack(spacing: AppTheme.Spacing.sm) {
                     filterMenuButton(bookshelfSortOrder.rawValue, icon: "arrow.up.arrow.down")
                     filterMenuButton(bookshelfContentKind == .all ? "分类" : bookshelfContentKind.rawValue, icon: "square.grid.2x2")
-                    filterMenuButton(bookshelfTopic == .all ? "标签" : bookshelfTopic.rawValue, icon: "tag")
+                    filterMenuButton(bookshelfTopic == "全部" ? "标签" : bookshelfTopic, icon: "tag")
                     Spacer(minLength: 0)
                 }
 
@@ -1479,12 +1535,12 @@ public struct SubscriptionCenterView: View {
                     ContentUnavailableView("没有匹配的书", systemImage: "books.vertical", description: Text("调整筛选条件或搜索其他关键词。"))
                         .frame(minHeight: 320)
                 } else {
-                    ForEach(BookshelfTopic.allCases.filter { $0 != .all }) { topic in
+                    ForEach(availableTopics.filter { $0 != "全部" }, id: \.self) { topic in
                         let group = visible.filter { self.topic(for: $0) == topic }
                         if !group.isEmpty {
                             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                                 HStack {
-                                    Text(topicSectionTitle(topic))
+                                    Text(topic)
                                         .font(.system(.title3, design: .serif, weight: .bold))
                                     Text("\(group.count) 本")
                                         .font(.caption)
@@ -1555,18 +1611,6 @@ public struct SubscriptionCenterView: View {
         .buttonStyle(.plain)
     }
 
-    private func topicSectionTitle(_ topic: BookshelfTopic) -> String {
-        switch topic {
-        case .literature: return "文学与随笔"
-        case .mathematics: return "数学与专业学习"
-        case .ai: return "AI 与技术"
-        case .psychology: return "心理与成长"
-        case .english: return "英语阅读"
-        case .travel: return "旅行与城市"
-        case .all: return "全部书籍"
-        }
-    }
-
     private var bookshelfFilterSheet: some View {
         NavigationStack {
             ScrollView {
@@ -1606,8 +1650,8 @@ public struct SubscriptionCenterView: View {
 
                     filterSectionTitle("标签")
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 76))], alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        ForEach(BookshelfTopic.allCases) { topic in
-                            filterChip(topic.rawValue, selected: bookshelfTopic == topic) { bookshelfTopic = topic }
+                        ForEach(availableTopics, id: \.self) { topic in
+                            filterChip(topic, selected: bookshelfTopic == topic) { bookshelfTopic = topic }
                         }
                     }
                 }
@@ -1618,7 +1662,7 @@ public struct SubscriptionCenterView: View {
                     Button("重置") {
                         allBooksScope = nil
                         bookshelfContentKind = .all
-                        bookshelfTopic = .all
+                        bookshelfTopic = "全部"
                         bookshelfSortOrder = .recent
                     }
                     .foregroundStyle(AppTheme.Colors.textSecondary)
@@ -1976,7 +2020,7 @@ public struct SubscriptionCenterView: View {
     private func knowledgeBookDetail(_ book: KnowledgeBookDTO) -> some View {
         KnowledgeBookReaderView(
             book: book,
-            isSubscribed: subscribedBookIDs.contains(book.id),
+            isSubscribed: isBookSubscribed(book),
             isBusy: subscriptionBusyBookID == book.id,
             onToggleSubscription: { Task { await toggleBookSubscription(book) } },
             onSaveExcerpt: { saveBookSummaryToNote(book) },
@@ -2791,31 +2835,24 @@ public struct SubscriptionCenterView: View {
     }
 
     private func loadBookshelves() async {
-        isLoading = true
+        guard previewCenter == nil else { return }
+        isLoading = bookshelves.isEmpty
         errorMessage = nil
-        if let subscriptions = try? await api.fetchBookSubscriptions() {
-            bookSubscriptions = subscriptions
-            subscribedBookIDs = Set(subscriptions.map(\.book.id))
-        }
+        defer { isLoading = false }
         do {
             let response = try await api.fetchKnowledgeBookshelves()
-            if response.bookshelves.isEmpty {
-                if let fallback = try? await api.fetchSubscriptionCenter(),
-                   let recovered = fallback.bookshelves, !recovered.isEmpty {
-                    bookshelves = recovered
-                    errorMessage = "图书目录暂未返回，正在显示订阅中心的书目；可下拉重试。"
-                } else {
-                    errorMessage = "图书目录暂未返回书籍。这不代表你的藏书被删除，请稍后重试。"
-                }
-            } else {
-                bookshelves = response.bookshelves
-            }
+            bookshelves = response.bookshelves
             publicCollections = response.publicCollections ?? []
             ownerPrivateCollections = response.ownerPrivateCollections ?? []
-        } catch {
-            errorMessage = actionableMessage(for: error)
-        }
-        isLoading = false
+            bookLists = response.bookLists ?? []
+            // Compatibility only while the server is rolling forward.
+            if let subscriptions = response.subscriptions {
+                bookSubscriptions = subscriptions
+            } else {
+                bookSubscriptions = try await api.fetchBookSubscriptions()
+            }
+            subscribedBookIDs = Set(bookSubscriptions.map(\.book.id))
+        } catch { errorMessage = actionableMessage(for: error) }
     }
 
     private var subscribedBooksFallback: some View {
@@ -2857,15 +2894,20 @@ public struct SubscriptionCenterView: View {
         .refreshable { await loadBookshelves() }
     }
 
+    private func isBookSubscribed(_ book: KnowledgeBookDTO) -> Bool {
+        subscribedBookIDs.contains(book.id) || (book.seriesId != nil && bookSubscriptions.contains { $0.book.seriesId == book.seriesId })
+    }
+
     private func toggleBookSubscription(_ book: KnowledgeBookDTO) async {
         guard subscriptionBusyBookID == nil else { return }
         subscriptionBusyBookID = book.id
         defer { subscriptionBusyBookID = nil }
         do {
-            if subscribedBookIDs.contains(book.id) {
+            if isBookSubscribed(book) {
                 try await api.unsubscribeBook(id: book.id)
                 subscribedBookIDs.remove(book.id)
-                bookSubscriptions.removeAll { $0.book.id == book.id }
+                bookSubscriptions.removeAll { $0.book.id == book.id || (book.seriesId != nil && $0.book.seriesId == book.seriesId) }
+                subscribedBookIDs = Set(bookSubscriptions.map(\.book.id))
             } else {
                 let subscription = try await api.subscribeBook(id: book.id)
                 subscribedBookIDs.insert(book.id)
@@ -3062,7 +3104,7 @@ struct KnowledgeBookReaderView: View {
         _showingReading = State(initialValue: startsInReading || ProcessInfo.processInfo.arguments.contains("-bookReadingPreview"))
     }
 
-    var body: some View {
+    private var overview: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -3209,7 +3251,7 @@ struct KnowledgeBookReaderView: View {
                             HStack(spacing: 10) {
                                 if isBusy { ProgressView().tint(.white) }
                                 Image(systemName: isSubscribed ? "book.pages.fill" : "plus")
-                                Text(isSubscribed ? "开始阅读" : "加入我的笔记书架")
+                                Text(isSubscribed ? "开始阅读" : (book.seriesId == nil ? "加入我的书架" : "订阅刊物 · 加入书架"))
                             }
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Color.white)
@@ -3219,7 +3261,7 @@ struct KnowledgeBookReaderView: View {
                         }
                         .disabled(isBusy && !isSubscribed)
                         .buttonStyle(SoftButtonStyle())
-                        .accessibilityLabel(isSubscribed ? "开始阅读《\(book.title)》" : "加入我的笔记书架")
+                        .accessibilityLabel(isSubscribed ? "开始阅读《\(book.title)》" : (book.seriesId == nil ? "加入我的书架" : "订阅刊物 · 加入书架"))
                         .accessibilityValue(isSubscribed ? "subscribed" : "unsubscribed")
                         .accessibilityIdentifier("publication-subscription-control.\(book.id)")
                     }
@@ -3259,7 +3301,10 @@ struct KnowledgeBookReaderView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showingReading) {
+    }
+
+    var body: some View {
+        if showingReading {
             KnowledgeBookReadingView(
                 book: book,
                 initialSectionID: initialSectionID,
@@ -3270,8 +3315,11 @@ struct KnowledgeBookReaderView: View {
                     selectedBookSectionID = section.id
                     selectedBookSectionTitle = section.title
                 },
-                onDismiss: { showingReading = false }
+                onDismiss: onDismiss,
+                onShowOverview: { showingReading = false }
             )
+        } else {
+            overview
         }
     }
 
@@ -3333,6 +3381,7 @@ func loadKnowledgeBookReaderData(
 }
 
 private struct KnowledgeBookReadingView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var api: APIClient
     @ObservedObject private var noteStore = KnowledgeNoteStore.shared
     @State private var bookBody: KnowledgeBookBodyDTO?
@@ -3368,6 +3417,7 @@ private struct KnowledgeBookReadingView: View {
     let initialCharacterOffset: Int?
     let onScopeChange: (KnowledgeBookBodyDTO, KnowledgeBookSectionDTO) -> Void
     let onDismiss: () -> Void
+    var onShowOverview: (() -> Void)? = nil
 
     @MainActor
     private func loadBody() async {
@@ -3477,6 +3527,8 @@ private struct KnowledgeBookReadingView: View {
         blockIndex: Int,
         characterOffset: Int
     ) {
+        guard pendingProgressIndex != sectionIndex || pendingBlockIndex != blockIndex
+                || pendingCharacterOffset != characterOffset else { return }
         locationSaveTask?.cancel()
         pendingProgressIndex = sectionIndex
         pendingBlockIndex = blockIndex
@@ -3551,23 +3603,19 @@ private struct KnowledgeBookReadingView: View {
     @ToolbarContentBuilder
     private func readerToolbar(bookBody: KnowledgeBookBodyDTO?, proxy: ScrollViewProxy) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button {
-                Task {
-                    locationSaveTask?.cancel()
-                    if let index = pendingProgressIndex {
-                        await recordReading(sectionIndex: index, blockIndex: pendingBlockIndex, characterOffset: pendingCharacterOffset)
-                    }
-                    onDismiss()
-                }
-            } label: {
+            Button(action: onDismiss) {
                 Image(systemName: "chevron.left")
                     .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.34), in: Circle())
             }
-            .accessibilityLabel("返回书籍概述")
+            .accessibilityLabel("返回书架")
         }
         if let bookBody {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if let onShowOverview {
+                    Button(action: onShowOverview) { Image(systemName: "info.circle").frame(width: 44, height: 44) }
+                        .accessibilityLabel("书籍信息")
+                }
                 Button { showingAnnotations = true } label: {
                     Image(systemName: "bookmark")
                         .frame(width: 44, height: 44)
@@ -3658,7 +3706,7 @@ private struct KnowledgeBookReadingView: View {
                     ForEach(Array(bookBody.sections.enumerated()), id: \.element.id) { index, section in
                         readingSection(section, index: index, bookBody: bookBody)
                     }
-                    if let illustrations = bookBody.illustrationUrls, !illustrations.isEmpty {
+                    if bookBody.illustrations == nil, let illustrations = bookBody.illustrationUrls, !illustrations.isEmpty {
                         VStack(alignment: .leading, spacing: 20) {
                             Text("本期配图").font(.headline)
                             ForEach(Array(illustrations.enumerated()), id: \.offset) { index, path in
@@ -3692,7 +3740,7 @@ private struct KnowledgeBookReadingView: View {
         bookBody: KnowledgeBookBodyDTO
     ) -> some View {
         let sectionAnnotations = annotations(for: section)
-        let content = ReadingSectionContent.parse(section.markdown)
+        let content = ReadingSectionContent.parse(section.markdown, cacheKey: "\(bookBody.bookId):\(bookBody.contentVersion):\(section.id)")
         return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             ReadingSectionIllustration(
                 index: index,
@@ -3720,6 +3768,7 @@ private struct KnowledgeBookReadingView: View {
                         annotations: sectionAnnotations
                     )
                     .id("\(section.id):\(blockIndex)")
+                    inlineIllustrations(after: block, section: section, bookBody: bookBody)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -3754,6 +3803,22 @@ private struct KnowledgeBookReadingView: View {
         .id(section.id)
         .onAppear {
             if section.id == initialSectionID { restoreSectionReady = true }
+        }
+    }
+
+    @ViewBuilder
+    private func inlineIllustrations(after block: MarkdownBlock, section: KnowledgeBookSectionDTO,
+                                     bookBody: KnowledgeBookBodyDTO) -> some View {
+        if case .paragraph(let text) = block {
+            ForEach((bookBody.illustrations ?? []).filter {
+                $0.sectionId == section.id && $0.contentVersion == bookBody.contentVersion
+                    && $0.afterParagraph == text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }) { illustration in
+                VStack(alignment: .leading, spacing: 8) {
+                    PublicationReaderImage(bookID: book.id, path: illustration.url, label: illustration.alt)
+                    Text(illustration.caption).font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -3799,6 +3864,23 @@ private struct KnowledgeBookReadingView: View {
                 }
             ) { excerpt in
                 prepareSelection(excerpt, section: section, bookBody: bookBody)
+            }
+        case .bulletList(let items):
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•").font(.body)
+                        MarkdownText(item, font: .body).lineSpacing(7)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        case .numberedList(let items):
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    MarkdownText(item, font: .body).lineSpacing(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         default:
             MarkdownBlockCard(block: block)
@@ -3904,6 +3986,10 @@ private struct KnowledgeBookReadingView: View {
                 }
             }
             .task(id: book.id) { await loadBody() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { flushReadingLocation() }
+            }
+            .onDisappear { flushReadingLocation() }
             .task(id: "\(bookBody?.contentVersion ?? ""): \(restoreSectionReady)") {
                 guard let initialSectionID, bookBody != nil else { return }
                 await Task.yield()
@@ -3918,6 +4004,13 @@ private struct KnowledgeBookReadingView: View {
             }
             }
         }
+    }
+
+    private func flushReadingLocation() {
+        locationSaveTask?.cancel()
+        guard let index = pendingProgressIndex else { return }
+        let block = pendingBlockIndex, offset = pendingCharacterOffset
+        Task { await recordReading(sectionIndex: index, blockIndex: block, characterOffset: offset) }
     }
 
     private func annotations(for section: KnowledgeBookSectionDTO) -> [ReaderAnnotationEntry] {
@@ -4088,43 +4181,63 @@ struct ReadingTextHighlight: Hashable {
     let quote: String
 }
 
+/// One observer per reader scroll view; coalesce notifications before TextKit work.
+final class ReadingScrollObservation {
+    static let instances = NSMapTable<UIScrollView, ReadingScrollObservation>.weakToStrongObjects()
+    private let views = NSHashTable<ReadingPositionTextView>.weakObjects()
+    private var observation: NSKeyValueObservation?
+    private var pending = false
+
+    static func attach(_ view: ReadingPositionTextView, to scroll: UIScrollView) -> ReadingScrollObservation {
+        let tracker: ReadingScrollObservation
+        if let existing = instances.object(forKey: scroll) { tracker = existing }
+        else {
+            tracker = ReadingScrollObservation()
+            tracker.observation = scroll.observe(\.contentOffset, options: [.new]) { [weak tracker] _, _ in
+                tracker?.schedule()
+            }
+            instances.setObject(tracker, forKey: scroll)
+        }
+        tracker.views.add(view)
+        tracker.schedule()
+        return tracker
+    }
+
+    func remove(_ view: ReadingPositionTextView) { views.remove(view) }
+
+    private func schedule() {
+        guard !pending else { return }
+        pending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pending = false
+            for view in self.views.allObjects {
+                view.restoreIfNeeded()
+                if view.reportVisibleCharacter() { break }
+            }
+        }
+    }
+}
+
 final class ReadingPositionTextView: UITextView {
     var onVisibleCharacter: (Int) -> Void = { _ in }
     var restoreCharacterOffset: Int?
     private weak var outerScrollView: UIScrollView?
-    private var contentOffsetObservation: NSKeyValueObservation?
-    private var contentSizeObservation: NSKeyValueObservation?
+    private var tracker: ReadingScrollObservation?
     private var restoredOffset: Int?
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        contentOffsetObservation?.invalidate()
-        contentSizeObservation?.invalidate()
+        tracker?.remove(self)
+        tracker = nil
         outerScrollView = nil
+        guard window != nil else { return }
         var ancestor = superview
         while let view = ancestor, outerScrollView == nil {
             outerScrollView = view as? UIScrollView
             ancestor = view.superview
         }
-        guard let outerScrollView else { return }
-        contentOffsetObservation = outerScrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.restoreIfNeeded()
-                self?.reportVisibleCharacter()
-            }
-        }
-        contentSizeObservation = outerScrollView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.restoreIfNeeded() }
-        }
-        DispatchQueue.main.async { [weak self] in
-            self?.restoreIfNeeded()
-            self?.reportVisibleCharacter()
-        }
-    }
-
-    deinit {
-        contentOffsetObservation?.invalidate()
-        contentSizeObservation?.invalidate()
+        if let outerScrollView { tracker = ReadingScrollObservation.attach(self, to: outerScrollView) }
     }
 
     override func layoutSubviews() {
@@ -4165,21 +4278,25 @@ final class ReadingPositionTextView: UITextView {
         )
     }
 
-    private func reportVisibleCharacter() {
-        guard let outerScrollView, window != nil, textStorage.length > 0 else { return }
+    @discardableResult
+    func reportVisibleCharacter() -> Bool {
+        guard let outerScrollView, window != nil, textStorage.length > 0 else { return false }
         let readingLine = CGPoint(
             x: outerScrollView.bounds.midX,
             y: outerScrollView.bounds.minY + outerScrollView.adjustedContentInset.top + 120
         )
         let local = convert(readingLine, from: outerScrollView)
-        guard local.y >= bounds.minY, local.y <= bounds.maxY else { return }
+        guard local.y >= bounds.minY, local.y <= bounds.maxY else { return false }
         layoutManager.ensureLayout(for: textContainer)
         let textPoint = CGPoint(
             x: min(max(local.x - textContainerInset.left, 0), textContainer.size.width),
             y: max(local.y - textContainerInset.top, 0)
         )
         let glyph = layoutManager.glyphIndex(for: textPoint, in: textContainer)
-        onVisibleCharacter(min(layoutManager.characterIndexForGlyph(at: glyph), textStorage.length - 1))
+        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        let offset = min(layoutManager.characterIndexForGlyph(at: glyph), textStorage.length - 1)
+        onVisibleCharacter(offset)
+        return true
     }
 }
 
@@ -4357,17 +4474,15 @@ struct SelectableReadingText: UIViewRepresentable {
         context.coordinator.onAnnotateSelection = onAnnotateSelection
         view.onVisibleCharacter = onVisibleCharacter
         view.restoreCharacterOffset = resumeCharacterOffset
-        let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|") + ":\(resumeCharacterOffset ?? -1)"
+        let signature = highlights.map { "\($0.id):\($0.quote.hashValue)" }.joined(separator: "|")
+            + ":\(resumeCharacterOffset ?? -1):\(view.traitCollection.preferredContentSizeCategory.rawValue):\(textColor)"
         guard context.coordinator.source != markdown || context.coordinator.highlightSignature != signature else {
             DispatchQueue.main.async { view.restoreIfNeeded() }
             return
         }
         context.coordinator.source = markdown
         context.coordinator.highlightSignature = signature
-        let attributed = ReadingResumeTarget.attributedText(markdown)
-        view.attributedText = NSAttributedString(attributed)
-        view.font = UIFont.preferredFont(forTextStyle: .body)
-        view.textColor = textColor
+        view.attributedText = Self.styledText(markdown, color: textColor, traits: view.traitCollection)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 7
         paragraph.paragraphSpacing = 14
@@ -4410,6 +4525,24 @@ struct SelectableReadingText: UIViewRepresentable {
         DispatchQueue.main.async {
             view.restoreIfNeeded()
         }
+    }
+
+    static func styledText(_ markdown: String, color: UIColor, traits: UITraitCollection) -> NSAttributedString {
+        var value = ReadingResumeTarget.attributedText(markdown)
+        let base = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traits)
+        for run in value.runs {
+            let intent = run.inlinePresentationIntent ?? []
+            var font = intent.contains(.code) ? UIFont.monospacedSystemFont(ofSize: base.pointSize, weight: .regular) : base
+            var symbolic = font.fontDescriptor.symbolicTraits
+            if intent.contains(.stronglyEmphasized) { symbolic.insert(.traitBold) }
+            if intent.contains(.emphasized) { symbolic.insert(.traitItalic) }
+            if let descriptor = font.fontDescriptor.withSymbolicTraits(symbolic) {
+                font = UIFont(descriptor: descriptor, size: base.pointSize)
+            }
+            value[run.range].font = font
+            value[run.range].foregroundColor = color
+        }
+        return NSAttributedString(value)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ReadingPositionTextView, context: Context) -> CGSize? {
@@ -4499,8 +4632,12 @@ enum ReadingQuickAction: Equatable {
         let selection = String(excerpt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2_000))
         return """
         这是阅读选词提问。用户选中：「\(selection)」。
-        请先直接解释选中内容在当前句子中的含义；章节正文只用于判断语境，不要用概述整段替代选词解释。若选中的是短词，请先说明这个词，再围绕它回应下面的请求。
-        用户请求：\(question)
+        优先直接回答下面的用户请求；选中文字和当前章节用于确定人物、事件、时间和语境，不要用概述整段替代回答。
+        如果用户要求解释选中词，请先直接解释选中内容在当前句子中的含义；不要用概述整段替代选词解释。
+        若问题超出本文信息，在已授权联网且用户未要求仅本文时，主动查证公开资料并附来源，明确标为补充资料。不要仅以“本文未提及”结束。
+        年龄等时点问题沿用文中事件发生时，明确计算时点；出生年或史料不详就说明不详，不编造数值。
+        【用户问题】
+        \(question)
         """
     }
 

@@ -118,6 +118,8 @@ def test_note_sync_is_tenant_scoped_idempotent_and_conflict_safe():
             "content_hash": digest,
             "updated_at": listed.json()["items"][0]["updated_at"],
             "archived": False,
+            "trashed": False,
+            "restored_at": None,
             "merged_into_note_id": None,
         }]
 
@@ -294,6 +296,24 @@ def test_note_archive_is_recoverable_and_scoped_to_authenticated_owner():
         assert (owner_dir / ".trash" / "old-note.md").is_file()
         assert json.loads((owner_dir / ".private-index.json").read_text())["document_count"] == 0
 
+        hidden = _request("GET", "/api/v1/me/knowledge-notes")
+        assert hidden.json()["count"] == 0
+        trash_list = _request("GET", "/api/v1/me/knowledge-notes", params={"include_trashed": "true"})
+        assert trash_list.json()["items"][0]["trashed"] is True
+        stale_sync = _request("PUT", "/api/v1/me/knowledge-notes/old-note",
+                              json={"markdown": markdown, "content_hash": digest})
+        assert stale_sync.status_code == 409
+        assert stale_sync.json()["detail"]["code"] == "note_trashed"
+        with patch.object(sync, "enqueue_note_contribution", new_callable=AsyncMock) as enqueue:
+            recovered = _request("POST", "/api/v1/me/knowledge-notes/old-note/restore", json={})
+            assert recovered.status_code == 200, recovered.text
+            enqueue.assert_not_awaited()  # Personal recovery does not reauthorize publication.
+        assert not (owner_dir / ".trash" / "old-note.md").exists()
+        assert (owner_dir / "old-note.md").read_text() == markdown
+        recovered_snapshot = _request("GET", "/api/v1/me/knowledge-notes").json()["items"][0]
+        assert recovered_snapshot["trashed"] is False
+        assert recovered_snapshot["updated_at"] >= trash_list.json()["items"][0]["updated_at"]
+
 
 def test_unreadable_note_returns_retryable_storage_error_without_leaking_path():
     import backend.api.auth as auth
@@ -400,3 +420,23 @@ def test_concurrent_merges_allow_one_cas_winner():
             responses = list(executor.map(attempt, (1, 2)))
         assert sorted(response.status_code for response in responses) == [200, 409]
         assert next(response for response in responses if response.status_code == 409).json()["detail"]["code"] == "merge_target_changed"
+
+
+def test_contribution_withdrawal_failure_preserves_note_until_retry(tmp_path):
+    import pytest
+    from fastapi import HTTPException
+    import backend.api.knowledge_sync as sync
+    payload = {"tenant_key": "withdraw-tenant", "user_id": "withdraw-user"}
+    with patch.object(sync, "_sync_root", return_value=tmp_path), \
+         patch.object(sync, "withdraw_contribution", new_callable=AsyncMock, side_effect=RuntimeError("database unavailable")):
+        for operation in ("trash", "archive"):
+            path, metadata = sync._paths(payload["tenant_key"], payload["user_id"], operation)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("preserve original")
+            metadata.write_text(json.dumps({"contribution_event_id": "existing-event"}))
+            call = sync.trash_note(operation, payload) if operation == "trash" else sync.archive_note(operation, sync.NoteArchiveRequest(), payload)
+            with pytest.raises(HTTPException) as error:
+                asyncio.run(call)
+            assert error.value.status_code == 503
+            assert error.value.detail["code"] == "knowledge_withdrawal_pending"
+            assert path.read_text() == "preserve original"

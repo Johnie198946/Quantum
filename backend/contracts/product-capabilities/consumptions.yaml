@@ -26,9 +26,9 @@ consumptions:
 
   - id: publication.illustrated_delivery
     kind: publication
-    description: Existing publication loop dispatches content then five-image preparation, independent signed review and due release; bookshelf consumers render authenticated media from the same frozen edition. Manual generation is not unattended acceptance.
-    input_contract: {series: enabled_registry_entry, occurrence: program_bound_issue_key, content: publication-content-v1, media: two_covers_and_three_illustrations, reader: authenticated_same_publication}
+    description: Existing publication loop dispatches content then planned illustration preparation, independent signed review and due release; bookshelf consumers render authenticated media from the same frozen edition. Manual generation is not unattended acceptance.
+    input_contract: {series: enabled_registry_entry, occurrence: program_bound_issue_key, content: publication-content-v1, media: two_covers_and_reviewed_illustration_plan, reader: authenticated_same_publication}
     receipt: native_dispatch_and_generation_evidence_signed_review_edition_and_reader_media_readback
     implementation_refs: [scripts/publication_scheduler_watchdog.py, scripts/publication_workflow_handoff.py, scripts/publication_editorial_remote.py, backend/services/knowledge_publication_store.py, backend/api/subscriptions.py, ios/AIPlatformApp/Networking/APIClient.swift, ios/AIPlatformApp/Views/Settings/SettingsView.swift, docs/runbooks/publication-standard-workflow.md]
-    gates: [configured_role_binding, frozen_author_content, bounded_material_claim, five_verified_media_receipts, independent_native_review_proof, due_release, authenticated_reader_media, client_visible_images]
+    gates: [configured_role_binding, frozen_author_content, bounded_material_claim, all_planned_media_receipts, independent_native_review_proof, due_release, authenticated_reader_media, client_visible_images]
     status: partial

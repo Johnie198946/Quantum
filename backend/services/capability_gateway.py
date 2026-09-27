@@ -155,8 +155,23 @@ async def create_capability_proposal(
                 payload=payload, session_id=session_id, request_id=request_id,
                 note_illustration_v1=renderer_version == "qcp-ios-notes@1",
             )
+        review_summary = capability["description"]
+        if capability_id == "knowledge.note.trash" and (canonical_input.get("all_active") or canonical_input.get("note_versions")):
+            from backend.api.knowledge_sync import list_synced_notes
+            from backend.capability_handlers import _note_title
+            snapshot = await list_synced_notes(False, payload, include_trashed=not bool(canonical_input.get("all_active")))
+            active = {item["note_id"]: item for item in snapshot["items"]}
+            frozen = ({key: item["content_hash"] for key, item in active.items()}
+                      if canonical_input.get("all_active") else canonical_input["note_versions"])
+            if not frozen or len(frozen) > 1000:
+                raise CapabilityContractError("请选择1至1000篇笔记；超过范围请分组，未删除任何内容")
+            if any(key not in active or active[key]["content_hash"] != value for key, value in frozen.items()):
+                raise CapabilityContractError("笔记版本已变化，请重新检查删除范围")
+            canonical_input = {"note_versions": frozen}
+            review_summary = f"将以下{len(frozen)}篇活跃云端笔记移到最近删除（可恢复）。确认后新增的笔记不受影响；未同步的本机笔记不在本次范围。\n" + "\n".join(
+                f"• {_note_title(active[key]['markdown'])} [{key}]" for key in frozen)
         versions = dict(resource_versions or {})
-        if len(versions) > 64 or any(
+        if len(versions) > (1000 if capability_id == "knowledge.note.trash" else 64) or any(
             not isinstance(key, str)
             or not key
             or len(key) > 160
@@ -167,7 +182,9 @@ async def create_capability_proposal(
         ):
             raise CapabilityContractError("resource_versions must be a bounded string/integer map")
         derived_versions: dict[str, str] = {}
-        if capability_id in {"knowledge.note.update", "knowledge.note.archive"}:
+        if capability_id == "knowledge.note.trash" and canonical_input.get("note_versions"):
+            derived_versions = dict(canonical_input["note_versions"])
+        elif capability_id in {"knowledge.note.update", "knowledge.note.archive", "knowledge.note.trash"}:
             derived_versions[str(canonical_input.get("note_id") or "")] = str(
                 canonical_input.get("base_hash") or ""
             )
@@ -248,7 +265,7 @@ async def create_capability_proposal(
         "input": canonical_input,
         "input_digest": input_digest,
         "resource_versions": canonical_resource_versions,
-        "summary": capability["description"],
+        "summary": review_summary,
         "risk": capability["risk"],
         "state": "awaiting_confirmation",
         "expires_at": expires_at.isoformat(),

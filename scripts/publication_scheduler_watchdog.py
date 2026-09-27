@@ -160,7 +160,7 @@ def _default_profile_only() -> None:
 
 def _status() -> dict:
     completed = subprocess.run(
-        [str(STATUS_CLIENT), "--status-only"], text=True, capture_output=True,
+        [sys.executable, str(STATUS_CLIENT), "--status-only"], text=True, capture_output=True,
         timeout=180, check=False, env=_default_env(),
     )
     if completed.returncode:
@@ -203,7 +203,12 @@ def _read_json(path: Path) -> dict:
 
 def _material_hash(item: dict) -> str:
     hashes: list[tuple[str, object]] = [("body", item.get("body_sha256"))]
-    hashes.extend((role, item.get(f"{role}_sha256")) for role in MEDIA_ROLES)
+    roles = item.get("media_roles", list(MEDIA_ROLES))
+    allowed = {"shelf_cover", "reader_cover", *(f"illustration_{i:02d}" for i in range(1, 13))}
+    if (not isinstance(roles, list) or any(not isinstance(role, str) for role in roles)
+            or len(roles) != len(set(roles)) or not {"shelf_cover", "reader_cover"} <= set(roles) <= allowed):
+        raise ValueError("invalid planned media roles")
+    hashes.extend((role, item.get(f"{role}_sha256")) for role in roles)
     for group in EVIDENCE_GROUPS:
         entries = item.get(group)
         if not isinstance(entries, list):
@@ -545,7 +550,11 @@ def _plan(
             return action, "ready"
         global_pending = sorted(
             (i for i in items if i.status == "await_review" and not i.review_ready
-             and i.series in SERIES and _role_profile(i.series, "review") == _action_profile(action)
+             and i.series in SERIES and SERIES[i.series].get("enabled", True)
+             and datetime.fromisoformat(
+                 i.issue_key if "T" in i.issue_key else i.day + "T12:00"
+             ).strftime("%H:%M") in SERIES[i.series].get("release_times", ["12:00"])
+             and _role_profile(i.series, "review") == _action_profile(action)
              and SERIES[i.series].get("review_job_id") == action.job_id
              and (claims is None or not claims.exhausted(i.day, Action(
                  "review", (Barrier(i.series, i.material_hash, i.issue_key or i.day),), job_id=action.job_id)))),
@@ -561,9 +570,9 @@ def _plan(
             if candidate.manifest == first.manifest
             and candidate.barriers[0].material_hash == first.material_hash
         ]
-        # publication_review_input scans sorted manifests and consumes at most
-        # one. Claim exactly that same first item; an older/out-of-scope pending
-        # item must be reconciled rather than silently crossed.
+        # publication_review_input selects enabled, configured slots in release
+        # order. Claim that same first item; an older active pending item still
+        # must be reconciled rather than silently crossed.
         if len(matching) != 1:
             return None, "review_scope_not_unique"
         action = matching[0]
@@ -902,7 +911,7 @@ def _run_action(action: Action) -> None:
     for command in commands:
         try:
             completed = subprocess.run(
-                command, text=True, capture_output=True, timeout=timeout,
+                [sys.executable, *command], text=True, capture_output=True, timeout=timeout,
                 check=False, env=_default_env(),
             )
         except subprocess.TimeoutExpired as exc:

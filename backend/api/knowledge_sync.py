@@ -90,7 +90,7 @@ def _read_metadata(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _note_snapshot(note_path: Path, metadata_path: Path, *, archived: bool) -> dict[str, Any]:
+def _note_snapshot(note_path: Path, metadata_path: Path, *, archived: bool, trashed: bool = False) -> dict[str, Any]:
     # Production containers currently run as root, so opening a mode-000 file can
     # succeed even though every non-root runtime and shared-volume consumer would
     # be denied. Treat the absence of all read bits as an explicit storage fault
@@ -103,7 +103,10 @@ def _note_snapshot(note_path: Path, metadata_path: Path, *, archived: bool) -> d
         "note_id": note_path.stem,
         "markdown": content,
         "content_hash": _digest(content.encode("utf-8")),
-        "updated_at": metadata.get("client_updated_at") or metadata.get("synced_at"),
+        "updated_at": max((value for key in ("client_updated_at", "synced_at", "archived_at", "trashed_at", "restored_at")
+                           if (value := metadata.get(key))), default=None),
+        "trashed": trashed,
+        "restored_at": metadata.get("restored_at"),
         "archived": archived,
         "merged_into_note_id": metadata.get("merged_into_note_id"),
     }
@@ -301,8 +304,10 @@ async def _withdraw_note_event(
             ))
         except ValueError:
             continue
-        except Exception:
+        except Exception as error:
             logger.exception("note contribution withdrawal failed", extra={"event_id": event_id})
+            raise HTTPException(503, detail={"code": "knowledge_withdrawal_pending",
+                "message": "平台知识撤回未完成，操作未确认成功，请重试。"}) from error
     return sorted(affected)
 
 
@@ -420,6 +425,7 @@ async def ingest_uploaded_file_content(
 async def list_synced_notes(
     include_archived: bool = True,
     payload: dict[str, Any] = Depends(require_auth),
+    *, include_trashed: bool = False,
 ) -> dict[str, Any]:
     """Return the authenticated account's durable note snapshot for device restore."""
     tenant_key = str(payload.get("tenant_key") or "")
@@ -458,6 +464,18 @@ async def list_synced_notes(
                         "retryable": True,
                     },
                 ) from error
+    if include_trashed:
+        trash = directory / ".trash"
+        try:
+            items.extend(
+                _note_snapshot(path, path.with_suffix(".sync.json"), archived=False, trashed=True)
+                for path in sorted(trash.glob("*.md"))
+                if path.is_file() and not path.is_symlink()
+            )
+        except PermissionError as error:
+            raise HTTPException(503, detail={
+                "code": "note_storage_permission_denied", "retryable": True,
+            }) from error
     return {
         "items": items,
         "count": len(items),
@@ -494,6 +512,8 @@ async def sync_note(
     lock_path = directory / ".merge.lock"
     with lock_path.open("a+") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        if (directory / ".trash" / f"{note_id}.md").is_file():
+            raise HTTPException(409, detail={"code": "note_trashed", "action": "restore_explicitly"})
         current_hash = _digest(note_path.read_bytes()) if note_path.is_file() else None
         previous_metadata = _read_metadata(metadata_path)
         archived_path, _ = _archived_paths(tenant_key, user_id, note_id)
@@ -511,6 +531,8 @@ async def sync_note(
                 "compile_status": "private_index_unchanged",
                 "private_index_hash": None,
             }
+        if archived_path.is_file() and not body.create_only:
+            raise HTTPException(409, detail={"code": "note_archived", "action": "restore_explicitly"})
         if body.create_only and (
             current_hash not in {None, actual_hash} or archived_hash is not None
         ):
@@ -671,6 +693,11 @@ async def archive_note(
         raise HTTPException(status_code=404, detail={"code": "note_not_synced"})
     if body.expected_content_hash and _digest(note_path.read_bytes()) != body.expected_content_hash:
         raise HTTPException(status_code=409, detail={"code": "archive_source_changed"})
+    withdrawn = await _withdraw_note_event(
+        tenant_key=tenant_key, user_id=user_id, metadata=_read_metadata(metadata_path), permanent=False,
+    )
+    if body.expected_content_hash and _digest(note_path.read_bytes()) != body.expected_content_hash:
+        raise HTTPException(409, detail={"code": "archive_source_changed"})
     archived_note.parent.mkdir(parents=True, exist_ok=True)
     os.replace(note_path, archived_note)
     metadata: dict[str, Any] = {}
@@ -698,9 +725,6 @@ async def archive_note(
     except FileNotFoundError:
         pass
     remove_private_note_index_entry(tenant_key, user_id, note_id, _sync_root())
-    withdrawn = await _withdraw_note_event(
-        tenant_key=tenant_key, user_id=user_id, metadata=metadata, permanent=False,
-    )
     return {
         "note_id": note_id,
         "archive_status": "archived",
@@ -721,6 +745,11 @@ async def restore_note(
     archived_note, archived_metadata = _archived_paths(tenant_key, user_id, note_id)
     if note_path.is_file():
         return {"note_id": note_id, "archive_status": "active", "changed": False}
+    from_trash = False
+    if not archived_note.is_file():
+        archived_note = note_path.parent / ".trash" / f"{note_id}.md"
+        archived_metadata = archived_note.with_suffix(".sync.json")
+        from_trash = True
     if not archived_note.is_file():
         raise HTTPException(status_code=404, detail={"code": "archived_note_not_found"})
     note_path.parent.mkdir(parents=True, exist_ok=True)
@@ -732,6 +761,8 @@ async def restore_note(
         except (OSError, json.JSONDecodeError):
             metadata = {}
     metadata.pop("archived_at", None)
+    metadata.pop("trashed_at", None)
+    metadata.pop("trash_status", None)
     metadata.pop("merged_into_note_id", None)
     metadata["archive_status"] = "active"
     restored_at = datetime.now(timezone.utc)
@@ -746,7 +777,7 @@ async def restore_note(
     except FileNotFoundError:
         pass
     update_private_note_index(tenant_key, user_id, note_path, _sync_root())
-    contribution = await enqueue_note_contribution(
+    contribution = None if from_trash else await enqueue_note_contribution(
         tenant_key=tenant_key, user_id=user_id, note_id=note_id,
         source_revision=metadata["contribution_revision"],
         content_hash=_digest(note_path.read_bytes()), source_changed_at=restored_at,
@@ -773,6 +804,7 @@ async def restore_note(
 async def trash_note(
     note_id: str,
     payload: dict[str, Any] = Depends(require_auth),
+    *, expected_content_hash: str | None = None,
 ) -> dict[str, Any]:
     """Recoverable delete: move only the authenticated user's note to .trash."""
     tenant_key = str(payload.get("tenant_key") or "")
@@ -784,6 +816,14 @@ async def trash_note(
     directory = note_directory(tenant_key, user_id, _sync_root()) / ".trash"
     destination = directory / f"{note_id}.md"
     destination_metadata = directory / f"{note_id}.sync.json"
+    if expected_content_hash is not None:
+        if not _SHA256.fullmatch(expected_content_hash):
+            raise HTTPException(422, detail={"code": "invalid_content_hash"})
+        current = destination if destination.is_file() else source_note
+        if not current.is_file():
+            raise HTTPException(404, detail={"code": "note_not_synced"})
+        if _digest(current.read_bytes()) != expected_content_hash:
+            raise HTTPException(409, detail={"code": "resource_conflict"})
     if destination.is_file():
         trashed_state = _read_metadata(destination_metadata)
         for path in (note_path, metadata_path, archived_note, archived_metadata):
@@ -802,6 +842,11 @@ async def trash_note(
         }
     if not source_note.is_file():
         raise HTTPException(status_code=404, detail={"code": "note_not_synced"})
+    withdrawn = await _withdraw_note_event(
+        tenant_key=tenant_key, user_id=user_id, metadata=_read_metadata(source_metadata), permanent=True,
+    )
+    if expected_content_hash and _digest(source_note.read_bytes()) != expected_content_hash:
+        raise HTTPException(409, detail={"code": "resource_conflict"})
     directory.mkdir(parents=True, exist_ok=True)
     os.replace(source_note, destination)
     metadata: dict[str, Any] = {}
@@ -823,9 +868,6 @@ async def trash_note(
     except FileNotFoundError:
         pass
     remove_private_note_index_entry(tenant_key, user_id, note_id, _sync_root())
-    withdrawn = await _withdraw_note_event(
-        tenant_key=tenant_key, user_id=user_id, metadata=metadata, permanent=True,
-    )
     return {
         "note_id": note_id, "trash_status": "trashed", "changed": True,
         "withdrawn_contribution_event_ids": withdrawn,

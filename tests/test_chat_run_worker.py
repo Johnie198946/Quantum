@@ -190,14 +190,19 @@ def test_knowledge_sink_rejects_suppressed_delta_visibility():
     assert worker.bridge._qput(sink, {"type": "delta", "content": "private"}) is False
 
 
-def test_worker_auto_ingests_high_confidence_research(monkeypatch, tmp_path):
+@pytest.mark.parametrize("goal", [
+    "研究华为财报并给出分析报告",
+    "Read-only audit: report all notes; do not create, merge, archive or delete notes.",
+    "把研究报告保存为笔记，先展示确认单",
+])
+def test_worker_never_bypasses_note_confirmation(monkeypatch, tmp_path, goal):
     store = worker.DurableChatRunStore(tmp_path / "runs.sqlite3")
     owner = store.tenant_user_hash("tenant-a", "user-a")
     run, _ = store.create_or_get(
         tenant_user_hash=owner, tenant_id="tenant-a", user_id="user-a",
         user_key="session-key", session_id="session-key", request_id="request-research",
         execution_payload={
-            "goal": "研究华为财报并给出分析报告",
+            "goal": goal,
             "agent_config": {"triage": {
                 "version": "v1", "route_class": "PROFESSIONAL_TASK", "confidence": 0.84,
                 "reason_code": "test", "evidence_requirements": [],
@@ -209,7 +214,7 @@ def test_worker_auto_ingests_high_confidence_research(monkeypatch, tmp_path):
     monkeypatch.setattr(worker.bridge, "_hermes_session_for_request", lambda *_: None)
     monkeypatch.setattr(worker, "_renew_knowledge_capability", lambda *_: None)
     captured = []
-    monkeypatch.setattr(worker, "persist_generated_private_note", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(worker, "persist_generated_private_note", lambda **kwargs: captured.append(kwargs), raising=False)
 
     def fake_run(_goal, _user_key, _hermes_sid, sink, _holder, *args):
         answer = "有来源支撑的华为财报研究结论。" * 12
@@ -218,7 +223,6 @@ def test_worker_auto_ingests_high_confidence_research(monkeypatch, tmp_path):
 
     monkeypatch.setattr(worker.bridge, "_run_agent_sync", fake_run)
     worker.execute(store, claimed)
-    assert captured
-    assert captured[0]["tenant_key"] == "tenant-a"
-    assert captured[0]["confidence"] == 0.84
-    assert captured[0]["kind"] == "research"
+    assert captured == []
+    assert store.get_unchecked(run["run_id"])["status"] == "completed"
+    assert store.get_unchecked(run["run_id"])["final_answer"]

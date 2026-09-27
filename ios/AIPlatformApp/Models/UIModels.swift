@@ -447,6 +447,8 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let language: String?
     public let citationStyle: String?
     public let evidencePolicy: String?
+    public var noteVersions: [String: String]? = nil
+    public var noteId: String? = nil
     public var exerciseId: String? = nil
     public var revision: Int? = nil
     public var questionId: String? = nil
@@ -473,6 +475,7 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
         case thesis, language
         case citationStyle = "citation_style"
         case evidencePolicy = "evidence_policy"
+        case noteVersions = "note_versions", noteId = "note_id"
         case exerciseId = "exercise_id", revision, questionId = "question_id", selected, text
         case bookId = "book_id", sectionId = "section_id", contentVersion = "content_version", minutes
     }

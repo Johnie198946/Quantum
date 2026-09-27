@@ -84,6 +84,8 @@ public struct CloudKnowledgeNoteDTO: Codable, Identifiable, Hashable, Sendable {
     public let updatedAt: String?
     public let archived: Bool
     public let mergedIntoNoteId: String?
+    public var trashed: Bool? = nil
+    public var restoredAt: String? = nil
 
     public var id: String { noteId }
 }
@@ -115,6 +117,7 @@ public struct KnowledgeNoteMergeResponseDTO: Decodable, Sendable {
     public let targetNoteId: String
     public let status: String
     public let revisedHash: String
+    public var contributionStatus: String? = nil
 }
 
 public struct UsageDailyDTO: Codable, Identifiable, Hashable {
@@ -334,7 +337,15 @@ public struct KnowledgeBookshelfDTO: Codable, Identifiable, Hashable {
     }
 }
 
+public struct KnowledgeBookListDTO: Codable, Identifiable, Hashable {
+    public let id: String
+    public let title: String
+    public let bookIds: [String]
+}
+
 public struct KnowledgeBookshelvesResponse: Codable {
+    public var subscriptions: [KnowledgeBookSubscriptionDTO]? = nil
+    public var bookLists: [KnowledgeBookListDTO]? = nil
     public let bookshelves: [KnowledgeBookshelfDTO]
     public var publicCollections: [PublicKnowledgeCollectionDTO]? = nil
     public var ownerPrivateCollections: [OwnerPrivateCollectionDTO]? = nil
@@ -516,6 +527,18 @@ public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
     public let markdown: String
 }
 
+public struct PublicationIllustrationDTO: Codable, Hashable, Identifiable {
+    public let id: String
+    public let url: String
+    public let sectionId: String
+    public let afterParagraph: String
+    public let caption: String
+    public let alt: String
+    public let width: Int
+    public let height: Int
+    public let contentVersion: String
+}
+
 public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public let bookId: String
     public let title: String
@@ -527,6 +550,7 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var shelfCoverUrl: String? = nil
     public var readerCoverUrl: String? = nil
     public var illustrationUrls: [String]? = nil
+    public var illustrations: [PublicationIllustrationDTO]? = nil
     public var seriesId: String? = nil
     public var seriesTitle: String? = nil
     public var issueId: String? = nil
@@ -1161,6 +1185,13 @@ public struct ChatStatusDTO: Decodable {
     public let eventSequence: Int?
     public let eventsNextOffset: Int?
     public let events: [QCPStreamEvent]?
+
+    public var requestId: String? = nil
+
+    func belongsTo(requestId: String, runId: String?) -> Bool {
+        if let runId { return self.runId == runId }
+        return self.requestId == requestId
+    }
 
     public var loadedAnswer: String? {
         answer ?? answerProjection.map { $0.blocks.map(\.content).joined() }
@@ -3144,7 +3175,23 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchKnowledgeBookshelves() async throws -> KnowledgeBookshelvesResponse {
-        try await request(KnowledgeBookshelvesResponse.self, path: "knowledge-bookshelves")
+        try await request(KnowledgeBookshelvesResponse.self, path: "knowledge-bookshelves",
+                          queryItems: [URLQueryItem(name: "include_reader", value: "true")])
+    }
+
+    public func saveBookList(id: String, title: String, bookIds: [String]) async throws -> KnowledgeBookListDTO {
+        struct Write: Encodable {
+            let title: String
+            let bookIds: [String]
+            enum CodingKeys: String, CodingKey { case title; case bookIds = "book_ids" }
+        }
+        return try await request(KnowledgeBookListDTO.self, path: "me/book-lists/\(encodedPath(id))",
+                                 method: "PUT", body: Write(title: title, bookIds: bookIds))
+    }
+
+    public func deleteBookList(id: String) async throws {
+        struct Result: Decodable { let deleted: Bool }
+        _ = try await request(Result.self, path: "me/book-lists/\(encodedPath(id))", method: "DELETE")
     }
 
     public func fetchBookSubscriptions() async throws -> [KnowledgeBookSubscriptionDTO] {
@@ -3893,7 +3940,7 @@ public final class APIClient: ObservableObject {
         let prefix = "/api/v1/knowledge-publications/"
         let safeID = bookID.range(of: "^[a-z0-9][a-z0-9._:-]{1,159}$", options: .regularExpression) != nil
         let suffix = String(path.dropFirst((prefix + bookID + "/").count))
-        let allowed = ["covers/shelf_cover", "covers/reader_cover", "media/illustration_01", "media/illustration_02", "media/illustration_03"]
+        let allowed = ["covers/shelf_cover", "covers/reader_cover"] + (1...12).map { String(format: "media/illustration_%02d", $0) }
         guard safeID, path.hasPrefix(prefix + bookID + "/"), allowed.contains(suffix),
               var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               ["https", "http"].contains(parts.scheme), parts.host != nil,
@@ -4012,6 +4059,7 @@ public final class APIClient: ObservableObject {
         markdown: String,
         updatedAt: Date,
         baseHash: String? = nil,
+        createOnly: Bool = false,
         credentialGeneration: UInt64
     ) async throws -> KnowledgeNoteSyncResponseDTO {
         let key = "\(credentialGeneration):\(id)"
@@ -4027,7 +4075,8 @@ public final class APIClient: ObservableObject {
             return try await self.performKnowledgeNoteSync(
                 id: id, markdown: markdown, updatedAt: updatedAt,
                 contentHash: contentHash,
-                baseHash: baseHash ?? predecessor?.contentHash ?? knownHash,
+                baseHash: createOnly ? nil : baseHash ?? predecessor?.contentHash ?? knownHash,
+                createOnly: createOnly,
                 credentialGeneration: credentialGeneration
             )
         }
@@ -4053,17 +4102,20 @@ public final class APIClient: ObservableObject {
         updatedAt: Date,
         contentHash: String,
         baseHash: String?,
+        createOnly: Bool,
         credentialGeneration: UInt64
     ) async throws -> KnowledgeNoteSyncResponseDTO {
         struct Body: Encodable {
             let markdown: String
             let contentHash: String
             let baseHash: String?
+            let createOnly: Bool
             let updatedAt: String
             enum CodingKeys: String, CodingKey {
                 case markdown
                 case contentHash = "content_hash"
                 case baseHash = "base_hash"
+                case createOnly = "create_only"
                 case updatedAt = "updated_at"
             }
         }
@@ -4077,6 +4129,7 @@ public final class APIClient: ObservableObject {
                 markdown: markdown,
                 contentHash: contentHash,
                 baseHash: baseHash,
+                createOnly: createOnly,
                 updatedAt: formatter.string(from: updatedAt)
             ),
             credentialGeneration: credentialGeneration
@@ -4093,12 +4146,13 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func fetchKnowledgeNotes(includeArchived: Bool = true) async throws -> CloudKnowledgeNotesResponse {
+    public func fetchKnowledgeNotes(includeArchived: Bool = true, includeTrashed: Bool = false) async throws -> CloudKnowledgeNotesResponse {
         try await request(
             CloudKnowledgeNotesResponse.self,
             path: "me/knowledge-notes",
             queryItems: [
-                URLQueryItem(name: "include_archived", value: includeArchived ? "true" : "false")
+                URLQueryItem(name: "include_archived", value: includeArchived ? "true" : "false"),
+                URLQueryItem(name: "include_trashed", value: includeTrashed ? "true" : "false")
             ]
         )
     }
@@ -4148,14 +4202,15 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func trashKnowledgeNote(id: String) async throws {
+    public func trashKnowledgeNote(id: String, expectedContentHash: String? = nil) async throws {
         struct Body: Encodable {}
         struct Response: Decodable { let trashStatus: String }
         let _: Response = try await request(
             Response.self,
             path: "me/knowledge-notes/\(encodedPath(id))/trash",
             method: "POST",
-            body: Body()
+            body: Body(),
+            queryItems: expectedContentHash.map { [URLQueryItem(name: "expected_content_hash", value: $0)] } ?? []
         )
     }
 

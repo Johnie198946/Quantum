@@ -173,6 +173,9 @@ def test_malformed_gateway_is_error_not_empty(monkeypatch):
 
 @pytest.mark.parametrize("goal,network,tools,allowed", [
     ("超聚变的IPD是什么？", True, ["web_search"], True),
+    ("【用户问题】殷开山和刘文静在浅水原之战时几岁？", True, ["web_search"], True),
+    ("只根据本文回答两人几岁", True, ["web_search"], False),
+    ("仅原文回答两人几岁", True, ["web_search"], False),
     ("超聚变的IPD是什么？", False, ["web_search"], False),
     ("超聚变的IPD是什么？", True, [], False),
     ("仅内部材料解释IPD", True, ["web_search"], False),

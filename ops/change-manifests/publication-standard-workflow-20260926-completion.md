@@ -2,12 +2,19 @@
 
 - task_id: publication-standard-workflow-20260926
 - goal: main 与 Story 无监督选题、写作、审核和发行；程序字段与可增删内容主题解耦。
-- status: DEPLOYED（b07e2cc 配图与协议修复已部署；真机UI及本轮无人值守完整发行仍在验收，尚不标 VERIFIED）
+- status: DEPLOYED（7414b4e出版修复保留于当前c030b9c服务器；真机UI、Story自动五图/独立审核/暂存恢复通过，教程返修及新两期发行仍待完成）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
-- head/local_commit: b07e2cc4fd6c0bcd299990ec58d474761134e577；后续真机验收脚本与证据仍为本地未提交。
+- head/local_commit: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8；快进整合已部署并行任务，保留出版修复；后续验收记录本地更新。
 - manifest: ops/change-manifests/publication-standard-workflow-20260926-completion.md。
-- evidence_note: 本文件与 publication-production-activation.json 的最终部署后事实更新保留本地未提交；程序/配置已提交、推送并部署同一 SHA，验收记录不冒充服务器版本。
+- evidence_note: 后续验收记录仍本地更新；运行版本按以下服务器与本机固定源码分别记录，文档提交不冒充服务器部署。
+- remote_sha: origin/main=c030b9cbba7a2d16e7d94bbb6541a069ae7442e8；任务远端分支仍7414b4e77303ee2aee217a57200806be97ce8ef2，均经git ls-remote核对。
+- server_before: 本任务本轮b07e2cc4fd6c0bcd299990ec58d474761134e577；并行任务接续部署前7414b4e77303ee2aee217a57200806be97ce8ef2。
+- server_after: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8，/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1；本机出版runtime固定7414，出版程序未变。
+- health_check: 八容器healthy、APIready、Bridgeok、部署锁释放，已独立复核。
+- functional_check: 真机指定刊物五图/目录/正文通过；新Story已自动生成五图、独立审核通过并暂存；三个12点合格栏目自动发行及正文/15媒体回读通过；新toolkit自动退稿返修中。
+- rollback_point: 本任务b07快照=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c；当前c030版本回滚为7414 release，备份=/opt/ai-lab-shared/rollbacks/chat-cleanup-pcm-c030b9cbba7a（已独立确认镜像/版本文件及3,072,061字节数据库gzip存在，校验通过由协调任务记录）。
+- remaining_risks: 两篇新期尚未完整发行；历史9本缺图未补；TestFlight未更新；外部工具和本机Hermes必须可用。
 
 ## 开工前 Git 盘点
 
@@ -128,3 +135,49 @@ remaining_risks：用户实际客户端/安装版本未确认；真实用户登�
 
 
 11:25 真机C层验收完成（仅指定完整媒体刊物）：v9 XCTest TEST SUCCEEDED，正文/11节目录前中末/五图加载断言通过；随后通过 computer-use 的 iPhone Mirroring 窗口逐一查看真实竖封面、横封面、三插图，保存 ops/reports/publication-media-ios-20260927/{shelf,shelf-cover,reader-cover,illustrations-all-three}.png，SHA见审计JSON。没有改变订阅、发送Chat或生成测试图片。系统锁屏PNG不作为视觉证据。当前安装b07 debug版，旧TestFlight Build66不包含本修复；9本历史缺图仍保留。设备已向已获用户授权的清理任务释放，服务器完整自动闭环仍待本轮完成。
+
+
+11:29 增量提交：a5e7b74为本任务提示词/真机验收及证据；合并远端笔记保存同意修复f7e6fa9后HEAD=c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1。origin/main与任务分支经git ls-remote核验同SHA；上游增量回归1passed，diff检查通过。仅提示词/测试/证据及上游iOS改动，不重启服务器；server_after与运行脚本仍b07e2cc。现有素材cron171a125ddb63仅追加已提交的启动/等待参数（prompt SHA ec19160571846a38fbf69bedb3cd8bf420829ab6fcc71ad2fa64ec3478c42652），schedule/script/workdir/model/provider/enabled/通知字段均未改。在途执行未重启，下一次自然调度读取补充。备份与回滚原prompt：~/.hermes/backups/publication-standard-workflow-20260926/assets-launch-c1c5788/job-before.json；细节见审计JSON。整体仍DEPLOYED，当前新一期完整自动发布待完成。
+
+
+11:40追加构建器修复：真实12点新稿在完成5次原生生图后，被 _native_rejected_revision 使用现行配置解释旧00:01 rejected记录阻断；未prepare/审核/发布。复用冻结bundle期次身份，当前合同优先完整验证；相邻review_input同根因修复。独立review另复现_plan全局待审候选包含退休时隙导致review_scope_not_unique，现按启用主题/现行时隙与review_input保持一致。没有删除旧manifest、篡改图片/作者或清预算。最小新增解析函数仅被两个既有历史扫描复用，无新服务或调度链。
+
+测试：relay相关21passed（117.79秒）、watchdog相关16passed（沙箱ps被拒的既有测试获得权限后同命令通过）、独立relay5passed、ruff/diff通过。两个实际新稿目录只读历史扫描通过，证据/tmp/publication-builder-real-history-readback.json。当前构建器增量尚未部署；10角色未来调度已备份暂停且active=[]，计划部署后由临时定时任务恢复。新rollback_point=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c，8镜像/版本/attestation/2,584,576字节在线DB备份；预算attempt1保留，剩余5次可正常恢复。
+
+
+## 11:50 最新交付事实（覆盖前文历史版本）
+
+- commit/remote_sha/server_after/runtime: 7414b4e77303ee2aee217a57200806be97ce8ef2；git ls-remote确认origin/main及任务分支同SHA。
+- server_before: b07e2cc4fd6c0bcd299990ec58d474761134e577。
+- server_after release: /opt/releases/ai-lab-platform-7414b4e77303.QdpNjt。
+- health_check: 8容器healthy，后端镜像a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610，APIready/Bridgeok，部署锁释放；前端b9688d保留。
+- rollback_point: /opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c（8镜像标签、版本、在线DB快照）。
+- 本机全部10角色固定7414b4e源码与新提示词。临时no_agent任务82f150bfae99计划11:50:51.038336+08自动核对源码并恢复10角色、调用现有watchdog；未手工运行作者/生图/审核/发行，未重置预算。
+- functional_check: 21 relay+16 watchdog相关测试、10独立测试、实际两个新稿历史扫描通过；此前真机五图显示已验。本轮新期完整自动恢复/独立审核/发行待确认，因此仍DEPLOYED，不能宣称全程未中断。
+
+
+11:57 自动恢复进展：单次任务82f150bfae99实际11:51:50.616670→11:52:05.055644，execution544a2582450047749fa7ab80e3545fd1 completed/error=null；已归档回执并删除临时job/script。既有素材cron自动启动execution7bf74d6c2ebb49cebbafef5833ff32a2，同一素材claim合法累计attempt2，未清预算。自动复用经校验的同一期五图，11:56:54 build/prepare完成，issue-dc6e2ea2dc24a3999ba01da33613d4db处于await_review；尚不算审核或发布通过。
+
+
+12:04 真实分支验收：12点到期发行cron自动发布ai-history、ai-practice、concept-fables三期；只读隔离ASGI验证三篇正文和15媒体200、哈希一致，原代码块保留，不代表在线登录测试。toolkit独立reviewer以真实Python反例拒绝：文中七必填字段与校验器行为不一致。保留拒稿与缺口，等待原作者自动修订；没有绕过审核。Story13点素材cron已自动启动。10个正常job均启用且固定7414源码。
+
+
+12:17 Story真实自动配图→送审：原生素材execution ad547213a3a747798d353bdec32d8afb在12:00:59启动、12:16:17完成；首次Codex启动即使用可写沙箱/非Git目录参数，thread01a0e108-0eee-7aa0-af81-481d53a415e8内五次真实imagegen返回原图。最终五图尺寸及SHA和清单一致、原图与工具返回一致，无人工生图。进程工具曾误报exited/null，agent自行改用540秒有界等待，未伪称进程成功。远端issue-8040b6323c0ad848e2e84b036a38cbf4已prepare；控制器自动派发supervision execution7825be20baf34685b1e9333bcc16fcac进行独立审核，尚未批准/发行。八服务持续healthy、server仍7414b4e。
+
+
+12:30 Story暂存恢复检查：12:20控制器和常规发行出现通用remote command failed(exit1)，12:27控制器再次失败；没有可靠stderr可认定根因。随后独立DB及原transport连续3次只读status确认唯一edition-220ff2b0c89f611a49f119d9422f8d63、publication-8040b6323c0ad848e2e84b036a38cbf4处于staged，release_at=13:00，content_hash=c489480888766bd7d373a0a2560368d366839bf6619197177b50696a0ee884e1；三个status均exit0且stderr空。远端审核/暂存已自动成功，本地manifest仍await_review，等待既有重试收敛；没有手动finalize或清预算。
+
+
+12:32 自动恢复收敛：Story controller第三次finalize execution45b081e1b0734f489df163c86060ac7a于12:31:39完成，原claim completed/attempts3；本地manifest已staged且error清除，远端唯一edition及review_hash一致。12:30常规release也已completed。未人工重跑/改账本；前两次远端错误根因尚未独立复现，不宣称已修复一个未经证实的代码问题。Story等待13:00；toolkit退稿自动修订仍待验。
+
+
+12:36 并行部署版本核验：另一获授权任务于12:31完成c030b9cbba7a2d16e7d94bbb6541a069ae7442e8部署；本任务独立ls-remote与服务器读取确认，7414为祖先，出版程序文件无变化，8容器healthy/APIready/Bridgeok/部署锁释放，release=/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1。任务分支快进c030并保留仅本任务两个验收文件修改；PCM手册/矩阵check及diff通过。本机cron仍固定7414，出版脚本与新服务端字节不变，不能宣称两边Git SHA相同。新版本回滚点由协调任务记录为7414 release及/opt/ai-lab-shared/rollbacks/chat-cleanup-pcm-c030b9cbba7a；本任务原b07快照仍保留。Build67包含媒体修复且归档，尚未TestFlight上传，真机媒体验收仍指此前debug构建。部署窗口可能影响远端重试，但12:20初次错误早于已知完成时间，未据此武断归因。
+
+
+12:41 自动内容返修接力：原toolkit作者job b52aa900ac12由控制器因native_content_rejected自动派发execution6d273d025a6a425ab1c96a2642544053/session cron_b52aa900ac12_20260927_123252；原生工具消息546638实读required_claim_fields_not_enforced。12:39:43交付r2内容，只有schema_version/title/summary/body/source_documents/execution_documents六字段；12:40:42程序接收新artifact29874ecde8d0c1133417cc2eea45d809baddc25b3a5d8c8d46e63a14c35a4e87至独立冻结目录，仍为当天12:00同一期，waiting_assets。没有人工修改内容或填系统字段。
+
+
+13:00 真实r2送审发现新接口错配：execution_negative_fixture_missing_fields长度41，作者artifact/本地manifest允许64，远端_receipts仅40，prepare明确invalid execution.kind。冻结作者内容及五图不改；仅共享存储校验40→64，复用既有64字符合同，规范同步边界。开工HEAD=c030b9cb、分支/worktree同前，仅本任务两份证据文件原有修改，其他worktree未动。素材/控制器未来调度备份暂停，正常发行保留。独立三轮复核无阻断，新增source/execution×旧短/41/64/65共8项通过，65仍拒绝；artifact_id上限及哈希/签名/媒体角色检查均不变。更广相关回归进行中，新增修复尚未部署。
+
+
+13:05 修复验证与部署准备：116项daily/handoff回归全部通过（首次5项仅受沙箱ps拒绝，同命令授权复跑通过），新增边界8项及独立8项通过，Ruff/diff通过。server_before=c030b9cb，新增rollback_point=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/c030b9cbba7a（8镜像/版本/2,584,576字节出版SQLite在线快照）。10角色已备份暂停，active=[]。Story13已13:01:20自动发表且10节正文/五图回读200、SHA一致；本次后续修复仍待部署。

@@ -34,6 +34,7 @@ from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
 )
+from backend.services.workflow_session_scope import register_client_session
 from backend.services.reasoning_extractor import ReasoningStep
 from backend.services.knowledge_policy import KnowledgePolicy, mint_capability, resolve_policy
 from backend.services.client_context_capability import (
@@ -827,6 +828,11 @@ async def _resolve_source_context(
             "省略 section 按全书顺序分页。page 从 1 开始，是工具字符页而非印刷页码。"
             "持续使用返回的 next 参数直到 truncated=false；章节问题读完该章节，"
             "全书问题遍历全书页面再综合，无法读完须明确覆盖范围。禁止公网替代本书证据。"
+            "这不限制用户的延伸追问：优先回答用户问题，选中内容用于消歧及定位事件时点。"
+            "已读正文不足以回答年龄、背景、后续事件等问题时，若已有联网授权且用户未要求仅本文或离线，"
+            "应主动使用web_search，必要时web_extract核验，并标注补充资料及URL；不得只回答本文未提及。"
+            "年龄按文中事件时点计算并说明时点；生年不详须如实说明。读取失败不等于本文未提及。"
+            "公开查询只传必要公开实体和时点，不上传整篇正文或私有内容。"
             f"\nbook_id={book['book_id']} content_version={book['content_version']}\n"
         )
         evidence += (
@@ -1082,6 +1088,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     effective_request_id = req.request_id or hashlib.sha256(
         f"{isolated_session_id}\0{req.question}".encode()
     ).hexdigest()[:32]
+    await register_client_session(payload, req.session_id, effective_request_id)
     client_context = _validated_client_session_context(
         req.client_session_context, req.session_id
     )
@@ -1729,6 +1736,7 @@ async def stream_chat(
         str(payload.get("tenant_key") or "public"), policy.policy_version,
         str(payload.get("user_id") or payload.get("sub") or "anonymous"),
     )
+    await register_client_session(payload, req.session_id, effective_request_id)
     client_context = _validated_client_session_context(
         req.client_session_context, req.session_id
     )

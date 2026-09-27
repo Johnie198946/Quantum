@@ -1036,3 +1036,34 @@ async def test_attachment_context_is_owner_scoped_versioned_and_bounded(monkeypa
     assert error.value.status_code == 422
     assert module.ChatRequest(question="读附件", source_refs=[ref]).source_refs == [ref]
     assert module.StreamRequest(question="读附件", source_refs=[ref]).source_refs == [ref]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_chat_binds_client_session_before_workflow(streaming, monkeypatch):
+    import uuid
+    from backend.api.auth import require_auth
+    import backend.api.chat as chat_api
+    from backend.services.workflow_session_scope import require_registered_client_session
+
+    actor = {"tenant_key": "registered-session-tenant", "user_id": "registered-session-user", "sub": "registered-session-user"}
+    sid = str(uuid.uuid4())
+
+    async def answer(*args, **kwargs):
+        return "ready", []
+
+    async def stream(*args, **kwargs):
+        yield 'data: {"type":"done","session_id":"test"}\n\n'
+
+    monkeypatch.setattr(chat_api, "_call_hermes", answer)
+    monkeypatch.setattr(chat_api, "_call_bridge_stream", stream)
+    app = FastAPI()
+    app.include_router(chat_api.router)
+    app.dependency_overrides[require_auth] = lambda: actor
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/chat" + ("/stream" if streaming else ""), json={
+            "question": "请为我制定旅行计划", "request_id": str(uuid.uuid4()), "session_id": sid,
+            "client_session_context": {"session_id": sid, "messages": []},
+        })
+    assert response.status_code == 200, response.text
+    binding = await require_registered_client_session(actor, sid)
+    assert binding.owner_user_id == actor["user_id"]

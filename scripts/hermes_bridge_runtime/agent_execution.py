@@ -286,7 +286,6 @@ def _build_in_process_agent(
         if inference_policy is not None
         else _agent_config._get_cached_fallback(cfg)
     )
-    session_db = _agent_config._create_sandbox_session_db(sandbox)
     drill_me_enabled = False
     clarify_round = 0
 
@@ -496,6 +495,8 @@ def _build_in_process_agent(
             "agent_cache_source": cache_origin,
         }
 
+    # Reuse the cached owner-bound connection; open only for a cold agent.
+    session_db = _agent_config._create_sandbox_session_db(sandbox)
     # 服务器 Hermes v0.19.0 AIAgent 无 requested_provider 参数（本地 v0.19.1 有）——
     # 一律不传，避免跨版本签名不兼容；runtime 解析已含该信息，非必需
     agent = AIAgent(
@@ -830,7 +831,8 @@ def _run_agent_sync(
                         or ""
                     ),
                     "knowledge_policy_version": str(
-                        context_claims.get("knowledge_policy_version") or "unknown"
+                        context_claims.get("policy_version")
+                        or context_claims.get("knowledge_policy_version") or "unknown"
                     ),
                 },
                 "hermes_session_id": hermes_sid,

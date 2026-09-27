@@ -2,6 +2,7 @@ import XCTest
 import SwiftUI
 import SQLite3
 import Combine
+import Vision
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -163,6 +164,12 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             } else {
                 responseBody = Data(#"{"agreement_version":"2026-09-06","accepted_at":"2026-09-06T08:00:00Z"}"#.utf8)
             }
+        case (true, "GET", "/api/v1/knowledge-bookshelves"):
+            responseBody = Data(#"{"bookshelves":[],"subscriptions":[],"book_lists":[{"id":"list-1","title":"History","book_ids":["kn-1"]}]}"#.utf8)
+        case (true, "PUT", "/api/v1/me/book-lists/list-1"):
+            responseBody = Data(#"{"id":"list-1","title":"History","book_ids":["kn-1"]}"#.utf8)
+        case (true, "DELETE", "/api/v1/me/book-lists/list-1"):
+            responseBody = Data(#"{"deleted":true}"#.utf8)
         case (true, "PUT", "/api/v1/me/book-subscriptions"),
              (true, "PATCH", "/api/v1/me/book-subscriptions/progress"):
             responseBody = Self.subscriptionResponse
@@ -758,6 +765,28 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         add(attachment)
     }
     #endif
+    @MainActor
+    func testPersonalBookListAndUnifiedCatalogWireContract() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "[REDACTED]")
+        let catalog = try await client.fetchKnowledgeBookshelves()
+        XCTAssertEqual(catalog.bookLists?.first?.bookIds, ["kn-1"])
+        XCTAssertEqual(catalog.subscriptions?.count, 0)
+        let saved = try await client.saveBookList(id: "list-1", title: "History", bookIds: ["kn-1"])
+        XCTAssertEqual(saved.bookIds, ["kn-1"])
+        try await client.deleteBookList(id: "list-1")
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests[0].request.url?.query, "include_reader=true")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[1].body)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["title", "book_ids"])
+        XCTAssertEqual(body["book_ids"] as? [String], ["kn-1"])
+        XCTAssertEqual(requests[2].request.httpMethod, "DELETE")
+    }
+
     @MainActor
     func testBookWritesMatchBackendWireContract() async throws {
         APIContractURLProtocol.reset()
@@ -1481,6 +1510,59 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
+    func testPublicationCacheDoesNotKeepItsCredentialOwnerAlive() {
+        weak var owner: APIClient?
+        autoreleasepool {
+            let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: .ephemeral, inMemoryToken: "fixture")
+            PublicationReaderImage.cacheAPI = api
+            owner = api
+            XCTAssertTrue(PublicationReaderImage.cacheAPI === api)
+        }
+        XCTAssertNil(owner)
+        XCTAssertNil(PublicationReaderImage.cacheAPI)
+    }
+
+    @MainActor
+    func testBookTitleRemainsVisibleWithLoadedCover() throws {
+        for (name, width, background) in [
+            ("light", CGFloat(180), UIColor.white),
+            ("dark", CGFloat(180), UIColor.black),
+            ("compact", CGFloat(84), UIColor.black),
+            ("long-title", CGFloat(180), UIColor.black),
+            ("placeholder", CGFloat(180), UIColor.clear)
+        ] {
+            let cover = UIGraphicsImageRenderer(size: CGSize(width: 90, height: 160)).image { context in
+                background.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 90, height: 160))
+            }
+            let renderer = ImageRenderer(content: IllustratedBookCover(
+                title: name == "long-title" ? "AI 给了你一份有来源的答案，先用本地证据门验一次" : "VISIBLE BOOK TITLE",
+                author: "Quantumn", theme: nil,
+                seed: "title-regression", width: width,
+                image: name == "placeholder" ? nil : cover
+            ))
+            renderer.scale = 3
+            let rendered = try XCTUnwrap(renderer.uiImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = name == "long-title" ? ["zh-Hans", "en-US"] : ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ").uppercased()
+            if name == "long-title" {
+                XCTAssertTrue(text.contains("来源"), "Long Chinese title must remain visible: \(text)")
+            } else {
+                XCTAssertTrue(text.contains("VISIBLE"), "\(name): visible title missing: \(text)")
+                XCTAssertTrue(text.contains("TITLE"), "\(name): title clipped: \(text)")
+            }
+            let attachment = XCTAttachment(image: rendered)
+            attachment.name = "book-title-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
     func testPublicationCoverAndReaderImagesRenderAuthenticatedFixture() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
@@ -2001,6 +2083,33 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
             XCTAssertGreaterThan(size.height, 100)
             XCTAssertLessThan(size.height, 1_000)
         }
+    }
+
+    func testReaderFollowupAllowsSourcedExtension() {
+        let prompt = ReadingQuickAction.focusedQuestion("殷开山和刘文静几岁", excerpt: "殷开山和刘文静")
+        XCTAssertTrue(prompt.contains("优先直接回答"))
+        XCTAssertTrue(prompt.contains("补充资料"))
+        XCTAssertTrue(prompt.contains("出生年或史料不详"))
+    }
+
+    @MainActor
+    func testReaderFontRetainsEmphasisAndScales() {
+        let normal = SelectableReadingText.styledText("普通 **粗体**", color: .label,
+            traits: UITraitCollection(preferredContentSizeCategory: .large))
+        let bold = normal.attribute(.font, at: 3, effectiveRange: nil) as? UIFont
+        XCTAssertTrue(bold?.fontDescriptor.symbolicTraits.contains(.traitBold) == true)
+        let large = SelectableReadingText.styledText("普通 **粗体**", color: .label,
+            traits: UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge))
+        XCTAssertGreaterThan((large.attribute(.font, at: 3, effectiveRange: nil) as? UIFont)?.pointSize ?? 0,
+                             bold?.pointSize ?? 0)
+    }
+
+    func testPlannedIllustrationDTOAndEmptyPlan() throws {
+        let json = #"{"book_id":"b","title":"t","author":"a","content_version":"v","edition":1,"citation":"c","sections":[],"illustrations":[{"id":"illustration_05","url":"/media/illustration_05","section_id":"section-1","after_paragraph":"位置段落。","caption":"艺术示意","alt":"战场示意","width":1600,"height":900,"content_version":"v"}]}"#
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let body = try decoder.decode(KnowledgeBookBodyDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(body.illustrations?.first?.afterParagraph, "位置段落。")
+        XCTAssertEqual(body.illustrations?.first?.id, "illustration_05")
     }
 
     func testReadingSelectionQuestionPrioritizesSelectedWord() {

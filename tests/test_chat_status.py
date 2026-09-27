@@ -665,6 +665,7 @@ class TestDurableBridgeStatus(unittest.TestCase):
         result = self._status(offset=1)
 
         self.assertEqual(result["status"], "running")
+        self.assertEqual(result["request_id"], "request-running")
         self.assertEqual(result["run_status"], "running")
         self.assertEqual(result["phase"], "clarify")
         self.assertEqual(result["event_sequence"], 1)

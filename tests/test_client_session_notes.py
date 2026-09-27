@@ -331,12 +331,15 @@ def test_bridge_startup_prewarms_configured_runtime_and_closes_agent(monkeypatch
     monkeypatch.setattr(bridge.contracts, "_get_clarify_gateway", lambda: object())
     monkeypatch.setattr(bridge.agent_config, "_get_shared_session_db", lambda: object())
 
+    monkeypatch.setattr(bridge.agent_config.importlib, "import_module",
+                        lambda name: observed.update(prewarmed_module=name))
     worker = bridge._prewarm_bridge_agent()
     worker.join(timeout=2)
 
     assert observed["model"] == "configured-model"
     assert observed["provider"] == "provider"
     assert observed["closed"] is True
+    assert observed["prewarmed_module"] == "backend.capability_handlers"
 
 
 @pytest.mark.asyncio
@@ -1020,7 +1023,10 @@ def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
         "capability": "signed", "sources": ["user_notes"],
     }
     bridge._client_context_tool_context.value = {
-        "knowledge_action_v1": True, "inline_notes": [],
+        "knowledge_action_v1": True, "inline_notes": [
+            {"id": f"unrelated-{index}", "title": "无关", "markdown": "其他内容"}
+            for index in range(12)
+        ],
     }
     try:
         with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[{
@@ -1049,7 +1055,8 @@ def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
         bridge._client_context_tool_context.value = None
 
 
-def test_save_request_allows_verified_no_increment_without_action(monkeypatch, tmp_path):
+@pytest.mark.parametrize("policy_field", ["policy_version", "knowledge_policy_version"])
+def test_save_request_allows_verified_no_increment_without_action(monkeypatch, tmp_path, policy_field):
     import queue
     import sys
     import types
@@ -1060,6 +1067,7 @@ def test_save_request_allows_verified_no_increment_without_action(monkeypatch, t
         session_id = "hermes-no-increment"
 
         def run_conversation(self, *_args, **_kwargs):
+            assert bridge._client_context_tool_context.value["identity"]["knowledge_policy_version"] == "policy-v2"
             result = json.loads(bridge._knowledge_workspace_read_tool({"operation": "list"}))
             assert result["success"] is True
             return {"final_response": "没有新增内容"}
@@ -1088,6 +1096,7 @@ def test_save_request_allows_verified_no_increment_without_action(monkeypatch, t
         "关于雾岛交通，帮我保存", "stable-ios-session", "hermes-no-increment",
         events, [None], client_context_claims={
             "tenant_key": "tenant-a", "user_id": "user-a", "request_id": "request-save",
+            policy_field: "policy-v2",
         }, sandbox=cast(Any, types.SimpleNamespace(state_db=tmp_path / "state.db")),
         knowledge_action_enabled=True,
     )

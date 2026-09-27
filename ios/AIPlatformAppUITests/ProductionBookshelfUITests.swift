@@ -42,6 +42,59 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testBookshelfEmptyScopesAndRealListEditor() {
+        app.terminate()
+        app.launchArguments = ["-bookshelfPreview"]
+        app.launch()
+        let finished = app.buttons["bookshelf-scope.已读"]
+        XCTAssertTrue(finished.waitForExistence(timeout: 10))
+        finished.tap()
+        XCTAssertTrue(app.staticTexts["暂无已读书籍"].exists)
+        app.buttons["bookshelf-scope.在读"].tap()
+        XCTAssertTrue(app.staticTexts["暂无在读书籍"].exists)
+        let create = app.buttons["bookshelf-create-list"]
+        for _ in 0..<4 where !create.isHittable { app.swipeUp() }
+        create.tap()
+        XCTAssertTrue(app.textFields["书单名称"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["保存"].isEnabled)
+        app.textFields["书单名称"].tap()
+        app.textFields["书单名称"].typeText("Reading plan")
+        XCTAssertTrue(app.buttons["保存"].isEnabled)
+        XCTAssertTrue(app.switches.firstMatch.exists)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.scrollViews["publication-bookshelf-container"].waitForExistence(timeout: 5))
+    }
+
+    func testBookListReadingPreservesUnsavedDraft() {
+        app.terminate()
+        app.launchArguments = ["-bookshelfPreview"]
+        app.launch()
+        let create = app.buttons["bookshelf-create-list"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !create.isHittable { app.swipeUp() }
+        create.tap()
+        let title = app.textFields["书单名称"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText("Keep my draft")
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "阅读《")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["关闭书籍"].waitForExistence(timeout: 8))
+        app.buttons["关闭书籍"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.value as? String, "Keep my draft")
+    }
+
+    func testReaderBackClosesDirectlyToBookshelf() {
+        app.terminate()
+        app.launchArguments = ["-bookshelfPreview", "-bookshelfBookPreview", "-bookshelfSubscribedPreview", "-bookReadingPreview", "-bookReadingLongFixture"]
+        app.launch()
+        let back = app.buttons["返回书架"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        XCTAssertTrue(app.scrollViews["publication-bookshelf-container"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["关闭书籍"].exists)
+    }
+
     func testNotesCreateEditSearchAndRecover() {
         app.terminate()
         app.launchArguments = ["-knowledgeHomePreview"]
@@ -80,7 +133,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.buttons["移到废纸篓"].tap()
         XCTAssertTrue(app.buttons["knowledge-more"].waitForExistence(timeout: 5))
         app.buttons["knowledge-more"].tap()
-        app.buttons["最近删除（本机）"].tap()
+        app.buttons["最近删除"].tap()
         XCTAssertTrue(app.buttons["恢复"].waitForExistence(timeout: 5))
         attachScreenshot(named: "notes-recovery")
         app.buttons["恢复"].tap()
@@ -457,7 +510,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertFalse(app.buttons["阅读进度未同步，点按重试。"].exists)
         attachScreenshot(named: "04-production-book-body-and-progress")
 
-        app.buttons["返回书籍概述"].tap()
+        app.buttons["书籍信息"].tap()
         let askChat = try preferredElement(
             app.buttons["selected-book-chat-open.\(expected.bookID)"],
             fallback: app.buttons.matching(
@@ -902,7 +955,7 @@ final class ReaderFixtureUITests: XCTestCase {
         assertBelowReaderChrome(last)
         attachScreenshot(named: "fixture-reader-last")
 
-        app.buttons["返回书籍概述"].tap()
+        app.buttons["书籍信息"].tap()
         let ask = app.buttons["selected-book-chat-open.product-map"]
         XCTAssertTrue(ask.waitForExistence(timeout: 5))
         XCTAssertTrue(ask.label.contains("AI 产品全景图"))
@@ -926,7 +979,7 @@ final class ReaderFixtureUITests: XCTestCase {
     }
 
     private func assertBelowReaderChrome(_ element: XCUIElement) {
-        let back = app.buttons["返回书籍概述"]
+        let back = app.buttons["返回书架"]
         let tableOfContents = app.buttons["publication-reader-toc.product-map"]
         XCTAssertTrue(back.exists)
         XCTAssertTrue(tableOfContents.exists)
@@ -1133,7 +1186,7 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
         }
 
         guard environment["QUANTUMN_UI_ALLOW_TEST_QUESTION"] == "1" else { return }
-        app.buttons["返回书籍概述"].tap()
+        app.buttons["书籍信息"].tap()
         let ask = app.buttons["selected-book-chat-open.\(bookID)"]
         XCTAssertTrue(ask.waitForExistence(timeout: 10), "现有选书提问入口未出现。")
         for _ in 0..<8 where !ask.isHittable { app.scrollViews.firstMatch.swipeUp() }

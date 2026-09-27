@@ -127,14 +127,14 @@ async def propose_local_note_capability(
         step.setdefault("tags", by_id[target]["tags"])
     if len(str(step.get("markdown") or "")) > 120_000:
         raise CapabilityContractError("revised note exceeds bounds")
-    labels = {"archive_note": "归档笔记", "restore_note": "恢复笔记", "merge_notes": "合并笔记",
+    labels = {"move_to_trash": "移到最近删除", "archive_note": "归档笔记", "restore_note": "恢复笔记", "merge_notes": "合并笔记",
               "update_note": "更新笔记", "create_note": "新建笔记", "illustrate_note": "调整笔记配图"}
     event = {
         "type": "knowledge_action_draft", "action_id": "ka-" + uuid.uuid4().hex,
         "summary": (note_action_summary(step)
                     if step.get("illustration_action") or step.get("layout") else labels[step["kind"]]), "steps": [step],
         "before_preview": "\n\n".join(note["markdown"] for note in notes)[:2000],
-        "after_preview": str(step.get("markdown") or "内容保留，可在归档中恢复。")[:4000],
+        "after_preview": str(step.get("markdown") or "内容保留，可在归档或最近删除中恢复。")[:4000],
         "markdown_diff": "", "risk_level": "high" if sources else "medium",
         "suggested_navigation": {"destination": "knowledge_home"},
         "confirmation_status": "unsigned",

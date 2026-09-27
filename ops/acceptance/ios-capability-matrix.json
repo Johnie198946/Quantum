@@ -1256,8 +1256,20 @@
               "type": "boolean"
             },
             "limit": {
-              "maximum": 20,
+              "maximum": 100,
               "minimum": 1,
+              "type": "integer"
+            },
+            "mode": {
+              "enum": [
+                "search",
+                "organize",
+                "catalog"
+              ],
+              "type": "string"
+            },
+            "offset": {
+              "minimum": 0,
               "type": "integer"
             },
             "query": {
@@ -1276,7 +1288,7 @@
           ],
           "type": "object"
         },
-        "version": "1.0.0"
+        "version": "1.1.0"
       },
       "status": "implemented"
     },

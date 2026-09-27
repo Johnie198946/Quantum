@@ -8,8 +8,8 @@
 2. 编译任务通过现有 canonical Wiki / knowledge gateway 提供可引用正文。优先本轮已编译内容；未选中候选编译失败不阻断本期，可回退已有授权知识。无可用正文时明确等待。
 3. 选题后冻结本期引用输入。写作 agent 只交内容（标题、摘要、正文、来源、必要的真实执行材料），不填写系统元数据、审核结果或发布状态。
 4. 程序从原生 cron 会话及程序注入的发行请求（或已受管 Workflow execution）绑定作者会话、主题、发行日及 slot，生成 editorial brief、学习目标、发行键、权利/证明控制字段。按体裁确定要求；预检失败通过现有持久化 revision outbox 返回写作修改，最多 3 次。
-5. 素材任务只补双封面及三张正文插图，不冒充原作者。独立审核通过现有原生证明；main 使用原有审核协议，Story 使用 story-supervision-v2 和 supervision。 修订合同保留旧缺口为 open，独立签名 review 通过 gap_resolutions 逐项说明真实补证或合理收缩范围；程序随后关闭已有缺口账本，不回写冻结合同或让作者补状态。审核时间同属程序字段：完整验证签名后，从原生会话结束时间生成 UTC 时间；原始审核文件及哈希保持不变，不依赖模型填写时区。
-6. 程序 finalize → 到期 release → 逐期正文和五媒体读回。全部应发 slot 通过才报告完成。任务暂停、缺失、跨 profile 不支持及重试耗尽均不能报成功。
+5. 素材任务只补双封面及计划内正文插图，不冒充原作者。独立审核通过现有原生证明；main 使用原有审核协议，Story 使用 story-supervision-v2 和 supervision。 修订合同保留旧缺口为 open，独立签名 review 通过 gap_resolutions 逐项说明真实补证或合理收缩范围；程序随后关闭已有缺口账本，不回写冻结合同或让作者补状态。审核时间同属程序字段：完整验证签名后，从原生会话结束时间生成 UTC 时间；原始审核文件及哈希保持不变，不依赖模型填写时区。
+6. 程序 finalize → 到期 release → 逐期正文和计划媒体读回。全部应发 slot 通过才报告完成。任务暂停、缺失、跨 profile 不支持及重试耗尽均不能报成功。
 
 时间安排：采集 01:00，收据目标 02:00，异步编译目标 03:00。watchdog 每 2 分钟检查当天全部期次并提前准备；作者每次实际开始时冻结本期输入，08:05 等固定作者 cron 是额外唤醒，不是阻止提前写作的时间门禁。ai-toolkit 先满足至少一个候选可用的采集条件，再优先使用已编译正文；新候选尚未编译时可使用既有授权知识，不以采集回执代替正文。发行以各主题 release_times 为准，到期才发布；写作/素材/审核应在对应 slot 前完成，延期保留原 issue_key，不借下一期掩盖。公共审核轮询每 10 分钟，公共到期发行每 5 分钟，由 store 判断是否到期，不为每个主题硬编码发行 cron。配置文件不会自动修改 cron，新增主题复用已绑定角色并由 watchdog 轮转。
 
@@ -33,11 +33,11 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 
 上线前：确认服务端与本地脚本同一版本；建立回滚点；绑定真实原生作者会话/独立 reviewer；修复 Story failure_deliver 的无效路由；恢复素材任务；仅重置已核验的失败 claim。现有稿件正文质量仍须修改，不降低门槛。
 
-生产验收必须创建下一分钟的一次性真实任务，留下同一 issue_key 的 scheduler run、作者原生会话、artifact、系统字段、素材、独立审核证明、finalize、release、读者正文与五媒体响应及重复触发幂等证据。测试后删除临时 job。
+生产验收必须创建下一分钟的一次性真实任务，留下同一 issue_key 的 scheduler run、作者原生会话、artifact、系统字段、素材、独立审核证明、finalize、release、读者正文与计划媒体响应及重复触发幂等证据。测试后删除临时 job。
 
 本任务的 `publication-standard-timed-check.json` 是真实 Hermes 定时触发的隔离集成测试（使用合成审核/素材 fixtures），只验证调度与程序链路，不代表真实内容和生产出版验收。用户已于本任务授权推送、部署和真实定时验收；最终状态以 completion manifest 为准。
 
-2026-09-27 真实验收使用 ai-toolkit/tang-history 的临时 00:01 时隙，两篇均已通过真实作者、独立审核、自动发行和正文/五媒体回读。验收后移除此临时时隙，保留历史记录；正常时隙为主栏目每日12:00、Story每日08:00/13:00/20:00。测试中修复过系统缺陷并重启定时恢复，不声称原测试全程未中断。
+2026-09-27 真实验收使用 ai-toolkit/tang-history 的临时 00:01 时隙，两篇均已通过真实作者、独立审核、自动发行和正文/计划媒体回读。验收后移除此临时时隙，保留历史记录；正常时隙为主栏目每日12:00、Story每日08:00/13:00/20:00。测试中修复过系统缺陷并重启定时恢复，不声称原测试全程未中断。
 
 
 ## 交接协议与字段所有权
@@ -49,10 +49,10 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 | 采集 | 采集 cron；配置的候选来源 | 至少1个可用候选与 CONTENT_AVAILABLE 收据；区分 saved/queued/compiled | 不要求各主题齐备；不得把排队或收据冒充已编译正文 |
 | 编译/选题 | 既有知识入口；已保存候选或授权知识 | 可读、可引用的来源正文；冻结本期选中输入 | 无正文就等待；非本期选中候选失败不扩大为全栏目失败 |
 | 作者请求 | 程序 `author-input` | `PUBLICATION_CONTENT_REQUEST`：series_id、issue_date、issue_key、issue_slot、release_at、author_job_id | 由配置及服务端期次生成；无任务返回 NO_NEW_DRAFT |
-| 作者内容 | main/Story；只读本期请求、来源与返工缺口 | `publication-content-v1` 的六个字段：schema_version、title、summary、body、source_documents、execution_documents；文档项仅 kind/content | 来源列表非空；真实执行材料按体裁需要。禁止添加批准、发行、身份及状态字段；校验器在 `backend/services/publication_workflow_handoff.py` |
+| 作者内容 | main/Story；只读本期请求、来源与返工缺口 | `publication-content-v1` 的六个字段：schema_version、title、summary、body、source_documents、execution_documents；文档项仅 kind/content | kind 为1–64字符的小写字母、数字、下划线，且以字母开头；程序收据沿用原值与同一上限，不截断冻结类型。来源列表非空；真实执行材料按体裁需要。禁止添加批准、发行、身份及状态字段；校验器在 `backend/services/publication_workflow_handoff.py` |
 | 作者回执 | 作者完成当前原生会话 | `publication_content_result` 仅含 series_id、issue_date、issue_slot、artifact_file；前三项原样回显请求 | 程序验证真实终态、请求匹配、路径和产物哈希，生成 `publication-native-author-v1` 身份绑定；回显不构成作者自行决定期次的授权 |
-| 素材/prepare | 素材角色；冻结正文及来源 | shelf_cover、reader_cover、illustration_01..03、image-manifest.json 与真实生成证据 | 素材角色不改正文或作者；start 构建合同，prepare 返回 issue/revision/attempt/target_hash；正文、来源、素材共同受审核绑定 |
-| 独立审核 | 独立 reviewer；`PUBLICATION_REVIEW_REQUEST` 精确指定的本期材料 | 原始审核 JSON、publication_review_result 回执；按实际请求绑定目标及 publication_material_hash（若提供） | 读取全部正文与五图证据；拒绝则结构化 research_gaps；已有 open 缺口通过 gap_resolutions 逐项确认；不得 stage、改合同或自签名 |
+| 素材/prepare | 素材角色；冻结正文及来源 | shelf_cover、reader_cover、illustration_01..12、image-manifest.json 与真实生成证据 | 素材角色不改正文或作者；start 构建合同，prepare 返回 issue/revision/attempt/target_hash；正文、来源、素材共同受审核绑定 |
+| 独立审核 | 独立 reviewer；`PUBLICATION_REVIEW_REQUEST` 精确指定的本期材料 | 原始审核 JSON、publication_review_result 回执；按实际请求绑定目标及 publication_material_hash（若提供） | 读取全部正文与计划媒体证据；拒绝则结构化 research_gaps；已有 open 缺口通过 gap_resolutions 逐项确认；不得 stage、改合同或自签名 |
 | 证明/入库 | 程序；已结束的真实原生审核会话 | native-editorial-review-v2 等实际请求版本的签名证明及验证后的审核 envelope | 核验公钥、全文输入、最终输出、身份、原始字节哈希和目标；reviewed_at 从签名 native_ended_at 派生，保留原 review/proof 字节 |
 | 暂存/发行 | 既有 finalize、operator、release_due | 通过门禁的 staged/scheduled edition；到期后 published 与发行回执 | 到期不是审核通过；单期失败不阻断其他合格期；重复执行不能重复发布 |
 | 读者交付 | 服务端投影与实际客户端 | 正文、封面、插图可见；认证、媒体响应及版本一致 | 服务端有图片或返回200只证明接口可用；客户端必须接收字段、鉴权取图并渲染，另行完成UI验收 |
@@ -71,23 +71,38 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 
 ## 图片交付协议与验收分层
 
-当前新每日出版物要求五图：shelf_cover 1440×2560、reader_cover 2560×1440、illustration_01..03 各1600×900；实际格式、大小和哈希由现有媒体验证器检查。旧版本可能没有完整媒体，不能把占位装饰当作已交付的生成图片。
+新每日出版物要求双封面及本期计划媒体：shelf_cover 1440×2560、reader_cover 2560×1440、illustration_01..12 各1600×900；实际格式、大小和哈希由现有媒体验证器检查。旧版本可能没有完整媒体，不能把占位装饰当作已交付的生成图片。
 
 - 书架 JSON：`shelf_cover_url` 指向 `/api/v1/knowledge-publications/{id}/covers/shelf_cover`。
-- 正文 JSON：`reader_cover_url` 指向同一路径族的 reader_cover；`illustration_urls` 列出 `/media/illustration_01..03`。插图列表不等于已插入 Markdown；客户端不得仅扫描正文图片语法。
+- 正文 JSON：`reader_cover_url` 指向同一路径族的 reader_cover；`illustration_urls` 列出 `/media/illustration_01..12`。插图列表不等于已插入 Markdown；客户端不得仅扫描正文图片语法。
 - 媒体接口需要认证及可见性检查。客户端应复用既有认证请求，不将私有媒体简单交给无认证的图片加载器，不向外部URL转发凭据。
-- 现有插图列表没有章节锚点。当前可按接口顺序展示插图区域；若要求逐段精准编排，应先定义并实现审核绑定的锚点合同，不能凭客户端猜测把历史图插进正文。
+- 新版通过 illustration_plan 提供正文版本绑定的精确段落锚点，并投影为 illustrations；旧无锚点版本仍兼容文末区域，禁止猜测历史插图位置。
 - 缺失图片与加载失败须可区分；占位图不作为图片验收通过证据。历史补图须走可审计的新版本/补充流程，不静默覆盖已冻结版。
 
-验收分为三层：A 原生自动执行与真实出版；B 读者API正文、媒体字节/哈希及认证边界；C 实际客户端书架封面、阅读封面和三张插图显示。任何完成报告必须逐层记录，A/B通过不能宣称C通过。2026-09-27的首轮闭环验证覆盖A/B，iOS图片可见性未验收；后续20本图片审计发现DTO和渲染消费缺口，详见本任务审计记录。
+验收分为三层：A 原生自动执行与真实出版；B 读者API正文、媒体字节/哈希及认证边界；C 实际客户端书架封面、阅读封面和计划内插图显示。任何完成报告必须逐层记录，A/B通过不能宣称C通过。2026-09-27的首轮闭环验证覆盖A/B，iOS图片可见性未验收；后续20本图片审计发现DTO和渲染消费缺口，详见本任务审计记录。
 
 
 ## PCM、Agent 规则与自动触发的关系
 
 PCM 的 `bookshelf.search/open` 输出合同描述读者媒体字段；`publication.illustrated_delivery` consumption 登记既有自动出版及媒体消费的边界和验收，不增加可调用工具或第二运行时。它的状态包含客户端消费，不因服务端可执行或接口描述可读就标为端到端通过。操作规范负责解释实施顺序；`AGENTS.md` 只放必读入口及不能绕过的责任约束。
 
-图片生成必须由已登记的自动出版角色执行。用户手动触发、人工补图、脚本直接调用模型的单次成功只能记录为手动验证。无人值守验收必须保存定时/控制器派发 → 精确素材请求 → 真实五图生成记录 → prepare → 独立审核 → 到期发行的同一期次证据，区分用户初次授权配置与每期人工干预；生产 cron 和测试一次性 cron 均须如实标明来源。
+图片生成必须由已登记的自动出版角色执行。用户手动触发、人工补图、脚本直接调用模型的单次成功只能记录为手动验证。无人值守验收必须保存定时/控制器派发 → 精确素材请求 → 真实计划媒体生成记录 → prepare → 独立审核 → 到期发行的同一期次证据，区分用户初次授权配置与每期人工干预；生产 cron 和测试一次性 cron 均须如实标明来源。
 
 书架媒体字段为兼容性可选字段：旧无图版本仍能解码读取，但不应显示为已配图。已具备的图片由客户端认证下载并显示；正常出版 loop 中缺图不应让用户点击“生成图片”才能继续。
 
-周期素材 cron 与控制器派发在同一个 recovery_claims 中领取精确材料预算；可信原生执行接管既有预约不重复计次，同一执行只能处理一个期次。按原生执行终态与冷却恢复，不把常驻 gateway PID 当作仍在配图。原生作者预脚本异常必须明确报告，不能用 NO_NEW_DRAFT 掩盖；已移除的历史时隙保留记录，但不参与当前已配置期次的作者等待判断。
+周期素材 cron 与控制器派发在同一个 recovery_claims 中领取精确材料预算；可信原生执行接管既有预约不重复计次，同一执行只能处理一个期次。按原生执行终态与冷却恢复，不把常驻 gateway PID 当作仍在配图。原生作者预脚本异常必须明确报告，不能用 NO_NEW_DRAFT 掩盖；已移除的历史时隙保留记录，但不参与当前已配置期次的作者等待、原生拒稿修订匹配和待审候选选择；控制器与审核入口采用一致的启用主题/时隙集合。冻结历史身份不按今天的时刻表重新解释；当前期次仍完整核验合同身份、文件哈希和审核绑定，不能伪装退休稿跳过。
+
+
+## 按需插图与段落位置（新稿执行规范）
+
+新稿先读取冻结 body.md 和已授权来源，制定 image-manifest.json 中的 illustration_plan，再生成计划内素材。沿用现有素材任务/恢复台账；不新建服务，不修改作者正文。双封面必需，正文图允许0张；12张是资源上限，不是目标。每张图应消除一个具体理解障碍，纯装饰或重复表达不生成；零图必须写清 reason，不能用零图掩盖生成失败。
+
+illustration_plan 只有 body_sha256、reason、illustrations 三个字段。body_sha256 为 body.md 原始UTF-8字节SHA-256；illustrations 为数组，每项只有 role、after_paragraph、caption、alt、purpose。role 在 illustration_01..12 内唯一；after_paragraph 必须逐字复制正文中唯一出现的完整普通段落（保留Markdown），不选标题、列表、引用、代码或学习目标元数据。caption、alt、purpose 均非空。正文换版必须重验锚点，不能平均分图或找不到锚点就追加末尾。
+
+程序将该计划保存为 illustration-plan.json，作为 publication_illustration_plan 来源收据绑定到现有审核target；实际图片集合必须恰好等于双封面加计划角色。每项 images 仍提供真实 prompt、final_file、sha256、生成记录和原图。旧无计划的已冻结包继续使用原五媒体合同；新稿禁止沿用固定三图指令。
+
+尺寸与构图：书架封面1440×2560（9:16），阅读封面2560×1440（16:9），正文插图1600×900（16:9）。满版构图，无白色画框/装饰边；人物与必要文字留安全区，不拉伸、不用任意裁切掩盖比例错误。客户端以相同比例预留空间。
+
+趣味说唐史（tang-history）统一采用敦煌壁画艺术风格：矿物色感、线描和适度壁画肌理。按本篇具体年代/地域及已冻结可靠来源约束服饰、发式、盔甲、兵器、建筑、马具、地貌；不能将不同朝代敦煌形象混用。来源不足时采用不依赖争议细节的示意构图，caption明确艺术示意。独立审核检查历史错置与图文对应；风格要求不构成史实证据，也不允许素材角色越权改写正文或伪造考据来源。
+
+审核、发行与完成检查按每期 expected_media_roles 核对实际媒体；所有计划内图片及位置共同受审，缺图仍阻断。真实验收必须包括自动派发、素材证据、审核、发行、认证字节回读和客户端正文中实际位置；接口200不替代UI验收。历史已发布正文不静默重排，旧稿优化须另走受审版本。

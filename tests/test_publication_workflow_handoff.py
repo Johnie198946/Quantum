@@ -1440,3 +1440,47 @@ def test_assets_input_rejects_cross_profile_asset_route(native_author, monkeypat
     with pytest.raises(ValueError, match="asset profile is not allowed"):
         handoff.assets_input()
     assert not (Path.home() / ".hermes/cron/publication-recovery.db").exists()
+
+
+@pytest.mark.parametrize("document_group,receipt_group", [
+    ("source_documents", "source_receipts"),
+    ("execution_documents", "execution_evidence"),
+])
+@pytest.mark.parametrize("kind", [
+    "execution_log",
+    "execution_negative_fixture_missing_fields",
+    "execution_" + "x" * 54,
+    "execution_" + "x" * 55,
+])
+def test_content_document_kind_length_matches_receipt_bundle_boundary(
+    tmp_path, document_group, receipt_group, kind
+):
+    from backend.services.knowledge_publication_store import PublicationError, validate_bundle
+    from backend.services.publication_workflow_handoff import validate_publication_artifact
+    content = artifact_value()
+    content["schema_version"] = "publication-content-v1"
+    content[document_group][0]["kind"] = kind
+    raw = canonical_json(content)
+    if len(kind) > 64:
+        with pytest.raises(PublicationHandoffError):
+            validate_publication_artifact(raw)
+    else:
+        content = validate_publication_artifact(raw)
+        assert content[document_group][0]["kind"] == kind
+    store = PublicationStore(tmp_path / "store")
+    value = draft(store, body=content["body"])
+    document = content[document_group][0]
+    path = tmp_path / "content-document.txt"
+    path.write_text(document["content"], encoding="utf-8")
+    receipt = store.ingest_file(path, document["kind"])
+    assert receipt["kind"] == kind
+    assert receipt["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    value[receipt_group] = [receipt]
+    value["source_snapshot_hash"] = receipt_set_hash(value["source_receipts"])
+    if len(kind) > 64:
+        with pytest.raises(PublicationError, match=r"invalid (source|execution)\.kind"):
+            validate_bundle(value)
+    else:
+        normalized, _ = validate_bundle(value)
+        assert normalized[receipt_group] == [receipt]
+        assert normalized["execution_claim"] == "not_run"

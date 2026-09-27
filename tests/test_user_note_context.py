@@ -161,3 +161,49 @@ async def test_auto_defers_source_selection_to_hermes(monkeypatch):
     assert claims["user_id"] == "user-a"
     assert resolved.knowledge_query == "超聚变是做什么的"
     assert resolved.sources == []
+
+
+def test_organization_checks_all_members_preserves_code_and_pages_evidence():
+    from backend.services.user_note_context import organize_note_candidates
+    def note(id, title, body, **extra):
+        return {"note_id": id, "title": title, "markdown": body, **extra}
+    shared = "This shared paragraph contains enough text to represent a meaningful reference."
+    notes = [note("a", "Title A", "# A\n\nSame body"),
+             note("b", "Title B", "# B\n\nSame body"),
+             note("c", "Title C", "Same body"),
+             note("archived", "Old", "Same body", archived=True),
+             note("d", "Topic", shared + "\n\nIndependent idea D"),
+             note("e", "Topic", shared + "\n\nIndependent idea E"),
+             note("f", "Reference", "Read [[Title A#Section]] for details."),
+             note("upper", "Code A", "```python\nVALUE = 1\n```"),
+             note("lower", "Code B", "```python\nvalue = 1\n```")]
+    result = organize_note_candidates(notes, limit=100)
+    assert result["scanned_notes"] == 8
+    assert result["semantic_scan_complete"] is False
+    duplicates = [c for c in result["candidates"] if c["relation"] == "duplicate"]
+    assert len(duplicates) == 1
+    assert {n["note_id"] for n in duplicates[0]["notes"]} == {"a", "b", "c"}
+    assert any(c["relation"] == "partial_overlap" and c["requires_semantic_review"] for c in result["candidates"])
+    assert any(c["relation"] == "reference" for c in result["candidates"])
+    first = organize_note_candidates(notes, limit=1)
+    second = organize_note_candidates(notes, offset=first["next_offset"], limit=100)
+    assert first["candidates"] + second["candidates"] == result["candidates"]
+    assert organize_note_candidates(list(reversed(notes)), limit=100)["candidates"] == result["candidates"]
+
+
+def test_organization_recalls_reworded_and_contained_notes_without_claiming_duplicates():
+    from backend.services.user_note_context import organize_note_candidates
+    common = "项目上线前，需要负责人核对预算、交付时间和验收条件，确认依赖任务完成后再通知客户。"
+    notes = [
+        {"id": "original", "title": "发布核对", "markdown": common},
+        {"id": "rewrite", "title": "上线准备", "markdown": "项目上线之前，负责人需要核对预算、交付时间和验收条件；确认依赖任务完成之后再通知客户。"},
+        {"id": "quote", "title": "客户协作", "markdown": common + "另一个独立主题是客户服务的工作流程，包括如何登记问题、分析原因和跟踪满意度。"},
+        {"id": "unrelated", "title": "旅行", "markdown": "京都旅行计划：周六参观寺庙，周日坐火车去大阪。"},
+    ]
+    result = organize_note_candidates(notes, limit=100)
+    groups = {frozenset(n["note_id"] for n in g["notes"]): g for g in result["candidates"]}
+    assert groups[frozenset(("original", "rewrite"))]["relation"] == "similar_content_candidate"
+    assert groups[frozenset(("original", "quote"))]["relation"] == "partial_overlap"
+    assert all(g["requires_semantic_review"] for g in groups.values())
+    assert all("unrelated" not in ids for ids in groups)
+    assert not result["semantic_scan_complete"]

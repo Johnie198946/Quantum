@@ -85,7 +85,7 @@ public struct ImageCard: View {
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
     }
 
-    nonisolated private static func thumbnailData(from data: Data) -> Data? {
+    nonisolated static func thumbnailData(from data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

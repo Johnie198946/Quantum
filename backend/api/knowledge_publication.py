@@ -76,6 +76,7 @@ class SerialBundle(BaseModel):
     references: list[dict]
     wiki_references: list[dict] = Field(default_factory=list)
     assets: list[dict] = Field(default_factory=list)
+    illustration_plan: dict | None = None
     completeness: str
     review: dict
     execution_claim: str = "not_run"

@@ -566,7 +566,12 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
     monkeypatch.setattr(bridge, "_get_cached_runtime", lambda _cfg: {"provider": "test"})
     monkeypatch.setattr(bridge, "_get_cached_fallback", lambda _cfg: None)
     monkeypatch.setattr(bridge, "_get_cached_tools", lambda _cfg: set())
-    monkeypatch.setattr(bridge, "_create_sandbox_session_db", lambda _sandbox: object())
+    opened = []
+    def open_db(_sandbox):
+        connection = object()
+        opened.append(connection)
+        return connection
+    monkeypatch.setattr(bridge, "_create_sandbox_session_db", open_db)
     monkeypatch.setattr(bridge, "_take_cached_agent", lambda *_args: None)
     monkeypatch.setattr(bridge.agent_execution, "persist_agent_snapshot", lambda *_args: None)
     monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
@@ -610,6 +615,18 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
         assert not {
             "app_capability_search", "app_capability_describe", "app_capability_invoke",
         } & {item["function"]["name"] for item in agent.tools}
+
+    assert len(opened) == 1
+    monkeypatch.setattr(bridge, "_take_cached_agent", lambda *_args: (agent, opened[0], "prior_turn"))
+    reused, reused_db, cached_route = bridge._build_in_process_agent(
+        "inspect application data", f"route-{int(qcp_enabled)}-{int(knowledge_enabled)}",
+        None, queue.Queue(), agent_config={}, qcp_enabled=qcp_enabled,
+        knowledge_action_enabled=knowledge_enabled,
+        sandbox=types.SimpleNamespace(root=tmp_path, state_db=tmp_path / "state.db", hermes_home=tmp_path),
+    )
+    assert reused is agent and reused_db is opened[0]
+    assert cached_route["agent_cache_source"] == "prior_turn"
+    assert len(opened) == 1  # Cache hits must not open and then discard a second connection.
 
 
 def test_bridge_navigation_emits_semantic_event_and_rejects_injected_identity():
