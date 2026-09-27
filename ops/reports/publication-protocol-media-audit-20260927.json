@@ -1,8 +1,8 @@
 {
   "task_id": "publication-standard-workflow-20260926",
   "followup": "protocol-and-20-books-media-audit",
-  "status": "DEPLOYED",
-  "source_and_server_sha": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+  "status": "VERIFIED",
+  "source_and_server_sha": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
   "inventory": {
     "count": 20,
     "rows": [
@@ -2527,7 +2527,7 @@
   },
   "inventory_scope": "Original 20-book diagnostic snapshot before media repairs; counts are not the current publication inventory. ios_findings describe pre-fix causes; media_fix_delivery records repairs and real-device validation.",
   "receipt_kind_repair": {
-    "status": "TESTED",
+    "status": "VERIFIED",
     "base_sha": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
     "cause": "content producer and local relay accept 64-character kind, shared receipt validator limited it to 40; actual 41-character execution_negative_fixture_missing_fields failed prepare",
     "change": "shared _receipts limit 40 -> 64, preserve frozen content and hashes",
@@ -2537,7 +2537,8 @@
     "runtime_pause": {
       "all_10_paused": true,
       "active": [],
-      "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/receipt-kind-deploy-pause-20260927"
+      "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/receipt-kind-deploy-pause-20260927",
+      "scope": "historical pre-deployment snapshot; restored by completed timer, current handoff snapshot is cron_state_at_handoff"
     },
     "rollback": {
       "server_before": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
@@ -2579,6 +2580,1346 @@
       },
       "publication_db_bytes": 2584576
     },
-    "deployment": "pending"
+    "deployment": {
+      "status": "VERIFIED",
+      "sha": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
+      "release": "/opt/releases/ai-lab-platform-3ad0ec084fbe.Gn6VEJ",
+      "health_evidence": "disk_full_deployment_incident.retry_health",
+      "functional_evidence": "receipt_kind_automatic_recovery"
+    }
+  },
+  "disk_full_deployment_incident": {
+    "candidate_sha": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
+    "result": "recovered_then_candidate_deployed_healthy",
+    "root_available_initial": "44MB",
+    "inode_used_percent": 30,
+    "database_error": "pg_logical/replorigin_checkpoint.tmp: No space left on device",
+    "rollback_health": {
+      "server_after": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+      "release": "/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1",
+      "containers": {
+        "api": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy",
+          "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+        },
+        "workflow-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy",
+          "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+        },
+        "planning-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy",
+          "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy",
+          "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 53,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "publication_jobs": "all_10_paused",
+    "cleanup": "APT downloaded package cache; three exact historical /tmp image transmission archives after verified local preservation",
+    "database_or_volume_deleted": false,
+    "deployment_retry_guard": {
+      "location": "/tmp/publication-server-deploy.sh",
+      "free_space_min_bytes": 2147483648,
+      "free_inodes_min": 100000,
+      "runs_before": "archive_extract_and_docker_build",
+      "limitation": "Task deployment helper only; repository updater has no permanent retention policy."
+    },
+    "remote_refs_after_coordination": {
+      "main": "0775c6bd0dfb0682f64addacf61e70fbde28a1ce",
+      "codex/publication-standard-workflow-20260926": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
+      "verified_by": "git ls-remote",
+      "deploy_candidate_remains": "3ad0ec084fbefc8f439617da73bde67c3846fae9"
+    },
+    "preserved_archives": [
+      {
+        "name": "ai-lab-images-7b3863a954e689f87ed2a8f1b7d9863a676dfb7d.tar.gz",
+        "bytes": 679807628,
+        "sha256": "f2d148be4bf42fc9583eccac07f6423b093ffe4ebadd71093b74d83c4c71dc83"
+      },
+      {
+        "name": "ai-lab-backend-381d619.tar.gz",
+        "bytes": 602672485,
+        "sha256": "ba7512913d729717c1c7134023e6877d0d2f6ce64c515090e9b303adc8befb07"
+      },
+      {
+        "name": "token-repair-97d3990385cb74886785ec37d4cb30f951c0f555.images.tar.zst",
+        "bytes": 550184160,
+        "sha256": "00f614c092d074190aa2fbd76ac950655996c63e025af99f27628e90759d1226"
+      }
+    ],
+    "local_archive_backup_directory": "/tmp/publication-disk-recovery-20260927",
+    "all_archive_copies_verified_before_remote_unlink": true,
+    "free_bytes_after_preservation": 2322186240,
+    "retry_health": {
+      "server_after": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
+      "release": "/opt/releases/ai-lab-platform-3ad0ec084fbe.Gn6VEJ",
+      "containers": {
+        "api": {
+          "image": "sha256:d4ae7a64465459d81781a5bfaff20c2408157931be633262146306e40cad4c75",
+          "health": "healthy",
+          "revision": "3ad0ec084fbefc8f439617da73bde67c3846fae9"
+        },
+        "workflow-worker": {
+          "image": "sha256:d4ae7a64465459d81781a5bfaff20c2408157931be633262146306e40cad4c75",
+          "health": "healthy",
+          "revision": "3ad0ec084fbefc8f439617da73bde67c3846fae9"
+        },
+        "planning-worker": {
+          "image": "sha256:d4ae7a64465459d81781a5bfaff20c2408157931be633262146306e40cad4c75",
+          "health": "healthy",
+          "revision": "3ad0ec084fbefc8f439617da73bde67c3846fae9"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:d4ae7a64465459d81781a5bfaff20c2408157931be633262146306e40cad4c75",
+          "health": "healthy",
+          "revision": "3ad0ec084fbefc8f439617da73bde67c3846fae9"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 53,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    }
+  },
+  "receipt_kind_recovery_timer": {
+    "id": "6ca0670987d6",
+    "name": "publication receipt kind recovery automatic acceptance",
+    "prompt": "",
+    "skills": [],
+    "skill": null,
+    "model": null,
+    "provider": null,
+    "provider_snapshot": null,
+    "model_snapshot": null,
+    "base_url": null,
+    "script": "publication-kind-timed-start.py",
+    "no_agent": true,
+    "monitor_script": null,
+    "monitor_url": null,
+    "monitor_state": null,
+    "context_from": null,
+    "schedule": {
+      "kind": "interval",
+      "minutes": 1,
+      "display": "every 1m"
+    },
+    "schedule_display": "every 1m",
+    "repeat": {
+      "times": 1,
+      "completed": 0
+    },
+    "enabled": true,
+    "state": "scheduled",
+    "paused_at": null,
+    "paused_reason": null,
+    "created_at": "2026-09-27T13:42:16.857408+08:00",
+    "next_run_at": "2026-09-27T13:43:16.859246+08:00",
+    "last_run_at": null,
+    "last_status": null,
+    "last_error": null,
+    "last_delivery_error": null,
+    "last_delivery_unverified": null,
+    "failure_streak": 0,
+    "deliver": "local",
+    "origin": null,
+    "enabled_toolsets": null,
+    "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9",
+    "failure_deliver": "local"
+  },
+  "receipt_kind_automatic_recovery": {
+    "runtime_sha": "3ad0ec084fbefc8f439617da73bde67c3846fae9",
+    "server_health_evidence": "/tmp/publication-kind-server-health.json",
+    "timer_job_id": "6ca0670987d6",
+    "scheduled_at": "2026-09-27T13:43:16+08:00",
+    "script": "publication-kind-timed-start.py",
+    "budget_reset": false,
+    "target_artifact_sha256": "29874ecde8d0c1133417cc2eea45d809baddc25b3a5d8c8d46e63a14c35a4e87",
+    "prior_disk_full_maintenance": "root reports rollback/recovery, space freed and redeployment succeeded",
+    "prepared": {
+      "issue_id": "issue-dc6e2ea2dc24a3999ba01da33613d4db",
+      "attempt_id": "attempt-aab0844d317e4b859dff5d96cea4676b",
+      "revision": 2,
+      "target_hash": "845a582eacf50ae546f52e81a705531659386c19f998eedf43dbca92a140f133",
+      "writer_sessions": [
+        "hermes:cron_b52aa900ac12_20260927_105943",
+        "hermes:cron_b52aa900ac12_20260927_123252"
+      ],
+      "research_gaps": [
+        {
+          "id": "required_claim_fields_not_enforced",
+          "question": "当前校验器是否真的逐项强制 claim 合同声明的七个字段齐全？",
+          "resolution": "Pending independent verification against: 使用指定 Python 3.12 复跑时，任一 kind 缺少合同声明的必填字段均以非零退出码和明确错误拒绝；原正例继续通过，既有三个负例继续拒绝，正文、脚本哈希与执行记录同步更新。",
+          "source_urls": [],
+          "state": "open"
+        }
+      ],
+      "execution_kinds": [
+        "execution_script",
+        "execution_source_fixture",
+        "execution_positive_fixture",
+        "execution_negative_fixture_bad_quote",
+        "execution_negative_fixture_bad_source",
+        "execution_negative_fixture_bad_unknown",
+        "execution_negative_fixture_missing_fields",
+        "execution_log"
+      ],
+      "frozen_artifact_sha256": "29874ecde8d0c1133417cc2eea45d809baddc25b3a5d8c8d46e63a14c35a4e87",
+      "image_manifest_sha256": "1dc4978b4e83e7334a475b52b9228cdba5f43cf36f9f8cc7189a83dca54f1bdb",
+      "local_status": "await_review"
+    },
+    "story_duplicate_release_readback": {
+      "path": "/Users/dengzhaoyu/.hermes/cron/output/1ad93e85cec2/2026-09-27_13-45-57.md",
+      "native_execution_id": "7044c695dd054f3bb046a2e959b701d4",
+      "finished_at": "2026-09-27T13:45:57.606585+08:00",
+      "released_edition_ids": [],
+      "published_delta": [],
+      "story13": {
+        "body_available": true,
+        "issue_key": "2026-09-27T13:00",
+        "issue_slot": "13:00",
+        "media_roles": [
+          "illustration_01",
+          "illustration_02",
+          "illustration_03",
+          "reader_cover",
+          "shelf_cover"
+        ],
+        "published": 1,
+        "release_at": "2026-09-27T13:00:00+08:00"
+      }
+    },
+    "temporary_timer_cleanup": {
+      "archived": true,
+      "normal_jobs_preserved": true,
+      "job_removed": "6ca0670987d6",
+      "backup_directory": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/activation-3ad0ec084fbefc8f439617da73bde67c3846fae9"
+    },
+    "review": {
+      "native_execution_id": "9befac95ed0a44b38f45e5eb774def3e",
+      "session_id": "cron_fbd1cd1217d7_20260927_134705",
+      "started_at": "2026-09-27T13:46:51.877525+08:00",
+      "finished_at": "2026-09-27T13:52:24.436705+08:00",
+      "tool_call_count": 43,
+      "review_file_sha256": "320127f770966aa15bf29c174c48d9d8c4df25b19f05a607e7b09d03eafb372f",
+      "decision": "approved",
+      "gap_resolutions": [
+        {
+          "id": "required_claim_fields_not_enforced",
+          "disposition": "resolved",
+          "quote": "第四份最重要：字段的值可以是合同允许的空数组或空字符串，但键本身不能消失。",
+          "finding": "独立使用指定 Python 3.12 复跑修订脚本：七字段差集检查已存在；正例退出 0，原三个负例及新增缺字段负例均退出 1，后者明确报告缺少 basis_claim_ids 与 next_check。"
+        }
+      ],
+      "real_execution_tool_message_id": 546917,
+      "actual_fixture_exit_codes": [
+        0,
+        1,
+        1,
+        1,
+        1
+      ],
+      "python_version": "3.12.3",
+      "proof_sha256": "081786d66d391aafcef4232573fb77467bc2894aa825e373c5da2f45ab8edabe"
+    },
+    "finalize": {
+      "native_execution_id": "9dc2246d8c8845afa26fc7e640970155",
+      "started_at": "2026-09-27T13:52:35.500887+08:00",
+      "finished_at": "2026-09-27T13:54:37.685097+08:00",
+      "result": "automatic_finalize_succeeded",
+      "local_material_status": "staged"
+    },
+    "scheduler_duplicate_fire": {
+      "native_execution_id": "5130b6d1abdf4f8c8b2a909a9c02510c",
+      "error": "Fire claim lost; execution was not started.",
+      "interpretation": "Periodic review tick collided with live review; duplicate did not start, original completed successfully."
+    },
+    "timer_execution": {
+      "id": "57f0baa75867438b9b899be54dd9139d",
+      "source": "builtin",
+      "started_at": "2026-09-27T13:43:31.399+08:00",
+      "finished_at": "2026-09-27T13:44:52.243772+08:00",
+      "status": "completed",
+      "error": null
+    },
+    "release": {
+      "output_file": "/Users/dengzhaoyu/.hermes/cron/output/1ad93e85cec2/2026-09-27_13-56-09.md",
+      "released_edition_ids": [
+        "edition-24d51073b0082da33c8907718a88e819"
+      ],
+      "published_delta": [
+        "publication-dc6e2ea2dc24a3999ba01da33613d4db"
+      ],
+      "totals": {
+        "blocked": 1,
+        "draft": 0,
+        "missing": 1,
+        "published": 25,
+        "scheduled": 0,
+        "staged": 0,
+        "withdrawn": 13
+      },
+      "toolkit": {
+        "body_available": true,
+        "expected": 1,
+        "media_roles": [
+          "illustration_01",
+          "illustration_02",
+          "illustration_03",
+          "reader_cover",
+          "shelf_cover"
+        ],
+        "published": 1,
+        "slots": [
+          {
+            "body_available": true,
+            "issue_key": "2026-09-27",
+            "issue_slot": "12:00",
+            "media_roles": [
+              "illustration_01",
+              "illustration_02",
+              "illustration_03",
+              "reader_cover",
+              "shelf_cover"
+            ],
+            "published": 1,
+            "release_at": "2026-09-27T12:00:00+08:00"
+          }
+        ]
+      },
+      "native_execution": {
+        "id": "7a6f67a4115c43578aeba7818934769d",
+        "started_at": "2026-09-27T13:55:36.974519+08:00",
+        "finished_at": "2026-09-27T13:56:10.209640+08:00",
+        "status": "completed",
+        "error": null
+      }
+    },
+    "reader_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-dc6e2ea2dc24a3999ba01da33613d4db",
+          "series_id": "ai-toolkit",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "5b212fca1710acb90a267bfbf00bef623f06a4c073a1489671f9641924c5af2c",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 12,
+          "code_block_hashes": [
+            "4bd4628e63a3bb4b549e186791796017c9a9818c5776de96d38f44794ff599b7",
+            "8d3643af2d88065d5afc9fe6c91e0664d52e8a0ff8252e236ca5eaf67dcfc529",
+            "65221e2444fdcc7582824fbab8771428ac5b0f2cd9b1bc707b265845bbbd41e0",
+            "74a6a844aa132233c37f08c3f64a7fba20b854635e23c123d539fcd9dcd300b4",
+            "cae0eab73c6e3b8cdb2bfbf7a35b5686e5799483e483c4a1475d8065b810f4d9",
+            "2461f8f8bf91dbd3662d1b7f97e93e676a0398f738bca2dae47003e8a1d72ed9",
+            "b4fe2437ade8a56d21006cf5bfdb90941ae5758ed0d9523bcadfcca5123a50a9",
+            "4daa926f44612c85730facf8a19bad5ab4bf214953b4cb507dc42ac3046431dd",
+            "dbc13641bd5c75ba00e2f5a6fbb9283ee2f82efd6d76430b3526690e4bf9dd8d",
+            "bd4040c76aca9fdec110d825f7429b371702d6e6ac0929dbdab15e832756e73f",
+            "8101035300e9752384015547d616c2cdd9c6b8183d0b83ec65d9781a11015a7d",
+            "941b7fb9d8fcbf490cbf2ad657c9cedf141e6f985b4314ceb62adbe076421009"
+          ],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 803526,
+              "sha256": "6520b68003f77af5d136f47c111cb0c1947adaa4d31bdf067cb4764effdab9ab"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 926127,
+              "sha256": "73eaf2e8ea91e6b38512f4a2692365e1977dbd8d72d119a065f6ef8ec7db7e99"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 367523,
+              "sha256": "071f5ee88f251b82eea6b1afebecc2faa27e8b152845c4fc9c0879f64ba07e92"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 434839,
+              "sha256": "0c70a81657dfdde9e5983536aa54a81fa93f9455f406501cfb13bd46709b8a86"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 475529,
+              "sha256": "8233db61da4ee4adede62f9f66ab3edc4562aaa54fb59061386becd007b968f1"
+            }
+          ]
+        }
+      ]
+    },
+    "final_server_records": {
+      "attempts": [
+        {
+          "issue_id": "issue-dc6e2ea2dc24a3999ba01da33613d4db",
+          "revision": 1,
+          "attempt_id": "attempt-2fb9f7db7cd0496d97df96df5aa1e92d",
+          "state": "rejected",
+          "gaps_json": "[{\"acceptance_criterion\": \"使用指定 Python 3.12 复跑时，任一 kind 缺少合同声明的必填字段均以非零退出码和明确错误拒绝；原正例继续通过，既有三个负例继续拒绝，正文、脚本哈希与执行记录同步更新。\", \"chapter\": \"chapter-001\", \"id\": \"required_claim_fields_not_enforced\", \"question\": \"当前校验器是否真的逐项强制 claim 合同声明的七个字段齐全？\", \"required_evidence\": \"修订校验器，显式检查每个 claim 的键集合或逐项必填字段；增加至少一个仅省略 basis_claim_ids、next_check 等字段的冻结负例，并保存 Python 3.12 的真实失败输出与退出码。\", \"why_reader_needs_it\": \"读者会把 RESULT=PASS 当作已满足教程定义的本地合同；若必填字段可直接省略，正文的核心验收边界和可复制结论会被高估。\", \"state\": \"open\", \"resolution\": \"\", \"source_urls\": []}]",
+          "review_hash": "ed966b30b46ed584deae213ee26ad1f6cc48cd47577707686b1dfa8bd9726b3c",
+          "closed_at": "2026-09-27T04:06:07.939539+00:00"
+        },
+        {
+          "issue_id": "issue-dc6e2ea2dc24a3999ba01da33613d4db",
+          "revision": 2,
+          "attempt_id": "attempt-aab0844d317e4b859dff5d96cea4676b",
+          "state": "approved",
+          "gaps_json": "[{\"id\": \"required_claim_fields_not_enforced\", \"question\": \"当前校验器是否真的逐项强制 claim 合同声明的七个字段齐全？\", \"resolution\": \"resolved: 独立使用指定 Python 3.12 复跑修订脚本：七字段差集检查已存在；正例退出 0，原三个负例及新增缺字段负例均退出 1，后者明确报告缺少 basis_claim_ids 与 next_check。\", \"source_urls\": [], \"state\": \"resolved\"}]",
+          "review_hash": "320127f770966aa15bf29c174c48d9d8c4df25b19f05a607e7b09d03eafb372f",
+          "closed_at": "2026-09-27T05:53:29.052985+00:00"
+        }
+      ],
+      "editions": [
+        {
+          "edition_id": "edition-24d51073b0082da33c8907718a88e819",
+          "publication_id": "publication-dc6e2ea2dc24a3999ba01da33613d4db",
+          "content_hash": "5b212fca1710acb90a267bfbf00bef623f06a4c073a1489671f9641924c5af2c",
+          "state": "published",
+          "actual_release_at": "2026-09-27T05:55:58.738742+00:00"
+        }
+      ]
+    }
+  },
+  "final_all_books_readback": {
+    "mode": "isolated_asgi_live_data",
+    "real_user_login_tested": false,
+    "unauthenticated_cover_status": 401,
+    "count": 25,
+    "rows": [
+      {
+        "publication_id": "publication-cb4a65e4e6a1488e02440127f2c0316b",
+        "title": "围棋没有被穷举：AlphaGo 如何让直觉、搜索与自我对弈形成闭环",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-cb4a65e4e6a1488e02440127f2c0316b/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-cb4a65e4e6a1488e02440127f2c0316b/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-cb4a65e4e6a1488e02440127f2c0316b/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-cb4a65e4e6a1488e02440127f2c0316b/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-cb4a65e4e6a1488e02440127f2c0316b/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-237a6fa83889846600f1ac8e1eec5e9d",
+        "title": "AI 把会议纪要变成任务表之后，先别点“导入”",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-237a6fa83889846600f1ac8e1eec5e9d/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-237a6fa83889846600f1ac8e1eec5e9d/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-237a6fa83889846600f1ac8e1eec5e9d/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-237a6fa83889846600f1ac8e1eec5e9d/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-237a6fa83889846600f1ac8e1eec5e9d/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+        "title": "先别把代码审查 Agent 放进定时任务：用离线预检守住只读边界",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-dc6e2ea2dc24a3999ba01da33613d4db",
+        "title": "AI 给了你一份“有来源”的答案，先用本地证据门验一次",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-dc6e2ea2dc24a3999ba01da33613d4db/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-dc6e2ea2dc24a3999ba01da33613d4db/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-dc6e2ea2dc24a3999ba01da33613d4db/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-dc6e2ea2dc24a3999ba01da33613d4db/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-dc6e2ea2dc24a3999ba01da33613d4db/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-01c2cef7d2593952bcd4d5547b1c5785",
+        "title": "当钟声只剩一个数字",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-01c2cef7d2593952bcd4d5547b1c5785/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-01c2cef7d2593952bcd4d5547b1c5785/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-01c2cef7d2593952bcd4d5547b1c5785/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-01c2cef7d2593952bcd4d5547b1c5785/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-01c2cef7d2593952bcd4d5547b1c5785/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+        "title": "李渊打进长安，为何先让别人当皇帝？",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-975d8cd9380e62b582864c800ba1881d",
+        "title": "李世民也打过败仗：浅水原的胜负，为什么不能只看冲锋？",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-8040b6323c0ad848e2e84b036a38cbf4",
+        "title": "窦建德来救洛阳，为什么把自己也赔了进去？",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-8040b6323c0ad848e2e84b036a38cbf4/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-8040b6323c0ad848e2e84b036a38cbf4/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-8040b6323c0ad848e2e84b036a38cbf4/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-8040b6323c0ad848e2e84b036a38cbf4/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-8040b6323c0ad848e2e84b036a38cbf4/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-ef8f00a741c201a77d6952f383ed5cb9",
+        "title": "一句话如何追上几秒钟的声音：端到端语音识别转折前的对齐难题",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-112feaa04063daa4af7bc7a46bf7c8d9",
+        "title": "八成准确率，不等于八成把握：给分类模型做一次概率体检",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-677bef6b531f863517bc8163155c64ec",
+        "title": "万路城的最后一张地图",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-5151f775b03a07f096b31416a03306fa",
+        "title": "不是一张显卡创造了 2012：ImageNet、AlexNet 与深度学习转折",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-d6e845ea2a3acda3f0d7cae02b41b3df",
+        "title": "九成准确率为何上线就塌：用分组交叉验证抓住“熟人泄漏”",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-f0ed45929f1f67eca3e9a6eff225e0a8",
+        "title": "把一个故事点子变成可验收分镜：用 Codex 与 Drama Skills 做五文档闭环",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-23378fc94fecf8802a03fc4d82046789",
+        "title": "两座码头的金色账簿",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-3310460aed5decafa5ef2acc7d4e4faf",
+        "title": "从“堆参数”到“喂数据”：大模型算力分配法则的因果演进",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-2672b9562c25014e2dc6a4e43e2f27e6",
+        "title": "别替截断的 JSON 猜结尾：一条可运行、可回滚的防御性解析流水线",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-ba63df8c93444d40f9e12c9edf627a0b",
+        "title": "用 Gemini Notebook 把一份长 PDF 变成可核对的学习笔记",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-ba63df8c93444d40f9e12c9edf627a0b/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-ba63df8c93444d40f9e12c9edf627a0b/covers/reader_cover",
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-b7a66d95fffaf1ab2e975ac7004495a1",
+        "title": "群岛灯塔的潮汐日志",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-01f24971feeb023d69da79e2f05e6129",
+        "title": "从“把整句塞进瓶子”到注意力机制：机器翻译为何改变路线",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-e7cb8f3397988e37367ecbeeaf754e20",
+        "title": "把一批文件交给 AI 之前：用清单、哈希和原子替换做出可恢复流程",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-e1e02beb258aa637301e7f757a954674",
+        "title": "没有人改过账本，为什么昨天变了",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-a997229a1b1efd600b9d21e69080d669",
+        "title": "GPU 为什么不再只是“更快的显卡”：一场关于等待的战争",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-9e5e04c6c07dc21ce840680202c9e15a",
+        "title": "AI 说“完成了”，为什么你还要看收据",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-0a002a4a42c4dc9a1d0962ea13950675",
+        "title": "七座门为什么同时打开了",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      }
+    ]
+  },
+  "cron_state_at_handoff": {
+    "checked_at": "2026-09-27T13:58:33.974446+08:00",
+    "jobs": [
+      {
+        "profile": "default",
+        "id": "5a3f2a2eb988",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "b52aa900ac12",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "fbd1cd1217d7",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "171a125ddb63",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "94f82c141295",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "1ad93e85cec2",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "106a9cfabae1",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "default",
+        "id": "b8c4c5e40bb1",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "story",
+        "id": "d3e461e0578c",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      },
+      {
+        "profile": "supervision",
+        "id": "0dd3884f173c",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/3ad0ec084fbefc8f439617da73bde67c3846fae9"
+      }
+    ],
+    "active": [
+      {
+        "id": "69f70d377dc747df8feab27638c13fab",
+        "job_id": "d3e461e0578c",
+        "status": "running",
+        "started_at": "2026-09-27T13:57:37.861755+08:00"
+      }
+    ]
+  },
+  "handoff": {
+    "publication_acceptance_complete": true,
+    "normal_jobs_enabled_at_handoff": 10,
+    "in_flight_story_author": "69f70d377dc747df8feab27638c13fab",
+    "instruction": "Receiving deployment task must back up and pause new dispatch, wait for current author to finish, preserve ledgers and original enabled set, then restore after its own verified upgrade.",
+    "root_will_not_mutate_server_or_cron_further": true
   }
 }

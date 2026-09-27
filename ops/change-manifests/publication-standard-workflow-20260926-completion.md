@@ -2,19 +2,21 @@
 
 - task_id: publication-standard-workflow-20260926
 - goal: main 与 Story 无监督选题、写作、审核和发行；程序字段与可增删内容主题解耦。
-- status: DEPLOYED（7414b4e出版修复保留于当前c030b9c服务器；真机UI、Story自动五图/独立审核/暂存恢复通过，教程返修及新两期发行仍待完成）
+- status: VERIFIED（部署代码3ad0ec0；真实定时恢复、独立审核、自动发行、正文/五图回读及全库回归均通过。后续仅提交验收文档。）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
-- head/local_commit: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8；快进整合已部署并行任务，保留出版修复；后续验收记录本地更新。
+- head/local_commit: 3ad0ec084fbefc8f439617da73bde67c3846fae9；其后仅验收证据本地更新。
 - manifest: ops/change-manifests/publication-standard-workflow-20260926-completion.md。
-- evidence_note: 后续验收记录仍本地更新；运行版本按以下服务器与本机固定源码分别记录，文档提交不冒充服务器部署。
-- remote_sha: origin/main=c030b9cbba7a2d16e7d94bbb6541a069ae7442e8；任务远端分支仍7414b4e77303ee2aee217a57200806be97ce8ef2，均经git ls-remote核对。
-- server_before: 本任务本轮b07e2cc4fd6c0bcd299990ec58d474761134e577；并行任务接续部署前7414b4e77303ee2aee217a57200806be97ce8ef2。
-- server_after: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8，/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1；本机出版runtime固定7414，出版程序未变。
-- health_check: 八容器healthy、APIready、Bridgeok、部署锁释放，已独立复核。
-- functional_check: 真机指定刊物五图/目录/正文通过；新Story已自动生成五图、独立审核通过并暂存；三个12点合格栏目自动发行及正文/15媒体回读通过；新toolkit自动退稿返修中。
-- rollback_point: 本任务b07快照=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c；当前c030版本回滚为7414 release，备份=/opt/ai-lab-shared/rollbacks/chat-cleanup-pcm-c030b9cbba7a（已独立确认镜像/版本文件及3,072,061字节数据库gzip存在，校验通过由协调任务记录）。
-- remaining_risks: 两篇新期尚未完整发行；历史9本缺图未补；TestFlight未更新；外部工具和本机Hermes必须可用。
+- evidence_note: VERIFIED针对固定3ad部署代码与下述已完成验收；验收文档提交不冒充新服务器部署。13:58交接时10cron启用且Story下一期作者在途，后续任务已接手暂停/排空/升级责任；本任务不再双写运行环境。
+- remote_sha: 任务分支=3ad0ec084fbefc8f439617da73bde67c3846fae9；origin/main=0775c6bd0dfb0682f64addacf61e70fbde28a1ce（并行任务后续提交）；均经git ls-remote核验。
+- server_before: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8。
+- server_after: 3ad0ec084fbefc8f439617da73bde67c3846fae9；/opt/releases/ai-lab-platform-3ad0ec084fbe.Gn6VEJ；本机10正常cron同版源码。
+- health_check: 独立八容器healthy、四后端image revision一致、API ready、Bridge ok、部署锁释放；部署后磁盘2.1GB，复查健康。
+- functional_check: main教程r2已自动prepare、独立复跑一正四负、关闭旧缺口、自动暂存并发行；Story13自动配图/审核/发行通过；25本正文与82媒体全部200且哈希一致，匿名401；新教程11节/12代码块字节保留；指定旧刊五图真机可见。
+- rollback_point: /opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1；/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/c030b9cbba7a（版本/镜像/attestation/在线SQLite备份）；磁盘故障后实际回滚健康已验证。
+- remaining_risks: 历史9本媒体不完整（1本仅两封面、8本无媒体），未改冻结旧刊；本任务未上传TestFlight，后续联合客户端由并行任务负责；磁盘仍约96%，长期清理策略未实现，三份历史临时镜像包本地保全于/tmp/publication-disk-recovery-20260927；外部工具与本机Hermes须可用。
+
+
 
 ## 开工前 Git 盘点
 
@@ -181,3 +183,32 @@ remaining_risks：用户实际客户端/安装版本未确认；真实用户登�
 
 
 13:05 修复验证与部署准备：116项daily/handoff回归全部通过（首次5项仅受沙箱ps拒绝，同命令授权复跑通过），新增边界8项及独立8项通过，Ruff/diff通过。server_before=c030b9cb，新增rollback_point=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/c030b9cbba7a（8镜像/版本/2,584,576字节出版SQLite在线快照）。10角色已备份暂停，active=[]。Story13已13:01:20自动发表且10节正文/五图回读200、SHA一致；本次后续修复仍待部署。
+
+## 2026-09-27 13:28 磁盘满部署故障与恢复中
+
+- source/local_commit: 3ad0ec084fbefc8f439617da73bde67c3846fae9；首次部署失败，不能视为上线。
+- 根盘49G、剩余44MB、inode使用30%；PostgreSQL明确报`could not write pg_logical/replorigin_checkpoint.tmp: No space left on device`，导致内部恢复循环。未证实内存不足。
+- 自动回滚指针恢复c030，但因数据库当时unhealthy，五个应用容器停留Created。清理可重下载APT缓存后余471MB，数据库自行恢复healthy，再启动这五个已创建的回滚容器。未重启或删除数据库，未删卷或刊物。
+- 只读独立核验通过：c030版本、八容器healthy、API ready、Bridge ok、部署锁释放。回执`/tmp/publication-disk-rollback-health.json`。
+- 全部10个正常出版cron仍暂停，无新临时启动任务；本机runtime已固定3ad但尚未启用。Story13已自动发行并回读通过；toolkit r2保留原稿及五张真实生成图，等待kind修复部署后由正常控制器接力。
+- 正在保存两个2026-09-19历史/tmp镜像传输包到本地，只有大小/完整SHA256一致后才释放对应服务器副本；保留当前/回滚镜像、release、数据库、备份。
+
+## 2026-09-27 13:42 磁盘恢复后3ad部署成功
+
+- server_before/rollback_point: c030b9cbba7a2d16e7d94bbb6541a069ae7442e8，/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1；本任务备份/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/c030b9cbba7a。
+- server_after: 3ad0ec084fbefc8f439617da73bde67c3846fae9，/opt/releases/ai-lab-platform-3ad0ec084fbe.Gn6VEJ。独立八服务healthy、四后端image revision一致、API ready、Bridge ok、部署锁释放。
+- 三个历史临时镜像传输包先保存在/tmp/publication-disk-recovery-20260927并逐份核对大小/SHA256，随后仅删除服务器/tmp对应副本；完整证据在audit JSON。部署前可用2322186240字节，重试入口先检查>=2GiB及>=100000空闲inode。镜像构建复用缓存。
+- 临时原生任务6ca0670987d6，计划2026-09-27T13:43:16.859246+08:00；只恢复10正常cron并运行既有watchdog，不手工prepare/review/release，不重置预算。
+- origin/main已被并行任务合法推进0775c6bd0dfb0682f64addacf61e70fbde28a1ce；任务分支远端仍3ad，经ls-remote核验；本轮部署固定已推送3ad。
+
+## 2026-09-27 14:00 最终验收与交接
+
+- 一次性原生恢复任务6ca0670987d6实际13:43:31启动，native57f0baa75867438b9b899be54dd9139d，13:44:52完成。原失败prepare attempt1保留，attempt2自动成功；未清除失败历史或重置预算。临时任务/脚本完成后归档并删除。
+- 独立审核native9befac95ed0a44b38f45e5eb774def3e，session cron_fbd1cd1217d7_20260927_134705，43次工具调用，13:52:24完成。工具消息546917真实执行Python3.12.3，一正四负退出码0/1/1/1/1，缺字段负例明确拒绝basis_claim_ids,next_check。审核hash320127f770966aa15bf29c174c48d9d8c4df25b19f05a607e7b09d03eafb372f。
+- 服务器revision1仍rejected，revision2=approved且缺口resolved；关闭时间2026-09-27T05:53:29.052985Z。控制器9dc2246d8c8845afa26fc7e640970155自动finalize于13:54:37结束。
+- 正常发行native7a6f67a4115c43578aeba7818934769d，13:55:36→13:56:10完成；edition-24d51073b0082da33c8907718a88e819唯一published，publication-dc6e2ea2dc24a3999ba01da33613d4db，actual_release_at=2026-09-27T05:55:58.738742Z。内容hash5b212fca1710acb90a267bfbf00bef623f06a4c073a1489671f9641924c5af2c。
+- 只读API回读该教程11节、12个代码块逐字节保留、5媒体200且与冻结hash一致；全库25正文/82媒体全部通过，匿名封面401。全库16本五图、1本两图、8本无图，不能把历史缺图说成已补齐。
+- Story13自动发行后，13:45正常发行native7044c695dd054f3bb046a2e959b701d4无重复edition/新增publication。
+- 13:58:33交接快照：10正常cron全部enabled且固定3ad，旧b43保持暂停；Story下一期作者69f70d377dc747df8feab27638c13fab在途，其余无在途。已向授权清理任务交接完整回滚/健康/原启用集合，并在当前进度明确后续部署须备份暂停新调度、等作者自然结束再切换。随后联合发布任务已确认接手，本任务不再操作server/runtime/cron。
+- 本轮真实运行经历维护暂停与恢复，不能声称从首轮开始全程未中断。修复后的后半程由原生timer及正常cron自动完成；root未代替作者、素材agent或独立审核执行业务步骤。
+- 验证沿用已通过的116项相关测试与Ruff；最终证据文件通过JSON解析及git diff --check。后续证据提交只包含本manifest和audit JSON，不再部署新代码。
