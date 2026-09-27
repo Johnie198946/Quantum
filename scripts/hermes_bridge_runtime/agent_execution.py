@@ -830,7 +830,8 @@ def _run_agent_sync(
                         or ""
                     ),
                     "knowledge_policy_version": str(
-                        context_claims.get("knowledge_policy_version") or "unknown"
+                        context_claims.get("policy_version")
+                        or context_claims.get("knowledge_policy_version") or "unknown"
                     ),
                 },
                 "hermes_session_id": hermes_sid,
