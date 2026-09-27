@@ -85,6 +85,18 @@ class KnowledgeBookSubscription(Base):
     )
 
 
+class KnowledgeBookList(Base):
+    """Personal list membership; reading authority remains in the live catalog."""
+
+    __tablename__ = "knowledge_book_lists"
+    tenant_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(80), nullable=False)
+    book_ids: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class LearningExercise(Base):
     """Versioned, owner-scoped mixed exercise; answer keys never leave before grading."""
 

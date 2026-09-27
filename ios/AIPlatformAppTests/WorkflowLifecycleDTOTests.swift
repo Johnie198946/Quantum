@@ -154,6 +154,12 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
             } else {
                 responseBody = Data(#"{"agreement_version":"2026-09-06","accepted_at":"2026-09-06T08:00:00Z"}"#.utf8)
             }
+        case (true, "GET", "/api/v1/knowledge-bookshelves"):
+            responseBody = Data(#"{"bookshelves":[],"subscriptions":[],"book_lists":[{"id":"list-1","title":"History","book_ids":["kn-1"]}]}"#.utf8)
+        case (true, "PUT", "/api/v1/me/book-lists/list-1"):
+            responseBody = Data(#"{"id":"list-1","title":"History","book_ids":["kn-1"]}"#.utf8)
+        case (true, "DELETE", "/api/v1/me/book-lists/list-1"):
+            responseBody = Data(#"{"deleted":true}"#.utf8)
         case (true, "PUT", "/api/v1/me/book-subscriptions"),
              (true, "PATCH", "/api/v1/me/book-subscriptions/progress"):
             responseBody = Self.subscriptionResponse
@@ -749,6 +755,28 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         add(attachment)
     }
     #endif
+    @MainActor
+    func testPersonalBookListAndUnifiedCatalogWireContract() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let client = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "[REDACTED]")
+        let catalog = try await client.fetchKnowledgeBookshelves()
+        XCTAssertEqual(catalog.bookLists?.first?.bookIds, ["kn-1"])
+        XCTAssertEqual(catalog.subscriptions?.count, 0)
+        let saved = try await client.saveBookList(id: "list-1", title: "History", bookIds: ["kn-1"])
+        XCTAssertEqual(saved.bookIds, ["kn-1"])
+        try await client.deleteBookList(id: "list-1")
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests[0].request.url?.query, "include_reader=true")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[1].body)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["title", "book_ids"])
+        XCTAssertEqual(body["book_ids"] as? [String], ["kn-1"])
+        XCTAssertEqual(requests[2].request.httpMethod, "DELETE")
+    }
+
     @MainActor
     func testBookWritesMatchBackendWireContract() async throws {
         APIContractURLProtocol.reset()

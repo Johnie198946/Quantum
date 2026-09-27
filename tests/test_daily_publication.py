@@ -689,3 +689,14 @@ def test_admin_serial_endpoints_remain_super_admin_only(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as error:
         asyncio.run(knowledge_publication.stage_serial(model, {"user_id": "ordinary"}))
     assert error.value.status_code == 403
+
+
+def test_source_catalog_filters_before_expensive_access_validation(tmp_path, monkeypatch):
+    store = PublicationStore(tmp_path)
+    item = stage(store, now=at(3))
+    assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+    def unexpected(*_args):
+        raise AssertionError("source catalog must not validate unrelated commentary editions")
+    monkeypatch.setattr(store, "_access_reasons", unexpected)
+    assert store.public_source_catalog(now=at(5)) == ([], [])
+    assert store.get_public_source("follow-builders-public-source-" + "a" * 24, now=at(5)) is None

@@ -1448,13 +1448,18 @@ class PublicationStore:
 
     def published(
         self, *, now: datetime | None = None, vault: Path | None = None,
-        include_body: bool = True,
+        include_body: bool = True, content_kind: str | None = None,
     ) -> list[dict[str, Any]]:
         if not self.db_path.exists():
             return []
         db, result, actual = self._connect(), [], now or _now()
         try:
-            for row in db.execute("SELECT * FROM editions WHERE state='published' ORDER BY issue_date DESC,series_id").fetchall():
+            query = "SELECT * FROM editions WHERE state='published'"
+            parameters = ()
+            if content_kind is not None:
+                query += " AND json_extract(bundle_json, '$.content_kind')=?"
+                parameters = (content_kind,)
+            for row in db.execute(query + " ORDER BY issue_date DESC,series_id", parameters).fetchall():
                 if not self._access_reasons(db, row, actual, vault):
                     item = self._record(row, body=include_body)
                     item["artifact_valid"] = True
@@ -1557,7 +1562,7 @@ class PublicationStore:
 
     def public_source_catalog(self, *, now: datetime | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         books, collections = [], []
-        for edition in self.published(now=now, include_body=False):
+        for edition in self.published(now=now, include_body=False, content_kind="source_index"):
             index = edition["bundle"].get("source_index")
             if edition["bundle"].get("content_kind") != "source_index" or not index:
                 continue
@@ -1577,7 +1582,7 @@ class PublicationStore:
     def get_public_source(self, book_id: str, *, now: datetime | None = None) -> tuple[dict[str, Any], dict[str, Any]] | None:
         if not re.fullmatch(r"follow-builders-public-source-[a-f0-9]{24}", book_id):
             return None
-        for edition in self.published(now=now, include_body=False):
+        for edition in self.published(now=now, include_body=False, content_kind="source_index"):
             index = edition["bundle"].get("source_index")
             if edition["bundle"].get("content_kind") != "source_index" or not index:
                 continue

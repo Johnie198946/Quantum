@@ -61,6 +61,11 @@ public struct KnowledgeView: View {
         let recentNotes = visibleNotes.filter { !$0.isPinned || scope != .all }
 
         return NavigationStack(path: $path) {
+            VStack(spacing: 0) {
+                if showingBookshelf {
+                    libraryHeader.padding(.horizontal, AppTheme.Metrics.contentGutter)
+                    SubscriptionCenterView(showsBackButton: false)
+                } else {
             List {
                 libraryHeader
                 if let error = store.lastError,
@@ -93,12 +98,13 @@ public struct KnowledgeView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(AppTheme.Colors.background)
+                }
+            }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(showingBookshelf ? .automatic : .hidden, for: .navigationBar)
             .refreshable {
                 await refreshNotes()
-                await loadBookSubscriptions()
             }
             .navigationDestination(for: String.self) { noteID in
                 KnowledgeNoteEditor(noteID: noteID)
@@ -120,7 +126,8 @@ public struct KnowledgeView: View {
             } message: {
                 Text("账号中已同步的笔记也会移到最近删除，可随时恢复；平台知识中的引用会撤回。")
             }
-            .task {
+            .task(id: showingBookshelf) {
+                guard !showingBookshelf else { return }
                 if !contentRevealed {
                     withAnimation(reduceMotion ? nil : .spring(response: 0.46, dampingFraction: 0.88)) {
                         contentRevealed = true
@@ -136,7 +143,6 @@ public struct KnowledgeView: View {
                 }
                 #endif
                 await refreshNotes()
-                await loadBookSubscriptions()
             }
             #if DEBUG
             .fullScreenCover(isPresented: .constant(ProcessInfo.processInfo.arguments.contains("-noteIllustrationChatPreview"))) {
@@ -702,12 +708,15 @@ public struct KnowledgeView: View {
         }
     }
 
-    private func syncLocalNotes() async {
+    private func syncLocalNotes(snapshot: CloudKnowledgeNotesResponse) async {
+        let remote = Dictionary(snapshot.items.map { ($0.noteId, $0) }, uniquingKeysWith: { _, last in last })
         let credentialGeneration = APIClient.shared.currentCredentialGeneration()
         let account = store.accountFingerprint
         for note in store.notes {
-            guard account == store.accountFingerprint,
+            guard !Task.isCancelled, account == store.accountFingerprint,
                   credentialGeneration == APIClient.shared.currentCredentialGeneration() else { return }
+            if let cloud = remote[note.id], cloud.contentHash == store.contentHash(for: note),
+               !cloud.archived, cloud.trashed != true { continue }
             _ = try? await APIClient.shared.syncKnowledgeNote(
                 id: note.id,
                 markdown: store.markdown(for: note),
@@ -716,9 +725,11 @@ public struct KnowledgeView: View {
             )
         }
         for note in store.archivedNotes {
-            guard account == store.accountFingerprint,
+            guard !Task.isCancelled, account == store.accountFingerprint,
                   credentialGeneration == APIClient.shared.currentCredentialGeneration() else { return }
             guard let mergedIntoNoteId = note.mergedIntoNoteId else { continue }
+            if let cloud = remote[note.id], cloud.contentHash == store.contentHash(for: note),
+               cloud.archived, cloud.trashed != true, cloud.mergedIntoNoteId == mergedIntoNoteId { continue }
             do {
                 _ = try await APIClient.shared.syncKnowledgeNote(
                     id: note.id,
@@ -726,7 +737,7 @@ public struct KnowledgeView: View {
                     updatedAt: note.updatedAt,
                     credentialGeneration: credentialGeneration
                 )
-                guard account == store.accountFingerprint,
+                guard !Task.isCancelled, account == store.accountFingerprint,
                       credentialGeneration == APIClient.shared.currentCredentialGeneration() else { return }
                 try await APIClient.shared.archiveKnowledgeNote(
                     id: note.id, mergedIntoNoteId: mergedIntoNoteId
@@ -740,9 +751,9 @@ public struct KnowledgeView: View {
     /// Pull first so server notes created by a Hermes-backed chat run appear
     /// immediately. iOS only owns local Markdown presentation and transport.
     private func refreshNotes() async {
-        await store.restoreFromCloud()
-        guard store.lastError == nil else { return }
-        await syncLocalNotes()
+        guard let snapshot = await store.restoreFromCloud(),
+              !Task.isCancelled, store.lastError == nil else { return }
+        await syncLocalNotes(snapshot: snapshot)
     }
 }
 

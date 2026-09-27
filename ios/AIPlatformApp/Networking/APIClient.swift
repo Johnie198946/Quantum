@@ -333,7 +333,15 @@ public struct KnowledgeBookshelfDTO: Codable, Identifiable, Hashable {
     }
 }
 
+public struct KnowledgeBookListDTO: Codable, Identifiable, Hashable {
+    public let id: String
+    public let title: String
+    public let bookIds: [String]
+}
+
 public struct KnowledgeBookshelvesResponse: Codable {
+    public var subscriptions: [KnowledgeBookSubscriptionDTO]? = nil
+    public var bookLists: [KnowledgeBookListDTO]? = nil
     public let bookshelves: [KnowledgeBookshelfDTO]
     public var publicCollections: [PublicKnowledgeCollectionDTO]? = nil
     public var ownerPrivateCollections: [OwnerPrivateCollectionDTO]? = nil
@@ -3157,7 +3165,23 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchKnowledgeBookshelves() async throws -> KnowledgeBookshelvesResponse {
-        try await request(KnowledgeBookshelvesResponse.self, path: "knowledge-bookshelves")
+        try await request(KnowledgeBookshelvesResponse.self, path: "knowledge-bookshelves",
+                          queryItems: [URLQueryItem(name: "include_reader", value: "true")])
+    }
+
+    public func saveBookList(id: String, title: String, bookIds: [String]) async throws -> KnowledgeBookListDTO {
+        struct Write: Encodable {
+            let title: String
+            let bookIds: [String]
+            enum CodingKeys: String, CodingKey { case title; case bookIds = "book_ids" }
+        }
+        return try await request(KnowledgeBookListDTO.self, path: "me/book-lists/\(encodedPath(id))",
+                                 method: "PUT", body: Write(title: title, bookIds: bookIds))
+    }
+
+    public func deleteBookList(id: String) async throws {
+        struct Result: Decodable { let deleted: Bool }
+        _ = try await request(Result.self, path: "me/book-lists/\(encodedPath(id))", method: "DELETE")
     }
 
     public func fetchBookSubscriptions() async throws -> [KnowledgeBookSubscriptionDTO] {

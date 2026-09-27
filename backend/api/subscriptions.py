@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from uuid import UUID
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.api.auth import PERSONAL_PUBLIC_ORG_ID, require_auth
 from backend.api import knowledge
 from backend.db import SessionLocal
-from backend.models.tenant import KnowledgeBookSubscription, KnowledgeSeriesSubscription
+from backend.models.tenant import KnowledgeBookList, KnowledgeBookSubscription, KnowledgeSeriesSubscription
 from backend.services.knowledge_catalog import (
     base_knowledge_status,
     bookshelf_catalog,
@@ -30,6 +31,7 @@ from backend.services.knowledge_catalog import (
     filter_database_live_documents,
     publication_book,
     reader_book_body,
+    run_knowledge_read,
     tenant_private_knowledge_status,
 )
 from backend.services.knowledge_publication_store import (
@@ -72,6 +74,25 @@ class SubscriptionReview(BaseModel):
 class BookSubscriptionWrite(BaseModel):
     book_id: str = Field(..., min_length=1, max_length=384)
     edition: int = Field(default=1, ge=1)
+
+
+class BookListWrite(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    book_ids: list[str] = Field(default_factory=list, max_length=500)
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value):
+        if not value.strip():
+            raise ValueError("title must not be blank")
+        return value.strip()
+
+    @field_validator("book_ids")
+    @classmethod
+    def unique_books(cls, value):
+        if any(not item or len(item) > 384 for item in value):
+            raise ValueError("invalid book id")
+        return list(dict.fromkeys(value))
 
 
 class BookProgressWrite(BaseModel):
@@ -274,13 +295,17 @@ async def subscription_center(payload=Depends(require_auth)):
 
 
 @router.get("/knowledge-bookshelves")
-async def knowledge_bookshelves(payload=Depends(require_auth)):
+async def knowledge_bookshelves(payload=Depends(require_auth), include_reader: bool = False):
     """Reader catalog independent of organization subscription state."""
     tenant_key, user_id = _owner_reader_identity(payload)
-    collection = _owner_private_store(payload).collection(tenant_key, user_id) if tenant_key and user_id else None
-    _, public_collections = PublicationStore().public_source_catalog()
+    collection = await run_knowledge_read(_owner_private_store(payload).collection, tenant_key, user_id) if tenant_key and user_id else None
+    _, public_collections = await run_knowledge_read(PublicationStore().public_source_catalog)
+    shelves = await _visible_bookshelves(payload)
+    available = {book["id"]: book for shelf in shelves for book in shelf["books"]}
     return {
-        "bookshelves": _public_bookshelves(await _visible_bookshelves(payload)),
+        "bookshelves": _public_bookshelves(shelves),
+        **({"subscriptions": await _book_subscriptions(payload, available, include_history=True),
+            "book_lists": await _book_lists(payload, available)} if include_reader else {}),
         "public_collections": public_collections,
         "owner_private_collections": [collection] if collection else [],
     }
@@ -309,15 +334,15 @@ def _owner_private_store(payload: dict[str, Any]) -> OwnerPrivateBookshelfStore:
 async def _visible_bookshelves(payload: dict[str, Any]) -> list[dict[str, Any]]:
     vault = knowledge._vault()
     documents = await filter_database_live_documents(
-        list(bookshelf_document_index(vault).values()), vault
+        list((await run_knowledge_read(bookshelf_document_index, vault)).values()), vault
     )
-    shelves = bookshelf_catalog(
-        payload["tenant_key"], vault, payload.get("visible_categories"), documents
+    shelves = await run_knowledge_read(
+        bookshelf_catalog, payload["tenant_key"], vault, payload.get("visible_categories"), documents
     )
     tenant_key, user_id = _owner_reader_identity(payload)
     if user_id:
         try:
-            shelves.extend(_owner_private_store(payload).catalog(tenant_key, user_id))
+            shelves.extend(await run_knowledge_read(_owner_private_store(payload).catalog, tenant_key, user_id))
         except OwnerPrivateBookshelfError:
             pass
     return shelves
@@ -611,8 +636,11 @@ async def knowledge_publication_media(publication_id: str, role: str, payload=De
 
 @router.get("/me/book-subscriptions")
 async def my_book_subscriptions(payload=Depends(require_auth)):
+    return {"subscriptions": await _book_subscriptions(payload, await _available_books(payload))}
+
+
+async def _book_subscriptions(payload, available, *, include_history=False):
     tenant_key, user_id = _reader_identity(payload)
-    available = await _available_books(payload)
     async with SessionLocal() as db:
         rows = (
             await db.execute(
@@ -642,7 +670,54 @@ async def my_book_subscriptions(payload=Depends(require_auth)):
     ]
     legacy = [_book_subscription(row, available[row.book_id]) for row in rows
               if row.book_id in available and not row.series_id]
-    return {"subscriptions": followed + legacy}
+    if include_history:
+        projected = {item["book"]["id"] for item in followed + legacy}
+        followed_series = {item.series_id for item in follows}
+        legacy.extend(_book_subscription(row, available[row.book_id]) for row in rows
+                      if row.book_id in available and row.book_id not in projected
+                      and row.series_id in followed_series)
+    return followed + legacy
+
+
+async def _book_lists(payload, available):
+    tenant_key, user_id = _reader_identity(payload)
+    async with SessionLocal() as db:
+        rows = (await db.execute(select(KnowledgeBookList).where(
+            KnowledgeBookList.tenant_key == tenant_key,
+            KnowledgeBookList.owner_user_id == user_id,
+        ).order_by(KnowledgeBookList.updated_at.desc(), KnowledgeBookList.id))).scalars().all()
+    return [{"id": row.id, "title": row.title,
+             "book_ids": [book_id for book_id in row.book_ids if book_id in available]}
+            for row in rows]
+
+
+@router.put("/me/book-lists/{list_id}")
+async def save_book_list(list_id: UUID, body: BookListWrite, payload=Depends(require_auth)):
+    tenant_key, user_id = _reader_identity(payload)
+    available = await _available_books(payload)
+    if any(book_id not in available for book_id in body.book_ids):
+        raise HTTPException(404, "书籍已下架或不可阅读，请刷新目录")
+    async with SessionLocal() as db:
+        row = await db.get(KnowledgeBookList, (tenant_key, user_id, str(list_id)))
+        if row is None:
+            row = KnowledgeBookList(tenant_key=tenant_key, owner_user_id=user_id, id=str(list_id))
+            db.add(row)
+        row.title, row.book_ids = body.title, body.book_ids
+        await db.commit()
+    return {"id": str(list_id), "title": body.title, "book_ids": body.book_ids}
+
+
+@router.delete("/me/book-lists/{list_id}")
+async def delete_book_list(list_id: UUID, payload=Depends(require_auth)):
+    tenant_key, user_id = _reader_identity(payload)
+    async with SessionLocal() as db:
+        await db.execute(delete(KnowledgeBookList).where(
+            KnowledgeBookList.tenant_key == tenant_key,
+            KnowledgeBookList.owner_user_id == user_id,
+            KnowledgeBookList.id == str(list_id),
+        ))
+        await db.commit()
+    return {"deleted": True}
 
 
 @router.get("/me/learning-resume")

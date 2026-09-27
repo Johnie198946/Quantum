@@ -249,7 +249,11 @@ def test_character_checkpoint_requires_block_and_section(book_db):
     assert error.value.detail["code"] == "book_block_required"
 
 
-def test_concurrent_duplicate_puts_are_idempotent(book_db):
+def test_concurrent_duplicate_puts_are_idempotent(book_db, monkeypatch):
+    # This exercises the database race, independently of bounded catalog admission.
+    async def available_body(_payload, _book_id):
+        return BOOK, BODY
+    monkeypatch.setattr(subscriptions, "_available_book_body", available_body)
     body = subscriptions.BookSubscriptionWrite(book_id=BOOK["id"])
 
     async def race():
@@ -447,3 +451,46 @@ def test_unsubscribe_unread_latest_issue_is_user_scoped(book_db, monkeypatch):
     ))["deleted"] is True
     assert run(subscriptions.my_book_subscriptions(AUTH))["subscriptions"] == []
     assert run(subscriptions.my_book_subscriptions(other))["subscriptions"][0]["book"]["id"] == second["id"]
+
+
+def test_personal_book_lists_are_persistent_owner_scoped_and_live_filtered(book_db):
+    from uuid import uuid4
+    list_id = uuid4()
+    write = subscriptions.BookListWrite(title="  唐史阅读  ", book_ids=[BOOK["id"], BOOK["id"]])
+    saved = run(subscriptions.save_book_list(list_id, write, AUTH))
+    assert saved == {"id": str(list_id), "title": "唐史阅读", "book_ids": [BOOK["id"]]}
+    assert run(subscriptions._book_lists(AUTH, {BOOK["id"]: BOOK})) == [saved]
+    for other in ({**AUTH, "user_id": "other"}, {**AUTH, "tenant_key": "other"}):
+        assert run(subscriptions._book_lists(other, {BOOK["id"]: BOOK})) == []
+        run(subscriptions.delete_book_list(list_id, other))
+        assert run(subscriptions._book_lists(AUTH, {BOOK["id"]: BOOK})) == [saved]
+    assert run(subscriptions._book_lists(AUTH, {}))[0]["book_ids"] == []
+    with pytest.raises(HTTPException) as exc:
+        run(subscriptions.save_book_list(list_id, subscriptions.BookListWrite(title="bad", book_ids=["unknown"]), AUTH))
+    assert exc.value.status_code == 404
+    assert run(subscriptions._book_lists(AUTH, {BOOK["id"]: BOOK})) == [saved]
+    run(subscriptions.delete_book_list(list_id, AUTH))
+    assert run(subscriptions._book_lists(AUTH, {BOOK["id"]: BOOK})) == []
+
+
+def test_reader_catalog_reuses_one_catalog_and_keeps_completed_issues(book_db, monkeypatch):
+    from datetime import datetime, timezone
+    first = {**BOOK, "id": "first", "series_id": "history", "issue_date": "2026-09-26", "content_version": VERSION}
+    latest = {**BOOK, "id": "latest", "series_id": "history", "issue_date": "2026-09-27", "content_version": VERSION}
+    calls = []
+    async def visible(_payload):
+        calls.append(1)
+        return [{"id": "history", "title": "唐史", "books": [first, latest]}]
+    monkeypatch.setattr(subscriptions, "_visible_bookshelves", visible)
+    async def seed():
+        async with subscriptions.SessionLocal() as db:
+            db.add(KnowledgeSeriesSubscription(tenant_key=AUTH["tenant_key"], owner_user_id=AUTH["user_id"], series_id="history"))
+            db.add(KnowledgeBookSubscription(tenant_key=AUTH["tenant_key"], owner_user_id=AUTH["user_id"], book_id="first", series_id="history", progress=1, content_version=VERSION))
+            await db.commit()
+    run(seed())
+    response = run(subscriptions.knowledge_bookshelves(AUTH, include_reader=True))
+    assert len(calls) == 1
+    assert {s["book"]["id"]: s["progress"] for s in response["subscriptions"]} == {"first": 1, "latest": 0}
+    assert response["book_lists"] == []
+    other = run(subscriptions.knowledge_bookshelves({**AUTH, "user_id": "other"}, include_reader=True))
+    assert other["subscriptions"] == []
