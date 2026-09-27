@@ -430,14 +430,16 @@ public struct IllustratedBookCover: View {
                 coverMotif(identity: identity, foreground: colors.last ?? AppTheme.Colors.leaf)
                     .accessibilityHidden(true)
             }
-            if image == nil {
-                VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
+            VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
+                if image == nil {
                     Text(coverKicker)
                         .font(.system(size: width < 100 ? 6 : 8, weight: .bold, design: .rounded))
                         .tracking(width < 100 ? 0.4 : 0.8)
                         .textCase(.uppercase)
                         .opacity(0.58)
-                    Spacer(minLength: 2)
+                }
+                Spacer(minLength: 2)
+                VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
                     Text(title)
                         .font(.system(size: width < 100 ? 10 : 15, weight: .bold, design: .serif))
                         .lineLimit(width < 80 ? 2 : 3)
@@ -446,9 +448,16 @@ public struct IllustratedBookCover: View {
                         .lineLimit(1)
                         .opacity(0.62)
                 }
-                .foregroundStyle(Color(hex: "132A35"))
-                .padding(width < 80 ? 7 : 10)
+                .padding(image == nil ? 0 : 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    if image != nil {
+                        Color(hex: "FFFDF7").opacity(0.97)
+                    }
+                }
             }
+            .foregroundStyle(Color(hex: "132A35"))
+            .padding(width < 80 ? 7 : 10)
         }
         .frame(width: width, height: width * 16 / 9)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
