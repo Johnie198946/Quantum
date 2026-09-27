@@ -1,0 +1,34 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project ios/AIPlatformApp.xcodeproj -scheme AIPlatformApp -destination "platform=iOS Simulator,id=A19AF5DC-C365-4869-B20B-34A89A5F44BB" -derivedDataPath /tmp/travel-notes-release-derived -resultBundlePath /tmp/travel-export-image-contract.xcresult "-only-testing:AIPlatformAppTests/ImageProposalContractTests" test-without-building
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  Mantis: https://github.com/guoyingtao/Mantis.git @ 3.1.0
+
+Writing result bundle at path:
+	/tmp/travel-export-image-contract.xcresult
+
+2026-09-27 19:11:38.181600+0800 AIPlatformApp[33421:21954434] [General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric
+Test Suite 'Selected tests' started at 2026-09-27 19:11:39.559.
+Test Suite 'AIPlatformAppTests.xctest' started at 2026-09-27 19:11:39.560.
+Test Suite 'ImageProposalContractTests' started at 2026-09-27 19:11:39.560.
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testImageParametersSurviveHistoryWithoutGuessingDefaults]' started.
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testImageParametersSurviveHistoryWithoutGuessingDefaults]' passed (0.026 seconds).
+Test Suite 'ImageProposalContractTests' passed at 2026-09-27 19:11:39.587.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.026 (0.026) seconds
+Test Suite 'AIPlatformAppTests.xctest' passed at 2026-09-27 19:11:39.587.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.026 (0.027) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 19:11:39.587.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.026 (0.028) seconds
+2026-09-27 19:11:39.978 xcodebuild[32963:21949189] [MT] IDETestOperationsObserverDebug: 29.479 elapsed -- Testing started completed.
+2026-09-27 19:11:39.979 xcodebuild[32963:21949189] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-27 19:11:39.979 xcodebuild[32963:21949189] [MT] IDETestOperationsObserverDebug: 29.479 sec, +29.479 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/travel-export-image-contract.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started

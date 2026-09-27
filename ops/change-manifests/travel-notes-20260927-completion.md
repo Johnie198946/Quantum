@@ -1,18 +1,18 @@
 # Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: TESTED（导出资料补丁；此前 d228 云端发布已 VERIFIED，新补丁尚未合并部署）
+- status: COMMITTED（导出资料补丁与图片代码联合本地提交；此前 d228 云端发布已 VERIFIED，联合新版本尚未部署）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7（运行代码；后续文档提交单独记录）
-- remote_sha: origin refs/heads/main=d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；git ls-remote 已核对
+- head/local_commit: 31f46ac4169c0e650f565368e5d39745ec3eed6f（联合运行代码；本文件所在后续文档提交由 git log 核对）
+- remote_sha: 2026-09-27 19:18 CST git ls-remote origin 核对：refs/heads/main=167fba5c956ade6daba6568fc70c35d7f679406b；refs/heads/codex/travel-notes-20260927=f23773272369ac31e17d89254eaf0448baa3242d；31f46ac4 未推送
 - server_before: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
 - server_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W
 - health_check: 8 容器 healthy；4 个 Python 运行镜像 revision=d228；Bridge/ChatWorker active；/ready、Bridge /health、公开 /health 全部 HTTP200
 - functional_check: 联合152测试通过；备份哈希/SQLite完整性/唯一staged稿校验通过；生产Bridge Maps HTTP工作流87.83秒成功；笔记任务独立136正文/5页/hash/精简/防跳页验证通过；出版10cron已由其任务pin d228恢复
 - rollback_point: /opt/releases/ai-lab-platform-f8c7d064c959.229Byr；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865（PG、SQLite、稿件媒体、env、8镜像）；浏览器配置/包清单 /opt/ai-lab-shared/rollbacks/travel-browser-20260927
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
-- remaining_risks: 生产性能仅少量样本；服务器私人收藏/社交会话未验收；本任务未发布新TestFlight二进制；临时12m配额由笔记验收任务协调恢复
+- remaining_risks: 核心节点各30次生产样本已完成，但部分时延未达标且未覆盖完整弱网/端上/大附件矩阵；真实私人收藏/社交资料未验收；新版相册入库回归已交图片任务修复；统一TestFlight尚未上传；临时配额由笔记验收任务协调
 
 本节与文末记录为当前状态；中间各节保留当时发现、失败与授权历史，不代表当前仍未部署。
 
@@ -322,3 +322,18 @@
 性能：正式Bridge澄清30次/并发2，0失败，p50=5.296秒、p95=8.547秒；内部工作流读取+非法内部token拒绝30次/并发4，p95=.063秒。后者是内部认证合同，用户所有者边界由外层API验证。GoogleMaps原生浏览器30次全部读到公共路线，p50=13.694秒/p95=27.388秒；冷15次p50=17.974秒，热15次p50=5.783秒，存在长尾和两次清理超时日志，不宣传稳定低时延。尚不含端上/广域网和完整模型研究总耗时。
 
 本机独立A/B仅5对澄清样本：minimal中位5.651秒、none中位5.247秒，收益不足且小样本；没有为此改变生产模型或推理配置。局部草案30次正式HTTP验收继续执行，最多并发2，19:31后停止新增任务以避开出版窗口。
+
+
+## 联合候选与性能收据归档（2026-09-27 19:18 CST）
+
+开工盘点：独立旅行工作树 clean；branch=codex/travel-notes-20260927；HEAD=31f46ac4169c0e650f565368e5d39745ec3eed6f；origin=Quantum.git、source=ai-lab-platform.git。共享main工作树HEAD=21250c7b8a5290abcf649b9279bbd91b9af1db88，阅读工作树HEAD=1914bce542cc268476a63064ddb456cd98e785c4；本任务未修改其他工作树。
+
+5a3b8b7f为导出补丁，31f46ac4自动合并图片167fba5c。联合后端214 passed / 1原有Office预览skip（24.41秒）；iOS WorkflowLifecycleDTOTests 194 passed（19.077秒），独立ImageProposalContractTests 1 passed（0.026秒），合计195。单项合同通过不代表相册入库语义通过。
+
+生产局部草案30次全部成功、并发2、两个隔离测试用户：原时间和独立资料标记保持，无外部工具调用。接收p50=.476秒 / p95=1.428秒 / max=1.430秒；草案p50=9.341秒 / p95=13.504秒 / max=18.635秒。草案p95达到15秒目标；接收p95超过1秒，草案p50超过5秒。澄清p50=5.296秒 / p95=8.547秒亦超过3/8秒目标。原生Maps冷/热30次结果有效，但两次cleanup超时警告保留在原日志中。所有本批生产负载已结束，未改模型配置、额度或账本。
+
+这些是已部署d228的正式Bridge/原生浏览器结果；不包含iOS首屏、广域网、TTFT或完整研究工作流的30次统计。不能据此宣称整个性能矩阵完成或全部SLO通过。首次内部只读脚本错误地按X-User-ID判断内部Bridge拒绝，已纠正为内部共享凭据合同，未当作产品跨用户缺陷；外层API所有者隔离由真实认证回归验证。
+
+联合语义审计发现：相册attachPhoto只生成ga图片引用，未走attachDocument/private note/compile/source_refs。与用户“全部上传附件入库编译”的需求不符。已通知统一协调任务，由图片任务唯一负责复用既有路径修复，注意/images也承载临时编辑结果，不能全部无条件入库。旅行未同时修改该入口。阅读候选1914bce4暂缓发布，等待图片补丁与真机全流程。
+
+收据和有界复现探针位于本任务receipts目录：production-clarification-30.jsonl、production-maps-30.txt、production-itinerary-30.jsonl及对应probe.py；export-image-joint-backend.txt、export-image-joint-ios.txt、image-proposal-contract.txt。探针需要原有服务运行环境，未存入任何凭据值；仅供显式验收执行，不是定时任务。私有收藏验收输入尚未收到，分享清单/导出资料路线可用并不等于已验证真实私人账号数据。

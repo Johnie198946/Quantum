@@ -1,0 +1,33 @@
+{"sample": 0, "state": "cold", "elapsed_s": 17.583, "status": "passed", "snapshot_chars": 3677}
+{"sample": 1, "state": "warm", "elapsed_s": 11.117, "status": "passed", "snapshot_chars": 3659}
+{"sample": 2, "state": "cold", "elapsed_s": 27.388, "status": "passed", "snapshot_chars": 4748}
+{"sample": 3, "state": "warm", "elapsed_s": 14.253, "status": "passed", "snapshot_chars": 3487}
+{"sample": 4, "state": "cold", "elapsed_s": 20.95, "status": "passed", "snapshot_chars": 3544}
+{"sample": 5, "state": "warm", "elapsed_s": 5.561, "status": "passed", "snapshot_chars": 3487}
+{"sample": 6, "state": "cold", "elapsed_s": 23.79, "status": "passed", "snapshot_chars": 5472}
+{"sample": 7, "state": "warm", "elapsed_s": 5.715, "status": "passed", "snapshot_chars": 1706}
+{"sample": 8, "state": "cold", "elapsed_s": 17.788, "status": "passed", "snapshot_chars": 4572}
+{"sample": 9, "state": "warm", "elapsed_s": 13.136, "status": "passed", "snapshot_chars": 3487}
+{"sample": 10, "state": "cold", "elapsed_s": 17.487, "status": "passed", "snapshot_chars": 3489}
+{"sample": 11, "state": "warm", "elapsed_s": 5.224, "status": "passed", "snapshot_chars": 3487}
+{"sample": 12, "state": "cold", "elapsed_s": 9.613, "status": "passed", "snapshot_chars": 3505}
+{"sample": 13, "state": "warm", "elapsed_s": 5.873, "status": "passed", "snapshot_chars": 3487}
+{"sample": 14, "state": "cold", "elapsed_s": 19.652, "status": "passed", "snapshot_chars": 4688}
+{"sample": 15, "state": "warm", "elapsed_s": 4.967, "status": "passed", "snapshot_chars": 1274}
+{"sample": 16, "state": "cold", "elapsed_s": 22.955, "status": "passed", "snapshot_chars": 4696}
+{"sample": 17, "state": "warm", "elapsed_s": 26.672, "status": "passed", "snapshot_chars": 3487}
+browser daemon for travel-perf-0f1ddfcd3b7c is alive after command timeout; session marked suspect and will be recycled at next use
+browser 'close' timed out after 10s (task=travel-perf-0f1ddfcd3b7c, socket_dir=/tmp/agent-browser-h_9aeb64dc32)
+{"sample": 18, "state": "cold", "elapsed_s": 27.811, "status": "passed", "snapshot_chars": 4688}
+{"sample": 19, "state": "warm", "elapsed_s": 9.511, "status": "passed", "snapshot_chars": 3487}
+{"sample": 20, "state": "cold", "elapsed_s": 17.183, "status": "passed", "snapshot_chars": 3505}
+{"sample": 21, "state": "warm", "elapsed_s": 9.062, "status": "passed", "snapshot_chars": 3487}
+{"sample": 22, "state": "cold", "elapsed_s": 17.974, "status": "passed", "snapshot_chars": 3820}
+{"sample": 23, "state": "warm", "elapsed_s": 4.99, "status": "passed", "snapshot_chars": 3487}
+{"sample": 24, "state": "cold", "elapsed_s": 6.611, "status": "passed", "snapshot_chars": 1284}
+{"sample": 25, "state": "warm", "elapsed_s": 5.599, "status": "passed", "snapshot_chars": 3487}
+{"sample": 26, "state": "cold", "elapsed_s": 17.707, "status": "passed", "snapshot_chars": 3471}
+{"sample": 27, "state": "warm", "elapsed_s": 5.783, "status": "passed", "snapshot_chars": 3487}
+{"sample": 28, "state": "cold", "elapsed_s": 26.75, "status": "passed", "snapshot_chars": 5480}
+{"sample": 29, "state": "warm", "elapsed_s": 5.284, "status": "passed", "snapshot_chars": 3495}
+{"summary": {"n": 30, "successes": 30, "failures": 0, "p50_s": 13.694, "p95_nearest_rank_s": 27.388}, "cold": {"n": 15, "successes": 15, "failures": 0, "p50_s": 17.974, "p95_nearest_rank_s": 27.811}, "warm": {"n": 15, "successes": 15, "failures": 0, "p50_s": 5.783, "p95_nearest_rank_s": 26.672}, "scope": "actual server native browser; public current transit; cold browser context/warm navigation; no model/UI/dated-route benchmark"}
