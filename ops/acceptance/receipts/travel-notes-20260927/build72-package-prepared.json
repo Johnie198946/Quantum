@@ -1,0 +1,17 @@
+{
+  "action": "prepared_only",
+  "source_sha": "b9e4d128dd5839bae89cff39790fb8240297e23e",
+  "archive": "/opt/ai-lab-shared/offline-source/ai-lab-platform-b9e4d128dd5839bae89cff39790fb8240297e23e.tar.gz",
+  "archive_sha256": "aaa818f7259da22b865d6374b4842194996f83f39bfd8ec6ee3dda6b664cebff",
+  "bytes": 71379877,
+  "dependency_locks_match_current": [
+    "requirements.lock",
+    "requirements-build.lock",
+    "requirements-bridge-worker.lock"
+  ],
+  "server_before": "d228c06d6865bdbca9329f264acfe4cf0e8fc5f7",
+  "server_after": "d228c06d6865bdbca9329f264acfe4cf0e8fc5f7",
+  "deployment_executed": false,
+  "git_ls_remote": "b9e4d128dd5839bae89cff39790fb8240297e23e refs/heads/main",
+  "checked_at": "2026-09-27T21:08:00+08:00"
+}

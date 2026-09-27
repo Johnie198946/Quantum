@@ -356,3 +356,12 @@
 当前运行代码仍d228；新联合候选未推main、未部署、未上传TestFlight。图片任务最终真机流程卡在iPhone镜像的本人Mac登录验证；笔记协调任务全量语义复测等待用户临时额度答复（现12m，拟15m）。这些需用户本人处理，旅行不操作登录验证、不绕额度或账本。20:00出版照常，由出版任务在发行完成后回报可用窗口，未提前暂停cron。私人收藏/社交真实资料也尚未获得输入，不能以合成验收替代。
 
 交付状态保持COMMITTED（旅行代码31f46ac4及后续文档提交；最终共同代码6a由协调任务持有）；远端旅行分支f237、main167，服务器d228。当前可以准备归档和上传前校验，但统一TestFlight正式上传的验收门槛尚未全部满足。性能新增实测和未达目标保留如上，不能宣称全部性能达标。
+
+
+## 统一Build72发布包准备（2026-09-27 21:08 CST）
+
+协调任务已确认图片543候选完整真机流程通过（图库选择由用户本人完成），图片导出扩展名问题已修复；统一Build72 Release归档源e52d8a9f，后续仅manifest记录。共同main最终b9e4d128dd5839bae89cff39790fb8240297e23e，本任务独立git ls-remote再次核对一致。此前镜像解锁/图片真机阻塞已解除；笔记完整语义验收仍待额度答复，正式TestFlight未上传。
+
+按协调要求仅准备、不部署：从GitHub精确SHA下载服务器offline-source，tar根路径校验通过，归档71,379,877字节，SHA256=aaa818f7259da22b865d6374b4842194996f83f39bfd8ec6ee3dda6b664cebff。requirements/requirements-build/requirements-bridge-worker三个lock与当前运行release完全一致，归档project.pbxproj为Build72。前后.deployed-sha均d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；未切镜像、未执行update.sh、未重启、未改cron或配额。
+
+完整回滚wrapper原样复用、bash -n通过。/tmp/travel-build72-release准备发布wrapper和图片server-functional.py；仅新副本fixture绑定b9e4，不改图片任务原件。现有d228回滚点仍有效，新版本的数据库/稿件/环境/镜像备份将在获得正式空闲窗口后、切换前由同一wrapper生成，本阶段未伪造新回滚点。图片HTTP smoke与健康检查尚未针对b9e4执行。记录build72-package-prepared.json；等待出版生产真机验收释放窗口及唯一协调方的发布通知。
