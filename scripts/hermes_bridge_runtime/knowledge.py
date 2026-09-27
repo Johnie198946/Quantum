@@ -1636,6 +1636,15 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         or len(request_id) < 8
     ):
         return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+    full_catalog = capability_id == "knowledge.note.search" and data.get("mode") == "catalog" and data.get("include_content") is True
+    catalog_scope = bool(data.get("include_archived"))
+    if full_catalog:
+        progress = context.get("note_catalog_progress", {}).get(catalog_scope, {})
+        expected = progress.get("next_offset", 0)
+        if data.get("offset", 0) not in (0, expected):
+            return json.dumps({"success": False, "error": "catalog_page_out_of_sequence",
+                               "next_offset": expected,
+                               "detail": "Follow the returned next_offset sequentially; page sizes vary with body length. Do not guess offsets or claim unread notes were reviewed."})
     from backend.api.tenant import current_tenant
     from backend.services.capability_catalog import invoke_capability
 
@@ -1684,6 +1693,17 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             elif capability_id == "knowledge.note.search" and data.get("include_content"):
                 read_notes = [note for note in payload.get("items") or []
                               if isinstance(note, dict) and note.get("content_complete") is True]
+                if full_catalog and isinstance(payload.get("total_count"), int):
+                    pages = context.setdefault("note_catalog_progress", {})
+                    previous = pages.get(catalog_scope, {}) if data.get("offset", 0) else {}
+                    note_ids = set(previous.get("note_ids", ())) | {note["note_id"] for note in read_notes}
+                    pages[catalog_scope] = {"note_ids": note_ids, "next_offset": payload.get("next_offset")}
+                    result["catalog_progress"] = {
+                        "full_bodies_read": len(note_ids), "total_count": payload["total_count"],
+                        "next_offset": payload.get("next_offset"),
+                        "all_bodies_read": payload.get("next_offset") is None and len(note_ids) == payload["total_count"],
+                        "semantic_review_complete": False,
+                    }
             for note in read_notes:
                 if note.get("note_id") and isinstance(note.get("markdown"), str):
                     current[note["note_id"]] = {**note, "id": note["note_id"]}
@@ -1693,6 +1713,9 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     if callable(emit):
         for event in result.get("events") or []:
             emit(event)
+        if progress := result.get("catalog_progress"):
+            emit({"type": "status", "phase": "reasoning",
+                  "detail": f"已读取 {progress['full_bodies_read']}/{progress['total_count']} 篇完整正文；正在核对内容。"})
     if callable(emit) and capability_id == "knowledge.note.search" and result.get("status") == "completed":
         for event in result.get("events") or []:
             report = (event.get("payload") or {}).get("organization")
