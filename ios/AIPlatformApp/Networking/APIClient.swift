@@ -7,9 +7,13 @@
 //
 
 import Foundation
+import UniformTypeIdentifiers
 import Combine
 import CryptoKit
 import Security
+import Vision
+import PDFKit
+import ImageIO
 
 // MARK: - 后端 API DTO（snake_case → camelCase 自动转换）
 
@@ -995,6 +999,7 @@ public struct ClientSessionContextDTO: Codable, Hashable, Sendable {
 
 /// POST /api/chat 请求体（snake_case 序列化对齐后端 ChatRequest）
 public struct ChatRequestDTO: Encodable {
+    public let sourceRefs: [WorkflowSourceReference]
     public let question: String
     public let requestId: String?
     public let sessionId: String?
@@ -1005,7 +1010,8 @@ public struct ChatRequestDTO: Encodable {
     public let clientSessionContext: ClientSessionContextDTO?
     public let clientCapabilities: [String]
 
-    public init(question: String, requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]) {
+    public init(question: String, sourceRefs: [WorkflowSourceReference] = [], requestId: String? = nil, sessionId: String? = nil, quotedContext: String? = nil, agentId: String? = nil, regenerate: Bool = false, contextScope: ChatContextScopeDTO = ChatContextScopeDTO(), clientSessionContext: ClientSessionContextDTO? = nil, clientCapabilities: [String] = ["qcp_v1", "knowledge_action_v1", "answer_blocks_v1"]) {
+        self.sourceRefs = sourceRefs
         self.question = question
         self.requestId = requestId
         self.sessionId = sessionId
@@ -1018,6 +1024,7 @@ public struct ChatRequestDTO: Encodable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case sourceRefs = "source_refs"
         case question
         case requestId = "request_id"
         case sessionId = "session_id"
@@ -1783,6 +1790,9 @@ public struct WorkflowArtifactDTO: Codable, Identifiable, Hashable {
 }
 
 public struct WorkflowArtifactMetadataDTO: Codable, Hashable {
+    public var travelRevision: Int? = nil
+    public var changeReason: String? = nil
+    public var changedAt: String? = nil
     public let renderType: String?
     public let approvalGate: String?
     public let artifactVersion: Int?
@@ -3377,12 +3387,45 @@ public final class APIClient: ObservableObject {
 
     // MARK: - 可执行工作流 V1
 
+    // Keep the route to durable travel drafts reachable after an offline restart.
+    private func workflowSnapshot<T: Codable>(_ type: T.Type, path: String) async throws -> T {
+        let generation = credentialGeneration
+        let owner = InboxFileManager.shared.cacheScope
+        let key = "workflow-entry:" + baseURL.absoluteString + ":" + path
+        do {
+            let value = try await request(type, path: path)
+            guard generation == credentialGeneration, owner == InboxFileManager.shared.cacheScope else { throw CancellationError() }
+            _ = try? InboxFileManager.shared.storePrivateFile(JSONEncoder().encode(value),
+                sourceId: key, revision: 1, filename: "snapshot.json", durable: true)
+            return value
+        } catch {
+            guard generation == credentialGeneration, owner == InboxFileManager.shared.cacheScope else { throw CancellationError() }
+            let unavailable: Bool
+            switch error {
+            case APIError.network, APIError.timeout: unavailable = true
+            case APIError.server(let status, _): unavailable = [502, 503, 504].contains(status)
+            case let value as URLError: unavailable = Self.isTransientNetworkError(value)
+            default: unavailable = false
+            }
+            if !unavailable, case APIError.server(let status, _) = error, [403, 404].contains(status) {
+                _ = try? InboxFileManager.shared.storePrivateFile(Data(), sourceId: key,
+                    revision: 1, filename: "snapshot.json", durable: true)
+            }
+            guard unavailable,
+                  let data = InboxFileManager.shared.readPrivateFile(sourceId: key, revision: 1,
+                      filename: "snapshot.json", durable: true),
+                  let value = try? JSONDecoder().decode(type, from: data) else { throw error }
+            isOfflineMode = true
+            return value
+        }
+    }
+
     public func fetchWorkflows() async throws -> [WorkflowDTO] {
-        try await request([WorkflowDTO].self, path: "workflows")
+        try await workflowSnapshot([WorkflowDTO].self, path: "workflows")
     }
 
     public func fetchWorkflow(id: String) async throws -> WorkflowDTO {
-        try await request(WorkflowDTO.self, path: "workflows/\(encodedPath(id))")
+        try await workflowSnapshot(WorkflowDTO.self, path: "workflows/\(encodedPath(id))")
     }
 
     public func createStructuredReview(
@@ -3540,14 +3583,20 @@ public final class APIClient: ObservableObject {
 
     public func respondToWorkflowClarification(
         workflowId: String,
-        response: String
+        response: String,
+        sourceRefs: [WorkflowSourceReference] = [],
+        expectedRound: Int? = nil
     ) async throws -> WorkflowClarificationSessionDTO {
-        struct Body: Encodable { let response: String }
+        struct Body: Encodable {
+            let response: String
+            let source_refs: [WorkflowSourceReference]
+            let expected_round: Int?
+        }
         return try await request(
             WorkflowClarificationSessionDTO.self,
             path: "workflows/\(encodedPath(workflowId))/clarification/respond",
             method: "POST",
-            body: Body(response: response)
+            body: Body(response: response, source_refs: sourceRefs, expected_round: expectedRound)
         )
     }
 
@@ -3678,7 +3727,7 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchWorkflowExecution(id: String) async throws -> WorkflowExecutionDTO {
-        try await request(
+        try await workflowSnapshot(
             WorkflowExecutionDTO.self,
             path: "workflow-executions/\(encodedPath(id))"
         )
@@ -3723,7 +3772,7 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchWorkflowArtifacts(executionId: String) async throws -> [WorkflowArtifactDTO] {
-        try await request(
+        try await workflowSnapshot(
             [WorkflowArtifactDTO].self,
             path: "workflow-executions/\(encodedPath(executionId))/artifacts"
         )
@@ -3739,16 +3788,78 @@ public final class APIClient: ObservableObject {
         )
     }
 
+    public func uploadDocument(at url: URL) async throws -> DocumentReceiptDTO {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 25 * 1024 * 1024 else {
+            throw APIError.network("附件超过 25 MB")
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= 25 * 1024 * 1024 else { throw APIError.network("附件超过 25 MB") }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        let receipt = try await uploadDocument(data: data, filename: url.lastPathComponent, contentType: mime)
+        guard receipt.status == "ready" else { throw APIError.network(receipt.parseError?.message ?? "附件尚未解析成功，原件已保留") }
+        return receipt
+    }
+
     public func uploadDocument(data: Data, filename: String, contentType: String, fileOptOut: Bool = false) async throws -> DocumentReceiptDTO {
+        let uploadGeneration = credentialGeneration
         let url = baseURL.appendingPathComponent("api/v1/documents")
-        var request = URLRequest(url: url); request.httpMethod = "POST"; request.httpBody = data
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 200; request.httpMethod = "POST"; request.httpBody = data
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        if contentType.hasPrefix("image/") || filename.lowercased().hasSuffix(".pdf") {
+            let extracted = (try? await Task.detached(priority: .userInitiated) { try Self.attachmentOCR(data, isPDF: filename.lowercased().hasSuffix(".pdf")) }.value) ?? ""
+            if !extracted.isEmpty {
+                request.httpBody = try JSONSerialization.data(withJSONObject: ["data": data.base64EncodedString(), "content_type": contentType, "extracted_text": extracted])
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+        }
         request.setValue(filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "document", forHTTPHeaderField: "X-File-Name")
         request.setValue(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), forHTTPHeaderField: "X-Content-Hash")
         if fileOptOut { request.setValue("true", forHTTPHeaderField: "X-File-Opt-Out") }
+        try Task.checkCancellation()
+        guard uploadGeneration == credentialGeneration else { throw CancellationError() }
         applyClientContract(to: &request)
-        let response = try await perform(request, session: session, canRetry: false)
+        let response = try await perform(request, session: chatSession, canRetry: false, credentialGeneration: uploadGeneration)
         return try decoder.decode(DocumentReceiptDTO.self, from: response)
+    }
+
+    // Native OCR keeps image/scanned-PDF text extraction off the model's critical path.
+    nonisolated static func attachmentOCR(_ data: Data, isPDF: Bool) throws -> String {
+        func recognize(_ image: CGImage) throws -> String {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.automaticallyDetectsLanguage = true
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        }
+        if isPDF {
+            guard let pdf = PDFDocument(data: data), !pdf.isLocked else { return "" }
+            var parts: [String] = []
+            for index in 0..<pdf.pageCount {
+                try Task.checkCancellation()
+                if let page = pdf.page(at: index), (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let image = page.thumbnail(of: CGSize(width: 1600, height: 2200), for: .mediaBox).cgImage {
+                    let text = try recognize(image)
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        parts.append("第 \(index + 1) 页\n" + text)
+                    }
+                }
+            }
+            return parts.joined(separator: "\n\n")
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 2200, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else {
+            throw APIError.network("无法读取图片")
+        }
+        let text = try recognize(image)
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+        let classification = VNClassifyImageRequest()
+        try VNImageRequestHandler(cgImage: image).perform([classification])
+        let subjects = (classification.results ?? []).filter { $0.confidence >= 0.25 }.prefix(8)
+            .map { "\($0.identifier) (\(Int($0.confidence * 100))%)" }.joined(separator: ", ")
+        return "[图片视觉参考] 设备端识别候选，不是已核实事实：" + (subjects.isEmpty ? "没有可靠候选" : subjects)
+            + "。原图已保留；具体地点、风格意图或人物关系需向用户确认，不能凭标签编造。"
     }
 
     public func transcribeVoice(data: Data, contentType: String) async throws -> VoiceTranscriptionDTO {
@@ -3849,21 +3960,26 @@ public final class APIClient: ObservableObject {
     public func requestWorkflowRevision(
         executionId: String,
         nodeId: String,
-        comment: String
+        comment: String,
+        artifactId: String? = nil, expectedHash: String? = nil
     ) async throws -> WorkflowExecutionDTO {
         struct Body: Encodable {
             let nodeId: String
             let comment: String
+            let artifactId: String?
+            let expectedHash: String?
             enum CodingKeys: String, CodingKey {
                 case nodeId = "node_id"
                 case comment
+                case artifactId = "artifact_id"
+                case expectedHash = "expected_hash"
             }
         }
         return try await request(
             WorkflowExecutionDTO.self,
             path: "workflow-executions/\(encodedPath(executionId))/request-revision",
             method: "POST",
-            body: Body(nodeId: nodeId, comment: comment)
+            body: Body(nodeId: nodeId, comment: comment, artifactId: artifactId, expectedHash: expectedHash)
         )
     }
 
@@ -4149,6 +4265,7 @@ public final class APIClient: ObservableObject {
     /// Task.cancel 传播中断客户端等待；404 可区分（清 session_id 幂等重发一次），超时单独抛 `.timeout`）。
     public func chat(
         question: String,
+        sourceRefs: [WorkflowSourceReference] = [],
         requestId: String? = nil,
         sessionId: String? = nil,
         quotedContext: String? = nil,
@@ -4166,6 +4283,7 @@ public final class APIClient: ObservableObject {
         request.httpBody = try JSONEncoder().encode(
             ChatRequestDTO(
                 question: question,
+                sourceRefs: sourceRefs,
                 requestId: requestId,
                 sessionId: sessionId,
                 quotedContext: quotedContext,
@@ -4438,6 +4556,7 @@ public final class APIClient: ObservableObject {
     ///   只有明确的用户取消操作才应调用 ``cancelStream``。
     public func chatStream(
         question: String,
+        sourceRefs: [WorkflowSourceReference] = [],
         requestId: String? = nil,
         sessionId: String? = nil,
         quotedContext: String? = nil,
@@ -4457,6 +4576,7 @@ public final class APIClient: ObservableObject {
             request.httpBody = try? JSONEncoder().encode(
                 ChatRequestDTO(
                     question: question,
+                sourceRefs: sourceRefs,
                     requestId: requestId,
                     sessionId: sessionId,
                     quotedContext: quotedContext,
@@ -4564,7 +4684,8 @@ public final class APIClient: ObservableObject {
         sessionId: String?,
         response: String,
         clarifyId: String? = nil,
-        agentId: String? = nil
+        agentId: String? = nil,
+        sourceRefs: [WorkflowSourceReference] = []
     ) async throws -> ClarifySubmitResult {
         guard let sessionId, !sessionId.isEmpty else {
             return ClarifySubmitResult(ok: false, state: "no_pending", clarifyId: clarifyId)
@@ -4579,6 +4700,7 @@ public final class APIClient: ObservableObject {
             "session_id": sessionId,
             "response": response,
         ]
+        body["source_refs"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(sourceRefs))
         if let clarifyId, !clarifyId.isEmpty {
             body["clarify_id"] = clarifyId
         }
@@ -4917,5 +5039,55 @@ private final class PublicationMediaRedirectGuard: NSObject, URLSessionTaskDeleg
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(nil)
+    }
+}
+
+
+public struct WorkflowSourceReference: Encodable {
+    let source_id: String
+    let source_revision: Int
+    let content_hash: String
+    init(sourceId: String, revision: Int, hash: String) {
+        source_id = sourceId; source_revision = revision; content_hash = hash
+    }
+    init(_ receipt: DocumentReceiptDTO) {
+        source_id = receipt.sourceId
+        source_revision = receipt.sourceRevision
+        content_hash = receipt.contentHash
+    }
+}
+
+public struct TravelRevisionReceipt: Decodable {
+    let id: String
+    let contentHash: String
+}
+
+extension APIClient {
+    public func reviseTravelPlan(executionId: String, artifactId: String, expectedHash: String,
+                                  content: String, reason: String, requestId: String, confirmedBookings: [String: String] = [:]) async throws -> TravelRevisionReceipt {
+        let proposed = try JSONSerialization.jsonObject(with: Data(content.utf8))
+        let body = try JSONSerialization.data(withJSONObject: ["artifact_id": artifactId, "expected_hash": expectedHash,
+            "request_id": requestId, "reason": reason, "proposed": proposed, "confirmed_bookings": confirmedBookings])
+        return try await submitTravelRevision(executionId: executionId, body: body)
+    }
+
+    public func recordTravelProgress(executionId: String, artifactId: String, expectedHash: String,
+                                     actionId: String, progress: String, requestId: String, happenedAt: String? = nil) async throws -> TravelRevisionReceipt {
+        struct Body: Encodable {
+            let artifact_id: String; let expected_hash: String; let request_id: String
+            let action_id: String; let progress: String; let reason: String; let happened_at: String?
+        }
+        let body = try JSONEncoder().encode(Body(artifact_id: artifactId, expected_hash: expectedHash,
+            request_id: requestId, action_id: actionId, progress: progress, reason: "用户更新实际行程进度", happened_at: happenedAt))
+        return try await submitTravelRevision(executionId: executionId, body: body)
+    }
+
+    private func submitTravelRevision(executionId: String, body: Data) async throws -> TravelRevisionReceipt {
+        let url = baseURL.appendingPathComponent("api/v1/workflow-executions/\(encodedPath(executionId))/travel-revisions")
+        var request = URLRequest(url: url); request.httpMethod = "POST"; request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientContract(to: &request)
+        // The server persists request_id + payload digest: retry the exact bytes once after transport loss.
+        return try decoder.decode(TravelRevisionReceipt.self, from: await perform(request, session: session, canRetry: true))
     }
 }

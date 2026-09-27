@@ -1,0 +1,11 @@
+	 Executed 186 tests, with 0 failures (0 unexpected) in 18.143 (18.198) seconds
+	 Executed 186 tests, with 0 failures (0 unexpected) in 18.143 (18.198) seconds
+	 Executed 186 tests, with 0 failures (0 unexpected) in 18.143 (18.199) seconds
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testOfflineEditSurvivesTerminationAndSynchronizes]' started.
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testOfflineEditSurvivesTerminationAndSynchronizes]' passed (61.463 seconds).
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testTenTravelEditsSurviveRelaunch]' started.
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testTenTravelEditsSurviveRelaunch]' passed (210.926 seconds).
+	 Executed 2 tests, with 0 failures (0 unexpected) in 272.389 (272.391) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 272.389 (272.393) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 272.389 (272.394) seconds
+** TEST SUCCEEDED **

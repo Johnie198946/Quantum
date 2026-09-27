@@ -369,6 +369,20 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         if receipt["content_hash"] != source.get("content_hash") or receipt["source_revision"] != source.get("source_revision"):
             raise RuntimeError("source document revision changed after approval")
         payload["source_document"] = {**source, "text": text}
+    references = (workflow.requirements_snapshot or {}).get("source_documents", []) if workflow else []
+    if references:
+        from backend.services.document_sources import document_text
+        documents = []
+        total = len(str((payload.get("source_document") or {}).get("text") or ""))
+        for ref in references:
+            text, receipt = document_text(execution.tenant_key, str(workflow.created_by), ref["source_id"])
+            if receipt["content_hash"] != ref["content_hash"] or receipt["source_revision"] != ref["source_revision"]:
+                raise RuntimeError("attached source changed after requirement confirmation")
+            documents.append({**ref, "text": text})
+            total += len(text)
+        if total > 80000:
+            raise RuntimeError("附件全文超过当前执行上下文上限，请缩小引用范围")
+        payload["source_documents"] = documents
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs",
@@ -564,6 +578,7 @@ def artifact_storage_contract(
     contracts = {
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "travel_plan_v2": ("json", "application/json"),
         "chart": ("json", "application/json"),
         "topology": ("json", "application/json"),
         "flowchart": ("json", "application/json"),
@@ -593,6 +608,9 @@ def artifact_storage_contract(
         "mime_type": mime_type,
         "approval_gate": artifact.get("approval_gate"),
         "artifact_version": int(artifact.get("artifact_version") or getattr(node, "attempt", 1) or 1),
+        "travel_revision": artifact.get("travel_revision", 0),
+        "parent_artifact_id": artifact.get("parent_artifact_id"),
+        "change_reason": artifact.get("change_reason"),
         "approved_design": artifact.get("approved_design"),
         "approved_outline": artifact.get("approved_outline"),
     }
@@ -858,12 +876,13 @@ async def retry_remote(
     execution_id: str,
     from_node_id: str | None = None,
     revision_comment: str | None = None,
+    travel_baseline: dict | None = None,
 ) -> None:
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs/{execution_id}/retry",
             headers=bridge_headers(),
-            json={"from_node_id": from_node_id, "revision_comment": revision_comment},
+            json={"from_node_id": from_node_id, "revision_comment": revision_comment, "travel_baseline": travel_baseline},
         )
     response.raise_for_status()
 

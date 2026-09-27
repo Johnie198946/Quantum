@@ -1,0 +1,1 @@
+{"status": "passed", "provider": "web-reference", "kind": "original", "bytes": 3646, "dimensions": [211, 71], "sha256": "574ffbbfb55b2bb401c40e92dfd613924392a038cbfcc1133c12649bff0fdce2", "elapsed_seconds": 0.66, "scope": "real public download + guarded normalization; no logged-in browser"}

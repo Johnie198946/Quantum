@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 import yaml
@@ -15,6 +16,40 @@ import yaml
 PLUGIN_NAME = "ai-lab-capabilities"
 EXTRACT_BACKEND = "ai-lab-native"
 SEARCH_BACKEND = "ddgs"
+
+
+def prepare_browser(hermes_home: Path) -> None:
+    """Provision Hermes' existing headless backend before serving requests."""
+    if hermes_home.stat().st_uid != os.geteuid():
+        raise RuntimeError("run_browser_setup_as_hermes_home_owner")
+    # Match the deployed Hermes 0.21.1 browser contract, without floating npx
+    # downloads or npm lifecycle scripts on a user's first travel request.
+    env = {key: os.environ[key] for key in
+           ("HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "LANG") if key in os.environ}
+    env.update(PATH=os.pathsep.join([str(hermes_home / "node/bin"), os.defpath]),
+               XDG_CACHE_HOME=str(hermes_home / "cache"),
+               npm_config_cache=str(hermes_home / "cache/npm"))
+    runtime = hermes_home / "browser-runtime"
+    subprocess.run(["npm", "install", "--prefix", str(runtime), "--ignore-scripts",
+                    "--no-audit", "--no-fund", "agent-browser@0.26.0"],
+                   env=env, check=True, timeout=240)
+    binary = str(runtime / "node_modules/.bin/agent-browser")
+    subprocess.run([binary, "install"], env=env, check=True, timeout=480)
+    subprocess.run([binary, "--version"], env=env, check=True, timeout=15)
+    # agent-browser 0.26 uses Chrome for Testing, not Playwright's cache.
+    # Hermes 0.21.1 needs an explicit executable to recognize that layout.
+    browsers = Path(env.get("HOME") or Path.home()) / ".agent-browser/browsers"
+    candidates = sorted(browsers.glob("chrome-*/chrome"),
+                        key=lambda p: tuple(int(v) for v in p.parent.name.removeprefix("chrome-").split(".")))
+    if not candidates:
+        raise RuntimeError("server_chrome_executable_missing")
+    subprocess.run([str(candidates[-1]), "--version"], env=env, check=True, timeout=15)
+    temporary = runtime / f".chrome-{os.getpid()}"
+    try:
+        temporary.symlink_to(candidates[-1])
+        os.replace(temporary, runtime / "chrome")
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _document(path: Path) -> dict:
@@ -125,7 +160,11 @@ def main() -> int:
     parser.add_argument("--hermes-home", type=Path, required=True)
     parser.add_argument("--plugin-source", type=Path, required=True)
     parser.add_argument("--backup-root", type=Path, required=True)
+    parser.add_argument("--prepare-browser", action="store_true",
+                        help="Install the server headless browser; does not restart services")
     args = parser.parse_args()
+    if args.prepare_browser:
+        prepare_browser(args.hermes_home.expanduser().resolve())
     result = configure(
         args.hermes_home.expanduser().resolve(),
         args.plugin_source.expanduser().resolve(),

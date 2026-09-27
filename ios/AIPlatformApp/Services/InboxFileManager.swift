@@ -28,7 +28,7 @@ public final class InboxFileManager {
     private let cleanupThrottleInterval: TimeInterval = 24 * 60 * 60
 
     private var lastCleanup: Date?
-    private var cacheScope = "inactive"
+    private(set) var cacheScope = "inactive"
 
     private init() {}
 
@@ -39,16 +39,26 @@ public final class InboxFileManager {
 
     public func clearPrivateCache() {
         try? FileManager.default.removeItem(at: privateCacheDirectory)
+        try? FileManager.default.removeItem(at: privateDirectory(durable: true))
         cacheScope = "inactive"
     }
 
-    public func storePrivateFile(_ data: Data, sourceId: String, revision: Int, filename: String) throws -> URL {
+    public func storePrivateFile(_ data: Data, sourceId: String, revision: Int, filename: String, durable: Bool = false) throws -> URL {
         let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
         let safeExt = ["pdf", "docx", "pptx"].contains(ext) ? ext : "bin"
-        let url = privateCacheDirectory.appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
-        try FileManager.default.createDirectory(at: privateCacheDirectory, withIntermediateDirectories: true)
+        let url = privateDirectory(durable: durable).appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
+        guard cacheScope != "inactive" else { throw CocoaError(.fileWriteNoPermission) }
+        try FileManager.default.createDirectory(at: privateDirectory(durable: durable), withIntermediateDirectories: true)
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         return url
+    }
+
+    public func readPrivateFile(sourceId: String, revision: Int, filename: String, durable: Bool = false) -> Data? {
+        guard cacheScope != "inactive" else { return nil }
+        let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
+        let safeExt = ["pdf", "docx", "pptx"].contains(ext) ? ext : "bin"
+        let url = privateDirectory(durable: durable).appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
+        return try? Data(contentsOf: url)
     }
 
     @MainActor public func thumbnailData(at url: URL) async -> Data? {
@@ -63,8 +73,10 @@ public final class InboxFileManager {
             .uiImage.jpegData(compressionQuality: 0.72)
     }
 
-    private var privateCacheDirectory: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    private var privateCacheDirectory: URL { privateDirectory(durable: false) }
+
+    private func privateDirectory(durable: Bool) -> URL {
+        FileManager.default.urls(for: durable ? .applicationSupportDirectory : .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PrivateDocuments", isDirectory: true)
             .appendingPathComponent(cacheScope, isDirectory: true)
     }

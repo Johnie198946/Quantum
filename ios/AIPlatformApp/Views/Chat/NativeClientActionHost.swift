@@ -328,7 +328,7 @@ private struct NativeFileUploadAction: View {
                 .onAppear { presented = true }
                 .fileImporter(
                     isPresented: $presented,
-                    allowedContentTypes: [.pdf, UTType(filenameExtension: "docx") ?? .data],
+                    allowedContentTypes: [.pdf, .image, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx") ?? .data, UTType(filenameExtension: "pptx") ?? .data],
                     allowsMultipleSelection: false
                 ) { result in
                     guard case .success(let urls) = result, let url = urls.first else {
@@ -342,17 +342,8 @@ private struct NativeFileUploadAction: View {
                     }
                     uploading = true
                     Task {
-                        let accessed = url.startAccessingSecurityScopedResource()
-                        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                         do {
-                            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                            let ext = url.pathExtension.lowercased()
-                            let mime = ext == "pdf"
-                                ? "application/pdf"
-                                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                            let receipt = try await APIClient.shared.uploadDocument(
-                                data: data, filename: url.lastPathComponent, contentType: mime
-                            )
+                            let receipt = try await APIClient.shared.uploadDocument(at: url)
                             onComplete("SUCCEEDED", [
                                 "source_id": receipt.sourceId,
                                 "content_hash": receipt.contentHash,

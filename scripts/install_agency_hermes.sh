@@ -108,10 +108,13 @@ echo "    agency-agents-router: $HERMES_HOME/plugins/agency-agents-router (exact
 echo "    ai-lab-capabilities:  $plugin_dest"
 
 echo "==> Configure safe AI Lab web extraction"
+browser_args=()
+[[ "$(uname -s)" == "Linux" ]] && browser_args+=(--prepare-browser)
 "$HERMES_PYTHON" scripts/configure_hermes_web_extract.py \
   --hermes-home "$HERMES_HOME" \
   --plugin-source agency/hermes-plugins/ai-lab-capabilities \
-  --backup-root "$HERMES_HOME/backups"
+  --backup-root "$HERMES_HOME/backups" \
+  "${browser_args[@]}"
 "$HERMES_PYTHON" -m pip install --disable-pip-version-check --no-input \
   --target "$plugin_dest/_html_dependencies" \
   -r "$plugin_dest/requirements-html.txt"

@@ -182,21 +182,12 @@ def test_task_agent_manifest_is_projected_to_strict_bridge_schema():
     }
 
 
-def test_document_rejects_legacy_and_oversize(tmp_path, monkeypatch):
+def test_document_rejects_oversize(tmp_path, monkeypatch):
     monkeypatch.setattr(
         document_sources,
         "note_directory",
         lambda tenant, user: tmp_path / tenant / user,
     )
-    with pytest.raises(DocumentSourceError) as legacy:
-        document_sources.save_document_source(
-            tenant_key="t",
-            user_id="u",
-            filename="old.doc",
-            content_type="application/msword",
-            data=b"x",
-        )
-    assert legacy.value.code == "legacy_doc_unsupported"
     with pytest.raises(DocumentSourceError) as oversized:
         document_sources.save_document_source(
             tenant_key="t",
@@ -1102,3 +1093,33 @@ def test_presentation_workflow_uses_presentation_questions_and_reads_source_in_a
     outline_prompt = bridge._workflow_node_prompt(run, plan["nodes"][1])
     assert "只应进入分析节点的私有原文" in analysis_prompt
     assert "只应进入分析节点的私有原文" not in outline_prompt
+
+
+def test_image_ocr_upload_reuses_private_source_and_compiler(tmp_path, monkeypatch):
+    import base64
+    from backend.api import documents as api
+    monkeypatch.setattr(document_sources, 'note_directory', lambda tenant, user: tmp_path / tenant / user)
+    captured = []
+    async def queued(candidate, *, source_content):
+        captured.append((candidate, source_content))
+        return {'schedule_status': 'scheduled', 'event_id': 'ocr-event', 'run_id': 'ocr-run'}
+    monkeypatch.setattr(api, 'enqueue_and_schedule', queued)
+    app = FastAPI(); app.include_router(documents_router)
+    identity = {'tenant_key': 'ocr-tenant', 'user_id': 'alice'}
+    app.dependency_overrides[require_auth] = lambda: identity
+    data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jSZkAAAAASUVORK5CYII=')
+    headers = {'X-File-Name': 'ticket.png', 'X-Content-Hash': hashlib.sha256(data).hexdigest()}
+    response = _request(app, 'POST', '/api/v1/documents', headers=headers,
+                        json={'data': base64.b64encode(data).decode(), 'content_type': 'image/png', 'extracted_text': '车次 123，出发 10:30'})
+    assert response.status_code == 201, response.text
+    receipt = response.json()
+    assert receipt['status'] == 'ready' and receipt['contribution_status'] == 'queued'
+    assert receipt['extraction_method'] == 'client_ocr'
+    assert '10:30' in captured[0][1]
+    original = _request(app, 'GET', f"/api/v1/documents/{receipt['source_id']}/download")
+    assert original.content == data
+    identity['user_id'] = 'bob'
+    assert _request(app, 'GET', f"/api/v1/documents/{receipt['source_id']}").status_code == 404
+    response = _request(app, 'POST', '/api/v1/documents', headers=headers,
+                        json={'data': 'not-base64', 'content_type': 'image/png', 'extracted_text': 'x'})
+    assert response.status_code == 422

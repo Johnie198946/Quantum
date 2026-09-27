@@ -1,0 +1,4 @@
+s............................................                            [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_document_presentation.py:521: PPTX 预览渲染失败（exit -6）：
+44 passed, 1 skipped, 6 warnings in 11.28s

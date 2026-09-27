@@ -1,0 +1,12 @@
+{
+  "validate_70_actions": {
+    "p50_ms": 0.246,
+    "p95_ms": 0.263,
+    "samples": 300
+  },
+  "revise_70_actions": {
+    "p50_ms": 0.605,
+    "p95_ms": 0.705,
+    "samples": 300
+  }
+}

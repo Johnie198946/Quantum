@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import Combine
 
 @MainActor
@@ -1299,7 +1300,8 @@ public final class TenantSessionCoordinator: ObservableObject {
         let req = InFlightRequest(
             id: UUID().uuidString, sessionId: sid, text: text, quote: quote,
             regenerate: regenerate, agentId: appState?.selectedAgentId,
-            contextScope: contextScope, clientSessionContext: runtimeClientContext
+            contextScope: contextScope, clientSessionContext: runtimeClientContext,
+            sourceRefs: attachmentSources(sessionId: sid)
         )
         inflight = req
         streamOutputMessageIds[req.id] = req.id
@@ -1741,6 +1743,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
         let stream = APIClient.shared.chatStream(
             question: req.text,
+            sourceRefs: req.sourceRefs,
             requestId: req.id,
             sessionId: req.sessionId,
             quotedContext: req.quote?.text,   // 引用历史消息上下文（若有），对齐后端 quoted_context 注入
@@ -2395,6 +2398,14 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     // MARK: - Clarify 选项卡会话推进（原 SSE 解锁续跑）
 
+    private func attachmentSources(sessionId: String) -> [WorkflowSourceReference] {
+        return Array(messages.filter { $0.sessionId == sessionId }.flatMap(\.blocks).compactMap { block -> WorkflowSourceReference? in
+            guard case .attachment(let item) = block, [.ready, .compiling].contains(item.state), let id = item.sourceId,
+                  let revision = item.sourceRevision, let hash = item.contentHash else { return nil }
+            return WorkflowSourceReference(sourceId: id, revision: revision, hash: hash)
+        }.suffix(10))
+    }
+
     public func sendClarifySelection(messageId: String, selection: String) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
         guard let clarify = messages[idx].clarifyBlock, !clarify.isSubmitted else { return }
@@ -2402,6 +2413,8 @@ public final class TenantSessionCoordinator: ObservableObject {
         let sid = clarify.sessionId ?? sessionManager.activeSessionID()
         let clarifyId = clarify.clarifyId
         let agentId = clarify.agentId ?? appState?.selectedAgentId
+
+        let sources = attachmentSources(sessionId: sid)
 
         // 本地预分类卡没有正在等待解锁的 Agent，按普通新问题处理。
         if clarify.source != "bridge" {
@@ -2430,7 +2443,8 @@ public final class TenantSessionCoordinator: ObservableObject {
                     sessionId: sid,
                     response: selection,
                     clarifyId: clarifyId,
-                    agentId: agentId
+                    agentId: agentId,
+                    sourceRefs: Array(sources)
                 )
                 guard !Task.isCancelled else { return }
                 print("[Clarify] submit-result clarify=\(clarifyId ?? "legacy") state=\(result.state)")
@@ -3861,17 +3875,16 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func attachPhoto(_ data: Data) {
-        let block = ImageBlock(assetName: "imported_photo", imageData: data, caption: "已导入照片（2048px 降采样）")
-        let msg = ChatMessage(
-            role: .user,
-            content: "📸 已从照片图库导入一张图片（客户端 2048px 等比降采样 · JPEG 0.85）",
-            blocks: [.image(block)]
-        )
-        messages.append(msg)
-        dispatchAssistantReply(to: "照片导入")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("photo-\(UUID().uuidString).jpg")
+        do {
+            try data.write(to: url, options: .atomic)
+            attachDocument(url)
+        } catch { showToast(error.localizedDescription) }
     }
 
     public func attachDocument(_ url: URL) {
+        let taskEpoch = tenantEpoch
+        let attachmentSession = sessionManager.activeSessionID()
         let name = url.lastPathComponent
         let metadataAccess = url.startAccessingSecurityScopedResource()
         let sizeBytes = InboxFileManager.shared.fileSizeBytes(at: url) ?? 0
@@ -3879,7 +3892,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let sizeText = ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
         let attachment = AttachmentBlock(fileName: name, fileType: attachmentFileType(for: url), fileSize: sizeText, state: .uploading, statusMessage: "正在上传并解析文档")
         let msg = ChatMessage(
-            role: .user,
+            sessionId: attachmentSession, role: .user,
             content: "📄 正在上传文档：\(name)（\(sizeText)）",
             blocks: [.attachment(attachment)]
         )
@@ -3891,13 +3904,15 @@ public final class TenantSessionCoordinator: ObservableObject {
             do {
                 guard sizeBytes <= InboxFileManager.maxFileSizeBytes else { throw APIError.network("文档超过 25 MB 上限") }
                 let ext = url.pathExtension.lowercased()
-                guard ["pdf", "docx"].contains(ext) else { throw APIError.network("仅支持 PDF 或 DOCX；旧版 .doc 暂不支持") }
+                guard ["pdf", "doc", "ppt", "docx", "pptx", "jpg", "jpeg", "png", "heic", "webp"].contains(ext) else { throw APIError.network("请选择 PDF、Word、PowerPoint 或图片") }
                 if let preview = await InboxFileManager.shared.thumbnailData(at: url) {
                     updateAttachmentPreview(messageId: msg.id, attachmentId: attachment.id, data: preview)
                 }
                 let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                let mime = ext == "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                let mime = UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
+                guard tenantEpoch == taskEpoch, sessionManager.activeSessionID() == attachmentSession else { return }
                 let receipt = try await APIClient.shared.uploadDocument(data: data, filename: name, contentType: mime)
+                guard tenantEpoch == taskEpoch, sessionManager.activeSessionID() == attachmentSession else { return }
                 updateAttachment(messageId: msg.id, attachmentId: attachment.id, receipt: receipt)
                 guard receipt.status == "ready" else { return }
                 await KnowledgeNoteStore.shared.restoreFromCloud()
@@ -3940,8 +3955,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     private func monitorDocumentCompilation(messageId: String, attachmentId: String, sourceId: String) async {
+        let taskEpoch = tenantEpoch
         for _ in 0..<90 {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, tenantEpoch == taskEpoch else { return }
             try? await Task.sleep(for: .seconds(2))
             guard let receipt = try? await APIClient.shared.fetchDocument(sourceId: sourceId) else { continue }
             updateAttachment(messageId: messageId, attachmentId: attachmentId, receipt: receipt)

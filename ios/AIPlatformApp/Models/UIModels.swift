@@ -290,7 +290,7 @@ public struct ClarifyBlock: Identifiable, Sendable, Hashable {
         self.expiresInSeconds = expiresInSeconds
         self.submissionState = submissionState
         self.question = question
-        self.choices = choices.map { ClarifyOption(label: $0) }
+        self.choices = choices.enumerated().map { ClarifyOption(id: "\(id):\($0.offset):\($0.element)", label: $0.element) }
         self.multiSelect = multiSelect
         self.submitLabel = submitLabel
         self.source = source
@@ -3159,5 +3159,89 @@ struct KnowledgeMergePreview: Codable, Sendable, Equatable {
 enum CleanupFilterPolicy {
     static func domains(taskAvailable: Bool, taskCount: Int) -> [Int] {
         taskAvailable && taskCount > 0 ? [0, 1, 2, 3] : [0, 1, 2]
+    }
+}
+
+
+extension ClarifyBlock {
+    /// Keep the displayed choice order and never discard a user's own answer.
+    func answer(selectionIDs: Set<String>, customText: String) -> String {
+        let choicesText = choices.filter { selectionIDs.contains($0.id) }.map(\.label).joined(separator: "、")
+        let detail = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [choicesText, detail].filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+}
+
+
+/// One user-authored travel change, persisted before sending so lost responses are replayable.
+struct TravelPendingChange: Codable, Identifiable {
+    var id = UUID().uuidString
+    let actionId: String
+    var baseAction: String
+    let changedAction: String
+    let previewContent: String
+    let reason: String
+    let progress: String?
+    let happenedAt: String?
+    let confirmedBookings: [String: String]
+    var preparedArtifactId: String?
+    var preparedHash: String?
+    var preparedContent: String?
+
+    static func action(in content: String, id: String) throws -> [String: Any] {
+        let document = try JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any]
+        guard let action = (document?["actions"] as? [[String: Any]])?.first(where: { $0["id"] as? String == id }) else {
+            throw APIError.decoding("行程事项不存在")
+        }
+        return action
+    }
+
+    static func serialized(_ object: Any) throws -> String {
+        String(decoding: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self)
+    }
+
+    static func fingerprint(_ action: [String: Any]) throws -> String {
+        var value = action.filter { !($0.value is NSNull) }
+        for key in ["details", "booking_reference"] where value[key] as? String == "" { value.removeValue(forKey: key) }
+        if value["locked"] as? Bool == false { value.removeValue(forKey: "locked") }
+        if (value["source_ids"] as? [String])?.isEmpty == true { value.removeValue(forKey: "source_ids") }
+        if value["status"] as? String == "planned" { value.removeValue(forKey: "status") }
+        if value["timezone"] as? String == "UTC" { value.removeValue(forKey: "timezone") }
+        let formatter = ISO8601DateFormatter()
+        for key in ["start", "end", "actual_start", "actual_end"] {
+            guard let text = value[key] as? String else { continue }
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            var date = formatter.date(from: text)
+            if date == nil {
+                formatter.formatOptions = [.withInternetDateTime]
+                date = formatter.date(from: text)
+            }
+            if let date { value[key] = date.timeIntervalSince1970 }
+        }
+        return try serialized(value)
+    }
+
+    // Only after the user reviews the cloud version; server history guards still apply.
+    func confirmedAgainst(_ cloud: String) throws -> Self {
+        var change = self
+        change.id = UUID().uuidString
+        change.baseAction = try Self.fingerprint(Self.action(in: cloud, id: actionId))
+        change.preparedArtifactId = nil; change.preparedHash = nil; change.preparedContent = nil
+        return change
+    }
+
+    func applying(to cloud: String) throws -> String {
+        let current = try Self.action(in: cloud, id: actionId)
+        guard try Self.fingerprint(current) == baseAction else {
+            throw APIError.server(409, "云端已修改同一事项，本地草稿已保留，请核对两个版本")
+        }
+        var document = try JSONSerialization.jsonObject(with: Data(cloud.utf8)) as? [String: Any] ?? [:]
+        var actions = document["actions"] as? [[String: Any]] ?? []
+        guard let index = actions.firstIndex(where: { $0["id"] as? String == actionId }) else {
+            throw APIError.decoding("行程事项不存在")
+        }
+        actions[index] = try JSONSerialization.jsonObject(with: Data(changedAction.utf8)) as? [String: Any] ?? [:]
+        document["actions"] = actions
+        return try Self.serialized(document)
     }
 }

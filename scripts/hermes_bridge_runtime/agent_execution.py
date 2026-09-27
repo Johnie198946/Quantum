@@ -939,7 +939,7 @@ def _run_agent_sync(
             ]
         route_marker = _agent_config._triage_route_marker(applied_triage)
         persistent_goal = route_marker + original_goal
-        execution_goal = route_marker + goal
+        execution_goal = route_marker + goal + _memory._sandbox_memory_context(sandbox)
         if qcp_enabled and has_signed_client_context:
             exercise_id = client_session_context.get("learning_exercise_id")
             if exercise_id:

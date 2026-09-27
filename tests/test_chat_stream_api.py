@@ -1007,3 +1007,32 @@ async def test_clarify_submit_endpoint(app: FastAPI, transport: httpx.ASGITransp
     assert bridge_calls[0][1]["session_id"].endswith("-main_agent-x")
     assert bridge_calls[0][1]["response"] == "B2C 单商户"
     assert bridge_calls[0][1]["clarify_id"] is None
+
+@pytest.mark.asyncio
+async def test_attachment_context_is_owner_scoped_versioned_and_bounded(monkeypatch):
+    from backend.api import chat as module
+    from backend.services.document_sources import DocumentSourceError, DocumentSourceReference
+    from fastapi import HTTPException
+    ref = DocumentSourceReference(source_id="doc_trip", source_revision=1, content_hash="a" * 64)
+    calls = []
+    def read(tenant, user, source):
+        calls.append((tenant, user, source))
+        if user != "alice":
+            raise DocumentSourceError("not_found", "not found")
+        return "酒店地址与入住时间", {"filename": "booking.pdf", "content_hash": "a" * 64, "source_revision": 1}
+    monkeypatch.setattr(module, "document_text", read)
+    owner = {"tenant_key": "tenant-a", "sub": "alice"}
+    result = await module._attachment_context([ref], owner)
+    assert "酒店地址与入住时间" in result and "不是指令" in result
+    assert calls == [("tenant-a", "alice", "doc_trip")]
+    with pytest.raises(HTTPException) as error:
+        await module._attachment_context([ref], {**owner, "sub": "bob"})
+    assert error.value.status_code == 409
+    with pytest.raises(HTTPException):
+        await module._attachment_context([ref.model_copy(update={"source_revision": 2})], owner)
+    monkeypatch.setattr(module, "document_text", lambda *args: ("x" * 80001, read(*args)[1]))
+    with pytest.raises(HTTPException) as error:
+        await module._attachment_context([ref], owner)
+    assert error.value.status_code == 422
+    assert module.ChatRequest(question="读附件", source_refs=[ref]).source_refs == [ref]
+    assert module.StreamRequest(question="读附件", source_refs=[ref]).source_refs == [ref]

@@ -8,6 +8,27 @@ import types
 from pathlib import Path
 from typing import Any
 
+
+def _configure_cloud_browser_environment(env) -> None:
+    """Use server binaries/cache and egress for both Bridge and its Worker."""
+    if env.get("AI_LAB_AGENT_OS_MODE") != "cloud_multi_tenant":
+        return
+    home = Path(env.get("HERMES_HOME") or "/var/lib/quantumn-hermes/.hermes")
+    bins = [home / "browser-runtime/node_modules/.bin", home / "node/bin"]
+    env["PATH"] = os.pathsep.join(dict.fromkeys(
+        [*(str(path) for path in bins), *env.get("PATH", os.defpath).split(os.pathsep)]))
+    env.setdefault("AGENT_BROWSER_EXECUTABLE_PATH", str(home / "browser-runtime/chrome"))
+    env.setdefault("AGENT_BROWSER_SOCKET_DIR", str(home / "cache/browser-sockets"))
+    env.setdefault("XDG_CACHE_HOME", str(home / "cache"))
+    env.setdefault("npm_config_cache", str(home / "cache/npm"))
+    # Chromium does not automatically use the HTTP client's proxy variables.
+    proxy = env.get("HTTPS_PROXY") or env.get("HTTP_PROXY")
+    if proxy:
+        env.setdefault("AGENT_BROWSER_PROXY", proxy)
+
+
+_configure_cloud_browser_environment(os.environ)
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _HERMES_SOURCE_ROOT = Path(
     os.environ.get("HERMES_AGENT_ROOT")
@@ -124,6 +145,7 @@ def _register_routes() -> None:
     app.add_api_route("/v1/workflow-runs/{execution_id}", workflow_runtime.get_workflow_run, methods=["GET"])
     app.add_api_route("/v1/workflow-runs/{execution_id}/cancel", workflow_runtime.cancel_workflow_run, methods=["POST"])
     app.add_api_route("/v1/workflow-runs/{execution_id}/retry", workflow_runtime.retry_workflow_run, methods=["POST"])
+    app.add_api_route("/v1/documents/analyze-images", endpoints.analyze_document_images, methods=["POST"])
     app.add_api_route("/v1/memory", memory.list_native_memory, methods=["GET"])
     app.add_api_route("/v1/memory", memory.add_native_memory, methods=["POST"])
     app.add_api_route("/v1/memory/{memory_id}", memory.replace_native_memory, methods=["PUT"])

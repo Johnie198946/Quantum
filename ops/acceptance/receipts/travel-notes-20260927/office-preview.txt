@@ -1,0 +1,11 @@
+.                                                                        [100%]
+=============================== warnings summary ===============================
+tests/test_document_presentation.py::test_editable_pptx_reopens_and_pdf_preview_uses_same_file
+tests/test_document_presentation.py::test_editable_pptx_reopens_and_pdf_preview_uses_same_file
+tests/test_document_presentation.py::test_editable_pptx_reopens_and_pdf_preview_uses_same_file
+tests/test_document_presentation.py::test_editable_pptx_reopens_and_pdf_preview_uses_same_file
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 4 warnings in 10.08s

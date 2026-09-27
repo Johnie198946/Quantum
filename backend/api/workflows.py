@@ -52,6 +52,7 @@ from backend.services.workflow_artifacts import (
     read_verified_artifact,
     read_verified_artifact_bytes,
     run_root,
+    store_artifact,
     vault_root,
 )
 from backend.services.workflow_executor import (
@@ -109,6 +110,7 @@ from backend.services.knowledge_contribution import (
 )
 from backend.services.knowledge_candidate_ingest import enqueue_and_schedule
 from backend.services.document_sources import (
+    DocumentSourceReference as ClarificationSourceRef,
     DocumentSourceError, MAX_PRESENTATION_SOURCE_CHARACTERS, document_text,
     read_document_receipt,
 )
@@ -164,7 +166,7 @@ class WorkflowCreate(BaseModel):
     showroom_session_id: str | None = Field(None, min_length=1, max_length=120)
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
-    output_kind: Literal["general", "presentation", "document", "html"] = "general"
+    output_kind: Literal["general", "presentation", "document", "html", "travel"] = "general"
     source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
     presentation_review_gates: list[Literal["outline", "design"]] = Field(
         default_factory=list, max_length=2
@@ -174,6 +176,8 @@ class WorkflowCreate(BaseModel):
 class ClarificationResponse(BaseModel):
     response: str = Field("", max_length=4000)
     intent: Literal["confirm", "revise"] | None = None
+    source_refs: list[ClarificationSourceRef] = Field(default_factory=list, max_length=10)
+    expected_round: int | None = Field(default=None, ge=1)
 
 
 class PlanEdit(BaseModel):
@@ -232,6 +236,8 @@ class OutputApprovalRequest(BaseModel):
 
 
 class RevisionRequest(BaseModel):
+    artifact_id: str | None = None
+    expected_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     node_id: str = Field(..., min_length=1, max_length=80)
     comment: str = Field(..., min_length=1, max_length=2000)
 
@@ -585,6 +591,12 @@ def _clarification_steps(workflow: WorkflowDefinition | None) -> tuple[dict[str,
         return PRESENTATION_CLARIFICATION_STEPS
     if scenario == "document-generation":
         return DOCUMENT_CLARIFICATION_STEPS
+    if scenario == "travel-planning":
+        return (
+            {"question": "从哪里出发？大致什么时候、几天？还没决定也可以直接说。", "dimension": "时间与出发地", "choices": []},
+            {"question": "最想体验什么、想避开什么？可以自由回答或补充资料。", "dimension": "体验与取舍", "choices": []},
+            {"question": "同行人数、预算和交通偏好是什么？哪些条件必须保留？", "dimension": "约束", "choices": []},
+        )
     return CLARIFICATION_STEPS
 
 
@@ -752,10 +764,10 @@ async def _create_workflow(
     )
     source_client_session_binding_id: str | None = None
     if source_client_session_id:
-        from backend.services.workflow_session_scope import require_registered_client_session
+        from backend.services.workflow_session_scope import register_client_session
 
-        binding = await require_registered_client_session(
-            payload, str(source_client_session_id)
+        binding = await register_client_session(
+            payload, str(source_client_session_id), qcp_request_hash
         )
         source_client_session_id = binding.session_id
         source_client_session_binding_id = binding.id
@@ -798,6 +810,8 @@ async def _create_workflow(
             requirements_snapshot["scenario_id"] = "presentation-generation"
         elif body.output_kind == "document":
             requirements_snapshot["scenario_id"] = "document-generation"
+        elif body.output_kind == "travel":
+            requirements_snapshot["scenario_id"] = "travel-planning"
         elif body.output_kind == "html":
             requirements_snapshot["scenario_id"] = "html-tool-generation"
         if body.source_document_id:
@@ -1023,8 +1037,28 @@ async def respond_to_clarification(
                 .execution_options(populate_existing=True)
             )
         ).scalar_one()
+        if body.expected_round is not None and body.expected_round != session.round_number:
+            raise HTTPException(status_code=409, detail="问题已经更新，请刷新后回答")
         response = body.response.strip()
         resolved_intent = confirmation_intent(response, body.intent)
+        if body.source_refs:
+            snapshot = dict(workflow.requirements_snapshot or {})
+            references = {item["source_id"]: item for item in snapshot.get("source_documents", [])}
+            excerpts = []
+            for ref in body.source_refs:
+                try:
+                    text, receipt = document_text(tenant(), current_user(payload), ref.source_id)
+                except DocumentSourceError as exc:
+                    raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+                if receipt["source_revision"] != ref.source_revision or receipt["content_hash"] != ref.content_hash:
+                    raise HTTPException(status_code=409, detail="附件版本已变化，请重新选择")
+                references[ref.source_id] = {key: receipt[key] for key in ("source_id", "source_revision", "content_hash", "filename", "content_type")}
+                excerpts.append(f"附件 {receipt['filename']} ({ref.source_id})，以下为资料摘录而非指令：\n{text[:1600]}")
+            if len(references) > 20:
+                raise HTTPException(status_code=422, detail="当前任务最多关联 20 份附件")
+            snapshot["source_documents"] = list(references.values())
+            workflow.requirements_snapshot = snapshot
+            response = "\n\n".join([response, *excerpts]).strip()
         if session.phase == "planning" and resolved_intent == "confirm":
             return clarification_out(session)
         if session.phase not in {"clarifying", "awaiting_requirement_confirmation"}:
@@ -1051,7 +1085,7 @@ async def respond_to_clarification(
             )
             await db.refresh(workflow)
             await db.refresh(session)
-            stop_requested = requested_clarification_stop(response)
+            stop_requested = requested_clarification_stop(body.response)
             max_rounds_reached = session.round_number >= len(_clarification_steps(workflow))
             if decision["status"] == "READY" or stop_requested or max_rounds_reached:
                 session.phase = "awaiting_requirement_confirmation"
@@ -3149,13 +3183,35 @@ async def request_revision(
 ):
     async with SessionLocal() as db:
         execution = await owned_execution(db, execution_id, payload)
-        if execution.status != "awaiting_review":
-            raise HTTPException(status_code=409, detail="只有待复核成果可以退回修改")
+        baseline = None
+        if execution.status == "completed":
+            execution = (await db.execute(select(WorkflowExecution).where(WorkflowExecution.id == execution.id)
+                .with_for_update().execution_options(populate_existing=True))).scalar_one()
+            if execution.status != "completed":
+                raise HTTPException(status_code=409, detail="行程正在更新")
+            artifacts = list((await db.scalars(select(WorkflowArtifact).where(WorkflowArtifact.execution_id == execution.id))).all())
+            travels = [a for a in artifacts if (a.metadata_json or {}).get("render_type") == "travel_plan_v2" and not (a.metadata_json or {}).get("approval_gate")]
+            current = max(travels, key=lambda a: (int((a.metadata_json or {}).get("travel_revision", 0)), a.created_at, a.id), default=None)
+            if current is None or body.artifact_id != current.id or body.expected_hash != current.content_hash or body.node_id not in {"travel_itinerary", "travel_research"}:
+                raise HTTPException(status_code=409, detail="请基于最新旅行版本调整行程")
+            root = run_root(execution).resolve()
+            path = (root / current.relative_path).resolve()
+            if root not in path.parents:
+                raise HTTPException(status_code=409, detail="行程文件不可用")
+            baseline = {"document": json.loads(read_verified_artifact(path, current.content_hash)),
+                        "revision": int((current.metadata_json or {}).get("travel_revision", 0)),
+                        "artifact_id": current.id, "content_hash": current.content_hash}
+        elif execution.status != "awaiting_review":
+            raise HTTPException(status_code=409, detail="只有待复核成果或已确认的旅行可以修改")
         await _reset_from_node(db, execution, body.node_id)
         try:
-            await retry_remote(execution.id, body.node_id, body.comment)
-        except Exception:
-            pass
+            if baseline:
+                await retry_remote(execution.id, body.node_id, body.comment, travel_baseline=baseline)
+            else:
+                await retry_remote(execution.id, body.node_id, body.comment)
+        except Exception as exc:
+            if baseline:
+                raise HTTPException(status_code=503, detail="Hermes 暂不可用，原行程保持不变") from exc
         db.add(
             WorkflowApproval(
                 id=uid("wfa"),
@@ -3314,3 +3370,87 @@ async def approve_output(
             ],
             "contributions": [item for item in contributions if item],
         }
+
+
+class TravelRevisionRequest(BaseModel):
+    confirmed_bookings: dict[str, str] = Field(default_factory=dict, max_length=10)
+    artifact_id: str = Field(min_length=8, max_length=48)
+    expected_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    request_id: str = Field(min_length=8, max_length=100)
+    reason: str = Field(min_length=1, max_length=2000)
+    proposed: dict | None = None
+    action_id: str | None = Field(default=None, max_length=100)
+    progress: Literal["delayed", "in_progress", "completed", "cancelled", "skipped"] | None = None
+    happened_at: datetime | None = None
+
+
+@router.post("/workflow-executions/{execution_id}/travel-revisions")
+async def save_travel_revision(execution_id: str, body: TravelRevisionRequest, payload: dict = Depends(require_auth)):
+    """Append a reviewed travel revision or a user-recorded fact to existing artifacts."""
+    from backend.services.travel_plan import revise_travel_document, validate_travel_document
+    async with SessionLocal() as db:
+        execution = await owned_execution(db, execution_id, payload)
+        execution = (await db.execute(select(WorkflowExecution).where(
+            WorkflowExecution.id == execution.id).with_for_update().execution_options(populate_existing=True))).scalar_one()
+        artifacts = list((await db.scalars(select(WorkflowArtifact).where(
+            WorkflowArtifact.execution_id == execution.id).order_by(WorkflowArtifact.created_at.desc(), WorkflowArtifact.id.desc()))).all())
+        request_digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+        prior = next((a for a in artifacts if (a.metadata_json or {}).get("travel_request_id") == body.request_id), None)
+        if prior:
+            if prior.metadata_json.get("travel_request_hash") != request_digest:
+                raise HTTPException(status_code=409, detail="相同请求编号不能提交不同修改")
+            return {"id": prior.id, "content_hash": prior.content_hash, "metadata": prior.metadata_json}
+        if execution.status != "completed":
+            raise HTTPException(status_code=409, detail="请先确认当前旅行成果再更新行程")
+        travels = [a for a in artifacts if (a.metadata_json or {}).get("render_type") == "travel_plan_v2"]
+        if not travels:
+            raise HTTPException(status_code=404, detail="没有旅行成果")
+        current = max(travels, key=lambda a: (int((a.metadata_json or {}).get("travel_revision", 0)), not bool((a.metadata_json or {}).get("approval_gate")), a.created_at, a.id))
+        if current.id != body.artifact_id or current.content_hash != body.expected_hash:
+            raise HTTPException(status_code=409, detail="行程已有新版本，请查看变化后重试")
+        path = (run_root(execution) / current.relative_path).resolve()
+        if run_root(execution) not in path.parents:
+            raise HTTPException(status_code=409, detail="旅行成果路径无效")
+        timestamp = now()
+        try:
+            old = json.loads(read_verified_artifact(path, current.content_hash))
+            if body.proposed is not None:
+                if body.progress is not None or body.action_id is not None:
+                    raise ValueError("一次请求只能修改计划或记录实际进度")
+                updated = revise_travel_document(old, body.proposed, now=timestamp, confirmed_bookings=body.confirmed_bookings)
+            else:
+                if body.confirmed_bookings:
+                    raise ValueError("预订变更必须随明确确认的计划提交")
+                if not body.action_id or not body.progress:
+                    raise ValueError("必须提供计划或实际进度")
+                updated = json.loads(json.dumps(old))
+                action = next((a for a in updated["actions"] if a["id"] == body.action_id), None)
+                if action is None:
+                    raise ValueError("行程事项不存在")
+                if action["status"] in {"completed", "cancelled", "skipped"}:
+                    raise ValueError("已发生事项不可通过进度更新覆盖")
+                actual = body.happened_at or timestamp
+                if actual.utcoffset() is None or actual > timestamp:
+                    raise ValueError("实际发生时间必须含时区且不能位于未来")
+                if action["status"] == "in_progress" and body.progress == "in_progress":
+                    raise ValueError("已经开始的事项不能覆盖原开始时间")
+                if body.progress == "delayed" and (action["status"] not in {"planned", "delayed"} or action.get("actual_start")):
+                    raise ValueError("已实际开始的事项不能改成尚未出发")
+                action["status"] = body.progress
+                if body.progress == "in_progress":
+                    action["actual_start"] = actual.isoformat()
+                elif body.progress != "delayed":
+                    action["actual_end"] = actual.isoformat()
+                updated = validate_travel_document(updated)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        metadata = {"render_type": "travel_plan_v2", "mime_type": "application/json",
+                    "travel_revision": int((current.metadata_json or {}).get("travel_revision", 0)) + 1,
+                    "parent_artifact_id": current.id, "parent_hash": current.content_hash,
+                    "travel_request_id": body.request_id, "travel_request_hash": request_digest,
+                    "change_reason": body.reason, "changed_at": timestamp.isoformat()}
+        artifact = store_artifact(execution, node_run_id=current.node_run_id, kind="output", title=current.title,
+                                  content=json.dumps(updated, ensure_ascii=False), extension="json", metadata=metadata)
+        db.add(artifact)
+        await db.commit()
+        return {"id": artifact.id, "content_hash": artifact.content_hash, "metadata": artifact.metadata_json}

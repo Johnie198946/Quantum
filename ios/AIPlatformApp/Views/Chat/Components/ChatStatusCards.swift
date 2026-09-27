@@ -35,6 +35,7 @@ public struct InFlightRequest: Identifiable, Sendable {
     public let agentId: String?
     public let contextScope: ChatContextScopeDTO
     public let clientSessionContext: ClientSessionContextDTO?
+    public let sourceRefs: [WorkflowSourceReference]
     public var didRetry404: Bool = false
     public var phase: InFlightPhase = .thinking
 
@@ -47,6 +48,7 @@ public struct InFlightRequest: Identifiable, Sendable {
         agentId: String? = nil,
         contextScope: ChatContextScopeDTO = ChatContextScopeDTO(),
         clientSessionContext: ClientSessionContextDTO? = nil,
+        sourceRefs: [WorkflowSourceReference] = [],
         didRetry404: Bool = false,
         phase: InFlightPhase = .thinking
     ) {
@@ -58,6 +60,7 @@ public struct InFlightRequest: Identifiable, Sendable {
         self.agentId = agentId
         self.contextScope = contextScope
         self.clientSessionContext = clientSessionContext
+        self.sourceRefs = sourceRefs
         self.didRetry404 = didRetry404
         self.phase = phase
     }

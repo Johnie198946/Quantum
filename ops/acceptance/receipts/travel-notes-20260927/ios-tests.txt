@@ -1,0 +1,12 @@
+Simulator: A19AF5DC-C365-4869-B20B-34A89A5F44BB
+Result: /tmp/travel-notes-final6-tests.xcresult
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' passed (0.902 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' passed (0.631 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.536 (1.537) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.536 (1.537) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 1.536 (1.538) seconds
+** TEST SUCCEEDED **

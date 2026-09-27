@@ -179,3 +179,56 @@ def test_existing_worker_dispatches_note_job_without_chat_agent(tmp_path, monkey
     completed = store.get_unchecked(row['run_id'])
     assert completed['status'] == 'completed'
     assert len(json.loads(completed['final_answer'])['assets']) == 1
+
+
+def test_travel_prefers_existing_web_reference_before_generated_fallback():
+    content = json.dumps({'stops': [{'name': '温泉'}], 'photo_references': [
+        {'anchor': 'overview', 'image_url': 'https://example.com/onsen.jpg', 'source_id': 'official'}]})
+    plan = illustration_plan(request(content, travel=True))
+    assert [item['anchor'] for item in plan] == ['overview', 'stop:0']
+    assert 'web_reference' in plan[0] and 'prompt' not in plan[0]
+
+
+def test_web_reference_archives_through_existing_owner_scoped_assets(tmp_path):
+    content = json.dumps({'stops': [], 'sources': [{'id': 'official', 'url': 'https://example.com'}],
+        'photo_references': [{'anchor': 'overview', 'image_url': 'https://example.com/photo.jpg', 'source_id': 'official', 'caption': '温泉'}]})
+    store = DurableChatRunStore(tmp_path / 'runs.db')
+    body = request(content, travel=True)
+    row = run(store, body)
+    captures = []
+    def capture(reference, task_id):
+        captures.append((reference, task_id))
+        return b'archived-fixture', 'web-reference', 'page-screenshot'
+    def must_not_generate(prompt):
+        raise AssertionError('real photos must not be replaced by synthetic images')
+    execute_illustrations(store, row, must_not_generate, capture)
+    result = json.loads(store.get_unchecked(row['run_id'])['final_answer'])
+    assert len(captures) == 1 and captures[0][1] == row['run_id']
+    assert captures[0][0]['source_url'] == 'https://example.com'
+    asset = result['assets'][0]
+    assert asset['provider'] == 'web-reference' and '来源页面截图' in asset['alt']
+    assert (media_directory(store, row['run_id']) / '0.jpg').read_bytes() == b'archived-fixture'
+    assert result['failed_indices'] == []
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_reference_screenshot_accepts_both_hermes_vision_formats(tmp_path, monkeypatch, native):
+    import sys
+    from types import SimpleNamespace
+    from PIL import Image
+    from backend.services.note_illustrations import archive_web_reference
+    image = tmp_path / "capture.png"
+    Image.new("RGB", (20, 10), "green").save(image)
+    cleanup = []
+    async def denied_download(*args, **kwargs):
+        raise RuntimeError("source requires page screenshot")
+    monkeypatch.setitem(sys.modules, "tools.url_safety", SimpleNamespace(is_safe_url=lambda url: True))
+    monkeypatch.setitem(sys.modules, "tools.vision_tools", SimpleNamespace(_download_image=denied_download))
+    result = {"meta": {"screenshot_path": str(image)}} if native else {"screenshot_path": str(image)}
+    monkeypatch.setitem(sys.modules, "tools.browser_tool", SimpleNamespace(
+        browser_navigate=lambda *args, **kwargs: '{"success": true}',
+        browser_vision=lambda *args, **kwargs: result if native else json.dumps(result),
+        cleanup_browser=lambda **kwargs: cleanup.append(kwargs["task_id"])))
+    data, provider, kind = archive_web_reference({"source_url": "https://example.com", "image_url": "https://example.com/image"}, "test-capture")
+    assert data.startswith(b"\xff\xd8") and provider == "web-reference" and kind == "page-screenshot"
+    assert cleanup == ["test-capture"]

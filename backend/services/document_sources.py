@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from pydantic import BaseModel, Field
 
 from backend.services.upload_text_extractor import extract_uploaded_text
 from backend.services.user_note_context import (
@@ -21,10 +22,19 @@ from backend.services.user_note_context import (
 MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
 MAX_PRESENTATION_SOURCE_CHARACTERS = 80_000
 SUPPORTED_DOCUMENTS = {
+    ".doc": "application/msword", ".ppt": "application/vnd.ms-powerpoint",
     ".pdf": "application/pdf",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".heic": "image/heic", ".webp": "image/webp",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+
+class DocumentSourceReference(BaseModel):
+    source_id: str = Field(pattern=r"^doc_[A-Za-z0-9]+$", max_length=48)
+    source_revision: int = Field(ge=1)
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class DocumentSourceError(ValueError):
@@ -115,15 +125,12 @@ def save_document_source(
     data: bytes,
     expected_hash: str = "",
     file_opt_out: bool = False,
+    extracted_text: str = "",
 ) -> dict[str, Any]:
     filename = _safe_filename(filename)
     suffix = Path(filename).suffix.lower()
-    if suffix == ".doc":
-        raise DocumentSourceError(
-            "legacy_doc_unsupported", "暂不支持旧版 .doc，请另存为 .docx"
-        )
     if suffix not in SUPPORTED_DOCUMENTS:
-        raise DocumentSourceError("unsupported_document_type", "仅支持 PDF、DOCX 或 PPTX")
+        raise DocumentSourceError("unsupported_document_type", "支持 PDF、Word、PowerPoint 和 JPG/PNG/HEIC/WebP 图片")
     if not data:
         raise DocumentSourceError("empty_document", "文档为空")
     if len(data) > MAX_DOCUMENT_BYTES:
@@ -158,7 +165,31 @@ def save_document_source(
         "original_name": original_name,
     }
     try:
-        text = extract_uploaded_text(data, filename=filename, content_type=content_type)
+        if len(extracted_text) > 200_000:
+            raise ValueError("OCR text exceeds extraction limit")
+        try:
+            def analyze_images(images):
+                import base64
+                import httpx
+                from backend.services.workflow_executor import bridge_base_url, bridge_headers
+                response = httpx.post(bridge_base_url() + "/v1/documents/analyze-images",
+                    headers={**bridge_headers(), "X-Tenant-Id": tenant_key, "X-User-Id": user_id},
+                    json={"images": [base64.b64encode(image).decode() for image in images]}, timeout=240)
+                response.raise_for_status()
+                return response.json()["analyses"]
+            text = extract_uploaded_text(data, filename=filename, content_type=content_type, analyze_images=analyze_images)
+            if suffix == ".pdf" and extracted_text.strip():
+                text += "\n\n[设备端补充识别扫描页，可能存在错误，请核对原件]\n" + extracted_text.strip()
+                receipt["extraction_method"] = "server_text_and_client_ocr"
+        except ValueError as exc:
+            if suffix not in {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".webp"} or not extracted_text.strip():
+                raise
+            # Client OCR is untrusted source material, never an instruction or a verified fact.
+            if suffix == ".pdf" and "no extractable text" not in str(exc):
+                raise
+            text = "[设备端识别，可能存在错误，请核对原件]\n" + extracted_text.strip()
+            receipt["extraction_method"] = "client_image_analysis" if extracted_text.startswith("[图片视觉参考]") else "client_ocr"
+
         encoded_text = text.encode("utf-8")
         _atomic_write(directory / "extracted.txt", encoded_text)
         receipt.update(
@@ -181,7 +212,7 @@ def save_document_source(
         elif "no extractable text" in message.lower():
             code, message = (
                 "no_extractable_text",
-                "PDF 没有可提取文字；暂不支持扫描件 OCR",
+                "没有可提取文字，原件已保留；请补充清晰图片或文字说明",
             )
         receipt.update(
             status="parse_failed",

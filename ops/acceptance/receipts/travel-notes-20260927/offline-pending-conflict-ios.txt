@@ -1,0 +1,575 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project ios/AIPlatformApp.xcodeproj -scheme AIPlatformApp -destination "platform=iOS Simulator,id=A19AF5DC-C365-4869-B20B-34A89A5F44BB" -derivedDataPath /tmp/travel-notes-derived -resultBundlePath /tmp/travel-conflict-ios.xcresult "-only-testing:AIPlatformAppTests/WorkflowLifecycleDTOTests" CODE_SIGNING_ALLOWED=NO test
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+
+Writing result bundle at path:
+	/tmp/travel-conflict-ios.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (3 targets)
+    Target 'AIPlatformAppUITests' in project 'AIPlatformApp'
+        ➜ Explicit dependency on target 'AIPlatformApp' in project 'AIPlatformApp'
+    Target 'AIPlatformAppTests' in project 'AIPlatformApp'
+        ➜ Explicit dependency on target 'AIPlatformApp' in project 'AIPlatformApp'
+    Target 'AIPlatformApp' in project 'AIPlatformApp' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -o /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
+
+SwiftDriver AIPlatformApp normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformApp -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftCompile normal arm64 Compiling\ WorkflowDashboardView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    
+
+SwiftCompile normal arm64 Compiling\ UIModels.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Models/UIModels.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Models/UIModels.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformApp (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+EmitSwiftModule normal arm64 (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    
+/Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:38:16: warning: stored property 'sourceRefs' of 'Sendable'-conforming struct 'InFlightRequest' contains non-Sendable type 'WorkflowSourceReference'; this is an error in the Swift 6 language mode
+    public let sourceRefs: [WorkflowSourceReference]
+               ^
+/Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Networking/APIClient.swift:4997:15: note: consider making struct 'WorkflowSourceReference' conform to the 'Sendable' protocol
+public struct WorkflowSourceReference: Encodable {
+              ^
+                                                , Sendable
+/Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Settings/SettingsView.swift:4477:26: warning: 'UITextItemInteraction' was deprecated in iOS 17.0: UITextItemInteraction has been replaced by text item methods on UITextViewDelegate
+            interaction: UITextItemInteraction
+                         ^
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformApp (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+SwiftDriver\ Compilation\ Requirements AIPlatformApp normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformApp -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/arm64-apple-ios-simulator.swiftmodule /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+Copy /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.abi.json (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.abi.json /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftsourceinfo (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftsourceinfo /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+SwiftDriver AIPlatformAppTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformAppTests -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/Developer/Library/Frameworks -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftCompile normal arm64 Compiling\ WorkflowLifecycleDTOTests.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+
+SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+
+EmitSwiftModule normal arm64 (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+
+SwiftDriver\ Compilation\ Requirements AIPlatformAppTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformAppTests -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/Developer/Library/Frameworks -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+Copy /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformAppTests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftsourceinfo (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftsourceinfo /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformAppTests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Copy /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformAppTests.swiftmodule/arm64-apple-ios-simulator.abi.json /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.abi.json (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.abi.json /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformAppTests.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+SwiftDriverJobDiscovery normal arm64 Compiling UIModels.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+SwiftDriverJobDiscovery normal arm64 Compiling WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+
+SwiftDriver\ Compilation AIPlatformAppTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformAppTests -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.SwiftFileList -DDEBUG -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/Developer/Library/Frameworks -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+SwiftDriverJobDiscovery normal arm64 Compiling WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+SwiftDriver\ Compilation AIPlatformApp normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AIPlatformApp -Onone -enforce-exclusivity\=checked @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.SwiftFileList -DDEBUG -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /tmp/travel-notes-derived/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -c -j12 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /tmp/travel-notes-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache -output-file-map /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /tmp/travel-notes-derived/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -sdk-module-cache-path /tmp/travel-notes-derived/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule -validate-clang-modules-once -clang-build-session-file /tmp/travel-notes-derived/ModuleCache.noindex/Session.modulevalidation -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_const_extract_protocols.json -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-generated-files.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-own-target-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-all-target-headers.hmap -Xcc -iquote -Xcc /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-project-headers.hmap -Xcc -I/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/include -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources-normal/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources/arm64 -Xcc -I/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-Swift.h -working-directory /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios -experimental-emit-module-separately -disable-cmo
+
+Ld /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib normal (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -dynamiclib -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/tmp/travel-notes-derived/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F/tmp/travel-notes-derived/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -filelist /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.LinkFileList -install_name @rpath/AIPlatformApp.debug.dylib -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.swiftmodule @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp-linker-args.resp -Xlinker -alias -Xlinker _main -Xlinker ___debug_main_executable_dylib_entry_point -o /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib
+
+ConstructStubExecutorLinkFileList /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-ExecutorLinkFileList-normal-arm64.txt (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    construct-stub-executor-link-file-list /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor_no_swift_entry_point.a /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libPreviewsJITStubExecutor.a --output /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-ExecutorLinkFileList-normal-arm64.txt
+note: Using stub executor library with Swift entry point. (in target 'AIPlatformApp' from project 'AIPlatformApp')
+
+Ld /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp normal (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -F/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -Xlinker -rpath -Xlinker @executable_path -Xlinker -rpath -Xlinker @executable_path/Frameworks -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -e ___debug_blank_executor_main -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_dylib -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-DebugDylibPath-normal-arm64.txt -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __debug_instlnm -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-DebugDylibInstallName-normal-arm64.txt -Xlinker -filelist -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp-ExecutorLinkFileList-normal-arm64.txt /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib -o /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp
+
+CopySwiftLibs /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/Frameworks --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/SystemExtensions --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/Extensions --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+ExtractAppIntentsMetadata (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name AIPlatformApp --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk --xcode-version 17B100 --platform-family iOS --deployment-target 17.0 --bundle-identifier com.ailab.AIPlatformApp --output /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app --target-triple arm64-apple-ios17.0-simulator --binary-file /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp --dependency-file /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp_dependency_info.dat --stringsdata-file /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.SwiftFileList --metadata-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp.DependencyMetadataFileList --static-metadata-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/AIPlatformApp.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformApp.build/Objects-normal/arm64/AIPlatformApp.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-09-27 14:45:20.511 appintentsmetadataprocessor[46259:20210114] Starting appintentsmetadataprocessor export
+2026-09-27 14:45:20.512 appintentsmetadataprocessor[46259:20210114] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+
+Ld /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/AIPlatformAppTests normal (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -O0 -L/tmp/travel-notes-derived/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/tmp/travel-notes-derived/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk/Developer/Library/Frameworks -filelist /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -bundle_loader /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp -Xlinker -object_path_lto -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.swiftmodule @/tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests-linker-args.resp -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/AIPlatformApp.debug.dylib -o /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/AIPlatformAppTests
+
+ExtractAppIntentsMetadata (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name AIPlatformAppTests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk --xcode-version 17B100 --platform-family iOS --deployment-target 17.0 --bundle-identifier com.ailab.AIPlatformAppTests --output /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest --target-triple arm64-apple-ios17.0-simulator --binary-file /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/AIPlatformAppTests --dependency-file /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests_dependency_info.dat --stringsdata-file /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.SwiftFileList --metadata-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests.DependencyMetadataFileList --static-metadata-file-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/AIPlatformAppTests.DependencyStaticMetadataFileList --swift-const-vals-list /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/Objects-normal/arm64/AIPlatformAppTests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-09-27 14:45:20.778 appintentsmetadataprocessor[46269:20210174] Starting appintentsmetadataprocessor export
+2026-09-27 14:45:20.779 appintentsmetadataprocessor[46269:20210174] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+
+CopySwiftLibs /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/AIPlatformAppTests --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/Frameworks --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/PlugIns --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/SystemExtensions --scan-folder /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/Extensions --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app/PlugIns/AIPlatformAppTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /tmp/travel-notes-derived/Build/Intermediates.noindex/AIPlatformApp.build/Debug-iphonesimulator/AIPlatformAppTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+Validate /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app (in target 'AIPlatformApp' from project 'AIPlatformApp')
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
+    builtin-validationUtility /tmp/travel-notes-derived/Build/Products/Debug-iphonesimulator/AIPlatformApp.app -shallow-bundle -infoplist-subpath Info.plist
+
+Test Suite 'Selected tests' started at 2026-09-27 14:45:49.096.
+Test Suite 'AIPlatformAppTests.xctest' started at 2026-09-27 14:45:49.097.
+Test Suite 'WorkflowLifecycleDTOTests' started at 2026-09-27 14:45:49.097.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAcceptanceFailureRetainsInMemoryCredentialAndReplayIsBounded]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAcceptanceFailureRetainsInMemoryCredentialAndReplayIsBounded]' passed (0.020 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore]' passed (0.253 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountTransitionsRetainQueuedWritesUntilDurable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountTransitionsRetainQueuedWritesUntilDurable]' passed (0.141 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testActivePlanningActivityDecodesStructuredPluginStep]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testActivePlanningActivityDecodesStructuredPluginStep]' passed (0.020 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentBuildResponseDecodesCompositionAndDelegationPolicy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentBuildResponseDecodesCompositionAndDelegationPolicy]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentRouteSSEEventDecodesProvenance]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentRouteSSEEventDecodesProvenance]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnnotatedReadingTextFillsAvailableWidth]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnnotatedReadingTextFillsAvailableWidth]' passed (0.162 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerBlocksPersistAcrossHistoryRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerBlocksPersistAcrossHistoryRoundTrip]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerPageStreamEventParsesBoundedProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerPageStreamEventParsesBoundedProjection]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' started.
+2026-09-27 14:45:49.742223+0800 AIPlatformApp[46630:20213988] Unbalanced calls to begin/end appearance transitions for <_TtGC7SwiftUI19UIHostingControllerGVS_15ModifiedContentGVS_6HStackGVS_9TupleViewTGS1_VS_9RectangleVS_12_FrameLayout_GS1_V13AIPlatformApp21SelectableReadingTextVS_16_FlexFrameLayout_GS1_VS_5ImageS5_____S5___: 0x1078acc00>.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' passed (0.920 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAuthentication401PreservesBackendReason]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAuthentication401PreservesBackendReason]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration]' passed (0.015 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBlankPDFDoesNotCreateFakeOCRContext]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBlankPDFDoesNotCreateFakeOCRContext]' passed (0.284 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookWritesMatchBackendWireContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookWritesMatchBackendWireContract]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testByteLimitedAnswerPagesCanExceedBlockLimitCeiling]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testByteLimitedAnswerPagesCanExceedBlockLimitCeiling]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCancellingPublicAuthCapabilitiesRemainsCancellation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCancellingPublicAuthCapabilitiesRemainsCancellation]' passed (0.029 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionConsumesTextExactlyOnce]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionConsumesTextExactlyOnce]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionKeepsWhitespaceOnlyDraftUnsent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionKeepsWhitespaceOnlyDraftUnsent]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreLeavesInvalidLegacyFileRecoverable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreLeavesInvalidLegacyFileRecoverable]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreMigratesLegacyJSONAndKeepsBackup]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreMigratesLegacyJSONAndKeepsBackup]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStorePagesOneThousandMessagesWithinBudgets]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStorePagesOneThousandMessagesWithinBudgets]' passed (0.041 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreRollsBackFailedSessionMigration]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreRollsBackFailedSessionMigration]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreSerializesConcurrentTransactionsAndStatusBackfill]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreSerializesConcurrentTransactionsAndStatusBackfill]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatPrewarmRequestUsesServerSessionContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatPrewarmRequestUsesServerSessionContract]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesClientSessionContextWithoutTenantClaims]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesClientSessionContextWithoutTenantClaims]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesCurrentServerBookSectionScope]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesCurrentServerBookSectionScope]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesExplicitLocalOnlyNoteScope]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesExplicitLocalOnlyNoteScope]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStatusDecodesRecoverableClarifyMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStatusDecodesRecoverableClarifyMetadata]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStreamRelayoutsAfterSendingBelowExtraTallMessage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStreamRelayoutsAfterSendingBelowExtraTallMessage]' passed (0.399 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarifyStateSurvivesSessionPersistenceRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarifyStateSurvivesSessionPersistenceRoundTrip]' passed (0.019 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupConfirmationRecoversConsumedTokenFromExistingReceipt]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupConfirmationRecoversConsumedTokenFromExistingReceipt]' passed (0.019 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearAndDeleteIgnoreOlderPersistenceCompletions]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearAndDeleteIgnoreOlderPersistenceCompletions]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip]' passed (0.457 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages]' passed (0.371 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCloudKnowledgeSnapshotDecodesForReinstallRestore]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCloudKnowledgeSnapshotDecodesForReinstallRestore]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedLongAnswerUsesBoundedSemanticPreview]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedLongAnswerUsesBoundedSemanticPreview]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedWhileAwayUpdatesOriginalStoredMessage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedWhileAwayUpdatesOriginalStoredMessage]' passed (0.040 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testComponentAssetLibraryUsesExistingBookAndNoteMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testComponentAssetLibraryUsesExistingBookAndNoteMetadata]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCoordinatorReplacesVisibleHistoryPages]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCoordinatorReplacesVisibleHistoryPages]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCreateDraftResponseDecodesClarificationSession]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCreateDraftResponseDecodesClarificationSession]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDailyPublicationDTOFieldsDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDailyPublicationDTOFieldsDecode]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDelayedSuccessCannotAcknowledgeReplacementAccount]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDelayedSuccessCannotAcknowledgeReplacementAccount]' passed (0.024 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDeveloperCredentialsBypassUnavailableSmsChannel]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDeveloperCredentialsBypassUnavailableSmsChannel]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentCapabilityProposalAndRendererRouteDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentCapabilityProposalAndRendererRouteDecode]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentContributionStatusMapsToVisibleTransferState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentContributionStatusMapsToVisibleTransferState]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunCursorPersistsAcrossColdStart]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunCursorPersistsAcrossColdStart]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplayDecodesKnowledgeActionEvent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplayDecodesKnowledgeActionEvent]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplaySnapshotDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplaySnapshotDecodes]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testExplicitStopAndRealFailureAreNotAutomaticallyResumed]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testExplicitStopAndRealFailureAreNotAutomaticallyResumed]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearAndDeleteRestoreDurableProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearAndDeleteRestoreDurableProjection]' passed (0.530 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearMergesMessagesSentWhileMutationWasBlocked]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearMergesMessagesSentWhileMutationWasBlocked]' passed (0.471 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFeedbackReceiptSSEEventDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFeedbackReceiptSSEEventDecodes]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerCancellationRetainsLastCommittedPage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerCancellationRetainsLastCommittedPage]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRefreshesStaleStreamingCursorAfterCompletion]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRefreshesStaleStreamingCursorAfterCompletion]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRejectsNoProgressAndNonAdvancingCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRejectsNoProgressAndNonAdvancingCursor]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDecodesNativeProfileContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDecodesNativeProfileContract]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDoesNotPresentRequestCancellationAsFailure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDoesNotPresentRequestCancellationAsFailure]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInboxImageDownsamplingBoundsDecodedPixels]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInboxImageDownsamplingBoundsDecodedPixels]' passed (0.042 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow]' passed (0.237 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInterruptionKeepsExistingPartialContentAndRunCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInterruptionKeepsExistingPartialContentAndRunCursor]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeAccessDecodesRuntimeEffectiveKnowledge]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeAccessDecodesRuntimeEffectiveKnowledge]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeActionSSEDecodesAndCapabilityIsNeverPersisted]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeActionSSEDecodesAndCapabilityIsNeverPersisted]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookshelfDecodesReaderMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookshelfDecodesReaderMetadata]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookSubscriptionDecodesBookAndProgress]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookSubscriptionDecodesBookAndProgress]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeMergeRequestEncodesOnlyAtomicTransactionContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeMergeRequestEncodesOnlyAtomicTransactionContract]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnownRunAlwaysUsesDurableRecoveryIdentity]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnownRunAlwaysUsesDurableRecoveryIdentity]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLate401CannotClearReplacementCredential]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLate401CannotClearReplacementCredential]' passed (0.023 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossAccountBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossAccountBoundary]' passed (0.020 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossSessionBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossSessionBoundary]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningAnswerProposalPreservesExactInputForRetry]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningAnswerProposalPreservesExactInputForRetry]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningChatEventPersistsReferenceAndHintWithoutDuplicatingExerciseState]' started.
+IOSurfaceClientSetSurfaceNotify failed e00002c7
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningChatEventPersistsReferenceAndHintWithoutDuplicatingExerciseState]' passed (0.259 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningExerciseTypesSelectionAndRichQuestionRendering]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningExerciseTypesSelectionAndRichQuestionRendering]' passed (1.949 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText]' passed (0.176 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapUsesStructuredSavedPreview]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapUsesStructuredSavedPreview]' passed (0.086 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningResumeDecodesExactSectionAndTwoPoints]' started.
+2026-09-27 14:45:56.542926+0800 AIPlatformApp[46630:20213988] [Invalid Configuration] Unable to render flattened version of PlatformViewRepresentableAdaptor<Base>.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningResumeDecodesExactSectionAndTwoPoints]' passed (0.188 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLeavingDuringCheckpointDoesNotPollOrCancelUnsubmittedRun]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLeavingDuringCheckpointDoesNotPollOrCancelUnsubmittedRun]' passed (0.125 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPersistedMessageWithoutClarifyStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPersistedMessageWithoutClarifyStillDecodes]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPlanWithoutNestedPlanIdStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPlanWithoutNestedPlanIdStillDecodes]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySelectedBookScopeStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySelectedBookScopeStillDecodes]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySessionRecordDefaultsToMainAgent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySessionRecordDefaultsToMainAgent]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLifecycleEventIgnoresPrivateReasoningPayload]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLifecycleEventIgnoresPrivateReasoningPayload]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsHonorExplicitCapabilityResponse]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsHonorExplicitCapabilityResponse]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsRemainFailClosedBeforeCapabilityProbeCompletes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsRemainFailClosedBeforeCapabilityProbeCompletes]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentErrorsAreBoundedAndDoNotLeakRawResponses]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentErrorsAreBoundedAndDoNotLeakRawResponses]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginInputPolicyKeepsOnlyBoundedDigits]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginInputPolicyKeepsOnlyBoundedDigits]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerDisclosureKeepsBubbleLayoutBoundedAcrossAccessibilitySizes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerDisclosureKeepsBubbleLayoutBoundedAcrossAccessibilitySizes]' passed (0.046 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSemanticBlocksPreserveMarkdownStructure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSemanticBlocksPreserveMarkdownStructure]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSheetAppendKeepsScrollViewIdentityAndReadingOffset]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSheetAppendKeepsScrollViewIdentityAndReadingOffset]' passed (0.136 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongPreviewHandlesExtendedGraphemeClustersWithoutIndexCrash]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongPreviewHandlesExtendedGraphemeClustersWithoutIndexCrash]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongStreamingPolicyBoundsRefreshAndTypewriterUpdates]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongStreamingPolicyBoundsRefreshAndTypewriterUpdates]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLostPredecessorResponseStillRequiresItsIntendedHash]' started.
+2026-09-27 14:45:57.093257+0800 AIPlatformApp[46630:20215037] [Default] Task <7AD8402F-426F-4CFC-9102-16CE52202813>.<1> finished with error [-1001] Error Domain=NSURLErrorDomain Code=-1001 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <7AD8402F-426F-4CFC-9102-16CE52202813>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <7AD8402F-426F-4CFC-9102-16CE52202813>.<1>}
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLostPredecessorResponseStillRequiresItsIntendedHash]' passed (0.214 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserKeepsRepeatedBlocksInSourceOrder]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserKeepsRepeatedBlocksInSourceOrder]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserReusesBoundedMessageCache]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserReusesBoundedMessageCache]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMemoryReceiptEventDecodesForVisibleConfirmation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMemoryReceiptEventDecodesForVisibleConfirmation]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMetadataWriteFailuresDoNotPublishStaleInMemoryProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMetadataWriteFailuresDoNotPublishStaleInMemoryProjection]' passed (0.570 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeChatPresentationUsesTruthfulSingleRunningState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeChatPresentationUsesTruthfulSingleRunningState]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeQuantumnSyntheticScreenshotFixtures]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeQuantumnSyntheticScreenshotFixtures]' passed (0.552 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeReaderShowsWaitingPartialAndCompletedContentStates]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeReaderShowsWaitingPartialAndCompletedContentStates]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNestedPlanIdDecodesWithGlobalSnakeCaseStrategy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNestedPlanIdDecodesWithGlobalSnakeCaseStrategy]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingChatDecodesAndDispatchesQCPEvents]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingChatDecodesAndDispatchesQCPEvents]' passed (0.031 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingFeedbackReceiptDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingFeedbackReceiptDecodes]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNoteDraftSSEEventDecodesForConfirmation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNoteDraftSSEEventDecodesForConfirmation]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineTravelChangesMergeOnlyAnUnchangedActionAndPersistReplayIdentity]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineTravelChangesMergeOnlyAnUnchangedActionAndPersistReplayIdentity]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOrdinaryChatCarriesVersionedAttachmentReferences]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOrdinaryChatCarriesVersionedAttachmentReferences]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOverlappingKnowledgeSavesSerializeAndUsePriorHashCAS]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOverlappingKnowledgeSavesSerializeAndUsePriorHashCAS]' passed (0.212 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPendingPlaceholderNeverHidesVisiblePartialAnswer]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPendingPlaceholderNeverHidesVisiblePartialAnswer]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes]' passed (0.020 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationBodyMediaDecodeAndLegacyDefaults]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationBodyMediaDecodeAndLegacyDefaults]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCoverAndReaderImagesRenderAuthenticatedFixture]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCoverAndReaderImagesRenderAuthenticatedFixture]' passed (1.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationFormatLabelsDoNotInferFromCompleteness]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationFormatLabelsDoNotInferFromCompleteness]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationImageClearsOnCredentialChangeAndDisappearance]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationImageClearsOnCredentialChangeAndDisappearance]' passed (0.269 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaFailureAndCancellationDoNotReturnImageBytes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaFailureAndCancellationDoNotReturnImageBytes]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaRejectsUntrustedRoutesBeforeAuthentication]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaRejectsUntrustedRoutesBeforeAuthentication]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicAuthCapabilitiesSurviveConcurrentProtected401WithoutAuthorization]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicAuthCapabilitiesSurviveConcurrentProtected401WithoutAuthorization]' passed (0.105 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicFollowBuildersMetadataAndQuarantinedRosterDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicFollowBuildersMetadataAndQuarantinedRosterDecode]' passed (0.044 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRaggedMarkdownTablePreservesCellsAndUsesSharedBoundedWidths]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRaggedMarkdownTablePreservesCellsAndUsesSharedBoundedWidths]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderBodySurvivesSubscriptionFailure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderBodySurvivesSubscriptionFailure]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload]' passed (0.075 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerDeckWrapsAtLargeTextSize]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerDeckWrapsAtLargeTextSize]' passed (0.017 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingQuickActionsRenderVisualsWithoutCodeCards]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingQuickActionsRenderVisualsWithoutCodeCards]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingSelectionQuestionPrioritizesSelectedWord]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingSelectionQuestionPrioritizesSelectedWord]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReasoningStepMutationSkipsRepeatedStreamingState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReasoningStepMutationSkipsRepeatedStreamingState]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunMonitorRemainsPresentationOwnerAfterProbeHandoff]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunMonitorRemainsPresentationOwnerAfterProbeHandoff]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunPresentationReplacesInterruptedCard]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunPresentationReplacesInterruptedCard]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveryBackoffAndAnswerPaginationAreBounded]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveryBackoffAndAnswerPaginationAreBounded]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRepeatedForegroundReconcileStartsOneDurableGET]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRepeatedForegroundReconcileStartsOneDurableGET]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunningChatStatusNeverAllowsRegenerate]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunningChatStatusNeverAllowsRegenerate]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush]' passed (0.020 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunReconciliationOwnerIsNotDuplicated]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunReconciliationOwnerIsNotDuplicated]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot]' passed (0.172 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerCoalescesHighFrequencyStreamingPersistence]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerCoalescesHighFrequencyStreamingPersistence]' passed (0.563 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerOrdersTruncateAndStatusAfterOlderSnapshots]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerOrdersTruncateAndStatusAfterOlderSnapshots]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsMessagesOffMainActorInOrder]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsMessagesOffMainActorInOrder]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsRunCursorOnlyChanges]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsRunCursorOnlyChanges]' passed (0.374 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites]' passed (0.752 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionOrganizationLifecycleAndSourceContextAreRecoverable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionOrganizationLifecycleAndSourceContextAreRecoverable]' passed (0.019 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionRecordPersistsSelectedAgent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionRecordPersistsSelectedAgent]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testShutdownFailsAfterQueuedTruncationCannotReachSQLite]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testShutdownFailsAfterQueuedTruncationCannotReachSQLite]' passed (0.402 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStaleKnowledgeSaveCannotStartWithReplacementCredential]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStaleKnowledgeSaveCannotStartWithReplacementCredential]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStartGenerationShowsTruthfulPendingStatusBeforeBackendEvents]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStartGenerationShowsTruthfulPendingStatusBeforeBackendEvents]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewExpandsBackwardInBoundedSteps]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewExpandsBackwardInBoundedSteps]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewKeepsOnlyBoundedTail]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewKeepsOnlyBoundedTail]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewLeavesShortContentUnchanged]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewLeavesShortContentUnchanged]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingTextChunksKeepCompletedPrefixesStable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingTextChunksKeepCompletedPrefixesStable]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict]' passed (0.033 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveListsPageStructureAndAssets]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveListsPageStructureAndAssets]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveMixedScalarValues]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveMixedScalarValues]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRendersAllSchemaFieldTypesOnSimulator]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRendersAllSchemaFieldTypesOnSimulator]' passed (0.431 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRestoresLastSavedAssetValue]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRestoresLastSavedAssetValue]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewViewModelCreatesOnlyAfterServerNotFound]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewViewModelCreatesOnlyAfterServerNotFound]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTableRenderingHasOneWholeTableHorizontalScrollForEmptyAndLargeInputs]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTableRenderingHasOneWholeTableHorizontalScrollForEmptyAndLargeInputs]' passed (0.588 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessagePreservesCompletedReasoningCopy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessagePreservesCompletedReasoningCopy]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessageSettlesGeneratingAnswerReasoning]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessageSettlesGeneratingAnswerReasoning]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTokenSummaryCacheBreakdownScreenshotFixtures]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTokenSummaryCacheBreakdownScreenshotFixtures]' passed (0.885 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails]' started.
+2026-09-27 14:46:04.523419+0800 AIPlatformApp[46630:20213988] Unbalanced calls to begin/end appearance transitions for <_TtGC7SwiftUI19UIHostingControllerGVS_15ModifiedContentV13AIPlatformApp21StableAnswerBlockViewVS_12_FrameLayout__: 0x1073f3600>.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails]' passed (0.467 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails]' passed (0.118 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicSessionsCapQueuePromoteAndPersistMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicSessionsCapQueuePromoteAndPersistMetadata]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelMutationRetriesIdenticalPayloadAfterLostResponse]' started.
+2026-09-27 14:46:05.110376+0800 AIPlatformApp[46630:20214464] [Default] Task <357B0579-72A6-4D2C-9282-090A06D069EA>.<1> finished with error [-1005] Error Domain=NSURLErrorDomain Code=-1005 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <357B0579-72A6-4D2C-9282-090A06D069EA>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <357B0579-72A6-4D2C-9282-090A06D069EA>.<1>}
+2026-09-27 14:46:05.112334+0800 AIPlatformApp[46630:20215792] [Default] Task <CF23EDD2-CD4D-4F81-A03C-01C7668320C5>.<1> finished with error [-1005] Error Domain=NSURLErrorDomain Code=-1005 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <CF23EDD2-CD4D-4F81-A03C-01C7668320C5>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <CF23EDD2-CD4D-4F81-A03C-01C7668320C5>.<1>}
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelMutationRetriesIdenticalPayloadAfterLostResponse]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelOfflineCacheRemainsOwnerScopedAcrossReactivation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelOfflineCacheRemainsOwnerScopedAcrossReactivation]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelPlanDocumentDecodesSideRouteArtifactContent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelPlanDocumentDecodesSideRouteArtifactContent]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelRoutesIncludeTransportEndpointsAndReturnLegs]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelRoutesIncludeTransportEndpointsAndReturnLegs]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' passed (0.601 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUnifiedAgreementDTOAndSnakeCaseAcceptanceNetworkContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUnifiedAgreementDTOAndSnakeCaseAcceptanceNetworkContract]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDecodesCacheBreakdownWithoutInference]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDecodesCacheBreakdownWithoutInference]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDerivesVerifiedCallsFromExplicitCoverage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDerivesVerifiedCallsFromExplicitCoverage]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDoesNotPresentUnverifiedZeroAsOverallZero]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDoesNotPresentUnverifiedZeroAsOverallZero]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsMissingCacheBreakdownUnavailable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsMissingCacheBreakdownUnavailable]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownForLegacyBasis]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownForLegacyBasis]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownWithoutCoverage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownWithoutCoverage]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUserDocumentMessageRendersAttachmentCardInsteadOfTextBubble]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUserDocumentMessageRendersAttachmentCardInsteadOfTextBubble]' passed (0.040 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testWorkflowCreateEncodesExplicitOutputKind]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testWorkflowCreateEncodesExplicitOutputKind]' passed (0.004 seconds).
+Test Suite 'WorkflowLifecycleDTOTests' passed at 2026-09-27 14:46:05.787.
+	 Executed 185 tests, with 0 failures (0 unexpected) in 16.630 (16.690) seconds
+Test Suite 'AIPlatformAppTests.xctest' passed at 2026-09-27 14:46:05.788.
+	 Executed 185 tests, with 0 failures (0 unexpected) in 16.630 (16.691) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 14:46:05.788.
+	 Executed 185 tests, with 0 failures (0 unexpected) in 16.630 (16.692) seconds
+2026-09-27 14:46:06.296 xcodebuild[45938:20207834] [MT] IDETestOperationsObserverDebug: 45.409 elapsed -- Testing started completed.
+2026-09-27 14:46:06.296 xcodebuild[45938:20207834] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-27 14:46:06.296 xcodebuild[45938:20207834] [MT] IDETestOperationsObserverDebug: 45.409 sec, +45.409 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/travel-conflict-ios.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

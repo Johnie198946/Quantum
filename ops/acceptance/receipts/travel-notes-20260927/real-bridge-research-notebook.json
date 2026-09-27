@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "runtime_status": "awaiting_review",
+  "elapsed_seconds": 170.75,
+  "actions": 3,
+  "sources": 4,
+  "approved_itinerary_preserved": true,
+  "search_calls": 9,
+  "scope": "real bridge HTTP + real knowledge gateway + real Hermes search + approval + notebook; excludes outer platform API and iOS",
+  "root": "/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/travel-live-runtime-yg9nbfo0"
+}

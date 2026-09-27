@@ -411,6 +411,37 @@ def test_configure_web_extract_preserves_plugins_and_sets_split_backends(tmp_pat
     assert (home / "plugins/ai-lab-capabilities/native_extract_provider.py").is_file()
 
 
+def test_browser_provisioning_pins_runtime_scrubs_secrets_and_links_actual_chrome(tmp_path, monkeypatch):
+    path = ROOT / "scripts/configure_hermes_web_extract.py"
+    spec = importlib.util.spec_from_file_location("configure_browser_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    home = tmp_path / "hermes"
+    (home / "browser-runtime").mkdir(parents=True)
+    chrome = tmp_path / ".agent-browser/browsers/chrome-154.0.0.0/chrome"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text("test executable")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-npm")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1234")
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)))
+    module.prepare_browser(home)
+    assert "agent-browser@0.26.0" in calls[0][0]
+    assert "--ignore-scripts" in calls[0][0]
+    for _, kw in calls:
+        assert kw["check"] is True and kw["timeout"] <= 480
+        assert "OPENAI_API_KEY" not in kw["env"]
+        assert kw["env"]["HTTPS_PROXY"] == "http://127.0.0.1:1234"
+    assert (home / "browser-runtime/chrome").resolve() == chrome
+    def fail(*args, **kwargs):
+        raise module.subprocess.CalledProcessError(1, "npm")
+    monkeypatch.setattr(module.subprocess, "run", fail)
+    with pytest.raises(module.subprocess.CalledProcessError):
+        module.prepare_browser(home)
+    assert (home / "browser-runtime/chrome").resolve() == chrome
+
+
 def test_native_extract_uses_wechat_profile_only_for_wechat_host():
     path = ROOT / "agency/hermes-plugins/ai-lab-capabilities/native_extract_provider.py"
     spec = importlib.util.spec_from_file_location("native_extract_provider", path)

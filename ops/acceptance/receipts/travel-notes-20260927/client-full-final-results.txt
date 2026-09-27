@@ -1,0 +1,1001 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project ios/AIPlatformApp.xcodeproj -scheme AIPlatformApp -destination "platform=iOS Simulator,id=A19AF5DC-C365-4869-B20B-34A89A5F44BB" -derivedDataPath /tmp/travel-notes-full-final-derived -resultBundlePath /tmp/travel-real-client-full12.xcresult "-only-testing:AIPlatformAppUITests/TravelFlowUITests/testFullClientJourneyWithStageWaits" "-only-testing:AIPlatformAppUITests/TravelFlowUITests/testSavedRealNotebookSurvivesRelaunch" CODE_SIGNING_ALLOWED=NO test
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+
+Writing result bundle at path:
+	/tmp/travel-real-client-full12.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (3 targets)
+    Target 'AIPlatformAppUITests' in project 'AIPlatformApp'
+        ➜ Explicit dependency on target 'AIPlatformApp' in project 'AIPlatformApp'
+    Target 'AIPlatformAppTests' in project 'AIPlatformApp'
+        ➜ Explicit dependency on target 'AIPlatformApp' in project 'AIPlatformApp'
+    Target 'AIPlatformApp' in project 'AIPlatformApp' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk /tmp/travel-notes-full-final-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
+    cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.1.sdk -o /tmp/travel-notes-full-final-derived/SDKStatCaches.noindex/iphonesimulator26.1-23B77-90cf18a4295e390e64c810bc6bd7acbc.sdkstatcache
+
+2026-09-27 16:44:47.989053+0800 AIPlatformAppUITests-Runner[31415:21010741] [Default] Running tests...
+2026-09-27 16:44:48.160293+0800 AIPlatformAppUITests-Runner[31415:21011165] [General] Failed to send CA Event for app launch measurements for ca_event_type: 0 event_name: com.apple.app_launch_measurement.FirstFramePresentationMetric
+2026-09-27 16:44:48.202587+0800 AIPlatformAppUITests-Runner[31415:21011163] [General] Failed to send CA Event for app launch measurements for ca_event_type: 1 event_name: com.apple.app_launch_measurement.ExtendedLaunchMetrics
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-09-27 16:44:52.366.
+Test Suite 'AIPlatformAppUITests.xctest' started at 2026-09-27 16:44:52.367.
+Test Suite 'TravelFlowUITests' started at 2026-09-27 16:44:52.367.
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithStageWaits]' started.
+    t =     0.00s Start Test at 2026-09-27 16:44:52.368
+    t =     0.35s Set Up
+    t =     0.35s Open com.ailab.AIPlatformApp
+    t =     0.35s     Launch com.ailab.AIPlatformApp
+    t =     4.23s         Setting up automation session
+    t =     5.83s         Wait for com.ailab.AIPlatformApp to idle
+    t =     8.18s Waiting 3.0s for "创建第一个工作流" Button to exist
+    t =     9.21s     Checking `Expect predicate `existsNoRetry == 1` for object "创建第一个工作流" Button`
+    t =     9.22s         Checking existence of `"创建第一个工作流" Button`
+    t =     9.49s Checking existence of `"创建第一个工作流" Button`
+    t =     9.53s Find the "创建第一个工作流" Button
+    t =     9.64s Find the "创建第一个工作流" Button
+    t =    10.70s Checking `Expect predicate `enabled == 1` for object "创建第一个工作流" Button`
+    t =    10.71s     Find the "创建第一个工作流" Button
+    t =    10.73s Tap "创建第一个工作流" Button
+    t =    10.73s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.73s     Find the "创建第一个工作流" Button
+    t =    10.75s     Check for interrupting elements affecting "创建第一个工作流" Button
+    t =    10.84s     Synthesize event
+    t =    11.54s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.88s Waiting 3.0s for Any (First Match) to exist
+    t =    12.91s     Checking `Expect predicate `existsNoRetry == 1` for object Any (First Match)`
+    t =    12.91s         Checking existence of `Any (First Match)`
+    t =    12.99s Checking existence of `Any (First Match)`
+    t =    13.03s Find the Any (First Match)
+    t =    13.08s Find the "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    14.16s Checking `Expect predicate `enabled == 1` for object "例如：写一篇关于人工智能的课程论文…" TextField`
+    t =    14.17s     Find the "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    14.23s Tap "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    14.23s     Wait for com.ailab.AIPlatformApp to idle
+    t =    14.23s     Find the "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    14.28s     Check for interrupting elements affecting "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    14.34s     Synthesize event
+    t =    14.63s     Wait for com.ailab.AIPlatformApp to idle
+    t =    15.64s Type 'Client full journe...' into "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    15.64s     Wait for com.ailab.AIPlatformApp to idle
+    t =    15.64s     Find the "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    15.73s     Check for interrupting elements affecting "例如：写一篇关于人工智能的课程论文…" TextField
+    t =    15.79s     Synthesize event
+    t =    17.39s     Wait for com.ailab.AIPlatformApp to idle
+    t =    17.39s Waiting 3.0s for "旅行计划" Button to exist
+    t =    18.43s     Checking `Expect predicate `existsNoRetry == 1` for object "旅行计划" Button`
+    t =    18.43s         Checking existence of `"旅行计划" Button`
+    t =    18.52s Checking existence of `"旅行计划" Button`
+    t =    18.56s Find the "旅行计划" Button
+    t =    18.61s Find the "旅行计划" Button
+    t =    19.68s Checking `Expect predicate `enabled == 1` for object "旅行计划" Button`
+    t =    19.68s     Find the "旅行计划" Button
+    t =    19.74s Tap "旅行计划" Button
+    t =    19.74s     Wait for com.ailab.AIPlatformApp to idle
+    t =    19.75s     Find the "旅行计划" Button
+    t =    19.79s     Check for interrupting elements affecting "旅行计划" Button
+    t =    19.84s     Synthesize event
+    t =    20.13s     Wait for com.ailab.AIPlatformApp to idle
+    t =    20.13s Waiting 3.0s for "生成计划" Button to exist
+    t =    21.16s     Checking `Expect predicate `existsNoRetry == 1` for object "生成计划" Button`
+    t =    21.16s         Checking existence of `"生成计划" Button`
+    t =    21.22s Checking existence of `"生成计划" Button`
+    t =    21.26s Find the "生成计划" Button
+    t =    21.30s Find the "生成计划" Button
+    t =    22.38s Checking `Expect predicate `enabled == 1` for object "生成计划" Button`
+    t =    22.38s     Find the "生成计划" Button
+    t =    22.44s Tap "生成计划" Button
+    t =    22.44s     Wait for com.ailab.AIPlatformApp to idle
+    t =    22.44s     Find the "生成计划" Button
+    t =    22.48s     Check for interrupting elements affecting "生成计划" Button
+    t =    22.52s     Synthesize event
+    t =    22.81s     Wait for com.ailab.AIPlatformApp to idle
+    t =    22.82s Waiting 30.0s for "从哪里出发？大致什么时候、几天？还没决定也可以直接说。" StaticText to exist
+    t =    23.86s     Checking `Expect predicate `existsNoRetry == 1` for object "从哪里出发？大致什么时候、几天？还没决定也可以直接说。" StaticText`
+    t =    23.91s         Checking existence of `"从哪里出发？大致什么时候、几天？还没决定也可以直接说。" StaticText`
+    t =    24.11s         Capturing element debug description
+    t =    24.83s     Checking `Expect predicate `existsNoRetry == 1` for object "从哪里出发？大致什么时候、几天？还没决定也可以直接说。" StaticText`
+    t =    24.83s         Checking existence of `"从哪里出发？大致什么时候、几天？还没决定也可以直接说。" StaticText`
+    t =    24.88s Checking existence of `"clarify-custom-input" Any`
+    t =    24.92s Find the "clarify-custom-input" Any
+    t =    24.97s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    25.00s Waiting 3.0s for "clarify-custom-input" TextField to exist
+    t =    26.04s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-custom-input" TextField`
+    t =    26.04s         Checking existence of `"clarify-custom-input" TextField`
+    t =    26.12s Checking existence of `"clarify-custom-input" TextField`
+    t =    26.17s Find the "clarify-custom-input" TextField
+    t =    26.22s Find the "clarify-custom-input" TextField
+    t =    27.29s Checking `Expect predicate `enabled == 1` for object "clarify-custom-input" TextField`
+    t =    27.30s     Find the "clarify-custom-input" TextField
+    t =    27.42s Tap "clarify-custom-input" TextField
+    t =    27.42s     Wait for com.ailab.AIPlatformApp to idle
+    t =    27.44s     Find the "clarify-custom-input" TextField
+    t =    27.52s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    27.61s     Synthesize event
+    t =    27.93s     Wait for com.ailab.AIPlatformApp to idle
+    t =    27.96s Type '一人，2030年1月3日，日本' into "clarify-custom-input" TextField
+    t =    27.96s     Wait for com.ailab.AIPlatformApp to idle
+    t =    27.98s     Find the "clarify-custom-input" TextField
+    t =    28.06s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    28.10s     Synthesize event
+    t =    28.56s     Wait for com.ailab.AIPlatformApp to idle
+    t =    28.56s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    28.61s Waiting 3.0s for "clarify-keyboard-primary-action" Button to exist
+    t =    29.65s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    29.65s         Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    29.74s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    29.80s Find the "clarify-keyboard-primary-action" Button
+    t =    29.86s Find the "clarify-keyboard-primary-action" Button
+    t =    30.95s Checking `Expect predicate `enabled == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    30.95s     Find the "clarify-keyboard-primary-action" Button
+    t =    31.04s Tap "clarify-keyboard-primary-action" Button
+    t =    31.04s     Wait for com.ailab.AIPlatformApp to idle
+    t =    31.05s     Find the "clarify-keyboard-primary-action" Button
+    t =    31.10s     Check for interrupting elements affecting "clarify-keyboard-primary-action" Button
+    t =    31.17s     Synthesize event
+    t =    31.46s     Wait for com.ailab.AIPlatformApp to idle
+    t =    31.48s Waiting 30.0s for "最想体验什么、想避开什么？可以自由回答或补充资料。" StaticText to exist
+    t =    32.51s     Checking `Expect predicate `existsNoRetry == 1` for object "最想体验什么、想避开什么？可以自由回答或补充资料。" StaticText`
+    t =    32.52s         Checking existence of `"最想体验什么、想避开什么？可以自由回答或补充资料。" StaticText`
+    t =    32.59s Checking existence of `"clarify-custom-input" Any`
+    t =    32.64s Find the "clarify-custom-input" Any
+    t =    32.69s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.71s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    32.71s     Wait for com.ailab.AIPlatformApp to idle
+    t =    32.72s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.75s     Check for interrupting elements affecting "知识星海" Application
+    t =    32.81s     Synthesize event
+    t =    32.81s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.84s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.87s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.90s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    32.94s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    33.79s     Wait for com.ailab.AIPlatformApp to idle
+    t =    34.17s Checking existence of `"clarify-custom-input" TextField`
+    t =    34.22s Find the "clarify-custom-input" TextField
+    t =    34.27s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    34.30s Waiting 3.0s for "clarify-custom-input" TextField to exist
+    t =    35.32s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-custom-input" TextField`
+    t =    35.32s         Checking existence of `"clarify-custom-input" TextField`
+    t =    35.38s Checking existence of `"clarify-custom-input" TextField`
+    t =    35.43s Find the "clarify-custom-input" TextField
+    t =    35.48s Find the "clarify-custom-input" TextField
+    t =    36.55s Checking `Expect predicate `enabled == 1` for object "clarify-custom-input" TextField`
+    t =    36.55s     Find the "clarify-custom-input" TextField
+    t =    36.60s Tap "clarify-custom-input" TextField
+    t =    36.60s     Wait for com.ailab.AIPlatformApp to idle
+    t =    36.61s     Find the "clarify-custom-input" TextField
+    t =    36.65s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    36.70s     Synthesize event
+    t =    36.98s     Wait for com.ailab.AIPlatformApp to idle
+    t =    36.98s Type '小众温泉和放空，不去人多的地方' into "clarify-custom-input" TextField
+    t =    36.98s     Wait for com.ailab.AIPlatformApp to idle
+    t =    36.99s     Find the "clarify-custom-input" TextField
+    t =    37.05s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    37.10s     Synthesize event
+    t =    37.56s     Wait for com.ailab.AIPlatformApp to idle
+    t =    37.56s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    37.63s Waiting 3.0s for "clarify-keyboard-primary-action" Button to exist
+    t =    38.67s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    38.67s         Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    38.73s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    38.78s Find the "clarify-keyboard-primary-action" Button
+    t =    38.84s Find the "clarify-keyboard-primary-action" Button
+    t =    39.93s Checking `Expect predicate `enabled == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    39.93s     Find the "clarify-keyboard-primary-action" Button
+    t =    39.99s Tap "clarify-keyboard-primary-action" Button
+    t =    39.99s     Wait for com.ailab.AIPlatformApp to idle
+    t =    39.99s     Find the "clarify-keyboard-primary-action" Button
+    t =    40.05s     Check for interrupting elements affecting "clarify-keyboard-primary-action" Button
+    t =    40.10s     Synthesize event
+    t =    40.40s     Wait for com.ailab.AIPlatformApp to idle
+    t =    40.54s Waiting 30.0s for "同行人数、预算和交通偏好是什么？哪些条件必须保留？" StaticText to exist
+    t =    41.56s     Checking `Expect predicate `existsNoRetry == 1` for object "同行人数、预算和交通偏好是什么？哪些条件必须保留？" StaticText`
+    t =    41.56s         Checking existence of `"同行人数、预算和交通偏好是什么？哪些条件必须保留？" StaticText`
+    t =    41.64s Checking existence of `"clarify-custom-input" Any`
+    t =    41.69s Find the "clarify-custom-input" Any
+    t =    41.74s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.76s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    41.76s     Wait for com.ailab.AIPlatformApp to idle
+    t =    41.77s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.79s     Check for interrupting elements affecting "知识星海" Application
+    t =    41.83s     Synthesize event
+    t =    41.83s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.86s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.88s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.91s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    41.94s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    42.78s     Wait for com.ailab.AIPlatformApp to idle
+    t =    43.13s Checking existence of `"clarify-custom-input" TextField`
+    t =    43.18s Find the "clarify-custom-input" TextField
+    t =    43.23s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    43.25s Waiting 3.0s for "clarify-custom-input" TextField to exist
+    t =    44.28s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-custom-input" TextField`
+    t =    44.28s         Checking existence of `"clarify-custom-input" TextField`
+    t =    44.34s Checking existence of `"clarify-custom-input" TextField`
+    t =    44.38s Find the "clarify-custom-input" TextField
+    t =    44.44s Find the "clarify-custom-input" TextField
+    t =    45.51s Checking `Expect predicate `enabled == 1` for object "clarify-custom-input" TextField`
+    t =    45.51s     Find the "clarify-custom-input" TextField
+    t =    45.58s Tap "clarify-custom-input" TextField
+    t =    45.58s     Wait for com.ailab.AIPlatformApp to idle
+    t =    45.58s     Find the "clarify-custom-input" TextField
+    t =    45.62s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    45.67s     Synthesize event
+    t =    45.97s     Wait for com.ailab.AIPlatformApp to idle
+    t =    45.97s Type '只查官方网页，最多3个安排，不预约' into "clarify-custom-input" TextField
+    t =    45.97s     Wait for com.ailab.AIPlatformApp to idle
+    t =    45.97s     Find the "clarify-custom-input" TextField
+    t =    46.03s     Check for interrupting elements affecting "clarify-custom-input" TextField
+    t =    46.08s     Synthesize event
+    t =    46.57s     Wait for com.ailab.AIPlatformApp to idle
+    t =    46.58s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    46.65s Waiting 3.0s for "clarify-keyboard-primary-action" Button to exist
+    t =    47.68s     Checking `Expect predicate `existsNoRetry == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    47.68s         Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    47.76s Checking existence of `"clarify-keyboard-primary-action" Button`
+    t =    47.82s Find the "clarify-keyboard-primary-action" Button
+    t =    47.88s Find the "clarify-keyboard-primary-action" Button
+    t =    48.96s Checking `Expect predicate `enabled == 1` for object "clarify-keyboard-primary-action" Button`
+    t =    48.96s     Find the "clarify-keyboard-primary-action" Button
+    t =    49.02s Tap "clarify-keyboard-primary-action" Button
+    t =    49.02s     Wait for com.ailab.AIPlatformApp to idle
+    t =    49.03s     Find the "clarify-keyboard-primary-action" Button
+    t =    49.09s     Check for interrupting elements affecting "clarify-keyboard-primary-action" Button
+    t =    49.15s     Synthesize event
+    t =    49.45s     Wait for com.ailab.AIPlatformApp to idle
+    t =    49.77s Waiting 3.0s for Button (First Match) to exist
+    t =    50.79s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =    50.79s         Checking existence of `Button (First Match)`
+    t =    50.85s Checking existence of `Button (First Match)`
+    t =    50.90s Find the Button (First Match)
+    t =    50.97s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    50.97s     Wait for com.ailab.AIPlatformApp to idle
+    t =    50.97s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    51.01s     Check for interrupting elements affecting "知识星海" Application
+    t =    51.05s     Synthesize event
+    t =    51.06s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    51.12s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    51.16s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    51.19s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    51.23s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    52.17s     Wait for com.ailab.AIPlatformApp to idle
+    t =    53.73s Checking existence of `"未选择，内容准确" Button`
+    t =    53.80s Find the "未选择，内容准确" Button
+    t =    53.85s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    53.85s     Wait for com.ailab.AIPlatformApp to idle
+    t =    53.85s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    53.89s     Check for interrupting elements affecting "知识星海" Application
+    t =    53.93s     Synthesize event
+    t =    53.93s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    53.96s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    54.00s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    54.03s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    54.07s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    55.00s     Wait for com.ailab.AIPlatformApp to idle
+    t =    56.57s Checking existence of `"未选择，内容准确" Button`
+    t =    56.63s Find the "未选择，内容准确" Button
+    t =    56.68s Find the "未选择，内容准确" Button
+    t =    57.75s Checking `Expect predicate `enabled == 1` for object "未选择，内容准确" Button`
+    t =    57.76s     Find the "未选择，内容准确" Button
+    t =    57.88s Tap "未选择，内容准确" Button
+    t =    57.88s     Wait for com.ailab.AIPlatformApp to idle
+    t =    57.88s     Find the "未选择，内容准确" Button
+    t =    57.93s     Check for interrupting elements affecting "未选择，内容准确" Button
+    t =    57.98s     Synthesize event
+    t =    58.27s     Wait for com.ailab.AIPlatformApp to idle
+    t =    58.49s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    58.58s Find the "requirement-confirm-primary-action" Button
+    t =    58.64s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.67s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    58.67s     Wait for com.ailab.AIPlatformApp to idle
+    t =    58.67s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.71s     Check for interrupting elements affecting "知识星海" Application
+    t =    58.75s     Synthesize event
+    t =    58.75s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.78s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.82s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.85s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    58.88s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    59.73s     Wait for com.ailab.AIPlatformApp to idle
+    t =    60.16s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    60.24s Find the "requirement-confirm-primary-action" Button
+    t =    60.31s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.34s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    60.34s     Wait for com.ailab.AIPlatformApp to idle
+    t =    60.35s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.38s     Check for interrupting elements affecting "知识星海" Application
+    t =    60.42s     Synthesize event
+    t =    60.42s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.45s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.49s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.52s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    60.55s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    61.40s     Wait for com.ailab.AIPlatformApp to idle
+    t =    61.82s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    61.90s Find the "requirement-confirm-primary-action" Button
+    t =    61.95s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    61.98s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    61.98s     Wait for com.ailab.AIPlatformApp to idle
+    t =    61.98s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    62.01s     Check for interrupting elements affecting "知识星海" Application
+    t =    62.05s     Synthesize event
+    t =    62.05s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    62.09s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    62.12s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    62.15s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    62.18s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.04s     Wait for com.ailab.AIPlatformApp to idle
+    t =    63.45s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    63.50s Find the "requirement-confirm-primary-action" Button
+    t =    63.55s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.58s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    63.58s     Wait for com.ailab.AIPlatformApp to idle
+    t =    63.58s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.61s     Check for interrupting elements affecting "知识星海" Application
+    t =    63.65s     Synthesize event
+    t =    63.65s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.68s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.71s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.74s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    63.78s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    64.62s     Wait for com.ailab.AIPlatformApp to idle
+    t =    65.07s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    65.12s Find the "requirement-confirm-primary-action" Button
+    t =    65.17s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.20s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    65.20s     Wait for com.ailab.AIPlatformApp to idle
+    t =    65.20s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.23s     Check for interrupting elements affecting "知识星海" Application
+    t =    65.27s     Synthesize event
+    t =    65.27s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.30s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.33s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.36s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    65.39s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.25s     Wait for com.ailab.AIPlatformApp to idle
+    t =    66.67s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    66.72s Find the "requirement-confirm-primary-action" Button
+    t =    66.77s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.80s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    66.80s     Wait for com.ailab.AIPlatformApp to idle
+    t =    66.80s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.83s     Check for interrupting elements affecting "知识星海" Application
+    t =    66.88s     Synthesize event
+    t =    66.88s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.91s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.94s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    66.97s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    67.00s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    67.87s     Wait for com.ailab.AIPlatformApp to idle
+    t =    68.53s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    68.59s Find the "requirement-confirm-primary-action" Button
+    t =    68.64s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.66s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    68.66s     Wait for com.ailab.AIPlatformApp to idle
+    t =    68.67s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.70s     Check for interrupting elements affecting "知识星海" Application
+    t =    68.74s     Synthesize event
+    t =    68.74s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.77s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.80s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.86s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    68.89s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    69.75s     Wait for com.ailab.AIPlatformApp to idle
+    t =    70.17s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    70.22s Find the "requirement-confirm-primary-action" Button
+    t =    70.27s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.30s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    70.30s     Wait for com.ailab.AIPlatformApp to idle
+    t =    70.31s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.34s     Check for interrupting elements affecting "知识星海" Application
+    t =    70.38s     Synthesize event
+    t =    70.38s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.41s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.44s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.47s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    70.50s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    71.35s     Wait for com.ailab.AIPlatformApp to idle
+    t =    71.78s Find the "requirement-confirm-primary-action" Button
+    t =    71.87s Waiting 3.0s for "requirement-confirm-primary-action" Button to exist
+    t =    72.89s     Checking `Expect predicate `existsNoRetry == 1` for object "requirement-confirm-primary-action" Button`
+    t =    72.89s         Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    72.97s Checking existence of `"requirement-confirm-primary-action" Button`
+    t =    73.03s Find the "requirement-confirm-primary-action" Button
+    t =    73.10s Find the "requirement-confirm-primary-action" Button
+    t =    74.21s Checking `Expect predicate `enabled == 1` for object "requirement-confirm-primary-action" Button`
+    t =    74.21s     Find the "requirement-confirm-primary-action" Button
+    t =    74.27s Tap "requirement-confirm-primary-action" Button
+    t =    74.27s     Wait for com.ailab.AIPlatformApp to idle
+    t =    74.27s     Find the "requirement-confirm-primary-action" Button
+    t =    74.32s     Check for interrupting elements affecting "requirement-confirm-primary-action" Button
+    t =    74.36s     Synthesize event
+    t =    74.64s     Wait for com.ailab.AIPlatformApp to idle
+    t =    74.76s Waiting 90.0s for "查看并确认方案" Button to exist
+    t =    75.79s     Checking `Expect predicate `existsNoRetry == 1` for object "查看并确认方案" Button`
+    t =    75.79s         Checking existence of `"查看并确认方案" Button`
+    t =    75.87s         Capturing element debug description
+    t =    76.78s     Checking `Expect predicate `existsNoRetry == 1` for object "查看并确认方案" Button`
+    t =    76.78s         Checking existence of `"查看并确认方案" Button`
+    t =    76.87s Waiting 3.0s for "查看并确认方案" Button to exist
+    t =    77.89s     Checking `Expect predicate `existsNoRetry == 1` for object "查看并确认方案" Button`
+    t =    77.89s         Checking existence of `"查看并确认方案" Button`
+    t =    77.95s Checking existence of `"查看并确认方案" Button`
+    t =    77.99s Find the "查看并确认方案" Button
+    t =    78.09s Find the "查看并确认方案" Button
+    t =    79.16s Checking `Expect predicate `enabled == 1` for object "查看并确认方案" Button`
+    t =    79.17s     Find the "查看并确认方案" Button
+    t =    79.25s Tap "查看并确认方案" Button
+    t =    79.25s     Wait for com.ailab.AIPlatformApp to idle
+    t =    79.25s     Find the "查看并确认方案" Button
+    t =    79.29s     Check for interrupting elements affecting "查看并确认方案" Button
+    t =    79.33s     Synthesize event
+    t =    79.63s     Wait for com.ailab.AIPlatformApp to idle
+    t =    79.70s Waiting 3.0s for Button (First Match) to exist
+    t =    80.72s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =    80.73s         Checking existence of `Button (First Match)`
+    t =    80.77s Checking existence of `Button (First Match)`
+    t =    80.79s Find the Button (First Match)
+    t =    80.83s Find the "workflow-card-Client full journey. 203" Button
+    t =    81.89s Checking `Expect predicate `enabled == 1` for object "workflow-card-Client full journey. 203" Button`
+    t =    81.89s     Find the "workflow-card-Client full journey. 203" Button
+    t =    81.93s Tap "workflow-card-Client full journey. 203" Button
+    t =    81.93s     Wait for com.ailab.AIPlatformApp to idle
+    t =    81.94s     Find the "workflow-card-Client full journey. 203" Button
+    t =    81.96s     Check for interrupting elements affecting "workflow-card-Client full journey. 203" Button
+    t =    82.01s     Synthesize event
+    t =    82.31s     Wait for com.ailab.AIPlatformApp to idle
+    t =    82.37s Waiting 3.0s for "确认并构建 Agent" Button to exist
+    t =    83.38s     Checking `Expect predicate `existsNoRetry == 1` for object "确认并构建 Agent" Button`
+    t =    83.38s         Checking existence of `"确认并构建 Agent" Button`
+    t =    83.43s Checking existence of `"确认并构建 Agent" Button`
+    t =    83.46s Find the "确认并构建 Agent" Button
+    t =    83.50s Find the "workflow-primary-action" Button
+    t =    84.55s Checking `Expect predicate `enabled == 1` for object "workflow-primary-action" Button`
+    t =    84.55s     Find the "workflow-primary-action" Button
+    t =    84.60s Tap "workflow-primary-action" Button
+    t =    84.60s     Wait for com.ailab.AIPlatformApp to idle
+    t =    84.62s     Find the "workflow-primary-action" Button
+    t =    84.72s     Check for interrupting elements affecting "workflow-primary-action" Button
+    t =    84.81s     Synthesize event
+    t =    85.10s     Wait for com.ailab.AIPlatformApp to idle
+    t =    85.10s Waiting 60.0s for "启动任务" Button to exist
+    t =    86.12s     Checking `Expect predicate `existsNoRetry == 1` for object "启动任务" Button`
+    t =    86.13s         Checking existence of `"启动任务" Button`
+    t =    86.17s Waiting 3.0s for "启动任务" Button to exist
+    t =    87.18s     Checking `Expect predicate `existsNoRetry == 1` for object "启动任务" Button`
+    t =    87.18s         Checking existence of `"启动任务" Button`
+    t =    87.23s Checking existence of `"启动任务" Button`
+    t =    87.27s Find the "启动任务" Button
+    t =    87.31s Find the "workflow-primary-action" Button
+    t =    88.37s Checking `Expect predicate `enabled == 1` for object "workflow-primary-action" Button`
+    t =    88.37s     Find the "workflow-primary-action" Button
+    t =    88.41s Tap "workflow-primary-action" Button
+    t =    88.41s     Wait for com.ailab.AIPlatformApp to idle
+    t =    88.42s     Find the "workflow-primary-action" Button
+    t =    88.45s     Check for interrupting elements affecting "workflow-primary-action" Button
+    t =    88.49s     Synthesize event
+    t =    88.79s     Wait for com.ailab.AIPlatformApp to idle
+    t =    88.79s Waiting 240.0s for "确认行程" Button to exist
+    t =    89.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    89.82s         Checking existence of `"确认行程" Button`
+    t =    89.89s         Capturing element debug description
+    t =    90.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    90.81s         Checking existence of `"确认行程" Button`
+    t =    90.87s         Capturing element debug description
+    t =    91.88s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    91.88s         Checking existence of `"确认行程" Button`
+    t =    91.92s         Capturing element debug description
+    t =    92.83s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    92.83s         Checking existence of `"确认行程" Button`
+    t =    92.88s         Capturing element debug description
+    t =    93.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    93.80s         Checking existence of `"确认行程" Button`
+    t =    93.83s         Capturing element debug description
+    t =    94.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    94.86s         Checking existence of `"确认行程" Button`
+    t =    94.90s         Capturing element debug description
+    t =    95.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    95.82s         Checking existence of `"确认行程" Button`
+    t =    95.88s         Capturing element debug description
+    t =    96.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    96.80s         Checking existence of `"确认行程" Button`
+    t =    96.84s         Capturing element debug description
+    t =    97.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    97.86s         Checking existence of `"确认行程" Button`
+    t =    97.90s         Capturing element debug description
+    t =    98.82s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    98.83s         Checking existence of `"确认行程" Button`
+    t =    98.87s         Capturing element debug description
+    t =    99.88s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =    99.88s         Checking existence of `"确认行程" Button`
+    t =    99.92s         Capturing element debug description
+    t =   100.83s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   100.84s         Checking existence of `"确认行程" Button`
+    t =   100.89s         Capturing element debug description
+    t =   101.82s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   101.82s         Checking existence of `"确认行程" Button`
+    t =   101.86s         Capturing element debug description
+    t =   102.88s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   102.88s         Checking existence of `"确认行程" Button`
+    t =   102.94s         Capturing element debug description
+    t =   103.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   103.86s         Checking existence of `"确认行程" Button`
+    t =   103.90s         Capturing element debug description
+    t =   104.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   104.81s         Checking existence of `"确认行程" Button`
+    t =   104.86s         Capturing element debug description
+    t =   105.89s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   105.89s         Checking existence of `"确认行程" Button`
+    t =   105.93s         Capturing element debug description
+    t =   106.84s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   106.85s         Checking existence of `"确认行程" Button`
+    t =   106.87s         Capturing element debug description
+    t =   107.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   107.81s         Checking existence of `"确认行程" Button`
+    t =   107.85s         Capturing element debug description
+    t =   108.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   108.86s         Checking existence of `"确认行程" Button`
+    t =   108.91s         Capturing element debug description
+    t =   109.82s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   109.82s         Checking existence of `"确认行程" Button`
+    t =   109.86s         Capturing element debug description
+    t =   110.89s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   110.89s         Checking existence of `"确认行程" Button`
+    t =   110.93s         Capturing element debug description
+    t =   111.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   111.85s         Checking existence of `"确认行程" Button`
+    t =   111.90s         Capturing element debug description
+    t =   112.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   112.82s         Checking existence of `"确认行程" Button`
+    t =   112.87s         Capturing element debug description
+    t =   113.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   113.80s         Checking existence of `"确认行程" Button`
+    t =   113.88s         Capturing element debug description
+    t =   114.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   114.80s         Checking existence of `"确认行程" Button`
+    t =   114.84s         Capturing element debug description
+    t =   115.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   115.86s         Checking existence of `"确认行程" Button`
+    t =   115.91s         Capturing element debug description
+    t =   116.83s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   116.83s         Checking existence of `"确认行程" Button`
+    t =   116.88s         Capturing element debug description
+    t =   117.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   117.81s         Checking existence of `"确认行程" Button`
+    t =   117.85s         Capturing element debug description
+    t =   118.87s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   118.87s         Checking existence of `"确认行程" Button`
+    t =   118.95s         Capturing element debug description
+    t =   119.87s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   119.87s         Checking existence of `"确认行程" Button`
+    t =   119.93s         Capturing element debug description
+    t =   120.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   120.85s         Checking existence of `"确认行程" Button`
+    t =   120.88s         Capturing element debug description
+    t =   121.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   121.80s         Checking existence of `"确认行程" Button`
+    t =   121.83s         Capturing element debug description
+    t =   122.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   122.85s         Checking existence of `"确认行程" Button`
+    t =   122.89s         Capturing element debug description
+    t =   123.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   123.81s         Checking existence of `"确认行程" Button`
+    t =   123.85s         Capturing element debug description
+    t =   124.87s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   124.88s         Checking existence of `"确认行程" Button`
+    t =   124.94s         Capturing element debug description
+    t =   125.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   125.86s         Checking existence of `"确认行程" Button`
+    t =   125.91s         Capturing element debug description
+    t =   126.84s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   126.84s         Checking existence of `"确认行程" Button`
+    t =   126.88s         Capturing element debug description
+    t =   127.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   127.82s         Checking existence of `"确认行程" Button`
+    t =   127.95s         Capturing element debug description
+    t =   128.88s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   128.88s         Checking existence of `"确认行程" Button`
+    t =   128.92s         Capturing element debug description
+    t =   129.84s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   129.85s         Checking existence of `"确认行程" Button`
+    t =   129.89s         Capturing element debug description
+    t =   130.79s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   130.80s         Checking existence of `"确认行程" Button`
+    t =   130.83s         Capturing element debug description
+    t =   131.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   131.86s         Checking existence of `"确认行程" Button`
+    t =   131.91s         Capturing element debug description
+    t =   132.83s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   132.83s         Checking existence of `"确认行程" Button`
+    t =   132.87s         Capturing element debug description
+    t =   133.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   133.80s         Checking existence of `"确认行程" Button`
+    t =   133.84s         Capturing element debug description
+    t =   134.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   134.86s         Checking existence of `"确认行程" Button`
+    t =   134.89s         Capturing element debug description
+    t =   135.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   135.81s         Checking existence of `"确认行程" Button`
+    t =   135.86s         Capturing element debug description
+    t =   136.89s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   136.91s         Checking existence of `"确认行程" Button`
+    t =   136.97s         Capturing element debug description
+    t =   137.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   137.80s         Checking existence of `"确认行程" Button`
+    t =   137.87s         Capturing element debug description
+    t =   138.89s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   138.89s         Checking existence of `"确认行程" Button`
+    t =   138.93s         Capturing element debug description
+    t =   139.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   139.85s         Checking existence of `"确认行程" Button`
+    t =   139.90s         Capturing element debug description
+    t =   140.83s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   140.83s         Checking existence of `"确认行程" Button`
+    t =   140.87s         Capturing element debug description
+    t =   141.80s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   141.80s         Checking existence of `"确认行程" Button`
+    t =   141.84s         Capturing element debug description
+    t =   142.86s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   142.87s         Checking existence of `"确认行程" Button`
+    t =   142.92s         Capturing element debug description
+    t =   143.84s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   143.84s         Checking existence of `"确认行程" Button`
+    t =   143.89s         Capturing element debug description
+    t =   144.82s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   144.82s         Checking existence of `"确认行程" Button`
+    t =   144.87s         Capturing element debug description
+    t =   145.89s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   145.89s         Checking existence of `"确认行程" Button`
+    t =   145.94s         Capturing element debug description
+    t =   146.87s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   146.87s         Checking existence of `"确认行程" Button`
+    t =   146.96s         Capturing element debug description
+    t =   147.88s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   147.88s         Checking existence of `"确认行程" Button`
+    t =   147.92s         Capturing element debug description
+    t =   148.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   148.85s         Checking existence of `"确认行程" Button`
+    t =   148.88s         Capturing element debug description
+    t =   149.81s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   149.81s         Checking existence of `"确认行程" Button`
+    t =   149.86s         Capturing element debug description
+    t =   150.79s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   150.80s         Checking existence of `"确认行程" Button`
+    t =   150.83s         Capturing element debug description
+    t =   151.87s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   151.87s         Checking existence of `"确认行程" Button`
+    t =   151.93s         Capturing element debug description
+    t =   152.85s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   152.85s         Checking existence of `"确认行程" Button`
+    t =   152.94s Waiting 3.0s for "确认行程" Button to exist
+    t =   153.97s     Checking `Expect predicate `existsNoRetry == 1` for object "确认行程" Button`
+    t =   153.97s         Checking existence of `"确认行程" Button`
+    t =   154.04s Checking existence of `"确认行程" Button`
+    t =   154.08s Find the "确认行程" Button
+    t =   154.17s Find the "确认行程" Button
+    t =   155.26s Checking `Expect predicate `enabled == 1` for object "确认行程" Button`
+    t =   155.26s     Find the "确认行程" Button
+    t =   155.30s Tap "确认行程" Button
+    t =   155.30s     Wait for com.ailab.AIPlatformApp to idle
+    t =   155.30s     Find the "确认行程" Button
+    t =   155.34s     Check for interrupting elements affecting "确认行程" Button
+    t =   155.44s     Synthesize event
+    t =   155.74s     Wait for com.ailab.AIPlatformApp to idle
+    t =   155.75s Waiting 180.0s for "采用这份行程" Button to exist
+    t =   156.78s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   156.78s         Checking existence of `"采用这份行程" Button`
+    t =   156.84s         Capturing element debug description
+    t =   157.77s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   157.77s         Checking existence of `"采用这份行程" Button`
+    t =   157.84s         Capturing element debug description
+    t =   158.77s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   158.77s         Checking existence of `"采用这份行程" Button`
+    t =   158.81s         Capturing element debug description
+    t =   159.75s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   159.76s         Checking existence of `"采用这份行程" Button`
+    t =   159.80s         Capturing element debug description
+    t =   160.83s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   160.84s         Checking existence of `"采用这份行程" Button`
+    t =   160.89s         Capturing element debug description
+    t =   161.81s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   161.82s         Checking existence of `"采用这份行程" Button`
+    t =   161.87s         Capturing element debug description
+    t =   162.79s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   162.80s         Checking existence of `"采用这份行程" Button`
+    t =   162.83s         Capturing element debug description
+    t =   163.76s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   163.76s         Checking existence of `"采用这份行程" Button`
+    t =   163.80s         Capturing element debug description
+    t =   164.83s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   164.83s         Checking existence of `"采用这份行程" Button`
+    t =   164.86s         Capturing element debug description
+    t =   165.79s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   165.79s         Checking existence of `"采用这份行程" Button`
+    t =   165.82s         Capturing element debug description
+    t =   166.75s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   166.75s         Checking existence of `"采用这份行程" Button`
+    t =   166.80s         Capturing element debug description
+    t =   167.83s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   167.83s         Checking existence of `"采用这份行程" Button`
+    t =   167.87s         Capturing element debug description
+    t =   168.80s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   168.80s         Checking existence of `"采用这份行程" Button`
+    t =   168.85s         Capturing element debug description
+    t =   169.78s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   169.78s         Checking existence of `"采用这份行程" Button`
+    t =   169.84s         Capturing element debug description
+    t =   170.76s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   170.76s         Checking existence of `"采用这份行程" Button`
+    t =   170.82s         Capturing element debug description
+    t =   171.75s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   171.75s         Checking existence of `"采用这份行程" Button`
+    t =   171.82s         Capturing element debug description
+    t =   172.75s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   172.75s         Checking existence of `"采用这份行程" Button`
+    t =   172.82s         Capturing element debug description
+    t =   173.75s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   173.75s         Checking existence of `"采用这份行程" Button`
+    t =   173.80s         Capturing element debug description
+    t =   174.84s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   174.84s         Checking existence of `"采用这份行程" Button`
+    t =   174.88s         Capturing element debug description
+    t =   175.81s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   175.82s         Checking existence of `"采用这份行程" Button`
+    t =   175.85s         Capturing element debug description
+    t =   176.78s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   176.79s         Checking existence of `"采用这份行程" Button`
+    t =   176.87s         Capturing element debug description
+    t =   177.80s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   177.80s         Checking existence of `"采用这份行程" Button`
+    t =   177.84s         Capturing element debug description
+    t =   178.77s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   178.77s         Checking existence of `"采用这份行程" Button`
+    t =   178.83s         Capturing element debug description
+    t =   179.76s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   179.76s         Checking existence of `"采用这份行程" Button`
+    t =   179.81s         Capturing element debug description
+    t =   180.84s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   180.84s         Checking existence of `"采用这份行程" Button`
+    t =   180.90s Waiting 3.0s for "采用这份行程" Button to exist
+    t =   181.93s     Checking `Expect predicate `existsNoRetry == 1` for object "采用这份行程" Button`
+    t =   181.93s         Checking existence of `"采用这份行程" Button`
+    t =   181.96s Checking existence of `"采用这份行程" Button`
+    t =   181.99s Find the "采用这份行程" Button
+    t =   182.06s Find the "采用这份行程" Button
+    t =   183.14s Checking `Expect predicate `enabled == 1` for object "采用这份行程" Button`
+    t =   183.14s     Find the "采用这份行程" Button
+    t =   183.19s Tap "采用这份行程" Button
+    t =   183.19s     Wait for com.ailab.AIPlatformApp to idle
+    t =   183.20s     Find the "采用这份行程" Button
+    t =   183.23s     Check for interrupting elements affecting "采用这份行程" Button
+    t =   183.32s     Synthesize event
+    t =   183.62s     Wait for com.ailab.AIPlatformApp to idle
+    t =   183.80s Waiting 30.0s for "查看完整行程  →" Button to exist
+    t =   184.82s     Checking `Expect predicate `existsNoRetry == 1` for object "查看完整行程  →" Button`
+    t =   184.82s         Checking existence of `"查看完整行程  →" Button`
+    t =   184.91s Waiting 3.0s for "查看完整行程  →" Button to exist
+    t =   185.94s     Checking `Expect predicate `existsNoRetry == 1` for object "查看完整行程  →" Button`
+    t =   185.94s         Checking existence of `"查看完整行程  →" Button`
+    t =   186.01s Checking existence of `"查看完整行程  →" Button`
+    t =   186.07s Find the "查看完整行程  →" Button
+    t =   186.16s Find the "查看完整行程  →" Button
+    t =   187.26s Checking `Expect predicate `enabled == 1` for object "查看完整行程  →" Button`
+    t =   187.26s     Find the "查看完整行程  →" Button
+    t =   187.33s Tap "查看完整行程  →" Button
+    t =   187.33s     Wait for com.ailab.AIPlatformApp to idle
+    t =   187.33s     Find the "查看完整行程  →" Button
+    t =   187.38s     Check for interrupting elements affecting "查看完整行程  →" Button
+    t =   187.43s     Synthesize event
+    t =   187.72s     Wait for com.ailab.AIPlatformApp to idle
+    t =   187.74s Waiting 10.0s for "第 1 天" Button to exist
+    t =   188.77s     Checking `Expect predicate `existsNoRetry == 1` for object "第 1 天" Button`
+    t =   188.78s         Checking existence of `"第 1 天" Button`
+    t =   188.86s Checking existence of `"现在开始" Button`
+    t =   188.93s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =   189.14s Added attachment named 'travel-real-model-client-notebook'
+    t =   189.16s Tear Down
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithStageWaits]' passed (190.181 seconds).
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testSavedRealNotebookSurvivesRelaunch]' started.
+    t =     0.00s Start Test at 2026-09-27 16:48:02.551
+    t =     0.07s Set Up
+    t =     0.07s Open com.ailab.AIPlatformApp
+    t =     0.07s     Launch com.ailab.AIPlatformApp
+    t =     0.08s         Terminate com.ailab.AIPlatformApp:31543
+    t =     1.61s         Setting up automation session
+    t =     3.36s         Wait for com.ailab.AIPlatformApp to idle
+    t =     5.74s Waiting 3.0s for Button (First Match) to exist
+    t =     6.77s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =     6.77s         Checking existence of `Button (First Match)`
+    t =     6.90s Checking existence of `Button (First Match)`
+    t =     6.93s Find the Button (First Match)
+    t =     7.00s Find the "workflow-card-Client full journey. 203" Button
+    t =     8.07s Checking `Expect predicate `enabled == 1` for object "workflow-card-Client full journey. 203" Button`
+    t =     8.07s     Find the "workflow-card-Client full journey. 203" Button
+    t =     8.10s Tap "workflow-card-Client full journey. 203" Button
+    t =     8.10s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.10s     Find the "workflow-card-Client full journey. 203" Button
+    t =     8.13s     Check for interrupting elements affecting "workflow-card-Client full journey. 203" Button
+    t =     8.20s     Synthesize event
+    t =     8.50s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.83s Waiting 3.0s for Button (First Match) to exist
+    t =     9.85s     Checking `Expect predicate `existsNoRetry == 1` for object Button (First Match)`
+    t =     9.86s         Checking existence of `Button (First Match)`
+    t =     9.94s Checking existence of `Button (First Match)`
+    t =    10.01s Find the Button (First Match)
+    t =    10.07s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    10.07s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.07s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    10.09s     Check for interrupting elements affecting "知识星海" Application
+    t =    10.12s     Synthesize event
+    t =    10.12s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    10.14s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    10.16s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    10.18s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    10.20s         Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    11.12s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.52s Checking existence of `"workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button`
+    t =    11.55s Find the "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    11.61s Find the "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    12.69s Checking `Expect predicate `enabled == 1` for object "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button`
+    t =    12.69s     Find the "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    12.74s Tap "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    12.74s     Wait for com.ailab.AIPlatformApp to idle
+    t =    12.74s     Find the "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    12.77s     Check for interrupting elements affecting "workflow-artifact-preview-wfa_8fa6fb2cdcf543e59a1c59eda7d56bf7" Button
+    t =    12.80s     Synthesize event
+    t =    13.09s     Wait for com.ailab.AIPlatformApp to idle
+    t =    13.47s Waiting 3.0s for "存为旅行笔记" Button to exist
+    t =    14.51s     Checking `Expect predicate `existsNoRetry == 1` for object "存为旅行笔记" Button`
+    t =    14.51s         Checking existence of `"存为旅行笔记" Button`
+    t =    14.62s Checking existence of `"存为旅行笔记" Button`
+    t =    14.66s Find the "存为旅行笔记" Button
+    t =    14.71s Find the "存为旅行笔记" Button
+    t =    15.80s Checking `Expect predicate `enabled == 1` for object "存为旅行笔记" Button`
+    t =    15.80s     Find the "存为旅行笔记" Button
+    t =    15.88s Tap "存为旅行笔记" Button
+    t =    15.88s     Wait for com.ailab.AIPlatformApp to idle
+    t =    15.89s     Find the "存为旅行笔记" Button
+    t =    15.97s     Check for interrupting elements affecting "存为旅行笔记" Button
+    t =    16.03s     Synthesize event
+    t =    16.31s     Wait for com.ailab.AIPlatformApp to idle
+    t =    16.43s Waiting 3.0s for "旅行笔记标题" TextField to exist
+    t =    17.46s     Checking `Expect predicate `existsNoRetry == 1` for object "旅行笔记标题" TextField`
+    t =    17.46s         Checking existence of `"旅行笔记标题" TextField`
+    t =    17.60s Checking existence of `"旅行笔记标题" TextField`
+    t =    17.66s Find the "旅行笔记标题" TextField
+    t =    17.72s Find the "旅行笔记标题" TextField
+    t =    18.81s Checking `Expect predicate `enabled == 1` for object "旅行笔记标题" TextField`
+    t =    18.81s     Find the "旅行笔记标题" TextField
+    t =    18.89s Tap "旅行笔记标题" TextField
+    t =    18.89s     Wait for com.ailab.AIPlatformApp to idle
+    t =    18.89s     Find the "旅行笔记标题" TextField
+    t =    18.95s     Check for interrupting elements affecting "旅行笔记标题" TextField
+    t =    19.04s     Synthesize event
+    t =    19.33s     Wait for com.ailab.AIPlatformApp to idle
+    t =    19.75s Waiting 2.0s for Keyboard (First Match) to exist
+    t =    20.79s     Checking `Expect predicate `existsNoRetry == 1` for object Keyboard (First Match)`
+    t =    20.79s         Checking existence of `Keyboard (First Match)`
+    t =    20.83s Waiting 5.0s for Keyboard (First Match) to exist
+    t =    21.86s     Checking `Expect predicate `existsNoRetry == 1` for object Keyboard (First Match)`
+    t =    21.87s         Checking existence of `Keyboard (First Match)`
+    t =    21.90s Find the "旅行笔记标题" TextField
+    t =    21.99s Type 'Client acce...' into "旅行笔记标题" TextField
+    t =    21.99s     Wait for com.ailab.AIPlatformApp to idle
+    t =    22.00s     Find the "旅行笔记标题" TextField
+    t =    22.07s     Check for interrupting elements affecting "旅行笔记标题" TextField
+    t =    22.14s     Synthesize event
+    t =    22.95s     Wait for com.ailab.AIPlatformApp to idle
+    t =    22.95s Waiting 3.0s for "保存旅行笔记" Button to exist
+    t =    23.97s     Checking `Expect predicate `existsNoRetry == 1` for object "保存旅行笔记" Button`
+    t =    23.98s         Checking existence of `"保存旅行笔记" Button`
+    t =    24.10s Checking existence of `"保存旅行笔记" Button`
+    t =    24.17s Find the "保存旅行笔记" Button
+    t =    24.27s Find the "保存旅行笔记" Button
+    t =    25.38s Checking `Expect predicate `enabled == 1` for object "保存旅行笔记" Button`
+    t =    25.39s     Find the "保存旅行笔记" Button
+    t =    25.51s Tap "保存旅行笔记" Button
+    t =    25.51s     Wait for com.ailab.AIPlatformApp to idle
+    t =    25.51s     Find the "保存旅行笔记" Button
+    t =    25.59s     Check for interrupting elements affecting "保存旅行笔记" Button
+    t =    25.66s     Synthesize event
+    t =    25.96s     Wait for com.ailab.AIPlatformApp to idle
+    t =    26.27s Waiting 15.0s for "已存入旅行笔记" Button to exist
+    t =    27.30s     Checking `Expect predicate `existsNoRetry == 1` for object "已存入旅行笔记" Button`
+    t =    27.30s         Checking existence of `"已存入旅行笔记" Button`
+    t =    27.37s Terminate com.ailab.AIPlatformApp:33585
+    t =    28.45s Open com.ailab.AIPlatformApp
+    t =    28.45s     Launch com.ailab.AIPlatformApp
+    t =    28.89s         Setting up automation session
+    t =    31.03s         Wait for com.ailab.AIPlatformApp to idle
+    t =    34.61s Waiting 3.0s for "main-tab-2" Button to exist
+    t =    35.61s     Checking `Expect predicate `existsNoRetry == 1` for object "main-tab-2" Button`
+    t =    35.61s         Checking existence of `"main-tab-2" Button`
+    t =    35.72s Checking existence of `"main-tab-2" Button`
+    t =    35.74s Find the "main-tab-2" Button
+    t =    35.77s Find the "main-tab-2" Button
+    t =    36.83s Checking `Expect predicate `enabled == 1` for object "main-tab-2" Button`
+    t =    36.83s     Find the "main-tab-2" Button
+    t =    36.87s Tap "main-tab-2" Button
+    t =    36.87s     Wait for com.ailab.AIPlatformApp to idle
+    t =    36.88s     Find the "main-tab-2" Button
+    t =    36.90s     Check for interrupting elements affecting "main-tab-2" Button
+    t =    36.95s     Synthesize event
+    t =    37.24s     Wait for com.ailab.AIPlatformApp to idle
+    t =    37.58s Waiting 3.0s for "note-search" TextField to exist
+    t =    38.60s     Checking `Expect predicate `existsNoRetry == 1` for object "note-search" TextField`
+    t =    38.60s         Checking existence of `"note-search" TextField`
+    t =    38.70s Checking existence of `"note-search" TextField`
+    t =    38.74s Find the "note-search" TextField
+    t =    38.79s Find the "note-search" TextField
+    t =    39.86s Checking `Expect predicate `enabled == 1` for object "note-search" TextField`
+    t =    39.87s     Find the "note-search" TextField
+    t =    39.92s Tap "note-search" TextField
+    t =    39.92s     Wait for com.ailab.AIPlatformApp to idle
+    t =    39.93s     Find the "note-search" TextField
+    t =    40.05s     Check for interrupting elements affecting "note-search" TextField
+    t =    40.10s     Synthesize event
+    t =    40.39s     Wait for com.ailab.AIPlatformApp to idle
+    t =    40.53s Type 'Client accepted tr...' into "note-search" TextField
+    t =    40.53s     Wait for com.ailab.AIPlatformApp to idle
+    t =    40.53s     Find the "note-search" TextField
+    t =    40.62s     Check for interrupting elements affecting "note-search" TextField
+    t =    40.66s     Synthesize event
+    t =    41.34s     Wait for com.ailab.AIPlatformApp to idle
+    t =    41.34s Waiting 3.0s for "Client accepted trip 988D0578" StaticText to exist
+    t =    42.37s     Checking `Expect predicate `existsNoRetry == 1` for object "Client accepted trip 988D0578" StaticText`
+    t =    42.37s         Checking existence of `"Client accepted trip 988D0578" StaticText`
+    t =    42.44s Checking existence of `"Client accepted trip 988D0578" StaticText`
+    t =    42.51s Find the "Client accepted trip 988D0578" StaticText
+    t =    42.59s Find the "Client accepted trip 988D0578" StaticText
+    t =    43.68s Checking `Expect predicate `enabled == 1` for object "Client accepted trip 988D0578" StaticText`
+    t =    43.69s     Find the "Client accepted trip 988D0578" StaticText
+    t =    43.78s Tap "Client accepted trip 988D0578" StaticText
+    t =    43.78s     Wait for com.ailab.AIPlatformApp to idle
+    t =    43.78s     Find the "Client accepted trip 988D0578" StaticText
+    t =    43.85s     Check for interrupting elements affecting "Client accepted trip 988D0578" StaticText
+    t =    43.90s     Synthesize event
+    t =    44.22s     Wait for com.ailab.AIPlatformApp to idle
+    t =    44.84s Waiting 15.0s for "查看完整行程  →" Button to exist
+    t =    45.87s     Checking `Expect predicate `existsNoRetry == 1` for object "查看完整行程  →" Button`
+    t =    45.87s         Checking existence of `"查看完整行程  →" Button`
+    t =    45.93s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    46.06s Added attachment named 'travel-saved-note-after-relaunch'
+    t =    46.07s Tear Down
+Test Case '-[AIPlatformAppUITests.TravelFlowUITests testSavedRealNotebookSurvivesRelaunch]' passed (46.589 seconds).
+Test Suite 'TravelFlowUITests' passed at 2026-09-27 16:48:49.140.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 236.771 (236.773) seconds
+Test Suite 'AIPlatformAppUITests.xctest' passed at 2026-09-27 16:48:49.141.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 236.771 (236.774) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 16:48:49.141.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 236.771 (236.775) seconds
+2026-09-27 16:49:09.051 xcodebuild[30769:21004474] [MT] IDETestOperationsObserverDebug: 274.293 elapsed -- Testing started completed.
+2026-09-27 16:49:09.052 xcodebuild[30769:21004474] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-27 16:49:09.052 xcodebuild[30769:21004474] [MT] IDETestOperationsObserverDebug: 274.293 sec, +274.293 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/travel-real-client-full12.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

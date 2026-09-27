@@ -1,0 +1,192 @@
+/Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+$ git status --short --branch
+## codex/travel-notes-20260927
+?? ops/change-manifests/travel-notes-20260927-inventory.txt
+$ git branch --show-current
+codex/travel-notes-20260927
+$ git rev-parse HEAD
+c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+$ git remote -v
+origin	https://github.com/Johnie198946/Quantum.git (fetch)
+origin	https://github.com/Johnie198946/Quantum.git (push)
+source	https://github.com/Johnie198946/ai-lab-platform.git (fetch)
+source	https://github.com/Johnie198946/ai-lab-platform.git (push)
+$ git worktree list --porcelain
+worktree /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/main
+
+worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/codex/travel-notes-20260927
+
+/Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+$ git status --short --branch
+## main...origin/main
+ M AGENTS.md
+ M backend/api/knowledge_actions.py
+ M backend/api/knowledge_sync.py
+ M backend/capability_handlers.py
+ M backend/contracts/product-capabilities/bindings.yaml
+ M backend/contracts/product-capabilities/capabilities.yaml
+ M backend/services/capability_catalog.py
+ M backend/services/capability_gateway.py
+ M backend/services/knowledge_action_capability.py
+ M backend/services/user_note_context.py
+ M docs/product-capability-coverage.json
+ M docs/product-capability-manual.md
+ M ios/AIPlatformApp/Networking/APIClient.swift
+ M ios/AIPlatformApp/Services/KnowledgeNoteStore.swift
+ M ios/AIPlatformApp/Views/Chat/Components/ChatMessageStreamView.swift
+ M ios/AIPlatformApp/Views/Chat/Components/CleanupMergeReviewView.swift
+ M ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+ M ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift
+ M ios/AIPlatformAppTests/CleanupMergeTests.swift
+ M ops/acceptance/ios-capability-matrix.json
+ M ops/change-manifests/chat-cleanup-client-compat-20260927-completion.md
+ M ops/change-manifests/chat-cleanup-pcm-20260927-completion.md
+ M ops/change-manifests/cleanup-exercise-testflight-20260927-completion.md
+ M ops/change-manifests/quantum-note-save-consent-20260927-completion.md
+ M ops/change-manifests/quantum-notes-release-20260927-completion.md
+ M scripts/hermes_bridge_runtime/knowledge.py
+ M tests/test_cleanup_capabilities.py
+ M tests/test_knowledge_sync_api.py
+ M tests/test_user_note_context.py
+?? ops/acceptance/receipts/
+?? ops/change-manifests/cleanup-diff-20260927-completion.md
+?? ops/change-manifests/note-organization-v2-20260927-completion.md
+?? ops/change-manifests/quantum-2.0-hermes-gate-i0-20260909-completion.md
+$ git branch --show-current
+main
+$ git rev-parse HEAD
+c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+$ git remote -v
+origin	https://github.com/Johnie198946/Quantum.git (fetch)
+origin	https://github.com/Johnie198946/Quantum.git (push)
+source	https://github.com/Johnie198946/ai-lab-platform.git (fetch)
+source	https://github.com/Johnie198946/ai-lab-platform.git (push)
+$ git worktree list --porcelain
+worktree /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/main
+
+worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/codex/travel-notes-20260927
+
+
+2026-09-27 continued acceptance inventory
+git status --short --branch
+## codex/travel-notes-20260927
+ M backend/api/chat.py
+ M backend/api/documents.py
+ M backend/api/workflows.py
+ M backend/contracts/product-capabilities/capabilities.yaml
+ M backend/services/document_sources.py
+ M backend/services/note_illustrations.py
+ M backend/services/presentation_renderer.py
+ M backend/services/upload_text_extractor.py
+ M backend/services/workflow_executor.py
+ M backend/services/workflow_planner.py
+ M ios/AIPlatformApp/Models/UIModels.swift
+ M ios/AIPlatformApp/Networking/APIClient.swift
+ M ios/AIPlatformApp/Views/Chat/Cards/ClarifyCard.swift
+ M ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+ M ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
+ M ios/AIPlatformApp/Views/Chat/PlusMenuSheet.swift
+ M ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift
+ M ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift
+ M ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+ M scripts/hermes_bridge_runtime/agent_execution.py
+ M scripts/hermes_bridge_runtime/contracts.py
+ M scripts/hermes_bridge_runtime/memory.py
+ M scripts/hermes_bridge_runtime/workflow_artifacts.py
+ M scripts/hermes_bridge_runtime/workflow_runtime.py
+ M tests/test_chat_stream_api.py
+ M tests/test_document_presentation.py
+ M tests/test_memory_capabilities.py
+ M tests/test_note_illustrations.py
+ M tests/test_upload_text_extractor.py
+?? backend/services/travel_plan.py
+?? docs/design/travel-notes-design-20260927.md
+?? ops/acceptance/receipts/
+?? ops/change-manifests/travel-notes-20260927-completion.md
+?? ops/change-manifests/travel-notes-20260927-inventory.txt
+?? tests/test_travel_plan.py
+git branch --show-current
+codex/travel-notes-20260927
+git rev-parse HEAD
+c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+git remote -v
+origin	https://github.com/Johnie198946/Quantum.git (fetch)
+origin	https://github.com/Johnie198946/Quantum.git (push)
+source	https://github.com/Johnie198946/ai-lab-platform.git (fetch)
+source	https://github.com/Johnie198946/ai-lab-platform.git (push)
+git worktree list --porcelain
+worktree /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+HEAD 0775c6bd0dfb0682f64addacf61e70fbde28a1ce
+branch refs/heads/main
+
+worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/codex/travel-notes-20260927
+
+
+Continued recovery and offline-read validation 2026-09-27
+git status --short --branch
+## codex/travel-notes-20260927
+ M backend/api/chat.py
+ M backend/api/documents.py
+ M backend/api/workflows.py
+ M backend/contracts/product-capabilities/capabilities.yaml
+ M backend/services/document_sources.py
+ M backend/services/note_illustrations.py
+ M backend/services/presentation_renderer.py
+ M backend/services/upload_text_extractor.py
+ M backend/services/workflow_executor.py
+ M backend/services/workflow_planner.py
+ M ios/AIPlatformApp/Models/UIModels.swift
+ M ios/AIPlatformApp/Networking/APIClient.swift
+ M ios/AIPlatformApp/Services/InboxFileManager.swift
+ M ios/AIPlatformApp/Views/Chat/Cards/ClarifyCard.swift
+ M ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift
+ M ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+ M ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
+ M ios/AIPlatformApp/Views/Chat/PlusMenuSheet.swift
+ M ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift
+ M ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift
+ M ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift
+ M scripts/hermes_bridge_runtime/agent_execution.py
+ M scripts/hermes_bridge_runtime/contracts.py
+ M scripts/hermes_bridge_runtime/memory.py
+ M scripts/hermes_bridge_runtime/workflow_artifacts.py
+ M scripts/hermes_bridge_runtime/workflow_runtime.py
+ M tests/test_chat_stream_api.py
+ M tests/test_document_presentation.py
+ M tests/test_memory_capabilities.py
+ M tests/test_note_illustrations.py
+ M tests/test_upload_text_extractor.py
+?? backend/services/travel_plan.py
+?? docs/design/travel-notes-design-20260927.md
+?? ops/acceptance/receipts/
+?? ops/change-manifests/travel-notes-20260927-completion.md
+?? ops/change-manifests/travel-notes-20260927-inventory.txt
+?? tests/test_travel_plan.py
+git branch --show-current
+codex/travel-notes-20260927
+git rev-parse HEAD
+c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+git remote -v
+origin	https://github.com/Johnie198946/Quantum.git (fetch)
+origin	https://github.com/Johnie198946/Quantum.git (push)
+source	https://github.com/Johnie198946/ai-lab-platform.git (fetch)
+source	https://github.com/Johnie198946/ai-lab-platform.git (push)
+git worktree list --porcelain
+worktree /Users/dengzhaoyu/Desktop/TepVis/Quantum-2.0
+HEAD e07c57f49893f17ccb18bcb8eeee21a34d1352bf
+branch refs/heads/main
+
+worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
+HEAD c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1
+branch refs/heads/codex/travel-notes-20260927
+

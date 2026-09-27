@@ -41,7 +41,7 @@ def validate_client_session_id(session_id: str) -> str:
 async def register_client_session(
     payload: dict[str, Any], session_id: str | None, request_id: str | None
 ) -> WorkflowClientSessionBinding | None:
-    """Persist that the authenticated chat API observed this client session."""
+    """Bind a client session first observed by an authenticated chat or workflow request."""
     if not session_id:
         return None
     value = validate_client_session_id(session_id)

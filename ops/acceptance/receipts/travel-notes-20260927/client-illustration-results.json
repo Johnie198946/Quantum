@@ -1,0 +1,67 @@
+[
+  {
+    "run_id": "639c903fa35e4114960ff82d84b035f4",
+    "status": "completed",
+    "assets": [
+      {
+        "index": 0,
+        "provider": "web-reference",
+        "model": "original",
+        "bytes": 3646,
+        "dimensions": [
+          211,
+          71
+        ],
+        "sha256": "574ffbbfb55b2bb401c40e92dfd613924392a038cbfcc1133c12649bff0fdce2"
+      }
+    ],
+    "failed_indices": []
+  },
+  {
+    "run_id": "4ecd2845650946468af1348d3a6cfc59",
+    "status": "completed",
+    "assets": [
+      {
+        "index": 1,
+        "provider": "volcengine-seedream",
+        "model": "doubao-seedream-5-0-pro-260628",
+        "bytes": 297902,
+        "dimensions": [
+          2048,
+          1152
+        ],
+        "sha256": "a8ccffa1fe826c173d2ca28ee48e16a15d5783f8300d28bac50a65bc0fd04795"
+      },
+      {
+        "index": 2,
+        "provider": "volcengine-seedream",
+        "model": "doubao-seedream-5-0-pro-260628",
+        "bytes": 366189,
+        "dimensions": [
+          2048,
+          1152
+        ],
+        "sha256": "f375ec6cef6a1586e934ecf57ab22a9c19a4195373f83824e667c20cf4e3530a"
+      }
+    ],
+    "failed_indices": [
+      0
+    ]
+  },
+  {
+    "run_id": "8a8de5e216d341c096c42bc5e04cf888",
+    "status": "completed",
+    "assets": [],
+    "failed_indices": [
+      0
+    ]
+  },
+  {
+    "run_id": "758fb57ddd36471789011e8d778146b0",
+    "status": "completed",
+    "assets": [],
+    "failed_indices": [
+      0
+    ]
+  }
+]

@@ -322,6 +322,11 @@ def build_pptx(content: str) -> bytes:
 
 
 def render_pptx_pdf(pptx_path: Path) -> bytes:
+    return render_office_pdf(pptx_path)
+
+
+def render_office_pdf(pptx_path: Path) -> bytes:
+    """Use the existing isolated LibreOffice profile for supported Office inputs."""
     executable = shutil.which("soffice") or shutil.which("libreoffice")
     if not executable:
         raise RuntimeError("PPTX 预览渲染器不可用（未检测到 LibreOffice）")

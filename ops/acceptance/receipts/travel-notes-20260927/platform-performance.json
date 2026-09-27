@@ -1,0 +1,54 @@
+{
+  "scope": "isolated local platform HTTP clarification, planning, approval, start, real dispatch, real Hermes/public search, itinerary approval, stored notebook readback; excludes iOS and signed-in sources",
+  "execution": "five sequential independent runs; synthetic authenticated owner; public DDGS web search",
+  "samples": [
+    {
+      "elapsed_seconds": 139.6,
+      "nodes_seconds": {
+        "travel_research": 54.1,
+        "travel_itinerary": 41.62,
+        "travel_notebook": 41.46
+      }
+    },
+    {
+      "elapsed_seconds": 133.06,
+      "nodes_seconds": {
+        "travel_research": 50.32,
+        "travel_itinerary": 33.51,
+        "travel_notebook": 47.07
+      }
+    },
+    {
+      "elapsed_seconds": 121.91,
+      "nodes_seconds": {
+        "travel_research": 49.0,
+        "travel_itinerary": 35.82,
+        "travel_notebook": 35.56
+      }
+    },
+    {
+      "elapsed_seconds": 130.1,
+      "nodes_seconds": {
+        "travel_research": 53.18,
+        "travel_itinerary": 40.14,
+        "travel_notebook": 34.92
+      }
+    },
+    {
+      "elapsed_seconds": 249.61,
+      "nodes_seconds": {
+        "travel_research": 60.36,
+        "travel_itinerary": 141.61,
+        "travel_notebook": 45.48
+      }
+    }
+  ],
+  "successes": 5,
+  "p50_seconds": 133.06,
+  "p95_nearest_rank_seconds": 249.61,
+  "limitations": [
+    "n=5 describes this acceptance sample, not a production SLO",
+    "public web extraction provider reports search-only; sources retain verification gaps",
+    "p95 outlier includes 141.61 seconds for itinerary node; model latency is not consistently low"
+  ]
+}

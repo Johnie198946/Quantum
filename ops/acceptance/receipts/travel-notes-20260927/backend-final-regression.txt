@@ -1,0 +1,5 @@
+Command: /tmp/travel-hermes-validation-env/bin/python -m pytest tests/test_travel_plan.py tests/test_upload_text_extractor.py tests/test_document_presentation.py tests/test_note_illustrations.py tests/test_memory_capabilities.py tests/test_workflows_api.py tests/test_workflow_capabilities.py tests/test_workflow_event_projection.py tests/test_workflow_artifact_reading.py tests/test_workflow_scheduler.py tests/test_workflow_contract.py tests/test_chat_stream_api.py -q --disable-warnings
+...........................................s............................ [ 34%]
+........................................................................ [ 69%]
+..............................................................           [100%]
+205 passed, 1 skipped, 6 warnings in 96.50s (0:01:36)

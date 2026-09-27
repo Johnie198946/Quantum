@@ -73,3 +73,60 @@ rollback, restore the previous immutable application release and its recorded
 `bridge-worker-venv` target together, run `systemctl daemon-reload`, restart Bridge
 and Worker, then repeat the version, import, listener, and container health probes.
 Never point the units back at the Hermes runtime venv.
+
+## Cloud travel / Google Maps browser
+
+Travel research runs `browser_navigate` + `browser_snapshot` in the server's
+existing Hermes runtime. It does not connect to a customer's desktop Chrome.
+Use public Maps search and directions URLs; a navigation success or HTTP 200 is
+not evidence that a place or transit route was read. Verify actual place/address,
+route/transfer/duration and selected travel date. A route for “leave now” does
+not verify a future booking. Private saved lists require a user-shared accessible
+list or uploaded source, never the service account's Google login.
+
+The September 27 server audit found working HTTP egress through the existing
+loopback proxy, but no Chrome installation or required shared libraries.
+Hermes 0.21.1 recognizes Playwright caches; agent-browser 0.26.0 installs Chrome
+for Testing under `$HOME/.agent-browser/browsers`. The Bridge now supplies the
+explicit `HERMES_HOME/browser-runtime/chrome` executable, shared read-only
+browser binaries, writable socket/cache directories and `AGENT_BROWSER_PROXY`
+from the service's existing HTTPS/HTTP proxy. Both Bridge and Worker use the same
+composition root. User cookies and task state remain isolated by Hermes; no
+personal browser profile is copied. Explicit operator browser settings win.
+
+Provision only as part of an authorized release, before restarting either unit:
+
+1. Ubuntu 24.04 system libraries (root; normal package-manager dependencies):
+
+   ```sh
+   apt-get install --no-install-recommends libatk1.0-0t64 libatk-bridge2.0-0t64 \
+     libcups2t64 libasound2t64 libgbm1 libcairo2 libpango-1.0-0 \
+     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libatspi2.0-0t64 fonts-noto-cjk
+   ```
+
+2. Run the existing `scripts/configure_hermes_web_extract.py` as the
+   `quantumn-hermes` account, using its real HOME and the existing approved
+   egress environment, with `--hermes-home /var/lib/quantumn-hermes/.hermes`,
+   `--plugin-source agency/hermes-plugins/ai-lab-capabilities`,
+   `--backup-root /var/lib/quantumn-hermes/.hermes/backups`, and
+   `--prepare-browser`. The existing Agency installer now includes that flag.
+   It pins agent-browser 0.26.0, disables npm lifecycle scripts, strips provider
+   credentials from child processes, verifies Chrome can load, and atomically
+   links the executable. Setup failure leaves the previous executable link.
+   Chrome's installer selects its stable release; record its returned version
+   and executable SHA for each release. This is not a fully pinned Chrome archive.
+
+3. Deploy through the existing exact-SHA flow. Never replace server source by
+   copying the working tree. Read back the actual service environment and test
+   Maps place search, dated transit routes and screenshots from that environment.
+   A temporary standalone browser check is separate from production acceptance.
+
+No Maps API credential is needed for this existing browser path. A future
+structured API integration would use Places plus Routes for transit; Grounding
+Lite currently covers driving/walking, so cannot replace transit verification.
+Google's API caching/display terms must be reviewed before using API-derived
+coordinates in the custom schematic map. That integration is not enabled here.
+
+References: [agent-browser v0.26.0 source](https://github.com/vercel-labs/agent-browser/tree/v0.26.0)
+(Apache-2.0), [Google Maps URLs](https://developers.google.com/maps/documentation/urls/get-started),
+[Routes transit](https://developers.google.com/maps/documentation/routes/transit-route).

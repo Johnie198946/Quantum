@@ -1,0 +1,34 @@
+{"provider": "web-reference", "kind": "page-screenshot", "bytes": 213822, "sha256": "005f69cee0b6a34d8bded0e5a453a3978ac32ef848a5bc17f5d4d9f1338bfc9d", "elapsed": 16.15}
+
+hermes plugin compat: `tools.browser_tool.cleanup_browser` moved to `tools.browser_tool_lifecycle.cleanup_browser`. The old path is kept only for external plugins and is removed on 2026-09-14; update your import.
+<string>:37: HermesPluginCompatWarning: hermes plugin compat: `tools.browser_tool.cleanup_browser` moved to `tools.browser_tool_lifecycle.cleanup_browser`. The old path is kept only for external plugins and is removed on 2026-09-14; update your import.
+Auxiliary: marking openrouter unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 17:33:26.
+Auxiliary Nous client unavailable: no Nous authentication found (run: hermes auth).
+Auxiliary: marking nous unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 17:33:26.
+resolve_provider_client: nous requested but Nous Portal not configured (run: hermes auth)
+browser_vision failed: No LLM provider configured for task=vision provider=auto. Run: hermes setup
+Traceback (most recent call last):
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/tools/browser_tool.py", line 1232, in browser_vision
+    analysis = _vision._analyze_screenshot_with_aux_llm(screenshot_path, question)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/tools/browser_tool_vision.py", line 131, in _analyze_screenshot_with_aux_llm
+    response = call_llm(**call_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 2388, in wrapped
+    return callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 7027, in call_llm
+    response = _call_llm_impl(
+               ^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 7144, in _call_llm_impl
+    req, retry_kwargs, candidate_kwargs = _plan_aux_call(
+                                          ^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 7072, in _plan_aux_call
+    req = _prepare_aux_request(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 6589, in _prepare_aux_request
+    client, final_model, resolved_provider, effective_provider = _resolve_call_client(
+                                                                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/var/lib/quantumn-hermes/.hermes/hermes-agent/agent/auxiliary_client.py", line 6559, in _resolve_call_client
+    raise RuntimeError(f"No LLM provider configured for task={task} "
+RuntimeError: No LLM provider configured for task=vision provider=auto. Run: hermes setup

@@ -56,11 +56,10 @@ public struct ClarifyCard: View {
                 submittingView
             } else if block.isSubmitted {
                 submittedBadgeView
+                ClarificationMemoryButton(content: block.question + "\n" + block.submittedSelection)
             } else {
                 optionsListView
-                if block.choices.isEmpty {
-                    customInputView
-                }
+                customInputView
                 if !block.choices.isEmpty || !customInputFocused {
                     submitButtonView
                 }
@@ -75,7 +74,7 @@ public struct ClarifyCard: View {
             onDraftChange?(Array(selectedIDs).sorted(), value)
         }
         .toolbar {
-            if block.choices.isEmpty && customInputFocused {
+            if customInputFocused {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button(block.submitLabel, action: submitMultiSelect)
@@ -278,7 +277,7 @@ public struct ClarifyCard: View {
 
     // MARK: - Custom Input (if no choices)
     private var customInputView: some View {
-        TextField("请输入您的需求…", text: $customText, axis: .vertical)
+        TextField("也可以自己说，或补充你的想法…", text: $customText, axis: .vertical)
             .font(AppTheme.Typography.body)
             .lineLimit(1...4)
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -315,14 +314,7 @@ public struct ClarifyCard: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
 
-        let selection: String
-        if !block.choices.isEmpty {
-            selection = selectedIDs
-                .compactMap { id in block.choices.first { $0.id == id }?.label }
-                .joined(separator: ", ")
-        } else {
-            selection = customText.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        let selection = block.answer(selectionIDs: selectedIDs, customText: customText)
         guard !selection.isEmpty else { return }
         customInputFocused = false
         onSubmit?(selection)
@@ -518,6 +510,7 @@ public struct RequirementConfirmationCard: View {
     public var onSubmit: ((String) -> Void)? = nil
 
     @State private var selectedID: String?
+    @State private var customAnswer = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(block: ClarifyBlock, onSubmit: ((String) -> Void)? = nil) {
@@ -674,10 +667,15 @@ public struct RequirementConfirmationCard: View {
                 }
             }
 
+            TextField("也可以直接补充或修改需求", text: $customAnswer, axis: .vertical)
+                .lineLimit(2...6)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("requirement-confirm-custom-answer")
+
             Button(action: submitSelection) {
                 Label(primaryActionTitle, systemImage: primaryActionIcon)
             }
-            .disabled(selectedID == nil)
+            .disabled(selectedID == nil && customAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .buttonStyle(QuantumPrimaryButtonStyle())
             .accessibilityHint("提交当前选择并进入下一阶段")
             .accessibilityIdentifier("requirement-confirm-primary-action")
@@ -747,6 +745,7 @@ public struct RequirementConfirmationCard: View {
     }
 
     private var primaryActionTitle: String {
+        if !customAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "提交补充，继续确认" }
         guard let option = selectedOption else { return "请选择下一步" }
         return option.label.hasPrefix("确认") || option.label.contains("进入方案")
             ? "确认并生成方案"
@@ -761,11 +760,13 @@ public struct RequirementConfirmationCard: View {
     }
 
     private func submitSelection() {
-        guard let option = selectedOption else { return }
+        let answer = customAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selectedOption != nil || !answer.isEmpty else { return }
         #if os(iOS)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         #endif
-        onSubmit?(option.label)
+        // Free text is a revision, never an implicit approval mixed with a choice.
+        onSubmit?(answer.isEmpty ? (selectedOption?.label ?? "") : answer)
     }
 
     private var summaryItems: [RequirementSummaryItem] {
@@ -816,5 +817,51 @@ private struct RequirementSummaryItem: Identifiable {
                     icon: definition.icon
                 )
             }
+    }
+}
+
+/// Shared by chat and workflow clarification; writes through native Hermes memory.
+struct ClarificationMemoryButton: View {
+    let content: String
+    @State private var showingMemory = false
+    @State private var memoryText = ""
+    @State private var memoryTarget = "user"
+    @State private var memorySaving = false
+    @State private var memoryResult: String?
+    var body: some View {
+        VStack(alignment: .leading) {
+            Button("记住这项偏好或工作方法", systemImage: "brain") {
+                memoryText = content
+                showingMemory = true
+            }.frame(minHeight: 44)
+            if let memoryResult { Text(memoryResult).font(.caption).foregroundStyle(.secondary) }
+        }
+        .sheet(isPresented: $showingMemory) {
+            NavigationStack {
+                Form {
+                    Picker("记忆类型", selection: $memoryTarget) {
+                        Text("长期个人偏好").tag("user")
+                        Text("处理工作的经验").tag("memory")
+                    }
+                    TextEditor(text: $memoryText).frame(minHeight: 160)
+                    Text("编辑成以后仍适用的内容。单次日期、票号和订单信息不必存为长期偏好。可在记忆中心修改或删除。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let memoryResult { Text(memoryResult) }
+                    Button(memorySaving ? "正在保存…" : "保存到长期记忆") {
+                        memorySaving = true
+                        Task {
+                            defer { memorySaving = false }
+                            do {
+                                _ = try await APIClient.shared.addHermesMemory(target: memoryTarget, content: memoryText)
+                                memoryResult = "已保存到记忆中心"
+                                showingMemory = false
+                            } catch { memoryResult = error.localizedDescription }
+                        }
+                    }.disabled(memorySaving || memoryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .navigationTitle("确认长期记忆")
+                .toolbar { Button("取消") { showingMemory = false } }
+            }
+        }
     }
 }

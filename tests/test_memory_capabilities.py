@@ -63,3 +63,32 @@ async def test_memory_input_rejects_authority_and_oversized_content():
         payload=AUTH, idempotency_key="memory-oversized-1",
     )
     assert injected["error"]["code"] == oversized["error"]["code"] == "contract_invalid"
+
+
+def test_owner_memory_context_is_fresh_and_never_reads_host_profile(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scripts import hermes_bridge as bridge
+
+    memory = bridge.memory
+    alice = SimpleNamespace(hermes_home=tmp_path / "alice")
+    bob = SimpleNamespace(hermes_home=tmp_path / "bob")
+    entries = {alice.hermes_home: "安静温泉", bob.hermes_home: "城市夜景"}
+    reads = []
+
+    def payload(owner):
+        reads.append(owner.hermes_home)
+        return {"items": [{"target": "user", "content": entries[owner.hermes_home]}]}
+
+    monkeypatch.setattr(memory, "_sandbox_memory_payload", payload)
+    assert memory._sandbox_memory_context(alice) == ""
+    assert reads == []
+    for owner in (alice, bob):
+        (owner.hermes_home / "memories").mkdir(parents=True)
+    assert "安静温泉" in memory._sandbox_memory_context(alice)
+    entries[alice.hermes_home] = "减少换酒店"
+    refreshed = memory._sandbox_memory_context(alice)
+    assert "减少换酒店" in refreshed and "安静温泉" not in refreshed
+    assert "当前明确要求优先" in refreshed
+    bob_context = memory._sandbox_memory_context(bob)
+    assert "城市夜景" in bob_context and "减少换酒店" not in bob_context
+    assert reads == [alice.hermes_home, alice.hermes_home, bob.hermes_home]

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 from datetime import datetime
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.auth import require_auth
 from backend.db import SessionLocal
@@ -94,29 +98,44 @@ async def upload_document(
             status_code=400,
             detail={"code": "invalid_content_length", "message": "上传长度无效"},
         ) from exc
-    if length > MAX_DOCUMENT_BYTES:
+    envelope = request.headers.get("content-type", "").split(";", 1)[0] == "application/json"
+    upload_limit = MAX_DOCUMENT_BYTES * 4 // 3 + 1_000_000 if envelope else MAX_DOCUMENT_BYTES
+    if length > upload_limit:
         raise HTTPException(
             status_code=413,
             detail={"code": "document_too_large", "message": "文档超过 25 MB 上限"},
         )
     data = bytearray()
     async for chunk in request.stream():
-        if len(data) + len(chunk) > MAX_DOCUMENT_BYTES:
+        if len(data) + len(chunk) > upload_limit:
             raise HTTPException(
                 status_code=413,
                 detail={"code": "document_too_large", "message": "文档超过 25 MB 上限"},
             )
         data.extend(chunk)
+    extracted_text = ""
+    mime = request.headers.get("content-type", "")
+    if envelope:
+        try:
+            content = json.loads(data)
+            extracted_text = content["extracted_text"]
+            if not isinstance(extracted_text, str) or len(extracted_text) > 200_000:
+                raise ValueError("invalid OCR text")
+            data = base64.b64decode(content["data"], validate=True)
+            mime = str(content["content_type"])
+        except (ValueError, KeyError, TypeError, binascii.Error) as exc:
+            raise HTTPException(status_code=422, detail="附件 OCR 上传格式无效") from exc
     tenant_key, user_id = _identity(payload)
     try:
-        receipt = save_document_source(
+        receipt = await run_in_threadpool(save_document_source,
             tenant_key=tenant_key,
             user_id=user_id,
             filename=unquote(filename),
-            content_type=request.headers.get("content-type", ""),
+            content_type=mime,
             data=bytes(data),
             expected_hash=content_hash,
             file_opt_out=file_opt_out,
+            extracted_text=extracted_text,
         )
     except DocumentSourceError as exc:
         raise _error(exc) from exc

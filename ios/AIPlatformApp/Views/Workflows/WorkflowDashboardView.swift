@@ -2,6 +2,8 @@ import SwiftUI
 import Combine
 import OSLog
 import PDFKit
+import UniformTypeIdentifiers
+import CryptoKit
 
 // MARK: - 工作流主页
 
@@ -267,7 +269,7 @@ private final class WorkflowDashboardModel: ObservableObject {
             let loaded = try await APIClient.shared.fetchWorkflows()
             guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
             workflows = loaded.filter { WorkflowActivityCoordinator.shared.accepts($0, in: scope) }
-            errorMessage = nil
+            errorMessage = APIClient.shared.isOfflineMode ? "离线：显示上次保存的任务，联网后自动更新。" : nil
         } catch {
             guard WorkflowActivityCoordinator.shared.isCurrent(scope) else { return }
             errorMessage = error.localizedDescription
@@ -399,16 +401,25 @@ struct WorkflowSummaryCard: View {
 
 // MARK: - 创建
 
-private struct WorkflowCreateSheet: View {
+struct WorkflowCreateSheet: View {
     let onCreated: (WorkflowCreateResponseDTO) async -> Void
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
+    @State private var showingAttachmentPicker = false
+    @State private var sourceDocument: DocumentReceiptDTO?
+    @State private var uploadingAttachment = false
     @State private var title = ""
     @State private var description = ""
     @State private var output = "研究报告（Markdown）"
     @State private var outputKind = "document"
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+
+    init(initialKind: String = "document", onCreated: @escaping (WorkflowCreateResponseDTO) async -> Void) {
+        self.onCreated = onCreated
+        _outputKind = State(initialValue: initialKind)
+        _output = State(initialValue: initialKind == "travel" ? "图文旅行计划，可确认后转为旅行笔记或 PDF" : "研究报告（Markdown）")
+    }
 
     var body: some View {
         NavigationStack {
@@ -429,15 +440,15 @@ private struct WorkflowCreateSheet: View {
                         HStack(spacing: AppTheme.Spacing.sm) {
                             compactOutputPreset(title: "报告", icon: "doc.text", kind: "document", deliverable: "研究报告（Markdown）")
                             compactOutputPreset(title: "PPT", icon: "rectangle.on.rectangle", kind: "presentation", deliverable: "可编辑 PPTX 与渲染预览")
-                            compactOutputPreset(title: "旅行计划", icon: "airplane.departure", kind: "general", deliverable: "图文旅行计划，可确认后转为旅行笔记或 PDF")
+                            compactOutputPreset(title: "旅行计划", icon: "airplane.departure", kind: "travel", deliverable: "图文旅行计划，可确认后转为旅行笔记或 PDF")
                         }
 
                         Text("参考资料（可选）").font(AppTheme.Typography.label)
-                        Button(action: {}) {
+                        Button { showingAttachmentPicker = true } label: {
                             VStack(spacing: AppTheme.Spacing.sm) {
                                 Image(systemName: "doc.badge.plus")
-                                Text("添加资料").font(AppTheme.Typography.label)
-                                Text("支持 PDF、图片、链接等")
+                                Text(sourceDocument?.filename ?? "添加资料").font(AppTheme.Typography.label)
+                                Text(uploadingAttachment ? "上传与解析中…" : "支持 PDF、图片、Word、PowerPoint")
                                     .font(AppTheme.Typography.micro)
                                     .foregroundStyle(AppTheme.Colors.textTertiary)
                             }
@@ -448,6 +459,10 @@ private struct WorkflowCreateSheet: View {
                             }
                         }
                         .buttonStyle(SoftButtonStyle())
+                        .disabled(uploadingAttachment || isSubmitting)
+                        if sourceDocument != nil {
+                            Button("移除附件") { sourceDocument = nil }.disabled(isSubmitting)
+                        }
 
                         if let errorMessage {
                             WorkflowErrorBanner(message: errorMessage)
@@ -460,7 +475,7 @@ private struct WorkflowCreateSheet: View {
             .safeAreaInset(edge: .bottom) {
                 Button(isSubmitting ? "正在生成…" : "生成计划", action: submit)
                     .buttonStyle(QuantumPrimaryButtonStyle())
-                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || isSubmitting)
+                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || isSubmitting || uploadingAttachment)
                     .padding(AppTheme.Metrics.contentGutter)
                     .background(.ultraThinMaterial)
             }
@@ -472,7 +487,22 @@ private struct WorkflowCreateSheet: View {
                         .disabled(isSubmitting)
                 }
             }
-            .interactiveDismissDisabled(isSubmitting)
+            .interactiveDismissDisabled(isSubmitting || uploadingAttachment)
+            .fileImporter(isPresented: $showingAttachmentPicker, allowedContentTypes: [.data]) { result in
+                guard case .success(let url) = result, let scope = workflowActivities.currentScope else { return }
+                uploadingAttachment = true
+                Task {
+                    defer { uploadingAttachment = false }
+                    do {
+                        let receipt = try await APIClient.shared.uploadDocument(at: url)
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        sourceDocument = receipt
+                        errorMessage = nil
+                    } catch {
+                        if workflowActivities.isCurrent(scope) { errorMessage = error.localizedDescription }
+                    }
+                }
+            }
         }
     }
 
@@ -550,7 +580,7 @@ private struct WorkflowCreateSheet: View {
                 let created = try await APIClient.shared.createWorkflow(
                     title: title.isEmpty ? String(description.prefix(24)) : title,
                     description: description, desiredOutput: deliverable,
-                    outputKind: outputKind,
+                    sourceDocumentId: sourceDocument?.sourceId, outputKind: outputKind,
                     sourceClientSessionId: scope.clientSessionId
                 )
                 guard workflowActivities.isCurrent(scope),
@@ -691,6 +721,8 @@ public final class WorkflowClarificationModel: ObservableObject {
     @Published var isSubmitting = false
     @Published var errorMessage: String?
     @Published var connectionState: String = "idle"
+    @Published var attachments: [DocumentReceiptDTO] = []
+    @Published var isUploadingAttachment = false
     @Published var optimisticPlanningMessage: String?
     private var streamActive = false
     private var streamTask: Task<Void, Never>?
@@ -797,9 +829,22 @@ public final class WorkflowClarificationModel: ObservableObject {
         }
     }
 
+    func attach(_ url: URL) async {
+        guard scopeIsCurrent, !isUploadingAttachment else { return }
+        isUploadingAttachment = true
+        defer { if scopeIsCurrent { isUploadingAttachment = false } }
+        do {
+            let receipt = try await APIClient.shared.uploadDocument(at: url)
+            guard scopeIsCurrent else { return }
+            if !attachments.contains(where: { $0.sourceId == receipt.sourceId }) { attachments.append(receipt) }
+        } catch {
+            if scopeIsCurrent { errorMessage = error.localizedDescription }
+        }
+    }
+
     func respond(_ response: String) async {
         guard scopeIsCurrent,
-              !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+              (!response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) else { return }
         isSubmitting = true
         if response.hasPrefix("确认") || response.contains("进入方案") {
             optimisticPlanningMessage = "规划请求已提交到云端，离开此页不会中断"
@@ -809,9 +854,11 @@ public final class WorkflowClarificationModel: ObservableObject {
         }
         do {
             _ = try await APIClient.shared.respondToWorkflowClarification(
-                workflowId: workflowId, response: response
+                workflowId: workflowId, response: response,
+                sourceRefs: attachments.map(WorkflowSourceReference.init), expectedRound: snapshot?.session.roundNumber
             )
             guard scopeIsCurrent else { return }
+            attachments = []
             await refresh()
             guard scopeIsCurrent else { return }
             if phase == "planning" {
@@ -1161,6 +1208,7 @@ private struct WorkflowClarificationView: View {
     let workflow: WorkflowDTO
     let onFinished: () async -> Void
     @ObservedObject private var model: WorkflowClarificationModel
+    @State private var showsAttachmentPicker = false
 
     init(workflow: WorkflowDTO, onFinished: @escaping () async -> Void) {
         self.workflow = workflow
@@ -1247,7 +1295,25 @@ private struct WorkflowClarificationView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if ["awaiting_approval", "agent_ready"].contains(model.phase) {
+            if ["clarifying", "awaiting_requirement_confirmation"].contains(model.phase) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.attachments, id: \.sourceId) { receipt in
+                        HStack {
+                            Label(receipt.filename, systemImage: "doc.text").lineLimit(1)
+                            Text(receipt.contributionStatus == "completed" ? "已编译" : "已保存 · 编译状态待核实").font(.caption)
+                            Button("移除") { model.attachments.removeAll { $0.sourceId == receipt.sourceId } }
+                        }
+                    }
+                    HStack {
+                        Button("补充图片或文档", systemImage: "paperclip") { showsAttachmentPicker = true }
+                            .disabled(model.isUploadingAttachment || model.isSubmitting)
+                        if model.isUploadingAttachment { ProgressView("上传与解析中") }
+                        if !model.attachments.isEmpty {
+                            Button("提交附件回答") { Task { await model.respond("") } }.disabled(model.isSubmitting)
+                        }
+                    }.frame(minHeight: 44)
+                }.padding().background(AppTheme.Colors.cardBackground)
+            } else if ["awaiting_approval", "agent_ready"].contains(model.phase) {
                 Button(model.phase == "agent_ready" ? "查看专属 Agent" : "查看并确认方案") {
                     Task { await onFinished() }
                 }
@@ -1258,6 +1324,9 @@ private struct WorkflowClarificationView: View {
                 .padding(AppTheme.Metrics.contentGutter)
                 .background(.ultraThinMaterial)
             }
+        }
+        .fileImporter(isPresented: $showsAttachmentPicker, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
+            if case .success(let urls) = result, let url = urls.first { Task { await model.attach(url) } }
         }
         .task { WorkflowActivityCoordinator.shared.track(workflow) }
     }
@@ -1270,6 +1339,7 @@ private struct WorkflowClarificationView: View {
            ["clarify", "requirement_confirmation"].contains(message.messageType),
            let question = message.payload.question {
             let block = ClarifyBlock(
+                id: message.id,
                 question: question,
                 choices: message.payload.choices ?? [],
                 multiSelect: message.payload.multiSelect ?? false,
@@ -1303,6 +1373,9 @@ private struct WorkflowClarificationView: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
                 if message.role != "user" { Spacer(minLength: 44) }
+            }
+            if message.role == "user" {
+                ClarificationMemoryButton(content: message.content)
             }
         }
     }
@@ -3036,7 +3109,8 @@ private struct WorkflowExecutionView: View {
         let output = workflow.desiredOutput.lowercased()
         return output.contains("docx") || output.contains("word")
     }
-    private var isStagedOutput: Bool { isPresentation || isDocument }
+    private var isTravel: Bool { artifacts.contains { $0.metadata.renderType == "travel_plan_v2" } }
+    private var isStagedOutput: Bool { isPresentation || isDocument || isTravel }
 
     init(
         workflow: WorkflowDTO,
@@ -3096,7 +3170,11 @@ private struct WorkflowExecutionView: View {
                 artifact: artifact,
                 scope: scope,
                 currentPage: $slideNumber,
-                allowsDownload: execution.status == "completed"
+                allowsDownload: execution.status == "completed",
+                onReplan: { updated in
+                    execution = updated
+                    Task { await monitor() }
+                }
             )
         }
         .sheet(isPresented: $showsStructuredReview) {
@@ -3129,6 +3207,11 @@ private struct WorkflowExecutionView: View {
     }
 
     private var visibleArtifacts: [WorkflowArtifactDTO] {
+        if isTravel {
+            let travel = artifacts.filter { $0.metadata.renderType == "travel_plan_v2" }
+            if execution.status == "awaiting_approval" { return travel.filter { $0.metadata.approvalGate == activePresentationGate } }
+            return travel.filter { $0.metadata.approvalGate == nil }
+        }
         if isDocument {
             if execution.status == "awaiting_approval" {
                 return artifacts.filter { $0.metadata.approvalGate == activePresentationGate }
@@ -3252,7 +3335,7 @@ private struct WorkflowExecutionView: View {
                 .background(AppTheme.Colors.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
-            if isStagedOutput,
+            if isStagedOutput && !isTravel,
                ["awaiting_review", "completed"].contains(execution.status),
                visibleArtifacts.last != nil {
                 Button(isPresentation ? "编辑全稿内容" : "填写结构化审核", systemImage: "checklist") {
@@ -3304,11 +3387,13 @@ private struct WorkflowExecutionView: View {
     }
 
     private var stagedReviewTitle: String {
+        if isTravel { return "一起调整这趟旅行" }
         if isPresentation { return presentationReviewTitle }
         return activePresentationGate == "outline" ? "确认 Word 文档大纲" : "确认 Word 文档全文"
     }
 
     private var stagedReviewHelp: String {
+        if isTravel { return "查看每日时间、交通与待核实项；不合适的安排可以继续讨论，确认后再生成笔记。" }
         if isPresentation { return presentationReviewHelp }
         if execution.status == "completed" { return "文档已确认，可预览、下载 DOCX 或用系统分享。" }
         if execution.status == "awaiting_review" { return "检查完整正文；可退回修改，确认后开放 DOCX 下载与系统分享。" }
@@ -3318,6 +3403,7 @@ private struct WorkflowExecutionView: View {
     }
 
     private var stagedFeedbackPrompt: String {
+        if isTravel { return "例如：第二天下午留给泡汤，保留酒店和晚餐" }
         if isPresentation { return presentationFeedbackPrompt }
         return activePresentationGate == "outline" ? "说明大纲要如何修改（退回时必填）" : "说明正文要如何修改（退回时必填）"
     }
@@ -3357,6 +3443,12 @@ private struct WorkflowExecutionView: View {
             } else if execution.status == "awaiting_review" && isPresentation {
                 Button("修改第 \(slideNumber) 页") { reviewPresentation(decision: "revise", perSlide: true) }.buttonStyle(.bordered)
                 Button("确认并下载") { reviewPresentation(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_approval" && isTravel {
+                Button("继续调整") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
+                Button("确认行程") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_review" && isTravel {
+                Button("继续调整") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
+                Button("采用这份行程") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_approval" && isDocument {
                 Button("修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
                 Button(activePresentationGate == "outline" ? "确认大纲" : "确认全文") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
@@ -3489,19 +3581,26 @@ private struct WorkflowExecutionView: View {
             if execution.status == "awaiting_approval" {
                 return item.metadata.approvalGate == activePresentationGate
             }
-            return item.extension == "docx"
+            return isTravel
+                ? item.metadata.renderType == "travel_plan_v2" && item.metadata.approvalGate == nil
+                : item.extension == "docx"
         }) else { errorMessage = "待确认成果尚未同步"; return }
         if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             errorMessage = "请填写修改意见"
             return
         }
         perform {
-            let updated = try await APIClient.shared.reviewPresentationStage(
-                executionId: execution.id,
-                artifact: artifact,
-                decision: decision,
-                comment: feedback
-            )
+            let updated: WorkflowExecutionDTO
+            if isTravel && decision == "revise" && execution.status == "awaiting_review" {
+                updated = try await APIClient.shared.requestWorkflowRevision(
+                    executionId: execution.id, nodeId: "travel_research", comment: feedback,
+                    artifactId: artifact.id, expectedHash: artifact.contentHash
+                )
+            } else {
+                updated = try await APIClient.shared.reviewPresentationStage(
+                    executionId: execution.id, artifact: artifact, decision: decision, comment: feedback
+                )
+            }
             guard workflowActivities.isCurrent(scope) else { return }
             execution = updated
             feedback = ""
@@ -3552,17 +3651,182 @@ private struct WorkflowArtifactPreview: View {
     let scope: WorkflowActivityCoordinator.Scope
     @Binding var currentPage: Int
     let allowsDownload: Bool
+    var onReplan: ((WorkflowExecutionDTO) -> Void)? = nil
     @State private var content: String?
     @State private var errorMessage: String?
     @State private var pdfDocument: PDFDocument?
     @State private var downloadURL: URL?
+    @State private var currentTravelArtifactId: String?
+    @State private var currentTravelHash: String?
+    @State private var editingTravelAction: TravelDayAction?
+    @State private var travelVersions: [WorkflowArtifactDTO] = []
+    @State private var historyContent: String?
+    @State private var showingTravelHistory = false
+    @State private var showingTravelReplan = false
+    @State private var travelFeedback = ""
+    @State private var savingProgress = false
+    @State private var showingCachedTravel = false
+    @State private var cloudTravelContent: String?
+    @State private var pendingTravelChanges: [TravelPendingChange] = []
+    @State private var showingCloudTravel = false
+    @Environment(\.scenePhase) private var travelScenePhase
     @State private var savedTravelNote = false
     @State private var showingTravelNoteSave = false
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
 
+    private var linkedTravelContent: String {
+        guard let content, var document = NoteIllustrationPlacement.travelObject(content) else { return content ?? "" }
+        document["workflow_execution_id"] = executionId
+        document["workflow_artifact_id"] = currentTravelArtifactId ?? artifact.id
+        document["workflow_artifact_hash"] = currentTravelHash ?? artifact.contentHash
+        guard let data = try? JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]) else { return content }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func cacheTravel() {
+        guard workflowActivities.isCurrent(scope), let content = cloudTravelContent ?? content,
+              let id = currentTravelArtifactId, let hash = currentTravelHash,
+              let data = try? JSONSerialization.data(withJSONObject: ["id": id, "hash": hash, "content": content]) else { return }
+        _ = try? InboxFileManager.shared.storePrivateFile(data, sourceId: "travel:" + executionId,
+            revision: 1, filename: "travel.json", durable: true)
+    }
+
+    private func restoreCachedTravel() {
+        guard workflowActivities.isCurrent(scope), allowsDownload,
+              let data = InboxFileManager.shared.readPrivateFile(sourceId: "travel:" + executionId, revision: 1, filename: "travel.json", durable: true),
+              let cached = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let text = cached["content"], let hash = cached["hash"], let id = cached["id"],
+              SHA256.hash(data: Data(text.utf8)).map({ String(format: "%02x", $0) }).joined() == hash,
+              TravelPlanDocument.decode(text) != nil else { return }
+        content = text; cloudTravelContent = text; currentTravelArtifactId = id; currentTravelHash = hash
+        showingCachedTravel = true
+    }
+
+    private func persistPendingTravel(_ changes: [TravelPendingChange]) throws {
+        guard workflowActivities.isCurrent(scope) else { throw CancellationError() }
+        _ = try InboxFileManager.shared.storePrivateFile(JSONEncoder().encode(changes),
+            sourceId: "travel-pending:" + executionId, revision: 1, filename: "pending.json", durable: true)
+        pendingTravelChanges = changes
+    }
+
+    private func restorePendingTravel() throws {
+        guard let data = InboxFileManager.shared.readPrivateFile(sourceId: "travel-pending:" + executionId,
+                revision: 1, filename: "pending.json", durable: true) else { return }
+        pendingTravelChanges = try JSONDecoder().decode([TravelPendingChange].self, from: data)
+        if let pending = pendingTravelChanges.last { content = pending.previewContent }
+    }
+
+    private func queueTravelChange(actionId: String, proposed: String, reason: String,
+                                   progress: String? = nil, happenedAt: String? = nil,
+                                   bookings: [String: String] = [:]) throws {
+        guard let content else { throw APIError.decoding("行程尚未读取") }
+        let change = TravelPendingChange(actionId: actionId,
+            baseAction: try TravelPendingChange.fingerprint(TravelPendingChange.action(in: content, id: actionId)),
+            changedAction: try TravelPendingChange.serialized(TravelPendingChange.action(in: proposed, id: actionId)),
+            previewContent: proposed, reason: reason, progress: progress, happenedAt: happenedAt,
+            confirmedBookings: bookings)
+        try persistPendingTravel(pendingTravelChanges + [change])
+        self.content = proposed
+        savedTravelNote = false
+    }
+
+    private func syncPendingTravel() async {
+        guard !savingProgress, workflowActivities.isCurrent(scope) else { return }
+        savingProgress = true
+        defer { savingProgress = false }
+        do {
+            while let next = pendingTravelChanges.first {
+                var change = next
+                if change.preparedArtifactId == nil {
+                    try await refreshTravel()
+                    guard let cloudTravelContent, workflowActivities.isCurrent(scope) else { throw CancellationError() }
+                    change.preparedContent = try change.applying(to: cloudTravelContent)
+                    change.preparedArtifactId = currentTravelArtifactId
+                    change.preparedHash = currentTravelHash
+                    var queue = pendingTravelChanges; queue[0] = change
+                    try persistPendingTravel(queue)
+                }
+                guard let id = change.preparedArtifactId, let hash = change.preparedHash,
+                      let proposed = change.preparedContent else { throw APIError.decoding("待同步修改缺少版本") }
+                let receipt: TravelRevisionReceipt
+                if let progress = change.progress {
+                    receipt = try await APIClient.shared.recordTravelProgress(executionId: executionId,
+                        artifactId: id, expectedHash: hash, actionId: change.actionId,
+                        progress: progress, requestId: change.id, happenedAt: change.happenedAt)
+                } else {
+                    receipt = try await APIClient.shared.reviseTravelPlan(executionId: executionId,
+                        artifactId: id, expectedHash: hash, content: proposed, reason: change.reason,
+                        requestId: change.id, confirmedBookings: change.confirmedBookings)
+                }
+                let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: receipt.id).content
+                guard workflowActivities.isCurrent(scope) else { throw CancellationError() }
+                cloudTravelContent = loaded; currentTravelArtifactId = receipt.id; currentTravelHash = receipt.contentHash
+                cacheTravel()
+                try persistPendingTravel(Array(pendingTravelChanges.dropFirst()))
+                content = pendingTravelChanges.last?.previewContent ?? loaded
+            }
+            try await refreshTravel()
+            errorMessage = nil
+        } catch is CancellationError { return }
+        catch {
+            guard workflowActivities.isCurrent(scope) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func recordProgress(_ action: String, _ status: String) {
+        guard !savingProgress, let content else { return }
+        do {
+            var document = try JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any] ?? [:]
+            var actions = document["actions"] as? [[String: Any]] ?? []
+            guard let index = actions.firstIndex(where: { $0["id"] as? String == action }) else { return }
+            let happenedAt = ISO8601DateFormatter().string(from: Date())
+            actions[index]["status"] = status
+            if status == "in_progress" { actions[index]["actual_start"] = happenedAt }
+            else if status != "delayed" { actions[index]["actual_end"] = happenedAt }
+            document["actions"] = actions
+            try queueTravelChange(actionId: action, proposed: TravelPendingChange.serialized(document),
+                reason: "用户更新实际行程进度", progress: status, happenedAt: happenedAt)
+            Task { await syncPendingTravel() }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func refreshTravel() async throws {
+        let versions = try await APIClient.shared.fetchWorkflowArtifacts(executionId: executionId)
+            .filter { $0.metadata.renderType == "travel_plan_v2" && $0.metadata.approvalGate == nil }
+            .sorted { ($0.metadata.travelRevision ?? 0) > ($1.metadata.travelRevision ?? 0) }
+        guard workflowActivities.isCurrent(scope) else { return }
+        travelVersions = versions
+        if let latest = versions.first {
+            let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: latest.id).content
+            guard workflowActivities.isCurrent(scope) else { return }
+            cloudTravelContent = loaded; content = pendingTravelChanges.last?.previewContent ?? loaded
+            currentTravelArtifactId = latest.id; currentTravelHash = latest.contentHash
+            showingCachedTravel = false
+            cacheTravel()
+        }
+    }
+
+    private func editTravel(_ action: TravelDayAction, title: String, details: String, booking: String, start: Date?, end: Date?, reason: String) async throws {
+        guard workflowActivities.isCurrent(scope), let content else { throw APIError.network("当前会话已变化") }
+        var document = try JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any] ?? [:]
+        var actions = document["actions"] as? [[String: Any]] ?? []
+        guard let index = actions.firstIndex(where: { $0["id"] as? String == action.id }) else { throw APIError.network("事项已变化，请刷新") }
+        actions[index]["title"] = title; actions[index]["details"] = details
+        actions[index]["booking_reference"] = booking
+        let formatter = ISO8601DateFormatter()
+        if action.status != "in_progress" { actions[index]["start"] = start.map { formatter.string(from: $0) } as Any? ?? NSNull() }
+        actions[index]["end"] = end.map { formatter.string(from: $0) } as Any? ?? NSNull()
+        document["actions"] = actions
+        let proposed = String(decoding: try JSONSerialization.data(withJSONObject: document), as: UTF8.self)
+        try queueTravelChange(actionId: action.id, proposed: proposed, reason: reason,
+            bookings: booking == (action.bookingReference ?? "") ? [:] : [action.id: booking])
+        await syncPendingTravel()
+    }
+
     private var isTravelArtifact: Bool {
-        if artifact.metadata.renderType == "travel_plan_v1" { return true }
+        if ["travel_plan_v1", "travel_plan_v2"].contains(artifact.metadata.renderType ?? "") { return true }
         let value = "\(artifact.title) \(artifact.kind) \(content?.prefix(300) ?? "")"
         return value.contains("旅行") || value.localizedCaseInsensitiveContains("travel")
     }
@@ -3579,8 +3843,33 @@ private struct WorkflowArtifactPreview: View {
                         PresentationOutlinePreview(outline: outline)
                             .padding(AppTheme.Metrics.contentGutter)
                     } else if isTravelArtifact {
-                        TravelPlanResultView(title: artifact.title, content: content)
+                        TravelPlanResultView(title: artifact.title, content: content,
+                            onProgress: allowsDownload && !savingProgress ? { action, status in recordProgress(action, status) } : nil,
+                            onEdit: allowsDownload && !savingProgress ? { editingTravelAction = $0 } : nil)
                         .padding(AppTheme.Metrics.contentGutter)
+                        if showingCachedTravel {
+                            Label("上次保存的行程 · 尚未核对云端最新版本", systemImage: "wifi.slash")
+                                .font(AppTheme.Typography.supporting)
+                            Button("重新连接并刷新") {
+                                Task {
+                                    await syncPendingTravel()
+                                }
+                            }.frame(minHeight: 44)
+                        }
+                        if !pendingTravelChanges.isEmpty {
+                            Label("\(pendingTravelChanges.count) 项修改已保存在本机，等待同步", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.subheadline)
+                            HStack {
+                                Button("立即同步") { Task { await syncPendingTravel() } }.disabled(savingProgress)
+                                Button("查看云端版本") { showingCloudTravel = true }.disabled(cloudTravelContent == nil)
+                            }.frame(minHeight: 44)
+                        }
+                        if allowsDownload && !showingCachedTravel && pendingTravelChanges.isEmpty {
+                            Button("有变化？告诉我怎么调整", systemImage: "bubble.left.and.text.bubble.right") { showingTravelReplan = true }
+                                .buttonStyle(.bordered).frame(minHeight: 44)
+                        }
+                        if savingProgress { ProgressView("正在保存…") }
+                        if let errorMessage { WorkflowErrorBanner(message: errorMessage).padding() }
                     } else {
                         Text(content)
                             .font(.body)
@@ -3601,11 +3890,13 @@ private struct WorkflowArtifactPreview: View {
                 if allowsDownload {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         if isTravelArtifact, content != nil {
+                            Button("旧版本", systemImage: "clock.arrow.circlepath") { showingTravelHistory = true }
+                                .disabled(travelVersions.isEmpty)
                             Button(savedTravelNote ? "已存入旅行笔记" : "存为旅行笔记", systemImage: savedTravelNote ? "checkmark.circle.fill" : "book.closed") {
                                 showingTravelNoteSave = true
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(savedTravelNote)
+                            .disabled(savedTravelNote || !pendingTravelChanges.isEmpty || savingProgress)
                         }
                         if let downloadURL {
                             ShareLink(item: downloadURL) {
@@ -3619,8 +3910,92 @@ private struct WorkflowArtifactPreview: View {
                     .background(.ultraThinMaterial)
                 }
             }
+            .onChange(of: travelScenePhase) { _, phase in
+                if phase == .active && !pendingTravelChanges.isEmpty { Task { await syncPendingTravel() } }
+            }
+            .onReceive(APIClient.shared.$isOfflineMode.removeDuplicates()) { offline in
+                if !offline && !pendingTravelChanges.isEmpty && !savingProgress { Task { await syncPendingTravel() } }
+            }
+            .sheet(isPresented: $showingCloudTravel) {
+                NavigationStack {
+                    if let cloudTravelContent { TravelPlanResultView(title: "云端行程", content: cloudTravelContent) }
+                    Button("已核对，按本机草稿重试首项修改") {
+                        do {
+                            guard let cloudTravelContent, let first = pendingTravelChanges.first else { return }
+                            var queue = pendingTravelChanges
+                            queue[0] = try first.confirmedAgainst(cloudTravelContent)
+                            try persistPendingTravel(queue)
+                            showingCloudTravel = false
+                            Task { await syncPendingTravel() }
+                        } catch { errorMessage = error.localizedDescription }
+                    }.disabled(savingProgress || pendingTravelChanges.isEmpty)
+                    Button("保留云端，撤回本机待同步修改") {
+                        do {
+                            try persistPendingTravel([])
+                            content = cloudTravelContent
+                            showingCloudTravel = false
+                            errorMessage = nil
+                        } catch { errorMessage = error.localizedDescription }
+                    }.disabled(savingProgress)
+                    .toolbar { Button("返回本机草稿") { showingCloudTravel = false } }
+                }
+            }
+            .sheet(isPresented: $showingTravelReplan) {
+                NavigationStack {
+                    Form {
+                        Text("例如：今天下雨，下午别去山里，换成旅馆附近的咖啡馆，晚餐预约保留。")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        TextEditor(text: $travelFeedback).frame(minHeight: 160)
+                        Text("系统会保留已发生记录，重排剩余行程后请你确认；原版仍可查阅。")
+                        if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                        Button(savingProgress ? "正在提交…" : "生成调整方案") {
+                            savingProgress = true
+                            Task {
+                                defer { savingProgress = false }
+                                do {
+                                    let updated = try await APIClient.shared.requestWorkflowRevision(executionId: executionId,
+                                        nodeId: "travel_research", comment: travelFeedback,
+                                        artifactId: currentTravelArtifactId ?? artifact.id,
+                                        expectedHash: currentTravelHash ?? artifact.contentHash)
+                                    guard workflowActivities.isCurrent(scope) else { return }
+                                    onReplan?(updated)
+                                    showingTravelReplan = false
+                                    dismiss()
+                                } catch { errorMessage = error.localizedDescription }
+                            }
+                        }.disabled(savingProgress || travelFeedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .navigationTitle("一起调整行程")
+                    .toolbar { Button("取消") { showingTravelReplan = false }.disabled(savingProgress) }
+                }.interactiveDismissDisabled(savingProgress)
+            }
+            .sheet(item: $editingTravelAction) { action in
+                TravelActionEditSheet(action: action) { title, details, booking, start, end, reason in
+                    try await editTravel(action, title: title, details: details, booking: booking, start: start, end: end, reason: reason)
+                }
+            }
+            .sheet(isPresented: $showingTravelHistory) {
+                NavigationStack {
+                    List {
+                        ForEach(travelVersions) { version in
+                            Button("版本 \(version.metadata.travelRevision ?? 0) · \(version.metadata.changeReason ?? "初始行程")") {
+                                Task {
+                                    do {
+                                        let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: version.id).content
+                                        guard workflowActivities.isCurrent(scope) else { return }
+                                        historyContent = loaded
+                                    } catch { errorMessage = error.localizedDescription }
+                                }
+                            }
+                        }
+                        if let historyContent { TravelPlanResultView(title: "历史版本 · 只读", content: historyContent) }
+                    }
+                    .navigationTitle("行程版本记录")
+                    .toolbar { Button("完成") { showingTravelHistory = false } }
+                }
+            }
             .sheet(isPresented: $showingTravelNoteSave) {
-                TravelNoteSaveSheet(title: artifact.title, content: content ?? "") { title, body in
+                TravelNoteSaveSheet(title: artifact.title, content: linkedTravelContent) { title, body in
                     if let note = KnowledgeNoteStore.shared.createNote(
                         title: title,
                         body: body,
@@ -3636,7 +4011,12 @@ private struct WorkflowArtifactPreview: View {
                     errorMessage = "对话会话已切换，无法读取此成果。"
                     return
                 }
+                if isTravelArtifact { restoreCachedTravel() }
                 do {
+                    if isTravelArtifact && allowsDownload {
+                        try restorePendingTravel()
+                        if !pendingTravelChanges.isEmpty { await syncPendingTravel(); return }
+                    }
                     if artifact.extension == "pptx" {
                         let deck = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
                         guard workflowActivities.isCurrent(scope) else { return }
@@ -3669,7 +4049,8 @@ private struct WorkflowArtifactPreview: View {
                         }
                         let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: artifact.id).content
                         guard workflowActivities.isCurrent(scope) else { return }
-                        content = loaded
+                        if !showingCachedTravel { content = loaded }
+                        if isTravelArtifact && allowsDownload { try await refreshTravel() }
                     }
                 } catch {
                     guard workflowActivities.isCurrent(scope) else { return }
@@ -4386,5 +4767,62 @@ private extension String {
         case "failed", "needs_attention": return AppTheme.Colors.statusError
         default: return AppTheme.Colors.statusIdle
         }
+    }
+}
+
+private struct TravelActionEditSheet: View {
+    let action: TravelDayAction
+    let onSave: (String, String, String, Date?, Date?, String) async throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var details = ""
+    @State private var booking = ""
+    @State private var reason = ""
+    @State private var start = Date()
+    @State private var end = Date()
+    @State private var hasStart = false
+    @State private var hasEnd = false
+    @State private var saving = false
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("调整剩余安排") {
+                    TextField("事项名称", text: $title)
+                    TextEditor(text: $details).frame(minHeight: 120)
+                    TextField("机票／酒店预订编号", text: $booking)
+                        .disabled(!["planned", "delayed"].contains(action.status))
+                    Text("填写已确认的订单信息；修改行程不会替你预约、改签或取消订单。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if action.status != "in_progress" {
+                        Toggle("已确定出发时间", isOn: $hasStart)
+                        if hasStart { DatePicker("出发", selection: $start) }
+                    }
+                    Toggle("已确定结束时间", isOn: $hasEnd)
+                    if hasEnd { DatePicker("结束", selection: $end) }
+                    Text("时间按 \(action.timezone ?? "UTC") 显示；已发生事项保持不变，保存后保留旧版本。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("修改原因") { TextField("例如：下雨，下午改在旅馆休息", text: $reason, axis: .vertical) }
+                if let error { Text(error).foregroundStyle(.red) }
+                Button(saving ? "正在保存…" : "保存为新版本") {
+                    saving = true
+                    Task {
+                        defer { saving = false }
+                        do { try await onSave(title, details, booking, hasStart ? start : nil, hasEnd ? end : nil, reason); dismiss() }
+                        catch { self.error = error.localizedDescription }
+                    }
+                }.disabled(saving || title.isEmpty || reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .environment(\.timeZone, TimeZone(identifier: action.timezone ?? "UTC") ?? .gmt)
+            .navigationTitle("调整行程")
+            .toolbar { Button("取消") { dismiss() }.disabled(saving) }
+            .onAppear {
+                title = action.title; details = action.details ?? ""; booking = action.bookingReference ?? ""
+                if let value = TravelDayAction.date(action.start) { start = value; hasStart = true }
+                if let value = TravelDayAction.date(action.end) { end = value; hasEnd = true }
+            }
+        }
+        .interactiveDismissDisabled(saving)
     }
 }

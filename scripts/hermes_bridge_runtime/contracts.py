@@ -607,6 +607,20 @@ class WorkflowRunRequest(BaseModel):
     agent_config: dict[str, Any] = Field(default_factory=dict)
     source_document: dict[str, Any] | None = None
 
+    source_documents: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+
+    @field_validator("source_documents")
+    @classmethod
+    def _trusted_source_documents(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [cls._trusted_source_document(item) for item in value]
+
+    @model_validator(mode="after")
+    def _source_budget(self):
+        sources = self.source_documents + ([self.source_document] if self.source_document else [])
+        if sum(len(item["text"]) for item in sources) > 80_000:
+            raise ValueError("private source documents exceed 80000 characters; truncation is forbidden")
+        return self
+
     @field_validator("agent_config")
     @classmethod
     def _trusted_agent_config(cls, value: dict[str, Any]) -> dict[str, Any]:
@@ -651,6 +665,7 @@ class ClarificationDecision(BaseModel):
 
 
 class WorkflowRetryRequest(BaseModel):
+    travel_baseline: dict | None = None
     from_node_id: str | None = Field(None, max_length=80)
     revision_comment: str | None = Field(None, max_length=2000)
 

@@ -92,6 +92,16 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         var responseError: URLError?
         var responseHeaders = ["Content-Type": "application/json"]
         switch (isContractOrigin, method, path) {
+        case (true, "POST", "/api/v1/documents"):
+            responseBody = Data(#"{"source_id":"doc-upload","source_revision":1,"filename":"test.docx","content_type":"application/octet-stream","size_bytes":7,"content_hash":"hash","status":"ready","text_available":true,"contribution_status":"pending"}"#.utf8)
+        case (true, "GET", "/api/v1/workflow-executions/offline-entry/artifacts"):
+            let attempts = Self.requests().filter { $0.request.url?.path == path }.count
+            responseStatus = attempts == 1 ? 200 : (attempts == 3 ? 403 : 503)
+            responseBody = Data("[]".utf8)
+        case (true, "POST", "/api/v1/workflow-executions/travel-retry/travel-revisions"):
+            let attempts = Self.requests().filter { $0.request.url?.path == path }.count
+            responseError = attempts == 1 ? URLError(.networkConnectionLost) : nil
+            responseBody = Data("{\"id\":\"travel-saved\",\"content_hash\":\"\(String(repeating: "a", count: 64))\"}".utf8)
         case (true, "GET", "/api/v1/knowledge-publications/pub-1/covers/shelf_cover"),
              (true, "GET", "/api/v1/knowledge-publications/pub-1/covers/reader_cover"),
              (true, "GET", "/api/v1/knowledge-publications/pub-1/media/illustration_01"):
@@ -6753,5 +6763,241 @@ extension WorkflowLifecycleDTOTests {
         let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(proposal.input)) as? [String: Any])
         XCTAssertEqual(encoded["revision"] as? Int, 3)
         XCTAssertEqual(encoded["exercise_id"] as? String, proposal.input.exerciseId)
+    }
+}
+
+extension WorkflowLifecycleDTOTests {
+    func testClarificationAlwaysKeepsCustomAnswerAlongsideChoice() {
+        let block = ClarifyBlock(question: "旅行节奏？", choices: ["紧凑", "慢一点"])
+        XCTAssertEqual(block.answer(selectionIDs: [block.choices[1].id], customText: "但想留一天徒步"), "慢一点\n但想留一天徒步")
+        XCTAssertEqual(block.answer(selectionIDs: [], customText: "以上都不合适"), "以上都不合适")
+    }
+
+    @MainActor
+    func testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime() async throws {
+        let content = #"{"schema_version":2,"destination":"日本温泉慢游","stops":[{"id":"onsen","name":"山间旅馆","address":"地址待核实","latitude":null,"longitude":null}],"actions":[{"id":"rest","day_id":"day-1","title":"入住后，留一整个下午泡汤","kind":"rest","place_id":"onsen","start":"2030-01-03T03:00:00Z","end":"2030-01-03T06:00:00Z","timezone":"Asia/Tokyo","status":"planned","details":"不安排赶场，晚餐前在附近散步。","locked":false}],"open_questions":["请核实旅馆接驳时刻"]}"#
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+        XCTAssertNil(plan.stops.first?.coordinate)
+        XCTAssertEqual(plan.actions[0].timeLabel, "01月03日 12:00")
+        XCTAssertTrue(plan.actions[0].canEdit)
+        let view = TravelPlanResultView(title: "旅行笔记", content: content, initialPage: .day)
+            .frame(width: 390).padding(16).background(Color.white)
+        let controller = UIHostingController(rootView: view)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 422, height: 900)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        controller.view.frame = window.bounds
+        try await Task.sleep(for: .milliseconds(300))
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        XCTAssertGreaterThan(image.size.height, 300)
+        let pixels = try XCTUnwrap(image.cgImage?.dataProvider?.data) as Data
+        XCTAssertGreaterThan(Set(stride(from: 0, to: pixels.count, by: 997).map { pixels[$0] }).count, 8, "Snapshot must contain rendered content")
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "travel-day-timeline"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testAttachmentOCRReadsImageWithoutModelCall() async throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 160))
+        let image = renderer.image { context in
+            UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 600, height: 160))
+            ("TOKYO 10:30" as NSString).draw(at: CGPoint(x: 30, y: 45), withAttributes: [.font: UIFont.systemFont(ofSize: 48), .foregroundColor: UIColor.black])
+        }
+        let data = try XCTUnwrap(image.pngData())
+        let result = try await Task.detached { try APIClient.attachmentOCR(data, isPDF: false) }.value
+        XCTAssertTrue(result.contains("TOKYO"), result)
+        XCTAssertTrue(result.contains("10:30"), result)
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    func testOrdinaryChatCarriesVersionedAttachmentReferences() throws {
+        let ref = WorkflowSourceReference(sourceId: "doc_booking", revision: 2, hash: String(repeating: "a", count: 64))
+        var attachments = [ref]
+        let request = InFlightRequest(sessionId: "travel", text: "按附件安排", sourceRefs: attachments)
+        attachments.removeAll()
+        var retry = request
+        retry.didRetry404 = true
+        XCTAssertEqual(retry.sourceRefs.count, 1)
+        let data = try JSONEncoder().encode(ChatRequestDTO(question: retry.text, sourceRefs: retry.sourceRefs))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let references = try XCTUnwrap(object["source_refs"] as? [[String: Any]])
+        XCTAssertEqual(references.first?["source_id"] as? String, "doc_booking")
+        XCTAssertEqual(references.first?["source_revision"] as? Int, 2)
+        XCTAssertNil(object["tenant_id"])
+    }
+
+    @MainActor
+    func testBlankPDFDoesNotCreateFakeOCRContext() async throws {
+        let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 300)).pdfData { renderer in
+            renderer.beginPage()
+        }
+        let text = try await Task.detached { try APIClient.attachmentOCR(data, isPDF: true) }.value
+        XCTAssertEqual(text, "")
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    func testTravelRoutesIncludeTransportEndpointsAndReturnLegs() throws {
+        let content = #"{"destination":"旅行","stops":[{"id":"a","name":"酒店"},{"id":"b","name":"车站"}],"actions":[{"id":"out","day_id":"day-1","title":"出发","kind":"transport","from_place_id":"a","to_place_id":"b","status":"delayed","start":"2020-01-01T00:00:00Z"},{"id":"back","day_id":"day-1","title":"返回","kind":"transport","from_place_id":"b","to_place_id":"a","status":"planned"}]}"#
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+        XCTAssertEqual(plan.orderedStops.map(\.sourceID), ["a", "b", "a"])
+        XCTAssertTrue(plan.actions[0].canEdit)
+        XCTAssertEqual(plan.actions[0].statusTitle, "延误，尚未开始")
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testTravelMutationRetriesIdenticalPayloadAfterLostResponse() async throws {
+        for editingPlan in [false, true] {
+            APIContractURLProtocol.reset()
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [APIContractURLProtocol.self]
+            let api = APIClient(baseURL: URL(string: "https://contract.invalid")!,
+                                sessionConfiguration: configuration, inMemoryToken: "token")
+            let hash = String(repeating: "a", count: 64)
+            let receipt: TravelRevisionReceipt
+            if editingPlan {
+                receipt = try await api.reviseTravelPlan(executionId: "travel-retry", artifactId: "artifact-1",
+                    expectedHash: hash, content: "{}", reason: "延后出发", requestId: "same-request")
+            } else {
+                receipt = try await api.recordTravelProgress(executionId: "travel-retry", artifactId: "artifact-1",
+                    expectedHash: hash, actionId: "train", progress: "delayed", requestId: "same-request")
+            }
+            XCTAssertEqual(receipt.id, "travel-saved")
+            let requests = APIContractURLProtocol.requests()
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertEqual(requests.first?.body, requests.last?.body)
+        }
+        APIContractURLProtocol.reset()
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testTravelOfflineCacheRemainsOwnerScopedAcrossReactivation() throws {
+        let store = InboxFileManager.shared
+        let tenant = "travel-cache-test-" + UUID().uuidString
+        store.activatePrivateCache(tenantKey: tenant, userId: "alice")
+        let bytes = Data("行程与酒店地址".utf8)
+        _ = try store.storePrivateFile(bytes, sourceId: "travel:execution", revision: 1, filename: "travel.json", durable: true)
+        store.activatePrivateCache(tenantKey: tenant, userId: "bob")
+        XCTAssertNil(store.readPrivateFile(sourceId: "travel:execution", revision: 1, filename: "travel.json", durable: true))
+        store.clearPrivateCache()
+        store.activatePrivateCache(tenantKey: tenant, userId: "alice")
+        XCTAssertEqual(store.readPrivateFile(sourceId: "travel:execution", revision: 1, filename: "travel.json", durable: true), bytes)
+        store.clearPrivateCache()
+        XCTAssertNil(store.readPrivateFile(sourceId: "travel:execution", revision: 1, filename: "travel.json", durable: true))
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    func testOfflineTravelChangesMergeOnlyAnUnchangedActionAndPersistReplayIdentity() throws {
+        let original = #"{"destination":"日本","actions":[{"id":"a","title":"休息","kind":"rest","day_id":"day-1"},{"id":"b","title":"晚餐","kind":"meal","day_id":"day-1"}]}"#
+        let changed = original.replacingOccurrences(of: "休息", with: "继续休息")
+        var draft = TravelPendingChange(actionId: "a",
+            baseAction: try TravelPendingChange.fingerprint(TravelPendingChange.action(in: original, id: "a")),
+            changedAction: try TravelPendingChange.serialized(TravelPendingChange.action(in: changed, id: "a")),
+            previewContent: changed, reason: "轻松一点", progress: nil, happenedAt: nil, confirmedBookings: [:])
+        let otherDevice = original.replacingOccurrences(of: "晚餐", with: "旅馆晚餐")
+        let merged = try draft.applying(to: otherDevice)
+        XCTAssertTrue(merged.contains("继续休息"))
+        XCTAssertTrue(merged.contains("旅馆晚餐"))
+        XCTAssertThrowsError(try draft.applying(to: original.replacingOccurrences(of: "休息", with: "散步")))
+        draft.preparedArtifactId = "artifact-1"; draft.preparedHash = String(repeating: "a", count: 64)
+        draft.preparedContent = merged
+        let restored = try JSONDecoder().decode(TravelPendingChange.self, from: JSONEncoder().encode(draft))
+        XCTAssertEqual(restored.id, draft.id)
+        XCTAssertEqual(restored.preparedContent, merged)
+        XCTAssertEqual(restored.preparedHash, draft.preparedHash)
+        let conflict = original.replacingOccurrences(of: "休息", with: "散步")
+        let confirmed = try restored.confirmedAgainst(conflict)
+        XCTAssertNotEqual(confirmed.id, restored.id)
+        XCTAssertNil(confirmed.preparedArtifactId)
+        XCTAssertNil(confirmed.preparedContent)
+        XCTAssertTrue(try confirmed.applying(to: conflict).contains("继续休息"))
+        XCTAssertEqual(try TravelPendingChange.fingerprint(["start": "2030-01-01T09:00:00+09:00"]),
+                       try TravelPendingChange.fingerprint(["start": "2030-01-01T00:00:00.000Z"]))
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testOfflineWorkflowEntryRestoresButNeverBypassesRevocationOrOwner() async throws {
+        APIContractURLProtocol.reset()
+        let store = InboxFileManager.shared
+        let tenant = "entry-test-" + UUID().uuidString
+        store.activatePrivateCache(tenantKey: tenant, userId: "alice")
+        defer { store.clearPrivateCache(); APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!,
+                            sessionConfiguration: configuration, inMemoryToken: "token")
+        let online = try await api.fetchWorkflowArtifacts(executionId: "offline-entry")
+        let offline = try await api.fetchWorkflowArtifacts(executionId: "offline-entry")
+        XCTAssertEqual(online, offline)
+        XCTAssertTrue(api.isOfflineMode)
+        do { _ = try await api.fetchWorkflowArtifacts(executionId: "offline-entry"); XCTFail("403 must not use cache") }
+        catch APIError.server(let code, _) { XCTAssertEqual(code, 403) }
+        do { _ = try await api.fetchWorkflowArtifacts(executionId: "offline-entry"); XCTFail("revoked snapshot must stay invalid offline") }
+        catch APIError.server(let code, _) { XCTAssertEqual(code, 503) }
+        store.clearPrivateCache()
+        store.activatePrivateCache(tenantKey: tenant, userId: "bob")
+        do { _ = try await api.fetchWorkflowArtifacts(executionId: "offline-entry"); XCTFail("another owner must not see cache") }
+        catch APIError.server(let code, _) { XCTAssertEqual(code, 503) }
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testOfficeUploadUsesBoundedLongRequestAndOriginalBytes() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!,
+                            sessionConfiguration: configuration, inMemoryToken: "token")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".docx")
+        let bytes = Data("fixture".utf8)
+        try bytes.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let receipt = try await api.uploadDocument(at: file)
+        XCTAssertEqual(receipt.sourceId, "doc-upload")
+        let sent = try XCTUnwrap(APIContractURLProtocol.requests().last)
+        XCTAssertEqual(sent.body, bytes)
+        XCTAssertEqual(sent.request.timeoutInterval, 200)
+    }
+}
+
+
+extension WorkflowLifecycleDTOTests {
+    func testClarificationSelectionSurvivesReconstructionWithoutSelectingChangedChoice() {
+        let first = ClarifyBlock(id: "message-1", question: "确认需求？", choices: ["内容准确", "需要调整"])
+        let selected = first.choices[0].id
+        let refreshed = ClarifyBlock(id: "message-1", question: first.question, choices: ["内容准确", "需要调整"])
+        XCTAssertEqual(refreshed.answer(selectionIDs: [selected], customText: ""), "内容准确")
+        let changed = ClarifyBlock(id: "message-1", question: first.question, choices: ["重新开始", "需要调整"])
+        XCTAssertFalse(changed.choices.contains { $0.id == selected })
+        let next = ClarifyBlock(id: "message-2", question: first.question, choices: ["内容准确", "需要调整"])
+        XCTAssertFalse(next.choices.contains { $0.id == selected })
     }
 }

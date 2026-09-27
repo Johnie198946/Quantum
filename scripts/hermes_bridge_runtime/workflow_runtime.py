@@ -145,7 +145,9 @@ def _workflow_run_sync(execution_id: str) -> None:
                     and set(agent_config.allowed_tools)
                     & {"web_search", "web_extract"}
                 )
-                if docs or not node_network_allowed:
+                if docs and node_network_allowed and node_id == "travel_research":
+                    node_prompt += "\n已有知识仅供参考，仍需核实当前信息：\n" + json.dumps(docs, ensure_ascii=False)[:12000]
+                if (docs and node_id != "travel_research") or not node_network_allowed:
                     gateway_completed = True
                     if docs:
                         rows = [
@@ -171,12 +173,15 @@ def _workflow_run_sync(execution_id: str) -> None:
             for completion_attempt in range(0 if gateway_completed else 2):
                 attempt_prompt = node_prompt
                 if completion_attempt:
-                    attempt_prompt = (
-                        node_prompt
-                        + "\n\n上一次响应停留在工具调用计划，没有形成成果。"
-                        "这次必须立即使用已授权工具完成检索，并直接返回含来源 URL、"
-                        "证据摘要和缺口标记的完整可落盘成果；禁止输出工具切换标签。"
-                    )[:_contracts.MAX_INPUT]
+                    if (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
+                        attempt_prompt = node_prompt + "\n上一次响应未符合旅行 JSON Schema。请严格使用给定字段类型、完整输出 JSON；不要省略括号或生成 Markdown。"
+                    else:
+                        attempt_prompt = (
+                            node_prompt
+                            + "\n\n上一次响应停留在工具调用计划，没有形成成果。"
+                            "这次必须立即使用已授权工具完成检索，并直接返回含来源 URL、"
+                            "证据摘要和缺口标记的完整可落盘成果；禁止输出工具切换标签。"
+                        )[:_contracts.MAX_INPUT]
                 reply, new_sid, raw_usage = _workflow_artifacts._run_workflow_node_in_process(
                     attempt_prompt,
                     node,
@@ -209,7 +214,28 @@ def _workflow_run_sync(execution_id: str) -> None:
             approved_design = None
             approved_outline = None
             render_type = str(contract["render_type"])
-            if render_type == "illustration_prompt":
+            if render_type == "travel_plan_v2":
+                from backend.services.travel_plan import validate_travel_document, revise_travel_document
+                baseline = run.get("travel_baseline")
+                travel = validate_travel_document(_workflow_artifacts._extract_json_object(reply))
+                if not baseline and any(a["status"] != "planned" or a.get("actual_start") or a.get("actual_end") for a in travel["actions"]):
+                    raise ValueError("AI cannot claim actual travel progress")
+                # Final writing must not silently modify the approved itinerary.
+                if node_id == "travel_notebook":
+                    approved, _binding = _workflow_artifacts._approved_presentation_stage(run, "travel_plan_v2", "itinerary")
+                    for field in ("actions", "stops"):
+                        travel[field] = approved.get(field, [])
+                    sources = {s["id"]: s for s in travel.get("sources", [])}
+                    sources.update({s["id"]: s for s in approved.get("sources", [])})
+                    travel["sources"] = list(sources.values())
+                    travel = validate_travel_document(travel)
+                if baseline:
+                    from datetime import datetime, timezone
+                    travel = revise_travel_document(baseline["document"], travel, now=datetime.now(timezone.utc))
+                    contract.update(travel_revision=baseline["revision"] + 1, parent_artifact_id=baseline["artifact_id"],
+                                    change_reason=(run.get("revision_feedback") or {}).get("travel_research") or (run.get("revision_feedback") or {}).get("travel_itinerary", "行程调整"))
+                reply = json.dumps(travel, ensure_ascii=False, separators=(",", ":"))
+            elif render_type == "illustration_prompt":
                 context = _workflow_artifacts._workflow_illustration_context(run)
                 try:
                     reply = validate_illustration_prompt(reply, context)
@@ -838,6 +864,10 @@ async def retry_workflow_run(
             )
         if target not in order:
             raise HTTPException(status_code=409, detail="no retryable node")
+        if body.travel_baseline is not None:
+            from backend.services.travel_plan import validate_travel_document
+            validate_travel_document(body.travel_baseline["document"])
+            run["travel_baseline"] = body.travel_baseline
         start = order.index(target)
         for node_id in order[start:]:
             run["nodes"][node_id] = {"status": "pending", "attempt": run["nodes"].get(node_id, {}).get("attempt", 0)}

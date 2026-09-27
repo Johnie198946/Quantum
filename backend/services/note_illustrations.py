@@ -4,7 +4,9 @@ Uses the existing durable worker; never runs image generation in the API process
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import tempfile
 import io
 import json
 import re
@@ -55,9 +57,16 @@ class NoteIllustrationRequest(BaseModel):
 
 
 def illustration_plan(body: NoteIllustrationRequest) -> list[dict]:
+    web_references = {}
     if body.travel:
         travel = json.loads(body.content)
         existing = {item.get("anchor") for item in travel.get("illustrations", []) if isinstance(item, dict)}
+        sources = {item.get("id"): item for item in travel.get("sources", []) if isinstance(item, dict)}
+        for item in travel.get("photo_references", []):
+            if isinstance(item, dict):
+                reference = {**item, "source_url": sources.get(item.get("source_id"), {}).get("url", "")}
+                if reference.get("image_url") or reference["source_url"]:
+                    web_references.setdefault(item.get("anchor", "overview"), reference)
         anchors = [body.anchor or "overview"] if body.mode == "manual" else [
             "overview", *[f"stop:{i}" for i in range(len(travel["stops"]))]
         ]
@@ -100,6 +109,12 @@ def illustration_plan(body: NoteIllustrationRequest) -> list[dict]:
             return anchor
     result = []
     for index, anchor in enumerate(anchors):
+        if body.mode == "auto" and anchor in web_references:
+            reference = web_references[anchor]
+            result.append({"index": index, "anchor": anchor, "web_reference": reference,
+                           "alt": "网络参考：" + str(reference.get("caption") or body.title)[:120]
+                           + " · " + str(reference.get("source_url") or reference.get("image_url"))})
+            continue
         position = body.content.find(anchor) if not body.travel else -1
         before = body.content[max(0, position - 1600):position] if position >= 0 else ""
         after = body.content[position + len(anchor):position + len(anchor) + 1600] if position >= 0 else ""
@@ -129,7 +144,6 @@ def generate_image(prompt: str) -> tuple[bytes, str, str]:
     from hermes_cli.plugins import _ensure_plugins_discovered
     from hermes_cli.config import load_config_readonly
     from agent.image_gen_registry import get_active_provider
-    from PIL import Image, ImageOps
 
     _ensure_plugins_discovered()
     provider = get_active_provider()
@@ -143,6 +157,12 @@ def generate_image(prompt: str) -> tuple[bytes, str, str]:
     path = Path(str(output.get("image") or ""))
     if not path.is_absolute() or not path.is_file() or path.stat().st_size > 40 * 1024 * 1024:
         raise RuntimeError("image_output_invalid")
+    return _normalized_image(path), str(output.get("provider") or "unknown"), str(output.get("model") or "unknown")
+
+def _normalized_image(path: Path) -> bytes:
+    from PIL import Image, ImageOps
+    if not path.is_file() or path.stat().st_size > 40 * 1024 * 1024:
+        raise ValueError("reference_image_invalid")
     with Image.open(path) as source:
         if source.width * source.height > 40_000_000:
             raise RuntimeError("image_dimensions_invalid")
@@ -150,10 +170,45 @@ def generate_image(prompt: str) -> tuple[bytes, str, str]:
         image.thumbnail((2048, 2048))
         buf = io.BytesIO()
         image.save(buf, format="JPEG", quality=90)
-    return buf.getvalue(), str(output.get("provider") or "unknown"), str(output.get("model") or "unknown")
+    return buf.getvalue()
 
 
-def execute_illustrations(store, run: dict, generate=generate_image) -> None:
+def archive_web_reference(reference: dict, task_id: str) -> tuple[bytes, str, str]:
+    """Reuse Hermes' guarded downloader and isolated browser, then existing media storage."""
+    from tools.url_safety import is_safe_url
+    from tools.vision_tools import _download_image
+    image_url = str(reference.get("image_url") or "")
+    source_url = str(reference.get("source_url") or "")
+    if image_url and not is_safe_url(image_url):
+        raise ValueError("reference_url_denied")
+    if source_url and not is_safe_url(source_url):
+        raise ValueError("reference_url_denied")
+    with tempfile.TemporaryDirectory(prefix="travel-reference-") as folder:
+        if image_url:
+            try:
+                path = asyncio.run(_download_image(image_url, Path(folder) / "image", max_retries=1))
+                return _normalized_image(path), "web-reference", "original"
+            except Exception:
+                if not source_url:
+                    raise
+        if not source_url:
+            raise ValueError("reference_url_missing")
+        from tools.browser_tool import browser_navigate, browser_vision, cleanup_browser
+        try:
+            navigation = json.loads(browser_navigate(source_url, task_id=task_id))
+            if not navigation.get("success"):
+                raise RuntimeError("reference_page_unavailable")
+            result = browser_vision("描述这个公开资料页面，不操作页面。", task_id=task_id)
+            result = json.loads(result) if isinstance(result, str) else result
+            path = Path(str(result.get("screenshot_path") or (result.get("meta") or {}).get("screenshot_path") or ""))
+            if not path.is_absolute():
+                raise ValueError("reference_screenshot_unavailable")
+            return _normalized_image(path), "web-reference", "page-screenshot"
+        finally:
+            cleanup_browser(task_id=task_id)
+
+
+def execute_illustrations(store, run: dict, generate=generate_image, capture=archive_web_reference) -> None:
     """Persist each successful asset before proceeding; retry reuses successes."""
     payload = run.get("execution_payload") or json.loads(run["execution_payload_json"])
     body = NoteIllustrationRequest.model_validate(payload["illustration"])
@@ -185,12 +240,17 @@ def execute_illustrations(store, run: dict, generate=generate_image) -> None:
                 if hashlib.sha256(image_file.read_bytes()).hexdigest() != asset["sha256"]:
                     raise ValueError("asset_hash_mismatch")
             else:
-                data, provider, model = generate(item["prompt"])
+                if item.get("web_reference"):
+                    data, provider, model = capture(item["web_reference"], run["run_id"])
+                else:
+                    data, provider, model = generate(item["prompt"])
                 if store.get_unchecked(run["run_id"])["status"] == "cancelled":
                     return
                 image_file.write_bytes(data)
                 image_file.chmod(0o600)
-                asset = {k: v for k, v in item.items() if k != "prompt"}
+                asset = {k: v for k, v in item.items() if k not in {"prompt", "web_reference"}}
+                if model == "page-screenshot":
+                    asset["alt"] = "来源页面截图 · " + asset["alt"]
                 asset.update(sha256=hashlib.sha256(data).hexdigest(), provider=provider, model=model, run_id=run["run_id"])
                 receipt.write_text(json.dumps(asset, ensure_ascii=False))
             asset.setdefault("run_id", run["run_id"])

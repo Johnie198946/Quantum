@@ -1,0 +1,34 @@
+{
+  "workflow_executions": [
+    {
+      "id": "wfr_d993a20638e44bbaa00011a4f92e3211",
+      "status": "completed",
+      "started_at": "2026-09-27 08:46:22.593840",
+      "finished_at": "2026-09-27 08:47:55.867716"
+    }
+  ],
+  "workflow_node_runs": [
+    {
+      "id": "wfn_3b093f46bc8a4f2c9168a34bf98d7081",
+      "node_id": "travel_research",
+      "status": "succeeded",
+      "started_at": "2026-09-27 08:46:22.595816",
+      "finished_at": "2026-09-27 08:47:05.500784"
+    },
+    {
+      "id": "wfn_4a8169daa0584c9da19d31f409f6b280",
+      "node_id": "travel_itinerary",
+      "status": "succeeded",
+      "started_at": "2026-09-27 08:47:05.513431",
+      "finished_at": "2026-09-27 08:47:23.784437"
+    },
+    {
+      "id": "wfn_56ad0d879954476dafe763186782d2e7",
+      "node_id": "travel_notebook",
+      "status": "succeeded",
+      "started_at": "2026-09-27 08:47:29.004825",
+      "finished_at": "2026-09-27 08:47:51.802144"
+    }
+  ],
+  "scope": "Actual iOS simulator UI creation through completed real-model workflow; two XCTest cases passed, 236.771 seconds including note save/relaunch/search/open; synthetic authenticated owner."
+}

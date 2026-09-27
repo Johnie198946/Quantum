@@ -9,6 +9,7 @@ import SwiftUI
 import UIKit
 import PhotosUI
 import MapKit
+import SceneKit
 
 private enum NoteScope: String, CaseIterable, Identifiable {
     case all = "全部"
@@ -39,6 +40,7 @@ public struct KnowledgeView: View {
     @State private var showingTrashConfirmation = false
     @State private var showingArchive = false
     @State private var showingTrash = false
+    @State private var showingTravelPlanner = false
     @State private var showingNoteOrganizer = false
     @State private var showingBookshelf = false
     @State private var showingSessionOrganizer = false
@@ -152,6 +154,12 @@ public struct KnowledgeView: View {
                     onSaveExcerpt: { saveBookSummaryToNote(book) },
                     onDismiss: { inspectedBook = nil }
                 )
+            }
+            .sheet(isPresented: $showingTravelPlanner) {
+                WorkflowCreateSheet(initialKind: "travel") { created in
+                    showingTravelPlanner = false
+                    appState.openWorkflow(created.workflow)
+                }
             }
             .sheet(isPresented: $showingArchive) { KnowledgeArchiveView() }
             .sheet(isPresented: $showingTrash) { KnowledgeArchiveView(isTrash: true) }
@@ -439,6 +447,9 @@ public struct KnowledgeView: View {
             .disabled(store.notes.isEmpty)
             Button { showingSessionOrganizer = true } label: {
                 Label("从对话生成笔记", systemImage: "bubble.left.and.text.bubble.right")
+            }
+            Button { showingTravelPlanner = true } label: {
+                Label("一起规划旅行", systemImage: "airplane.departure")
             }
             Button {
                 if let note = store.createNote(title: "我的旅行", body: "{\"stops\":[],\"journal\":\"\"}", tags: ["旅行"]) {
@@ -2593,25 +2604,16 @@ struct TravelNoteSaveSheet: View {
     @Environment(\.dismiss) private var dismiss
     let content: String
     let onSave: (String, String) -> Void
-
     @State private var noteTitle: String
-    @State private var selectedCover = 0
-    @State private var privacy = "公开"
-    @State private var includesRoute = true
-    @State private var includesPhotos = true
-    @State private var includesPlaces = true
-
-    private let covers = [
-        "travel_kyoto_camera",
-        "travel_kyoto_bamboo",
-        "travel_kyoto_street",
-        "travel_kyoto_bridge"
-    ]
+    private var document: [String: Any] { NoteIllustrationPlacement.travelObject(content) ?? [:] }
+    private var actionCount: Int { (document["actions"] as? [Any])?.count ?? 0 }
+    private var placeCount: Int { (document["stops"] as? [Any])?.count ?? 0 }
+    private var photoCount: Int { ((document["illustrations"] as? [Any])?.count ?? 0) + ((document["photo_references"] as? [Any])?.count ?? 0) }
 
     init(title: String, content: String, onSave: @escaping (String, String) -> Void) {
         self.content = content
         self.onSave = onSave
-        _noteTitle = State(initialValue: title.isEmpty ? "京都五日 · 春日行记" : title)
+        _noteTitle = State(initialValue: title.isEmpty ? "我的旅行手记" : title)
     }
 
     var body: some View {
@@ -2623,55 +2625,27 @@ struct TravelNoteSaveSheet: View {
                         TextField("旅行笔记标题", text: $noteTitle)
                             .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
-                                Text("\(noteTitle.count)/30")
+                                Text("\(noteTitle.count) 字")
                                     .font(AppTheme.Typography.micro)
                                     .foregroundStyle(AppTheme.Colors.textTertiary)
                                     .padding(.trailing, AppTheme.Spacing.sm)
                             }
                     }
 
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        Text("封面照片").font(.caption.weight(.semibold))
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: AppTheme.Spacing.sm) {
-                                ForEach(Array(covers.enumerated()), id: \.offset) { index, cover in
-                                    Button { selectedCover = index } label: {
-                                        Image(cover)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 72, height: 78)
-                                            .clipped()
-                                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-                                            .overlay {
-                                                RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                                                    .stroke(selectedCover == index ? AppTheme.Colors.quantumBlue : Color.clear, lineWidth: 3)
-                                            }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("选择第 \(index + 1) 张封面")
-                                }
-                            }
-                        }
+                    saveOption(icon: "lock.fill", title: "保存到我的笔记", detail: "原始附件与预订信息保持私有；知识编译遵循账户已设置的参与规则") {
+                        Image(systemName: "checkmark.shield")
+                    }
+                    saveOption(icon: "list.bullet", title: "完整行程", detail: "\(actionCount) 项安排 · 保留时间、地址与版本入口") {
+                        Image(systemName: "checkmark")
+                    }
+                    saveOption(icon: "photo", title: "配图与摄影参考", detail: "\(photoCount) 项图片或来源参考") {
+                        Image(systemName: "checkmark")
+                    }
+                    saveOption(icon: "mappin", title: "沿途地点", detail: "\(placeCount) 个地点 · 保留来源与待确认信息") {
+                        Image(systemName: "checkmark")
                     }
 
-                    saveOption(icon: "lock.fill", title: "隐私设置", detail: nil) {
-                        Menu(privacy) {
-                            ForEach(["公开", "仅自己", "同行可见"], id: \.self) { value in
-                                Button(value) { privacy = value }
-                            }
-                        }
-                    }
-                    saveOption(icon: "list.bullet", title: "包含行程", detail: "已选择 5 天行程与地图") {
-                        Toggle("包含行程", isOn: $includesRoute).labelsHidden()
-                    }
-                    saveOption(icon: "photo", title: "包含照片", detail: "已选择 28 张照片") {
-                        Toggle("包含照片", isOn: $includesPhotos).labelsHidden()
-                    }
-                    saveOption(icon: "doc.text", title: "包含地点与推荐", detail: "收藏的景点、美食、住宿等") {
-                        Toggle("包含地点与推荐", isOn: $includesPlaces).labelsHidden()
-                    }
-
-                    Button("生成旅行笔记", systemImage: "sparkles") {
+                    Button("保存旅行笔记", systemImage: "book.closed") {
                         onSave(noteTitle.trimmingCharacters(in: .whitespacesAndNewlines), content)
                         dismiss()
                     }
@@ -3012,11 +2986,79 @@ struct TravelNoteReadingView: View {
 
 struct TravelRouteStop: Decodable, Hashable, Identifiable {
     let name: String
-    let latitude: Double
-    let longitude: Double
+    let latitude: Double?
+    let longitude: Double?
+    var sourceID: String? = nil
+    var address: String? = nil
 
-    var id: String { "\(name)-\(latitude)-\(longitude)" }
-    var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+    var id: String { sourceID ?? "\(name)-\(latitude ?? 0)-\(longitude ?? 0)" }
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude, latitude.isFinite, longitude.isFinite,
+              (-90...90).contains(latitude), (-180...180).contains(longitude) else { return nil }
+        return .init(latitude: latitude, longitude: longitude)
+    }
+    enum CodingKeys: String, CodingKey { case name, latitude, longitude, sourceID = "id", address }
+}
+
+struct TravelDayAction: Decodable, Equatable, Identifiable {
+    let id: String
+    let dayId: String
+    let title: String
+    let kind: String
+    let placeId: String?
+    let start: String?
+    let end: String?
+    let timezone: String?
+    let status: String
+    let actualStart: String?
+    let actualEnd: String?
+    let bookingReference: String?
+    let fromPlaceId: String?
+    let toPlaceId: String?
+    let locked: Bool?
+    let details: String?
+
+    var statusTitle: String {
+        switch status {
+        case "completed": return "已完成"
+        case "in_progress": return "进行中"
+        case "delayed": return "延误，尚未开始"
+        case "cancelled": return "已取消"
+        case "skipped": return "已跳过"
+        default: return "计划中"
+        }
+    }
+    var symbol: String {
+        switch kind {
+        case "transport": return "tram.fill"
+        case "meal": return "fork.knife"
+        case "hotel": return "bed.double.fill"
+        case "photography": return "camera"
+        case "rest": return "leaf"
+        default: return "mappin"
+        }
+    }
+    var timeLabel: String {
+        guard let start else { return "时间待定" }
+        return displayTime(start)
+    }
+    static func date(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let format = ISO8601DateFormatter()
+        if let date = format.date(from: value) { return date }
+        format.formatOptions.insert(.withFractionalSeconds)
+        return format.date(from: value)
+    }
+    var canEdit: Bool {
+        locked != true && (["delayed", "in_progress"].contains(status) || (status == "planned" && (Self.date(start).map { $0 > Date() } ?? true)))
+    }
+    func displayTime(_ value: String) -> String {
+        guard let date = Self.date(value) else { return value }
+        let format = DateFormatter()
+        format.timeZone = TimeZone(identifier: timezone ?? "UTC")
+        format.dateFormat = "MM月dd日 HH:mm"
+        return format.string(from: date)
+    }
 }
 
 struct TravelPlanDocument: Decodable, Equatable {
@@ -3026,9 +3068,21 @@ struct TravelPlanDocument: Decodable, Equatable {
     let companions: Int?
     let style: String?
     let stops: [TravelRouteStop]
+    var actions: [TravelDayAction] = []
+    var openQuestions: [String] = []
+
+    func routeStops(for actions: [TravelDayAction]) -> [TravelRouteStop] {
+        actions.flatMap { [$0.fromPlaceId, $0.placeId, $0.toPlaceId].compactMap { $0 } }
+            .compactMap { id in stops.first { $0.sourceID == id } }
+            .reduce(into: []) { route, stop in if route.last != stop { route.append(stop) } }
+    }
+
+    var orderedStops: [TravelRouteStop] {
+        actions.isEmpty ? stops : routeStops(for: actions)
+    }
 
     private enum CodingKeys: String, CodingKey {
-        case destination, dateRange, budget, companions, style, stops
+        case destination, dateRange, budget, companions, style, stops, actions, openQuestions
     }
 
     init(destination: String?, dateRange: String?, budget: String?, companions: Int?, style: String?, stops: [TravelRouteStop]) {
@@ -3048,6 +3102,8 @@ struct TravelPlanDocument: Decodable, Equatable {
         companions = try values.decodeIfPresent(Int.self, forKey: .companions)
         style = try values.decodeIfPresent(String.self, forKey: .style)
         stops = try values.decodeIfPresent([TravelRouteStop].self, forKey: .stops) ?? []
+        actions = try values.decodeIfPresent([TravelDayAction].self, forKey: .actions) ?? []
+        openQuestions = try values.decodeIfPresent([String].self, forKey: .openQuestions) ?? []
     }
 
     static func decode(_ content: String) -> Self? {
@@ -3077,57 +3133,149 @@ struct TravelPlanDocument: Decodable, Equatable {
 struct TravelRouteMap: View {
     let stops: [TravelRouteStop]
     let height: CGFloat
-    @State private var position: MapCameraPosition = .automatic
 
     init(stops: [TravelRouteStop] = TravelPlanDocument.kyotoPreview.stops, height: CGFloat = 190) {
         self.stops = stops
         self.height = height
     }
 
+    private var located: [TravelRouteStop] { stops.filter { $0.coordinate != nil } }
+
     var body: some View {
-        Map(position: $position, interactionModes: [.pan, .zoom]) {
-            MapPolyline(coordinates: stops.map(\.coordinate))
-                .stroke(AppTheme.Colors.quantumBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-            ForEach(stops) { stop in
-                Annotation("", coordinate: stop.coordinate, anchor: .bottom) {
-                    VStack(spacing: 2) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(AppTheme.Colors.quantumBlue)
-                        Text(stop.name)
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(.ultraThinMaterial, in: Capsule())
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("路线手记", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    .font(.headline)
+                Spacer()
+                Text("北 ↑").font(.caption)
+            }
+            GeometryReader { geometry in
+                let points = positions(in: geometry.size)
+                ZStack {
+                    Path { path in
+                        guard let first = points.first else { return }
+                        path.move(to: first)
+                        for point in points.dropFirst() { path.addLine(to: point) }
+                    }
+                    .stroke(AppTheme.Colors.quantumBlue.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                    ForEach(Array(located.enumerated()), id: \.offset) { index, stop in
+                        if !located.prefix(index).contains(stop) {
+                        VStack(spacing: 4) {
+                            Text(located.enumerated().filter { $0.element == stop }.map { String($0.offset + 1) }.joined(separator: "/")).font(.caption.bold())
+                                .foregroundStyle(.white).frame(width: 28, height: 28)
+                                .background(AppTheme.Colors.quantumBlue, in: Circle())
+                            Text(stop.name).font(.caption).lineLimit(2)
+                                .padding(4).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .frame(width: 90).position(points[index])
+                        .accessibilityLabel("第 \(index + 1) 站，\(stop.name)")
+                        }
+                    }
+                    if located.isEmpty {
+                        ContentUnavailableView("地点待定位", systemImage: "mappin.slash", description: Text("已保留地点信息，核实坐标后展示路线。"))
                     }
                 }
             }
+            .frame(height: height)
+            Text("路线示意 · 虚线不是实际道路；交通时长以行程核验为准")
+                .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
         }
-        .mapStyle(.standard(elevation: .flat))
-        .onAppear { position = .region(Self.region(for: stops)) }
-        .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border, lineWidth: 0.75) }
-        .accessibilityLabel("旅行路线地图，共 \(stops.count) 个地点")
+        .padding(16)
+        .background(AppTheme.Colors.mistMint.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
     }
 
-    private static func region(for stops: [TravelRouteStop]) -> MKCoordinateRegion {
-        guard let first = stops.first else {
-            return .init(center: .init(latitude: 35.0116, longitude: 135.7681), span: .init(latitudeDelta: 0.12, longitudeDelta: 0.16))
+    private func positions(in size: CGSize) -> [CGPoint] {
+        let coordinates = located.compactMap(\.coordinate)
+        guard let first = coordinates.first else { return [] }
+        // Normalize around the first longitude so a dateline crossing stays local.
+        let xs = coordinates.map { value -> Double in
+            let delta = value.longitude - first.longitude
+            return delta > 180 ? delta - 360 : delta < -180 ? delta + 360 : delta
         }
-        let latitudes = stops.map(\.latitude)
-        let longitudes = stops.map(\.longitude)
-        let minLatitude = latitudes.min() ?? first.latitude
-        let maxLatitude = latitudes.max() ?? first.latitude
-        let minLongitude = longitudes.min() ?? first.longitude
-        let maxLongitude = longitudes.max() ?? first.longitude
-        return .init(
-            center: .init(latitude: (minLatitude + maxLatitude) / 2, longitude: (minLongitude + maxLongitude) / 2),
-            span: .init(
-                latitudeDelta: max((maxLatitude - minLatitude) * 1.65, 0.06),
-                longitudeDelta: max((maxLongitude - minLongitude) * 1.45, 0.09)
-            )
-        )
+        let ys = coordinates.map(\.latitude)
+        let minX = xs.min() ?? 0, maxX = xs.max() ?? 0
+        let minY = ys.min() ?? 0, maxY = ys.max() ?? 0
+        return coordinates.indices.map { index in
+            let x = maxX == minX ? 0.5 : (xs[index] - minX) / (maxX - minX)
+            let y = maxY == minY ? 0.5 : 1 - (ys[index] - minY) / (maxY - minY)
+            return CGPoint(x: 48 + x * max(0, size.width - 96), y: 30 + y * max(0, size.height - 70))
+        }
+    }
+}
+
+// Native, offline position globe. No road geometry or transit claims are inferred.
+private struct TravelGlobeView: View {
+    let stops: [TravelRouteStop]
+    @State private var scene: SCNScene?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let scene {
+                SceneView(scene: scene, options: [.allowsCameraControl, .autoenablesDefaultLighting])
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .accessibilityLabel("可旋转的全球目的地位置示意图")
+            } else { ProgressView().frame(height: 300) }
+            Text("拖动旋转 · 双指缩放 · 位置示意，不含地形与实际道路")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
+                Text("\(index + 1)  \(stop.name)" + (stop.coordinate == nil ? " · 坐标待核实" : ""))
+                    .font(.subheadline)
+            }
+        }.task(id: stops) { scene = makeScene() }
+    }
+
+    private func makeScene() -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = UIColor(red: 0.035, green: 0.10, blue: 0.15, alpha: 1)
+        let sphere = SCNSphere(radius: 1)
+        sphere.segmentCount = 64
+        sphere.firstMaterial?.diffuse.contents = UIColor(red: 0.08, green: 0.23, blue: 0.28, alpha: 1)
+        sphere.firstMaterial?.roughness.contents = 0.85
+        scene.rootNode.addChildNode(SCNNode(geometry: sphere))
+        func point(_ latitude: Double, _ longitude: Double, radius: Double = 1.008) -> SCNVector3 {
+            let lat = latitude * .pi / 180, lon = longitude * .pi / 180
+            return SCNVector3(Float(radius * cos(lat) * sin(lon)), Float(radius * sin(lat)), Float(radius * cos(lat) * cos(lon)))
+        }
+        func line(_ points: [SCNVector3], color: UIColor) {
+            guard points.count > 1 else { return }
+            let indices = (0..<(points.count - 1)).flatMap { [Int32($0), Int32($0 + 1)] }
+            let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: points)], elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
+            geometry.firstMaterial?.diffuse.contents = color
+            geometry.firstMaterial?.lightingModel = .constant
+            scene.rootNode.addChildNode(SCNNode(geometry: geometry))
+        }
+        for latitude in stride(from: -60.0, through: 60.0, by: 30) {
+            line(stride(from: -180.0, through: 180.0, by: 4).map { point(latitude, $0) }, color: .systemTeal.withAlphaComponent(0.35))
+        }
+        for longitude in stride(from: -180.0, to: 180.0, by: 30) {
+            line(stride(from: -90.0, through: 90.0, by: 3).map { point($0, longitude) }, color: .systemTeal.withAlphaComponent(0.35))
+        }
+        let located = stops.compactMap(\.coordinate)
+        for (from, to) in zip(located, located.dropFirst()) {
+            let delta = (to.longitude - from.longitude + 540).truncatingRemainder(dividingBy: 360) - 180
+            let arc = (0...48).map { step -> SCNVector3 in
+                let fraction = Double(step) / 48
+                return point(from.latitude + (to.latitude - from.latitude) * fraction,
+                             from.longitude + delta * fraction, radius: 1.025 + 0.12 * sin(.pi * fraction))
+            }
+            line(arc, color: .systemOrange)
+        }
+        for location in located {
+            let pin = SCNSphere(radius: 0.018)
+            pin.firstMaterial?.diffuse.contents = UIColor.systemOrange
+            pin.firstMaterial?.lightingModel = .constant
+            let node = SCNNode(geometry: pin)
+            node.position = point(location.latitude, location.longitude, radius: 1.025)
+            scene.rootNode.addChildNode(node)
+        }
+        let camera = SCNNode()
+        camera.camera = SCNCamera()
+        camera.camera?.fieldOfView = 45
+        let focus = located.first ?? CLLocationCoordinate2D(latitude: 25, longitude: 100)
+        camera.position = point(focus.latitude, focus.longitude, radius: 3.4)
+        camera.look(at: SCNVector3Zero)
+        scene.rootNode.addChildNode(camera)
+        return scene
     }
 }
 
@@ -3155,17 +3303,25 @@ private struct TravelInfoCard: View {
 }
 
 struct TravelPlanResultView: View {
-    enum Page { case overview, day, place, check }
+    enum Page: Hashable { case overview, day, place, check }
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+    @State private var linkedWorkflowError: String?
     let title: String
     let content: String
     @State private var page: Page
+    @State private var selectedDay: String?
+    @State private var showingGlobe = false
     let baseURL: URL?
     let onIllustrate: ((String) -> Void)?
+    let onProgress: ((String, String) -> Void)?
+    let onEdit: ((TravelDayAction) -> Void)?
     private var previewOnly: Bool { content.isEmpty && ProcessInfo.processInfo.arguments.contains("-prototypePreview") }
 
-    init(title: String, content: String, initialPage: Page = .overview, baseURL: URL? = nil, onIllustrate: ((String) -> Void)? = nil) {
+    init(title: String, content: String, initialPage: Page = .overview, baseURL: URL? = nil, onIllustrate: ((String) -> Void)? = nil, onProgress: ((String, String) -> Void)? = nil, onEdit: ((TravelDayAction) -> Void)? = nil) {
+        self.onEdit = onEdit
+        self.onProgress = onProgress
         self.title = title
         self.content = content
         self.baseURL = baseURL
@@ -3184,6 +3340,29 @@ struct TravelPlanResultView: View {
                     .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
                 NoteReadingView(content: content, baseURL: baseURL)
             } else {
+                if let executionId = NoteIllustrationPlacement.travelObject(content)?["workflow_execution_id"] as? String {
+                    Button("查看或调整最新行程", systemImage: "arrow.triangle.2.circlepath") {
+                        let account = KnowledgeNoteStore.shared.accountFingerprint
+                        Task {
+                            do {
+                                let execution = try await APIClient.shared.fetchWorkflowExecution(id: executionId)
+                                let workflow = try await APIClient.shared.fetchWorkflow(id: execution.workflowId)
+                                guard KnowledgeNoteStore.shared.accountFingerprint == account else { return }
+                                appState.openWorkflow(workflow)
+                                dismiss()
+                            } catch { linkedWorkflowError = error.localizedDescription }
+                        }
+                    }.buttonStyle(.bordered).frame(minHeight: 44)
+                    Text("当前笔记保留保存时的版本，最新安排与历史记录可在行程中查看。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let linkedWorkflowError { Text(linkedWorkflowError).font(.caption).foregroundStyle(.red) }
+                }
+                Picker("旅行笔记页面", selection: $page) {
+                    Text("总览").tag(Page.overview)
+                    Text("每天").tag(Page.day)
+                    Text("沿途").tag(Page.place)
+                    Text("待办").tag(Page.check)
+                }.pickerStyle(.segmented)
                 switch page {
                 case .overview:
                     overview
@@ -3192,7 +3371,7 @@ struct TravelPlanResultView: View {
                         NoteReadingView(content: journal, baseURL: baseURL)
                     }
                 case .day:
-                    if previewOnly { dailyPlan } else { actualStops }
+                    if previewOnly { dailyPlan } else if !plan.actions.isEmpty { itinerary } else { actualStops }
                 case .place:
                     if previewOnly { placeDetail } else { actualStops }
                 case .check:
@@ -3202,6 +3381,8 @@ struct TravelPlanResultView: View {
                             checkRow(!plan.stops.isEmpty, "行程地点", plan.stops.isEmpty ? "尚未填写" : "共 \(plan.stops.count) 个地点")
                             checkRow(plan.dateRange != nil, "旅行日期", plan.dateRange ?? "尚未填写")
                             checkRow(plan.budget != nil, "预算", plan.budget ?? "尚未填写")
+                            ForEach(plan.openQuestions, id: \.self) { Text("· " + $0) }
+                            sourceList
                             Text("此处只核对笔记中已有信息，不代表机票、住宿或预约已确认。")
                                 .font(.footnote).foregroundStyle(AppTheme.Colors.textSecondary)
                         }
@@ -3210,6 +3391,21 @@ struct TravelPlanResultView: View {
             }
         }
         .animation(AppTheme.Motion.standard, value: page)
+    }
+
+    private var sourceList: some View {
+        let sources = NoteIllustrationPlacement.travelObject(content)?["sources"] as? [[String: Any]] ?? []
+        return VStack(alignment: .leading, spacing: 10) {
+            if !sources.isEmpty { Text("资料与核验").font(.headline) }
+            ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
+                if let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
+                    Link(source["title"] as? String ?? "查看来源", destination: url).frame(minHeight: 44)
+                    if let checked = source["checked_at"] as? String, !checked.isEmpty {
+                        Text("核验时间：" + checked).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
     }
 
     private var overview: some View {
@@ -3290,7 +3486,14 @@ struct TravelPlanResultView: View {
                 planStat("同行", plan.companions.map { "\($0) 人" } ?? "待填写", "person.2.fill")
                 planStat("旅行风格", plan.style ?? "自由探索", "camera.fill")
             }
-            if !plan.stops.isEmpty { TravelRouteMap(stops: plan.stops, height: 270) }
+            if !plan.stops.isEmpty {
+                Picker("路线视图", selection: $showingGlobe) {
+                    Text("设计路线图").tag(false)
+                    Text("3D 位置总览").tag(true)
+                }.pickerStyle(.segmented)
+                if showingGlobe { TravelGlobeView(stops: plan.orderedStops) }
+                else { TravelRouteMap(stops: plan.orderedStops, height: 270) }
+            }
             Button("查看完整行程  →") { page = .day }
                 .buttonStyle(QuantumPrimaryButtonStyle())
         }
@@ -3298,6 +3501,27 @@ struct TravelPlanResultView: View {
 
     @ViewBuilder
     private func travelImages(_ anchor: String) -> some View {
+        let document = NoteIllustrationPlacement.travelObject(content) ?? [:]
+        let hasLocalImage = (document["illustrations"] as? [[String: String]] ?? []).contains { $0["anchor"] == anchor }
+        let references = (document["photo_references"] as? [[String: Any]] ?? []).filter { ($0["anchor"] as? String ?? "overview") == anchor }
+        let sources = document["sources"] as? [[String: Any]] ?? []
+        ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
+            VStack(alignment: .leading, spacing: 8) {
+                if !hasLocalImage, let raw = reference["image_url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFit() }
+                        else if phase.error != nil { Label("图片暂不可用，可打开来源页", systemImage: "photo") }
+                        else { ProgressView().frame(height: 160) }
+                    }.frame(maxHeight: 320).clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                if let caption = reference["caption"] as? String { Text(caption).font(.subheadline) }
+                if let tip = reference["shooting_tip"] as? String { Text(tip).font(.subheadline).foregroundStyle(.secondary) }
+                if let source = sources.first(where: { $0["id"] as? String == reference["source_id"] as? String }),
+                   let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
+                    Link("照片来源 · " + (source["title"] as? String ?? "查看原文"), destination: url).frame(minHeight: 44)
+                }
+            }
+        }
         let images = (NoteIllustrationPlacement.travelObject(content)?["illustrations"] as? [[String: String]] ?? []).filter { $0["anchor"] == anchor }
         ForEach(Array(images.enumerated()), id: \.offset) { _, item in
             if let path = item["path"] { NoteReadingImage(url: baseURL?.appendingPathComponent(path), caption: item["alt"] ?? "AI 插图") }
@@ -3305,6 +3529,70 @@ struct TravelPlanResultView: View {
         if let onIllustrate {
             Button("为这里配图", systemImage: "sparkles") { onIllustrate(anchor) }
                 .buttonStyle(.bordered).frame(minHeight: 44)
+        }
+    }
+
+    private var itinerary: some View {
+        let days = plan.actions.map(\.dayId).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        let day = selectedDay ?? days.first
+        let actions = plan.actions.filter { $0.dayId == day }
+        let dayStops = plan.routeStops(for: actions)
+        return VStack(alignment: .leading, spacing: 20) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(days.enumerated()), id: \.element) { index, value in
+                        Button("第 \(index + 1) 天") { selectedDay = value }
+                            .buttonStyle(.bordered).tint(day == value ? AppTheme.Colors.primary : .secondary)
+                            .frame(minHeight: 44)
+                    }
+                }
+            }
+            TravelRouteMap(stops: dayStops, height: 200)
+            ForEach(actions) { action in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label(action.timeLabel, systemImage: action.symbol).font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(action.statusTitle).font(.caption)
+                        if action.locked == true { Image(systemName: "lock.fill").accessibilityLabel("已锁定") }
+                    }
+                    Text(action.title).font(.title3.weight(.semibold))
+                    if let from = plan.stops.first(where: { $0.sourceID == action.fromPlaceId }),
+                       let to = plan.stops.first(where: { $0.sourceID == action.toPlaceId }) {
+                        Text(from.name + " → " + to.name).font(.subheadline)
+                    }
+                    if let booking = action.bookingReference, !booking.isEmpty { Text("预订编号：" + booking).textSelection(.enabled) }
+                    if let actual = action.actualStart { Text("实际开始：" + action.displayTime(actual)).font(.caption) }
+                    if let actual = action.actualEnd { Text("实际结束：" + action.displayTime(actual)).font(.caption) }
+                    if let onEdit, action.canEdit {
+                        Button("调整这个安排", systemImage: "slider.horizontal.3") { onEdit(action) }.frame(minHeight: 44)
+                    }
+                    if let onProgress, ["planned", "delayed", "in_progress"].contains(action.status) {
+                        HStack {
+                            if ["planned", "delayed"].contains(action.status) { Button("现在开始") { onProgress(action.id, "in_progress") } }
+                            Button("已完成") { onProgress(action.id, "completed") }
+                            Button("跳过") { onProgress(action.id, "skipped") }
+                        }.buttonStyle(.bordered).frame(minHeight: 44)
+                        if action.status == "planned" {
+                            Button("延误了，还没开始") { onProgress(action.id, "delayed") }.frame(minHeight: 44)
+                        }
+                    }
+                    if let end = action.end { Text("至 " + action.displayTime(end)).font(.caption) }
+                    if let zone = action.timezone { Text(zone).font(.caption).foregroundStyle(.secondary) }
+                    if let place = plan.stops.first(where: { $0.sourceID == action.placeId }), let address = place.address, !address.isEmpty {
+                        Text(address).font(.subheadline).textSelection(.enabled)
+                    }
+                    if let detail = action.details, !detail.isEmpty { Text(detail).font(.body).textSelection(.enabled) }
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            }
+            if !plan.openQuestions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("出发前仍需确认", systemImage: "checklist").font(.headline)
+                    ForEach(plan.openQuestions, id: \.self) { Text($0).font(.subheadline) }
+                }.padding(16)
+            }
         }
     }
 
@@ -3318,9 +3606,11 @@ struct TravelPlanResultView: View {
             ForEach(Array(plan.stops.enumerated()), id: \.offset) { index, stop in
                 planStop("\(index + 1)", "mappin", stop.name, "行程地点", nil, isLast: index == plan.stops.count - 1)
                 travelImages("stop:\(index)")
-                Button("在地图中查看", systemImage: "map") {
-                    MKMapItem(placemark: MKPlacemark(coordinate: stop.coordinate)).openInMaps()
-                }.frame(minHeight: 44)
+                if let coordinate = stop.coordinate {
+                    Button("打开导航", systemImage: "map") {
+                        MKMapItem(placemark: MKPlacemark(coordinate: coordinate)).openInMaps()
+                    }.frame(minHeight: 44)
+                }
             }
         }
     }

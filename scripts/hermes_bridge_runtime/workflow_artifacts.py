@@ -246,7 +246,7 @@ def _workflow_toolsets(
         # model execution. Hermes may only supplement an explicit evidence gap
         # with the web tool; local Vault/file tools are never granted.
         return (
-            ["web"]
+            (["web", "browser"] if params.get("scenario_id") == "travel-planning" and "browser_navigate" in allowed else ["web"])
             if bool(params.get("allow_network"))
             and bool(agent_config.allow_network)
             and bool(allowed & {"web_search", "web_extract"})
@@ -309,6 +309,8 @@ def _workflow_turn_token_cap(node: dict[str, Any]) -> int:
         256,
         min(16_384, int((node.get("parameters") or {}).get("max_tokens") or 2048)),
     )
+    if (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
+        return node_budget
     expected_turns = 6 if str(node.get("node_type") or "") == "KNOWLEDGE_RETRIEVAL" else 3
     return max(384, min(2048, node_budget // expected_turns))
 
@@ -329,6 +331,7 @@ def _run_workflow_node_in_process(
     event_callback=None,
     sandbox: TenantHermesSandbox | None = None,
     agent_config: _contracts.TrustedAgentConfig | None = None,
+    image_data_urls: list[str] | None = None,
 ) -> tuple[str, str | None, dict[str, Any]]:
     """通过 Hermes AIAgent 原生 Session 执行节点。
 
@@ -459,19 +462,27 @@ def _run_workflow_node_in_process(
             except Exception:
                 pass
 
+        node_timeout = min(_contracts.WORKFLOW_NODE_TIMEOUT, 120) if image_data_urls else _contracts.WORKFLOW_NODE_TIMEOUT
         timeout_timer = threading.Timer(
-            _contracts.WORKFLOW_NODE_TIMEOUT,
+            node_timeout,
             _interrupt_on_timeout,
         )
         timeout_timer.daemon = True
         timeout_timer.start()
         usage_baseline = _agent_usage_baseline(agent)
-        result = agent.run_conversation(goal)
+        user_input = goal + _memory._sandbox_memory_context(sandbox)
+        if image_data_urls:
+            user_input = [{"type": "text", "text": user_input}, *[
+                {"type": "image_url", "image_url": {"url": url}} for url in image_data_urls
+            ]]
+        result = agent.run_conversation(user_input)
         if timeout_fired.is_set():
             raise TimeoutError(
-                f"Hermes 工作流节点超过 {_contracts.WORKFLOW_NODE_TIMEOUT} 秒"
+                f"Hermes 工作流节点超过 {node_timeout} 秒"
             )
         result = result if isinstance(result, dict) else {}
+        if result.get("failed") or result.get("error") or result.get("completed") is False:
+            raise RuntimeError("Hermes 节点执行失败，请检查模型服务与运行环境后重试")
         reply = str(result.get("final_response") or "").strip()
         return reply, getattr(agent, "session_id", None) or session_id, _usage_delta(result, usage_baseline)
     finally:
@@ -514,10 +525,11 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
         "illustration_svg": "illustration_svg",
         "html": "html", "htm": "html", "网页": "html", "网页工具": "html",
     }
-    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html"} else "markdown")
+    render_type = aliases.get(raw_type, raw_type if raw_type in {"markdown", "word", "chart", "topology", "flowchart", "data", "presentation_outline", "presentation_design", "presentation", "html_design", "illustration_prompt", "illustration_svg", "html", "travel_plan_v2"} else "markdown")
     extension, mime_type = {
         "markdown": ("md", "text/markdown"),
         "word": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "travel_plan_v2": ("json", "application/json"),
         "chart": ("json", "application/json"),
         "topology": ("json", "application/json"),
         "flowchart": ("json", "application/json"),
@@ -537,6 +549,9 @@ def _workflow_artifact_contract(node: dict[str, Any]) -> dict[str, str]:
 
 def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
     render_type = contract["render_type"]
+    if render_type == "travel_plan_v2":
+        from backend.services.travel_plan import TRAVEL_INSTRUCTION
+        return TRAVEL_INSTRUCTION
     if render_type == "chart":
         return '只输出合法 JSON 对象：{"labels":["维度"],"values":[1]}；values 仅使用非负数字。'
     if render_type in {"topology", "flowchart"}:
@@ -716,13 +731,14 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     params = node.get("parameters") or {}
     artifact_contract = _workflow_artifact_contract(node)
     output_format = str(params.get("output_format") or "").lower()
+    travel_output = output_format == "travel_plan_v2" or params.get("scenario_id") == "travel-planning"
     presentation_output = output_format.startswith("presentation")
     document_output = output_format in {"word", "docx", "word 文档", "word文档"}
     html_output = output_format in {"html", "html_design", "htm", "网页", "网页工具"}
     illustration_output = output_format in {"illustration_prompt", "illustration_svg"}
     completed = []
     current_id = str(node.get("id") or "")
-    revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or "").strip()
+    revision_comment = str((run.get("revision_feedback") or {}).get(current_id) or ((run.get("revision_feedback") or {}).get("travel_research") if travel_output else "") or "").strip()
     dependency_ids = {
         str(edge.get("source") or "")
         for edge in run.get("plan", {}).get("edges") or []
@@ -734,9 +750,9 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
+            upstream_limit = 48000 if travel_output else 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
-            if presentation_output or document_output or html_output or illustration_output:
+            if travel_output or presentation_output or document_output or html_output or illustration_output:
                 if len(output) > upstream_limit:
                     raise RuntimeError(f"上游成果 {node_id} 超过 {upstream_limit} 字符；禁止静默截断")
             completed.append(f"- {candidate.get('name') or node_id}: {output[:upstream_limit]}")
@@ -747,8 +763,8 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     output_char_limit = max(
         600,
         min(
-            48000 if html_output else 24000 if illustration_output else 8000 if presentation_output or document_output else 2200,
-            node_budget * 2 if html_output or illustration_output else node_budget // 2,
+            48000 if html_output or travel_output else 24000 if illustration_output else 8000 if presentation_output or document_output else 2200,
+            node_budget * 2 if html_output or illustration_output or travel_output else node_budget // 2,
         ),
     )
     if params.get("workspace_mode") == "tenant_coder":
@@ -765,18 +781,27 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
     else:
         tool_rule = "本节点禁止调用工具；只基于当前 Session 已有的上游成果完成转换、分析或格式化。"
     upstream = chr(10).join(completed) if completed else "无直接依赖或上游暂无成果"
+    if travel_output and run.get("travel_baseline"):
+        upstream += "\n当前实际行程（保留所有已发生记录和旧 id，只调整现在剩余部分及未来；个人原文不可覆盖）：\n" + json.dumps(run["travel_baseline"]["document"], ensure_ascii=False)
     source = run.get("source_document") or {}
     source_text = str(source.get("text") or "")
+    attachments = run.get("source_documents") or []
+    if attachments:
+        source_text += "\n\n" + "\n\n".join(
+            f"来源 {item.get('filename', 'document')} [{item['source_id']}]\n{item['text']}"
+            for item in attachments
+        )
     plan_node_ids = {
         str(item.get("id") or "") for item in run.get("plan", {}).get("nodes") or []
     }
     source_node_id = (
-        "presentation_analysis" if "presentation_analysis" in plan_node_ids
+        "travel_research" if "travel_research" in plan_node_ids
+        else "presentation_analysis" if "presentation_analysis" in plan_node_ids
         else "document_analysis" if "document_analysis" in plan_node_ids
         else "html_tool_analysis" if "html_tool_analysis" in plan_node_ids
         else "presentation_outline"
     )
-    if source_text and current_id == source_node_id:
+    if source_text and current_id in {source_node_id, "travel_itinerary"}:
         if len(source_text) > 80_000:
             raise RuntimeError("私有源文档超过 80000 字符；文档生成工作流禁止静默截断")
         upstream += f"\n\n私有源文档（{source.get('filename', 'document')}，共 {len(source_text)} 字符）：\n{source_text}"
@@ -819,8 +844,8 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
         "只输出当前节点可落盘的完整成果，不要输出运行状态说明。\n"
         f"上游上下文：\n{upstream}"
     )
-    input_limit = _contracts.MAX_DOCUMENT_WORKFLOW_INPUT if source_text and current_id == source_node_id else _contracts.MAX_INPUT
-    if (presentation_output or document_output or html_output or illustration_output or input_limit > _contracts.MAX_INPUT) and len(prompt) > input_limit:
+    input_limit = _contracts.MAX_DOCUMENT_WORKFLOW_INPUT if travel_output or (source_text and current_id == source_node_id) else _contracts.MAX_INPUT
+    if (travel_output or presentation_output or document_output or html_output or illustration_output or input_limit > _contracts.MAX_INPUT) and len(prompt) > input_limit:
         raise RuntimeError(f"文档生成工作流输入为 {len(prompt)} 字符，超过 {input_limit} 字符上限；禁止静默截断")
     return prompt[:input_limit]
 
@@ -832,6 +857,13 @@ def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:
         return True
     if "<tool_switch_" in normalized or "<tool_call" in normalized:
         return True
+    if (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
+        from backend.services.travel_plan import validate_travel_document
+        try:
+            validate_travel_document(_extract_json_object(reply))
+        except ValueError:
+            return True
+        return False
     if str(node.get("node_type") or "") != "KNOWLEDGE_RETRIEVAL":
         return False
     planning_markers = (

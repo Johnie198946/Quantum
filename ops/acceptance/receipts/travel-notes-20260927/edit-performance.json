@@ -1,0 +1,1 @@
+{"scope": "actual loopback HTTP with isolated SQLite and synthetic owner; each read is artifacts list + content; save is revision POST, all saves read back; excludes WAN and UI overhead", "reads": {"n": 20, "p50_ms": 58.72, "p95_nearest_rank_ms": 95.82, "max_ms": 469.6}, "saves": {"n": 20, "p50_ms": 32.41, "p95_nearest_rank_ms": 122.87, "max_ms": 126.67}, "status": "passed"}

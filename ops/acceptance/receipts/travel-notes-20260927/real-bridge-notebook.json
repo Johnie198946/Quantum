@@ -1,0 +1,135 @@
+{
+  "schema_version": 2,
+  "destination": "日本群马县水上町法师温泉（候选区域）",
+  "date_range": "2030-01-03",
+  "budget": "日归入浴现行公开费用：成人1,500日元、儿童500日元；交通、餐饮及2030年实际费用待确认",
+  "companions": null,
+  "style": "一日秘汤旅行；不超过3个事项；保留至少连续两小时休息；不预订",
+  "stops": [
+    {
+      "id": "place-hoshi-onsen-choujukan",
+      "name": "法師温泉 長寿館",
+      "address": "〒379-1401 群馬県利根郡みなかみ町永井650番地",
+      "latitude": null,
+      "longitude": null,
+      "source_ids": [
+        "source-provider-626",
+        "source-map-626"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action-day1-outbound",
+      "day_id": "day-1",
+      "title": "前往法师温泉长寿馆",
+      "kind": "transport",
+      "place_id": "place-hoshi-onsen-choujukan",
+      "start": null,
+      "end": null,
+      "timezone": "Asia/Tokyo",
+      "status": "planned",
+      "actual_start": null,
+      "actual_end": null,
+      "locked": false,
+      "details": "出发城市和车站尚未确定。铁路车次、路线巴士、换乘地点、旅馆接驳及所需缓冲时间均无法由协会官网核实，故不填写推测班次。临近出行时应以2030年1月3日实际时刻表为准，并为冬季道路、元旦客流和换乘预留缓冲。",
+      "booking_reference": "",
+      "from_place_id": null,
+      "to_place_id": "place-hoshi-onsen-choujukan",
+      "source_ids": [
+        "source-map-626"
+      ]
+    },
+    {
+      "id": "action-day1-onsen-rest",
+      "day_id": "day-1",
+      "title": "日归入浴并连续休息至少两小时",
+      "kind": "rest",
+      "place_id": "place-hoshi-onsen-choujukan",
+      "start": null,
+      "end": null,
+      "timezone": "Asia/Tokyo",
+      "status": "planned",
+      "actual_start": null,
+      "actual_end": null,
+      "locked": false,
+      "details": "协会官方会员页当前公开日归入浴时段为11:00–13:30，现行费用为成人1,500日元、儿童500日元。可暂以11:00–13:00作为连续两小时休息窗口，但2030年1月3日元旦期间安排尚未确认，因此起止时间保留为null。实施前须确认当日是否接待日归客及开放窗口是否足够；若不足两小时，应更换日期或候选旅馆。官方页面当前标记信用卡不可使用，宜准备现金并在出发前复核。未确认日归午餐，不安排或虚构餐饮预约。",
+      "booking_reference": "",
+      "from_place_id": null,
+      "to_place_id": null,
+      "source_ids": [
+        "source-provider-626"
+      ]
+    },
+    {
+      "id": "action-day1-return",
+      "day_id": "day-1",
+      "title": "从法师温泉长寿馆返回",
+      "kind": "transport",
+      "place_id": "place-hoshi-onsen-choujukan",
+      "start": null,
+      "end": null,
+      "timezone": "Asia/Tokyo",
+      "status": "planned",
+      "actual_start": null,
+      "actual_end": null,
+      "locked": false,
+      "details": "返回城市、到达地点、车次和时间均未确定。协会官网不足以核实2030年1月3日返程巴士、铁路末班车或接驳服务，故不估算发车及抵达时间。确认出发地后，应核对完整返程链路，并为冬季道路、元旦特别运行及换乘预留缓冲。",
+      "booking_reference": "",
+      "from_place_id": "place-hoshi-onsen-choujukan",
+      "to_place_id": null,
+      "source_ids": [
+        "source-map-626"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "source-official-home",
+      "title": "日本秘湯を守る会 公式Webサイト",
+      "url": "https://www.hitou.or.jp/",
+      "checked_at": ""
+    },
+    {
+      "id": "source-provider-list",
+      "title": "日本秘湯を守る会 会員宿一覧",
+      "url": "https://www.hitou.or.jp/provider/list",
+      "checked_at": ""
+    },
+    {
+      "id": "source-provider-626",
+      "title": "法師温泉 長寿館 施設・予約ページ",
+      "url": "https://www.hitou.or.jp/provider/detail?providerId=626",
+      "checked_at": ""
+    },
+    {
+      "id": "source-map-626",
+      "title": "法師温泉 長寿館 交通ページ",
+      "url": "https://www.hitou.or.jp/provider/map?providerId=626",
+      "checked_at": ""
+    }
+  ],
+  "photo_references": [
+    {
+      "id": "photo-reference-hoshi-onsen",
+      "place_id": "place-hoshi-onsen-choujukan",
+      "anchor": "stop:1",
+      "image_url": null,
+      "source_id": "source-provider-626",
+      "caption": "法師温泉长寿馆的协会官方会员页。本轮未取得可核实的网络实拍图片直链，因此仅保留来源页，不以推测网址或概念图代替。",
+      "shooting_tip": "抵达时刻尚未确定，2030年1月3日的天气、积雪及现场拍摄限制也未知。抵达后先确认允许拍摄的区域，浴场内不要拍摄其他客人；优先在建筑外观、入口或获准拍摄的公共区域取景。朝向资料不足，应到场后依据太阳位置和积雪反光调整站位。阴雪天气注意保护高光、缩短换镜时间并保持镜头干燥；晴天避免正午强反差，可利用檐下阴影平衡亮度。摄影应从属于休息安排，不占用连续两小时的休息留白。"
+    }
+  ],
+  "journal": "旅行笔记：候选区域为群马县水上町法师温泉，目的地为日本秘湯を守る会会员旅馆“法師温泉 長寿館”。协会官方会员页当前标示其通年营业，并公开日归入浴时段11:00–13:30，可作为2030年1月3日一日温泉旅行的优先候选。现行公开信息不等于元旦期间安排，实施前必须确认当日日归营业、实际费用和接待条件。\n\n城市和出发站尚未确定，协会官网也不足以核实2030年的铁路、路线巴士、接驳及返程班次，因此所有交通时间均留空，不虚构车次。行程仅保留往程、日归入浴与休息、返程三个事项。在日归开放窗口内须保留至少连续两小时休息；若2030年实际开放时间不足两小时，应更换日期或候选旅馆，而不是压缩休息。\n\n摄影灵感以冬季旅馆外观、入口细节、积雪与木质建筑的明暗关系为主，但必须先确认现场拍摄规则，不在浴场内拍到其他客人。本轮仅限协会官方公开网页，未取得可核实的图片直链，因此没有伪造实拍参考。雨雪时减少室外拍摄，将相机防潮和安全通行置于画面完整性之前；若天气恶劣或旅馆临时停止日归接待，暂不加入未经协会官网核实的替代温泉。\n\n协会页面未明确日归午餐安排，餐饮暂不纳入行程。官方页面当前标记信用卡不可使用，出行时宜准备现金，但仍需临近日期复核。",
+  "open_questions": [
+    "从哪座城市、机场或车站出发？",
+    "2030年1月3日法师温泉长寿馆是否照常接待日归入浴，实际开放时段和费用是多少？",
+    "2030年1月3日可用的铁路、路线巴士及返程班次是什么？",
+    "旅馆是否向日归客提供接驳；若提供，接驳站点、时刻和预约要求是什么？",
+    "最近车站或巴士站至旅馆的实际步行距离及冬季道路条件如何？",
+    "日归入浴是否可以附午餐；若不可，餐食应在哪个交通枢纽安排？",
+    "同行人数及成人、儿童构成尚未确定。",
+    "协会官方页面未取得可核实的图片直链，实拍参考图仍有缺口。",
+    "2030年1月3日若遇大雪、道路中断或停止日归接待，是否改期？"
+  ]
+}
