@@ -5075,8 +5075,8 @@ private struct ReadingSelectionQuestionSheet: View {
             }
             if streamedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errorMessage = "没有收到回答，请重试。"
-            } else if completed, !isStreamPreview, !isPreview {
-                saveAnswer()
+            } else if !completed {
+                errorMessage = "回答传输尚未完成，请重试。"
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -5131,7 +5131,6 @@ struct ReaderQuestionSheet: View {
     let sourceSubtitle: String
     let sheetTitle: String?
     let onSaveAnswer: ((String, String, String?) -> Bool)?
-    let automaticallySaveAnswer: Bool
     let submitsOnAppear: Bool
     let ask: (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
     @Environment(\.dismiss) private var dismiss
@@ -5144,7 +5143,6 @@ struct ReaderQuestionSheet: View {
     @State private var statusText = ""
     @State private var turns: [ReaderQuestionTurn]
     @State private var accountFingerprint: String
-    @State private var answerNeedsSave = false
     @State private var showsFullExcerpt = false
     @FocusState private var isQuestionFocused: Bool
 
@@ -5163,7 +5161,6 @@ struct ReaderQuestionSheet: View {
         initialQuestion: String = "",
         initialTurns: [ReaderQuestionTurn] = [],
         submitsOnAppear: Bool = false,
-        automaticallySaveAnswer: Bool = false,
         onSaveAnswer: ((String, String, String?) -> Bool)? = nil,
         ask: @escaping (String, String?) async throws -> AsyncThrowingStream<APIClient.StreamEvent, Error>
     ) {
@@ -5172,7 +5169,6 @@ struct ReaderQuestionSheet: View {
         self.sourceSubtitle = sourceSubtitle
         self.sheetTitle = sheetTitle
         self.submitsOnAppear = submitsOnAppear
-        self.automaticallySaveAnswer = automaticallySaveAnswer
         self.onSaveAnswer = onSaveAnswer
         self.ask = ask
         _question = State(initialValue: initialQuestion)
@@ -5246,16 +5242,6 @@ struct ReaderQuestionSheet: View {
                         .padding(AppTheme.Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(AppTheme.Colors.dangerSurface, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                    if answerNeedsSave {
-                        Button("重试保存回答") {
-                            guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else { return }
-                            if onSaveAnswer?(lastQuestion, answer, sessionID) == true {
-                                answerNeedsSave = false
-                                self.errorMessage = nil
-                            }
-                        }
-                        .frame(minHeight: 44)
-                    }
                 }
             }
             .padding(.horizontal, AppTheme.Metrics.contentGutter)
@@ -5334,7 +5320,7 @@ struct ReaderQuestionSheet: View {
             .padding(AppTheme.Spacing.sm)
             .background(AppTheme.Colors.surfaceTint.opacity(0.74), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
 
-            if !answer.isEmpty, let onSaveAnswer, !automaticallySaveAnswer {
+            if !answer.isEmpty, !isAsking, let onSaveAnswer {
                 Button {
                     guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
                         errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
@@ -5376,10 +5362,6 @@ struct ReaderQuestionSheet: View {
     private func submit() async {
         let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !isAsking else { return }
-        guard !answerNeedsSave else {
-            errorMessage = "请先重试保存上一条回答，再继续追问。"
-            return
-        }
         guard accountFingerprint == KnowledgeNoteStore.shared.accountFingerprint else {
             errorMessage = "账号已切换，请关闭后重新打开阅读问答。"
             return
@@ -5432,11 +5414,6 @@ struct ReaderQuestionSheet: View {
                 errorMessage = "回答传输尚未完成，请重试。"
             } else if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 errorMessage = isEnglish ? "No answer was returned. Please try again." : "没有收到回答，请重试。"
-            } else if automaticallySaveAnswer {
-                if onSaveAnswer?(lastQuestion, answer, sessionID) != true {
-                    answerNeedsSave = true
-                    errorMessage = "回答未能保存，请先复制回答，避免关闭后丢失。"
-                }
             }
             question = ""
         } catch {
