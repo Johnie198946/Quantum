@@ -9,7 +9,6 @@ import asyncio
 import json
 import math
 import os
-import re
 import socket
 import threading
 import time
@@ -18,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from backend.services.knowledge_policy import KnowledgePolicy, mint_capability
-from backend.services.user_note_context import persist_generated_private_note
 from backend.services.knowledge_worker_authorization import stage_is_authorized
 from backend.services.runtime_placement import (
     RuntimePlacementConflict,
@@ -51,7 +49,6 @@ _placement_loop = asyncio.new_event_loop()
 _placement_loop_lock = threading.Lock()
 bridge._bridge_async_loop = _placement_loop
 bridge._bridge_async_loop_lock = _placement_loop_lock
-_AUTO_INGEST_RE = re.compile(r"调研|研究|分析|评估|方案|报告|诊断|规划|research|analysis|report|plan", re.I)
 
 
 class DurableEventSink(bridge.DurableEventQueue):
@@ -321,27 +318,8 @@ def execute(store: DurableChatRunStore, run: dict[str, Any]) -> None:
             payload.get("client_session_id"),
         )
         snapshot = store.get_unchecked(run_id)
-        triage = dict((payload.get("agent_config") or {}).get("triage") or {})
-        confidence = float(triage.get("confidence") or 0.0)
-        original_goal = str(payload.get("goal") or "")
-        final_answer = str(snapshot.get("final_answer") or "")
-        if (
-            snapshot["status"] == "completed"
-            and stage_spec is None
-            and confidence >= 0.60
-            and _AUTO_INGEST_RE.search(original_goal)
-            and len(final_answer.strip()) >= 120
-        ):
-            kind = "research" if re.search(r"调研|研究|分析|评估|报告|research|analysis|report", original_goal, re.I) else "solution"
-            persist_generated_private_note(
-                tenant_key=str(run.get("tenant_id") or ""),
-                user_id=str(run.get("user_id") or ""),
-                session_id=str(run.get("session_id") or ""),
-                request_id=str(run.get("request_id") or ""),
-                kind=kind,
-                content=final_answer,
-                confidence=confidence,
-            )
+        # Personal notes are written only through the confirmed PCM action path.
+        # A successful research/read response is not permission to create a note.
         if snapshot["status"] not in {"completed", "failed", "cancelled"}:
             store.append_event(run_id, {
                 "type": "error", "code": "worker_no_terminal",
