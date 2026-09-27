@@ -63,7 +63,7 @@ def harness(tmp_path, monkeypatch):
     monkeypatch.setattr(worker.bridge, "_tenant_sandbox_from_claims", lambda **_: SimpleNamespace(state_db=tmp_path / "state.db"))
     monkeypatch.setattr(worker.bridge, "_hermes_session_for_request", lambda *_: pytest.fail("stage resumed chat session"))
     monkeypatch.setattr(worker, "_renew_knowledge_capability", lambda *_: pytest.fail("stage minted knowledge capability"))
-    monkeypatch.setattr(worker, "persist_generated_private_note", lambda **_: pytest.fail("stage auto-ingested note"))
+    monkeypatch.setattr(worker, "persist_generated_private_note", lambda **_: pytest.fail("stage auto-ingested note"), raising=False)
     calls = []
 
     def execute(answer):
