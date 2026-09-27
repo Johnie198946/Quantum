@@ -98,3 +98,13 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - cron: 备份暂停10任务，三profile active=[]后交接部署；最终10任务原enabled全部恢复，提示词/计划/script/model/provider/delivery逐项保持，runtime=21250，恢复回读active=[]。
 - rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-pagination-followup-21250c7b；服务器/opt/ai-lab-shared/rollbacks/bookshelf-functionality-21250c7b8a52。
 - status: VERIFIED仅针对此次版本恢复及已完成检查；新刊到期发行与读者端段落位置仍未验收，20:10一次性续查保持。历史9本媒体缺口未改写。
+
+## 旅行并行部署后最终同步（f8c7）
+
+- server_before: 21250c7b8a5290abcf649b9279bbd91b9af1db88；server_after/runtime_after: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe。其他任务已执行服务器部署，本任务未重启服务器；通过已授权cleanup协调锁归属。
+- remote_sha: 安装脚本再次git ls-remote严格确认main=f8c7；源码包含21250，publication/editorial/knowledge/story/scheduler/cron以及main/auth/agreement等所查路径无差异。
+- health_check: 独立读服务器.deployed-sha、API镜像revision均f8c7，/ready返回ready；新runtime的_status生产只读请求成功。首次临时importlib探针未注册sys.modules导致dataclass导入异常，修正探针后通过，不是产品故障。
+- functional_check: 生产唯一staged稿、20:00 release、actual_release_at=null，正文/plan哈希076cbb...c9f、3图计划、5媒体记录保持；尚未进行新刊发行后媒体验收。状态接口仍提示2026-09-09历史rights_attestation_missing_or_unbound，不伪报全局无异常。
+- cron: 暂停仅新触发；当时控制任务2a32dcef0240496fbdf294507e87c298自然completed后切换；10cron原enabled和各配置恢复，active=[]。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-compatible-f8c7d064；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-f8c7d064c959已独立列目录确认PG与版本备份存在，但没有publication SQLite；出版库可使用上一轮bookshelf-functionality-21250c7b8a52已校验备份，不能将本轮目录描述为包含出版库。
+- status: VERIFIED仅上述同步/健康/暂存完整性检查；新计划发行及手机位置仍待20:10续查，历史9本图片缺口仍在。
