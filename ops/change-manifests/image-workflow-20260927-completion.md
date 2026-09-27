@@ -102,3 +102,7 @@ remaining_risks: 最终候选须重建并补图库→Chat→确认→处理→�
 由联合发布任务在冻结1914bce5干净worktree审查整合。规范main脏树未动。最终真机UI未过，不推送、不部署、不上传。
 
 联合整合后独立回归：133 passed/1 skipped/6 warnings，7.21秒；图片、文档、清理、PCM、旅行模块均覆盖。Ruff与git diff --check通过。日志/private/tmp/quantum-final-photo-regression.log。
+
+## 真机发现图片导出扩展名回归
+
+真机6a验证原图经doc入库/编译启动后，发现ImageCard下载经InboxFileManager存为.bin，分享无法识别图片。复用既有storePrivateFile/readPrivateFile，两侧同一白名单加入png/jpg/jpeg/webp，PDF/Office保留；增加格式回读与owner隔离测试。图片任务Swift ImageProposalContractTests TEST SUCCEEDED，证据/tmp/quantum-image-export-fix-swift.log及19-39-16 xcresult。本任务审查调用者并整合两文件补丁，git diff --check通过。真机PhotosPicker已打开但Mac锁定，尚未选图；补丁后导出UI尚待验收，不推送/部署/上传。

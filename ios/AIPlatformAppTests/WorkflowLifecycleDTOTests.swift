@@ -7114,6 +7114,22 @@ extension WorkflowLifecycleDTOTests {
 }
 
 final class ImageProposalContractTests: XCTestCase {
+    @MainActor
+    func testImageExportPreservesFormatAndOwnerIsolation() throws {
+        let store = InboxFileManager.shared
+        let tenant = "image-export-" + UUID().uuidString
+        store.activatePrivateCache(tenantKey: tenant, userId: "alice")
+        defer { store.clearPrivateCache() }
+        for ext in ["png", "jpg", "jpeg", "webp"] {
+            let bytes = Data(ext.utf8)
+            let url = try store.storePrivateFile(bytes, sourceId: ext, revision: 1, filename: "photo." + ext)
+            XCTAssertEqual(url.pathExtension, ext)
+            XCTAssertEqual(store.readPrivateFile(sourceId: ext, revision: 1, filename: "photo." + ext), bytes)
+        }
+        store.activatePrivateCache(tenantKey: tenant, userId: "bob")
+        XCTAssertNil(store.readPrivateFile(sourceId: "png", revision: 1, filename: "photo.png"))
+    }
+
     func testDocumentImagePersistsOneSharedSourceWithoutPhotoBytes() throws {
         let id = "doc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let attachment = AttachmentBlock(fileName: "photo.png", fileType: .generic, fileSize: "1 KB",

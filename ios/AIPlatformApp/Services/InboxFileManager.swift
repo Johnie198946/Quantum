@@ -45,7 +45,7 @@ public final class InboxFileManager {
 
     public func storePrivateFile(_ data: Data, sourceId: String, revision: Int, filename: String, durable: Bool = false) throws -> URL {
         let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
-        let safeExt = ["pdf", "docx", "pptx"].contains(ext) ? ext : "bin"
+        let safeExt = ["pdf", "docx", "pptx", "png", "jpg", "jpeg", "webp"].contains(ext) ? ext : "bin"
         let url = privateDirectory(durable: durable).appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
         guard cacheScope != "inactive" else { throw CocoaError(.fileWriteNoPermission) }
         try FileManager.default.createDirectory(at: privateDirectory(durable: durable), withIntermediateDirectories: true)
@@ -56,7 +56,7 @@ public final class InboxFileManager {
     public func readPrivateFile(sourceId: String, revision: Int, filename: String, durable: Bool = false) -> Data? {
         guard cacheScope != "inactive" else { return nil }
         let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
-        let safeExt = ["pdf", "docx", "pptx"].contains(ext) ? ext : "bin"
+        let safeExt = ["pdf", "docx", "pptx", "png", "jpg", "jpeg", "webp"].contains(ext) ? ext : "bin"
         let url = privateDirectory(durable: durable).appendingPathComponent("\(Self.scope(sourceId))-r\(revision).\(safeExt)")
         return try? Data(contentsOf: url)
     }
