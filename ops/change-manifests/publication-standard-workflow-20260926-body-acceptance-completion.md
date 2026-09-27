@@ -63,3 +63,8 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - 本机最终10cron全部恢复原enabled=true，最后resume回读active=[]；controller next=16:38、assets next=16:40。prompt、schedule、script、deliver、failure_deliver、model、provider经逐项比较保持。未建立额外出版scheduler、未直接派发素材或提前发行。
 - 最终本机rollback_point=/Users/dengzhaoyu/.hermes/backups/publication-fetch-878744d9d3a2（receipt.after=a8cc，before=74c，目录名保留）；server rollback_point=/opt/ai-lab-shared/rollbacks/bookshelf-functionality-a8cc2954e13a，PG/SQLite哈希检查通过。
 - remaining_risks：当前8本历史无媒体、1本仅封面，未静默改写冻结历史；新版按段落插图仍待自动重试、独立审核、20:00正常发行和真机位置验收。20:10续查已安排。VERIFIED仅针对controller修复及既有正文/媒体验收，不代表新插图全链完成。
+
+## 最终恢复后的自然触发
+
+- a8cc runtime原生controller执行082640b3d7b7455aa86dfb415954821a，于16:39:10完成并返回phase=assets/action=triggered；材料哈希仍为382d219637ff63c9ff170880d68aa34f9216515f526038432dede472533bc1db。
+- 原生素材执行a01a6b179ebc4189b8f393a46ee4ef26于16:39:10.117315启动，查询时running。确认自然有界恢复已继续，不将running当作生成成功；新计划媒体和发行留待20:10续查及后续证据。
