@@ -5,7 +5,7 @@
 - status: DEPLOYED（b07e2cc 配图与协议修复已部署；真机UI及本轮无人值守完整发行仍在验收，尚不标 VERIFIED）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
-- head/local_commit: b07e2cc4fd6c0bcd299990ec58d474761134e577；后续真机验收脚本与证据仍为本地未提交。
+- head/local_commit: c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1；已推送，包含提示词/验收证据及上游f7e6fa9笔记保存同意修复。生产程序仍b07e2cc。
 - manifest: ops/change-manifests/publication-standard-workflow-20260926-completion.md。
 - evidence_note: 本文件与 publication-production-activation.json 的最终部署后事实更新保留本地未提交；程序/配置已提交、推送并部署同一 SHA，验收记录不冒充服务器版本。
 
@@ -128,3 +128,11 @@ remaining_risks：用户实际客户端/安装版本未确认；真实用户登�
 
 
 11:25 真机C层验收完成（仅指定完整媒体刊物）：v9 XCTest TEST SUCCEEDED，正文/11节目录前中末/五图加载断言通过；随后通过 computer-use 的 iPhone Mirroring 窗口逐一查看真实竖封面、横封面、三插图，保存 ops/reports/publication-media-ios-20260927/{shelf,shelf-cover,reader-cover,illustrations-all-three}.png，SHA见审计JSON。没有改变订阅、发送Chat或生成测试图片。系统锁屏PNG不作为视觉证据。当前安装b07 debug版，旧TestFlight Build66不包含本修复；9本历史缺图仍保留。设备已向已获用户授权的清理任务释放，服务器完整自动闭环仍待本轮完成。
+
+
+11:29 增量提交：a5e7b74为本任务提示词/真机验收及证据；合并远端笔记保存同意修复f7e6fa9后HEAD=c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1。origin/main与任务分支经git ls-remote核验同SHA；上游增量回归1passed，diff检查通过。仅提示词/测试/证据及上游iOS改动，不重启服务器；server_after与运行脚本仍b07e2cc。现有素材cron171a125ddb63仅追加已提交的启动/等待参数（prompt SHA ec19160571846a38fbf69bedb3cd8bf420829ab6fcc71ad2fa64ec3478c42652），schedule/script/workdir/model/provider/enabled/通知字段均未改。在途执行未重启，下一次自然调度读取补充。备份与回滚原prompt：~/.hermes/backups/publication-standard-workflow-20260926/assets-launch-c1c5788/job-before.json；细节见审计JSON。整体仍DEPLOYED，当前新一期完整自动发布待完成。
+
+
+11:40追加构建器修复：真实12点新稿在完成5次原生生图后，被 _native_rejected_revision 使用现行配置解释旧00:01 rejected记录阻断；未prepare/审核/发布。复用冻结bundle期次身份，当前合同优先完整验证；相邻review_input同根因修复。独立review另复现_plan全局待审候选包含退休时隙导致review_scope_not_unique，现按启用主题/现行时隙与review_input保持一致。没有删除旧manifest、篡改图片/作者或清预算。最小新增解析函数仅被两个既有历史扫描复用，无新服务或调度链。
+
+测试：relay相关21passed（117.79秒）、watchdog相关16passed（沙箱ps被拒的既有测试获得权限后同命令通过）、独立relay5passed、ruff/diff通过。两个实际新稿目录只读历史扫描通过，证据/tmp/publication-builder-real-history-readback.json。当前构建器增量尚未部署；10角色未来调度已备份暂停且active=[]，计划部署后由临时定时任务恢复。新rollback_point=/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c，8镜像/版本/attestation/2,584,576字节在线DB备份；预算attempt1保留，剩余5次可正常恢复。

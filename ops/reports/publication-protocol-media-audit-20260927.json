@@ -1189,6 +1189,214 @@
       "second_exit": "agent added skip-git but inherited read-only sandbox, no images generated",
       "wait_defect": "kill -0 sees zombie PID5854 as live; terminal wait timeout600 started11:13:10; awaiting automatic timeout",
       "repair": "existing assets prompt fixes workspace-write/skip-git and original process-handle wait; no new wrapper or bypass"
+    },
+    "assets_prompt_activation": {
+      "job_id": "171a125ddb63",
+      "prompt_commit": "c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1",
+      "program_sha": "b07e2cc4fd6c0bcd299990ec58d474761134e577",
+      "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/assets-launch-c1c5788",
+      "prompt_before_sha256": "bfa1f435c95438a7d509ab4c6f5f30ddb996c3efe60b84c22b0713691c4856ab",
+      "prompt_after_sha256": "ec19160571846a38fbf69bedb3cd8bf420829ab6fcc71ad2fa64ec3478c42652",
+      "only_prompt_changed": true,
+      "active_execution_restarted": false
+    },
+    "followup_remote_sha": "c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1",
+    "builder_failure": {
+      "observed_at": "2026-09-27T11:30:13+08:00",
+      "native_execution_id": "fe9bb5f1d4a446928d213962d898aa53",
+      "business_status": "build_failed_no_prepare",
+      "error": "issue slot is not configured",
+      "cause": "_native_rejected_revision validates retired 00:01 historical bundle against current configured slots",
+      "five_images_preserved": true,
+      "claim_attempts": 1,
+      "future_dispatch_paused": [
+        "94f82c141295",
+        "171a125ddb63"
+      ],
+      "active_execution_interrupted": false,
+      "new_rollback": {
+        "server_before": "b07e2cc4fd6c0bcd299990ec58d474761134e577",
+        "release": "/opt/releases/ai-lab-platform-b07e2cc4fd6c.NVjqCO",
+        "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c",
+        "images": {
+          "api": {
+            "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+            "health": "healthy"
+          },
+          "workflow-worker": {
+            "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+            "health": "healthy"
+          },
+          "planning-worker": {
+            "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+            "health": "healthy"
+          },
+          "agent-evaluation-worker": {
+            "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+            "health": "healthy"
+          },
+          "frontend": {
+            "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+            "health": "healthy"
+          },
+          "postgres": {
+            "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+            "health": "healthy"
+          },
+          "redis": {
+            "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+            "health": "healthy"
+          },
+          "taskboard": {
+            "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+            "health": "healthy"
+          }
+        },
+        "publication_db_bytes": 2584576
+      }
+    },
+    "new_loop_real_generation": {
+      "toolkit_generated_images": {
+        "verified_at": "2026-09-27T11:33:56.020867+08:00",
+        "directory": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-16f0dcc3ae06306b0675eaa2-2026-09-27",
+        "manifest_sha256": "67a842d96933672e050665d0ded3b1a5c5e40fa18d0f0c34abaa84fad6841350",
+        "manifest_hash_state": "final after asset session completed at 11:30:13",
+        "files": [
+          {
+            "role": "shelf_cover",
+            "final_file": "shelf_cover.jpg",
+            "size": [
+              1440,
+              2560
+            ],
+            "sha256": "346348f9b3f610ad4de2fb241c4fcf74ce92936dfb54db23f7df22621478f88b",
+            "hash_matches": true,
+            "original_file": "image-generation-originals/shelf_cover-original.png",
+            "original_sha256": "e2c8ab9613e7d1ccbd3a08c91376dfb56ace245d6439ecd54fe320840a54566f",
+            "original_hash_matches": true,
+            "tool_returned_original_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "final_file": "reader_cover.jpg",
+            "size": [
+              2560,
+              1440
+            ],
+            "sha256": "98d5a74f346c9c8f9f6aecd0129b5eac362377f290d473a50172e6fb5afc3aa7",
+            "hash_matches": true,
+            "original_file": "image-generation-originals/reader_cover-original.png",
+            "original_sha256": "5ee54e0483862bc9e2172a67f3b98bbe20198e3a4bf82e75d292dcd66b10b86d",
+            "original_hash_matches": true,
+            "tool_returned_original_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "final_file": "illustration_01.jpg",
+            "size": [
+              1600,
+              900
+            ],
+            "sha256": "c1350559de873d7d1f7406966c96841460f8b7139f090a630dce53a59fcac030",
+            "hash_matches": true,
+            "original_file": "image-generation-originals/illustration_01-original.png",
+            "original_sha256": "210e6f87fa5cbf018b2457b5c60c3510e41c01d6653de43b7616f44af5acc4be",
+            "original_hash_matches": true,
+            "tool_returned_original_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "final_file": "illustration_02.jpg",
+            "size": [
+              1600,
+              900
+            ],
+            "sha256": "8a2bac94ceac0a3f0f2488348fed6305ec7510301404f54ee73f5934fa0a136e",
+            "hash_matches": true,
+            "original_file": "image-generation-originals/illustration_02-original.png",
+            "original_sha256": "0a0ef1a7df956eb2f94b194b3ac395c22dc844920580ba130ad9a1659ed3ff0c",
+            "original_hash_matches": true,
+            "tool_returned_original_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "final_file": "illustration_03.jpg",
+            "size": [
+              1600,
+              900
+            ],
+            "sha256": "3d8afe23359a441aa116559858e1eeda02ba083f61ae5524755fab5dee921fb6",
+            "hash_matches": true,
+            "original_file": "image-generation-originals/illustration_03-original.png",
+            "original_sha256": "44db86a033ae8262c90fcf4ff021ef4cc347a41f1c9df15af3fb890f5e133ef1",
+            "original_hash_matches": true,
+            "tool_returned_original_matches": true
+          }
+        ]
+      },
+      "independent_imagegen_proof": {
+        "codex_thread_id": "01a0e0e1-b2b5-7d32-ae18-c5614c1b1382",
+        "native_rollout": "/Users/dengzhaoyu/.codex/sessions/2026/09/27/rollout-2026-09-27T11-21-23-01a0e0e1-b2b5-7d32-ae18-c5614c1b1382.jsonl",
+        "direct_imagegen_calls": [
+          {
+            "timestamp": "2026-09-27T03:22:06.287Z",
+            "name": "exec",
+            "call_id": "call_JJXHFzrXFbqpBtUePWc9r3Yr"
+          },
+          {
+            "timestamp": "2026-09-27T03:23:16.855Z",
+            "name": "exec",
+            "call_id": "call_S8GYBbt5BgN8FnG2ToSxGQIC"
+          },
+          {
+            "timestamp": "2026-09-27T03:23:46.475Z",
+            "name": "exec",
+            "call_id": "call_rqPtF9CGg5mVa3rsE8joguDA"
+          },
+          {
+            "timestamp": "2026-09-27T03:24:04.980Z",
+            "name": "exec",
+            "call_id": "call_Uw2GSGN5k37Y4PiURZVGIj75"
+          },
+          {
+            "timestamp": "2026-09-27T03:24:42.990Z",
+            "name": "exec",
+            "call_id": "call_ZSJgm7w5e43etV9AZRENQKKT"
+          }
+        ],
+        "original_source_checks": [
+          {
+            "role": "shelf_cover",
+            "returned_output_exists": true,
+            "returned_output_sha256": "e2c8ab9613e7d1ccbd3a08c91376dfb56ace245d6439ecd54fe320840a54566f",
+            "matches_preserved_original": true
+          },
+          {
+            "role": "reader_cover",
+            "returned_output_exists": true,
+            "returned_output_sha256": "5ee54e0483862bc9e2172a67f3b98bbe20198e3a4bf82e75d292dcd66b10b86d",
+            "matches_preserved_original": true
+          },
+          {
+            "role": "illustration_01",
+            "returned_output_exists": true,
+            "returned_output_sha256": "210e6f87fa5cbf018b2457b5c60c3510e41c01d6653de43b7616f44af5acc4be",
+            "matches_preserved_original": true
+          },
+          {
+            "role": "illustration_02",
+            "returned_output_exists": true,
+            "returned_output_sha256": "0a0ef1a7df956eb2f94b194b3ac395c22dc844920580ba130ad9a1659ed3ff0c",
+            "matches_preserved_original": true
+          },
+          {
+            "role": "illustration_03",
+            "returned_output_exists": true,
+            "returned_output_sha256": "44db86a033ae8262c90fcf4ff021ef4cc347a41f1c9df15af3fb890f5e133ef1",
+            "matches_preserved_original": true
+          }
+        ]
+      }
     }
   }
 }

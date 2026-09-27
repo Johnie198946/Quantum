@@ -1314,8 +1314,9 @@ def test_review_input_does_not_offer_default_request_to_supervision(flow, monkey
     assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
 
 
+@pytest.mark.parametrize("historical_slot", [None, "00:01"])
 @pytest.mark.parametrize("review_mode", ["scope_removed", "missing", "tampered"])
-def test_rejected_native_content_enters_revision_two_and_independent_approval(flow, tmp_path, monkeypatch, review_mode):
+def test_rejected_native_content_enters_revision_two_and_independent_approval(flow, tmp_path, monkeypatch, review_mode, historical_slot):
     from backend.services.knowledge_publication_store import SERIES
     from scripts import publication_workflow_handoff as handoff
     local, old_manifest, remote, calls, key, store, intake = flow
@@ -1338,6 +1339,10 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     old_bundle = json.loads((historical / old_item["bundle_file"]).read_text())
     old_bundle["issue_date"] = "2026-09-07"
     old_bundle["release_at"] = "2026-09-07T12:00:00+08:00"
+    if historical_slot:
+        old_bundle.update(issue_date="2026-09-08", issue_slot=historical_slot,
+                          release_at=f"2026-09-08T{historical_slot}:00+08:00")
+        old_bundle.pop("issue_key", None)
     old_bundle["quality_contract"]["issue_id"] = "issue-historical"
     old_item["quality_contract"] = old_bundle["quality_contract"]
     relay.save(historical / old_item["bundle_file"], old_bundle)
@@ -1433,6 +1438,65 @@ def test_rejected_revision_reopens_unverified_resolved_gap_and_retains_requireme
     assert "两次在线运行成功" in gaps[0]["resolution"]
     assert "删除在线成功主张" in gaps[1]["resolution"]
     assert prior["research_gaps"][0]["state"] == "resolved"  # frozen historical contract is untouched
+
+@pytest.mark.parametrize("mutation", ["retired", "invalid_slot", "conflicting_key"])
+def test_native_history_identity_does_not_mask_current_contract(flow, mutation):
+    local, manifest, remote, _, key, *_ = flow
+    databases, _ = native(flow, "rejected")
+    relay.finalize(local, remote, db=databases, key=key)
+    value = json.loads(manifest.read_text())
+    item = value["items"][0]
+    bundle_path = local / item["bundle_file"]
+    bundle = json.loads(bundle_path.read_text())
+    if mutation == "conflicting_key":
+        bundle["issue_key"] = "2026-09-08T00:01"
+    else:
+        bundle["issue_slot"] = "00:01" if mutation == "retired" else "garbage"
+        bundle["release_at"] = "2026-09-08T00:01:00+08:00"
+    relay.save(bundle_path, bundle)
+    # Leave the frozen digest intact: a current contract must force validation,
+    # even if its bundle is relabelled as a retired or malformed occurrence.
+    with pytest.raises(ValueError):
+        relay._native_rejected_revision(local.parent / "new-native", "ai-history", "2026-09-08",
+                                        "f" * 64, synthetic_brief())
+
+
+@pytest.mark.parametrize("tampered_current_identity", [False, True])
+def test_review_input_skips_retired_slot_without_schedule_validation(flow, monkeypatch, tampered_current_identity):
+    from backend.services.knowledge_publication_store import PublicationStore
+    local, manifest, remote, *_ = flow
+    relay.prepare(manifest, remote)
+    retired = local.parent / "00-retired"
+    shutil.copytree(local, retired)
+    value = json.loads((retired / manifest.name).read_text())
+    item = value["items"][0]
+    bundle_path = retired / item["bundle_file"]
+    bundle = json.loads(bundle_path.read_text())
+    bundle.update(issue_slot="00:01", release_at="2026-09-08T00:01:00+08:00")
+    bundle.pop("issue_key", None)
+    if not tampered_current_identity:
+        retired_id = PublicationStore.ids("ai-history", "2026-09-08T00:01", 1)[1]
+        item["quality_contract"]["issue_id"] = retired_id
+        bundle["quality_contract"]["issue_id"] = retired_id
+    relay.save(bundle_path, bundle)
+    item["bundle_sha256"] = relay.sha(bundle_path.read_bytes())
+    relay.save(retired / manifest.name, value)
+    relay.load_manifest(retired / manifest.name)
+    original_attempt = relay.attempt
+    calls = []
+    def checked_attempt(*args):
+        calls.append(args[1]["attempt_id"])
+        return original_attempt(*args)
+    monkeypatch.setattr(relay, "attempt", checked_attempt)
+    if tampered_current_identity:
+        with pytest.raises(ValueError, match="occurrence identity mismatch"):
+            relay.review_input(local.parent, remote)
+        assert not calls
+        return
+    envelope = json.loads(relay.review_input(local.parent, remote).split("\nPUBLICATION_REVIEW_REQUEST\n", 1)[0])
+    assert envelope["manifest"] == str(manifest)
+    assert len(calls) == 1
+
 
 @pytest.mark.parametrize("damage", ["hash", "contract", "review", "missing"])
 def test_native_rejected_revision_fails_closed_for_damaged_same_occurrence(flow, damage):

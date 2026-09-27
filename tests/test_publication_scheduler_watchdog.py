@@ -1444,3 +1444,38 @@ def test_legacy_dispatched_rearm_requires_expired_dead_verified_owner(tmp_path, 
         assert history[0]["previous"]["attempts"] == 6
     else:
         assert history == []
+
+
+@pytest.mark.parametrize("current_slot", ["12:00", "13:00"])
+@pytest.mark.parametrize("historical_kind", ["retired_slot", "disabled_series"])
+def test_review_plan_ignores_retired_candidates_but_keeps_current_identity(
+    monkeypatch, current_slot, historical_kind
+):
+    from dataclasses import replace
+    series = "ai-practice"
+    monkeypatch.setitem(watchdog.SERIES, series, {
+        **watchdog.SERIES[series], "release_times": [current_slot],
+    })
+    key = DAY if current_slot == "12:00" else DAY + "T" + current_slot
+    current = replace(item(series, "await_review"), issue_key=key)
+    if historical_kind == "retired_slot":
+        historical = replace(item(series, "await_review", suffix="retired"), issue_key=DAY + "T00:01")
+    else:
+        monkeypatch.setitem(watchdog.SERIES, "ai-history", {
+            **watchdog.SERIES["ai-history"], "enabled": False,
+        })
+        historical = item("ai-history", "await_review", day="2026-09-24")
+    action, reason = watchdog._plan(DAY, {series}, [historical, current], issue_key=key)
+    assert reason == "ready"
+    assert action.phase == "review" and action.manifest == current.manifest
+    invalid = replace(current, status="invalid")
+    action, reason = watchdog._plan(DAY, {series}, [historical, invalid], issue_key=key)
+    assert action is None and reason == "invalid_manifest"
+
+
+def test_review_plan_does_not_treat_malformed_slot_as_retired():
+    from dataclasses import replace
+    current = item("ai-practice", "await_review")
+    malformed = replace(current, manifest=Path("/malformed/draft-manifest.json"), issue_key=DAY + "Tgarbage")
+    with pytest.raises(ValueError):
+        watchdog._plan(DAY, {current.series}, [malformed, current], issue_key=DAY)

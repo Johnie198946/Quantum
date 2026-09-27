@@ -545,7 +545,11 @@ def _plan(
             return action, "ready"
         global_pending = sorted(
             (i for i in items if i.status == "await_review" and not i.review_ready
-             and i.series in SERIES and _role_profile(i.series, "review") == _action_profile(action)
+             and i.series in SERIES and SERIES[i.series].get("enabled", True)
+             and datetime.fromisoformat(
+                 i.issue_key if "T" in i.issue_key else i.day + "T12:00"
+             ).strftime("%H:%M") in SERIES[i.series].get("release_times", ["12:00"])
+             and _role_profile(i.series, "review") == _action_profile(action)
              and SERIES[i.series].get("review_job_id") == action.job_id
              and (claims is None or not claims.exhausted(i.day, Action(
                  "review", (Barrier(i.series, i.material_hash, i.issue_key or i.day),), job_id=action.job_id)))),
@@ -561,9 +565,9 @@ def _plan(
             if candidate.manifest == first.manifest
             and candidate.barriers[0].material_hash == first.material_hash
         ]
-        # publication_review_input scans sorted manifests and consumes at most
-        # one. Claim exactly that same first item; an older/out-of-scope pending
-        # item must be reconciled rather than silently crossed.
+        # publication_review_input selects enabled, configured slots in release
+        # order. Claim that same first item; an older active pending item still
+        # must be reconciled rather than silently crossed.
         if len(matching) != 1:
             return None, "review_scope_not_unique"
         action = matching[0]

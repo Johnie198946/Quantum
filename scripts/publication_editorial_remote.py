@@ -570,10 +570,27 @@ def _revision_gaps(prior_contract: dict, review_gaps: list) -> list:
     return list(gaps.values())
 
 
+def _historical_issue_key(bundle: dict) -> str:
+    """Read frozen occurrence identity without applying today's release schedule."""
+    from zoneinfo import ZoneInfo
+    day = bundle["issue_date"]
+    if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
+        raise ValueError("historical occurrence date is invalid")
+    release = datetime.fromisoformat(bundle["release_at"])
+    if release.tzinfo is None:
+        raise ValueError("publication release_at must include timezone")
+    release_slot = release.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+    slot = bundle.get("issue_slot") or release_slot
+    if not isinstance(slot, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", slot) or slot != release_slot:
+        raise ValueError("historical occurrence slot is invalid")
+    key = day if slot == "12:00" else f"{day}T{slot}"
+    if bundle.get("issue_key", key) != key:
+        raise ValueError("historical occurrence identity mismatch")
+    return key
+
+
 def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_hash: str, brief: dict):
     """Reuse the latest genuine rejected attempt for the same native occurrence."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
     from backend.services.knowledge_publication_store import PublicationStore
     expected_issue_id = PublicationStore.ids(series_id, issue_key, 1)[1]
     candidates = []
@@ -594,8 +611,7 @@ def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_h
             prior = json.loads(read(local_path(path.parent, item["bundle_file"])))
             if prior.get("series_id") != series_id or prior.get("issue_date") != issue_key.split("T", 1)[0]:
                 continue
-            slot = prior.get("issue_slot") or datetime.fromisoformat(prior["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
-            if publication_slot(series_id, prior["issue_date"], slot)["issue_key"] == issue_key:
+            if _historical_issue_key(prior) == issue_key:
                 matching.append(index)
         if not matching:
             continue
@@ -969,11 +985,14 @@ def review_input(root, remote):
             release_at = datetime.fromisoformat(bundle["release_at"])
             if release_at.tzinfo is None:
                 raise ValueError("publication release_at must include timezone")
-            from zoneinfo import ZoneInfo
-            issue_key = bundle.get("issue_key") or publication_slot(
-                bundle["series_id"], bundle["issue_date"],
-                bundle.get("issue_slot") or release_at.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M"),
-            )["issue_key"]
+            issue_key = _historical_issue_key(bundle)
+            from backend.services.knowledge_publication_store import PublicationStore
+            if contract.get("issue_id") != PublicationStore.ids(bundle["series_id"], issue_key, 1)[1]:
+                raise ValueError("pending review occurrence identity mismatch")
+            slot = issue_key.partition("T")[2] or "12:00"
+            series = SERIES[bundle["series_id"]]
+            if not series.get("enabled", True) or slot not in series.get("release_times", ["12:00"]):
+                continue
             barrier = Barrier(bundle["series_id"], _material_hash(item), issue_key)
             if recovery.exhausted(bundle["issue_date"], Action(
                 "review", (barrier,), job_id=SERIES[bundle["series_id"]].get("review_job_id")
