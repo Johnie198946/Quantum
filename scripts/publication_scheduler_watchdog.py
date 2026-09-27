@@ -160,7 +160,7 @@ def _default_profile_only() -> None:
 
 def _status() -> dict:
     completed = subprocess.run(
-        [str(STATUS_CLIENT), "--status-only"], text=True, capture_output=True,
+        [sys.executable, str(STATUS_CLIENT), "--status-only"], text=True, capture_output=True,
         timeout=180, check=False, env=_default_env(),
     )
     if completed.returncode:
@@ -911,7 +911,7 @@ def _run_action(action: Action) -> None:
     for command in commands:
         try:
             completed = subprocess.run(
-                command, text=True, capture_output=True, timeout=timeout,
+                [sys.executable, *command], text=True, capture_output=True, timeout=timeout,
                 check=False, env=_default_env(),
             )
         except subprocess.TimeoutExpired as exc:

@@ -409,9 +409,43 @@ def test_prepare_and_finalize_use_existing_gate_enforcing_client(monkeypatch):
     manifest = Path("/safe/item/draft-manifest.json")
     watchdog._run_action(watchdog.Action("prepare", (watchdog.Barrier("ai-history", "a" * 64),), manifest=manifest))
     watchdog._run_action(watchdog.Action("finalize", (watchdog.Barrier("ai-history", "a" * 64),), manifest=manifest))
-    assert calls[0][0] == [str(watchdog.EDITORIAL_CLIENT), "prepare", "--manifest", str(manifest)]
-    assert calls[1][0] == [str(watchdog.EDITORIAL_CLIENT), "finalize", "--root", str(manifest.parent)]
+    assert calls[0][0] == [sys.executable, str(watchdog.EDITORIAL_CLIENT), "prepare", "--manifest", str(manifest)]
+    assert calls[1][0] == [sys.executable, str(watchdog.EDITORIAL_CLIENT), "finalize", "--root", str(manifest.parent)]
     assert all(not any("release" in word for word in command) for command, _ in calls)
+
+
+@pytest.mark.parametrize("phase", [
+    "status", "native_fetch", "handoff_fetch", "prepare", "finalize",
+    "handoff_acknowledge", "handoff_revision",
+])
+def test_python_clients_run_without_executable_permission(tmp_path, monkeypatch, phase):
+    manifest = tmp_path / "draft-manifest.json"
+    output_root = tmp_path / "outputs"
+    expected = {
+        "status": ["--status-only"],
+        "native_fetch": ["fetch-native", "--output-root", str(output_root), "--series-id", "ai-history", "--issue-key", DAY],
+        "handoff_fetch": ["fetch", "--output-root", str(output_root), "--series-id", "ai-history", "--issue-key", DAY],
+        "prepare": ["prepare", "--manifest", str(manifest)],
+        "finalize": ["finalize", "--root", str(tmp_path)],
+        "handoff_acknowledge": ["acknowledge", "--manifest", str(manifest)],
+        "handoff_revision": ["request-revision", "--manifest", str(manifest)],
+    }[phase]
+    client = tmp_path / "client.py"
+    client.write_text(
+        "import json, sys\n"
+        f"assert sys.argv[1:] == {expected!r}, sys.argv\n"
+        "print(json.dumps({'status': 'waiting_assets'}))\n"
+    )
+    client.chmod(0o644)
+    for name in ("STATUS_CLIENT", "HANDOFF_CLIENT", "EDITORIAL_CLIENT"):
+        monkeypatch.setattr(watchdog, name, client)
+    monkeypatch.setattr(watchdog, "OUTPUT_ROOT", output_root)
+    if phase == "status":
+        assert watchdog._status() == {"status": "waiting_assets"}
+    else:
+        watchdog._run_action(watchdog.Action(
+            phase, (watchdog.Barrier("ai-history", "a" * 64, issue_key=DAY),), manifest=manifest,
+        ))
 
 
 def test_detached_dispatch_returns_after_persisted_live_execution(tmp_path, monkeypatch):
