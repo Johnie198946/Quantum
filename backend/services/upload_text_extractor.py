@@ -23,7 +23,7 @@ def extract_uploaded_text(data: bytes, *, filename: str, content_type: str, anal
     suffix = Path(filename).suffix.lower()
     mime = content_type.split(";", 1)[0].strip().lower()
     if mime.startswith("text/") or suffix in {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".html"}:
-        return _bounded(data.decode("utf-8", errors="replace"))
+        return _bounded(data.decode("utf-8-sig"))
     if suffix in {".doc", ".ppt"}:
         import tempfile
         from backend.services.presentation_renderer import render_office_pdf

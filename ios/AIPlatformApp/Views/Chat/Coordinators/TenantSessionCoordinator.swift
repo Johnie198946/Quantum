@@ -3940,7 +3940,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             do {
                 guard sizeBytes <= InboxFileManager.maxFileSizeBytes else { throw APIError.network("文档超过 25 MB 上限") }
                 let ext = url.pathExtension.lowercased()
-                guard ["pdf", "doc", "ppt", "docx", "pptx", "jpg", "jpeg", "png", "heic", "webp"].contains(ext) else { throw APIError.network("请选择 PDF、Word、PowerPoint 或图片") }
+                guard ["pdf", "doc", "ppt", "docx", "pptx", "jpg", "jpeg", "png", "heic", "webp", "csv", "json", "txt", "md"].contains(ext) else { throw APIError.network("请选择文档、图片、CSV、JSON 或文本文件") }
                 if let preview = await InboxFileManager.shared.thumbnailData(at: url) {
                     updateAttachmentPreview(messageId: msg.id, attachmentId: attachment.id, data: preview)
                 }

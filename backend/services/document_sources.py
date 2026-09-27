@@ -22,6 +22,8 @@ from backend.services.user_note_context import (
 MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
 MAX_PRESENTATION_SOURCE_CHARACTERS = 80_000
 SUPPORTED_DOCUMENTS = {
+    ".csv": "text/csv", ".json": "application/json",
+    ".txt": "text/plain", ".md": "text/markdown",
     ".doc": "application/msword", ".ppt": "application/vnd.ms-powerpoint",
     ".pdf": "application/pdf",
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -130,7 +132,7 @@ def save_document_source(
     filename = _safe_filename(filename)
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENTS:
-        raise DocumentSourceError("unsupported_document_type", "支持 PDF、Word、PowerPoint 和 JPG/PNG/HEIC/WebP 图片")
+        raise DocumentSourceError("unsupported_document_type", "支持 PDF、Word、PowerPoint、CSV、JSON、TXT、Markdown 和图片")
     if not data:
         raise DocumentSourceError("empty_document", "文档为空")
     if len(data) > MAX_DOCUMENT_BYTES:
@@ -207,7 +209,9 @@ def save_document_source(
     except Exception as exc:
         message = str(exc)
         code = "document_parse_failed"
-        if "encrypt" in message.lower() or "decrypt" in message.lower():
+        if isinstance(exc, UnicodeDecodeError):
+            code, message = "unsupported_text_encoding", "文本编码无法识别，请导出为 UTF-8；原件已保留"
+        elif "encrypt" in message.lower() or "decrypt" in message.lower():
             code, message = "encrypted_pdf", "PDF 已加密，无法提取文本"
         elif "no extractable text" in message.lower():
             code, message = (

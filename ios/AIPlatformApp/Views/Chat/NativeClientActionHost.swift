@@ -328,7 +328,7 @@ private struct NativeFileUploadAction: View {
                 .onAppear { presented = true }
                 .fileImporter(
                     isPresented: $presented,
-                    allowedContentTypes: [.pdf, .image, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx") ?? .data, UTType(filenameExtension: "pptx") ?? .data],
+                    allowedContentTypes: [.pdf, .image, .commaSeparatedText, .json, .plainText, UTType(filenameExtension: "md") ?? .plainText, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx") ?? .data, UTType(filenameExtension: "pptx") ?? .data],
                     allowsMultipleSelection: false
                 ) { result in
                     guard case .success(let urls) = result, let url = urls.first else {

@@ -75,7 +75,7 @@ public struct PlusMenuSheet: View {
             }
             .fileImporter(
                 isPresented: $isFileImporterPresented,
-                allowedContentTypes: [.pdf, .image, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx")!, UTType(filenameExtension: "pptx")!],
+                allowedContentTypes: [.pdf, .image, .commaSeparatedText, .json, .plainText, UTType(filenameExtension: "md") ?? .plainText, UTType(filenameExtension: "doc") ?? .data, UTType(filenameExtension: "ppt") ?? .data, UTType(filenameExtension: "docx")!, UTType(filenameExtension: "pptx")!],
                 allowsMultipleSelection: false,
                 onCompletion: handleDocumentImport
             )

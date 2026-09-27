@@ -7085,15 +7085,17 @@ extension WorkflowLifecycleDTOTests {
         configuration.protocolClasses = [APIContractURLProtocol.self]
         let api = APIClient(baseURL: URL(string: "https://contract.invalid")!,
                             sessionConfiguration: configuration, inMemoryToken: "token")
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".docx")
-        let bytes = Data("fixture".utf8)
-        try bytes.write(to: file)
-        defer { try? FileManager.default.removeItem(at: file) }
-        let receipt = try await api.uploadDocument(at: file)
-        XCTAssertEqual(receipt.sourceId, "doc-upload")
-        let sent = try XCTUnwrap(APIContractURLProtocol.requests().last)
-        XCTAssertEqual(sent.body, bytes)
-        XCTAssertEqual(sent.request.timeoutInterval, 200)
+        for ext in ["docx", "csv", "json", "txt", "md"] {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
+            let bytes = Data("fixture".utf8)
+            try bytes.write(to: file)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let receipt = try await api.uploadDocument(at: file)
+            XCTAssertEqual(receipt.sourceId, "doc-upload")
+            let sent = try XCTUnwrap(APIContractURLProtocol.requests().last)
+            XCTAssertEqual(sent.body, bytes)
+            XCTAssertEqual(sent.request.timeoutInterval, 200)
+        }
     }
 }
 

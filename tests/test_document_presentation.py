@@ -225,8 +225,9 @@ def test_pptx_upload_uses_existing_extractor_and_materializes_private_note(
     assert "PPTX 附件执行链验收" in text
 
 
+@pytest.mark.parametrize("suffix", [".docx", ".csv", ".json", ".txt", ".md"])
 def test_authenticated_upload_receipt_download_hash_and_user_boundary(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, suffix
 ):
     monkeypatch.setattr(
         document_sources,
@@ -237,7 +238,9 @@ def test_authenticated_upload_receipt_download_hash_and_user_boundary(
     app.include_router(documents_router)
     identity = {"tenant_key": "tenant-a", "user_id": "user-a"}
     app.dependency_overrides[require_auth] = lambda: identity
-    data = _docx("可验证的私有上传")
+    data = (_docx("可验证的私有上传") if suffix == ".docx" else
+            ('\ufeffTitle,URL,Note\n東京駅,https://maps.google.com/,私人收藏' if suffix == ".csv"
+             else '{"data":"用户原文","content_type":"收藏","extracted_text":"原样保留"}').encode("utf-8"))
     digest = hashlib.sha256(data).hexdigest()
     response = _request(
         app,
@@ -245,10 +248,10 @@ def test_authenticated_upload_receipt_download_hash_and_user_boundary(
         "/api/v1/documents",
         content=data,
         headers={
-            "X-File-Name": "private.docx",
+            "X-File-Name": "private" + suffix,
             "X-Content-Hash": digest,
             "X-File-Opt-Out": "true",
-            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Content-Type": document_sources.SUPPORTED_DOCUMENTS[suffix],
         },
     )
     assert response.status_code == 201
@@ -257,6 +260,10 @@ def test_authenticated_upload_receipt_download_hash_and_user_boundary(
         receipt["content_hash"] == digest
         and receipt["contribution_status"] == "excluded"
     )
+    assert receipt["status"] == "ready"
+    text, _ = document_sources.document_text("tenant-a", "user-a", receipt["source_id"])
+    if suffix != ".docx":
+        assert text == data.decode("utf-8-sig")
     downloaded = _request(
         app, "GET", f"/api/v1/documents/{receipt['source_id']}/download"
     )
@@ -270,8 +277,13 @@ def test_authenticated_upload_receipt_download_hash_and_user_boundary(
     )
 
 
+    identity.update(tenant_key="tenant-b", user_id="user-a")
+    assert _request(app, "GET", f"/api/v1/documents/{receipt['source_id']}").status_code == 404
+
+
+@pytest.mark.parametrize("suffix", [".docx", ".csv", ".json"])
 def test_authorized_default_upload_uses_authenticated_identity_and_real_queue_receipt(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, suffix
 ):
     from agreement_fixtures import set_user_contribution_consent
     from backend.db import SessionLocal
@@ -308,10 +320,11 @@ def test_authorized_default_upload_uses_authenticated_identity_and_real_queue_re
         app,
         "POST",
         "/api/v1/documents",
-        content=_docx("参与贡献但原件保持私有"),
+        content=(_docx("参与贡献但原件保持私有") if suffix == ".docx" else
+                 '{"title":"用户提供的私人收藏","url":"https://maps.google.com/"}'.encode("utf-8")),
         headers={
-            "X-File-Name": "governed.docx",
-            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "X-File-Name": "governed" + suffix,
+            "Content-Type": document_sources.SUPPORTED_DOCUMENTS[suffix],
         },
     )
     receipt = response.json()
@@ -1104,7 +1117,8 @@ def test_image_ocr_upload_reuses_private_source_and_compiler(tmp_path, monkeypat
         captured.append((candidate, source_content))
         return {'schedule_status': 'scheduled', 'event_id': 'ocr-event', 'run_id': 'ocr-run'}
     monkeypatch.setattr(api, 'enqueue_and_schedule', queued)
-    app = FastAPI(); app.include_router(documents_router)
+    app = FastAPI()
+    app.include_router(documents_router)
     identity = {'tenant_key': 'ocr-tenant', 'user_id': 'alice'}
     app.dependency_overrides[require_auth] = lambda: identity
     data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jSZkAAAAASUVORK5CYII=')
@@ -1123,3 +1137,14 @@ def test_image_ocr_upload_reuses_private_source_and_compiler(tmp_path, monkeypat
     response = _request(app, 'POST', '/api/v1/documents', headers=headers,
                         json={'data': 'not-base64', 'content_type': 'image/png', 'extracted_text': 'x'})
     assert response.status_code == 422
+
+
+def test_export_invalid_encoding_preserves_original_without_garbled_note(tmp_path, monkeypatch):
+    monkeypatch.setattr(document_sources, "note_directory", lambda tenant, user: tmp_path / tenant / user)
+    data = b"Title,Note\nTokyo,\xff"
+    receipt = document_sources.save_document_source(tenant_key="export-test", user_id="alice",
+        filename="saved.csv", content_type="text/csv", data=data)
+    assert receipt["status"] == "parse_failed" and receipt["note_id"] is None
+    assert receipt["parse_error"]["code"] == "unsupported_text_encoding"
+    path, _ = document_sources.document_original_path("export-test", "alice", receipt["source_id"])
+    assert path.read_bytes() == data

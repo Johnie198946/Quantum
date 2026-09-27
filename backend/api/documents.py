@@ -98,7 +98,8 @@ async def upload_document(
             status_code=400,
             detail={"code": "invalid_content_length", "message": "上传长度无效"},
         ) from exc
-    envelope = request.headers.get("content-type", "").split(";", 1)[0] == "application/json"
+    envelope = (request.headers.get("content-type", "").split(";", 1)[0] == "application/json"
+                and not unquote(filename).lower().endswith(".json"))
     upload_limit = MAX_DOCUMENT_BYTES * 4 // 3 + 1_000_000 if envelope else MAX_DOCUMENT_BYTES
     if length > upload_limit:
         raise HTTPException(

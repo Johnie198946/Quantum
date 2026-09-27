@@ -1,7 +1,7 @@
 # Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: VERIFIED（本次云端联合发布；不等于私人登录资料、客户端分发及全部性能验收完成）
+- status: TESTED（导出资料补丁；此前 d228 云端发布已 VERIFIED，新补丁尚未合并部署）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
 - head/local_commit: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7（运行代码；后续文档提交单独记录）
@@ -308,3 +308,17 @@
 ### 当前边界
 
 云端公共Maps查询及官网截图/生成图正式服务链路已验证，无本机Chrome依赖。Office实际文件、多轮修改、断网恢复及冷启动证据见此前完整回执，合并后194项iOS回归通过；本任务未发布新TestFlight二进制。私人社交登录/Google收藏未在云端建立已授权会话，不能宣称已验收；可访问分享清单和用户上传资料走现有路径。87.83秒是单样本，不能作为生产并发或p95/SLO达标结论。临时12m配额保留供笔记任务验收并由该任务协调恢复，账本从未由本任务更改。
+
+## 导出资料补齐与统一 TestFlight（后续）
+
+用户要求TestFlight合并分发并继续完成剩余项。由既有笔记任务唯一负责归档上传；旅行不单独发布Build70。最新共同main=167fba5c956ade6daba6568fc70c35d7f679406b（图片任务，未部署），将从本隔离分支整合；共享主工作区不动。
+
+架构命中：已有extract_uploaded_text支持CSV/JSON/TXT/MD，但documents白名单和客户端选择器拒绝；JSON原文件会误入OCR envelope。扩展现有documents/私有笔记/贡献编译通路，不新增服务、凭据库或第二个导入器。新增格式保留原件和哈希、按原权限入库；UTF-8 BOM去除，不用替换字符悄悄损坏资料，编码失败保留原件并提示重新导出UTF-8。
+
+改动：backend/api/documents.py、services/document_sources.py、services/upload_text_extractor.py；iOS PlusMenuSheet/NativeClientActionHost/TenantSessionCoordinator的现有选择器和后缀校验；复用test_document_presentation及WorkflowLifecycleDTOTests。
+
+验证：相关后端76 passed/1原有Office预览skip；最终编码错误回归9 passed；iOS194 passed/0 failures（20.259秒，/tmp/travel-export-ios.xcresult），实际客户端上传DOCX/CSV/JSON/TXT/MD原字节保持；Ruff、diff检查通过。API测试覆盖JSON包含data/content_type/extracted_text的普通文件不误解包、CSV BOM、原件下载哈希、同租户跨用户和跨租户404、真实贡献队列回执、编码失败原件保留。未宣称真实用户私人账号资料已读。
+
+性能：正式Bridge澄清30次/并发2，0失败，p50=5.296秒、p95=8.547秒；内部工作流读取+非法内部token拒绝30次/并发4，p95=.063秒。后者是内部认证合同，用户所有者边界由外层API验证。GoogleMaps原生浏览器30次全部读到公共路线，p50=13.694秒/p95=27.388秒；冷15次p50=17.974秒，热15次p50=5.783秒，存在长尾和两次清理超时日志，不宣传稳定低时延。尚不含端上/广域网和完整模型研究总耗时。
+
+本机独立A/B仅5对澄清样本：minimal中位5.651秒、none中位5.247秒，收益不足且小样本；没有为此改变生产模型或推理配置。局部草案30次正式HTTP验收继续执行，最多并发2，19:31后停止新增任务以避开出版窗口。
