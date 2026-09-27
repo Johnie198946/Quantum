@@ -2,7 +2,7 @@
 
 - task_id: publication-standard-workflow-20260926-body-acceptance
 - status: VERIFIED
-- verified_scope: 仅controller启动修复；新版插图全链未完成
+- verified_scope: controller启动修复；2026-09-27 20:00新稿自动配图、独立审核、到期唯一发行、全文/媒体API及生产Build70三图段落位置真机验收通过（最后补证见文末）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
 - head_before: 2f1fb74d06d9b53828258f6360a0dbb54b8cffbf
@@ -136,3 +136,20 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - 恢复台账只读：author attempts=1、assets=2、review=1、finalize=1，所有rearm_history=[]；assets仍关联自然成功执行a01a6b179ebc4189b8f393a46ee4ef26。finalize claim历史state=failed，不能将台账描述为全绿；实际唯一staged/published结果和冻结审核回执已验证。本轮未重置台账。
 - UI待验收：阅读优化确认不占手机，cleanup确认设备由图片任务使用，安装543d3281候选开发包Build70、隔离本机身份/服务，并有Mac锁屏阻塞；未将此环境当成生产阅读验收。已经授权协调方请求待图片任务结束并恢复生产会话后交接，未抢设备或重复索要解锁。
 - status: VERIFIED限自动配图→独立审核→到期唯一发行→正文及计划媒体API闭环；完整用户目标尚有新稿真实客户端段落位置、图注与完整显示待验收。历史9本图片缺口未处理；本轮无部署，沿用d228回滚点。
+
+## 21:10生产Build70三张段落插图真机验收完成
+
+- status: VERIFIED。本期publication-6d65e4fff6f4ae7734d1585c3a05a80a的新计划自动生成→独立审核→20:00:32唯一发行→10章全文/5媒体API→生产客户端三图位置闭环通过。单期成功不保证所有未来模型执行永不失败，失败预算与恢复机制仍保留。
+- 设备由cleanup明确交接，恢复正常生产启动的1.0.3 Build70（a8cc archive），无隔离测试env/args；本任务实际查看生产个人资料/历史、书架及新刊。用户辅助打开和两次滚动，原因是Sky中文输入/滚动未可靠生效；这属于验收协助，不是人工生成、审核或发行。
+- 第3章第一图：完整路线图紧随“先把地图缩小到这场行动需要的范围……”完整段落；图注“夔州、夷陵与江陵的相对行进示意；用于理解方向，不按比例复原疆界与现代水系。”完整，后接《资治通鉴》部署说明。
+- 第6章第二图：完整漂船图紧随“让缴获的船顺江漂下……”段落及[1]；图注“缴获船只顺江而下，使尚未抵达的援军需要停下查证；艺术示意不代表唐军弃掉全部船队。”完整，后接“注意两处经常被故事省掉的限定”。
+- 第7章第三图：完整受降图紧随“到这里，战争的逻辑换了一个问题……”段落；图注“江陵受降后的约束处置：制止掠夺并反对籍没，艺术示意不表示萧铣获赦或人人安全。”完整，后接“这不是给战争涂上一层温暖滤镜”。三图均完整可见上下边缘，正常衔接前后正文。第10章来源与延伸阅读末尾也实际显示完整。
+- 图片为正文分散插入，无需回到文末旧图库。验收截图仅本地保留，不上传GitHub。镜像窗口已释放给cleanup协调；未暂停cron、未放行其他部署。
+- server_before/server_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7（本轮无部署）；health_check与自动发行/API证据沿用20:10检查，functional_check新增上述生产真机证明。rollback_point沿用/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865。
+- remaining_risks: 历史8本无媒体、1本仅封面仍未改写；历史版权绑定阻塞、finalize历史failed台账和临时配额恢复仍为已记录独立事项，不影响本期已验证结果。其他任务候选Build72/b9未纳入本轮手机验证。
+
+本地截图SHA256：
+- build70-new-illustration-01.png: e5bc784ec733beb92bd1f08b6e66e5db0b00caf5a73a4707f8f3a44d630d8f2e
+- build70-new-illustration-02.png: 78761b1b32301cdcfe289181a70a231937ae1eece964994d3d25fae1587d29f3
+- build70-new-illustration-03.png: 65e25618bb48850f5fd4c1ecca56ff08e1234a743ea25eb7db1ce2c89e286d14
+- build70-new-sources.png: 66bcc1a9fff4bdc46b91589b48b764d85f57a37421a12cd044b168cc83f6599a
