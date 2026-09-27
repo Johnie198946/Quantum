@@ -34,6 +34,7 @@ from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
 )
+from backend.services.workflow_session_scope import register_client_session
 from backend.services.reasoning_extractor import ReasoningStep
 from backend.services.knowledge_policy import KnowledgePolicy, mint_capability, resolve_policy
 from backend.services.client_context_capability import (
@@ -1068,6 +1069,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
     effective_request_id = req.request_id or hashlib.sha256(
         f"{isolated_session_id}\0{req.question}".encode()
     ).hexdigest()[:32]
+    await register_client_session(payload, req.session_id, effective_request_id)
     client_context = _validated_client_session_context(
         req.client_session_context, req.session_id
     )
@@ -1713,6 +1715,7 @@ async def stream_chat(
         str(payload.get("tenant_key") or "public"), policy.policy_version,
         str(payload.get("user_id") or payload.get("sub") or "anonymous"),
     )
+    await register_client_session(payload, req.session_id, effective_request_id)
     client_context = _validated_client_session_context(
         req.client_session_context, req.session_id
     )
