@@ -125,3 +125,14 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - functional_check: 独立只读生产SQLite核目标publication仅一个edition，staged，20:00 CST release，actual_release_at=null；正文/content_hash/plan.body_sha256一致076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3计划图和5媒体记录保持。10cron配置及启用状态恢复、runtime/wrapper=d228、active=[]，未提前发行。
 - rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-d228c06d；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865含PG、出版SQLite、媒体稿件tar、环境配置及旧版本引用；独立sha256sum -c三份备份全部OK。旧release f8保留。
 - status: VERIFIED仅本轮部署恢复及已完成验收范围。remaining_risks: 新刊到期发行及手机段落位置仍未验收，20:10续查保持；临时12m配额由cleanup后续协调恢复；历史9本图片缺口和历史版权绑定阻塞仍如前。
+
+## 20:10自动续查：新计划自然发行及全文媒体验收通过
+
+- server_after/runtime_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；本轮只读核验服务器.deployed-sha一致，10cron全部原enabled=true、workdir一致，未修改调度/恢复预算或手工派发。
+- 自然发行执行f0af6a0ca26a4143a7ea84188390bcd7，source=builtin，20:00:09.082823开始、20:00:41.530914完成；后续20:05/20:10任务也completed。唯一edition-bd22b975b1adbff7ddf1c3eadf515a6b实际发行时间2026-09-27T12:00:32.674400+00:00，计划12:00UTC，state=published，无重复edition。
+- functional_check: 新稿读者API全部10章节正文文本（仅忽略排版空白）、标题顺序完整，正文哈希仍076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f；3个illustration对象的after_paragraph/caption/alt/section_id/content_version与计划逐项一致，锚点在对应章节唯一；双封面+3插图全部HTTP200且5个SHA与生成manifest匹配。原始Markdown无内嵌图片是正常的结构化illustrations契约，不算丢图。
+- 验收方式为隔离ASGI进程读取真实生产数据，认证仅在该进程覆盖；不代表真实用户登录或手机渲染通过。匿名封面401。结果本地/tmp/publication-body-acceptance-20260927/new-plan-published-readback.json及new-plan-full-body.json。
+- 生成/审核证据再次校验：plan SHA74daf26a...a471f、image-manifest SHA8d62a7ee...6b12、review SHA51ac8dd8...cef、proof SHAcfe45cef...8f3均与先前核验一致；保留5次真实image_gen调用/原图匹配、尺寸及独立审核hermes:cron_0dd3884f173c_20260927_165323 approved证据。
+- 恢复台账只读：author attempts=1、assets=2、review=1、finalize=1，所有rearm_history=[]；assets仍关联自然成功执行a01a6b179ebc4189b8f393a46ee4ef26。finalize claim历史state=failed，不能将台账描述为全绿；实际唯一staged/published结果和冻结审核回执已验证。本轮未重置台账。
+- UI待验收：阅读优化确认不占手机，cleanup确认设备由图片任务使用，安装543d3281候选开发包Build70、隔离本机身份/服务，并有Mac锁屏阻塞；未将此环境当成生产阅读验收。已经授权协调方请求待图片任务结束并恢复生产会话后交接，未抢设备或重复索要解锁。
+- status: VERIFIED限自动配图→独立审核→到期唯一发行→正文及计划媒体API闭环；完整用户目标尚有新稿真实客户端段落位置、图注与完整显示待验收。历史9本图片缺口未处理；本轮无部署，沿用d228回滚点。
