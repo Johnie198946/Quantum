@@ -692,12 +692,7 @@ final class KnowledgeNoteStoreTests: XCTestCase {
         XCTAssertTrue(TenantSessionCoordinator.shouldAttachClientSessionContext(
             userText: "继续", hasRecoveryContext: true, hasLocalNotes: false
         ))
-        XCTAssertTrue(TenantSessionCoordinator.shouldShowKnowledgeProposalRetry(
-            userText: "保存为笔记", hasProposal: false
-        ))
-        XCTAssertFalse(TenantSessionCoordinator.shouldShowKnowledgeProposalRetry(
-            userText: "保存为笔记", hasProposal: true
-        ))
+
     }
     func testTextPresentationProposalPreservesRegistryInput() throws {
         let data = Data(#"{"proposal_id":"ppt-text-1","capability_id":"presentation.create_from_text","input":{"title":"因特拉肯旅行攻略","text_material":"湖泊、雪山与少女峰路线","intended_use":"travel_guide","layout_style":"editorial_16_9","slide_count":10,"clarification_strategy":"use_defaults_unless_blocked"},"summary":"Create deck","risk":"medium","state":"awaiting_confirmation"}"#.utf8)

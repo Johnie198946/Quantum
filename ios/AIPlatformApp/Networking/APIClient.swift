@@ -1171,6 +1171,13 @@ public struct ChatStatusDTO: Decodable {
     public let eventsNextOffset: Int?
     public let events: [QCPStreamEvent]?
 
+    public var requestId: String? = nil
+
+    func belongsTo(requestId: String, runId: String?) -> Bool {
+        if let runId { return self.runId == runId }
+        return self.requestId == requestId
+    }
+
     public var loadedAnswer: String? {
         answer ?? answerProjection.map { $0.blocks.map(\.content).joined() }
     }
