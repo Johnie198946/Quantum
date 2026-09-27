@@ -1,0 +1,25 @@
+event tool_start browser_navigate
+  ┊ 🌐 navigate  www.google.com  10.8s
+event tool_complete browser_navigate
+event tool_start browser_click
+  ┊ 👆 click     e12  0.9s
+event tool_complete browser_click
+event tool_start browser_snapshot
+  ┊ 📸 snapshot  full  1.0s
+event tool_complete browser_snapshot
+event tool_start browser_click
+  ┊ 👆 click     e26  1.4s
+event tool_complete browser_click
+event tool_start browser_snapshot
+  ┊ 📸 snapshot  full  3.6s
+event tool_complete browser_snapshot
+event tool_start browser_navigate
+  ┊ 🌐 navigate  www.google.com  5.8s
+event tool_complete browser_navigate
+⚠️ Iteration budget exhausted (6/6) — asking model to summarise
+⚠️  Reached maximum iterations (6). Requesting summary...
+Traceback (most recent call last):
+  File "<string>", line 29, in <module>
+  File "/opt/releases/ai-lab-platform-f8c7d064c959.229Byr/scripts/hermes_bridge_runtime/workflow_artifacts.py", line 485, in _run_workflow_node_in_process
+    raise RuntimeError("Hermes 节点执行失败，请检查模型服务与运行环境后重试")
+RuntimeError: Hermes 节点执行失败，请检查模型服务与运行环境后重试

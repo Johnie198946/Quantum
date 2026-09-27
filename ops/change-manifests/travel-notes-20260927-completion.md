@@ -257,3 +257,13 @@
 - 指定日期查询：正式环境9月28日09:00条件，实际页面显示中央线09:03–09:17、14分钟、¥260，dated_route_verified=True。是服务账号的独立验收进程，尚不能代替正式Bridge完整研究流程。
 - Bridge生产研究 wfr_cloud_maps_6fa3ec745271 21.53秒失败，未执行浏览器。直接空知识范围网关请求200、27.0秒，超过已有20秒超时。最小修复在现有Workflow入口：空requested_scope不发起知识网关搜索；非空范围与联网权限保持。63项测试通过（含空/非空×联网/离线四组合），未部署此修复，等待共享窗口。
 - 今晚publication-6d65e4fff6f4ae7734d1585c3a05a80a只读验证：唯一staged，release_at=2026-09-27T12:00:00+00:00，actual_release_at=null，正文/plan SHA=076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3图计划保持；没有改变cron/额度账本。
+
+### 正式 Worker 图片验证
+
+自动模式官网截图任务 c644ba991d6241d28382d30a57a6afdb 完成：15.13秒，provider=web-reference，model=page-screenshot，JPEG223681字节，SHA256=c58a17665842b14a97e81662eef12ebb83c0456211919696585c78407fe34d89；服务端API字节读回一致，另一用户404。production-reference.jpg已目视检查：日文清晰、主照片/地图/说明完整可见，部分底部远端资源未加载，作为带来源网页截图而非精修旅行照片。
+
+前一手动模式任务 ee72563062a545b1bb85feb9c190a0dc 实际为生成图（openai-codex/gpt-image-2-medium），48.12秒，350327字节；不当作官网截图证据。两类返回provider/model区分真实，均完成跨用户404验证。
+
+### 浏览器交互预算修复（待协调发布）
+
+真实模型通过已有旅行research节点操作服务器Google Maps，在6轮工具上限触发强制摘要后失败。仅该scenario的KNOWLEDGE_RETRIEVAL节点上限提高到12，其他节点沿用原配置；提示直接进入含起终点地址的路线页，减少重复地点搜索。66项相关回归和Ruff通过，覆盖旅行研究/其他研究/旅行推理构造器实际获得的预算，正在独立服务账号进程实测12轮。未切版、未重启、未修改其他任务临时配额。

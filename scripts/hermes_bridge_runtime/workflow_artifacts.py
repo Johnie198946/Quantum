@@ -425,7 +425,9 @@ def _run_workflow_node_in_process(
             provider=runtime.get("provider"),
             api_mode=runtime.get("api_mode"),
             model=cfg_model,
-            max_iterations=_contracts.WORKFLOW_NODE_MAX_ITERATIONS,
+            max_iterations=(12 if node.get("node_type") == "KNOWLEDGE_RETRIEVAL"
+                            and (node.get("parameters") or {}).get("scenario_id") == "travel-planning"
+                            else _contracts.WORKFLOW_NODE_MAX_ITERATIONS),
             max_tokens=max_tokens,
             enabled_toolsets=_workflow_toolsets(node, agent_config),
             quiet_mode=True,

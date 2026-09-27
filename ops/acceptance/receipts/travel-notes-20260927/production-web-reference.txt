@@ -1,0 +1,4 @@
+image_started c644ba991d6241d28382d30a57a6afdb
+image_result {"run_id": "c644ba991d6241d28382d30a57a6afdb", "status": "completed", "message": "正在生成插图 1/1", "assets": [{"index": 0, "anchor": "overview", "alt": "来源页面截图 · 网络参考：云端温泉官网截图验收 · https://www.hitou.or.jp/", "sha256": "c58a17665842b14a97e81662eef12ebb83c0456211919696585c78407fe34d89", "provider": "web-reference", "model": "page-screenshot", "run_id": "c644ba991d6241d28382d30a57a6afdb"}], "failed_indices": [], "error_code": ""} elapsed 15.13
+image_bytes 223681 sha256 c58a17665842b14a97e81662eef12ebb83c0456211919696585c78407fe34d89
+other_user_denied 404

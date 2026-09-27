@@ -489,3 +489,36 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     assert run["status"] == "awaiting_review", run.get("error")
     assert searches == ([scope] if scope else [])
     assert bool(models) == network
+
+
+@pytest.mark.parametrize("scenario,kind,expected", [
+    ("travel-planning", "KNOWLEDGE_RETRIEVAL", 12),
+    ("other", "KNOWLEDGE_RETRIEVAL", 6),
+    ("travel-planning", "LLM_INFERENCE", 6),
+])
+def test_browser_iteration_budget_is_only_expanded_for_travel_research(monkeypatch, tmp_path, scenario, kind, expected):
+    import sys
+    from scripts import hermes_bridge as bridge
+    from scripts.hermes_bridge_runtime import workflow_artifacts as module
+    class Constructed(Exception):
+        pass
+    def create(**kwargs):
+        assert kwargs["max_iterations"] == expected
+        raise Constructed()
+    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=create))
+    monkeypatch.setitem(sys.modules, "agent.runtime_cwd", SimpleNamespace(set_session_cwd=lambda *_: None))
+    monkeypatch.setattr(bridge.contracts, "WORKFLOW_NODE_MAX_ITERATIONS", 6)
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_config", lambda: {"model": "test"})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_runtime", lambda *_: {})
+    monkeypatch.setattr(bridge.agent_config, "_get_cached_fallback", lambda *_: None)
+    monkeypatch.setattr(bridge.agent_config, "_cache_request_overrides", lambda *_: {})
+    monkeypatch.setattr(bridge.agent_config, "_create_sandbox_session_db", lambda *_: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(bridge.knowledge, "_ensure_tenant_skill_tool_registered", lambda: None)
+    monkeypatch.setattr(module, "persist_agent_snapshot", lambda *_: None)
+    monkeypatch.setattr(bridge.memory, "_sandbox_hermes_home", lambda *_: tmp_path)
+    monkeypatch.setattr(module, "_load_workflow_design_skills", lambda *_: ("", []))
+    with pytest.raises(Constructed):
+        module._run_workflow_node_in_process("query", {"node_type": kind,
+            "parameters": {"scenario_id": scenario, "max_tokens": 1000}},
+            sandbox=SimpleNamespace(root=tmp_path, hermes_home=tmp_path),
+            agent_config=bridge.contracts.TrustedAgentConfig(id="main_agent"))

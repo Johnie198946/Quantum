@@ -221,6 +221,7 @@ def build_travel_plan(workflow, *, plan_id: str, knowledge_scope: list[str]) -> 
         " Google Maps 查询在云服务器的 Hermes 浏览器执行，不依赖用户电脑、Chrome 扩展或本机登录。"
         "查地点用 https://www.google.com/maps/search/?api=1&query= 加 URL 编码地点；"
         "查交通用 https://www.google.com/maps/dir/?api=1&origin=起点&destination=终点&travelmode=transit。"
+        "公共交通优先直接进入路线页，该页已有起终点地址，避免再分别搜索两个站点。"
         "用 browser_navigate 后读取 browser_snapshot，必要时操作日期时间控件核对用户出行时间。"
         "必须实际读到地点名称/地址或线路/换乘/时长才算查询成功；页面打开、空白壳和地图链接不算证据。"
         "默认出发时刻的路线不能当成未来指定日期班次。验证码/无路线/工具不可用明确保留缺口，不能伪造。"
