@@ -33,9 +33,11 @@
 
 ## 固定图片工具入口与证据
 
-Mac 当前已验证入口为 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`。使用该绝对路径的 `exec --json`，以 stdin 传入完整的本期生成请求，`-C` 指定本期目录，`-o` 保存最终回执；将 JSONL 事件和 stderr 分别保存在本期目录。沿用用户模型配置，不自动升级 CLI、安装全局包或修改全局配置。入口不存在或工具明确不支持生成时失败退出，让运行维护处理。
+Mac 当前已验证入口为 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`。使用该绝对路径的 `exec --json --sandbox workspace-write --skip-git-repo-check`，以 stdin 传入完整的本期生成请求，`-C` 指定本期目录，`-o` 保存最终回执；将 JSONL 事件和 stderr 分别保存在本期目录。沿用用户模型配置，不自动升级 CLI、安装全局包或修改全局配置。入口不存在或工具明确不支持生成时失败退出，让运行维护处理。
 
-只启动一次生成进程，持续等待同一个进程并回读事件。活动 writer 未退出时禁止重复 `resume` 同一 thread；尚无最终文件不等于进程已失败。仅当进程明确结束且输出不完整时报告缺口，不以复制旧刊图片或伪造日志兜底。
+本期产物目录不是 Git 仓库，必须显式允许该目录类型；生成进程必须使用 workspace-write 才能保存原图、最终图和清单。不得关闭审批或沙箱、扩大额外可写目录或修改全局配置；正文和作者材料仍由后续哈希校验保护。
+
+只启动一次生成进程，持续等待同一个进程并回读事件。使用启动工具返回的原进程句柄查询完成状态、退出码和最终回执；不得用 `kill -0` 或仅 PID 存在判断是否仍运行（僵尸进程也会命中），不得另起无限 shell 轮询。工具等待必须有超时；退出码与业务回执共同决定成功。活动 writer 未退出时禁止重复 `resume` 同一 thread；尚无最终文件不等于进程已失败。仅当进程明确结束且输出不完整时报告缺口，不以复制旧刊图片或伪造日志兜底。
 
 保存原始生成图与每图调用记录。生成 `image-manifest.json`，记录每个角色的 prompt、实际模型（工具没有返回则标未知，不猜测）、生成 thread/调用记录、原图路径和 SHA-256、最终文件名、尺寸与 SHA-256。该文件由 builder 自动登记为 `publication_image_generation` 来源证据，供独立审核核验；不得改作者 source/execution documents，也不得把图片生成成功写成教程执行成功。
 

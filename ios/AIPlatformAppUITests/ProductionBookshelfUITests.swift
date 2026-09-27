@@ -1069,25 +1069,19 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
             XCTFail("缺少已安装 App 的现有登录会话；本验收不会自动登录或绕过同意流程。")
             return
         }
-        // The production dock intentionally collapses after five seconds.
-        // Reveal it using the existing left-edge gesture, without altering session state.
-        if !knowledgeTab.exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
-        }
         XCTAssertTrue(knowledgeTab.waitForExistence(timeout: 8), "未找到已认证主导航；请解锁真机并保留现有登录会话。")
         knowledgeTab.tap()
-        XCTAssertTrue(app.navigationBars["知识"].waitForExistence(timeout: 10))
-
-        let discover = app.buttons["发现更多书籍"]
-        if discover.waitForExistence(timeout: 8) {
-            discover.tap()
-        } else {
-            let emptyShelf = app.buttons.containing(.staticText, identifier: "空书架也该被看见").firstMatch
-            XCTAssertTrue(emptyShelf.waitForExistence(timeout: 8), "现有知识页未提供书架入口。")
-            emptyShelf.tap()
-        }
-        XCTAssertTrue(app.navigationBars["知识书架"].waitForExistence(timeout: 15))
+        if !knowledgeTab.isSelected { knowledgeTab.tap() }
+        let section = app.segmentedControls["knowledge-section"]
+        XCTAssertTrue(section.waitForExistence(timeout: 10), "现有阅读页未出现。")
+        let shelfTab = section.buttons["书架"]
+        shelfTab.tap()
+        if !shelfTab.isSelected { shelfTab.tap() }
+        XCTAssertTrue(shelfTab.isSelected, "真实阅读页未切换到书架。")
+        let manage = app.buttons["打开知识书架"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 8), "现有阅读页未提供书架入口。")
+        manage.tap()
+        XCTAssertTrue(app.scrollViews["publication-bookshelf-container"].waitForExistence(timeout: 20))
 
         let book = try findBook(id: bookID)
         book.tap()
@@ -1156,6 +1150,15 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
     }
 
     private func findBook(id bookID: String) throws -> XCUIElement {
+        if let query = ProcessInfo.processInfo.environment["QUANTUMN_UI_BOOK_QUERY"], !query.isEmpty {
+            let search = app.textFields["搜索书名、作者或关键词"]
+            XCTAssertTrue(search.waitForExistence(timeout: 10))
+            search.tap()
+            search.typeText(query + "\n")
+            let result = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", query)).firstMatch
+            XCTAssertTrue(result.waitForExistence(timeout: 15), "现有书架搜索未找到目标刊物。")
+            return result
+        }
         let target = app.buttons.matching(
             NSPredicate(format: "identifier ENDSWITH %@", ".\(bookID)")
         ).firstMatch

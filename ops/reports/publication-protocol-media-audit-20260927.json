@@ -1027,5 +1027,168 @@
       }
     },
     "publication_db_bytes": 2584576
+  },
+  "media_fix_delivery": {
+    "source_sha": "b07e2cc4fd6c0bcd299990ec58d474761134e577",
+    "server": {
+      "server_after": "b07e2cc4fd6c0bcd299990ec58d474761134e577",
+      "release": "/opt/releases/ai-lab-platform-b07e2cc4fd6c.NVjqCO",
+      "containers": {
+        "api": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy",
+          "revision": "b07e2cc4fd6c0bcd299990ec58d474761134e577"
+        },
+        "workflow-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy",
+          "revision": "b07e2cc4fd6c0bcd299990ec58d474761134e577"
+        },
+        "planning-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy",
+          "revision": "b07e2cc4fd6c0bcd299990ec58d474761134e577"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy",
+          "revision": "b07e2cc4fd6c0bcd299990ec58d474761134e577"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 37,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "rearm": {
+      "action": "rearmed",
+      "idempotency_key": "publication-recovery-v1:2026-09-27:ai-toolkit:8355a588349131db512268399dd0e919e7c6cbe6e9c3e968ae58000dbadca4e9:author",
+      "ok": true,
+      "previous_attempts": 6
+    },
+    "timed_job": {
+      "id": "ea82a8f53a00",
+      "name": "publication-media automatic loop acceptance",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "publication-media-timed-start.py",
+      "no_agent": true,
+      "monitor_script": null,
+      "monitor_url": null,
+      "monitor_state": null,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1,
+        "display": "every 1m"
+      },
+      "schedule_display": "every 1m",
+      "repeat": {
+        "times": 1,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-09-27T10:57:43.150605+08:00",
+      "next_run_at": "2026-09-27T10:58:43.151644+08:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "last_delivery_unverified": null,
+      "failure_streak": 0,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/b07e2cc4fd6c0bcd299990ec58d474761134e577",
+      "failure_deliver": "local"
+    },
+    "device_executable_sha256": "f56c07e6063affc25559d847960ae7057c026779af39595b8037879e9b3707e1",
+    "device_ui": "Passed for publication-234c61fdd8aacdf10057f6d6c6434fc8: real-device XCTest plus independent live-mirror visual inspection; old lock-screen captures excluded. Not TestFlight delivery or historical missing-image repair.",
+    "physical_ui_check": {
+      "status": "passed_for_configured_book",
+      "device": "iPhone 17 Pro 囧尼部落",
+      "run": "/tmp/publication-media-device-v9.xcresult",
+      "passed_assertions": [
+        "actual target book ID and existing subscription",
+        "nonempty reader body",
+        "two covers plus three illustrations loaded",
+        "11 section TOC, first/middle/last navigation"
+      ],
+      "lock_state_after_mirroring_quit": {
+        "passcodeRequired": true,
+        "unlockedSinceBoot": true
+      },
+      "test_result": "TEST SUCCEEDED (151.265 seconds)",
+      "visual_result": "Live iPhone Mirroring window inspected: real shelf cover, reader cover, and all three distinct illustrations fully visible; native XCTest screenshots excluded because they capture mirror lock screen",
+      "visual_evidence": {
+        "ops/reports/publication-media-ios-20260927/shelf.png": {
+          "sha256": "bfb86dfaeda3bbc049f50bacb5c19b3492c5325bdd2b90a390180fabf6c46441",
+          "bytes": 117897
+        },
+        "ops/reports/publication-media-ios-20260927/shelf-cover.png": {
+          "sha256": "1493fa8391a1d712d82d208183d1c4f6dcc2b9146a8f9a5abc0c5603da341a36",
+          "bytes": 112149
+        },
+        "ops/reports/publication-media-ios-20260927/reader-cover.png": {
+          "sha256": "b5551e832cd074955a8535a90e163e7fd5ec3e8ea32d03c4b93f0c6fcec27bd8",
+          "bytes": 128080
+        },
+        "ops/reports/publication-media-ios-20260927/illustrations-all-three.png": {
+          "sha256": "1dfa64850859981a0af20bc0a3b1b62880fc3703269348115a1eb95532e2f5b1",
+          "bytes": 185423
+        }
+      },
+      "book_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+      "scope": "Existing authenticated user, preserved subscription, b07 debug client; not a claim that historical 9 books have images or TestFlight includes this fix"
+    },
+    "asset_launch_findings": {
+      "native_execution_id": "fe9bb5f1d4a446928d213962d898aa53",
+      "first_exit": "non-Git output directory rejected without --skip-git-repo-check",
+      "second_exit": "agent added skip-git but inherited read-only sandbox, no images generated",
+      "wait_defect": "kill -0 sees zombie PID5854 as live; terminal wait timeout600 started11:13:10; awaiting automatic timeout",
+      "repair": "existing assets prompt fixes workspace-write/skip-git and original process-handle wait; no new wrapper or bypass"
+    }
   }
 }

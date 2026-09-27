@@ -2,10 +2,10 @@
 
 - task_id: publication-standard-workflow-20260926
 - goal: main 与 Story 无监督选题、写作、审核和发行；程序字段与可增删内容主题解耦。
-- status: TESTED（2026-09-27 配图与协议追加修复本地检查通过；真机UI与部署后无人值守验收待完成，前一版5cd60e4部署证据不代表本轮已部署）
+- status: DEPLOYED（b07e2cc 配图与协议修复已部署；真机UI及本轮无人值守完整发行仍在验收，尚不标 VERIFIED）
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
-- head/local_commit: 5cd60e418d7b462568469d49782bb90f9d78e381。
+- head/local_commit: b07e2cc4fd6c0bcd299990ec58d474761134e577；后续真机验收脚本与证据仍为本地未提交。
 - manifest: ops/change-manifests/publication-standard-workflow-20260926-completion.md。
 - evidence_note: 本文件与 publication-production-activation.json 的最终部署后事实更新保留本地未提交；程序/配置已提交、推送并部署同一 SHA，验收记录不冒充服务器版本。
 
@@ -103,3 +103,28 @@ remaining_risks：用户实际客户端/安装版本未确认；真实用户登�
 运行规范已备份并写入 default/story/supervision 的AGENTS.md；备份 `~/.hermes/backups/publication-standard-workflow-20260926/agent-rules-20260927-103900`，文件哈希见media审计JSON。10:42暂缓控制器及三个作者防止继续消耗已知错误预算；发行保留运行。用户另行授权与“帮我清理”任务协调同一真机/服务器，当前没有并发部署。
 
 本轮rollback_point已建立：`/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/5cd60e418d7b`，8镜像标签、release/attestation与2,584,576字节SQLite在线备份；server_before确认5cd60e4，8服务当时healthy。新源码尚未部署。
+
+
+## 2026-09-27 11:08 当前部署与验收进度（覆盖前文历史状态）
+
+- status: DEPLOYED。
+- commit/remote_sha: b07e2cc4fd6c0bcd299990ec58d474761134e577；已用 git ls-remote 核验 origin/main 与任务分支同 SHA。包含媒体修复0028eec与上游清理兼容34b94f6。
+- server_before: 5cd60e418d7b462568469d49782bb90f9d78e381。
+- server_after: b07e2cc4fd6c0bcd299990ec58d474761134e577，release=/opt/releases/ai-lab-platform-b07e2cc4fd6c.NVjqCO。
+- health_check: 8服务healthy；4后端镜像c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3，revision=b07e2cc；既有前端b9688d499424保留；API ready、Bridge ok、部署锁释放。
+- rollback_point: /opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/5cd60e418d7b，部署前8镜像标签、版本/attestation、2,584,576字节publication SQLite在线备份。
+- functional_check: 部署后隔离ASGI回读20本正文200、已有57媒体200且哈希匹配、匿名取图401；不等于真实登录UI。模拟器6测试及PCM/后端相关检查通过；合并上游后115项回归通过。
+- runtime: default/story/supervision规范入口已备份同步；10个正常job固定b07源码且启用，旧重复job b43保持暂停。toolkit精确旧耗尽claim经CLI校验冷却、owner证死、全局无活动任务后审计rearm，保留历史；未清空账本。
+- 新临时单次定时job ea82a8f53a00：计划10:58:43.151644+08，实际10:58:53.264412，execution22526fd5a46d4c69b6a2c97ca4901ffc于10:59:23完成且无error；仅恢复既有控制器并调用既有watchdog。回执归档后临时job/script已删除。
+- toolkit12点原生author execution1c34236dfafc4cc38acd647f350cb439，11:06:24已输出内容artifact；Story13点原生author execution66c843a7ee514c4d83510e5a3fe14302仍进行。当前不能声称本轮新稿自动配图、独立审核、按时发行已全部通过。
+- 真机已解锁，保留登录并安装本轮debug构建。旧UI验收脚本依赖已删除导航标题，正对齐现有知识分段/书架容器/搜索入口；尚无真实五图UI通过结论。TestFlight旧Build66不包含本轮媒体修复，不能混称客户端已交付。
+- remaining_risks: 本轮新稿完整自动链与真机媒体待验；9本历史缺图冻结刊物未补齐（1本双封面、8本无图），不能宣称20本均五图齐全。回滚代码用上述release/images，默认不回退数据库以免丢失新增稿件。
+
+
+11:11真机证据校正：v8通过真实书籍身份、正文非空和双封面AX“图片已加载”断言，但导出PNG经肉眼复核均为iPhone镜像占用时的锁屏，不构成视觉通过；目录菜单测试失败。已退出Mac iPhone Mirroring，devicectl确认passcodeRequired=true，请用户再解锁。未把AX或合成触摸当作视觉通过，三插图尚未验。
+
+
+11:20追加：v9真实XCTest通过（151.265秒），验证原登录/订阅、正文、11节目录首中末导航及五图AX加载；所有系统截图仍为镜像占用锁屏，独立镜像窗口视觉复核继续。不能将测试通过等同视觉通过。素材首轮已自行处理非git目录和只读权限错误，保留日志；11:20:55同一次assetclaim重启可写沙箱，未人工触发生图。旧等待曾以kill -0误判僵尸存活（工具timeout600有界），规范修正要求原进程句柄/退出码/回执，禁止PID轮询。提示词增量经独立review认可和本机CLI帮助核对，尚未提交同步运行态。
+
+
+11:25 真机C层验收完成（仅指定完整媒体刊物）：v9 XCTest TEST SUCCEEDED，正文/11节目录前中末/五图加载断言通过；随后通过 computer-use 的 iPhone Mirroring 窗口逐一查看真实竖封面、横封面、三插图，保存 ops/reports/publication-media-ios-20260927/{shelf,shelf-cover,reader-cover,illustrations-all-three}.png，SHA见审计JSON。没有改变订阅、发送Chat或生成测试图片。系统锁屏PNG不作为视觉证据。当前安装b07 debug版，旧TestFlight Build66不包含本修复；9本历史缺图仍保留。设备已向已获用户授权的清理任务释放，服务器完整自动闭环仍待本轮完成。
