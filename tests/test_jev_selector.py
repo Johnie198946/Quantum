@@ -491,7 +491,7 @@ def test_resident_provider_warm_failure_keeps_local_abstain_and_can_retry(monkey
     assert resident.status()["ready"] is True
     assert resident.status()["provider_ready"] is False
 
-    monkeypatch.setattr(resident, "_shortlist", lambda _payload: ([], [], -1.0, -1.0))
+    monkeypatch.setattr(resident, "_shortlist", lambda _payload: ([], [], -1.0, -1.0, [], -1.0))
     assert resident.select({"request": "hello"}, 0.1)["reason_code"] == "NO_MATCH"
 
     monkeypatch.setattr(resident, "_NEXT_RETRY_AT", 0.0)
@@ -508,7 +508,7 @@ def test_resident_provider_call_has_a_hard_request_deadline(monkeypatch):
     monkeypatch.setattr(
         resident,
         "_shortlist",
-        lambda _payload: ([{"id": "skill:research"}], [], 0.9, -1.0),
+        lambda _payload: ([{'id': 'skill:research'}], [], 0.9, -1.0, [], -1.0),
     )
 
     def blocked(_payload):
@@ -542,7 +542,7 @@ def test_resident_rejects_immediately_when_provider_workers_are_saturated(monkey
     monkeypatch.setattr(
         resident,
         "_shortlist",
-        lambda _payload: ([{"id": "skill:research"}], [], 0.9, -1.0),
+        lambda _payload: ([{'id': 'skill:research'}], [], 0.9, -1.0, [], -1.0),
     )
     monkeypatch.setattr(
         resident,
@@ -568,12 +568,7 @@ def test_resident_omits_each_low_affinity_kind_before_remote_selection(monkeypat
     monkeypatch.setattr(
         resident,
         "_shortlist",
-        lambda _payload: (
-            [{"id": "skill:research"}],
-            [{"id": "agency:reviewer"}],
-            0.9,
-            0.2,
-        ),
+        lambda _payload: ([{'id': 'skill:research'}], [{'id': 'agency:reviewer'}], 0.9, 0.2, [], -1.0),
     )
 
     def provider(payload):
@@ -601,12 +596,7 @@ def test_resident_rejects_an_id_omitted_by_per_kind_abstention(monkeypatch):
     monkeypatch.setattr(
         resident,
         "_shortlist",
-        lambda _payload: (
-            [{"id": "skill:research"}],
-            [{"id": "agency:reviewer"}],
-            0.9,
-            0.2,
-        ),
+        lambda _payload: ([{'id': 'skill:research'}], [{'id': 'agency:reviewer'}], 0.9, 0.2, [], -1.0),
     )
     monkeypatch.setattr(
         resident,
@@ -635,7 +625,7 @@ def test_resident_rejects_non_string_provider_ids(monkeypatch):
     monkeypatch.setattr(
         resident,
         "_shortlist",
-        lambda _payload: ([{"id": "skill:research"}], [], 0.9, 0.0),
+        lambda _payload: ([{'id': 'skill:research'}], [], 0.9, 0.0, [], -1.0),
     )
     monkeypatch.setattr(
         resident,
@@ -655,3 +645,29 @@ def test_resident_rejects_non_string_provider_ids(monkeypatch):
         assert str(exc) == "resident_jev_candidate_escape"
     else:
         raise AssertionError("a non-string candidate id must fail closed")
+
+
+def test_pcm_products_share_single_validated_decision_and_authorized_catalog():
+    from backend.services.capability_catalog import load_catalog, routing_capability_cards
+    cards = routing_capability_cards()
+    assert {c['id'] for c in cards} == {
+        c['id'] for c in load_catalog()['capabilities']
+        if c['implementation_status'] == 'implemented'
+    }
+    assert routing_capability_cards(set()) == []
+    for card in cards:
+        calls = []
+        def provider(payload, _timeout):
+            calls.append(payload)
+            return {'skill_id': None, 'agent_id': None, 'skill_confidence': 0,
+                    'agent_confidence': 0, 'capability_id': card['id'],
+                    'capability_confidence': .95, 'reason_code': 'MATCHED'}
+        kwargs = dict(task_state={}, policy_version='pcm-products-test',
+                      skill_candidates=[], agent_candidates=[],
+                      capability_candidates=[card], provider=provider)
+        selected = module.select_route('execute ' + card['id'], **kwargs)
+        assert selected.validated and selected.capability_id == card['id']
+        assert len(calls) == 1
+        kwargs['capability_candidates'] = [dict(card, id='other.allowed')]
+        rejected = module.select_route('execute ' + card['id'], **kwargs)
+        assert not rejected.validated and rejected.capability_id is None

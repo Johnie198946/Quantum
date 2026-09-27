@@ -787,6 +787,8 @@ def _jev_routing_context(
     if authorized_agent_ids is not None:
         allowed = {str(item) for item in authorized_agent_ids}
         agents = [item for item in agents if str(item.get("id")) in allowed]
+    server_scope = _server_routing_scope()
+    capabilities = list(server_scope.get("capability_candidates") or [])
     decision = select_route(
         query,
         task_state=task_state,
@@ -795,7 +797,13 @@ def _jev_routing_context(
         agent_candidates=agents,
         tenant_scope=str(state.get("tenant_id") or ""),
         principal_scope=str(state.get("principal") or ""),
+        **({"capability_candidates": capabilities} if capabilities else {}),
     )
+    selected_capability = next((item for item in capabilities
+                               if item["id"] == getattr(decision, "capability_id", None)), None)
+    emit = server_scope.get("emit_decision")
+    if callable(emit):
+        emit(decision.as_dict())
     selected_skill = next(
         (
             item for item in skills
@@ -847,6 +855,7 @@ def _jev_routing_context(
         "decision_id": decision.decision_id,
         "catalog_version": decision.catalog_version,
         "policy_version": decision.policy_version,
+        "selected_capability": selected_capability["id"] if selected_capability else None,
         "skill_selected": bool(selected_skill),
         "requested_skill": (
             str(selected_skill.get("id") or "").removeprefix("skill:")
@@ -885,12 +894,18 @@ def _jev_routing_context(
             decision_id=decision.decision_id,
             catalog_version=decision.catalog_version,
             policy_version=decision.policy_version,
+            capability_id=selected_capability["id"] if selected_capability else None,
         )
     except (ImportError, RuntimeError, TypeError, ValueError):
         pass
-    if not selected_skill and not selected_agency:
+    if not selected_skill and not selected_agency and not selected_capability:
         return ""
     plan: list[dict[str, Any]] = []
+    if selected_capability:
+        # Same naming contract as the PCM native adapter, never a new dispatcher.
+        from backend.services.capability_catalog import capability_tool_name
+        plan.append({"phase": "capability", "capability_id": selected_capability["id"],
+                     "tool": capability_tool_name(selected_capability["id"])})
     if selected_skill:
         plan.append({"phase": "skill", "invoke": {
             "tool": "skill_view",
@@ -908,7 +923,13 @@ def _jev_routing_context(
         "native delegate_task with the exact tasks[] arguments in the plan. "
         "After dispatch, return only a truthful started-status; after the completion continuation, "
         "materially use the verified child result. Do not rerun selection in a child, invent "
-        "receipts, or expand permissions. A plan with no phases means direct Hermes execution.\n"
+        "receipts, or expand permissions. A capability phase must use its registered native tool "
+        "through QCP. Build inputs from the current request and native history, selecting the "
+        "appropriate output format from its schema. Read prerequisites as needed; if essential "
+        "inputs are missing, call clarify, never invent IDs. Continue existing resources when the "
+        "user requests revisions, do not create duplicates. A confirmation proposal is awaiting "
+        "user approval, not execution success. Do not replace the selected action with a text-only "
+        "answer. Report failures truthfully. A plan with no phases means direct Hermes execution.\n"
         "Decision: " + json.dumps(decision.as_dict(), ensure_ascii=False, separators=(",", ":"))
         + "\nPlan: "
         + json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
@@ -1461,6 +1482,12 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             "session_id": session_id,
             "turn_id": str(kwargs.get("turn_id") or kwargs.get("task_id") or ""),
             "platform": platform,
+            "recent_messages": [
+                {"role": item["role"], "content": item["content"][:1000]}
+                for item in (kwargs.get("conversation_history") or [])
+                if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
+                and isinstance(item.get("content"), str) and item["content"]
+            ][-4:],
         },
         policy_version=str(
             kwargs.get("policy_version")
@@ -2214,7 +2241,8 @@ def install(ctx: Any, deposition: Any = None) -> None:
     # tool_search unchanged so no second ranking path can select capabilities.
     _compact_skill_manifest()
     if os.environ.get("_HERMES_GATEWAY") == "1":
-        start_resident_warmup(_skill_capabilities(), _agency_capabilities())
+        from backend.services.capability_catalog import routing_capability_cards
+        start_resident_warmup(_skill_capabilities(), _agency_capabilities(), routing_capability_cards())
 
     def pre_llm_with_runtime_skill(user_message: str = "", **kwargs: Any):
         return _pre_llm_with_runtime_skill(ctx, user_message, **kwargs)

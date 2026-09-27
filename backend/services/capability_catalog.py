@@ -217,6 +217,30 @@ def search_capabilities(query: str, *, limit: int = 5) -> list[dict[str, Any]]:
     } for _, _, capability in ranked[:max(1, min(limit, 10))]]
 
 
+def capability_tool_name(capability_id: str) -> str:
+    normalized = re.sub(r"[^a-z0-9_]+", "_", capability_id.casefold()).strip("_")
+    name = f"app_{normalized}"
+    if not normalized or len(name) > 64:
+        raise ValueError(f"invalid native capability tool name: {capability_id}")
+    return name
+
+
+def routing_capability_cards(capability_ids: set[str] | None = None) -> list[dict[str, Any]]:
+    """Project implemented PCM contracts; request callers must pass their exposed IDs.
+
+    None is used only for startup embedding warmup and grants no execution rights.
+    """
+    return [{
+        "id": item["id"], "kind": "capability", "version": item["version"],
+        "use_when": [*item.get("positive_examples", []), item["description"]],
+        "do_not_use_when": item.get("negative_examples", []),
+        "requires": {"permissions": [item["policy_ref"]], "tools": [], "platforms": []},
+        "risk": "read" if item["effect"] == "read" else "write", "status": "active",
+    } for item in load_catalog()["capabilities"]
+        if item["implementation_status"] == "implemented"
+        and (capability_ids is None or item["id"] in capability_ids)]
+
+
 def describe_capability(capability_id: str) -> dict[str, Any] | None:
     return next(
         (dict(item) for item in load_catalog()["capabilities"] if item["id"] == capability_id),

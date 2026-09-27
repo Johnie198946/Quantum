@@ -81,7 +81,7 @@ def test_pcm_routing_contract_is_parseable_and_declares_single_runtime():
         "tool_authorization": "qcp",
         "subagent_scope": "parent_subset",
     }
-    assert contract["selector"]["limits"] == {"skills": 1, "agents": 1}
+    assert contract["selector"]["limits"] == {"skills": 1, "agents": 1, "capabilities": 1}
     assert contract["selector"]["residency"] == "hermes_gateway_process"
     assert contract["selector"]["cold_start_on_request"] == "forbidden"
     assert contract["selector"]["config_key"] == "plugins.entries.ai-lab-capabilities.settings.jev"

@@ -1508,6 +1508,14 @@ def _app_capability_describe_tool(args: dict[str, Any], **_kwargs) -> str:
 
 
 def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
+    from backend.services.capability_projection import record_capability_result
+
+    result = _invoke_app_capability(args, **_kwargs)
+    record_capability_result(str((args or {}).get("capability_id") or ""), json.loads(result))
+    return result
+
+
+def _invoke_app_capability(args: dict[str, Any], **_kwargs) -> str:
     """Route model intent to existing semantic tools; never accepts authority."""
     from backend.services.capability_catalog import (
         CapabilityContractError, describe_capability, validate_instance,
@@ -1749,11 +1757,8 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
 
 def _app_capability_native_tool_name(capability_id: str) -> str:
     """Compile one stable provider-safe Hermes tool name from a QCP id."""
-    normalized = re.sub(r"[^a-z0-9_]+", "_", capability_id.casefold()).strip("_")
-    name = f"app_{normalized}"
-    if not normalized or len(name) > 64:
-        raise ValueError(f"invalid native capability tool name: {capability_id}")
-    return name
+    from backend.services.capability_catalog import capability_tool_name
+    return capability_tool_name(capability_id)
 
 
 
