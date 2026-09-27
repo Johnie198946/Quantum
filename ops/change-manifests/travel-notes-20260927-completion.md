@@ -1,18 +1,18 @@
 # Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: DEPLOYED（Build73后端c533健康/出版保护通过；图片直接执行生产500，整体功能验收未完成）
+- status: DEPLOYED（Build74后端修复及其生产流程验收通过；整体旅行验收仍有下列剩余项）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf（共同发布源码；本任务文档提交见git log）
-- remote_sha: origin refs/heads/main=c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；部署前独立git ls-remote核对
-- server_before: b9e4d128dd5839bae89cff39790fb8240297e23e
-- server_after: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；/opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM
-- health_check: 8healthy、4Python运行revision=c533、Hermes两服务active、3 health200；6进程12000000配额不变
-- functional_check: 出版before/after全等；图片/doc原件前置断言通过，但media.process直接invoke返回500，后续重放/取消重试与四格式步骤未执行，不计通过
-- rollback_point: /opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-c5331384d0f8，备份哈希和SQLite完整性通过
+- head/local_commit: 本任务收据前序282d9b57e13a826e61fd6b8e42d7f9716d603053；最终文档提交见git log；发布源码ae11b9bd8e30c89269ea8c59da7cf239fac86920
+- remote_sha: origin refs/heads/main=ae11b9bd8e30c89269ea8c59da7cf239fac86920；最终git ls-remote一致
+- server_before: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf
+- server_after: ae11b9bd8e30c89269ea8c59da7cf239fac86920；/opt/releases/ai-lab-platform-ae11b9bd8e30.K1hkwb
+- health_check: 最终8healthy、4Python revision=ae11、Hermes两服务active、3health200；外部配额任务重建后4Python50000000，Hermes两进程仍12000000，一致性未通过
+- functional_check: invoke/replay、取消重试、失败重试、新instruction/action、旧成功回执409、最终completed/下载hash/跨用户404全部通过；首轮被外部重建中断exit1，同工作流续验exit0；出版前后快照相等
+- rollback_point: /opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-ae11b9bd8e30；完整PG/SQLite/媒体/env/8镜像备份
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
-- remaining_risks: 图片API/后台并行建计划导致生产500，负责人修复中；取消重试尚未验证；客户端42MP照片超过24MP上限，准确提示修复由Build74整合；笔记语义、私人资料、部分性能仍未完成；出版10cron已独立恢复；Build73协调方报告已上传PROCESSING
+- remaining_risks: 私人收藏/社交资料、笔记全量语义、部分性能矩阵未完成；Hermes与API配额差异；Build74协调方确认App upload complete但本任务未独立确认TestFlight可安装；前端镜像未更新
 
 本节与文末记录为当前状态；中间各节保留当时发现、失败与授权历史，不代表当前仍未部署。
 
@@ -406,3 +406,19 @@
 旧c533：orphan_jobs=1、worker completed、API IntegrityError/uq_workflow_plan_version、plan_count=1/job_count=1，预期失败稳定复现。候选：orphan_jobs=0、完整图片路径passed、plan_count=1/job_count=0。覆盖invoke/replay、CANCELLED/FAILED重试、新attempt和instruction、旧成功回执409、Bridge不可用503、成品下载与跨用户404。两探针exit0；原生图片产物是既有fixture，并非本探针重新验证iPhone处理。日志与可复现探针保存在receipts/build74-postgres-*；候选patch亦存档。
 
 Build74候选当前仅TESTED，生产仍c533/DEPLOYED，等待协调方最终SHA、出版短窗口、部署和生产功能复验。已将对照证据同步授权的根发布任务。
+
+### Build74生产部署、并发中断与续验
+
+- 最终共同SHA ae11b9bd8e30c89269ea8c59da7cf239fac86920，git ls-remote最终一致。被测workflows.py与提交逐字相同，SHA256=87e666ae8e57e280aa5ba17521c2732eb413fbf2727ae571710c35b37386bf81。
+- 服务器codeload180秒下载超时（18MB），改本地准确git archive上传；归档SHA256=c6b9a572ba9713aa61fb1fd72a2dd88a567b967eabb5c05fa0e2f1e8122c6727，71428034bytes；服务器核验一致，3份依赖锁与c533一致。没有从脏工作区打包。
+- 出版窗口由授权协调方释放，10cron暂停且active=[]。唯一wrapper完整备份后执行，exit0；server_before=c533，server_after=ae11；配额和用量账本在本任务部署中未改。
+- 回滚备份PG SHA256=a5085f5abd53f2ef783f416375d36dd6ae4447b629ad425df5ec1e7bd6b51df6；SQLite=863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209，integrity ok；媒体=930fd49f7b4c15a062b674914e7524422a5e601fa4bab068a3cd30b665b46c11。回滚应优先旧代码/镜像，不能盲目覆盖新业务数据或后来授权的50m额度；c533本身有已知规划竞争，回滚前评估该风险。
+- 首次独立verify exit0：8healthy、4Python ae11、2Hermes active、3health200、6进程12m。出版before/after JSON完全相同（正文、发布时间、版数、插图/媒体字节hash）。出版负责方随后恢复原10cron和wrapper pin ae11，active=[]；本任务未操作其cron。
+- 测试夹具初次docker cp被只读rootfs拒绝，保留容器只读保护，改stdin载入夹具；未改生产配置。未上传真实用户图片。
+- 正式HTTP smoke完成上传/原件/私有笔记、invalid422、跨用户404、media.process直接执行和同幂等键重放、删除仍需确认、CSV/JSON/TXT/MD原件与正文及隐私、CANCELLED→retry新action/instruction/旧成功回执409。
+- 在FAILED已提交且retry返回queued之后，等待新action时localhost8000 Connection refused，首轮exit1。只读查得23:28:12外部PID820493执行4服务force-recreate。协调方确认另一用户授权的“所有账号50m月额度”任务正在重建，非本任务重部署/产品500；未干预该任务，未回滚其额度。故不能把首轮称为完整pass。
+- 健康恢复后对原wf_dda24c8a8c6031d7e4247d57e98309f3 / wfr_08d12e30414940bda49eab59beb4e8f4续验，独立只读查询确认持久CANCELLED和FAILED、node attempt3；FAILED新action/instruction与旧SUCCEEDED409通过，提交新SUCCEEDED、execution completed、工作流产物下载字节hash=80b88ed9b4ba5971591240d2d7f059b5f21c27f60724d3196609ef48e11d3a3c、跨用户404全部通过，续验exit0。没有另建工作流掩盖失败。原生结果为之前验收夹具，不把此探针算成新一次iPhone原生执行。
+- 配额任务后严格verify期望50m，4Python通过，但Hermes进程仍12m导致exit1；最终只读health/content检查exit0并显式quota_alignment=False。Bridge与ChatWorker实际均active/12000000；此配置差异已反馈授权根任务，没有越权联系其他任务或改其配置。
+- 协调方报告Build74 App upload complete，证据/tmp/build74-upload-complete.jpeg；不声称本任务独立验证Apple处理完毕/可安装。最终独立Postgres测试cluster已停止，临时数据库保留证据。
+
+证据：receipts目录build74-package/ deploy/verify/functional/functional-resume/verify-after-quota/final-health/publication-before/publication-after以及两份可复现server-functional脚本。夹具字节、JWT、私钥与环境秘密不入库。

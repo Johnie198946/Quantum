@@ -1,0 +1,13 @@
+Original log SHA256: d2eb6ec9eca995318c46aac669f7db589f78c676dc2fd3318acd39327fe83348
+release /opt/releases/ai-lab-platform-ae11b9bd8e30.K1hkwb sha ae11b9bd8e30c89269ea8c59da7cf239fac86920
+{"service": "api", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "workflow-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "planning-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "agent-evaluation-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "frontend", "health": "healthy", "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515", "quota": []}
+{"service": "taskboard", "health": "healthy", "revision": null, "quota": []}
+{"service": "postgres", "health": "healthy", "revision": null, "quota": []}
+{"service": "redis", "health": "healthy", "revision": null, "quota": []}
+Traceback (most recent call last):
+  File "<stdin>", line 19, in <module>
+AssertionError: ('hermes-bridge.service', 'quota_changed')

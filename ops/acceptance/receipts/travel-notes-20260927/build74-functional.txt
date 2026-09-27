@@ -1,0 +1,66 @@
+Original log SHA256: b277ff6a48838e2b7385b81cfadf1a14fa263b546b2dd6d94f4bb942897385aa
+{"release_sha": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "upload_download": "passed", "invalid_input_422": "passed", "cross_owner_404": "passed", "native_jpeg_download": "passed", "native_jpeg_sha256": "80b88ed9b4ba5971591240d2d7f059b5f21c27f60724d3196609ef48e11d3a3c", "dimensions": [656, 369], "document_original_and_private_note": "passed", "document_image_workflow": "passed", "pcm_direct_workflow_and_replay": "passed", "note_delete_confirmation_contract": "required", "workflow_id": "wf_dda24c8a8c6031d7e4247d57e98309f3", "test_user": "image-release-acceptance-ae11b9bd8e30", "model_calls": 0, "scope": "server HTTP upload/download and PCM workflow creation; native processing separately verified on iPhone"}
+{"reference_format": "csv", "original_and_text": "passed", "private_note": "passed", "cross_owner_404": "passed", "shared_compile": "opted_out_for_smoke", "model_calls": 0}
+{"reference_format": "json", "original_and_text": "passed", "private_note": "passed", "cross_owner_404": "passed", "shared_compile": "opted_out_for_smoke", "model_calls": 0}
+{"reference_format": "txt", "original_and_text": "passed", "private_note": "passed", "cross_owner_404": "passed", "shared_compile": "opted_out_for_smoke", "model_calls": 0}
+{"reference_format": "md", "original_and_text": "passed", "private_note": "passed", "cross_owner_404": "passed", "shared_compile": "opted_out_for_smoke", "model_calls": 0}
+{"terminal": "CANCELLED", "retry_new_instruction_and_action": "passed", "stale_success_receipt_409": "passed", "execution_id": "wfr_08d12e30414940bda49eab59beb4e8f4"}
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 101, in handle_request
+    raise exc
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 78, in handle_request
+    stream = self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/usr/local/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno 111] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 66, in <module>
+  File "<stdin>", line 54, in await_action
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 1144, in post
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno 111] Connection refused

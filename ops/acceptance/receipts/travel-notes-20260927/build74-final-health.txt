@@ -1,0 +1,22 @@
+Original log SHA256: b3778401cc8c15eb84a93303ccbbdbf2097041bb563d477be4eee717f4497b2d
+release /opt/releases/ai-lab-platform-ae11b9bd8e30.K1hkwb sha ae11b9bd8e30c89269ea8c59da7cf239fac86920
+{"service": "api", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "workflow-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "planning-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "agent-evaluation-worker", "health": "healthy", "revision": "ae11b9bd8e30c89269ea8c59da7cf239fac86920", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=50000000"]}
+{"service": "frontend", "health": "healthy", "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515", "quota": []}
+{"service": "taskboard", "health": "healthy", "revision": null, "quota": []}
+{"service": "postgres", "health": "healthy", "revision": null, "quota": []}
+{"service": "redis", "health": "healthy", "revision": null, "quota": []}
+quota_alignment hermes-bridge.service False
+hermes-bridge.service active quota 12000000
+quota_alignment hermes-chat-worker.service False
+hermes-chat-worker.service active quota 12000000
+health http://127.0.0.1:8000/ready 200 {"status":"ready","version":"0.8.0"}
+health http://172.18.0.1:9118/health 200 {"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":101,"workflow_runs":80,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+health https://t-react.com/health 200 {"status":"ok","version":"0.8.0"}
+backup_hash database-before a5085f5abd53f2ef783f416375d36dd6ae4447b629ad425df5ec1e7bd6b51df6
+backup_hash publication-before 863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209
+backup_hash publication-files-before 930fd49f7b4c15a062b674914e7524422a5e601fa4bab068a3cd30b665b46c11
+publication {"count": 1, "state": "published", "release_at": "2026-09-27T12:00:00+00:00", "actual_release_at": "2026-09-27T12:00:32.674400+00:00", "body_sha256": "076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f", "plan_keys": ["body_sha256", "illustrations", "reason"]}
+health_content_verification=passed; quota_alignment_reported_separately
