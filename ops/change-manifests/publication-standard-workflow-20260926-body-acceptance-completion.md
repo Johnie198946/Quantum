@@ -108,3 +108,20 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - cron: 暂停仅新触发；当时控制任务2a32dcef0240496fbdf294507e87c298自然completed后切换；10cron原enabled和各配置恢复，active=[]。
 - rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-compatible-f8c7d064；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-f8c7d064c959已独立列目录确认PG与版本备份存在，但没有publication SQLite；出版库可使用上一轮bookshelf-functionality-21250c7b8a52已校验备份，不能将本轮目录描述为包含出版库。
 - status: VERIFIED仅上述同步/健康/暂存完整性检查；新计划发行及手机位置仍待20:10续查，历史9本图片缺口仍在。
+
+## API临时配额重载窗口结束
+
+- cleanup按其用户授权临时将API配额10000000调整12000000，声明workers未改；本任务未修改配额或账本，仅协调出版空闲窗口。
+- server_before/server_after/runtime_after: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe保持；独立API镜像revision相符、healthy、/ready返回ready。
+- functional_check: 暂停10cron前保存原配置，active=[]；配置重载后10cron全部恢复原enabled且runtime保持f8，恢复active=[]。不把此检查当作新刊发行或配图真机通过。
+- rollback_point: 出版设置/Users/dengzhaoyu/.hermes/backups/publication-quota-window-20260927（receipt=resumed）；配额配置备份由cleanup记录/opt/ai-lab-shared/rollbacks/note70-quota-20260927/env.before，本任务未读取其敏感内容。
+- remaining_risks: 临时配额待cleanup复测后协调恢复；旅行新补丁尚未部署；20:00新刊发行和20:10续查仍待执行。
+
+## 联合d228部署后的最终出版恢复
+
+- server_before: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；server_after/runtime_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；release=/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W。cleanup协调、旅行唯一服务器部署、本任务仅出版调度窗口与运行时同步。
+- remote_sha: 本任务独立git ls-remote在暂停前和安装时均确认main=d228。
+- health_check: 独立服务器.deployed-sha及API镜像revision=d228、API healthy、/ready返回ready；协作方回报8容器healthy。
+- functional_check: 独立只读生产SQLite核目标publication仅一个edition，staged，20:00 CST release，actual_release_at=null；正文/content_hash/plan.body_sha256一致076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3计划图和5媒体记录保持。10cron配置及启用状态恢复、runtime/wrapper=d228、active=[]，未提前发行。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-d228c06d；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865含PG、出版SQLite、媒体稿件tar、环境配置及旧版本引用；独立sha256sum -c三份备份全部OK。旧release f8保留。
+- status: VERIFIED仅本轮部署恢复及已完成验收范围。remaining_risks: 新刊到期发行及手机段落位置仍未验收，20:10续查保持；临时12m配额由cleanup后续协调恢复；历史9本图片缺口和历史版权绑定阻塞仍如前。
