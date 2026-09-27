@@ -340,6 +340,13 @@
       ]
     },
     {
+      "id": "media.process",
+      "status": "implemented",
+      "tests": [
+        "tests/test_image_processing.py"
+      ]
+    },
+    {
       "id": "memory.create",
       "status": "implemented",
       "tests": [
@@ -672,7 +679,7 @@
       ]
     }
   ],
-  "catalog_digest": "95b4bbcbb799323840d3a8fdc64a02463235bf5f31c7f4114c300860beb29c0c",
+  "catalog_digest": "59a26bf7c3b59b964d4919ca75400ec6b81b1b1c284a4fe98ed68ab4eaba2a8e",
   "consumptions": [
     {
       "gates": [
@@ -742,7 +749,7 @@
     }
   ],
   "counts": {
-    "implemented": 91,
+    "implemented": 92,
     "partial": 0,
     "unverified": 0
   },
@@ -3337,6 +3344,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 91,
+  "total": 92,
   "version": "1.0.0"
 }

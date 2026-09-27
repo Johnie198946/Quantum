@@ -156,6 +156,17 @@ async def create_capability_proposal(
                 note_illustration_v1=renderer_version == "qcp-ios-notes@1",
             )
         review_summary = capability["description"]
+        if capability_id == "media.process":
+            from backend.services.image_processing import ImageEdit
+            edit = ImageEdit.model_validate({key: value for key, value in canonical_input.items()
+                                            if key not in {"source_artifact_id", "source_client_session_id"}})
+            if edit.extract_subject and edit.format == "jpg":
+                raise CapabilityContractError("主体提取需要透明 PNG")
+            canonical_input.update(edit.model_dump())
+            ratio = canonical_input.get("aspect_ratio", "original")
+            framing = "保持原比例" if ratio == "original" else f"裁切为 {ratio}"
+            subject = "，保留选中主体并去除背景" if canonical_input.get("extract_subject") else ""
+            review_summary = f"在 iPhone 上{framing}{subject}，保存为 {canonical_input.get('format', 'png').upper()}；原图保留。"
         if capability_id == "knowledge.note.trash" and (canonical_input.get("all_active") or canonical_input.get("note_versions")):
             from backend.api.knowledge_sync import list_synced_notes
             from backend.capability_handlers import _note_title

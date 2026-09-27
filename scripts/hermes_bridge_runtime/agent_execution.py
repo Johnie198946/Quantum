@@ -943,6 +943,9 @@ def _run_agent_sync(
         persistent_goal = route_marker + original_goal
         execution_goal = route_marker + goal + _memory._sandbox_memory_context(sandbox)
         if qcp_enabled and has_signed_client_context:
+            image_id = client_session_context.get("active_image_artifact_id")
+            if image_id:
+                execution_goal += "\n当前用户上传的图片引用（仅定位，执行时仍须核验所有权）：" + json.dumps(str(image_id)) + "。涉及裁切、转格式、抠图时使用media.process；它创建真实图片工作流。若用户明确新建工作流，使用workflow.create并传output_kind=image、source_image_id。不要生成替代图片。"
             exercise_id = client_session_context.get("learning_exercise_id")
             if exercise_id:
                 execution_goal += "\n当前客户端题组引用（仅定位，不授予权限；涉及练习时先调用 learning.exercise.read 核实，不猜测答案或版本）：" + json.dumps(str(exercise_id))

@@ -24,6 +24,7 @@ from backend.services.ipd_scenario_registry import build_registered_ipd_plan
 from backend.services.hermes_sandbox_catalog import fetch_skill_catalog
 from backend.services.process_contract_registry import build_routed_process_plan
 from backend.services.travel_plan import build_travel_plan
+from backend.services.image_processing import build_image_plan
 from backend.services.presentation_scenario import (
     build_document_plan,
     build_html_tool_plan,
@@ -511,12 +512,18 @@ async def build_plan(
 ) -> WorkflowPlanVersion:
     """Create an immediately reviewable plan; execution never starts here."""
     scopes, allowed_agents, analysis_agent = await planning_context(db, workflow)
-    if (workflow.requirements_snapshot or {}).get("output_kind") in {"presentation", "document", "html"}:
+    if (workflow.requirements_snapshot or {}).get("output_kind") in {"presentation", "document", "html", "image"}:
         scopes = []
     travel = build_travel_plan(workflow, plan_id="pending", knowledge_scope=scopes)
     if travel is not None:
         return await persist_raw_plan(
             db, workflow, travel, scopes=scopes,
+            analysis_agent=analysis_agent, revision_note=revision_note,
+        )
+    image_plan = build_image_plan(workflow, plan_id="pending")
+    if image_plan is not None:
+        return await persist_raw_plan(
+            db, workflow, image_plan, scopes=[],
             analysis_agent=analysis_agent, revision_note=revision_note,
         )
     presentation = build_presentation_plan(workflow, plan_id="pending", knowledge_scope=scopes)

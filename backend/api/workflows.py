@@ -166,7 +166,8 @@ class WorkflowCreate(BaseModel):
     showroom_session_id: str | None = Field(None, min_length=1, max_length=120)
     customer_demand_id: str | None = Field(None, min_length=1, max_length=48)
     source_document_id: str | None = Field(None, min_length=8, max_length=48)
-    output_kind: Literal["general", "presentation", "document", "html", "travel"] = "general"
+    source_image_id: str | None = Field(None, pattern=r"^ga_[a-f0-9]{32}$")
+    output_kind: Literal["general", "presentation", "document", "html", "travel", "image"] = "general"
     source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
     presentation_review_gates: list[Literal["outline", "design"]] = Field(
         default_factory=list, max_length=2
@@ -814,6 +815,18 @@ async def _create_workflow(
             requirements_snapshot["scenario_id"] = "travel-planning"
         elif body.output_kind == "html":
             requirements_snapshot["scenario_id"] = "html-tool-generation"
+        if body.output_kind == "image":
+            if not body.source_image_id:
+                raise HTTPException(422, detail="请先上传需要处理的图片")
+            from backend.services.image_processing import workflow_image_source
+            from backend.services.generated_artifacts import GeneratedArtifactError
+            try:
+                source_image = workflow_image_source(tenant(), current_user(payload), body.source_image_id)
+            except GeneratedArtifactError as exc:
+                raise HTTPException(422, detail=str(exc)) from exc
+            requirements_snapshot.update({"scenario_id": "image-processing", "source_image": {
+                key: source_image[key] for key in ("artifact_id", "content_hash")
+            }})
         if body.source_document_id:
             try:
                 source = read_document_receipt(tenant(), current_user(payload), body.source_document_id)
@@ -1164,7 +1177,7 @@ async def respond_to_clarification(
                 prior_snapshot = workflow.requirements_snapshot or {}
                 source_context = {
                     key: prior_snapshot[key]
-                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence")
+                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence", "source_image", "image_edit")
                     if prior_snapshot.get(key)
                 }
                 workflow.requirements_snapshot = {**spec, **source_context}
@@ -2768,6 +2781,15 @@ async def get_execution(execution_id: str, payload: dict = Depends(require_auth)
             .all()
         )
         return execution_out(execution, nodes)
+
+
+@router.post("/workflow-executions/{execution_id}/image-action")
+async def prepare_image_action(execution_id: str, payload: dict = Depends(require_auth)):
+    from backend.services.image_processing import image_device_action
+    async with SessionLocal() as db:
+        execution = await owned_execution(db, execution_id, payload)
+        workflow = await owned_workflow(db, execution.workflow_id, payload)
+        return await image_device_action(db, execution, workflow, payload)
 
 
 @router.get("/workflow-executions/{execution_id}/events")

@@ -1,0 +1,28 @@
+## main...origin/main
+ M AGENTS.md
+ M backend/api/subscriptions.py
+ M backend/capability_handlers.py
+ M backend/contracts/product-capabilities/capabilities.yaml
+ M backend/models/tenant.py
+ M backend/services/user_note_context.py
+ M docs/product-capability-coverage.json
+ M docs/product-capability-manual.md
+ M ios/AIPlatformApp/Networking/APIClient.swift
+ M ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift
+ M ios/AIPlatformApp/Views/Settings/SettingsView.swift
+ M ops/change-manifests/chat-cleanup-client-compat-20260927-completion.md
+ M ops/change-manifests/chat-cleanup-pcm-20260927-completion.md
+ M ops/change-manifests/cleanup-exercise-testflight-20260927-completion.md
+ M ops/change-manifests/note-audit-recovery-20260927-completion.md
+ M ops/change-manifests/note-organization-v2-20260927-completion.md
+ M ops/change-manifests/quantum-note-save-consent-20260927-completion.md
+ M ops/change-manifests/quantum-notes-release-20260927-completion.md
+ M ops/change-manifests/reader-experience-release-20260927-completion.md
+ M scripts/hermes_bridge_runtime/knowledge.py
+ M tests/test_book_subscriptions.py
+ M tests/test_cleanup_capabilities.py
+ M tests/test_user_note_context.py
+?? ops/acceptance/receipts/
+?? ops/change-manifests/bookshelf-functionality-20260927-completion.md
+?? ops/change-manifests/cleanup-diff-20260927-completion.md
+?? ops/change-manifests/quantum-2.0-hermes-gate-i0-20260909-completion.md

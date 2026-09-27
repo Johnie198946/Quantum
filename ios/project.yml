@@ -8,8 +8,15 @@ options:
   xcodeVersion: "26.1"
   createIntermediateGroups: true
 
+packages:
+  Mantis:
+    url: https://github.com/guoyingtao/Mantis.git
+    exactVersion: 3.1.0
+
 targets:
   AIPlatformApp:
+    dependencies:
+      - package: Mantis
     type: application
     platform: iOS
     deploymentTarget: "17.0"

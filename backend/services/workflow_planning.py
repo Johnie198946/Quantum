@@ -303,7 +303,7 @@ async def process_job(job_id: str, owner: str) -> None:
                 "revision_note": job.revision_note,
             }
 
-        if not HERMES_PLANNING_ENABLED or is_registered_ipd_scenario(workflow.description) or is_presentation_workflow(workflow):
+        if not HERMES_PLANNING_ENABLED or is_registered_ipd_scenario(workflow.description) or is_presentation_workflow(workflow) or (workflow.requirements_snapshot or {}).get("output_kind") == "image":
             async with SessionLocal() as db:
                 current_job = await db.get(WorkflowPlanningJob, job_id)
                 workflow = await db.get(WorkflowDefinition, current_job.workflow_id)

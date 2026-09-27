@@ -124,6 +124,13 @@ def encode_artifact_content(content: str | bytes, extension: str) -> bytes:
     if isinstance(content, bytes):
         return content
     normalized = str(extension).lower().lstrip(".")
+    if normalized in {"png", "jpg", "webp"}:
+        from backend.services.image_processing import decode_image, FORMATS
+        raw = base64.b64decode(content, validate=True)
+        _, fmt = decode_image(raw)
+        if FORMATS[fmt][0] != normalized:
+            raise ValueError("image extension does not match bytes")
+        return raw
     if normalized == "docx":
         return _docx_bytes(content)
     if normalized == "pptx":
@@ -185,8 +192,10 @@ def _image_dimensions(data: bytes, image_mime: str) -> tuple[int, int]:
 
 def _preview_from_bytes(path: Path, data: bytes) -> str:
     image_mime = mimetypes.guess_type(path.name)[0]
-    if image_mime in {"image/png", "image/jpeg"}:
-        width, height = _image_dimensions(data, image_mime)
+    if image_mime in {"image/png", "image/jpeg", "image/webp"}:
+        from backend.services.image_processing import decode_image
+        decoded, _ = decode_image(data)
+        width, height = decoded.size
         if width <= 0 or height <= 0 or width * height > 24_000_000:
             raise ValueError("image preview dimensions exceed limit")
         encoded = base64.b64encode(data).decode("ascii")
