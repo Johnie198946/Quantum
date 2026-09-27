@@ -1624,7 +1624,7 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     if capability.get("effect") != "read" and capability_id not in {
         "workflow.create", "workflow.open", "workflow.status", "workflow.start",
         "presentation.create_from_document", "artifact.open", "artifact.download",
-        "artifact.consume_structured", "media.process",
+        "artifact.consume_structured", "media.process", "media.save_edit",
     }:
         return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
     context = getattr(_client_context_tool_context, "value", None)

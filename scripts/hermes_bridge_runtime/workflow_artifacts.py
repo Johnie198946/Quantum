@@ -556,7 +556,14 @@ def _workflow_artifact_instruction(contract: dict[str, str]) -> str:
         from backend.services.travel_plan import TRAVEL_INSTRUCTION
         return TRAVEL_INSTRUCTION
     if render_type == "image_edit":
-        return '只输出图片编辑 JSON：{"format":"png|jpg","aspect_ratio":"original|16:9|9:16|1:1|4:3|3:4","extract_subject":false,"focus_x":0.5,"focus_y":0.5}。默认保持原比例并输出PNG；仅在要求抠图/去背景/提取主体时启用extract_subject，并用PNG。focus为用户指定目标在图片中的归一化位置，左0右1、上0下1；没有明确位置时用中心。不支持的要求必须报错，不能假装完成。'
+        from backend.services.capability_catalog import describe_capability
+        schema = dict(describe_capability("media.process")["input_schema"])
+        schema["properties"] = {key: value for key, value in schema["properties"].items()
+                                if not key.startswith("source_")}
+        schema.pop("required", None)
+        return ("只输出图片编辑JSON，严格使用以下PCM合同。默认保留原比例和PNG。修复选区、主体位置和图层素材引用必须来自用户提供的真实信息，不得猜测。"
+                "studio修复与主体坐标相对于构图前原图，图层坐标相对于最终画布；不得生成替代图片。不支持的要求报错，不能假装完成。合同："
+                + json.dumps(schema, ensure_ascii=False, separators=(",", ":")))
     if render_type == "chart":
         return '只输出合法 JSON 对象：{"labels":["维度"],"values":[1]}；values 仅使用非负数字。'
     if render_type in {"topology", "flowchart"}:

@@ -1154,10 +1154,12 @@ async def _data_analyze(data, payload, key):
 
 
 async def _media_process(data, payload, key):
-    from backend.services.image_processing import ImageEdit
+    from backend.services.image_processing import ImageEdit, validate_studio_assets, workflow_image_source, expected_image_size
 
     assert key
     edit = ImageEdit.model_validate({k: v for k, v in data.items() if k not in {"source_artifact_id", "source_client_session_id"}})
+    validate_studio_assets(*_generated_owner(payload), edit)
+    expected_image_size(workflow_image_source(*_generated_owner(payload), data["source_artifact_id"]), edit)
     workflow_id, request_hash = _qcp_workflow_identity("media.process", payload, key, data)
     return await _create_workflow(
         WorkflowCreate(title="图片处理", description="按已确认的图片编辑参数处理原图，交付可下载的真实图片。",
@@ -1168,6 +1170,12 @@ async def _media_process(data, payload, key):
         requirements_explicit=True,
         requirements_snapshot_overrides={"image_edit": edit.model_dump()},
     )
+
+
+async def _media_save_edit(data, payload, key):
+    from backend.services.image_processing import save_processed_image
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(save_processed_image, *_generated_owner(payload), data, key)
 
 
 async def _media_create(data, payload, key):
@@ -1390,5 +1398,6 @@ HANDLERS: dict[str, Handler] = {
     "data.analyze": _data_analyze,
     "media.create": _media_create,
     "media.process": _media_process,
+    "media.save_edit": _media_save_edit,
     "task.execute": _task_execute,
 }

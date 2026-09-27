@@ -117,26 +117,361 @@ capabilities:
   - id: media.process
     version: 1.0.0
     domain: generated_artifact
-    description: Directly process an uploaded private image using the existing workflow. The user's edit request authorizes execution; do not ask for requirement, plan, start, or result confirmation. On iPhone, convert to PNG/JPG, crop to a ratio, or extract the subject at a normalized point into transparent PNG. Use the active uploaded artifact ID. Never invent a source or claim a cutout from generated artwork. For an unclear subject ask the user to select its position; do not infer unseen objects. JPG flattens transparency on white; extraction requires PNG.
-    positive_examples: ["帮我改成16:9的比例，从png改为jpg", "帮我把中间的人物抠出来", "Crop this uploaded photo and convert to JPG"]
-    negative_examples: ["Generate a new illustration without an uploaded image"]
+    description: 'Directly process an uploaded private image using the existing workflow. The user''s edit request authorizes
+      execution; do not ask for requirement, plan, start, or result confirmation. On iPhone, convert to PNG/JPG, crop to a ratio,
+      or extract the subject at a normalized point into transparent PNG. Use the active uploaded artifact ID. Never invent a
+      source or claim a cutout from generated artwork. For an unclear subject ask the user to select its position; do not infer
+      unseen objects. JPG flattens transparency on white; extraction requires PNG. Optional studio v1 supports ordered crop
+      quadrilaterals, 90-degree rotation/flip, exposure/contrast/saturation/temperature/shadows, original/sunny/mint/film filters,
+      editable text and owner-private image layers, local spot repair brush strokes, output dimensions and JPEG quality. Coordinates
+      are normalized top-left. Repair strokes and subject points refer to the base image before studio crops; layer positions refer to the final canvas. Never guess repair masks. Device processing uses the same renderer as manual editing. Manual
+      studio operations: 图像调整、添加文字、文字水印、图层叠加、滤镜、调色、去除污点、抠图、尺寸和质量滑杆。 For batch editing invoke this same capability once per source
+      artifact with a distinct idempotency key; never reuse a repair mask or subject point across different images without explicit
+      selection.'
+    positive_examples:
+    - 帮我改成16:9的比例，从png改为jpg
+    - 帮我把中间的人物抠出来
+    - Crop this uploaded photo and convert to JPG
+    - 图片添加文字
+    - 文字水印
+    - 图片图层
+    - 照片滤镜
+    - 图片调色
+    - 去除污点
+    - 修复选区
+    - 图片尺寸
+    - 图片质量
+    - 批量修图
+    negative_examples:
+    - Generate a new illustration without an uploaded image
     input_schema:
       type: object
       additionalProperties: false
-      required: [source_artifact_id]
+      required:
+      - source_artifact_id
       properties:
-        source_client_session_id: {type: string, minLength: 1, maxLength: 100}
-        source_artifact_id: {type: string, pattern: '^(ga|doc)_[a-f0-9]{32}$'}
-        format: {type: string, enum: [png, jpg], default: png}
-        aspect_ratio: {type: string, enum: [original, '16:9', '9:16', '1:1', '4:3', '3:4'], default: original}
-        extract_subject: {type: boolean, default: false}
-        focus_x: {type: number, minimum: 0, maximum: 1, default: 0.5, description: Horizontal target point from left to right.}
-        focus_y: {type: number, minimum: 0, maximum: 1, default: 0.5, description: Vertical target point from top to bottom.}
-    output_schema: {type: object, required: [workflow]}
+        source_client_session_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+        source_artifact_id:
+          type: string
+          pattern: ^(ga|doc)_[a-f0-9]{32}$
+        format:
+          type: string
+          enum:
+          - png
+          - jpg
+          default: png
+        aspect_ratio:
+          type: string
+          enum:
+          - original
+          - '16:9'
+          - '9:16'
+          - '1:1'
+          - '4:3'
+          - '3:4'
+          default: original
+        extract_subject:
+          type: boolean
+          default: false
+        focus_x:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+          description: Horizontal target point from left to right.
+        focus_y:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+          description: Vertical target point from top to bottom.
+        studio: &id001
+          anyOf:
+          - additionalProperties: false
+            properties:
+              version:
+                const: 1
+                default: 1
+              crops:
+                items:
+                  additionalProperties: false
+                  properties:
+                    corners:
+                      items:
+                        additionalProperties: false
+                        properties:
+                          x:
+                            maximum: 1.0
+                            minimum: 0.0
+                            type: number
+                          y:
+                            maximum: 1.0
+                            minimum: 0.0
+                            type: number
+                        required:
+                        - x
+                        - y
+                        type: object
+                      maxItems: 4
+                      minItems: 4
+                      type: array
+                    width:
+                      maximum: 12000
+                      minimum: 1
+                      type: integer
+                    height:
+                      maximum: 12000
+                      minimum: 1
+                      type: integer
+                  required:
+                  - corners
+                  - width
+                  - height
+                  type: object
+                maxItems: 12
+                type: array
+              rotation:
+                default: 0
+                enum:
+                - 0
+                - 90
+                - 180
+                - 270
+                type: integer
+              flip_horizontal:
+                default: false
+                type: boolean
+              subject:
+                default: false
+                type: boolean
+              subject_x:
+                default: 0.5
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              subject_y:
+                default: 0.5
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              exposure:
+                default: 0
+                maximum: 2.0
+                minimum: -2.0
+                type: number
+              contrast:
+                default: 1
+                maximum: 2.0
+                minimum: 0.5
+                type: number
+              saturation:
+                default: 1
+                maximum: 2.0
+                minimum: 0.0
+                type: number
+              temperature:
+                default: 6500
+                maximum: 10000.0
+                minimum: 2500.0
+                type: number
+              shadows:
+                default: 0
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              filter:
+                default: original
+                enum:
+                - original
+                - sunny
+                - mint
+                - film
+                type: string
+              intensity:
+                default: 1
+                maximum: 1.0
+                minimum: 0.0
+                type: number
+              layers:
+                items:
+                  additionalProperties: false
+                  properties:
+                    id:
+                      maxLength: 80
+                      type: string
+                    kind:
+                      default: text
+                      enum:
+                      - text
+                      - image
+                      type: string
+                    text:
+                      default: ''
+                      maxLength: 2000
+                      type: string
+                    asset_id:
+                      anyOf:
+                      - pattern: ^(ga|doc)_[a-f0-9]{32}$
+                        type: string
+                      - type: 'null'
+                      default: null
+                    font:
+                      default: serif
+                      enum:
+                      - sans
+                      - serif
+                      - hand
+                      type: string
+                    font_size:
+                      default: 0.12
+                      maximum: 0.5
+                      minimum: 0.01
+                      type: number
+                    color:
+                      default: FFF7EC
+                      pattern: ^[0-9a-fA-F]{6}$
+                      type: string
+                    x:
+                      default: 0.5
+                      maximum: 1.0
+                      minimum: 0.0
+                      type: number
+                    y:
+                      default: 0.2
+                      maximum: 1.0
+                      minimum: 0.0
+                      type: number
+                    width:
+                      default: 0.85
+                      maximum: 2.0
+                      minimum: 0.02
+                      type: number
+                    rotation:
+                      default: 0
+                      maximum: 360.0
+                      minimum: -360.0
+                      type: number
+                    opacity:
+                      default: 1
+                      maximum: 1.0
+                      minimum: 0.0
+                      type: number
+                    visible:
+                      default: true
+                      type: boolean
+                    locked:
+                      default: false
+                      type: boolean
+                    alignment:
+                      default: center
+                      enum:
+                      - left
+                      - center
+                      - right
+                      type: string
+                    tracking:
+                      default: 0
+                      maximum: 0.1
+                      minimum: -0.05
+                      type: number
+                    outline:
+                      default: 0
+                      maximum: 0.1
+                      minimum: 0.0
+                      type: number
+                    shadow:
+                      default: 0
+                      maximum: 0.1
+                      minimum: 0.0
+                      type: number
+                    blend:
+                      default: normal
+                      enum:
+                      - normal
+                      - multiply
+                      - screen
+                      - overlay
+                      type: string
+                  required:
+                  - id
+                  type: object
+                maxItems: 20
+                type: array
+              strokes:
+                items:
+                  additionalProperties: false
+                  properties:
+                    id:
+                      maxLength: 80
+                      type: string
+                    points:
+                      items:
+                        additionalProperties: false
+                        properties:
+                          x:
+                            maximum: 1.0
+                            minimum: 0.0
+                            type: number
+                          y:
+                            maximum: 1.0
+                            minimum: 0.0
+                            type: number
+                        required:
+                        - x
+                        - y
+                        type: object
+                      maxItems: 256
+                      minItems: 1
+                      type: array
+                    radius:
+                      default: 0.015
+                      maximum: 0.08
+                      minimum: 0.001
+                      type: number
+                  required:
+                  - id
+                  - points
+                  type: object
+                maxItems: 40
+                type: array
+              output_width:
+                anyOf:
+                - maximum: 12000
+                  minimum: 1
+                  type: integer
+                - type: 'null'
+                default: null
+              output_height:
+                anyOf:
+                - maximum: 12000
+                  minimum: 1
+                  type: integer
+                - type: 'null'
+                default: null
+              quality:
+                default: 0.9
+                maximum: 1.0
+                minimum: 0.1
+                type: number
+              remove_location:
+                default: true
+                type: boolean
+            type: object
+          - type: 'null'
+          default: null
+    output_schema:
+      type: object
+      required:
+      - workflow
     effect: write
     risk: low
     confirmation: none
-    preconditions: [authenticated_generated_artifact_owner, bounded_generation_input]
+    preconditions:
+    - authenticated_generated_artifact_owner
+    - bounded_generation_input
     policy_ref: generated-artifact-owner
     handler_binding: media.process
     idempotency: required
@@ -144,5 +479,98 @@ capabilities:
     result_event: workflow.created
     renderer: workflow
     renderer_version: 1
-    tests: [tests/test_image_processing.py]
+    tests:
+    - tests/test_image_processing.py
+    - tests/test_image_studio.py
+    implementation_status: implemented
+  - id: media.save_edit
+    version: 1.0.0
+    domain: generated_artifact
+    description: Save an already rendered private image edit as a new copy after validating owner, source hash, dimensions and
+      format. For manual editor save or committing an actual device result; not for generating images or claiming edits without
+      output bytes.
+    positive_examples:
+    - 保存这张已处理的图片副本
+    negative_examples:
+    - 没有结果图片就声称完成
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - source_artifact_id
+      - result_artifact_id
+      - source_hash
+      - edit
+      - filename
+      properties:
+        source_artifact_id:
+          type: string
+          pattern: ^(ga|doc)_[a-f0-9]{32}$
+        result_artifact_id:
+          type: string
+          pattern: ^ga_[a-f0-9]{32}$
+        source_hash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        edit:
+          additionalProperties: false
+          properties:
+            format:
+              default: png
+              enum:
+              - png
+              - jpg
+              type: string
+            aspect_ratio:
+              default: original
+              enum:
+              - original
+              - '16:9'
+              - '9:16'
+              - '1:1'
+              - '4:3'
+              - '3:4'
+              type: string
+            studio: *id001
+            extract_subject:
+              default: false
+              type: boolean
+            focus_x:
+              default: 0.5
+              maximum: 1.0
+              minimum: 0.0
+              type: number
+            focus_y:
+              default: 0.5
+              maximum: 1.0
+              minimum: 0.0
+              type: number
+          type: object
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 80
+    output_schema:
+      type: object
+      required:
+      - artifact_id
+      - content_hash
+      - byte_size
+      - revision
+      - download_path
+    effect: write
+    risk: low
+    confirmation: none
+    preconditions:
+    - authenticated_generated_artifact_owner
+    - bounded_generation_input
+    policy_ref: generated-artifact-owner
+    handler_binding: media.save_edit
+    idempotency: required
+    receipt: required
+    result_event: artifact.generated
+    renderer: image_card
+    renderer_version: 1
+    tests:
+    - tests/test_image_studio.py
     implementation_status: implemented

@@ -343,7 +343,15 @@
       "id": "media.process",
       "status": "implemented",
       "tests": [
-        "tests/test_image_processing.py"
+        "tests/test_image_processing.py",
+        "tests/test_image_studio.py"
+      ]
+    },
+    {
+      "id": "media.save_edit",
+      "status": "implemented",
+      "tests": [
+        "tests/test_image_studio.py"
       ]
     },
     {
@@ -679,7 +687,7 @@
       ]
     }
   ],
-  "catalog_digest": "6d6b41fcf0c3912ab1c76db01f6f3b13e0efee4aecdb6dfce9b90568a6d33604",
+  "catalog_digest": "b30618222067bcd16a092b2a2c166748a64b28d5d082e1198f11927b0c026e20",
   "consumptions": [
     {
       "gates": [
@@ -749,7 +757,7 @@
     }
   ],
   "counts": {
-    "implemented": 92,
+    "implemented": 93,
     "partial": 0,
     "unverified": 0
   },
@@ -3344,6 +3352,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 92,
+  "total": 93,
   "version": "1.0.0"
 }

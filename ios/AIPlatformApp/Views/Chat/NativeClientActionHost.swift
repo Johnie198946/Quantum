@@ -29,7 +29,7 @@ private enum NativeClientActionRegistry {
         onComplete: @escaping (String, [String: String]) -> Void
     ) -> some View {
         switch action.actionType {
-        case "image_process":
+        case "image_process", "image_studio_v1":
             NativeImageProcessAction(action: action, onComplete: onComplete)
         case "conversation_lifecycle":
             ProgressView("正在整理对话…").task(id: action.id) { @MainActor in
@@ -474,7 +474,7 @@ private struct NativeImageProcessAction: View {
                     .font(.system(size: 54)).foregroundStyle(AppTheme.Colors.quantumBlue)
                 Text(errorMessage == nil ? "正在你的 iPhone 上处理" : "图片处理未完成")
                     .font(AppTheme.Typography.screenTitle)
-                Text("裁切、转码和主体提取均在本机完成，完成后保存结果。")
+                Text("裁剪、文字图层、调色和修复均在本机完成，完成后保存结果。")
                     .foregroundStyle(AppTheme.Colors.textSecondary).multilineTextAlignment(.center)
                 if processing { ProgressView() }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
@@ -505,8 +505,18 @@ private struct NativeImageProcessAction: View {
                     let source = try await APIClient.shared.fetchImageReceipt(id: id)
                     guard source.contentHash == sourceHash else { throw APIError.network("原图已变化") }
                     let bytes = try await APIClient.shared.downloadAuthenticated(path: source.downloadPath, expectedHash: sourceHash)
+                    var assets: [String: Data] = [:]
+                    for assetId in Set(edit.studio?.layers.compactMap(\.assetId) ?? []) {
+                        guard !cancelled, TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint == account else { return }
+                        let receipt = try await APIClient.shared.fetchImageReceipt(id: assetId)
+                        let data = try await APIClient.shared.downloadAuthenticated(path: receipt.downloadPath, expectedHash: receipt.contentHash)
+                        guard assets.values.reduce(0, { $0 + $1.count }) + data.count <= 24 * 1024 * 1024 else { throw APIError.network("图层素材合计超过24 MB") }
+                        assets[assetId] = data
+                    }
+                    let resources = assets
                     let output = try await Task.detached(priority: .userInitiated) {
-                        try ImageEditSupport.process(bytes, edit: edit)
+                        if edit.studio != nil { return try ImageEditSupport.renderStudio(bytes, edit: edit, assets: resources) }
+                        return try ImageEditSupport.process(bytes, edit: edit)
                     }.value
                     guard !cancelled else { return }
                     guard TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint == account else { throw APIError.network("账号已切换，请重新打开任务") }

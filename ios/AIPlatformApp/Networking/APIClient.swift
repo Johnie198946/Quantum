@@ -2218,6 +2218,7 @@ public struct ImageEditDTO: Codable, Hashable, Sendable {
     public let extractSubject: Bool
     public let focusX: Double
     public let focusY: Double
+    public var studio: ImageStudioRecipe? = nil
 }
 
 public struct ClientActionPayloadDTO: Codable, Hashable {

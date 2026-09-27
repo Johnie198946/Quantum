@@ -47,7 +47,7 @@ IMPLEMENTED_HANDLERS = {
     "hermes.session.delete",
     "file.pick", "photo.capture", "photo.import", "voice.record", "share.present",
     "file.upload", "file.download", "voice.transcribe",
-    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create", "media.process",
+    "office.spreadsheet.create", "office.pdf.create", "data.analyze", "media.create", "media.process", "media.save_edit",
     "task.execute", "conversation.lifecycle",
     "learning.resume", "learning.exercise.read", "learning.exercise.create", "learning.exercise.hint", "learning.exercise.answer", "learning.exercise.submit",
 }
@@ -166,11 +166,11 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
         if capability["effect"] != "read" and capability["effect"] != "client":
             if (
                 (capability["confirmation"] != "required" and not (
-                    capability["id"] == "media.process"
+                    capability["id"] in {"media.process", "media.save_edit"}
                     and capability["confirmation"] == "none"
                     and capability["risk"] == "low"
                     and capability["effect"] == "write"
-                    and capability["handler_binding"] == "media.process"
+                    and capability["handler_binding"] == capability["id"]
                     and capability["policy_ref"] == "generated-artifact-owner"
                 ))
                 or capability["idempotency"] != "required"
@@ -307,6 +307,7 @@ async def execute_verified_capability(
 ) -> dict[str, Any]:
     """Internal dispatcher for contract-authorized calls or Gateway confirmations."""
     from fastapi import HTTPException
+    from backend.services.generated_artifacts import GeneratedArtifactError
     from backend.capability_handlers import HANDLERS, verify_resource_versions
 
     capability = describe_capability(capability_id)
@@ -335,6 +336,8 @@ async def execute_verified_capability(
             )
         result = await handler(data, payload, idempotency_key)
         validate_instance(result, capability["output_schema"], "output")
+    except GeneratedArtifactError as exc:
+        return _failure(capability_id, exc.code, str(exc))
     except CapabilityContractError as exc:
         return _failure(capability_id, "contract_invalid", str(exc))
     except ValidationError:

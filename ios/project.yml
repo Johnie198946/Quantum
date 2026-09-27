@@ -9,6 +9,9 @@ options:
   createIntermediateGroups: true
 
 packages:
+  OpenCV:
+    url: https://github.com/yeatse/opencv-spm.git
+    exactVersion: 4.13.0
   Mantis:
     url: https://github.com/guoyingtao/Mantis.git
     exactVersion: 3.1.0
@@ -17,6 +20,7 @@ targets:
   AIPlatformApp:
     dependencies:
       - package: Mantis
+      - package: OpenCV
     type: application
     platform: iOS
     deploymentTarget: "17.0"
@@ -43,6 +47,10 @@ targets:
         UIBackgroundModes:
           - audio
         UIUserInterfaceStyle: Light
+        UIAppFonts:
+          - ZCOOLXiaoWei-Regular.ttf
+          - MaShanZheng-Regular.ttf
+        NSPhotoLibraryAddUsageDescription: "将你编辑完成的图片副本保存到相册。"
         NSMicrophoneUsageDescription: "用于语音交互输入，将你的语音实时转写为文字。"
         NSCameraUsageDescription: "用于在你明确确认设备操作后拍摄并附加照片。"
         NSLocalNetworkUsageDescription: "用于连接本机开发服务完成真机端到端验收。"
@@ -63,7 +71,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: AIPlatformApp/AIPlatformApp.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.ailab.AIPlatformApp
         MARKETING_VERSION: "1.0.3"
-        CURRENT_PROJECT_VERSION: "74"
+        CURRENT_PROJECT_VERSION: "75"
         DEVELOPMENT_TEAM: AALA948YY5
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "5.9"

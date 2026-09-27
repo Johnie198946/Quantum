@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `6d6b41fcf0c3912ab1c76db01f6f3b13e0efee4aecdb6dfce9b90568a6d33604`
+Catalog digest: `b30618222067bcd16a092b2a2c166748a64b28d5d082e1198f11927b0c026e20`
 
 ## Gateway 核心模块规范
 
@@ -348,6 +348,7 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 | `learning.resume@1.0.0` | learning | read | none | none | `learning.resume` | `answer@1` | implemented |
 | `media.create@1.0.0` | generated_artifact | write | required | required | `artifact.generated` | `image_card@1` | implemented |
 | `media.process@1.0.0` | generated_artifact | write | none | required | `workflow.created` | `workflow@1` | implemented |
+| `media.save_edit@1.0.0` | generated_artifact | write | none | required | `artifact.generated` | `image_card@1` | implemented |
 | `memory.create@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.delete@1.0.0` | memory | write | required | required | `memory.changed` | `answer@1` | implemented |
 | `memory.list@1.0.0` | memory | read | none | none | `memory.snapshot` | `answer@1` | implemented |
