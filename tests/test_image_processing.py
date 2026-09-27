@@ -34,6 +34,16 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
     stream = io.BytesIO()
     image.save(stream, format="PNG")
     original = stream.getvalue()
+    from backend.services import workflow_planner, workflow_planning
+    original_build_plan = workflow_planner.build_plan
+
+    async def build_without_background_race(db, workflow, **kwargs):
+        # Run the worker's orphan scan after draft commit, before API planning.
+        async with SessionLocal() as worker_db:
+            assert await workflow_planning.backfill_orphaned_planning_jobs(worker_db) == 0
+        return await original_build_plan(db, workflow, **kwargs)
+
+    monkeypatch.setattr(workflow_planner, "build_plan", build_without_background_race)
     actor = {"tenant_key": "image-tenant", "user_id": "image-user", "sub": "image-user"}
     app = FastAPI()
     app.include_router(router)

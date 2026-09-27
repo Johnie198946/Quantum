@@ -322,7 +322,7 @@ public struct PlusMenuSheet: View {
                 return
             }
             guard let original = ImageEditSupport.uploadData(data) else {
-                showToast("图片解码失败", isError: true)
+                showToast("请选择 12 MB、2400 万像素以内的静态图片", isError: true)
                 return
             }
             onPhotoPicked(original)

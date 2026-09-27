@@ -773,6 +773,7 @@ async def _create_workflow(
     from backend.services.workflow_planner import build_plan
     async with SessionLocal() as db:
         workflow = await owned_workflow(db, workflow_id, payload)
+        await db.refresh(workflow, with_for_update=True)
         if not workflow.active_plan_id:
             plan = await build_plan(db, workflow)
             if plan.validation_errors:
@@ -964,8 +965,8 @@ async def _create_workflow_draft(
             content=description,
         )
         if body.output_kind == "image":
-            clarification.phase = "planning"
-            row.status = "planning"
+            # The caller builds the deterministic plan synchronously; publishing
+            # "planning" here would enqueue another builder in the durable worker.
             await db.commit()
             await db.refresh(row)
             await db.refresh(clarification)

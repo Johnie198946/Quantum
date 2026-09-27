@@ -1,7 +1,7 @@
 # 联合 iOS 发布验收
 
 task_id: joint-ios-release-20260927
-status: DEPLOYED（b9e4d128已部署且健康通过；笔记真实模型语义/性能验收尚未通过）
+status: DEPLOYED（Build73 c5331384已部署且健康通过、Apple已接收；图片特定选图问题与真机复验收尾中）
 
 ## 范围与证据
 
@@ -89,3 +89,33 @@ Xcode实际窗口现显示App upload complete / AIPlatformApp 1.0.3 (72) uploade
 409增量SHA256=92b6292f3af1a622afab3fc98a7ab999b24bfbbdf41baf600cb6010a2e732ed0，扩展现有图片retry及按attempt选择instruction；原远端失败不伪造重试成功。最终组合后端196 passed（/tmp/build73-python-final.log），iOS203 passed且409增量不改客户端；Ruff/生成合同/diff检查通过。Release ARCHIVE SUCCEEDED（/tmp/build73-archive.log），/private/tmp/Quantumn-1.0.3-73.xcarchive签名校验exit0，版本1.0.3(73)，203个iOS跟踪文件与归档开始快照hash完全一致。
 
 本次发布用户已明确授权推送、部署及TestFlight；现在进入提交推送阶段。新版真机全链路仍由图片任务隔离验证，未用模拟器代替真机。笔记全量语义/耗时历史剩余项不列为本轮已修复。
+
+### Build73 提交、远端与 Apple 回执
+
+commit/remote_sha=c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf，git push origin HEAD:main成功且git ls-remote origin refs/heads/main完全一致。203个iOS跟踪文件与该commit逐字节hash一致，归档证据/tmp/build73-artifact-verification.json。
+
+Xcode实际显示“AIPlatformApp 1.0.3 (73) uploaded”；ContentDelivery.log确认22:44:33上传成功，processingState=PROCESSING，/tmp/build73-upload-receipt.json。最初UI点击Validate但后续实际流程完成上传，真机新版复验尚未结束；记录顺序偏差，不将上传误写为真机验收通过。此时server仍b9，c533精确源码包准备完成，出版保护窗口建立中。
+
+### Build73 真机新增待查项
+
+图片任务在真实PhotosPicker选取风景照片后观察到客户端红色错误且无documents POST。尚未判明格式/像素/字节边界，不能断言客户端限制就是根因。图片任务继续隔离诊断；本轮图片UI验收尚未通过。73已上传不掩盖该问题，若需客户端修复将使用新构建号，c533后端部署/验收独立继续。
+
+### Build73 生产部署独立核验
+
+server_before=b9e4d128dd5839bae89cff39790fb8240297e23e；server_after=c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf，/opt/releases/ai-lab-platform-c5331384d0f8.1ykxrM。root独立verify.py exit0：8容器healthy，4Python镜像revision精确c533，Bridge/ChatWorker active，ready/Bridge/public health HTTP200；6运行进程12m配额不变。
+
+rollback_point=/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT；完整备份/opt/ai-lab-shared/rollbacks/chat-travel-pcm-c5331384d0f8，PG SHA256 a68126fb230d1f48794ed2dd49fa131888450ff23a487e304e9a7457fde89648，SQLite 863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209，publication媒体2fc49fcb96ae4fbcb8a721660dcce87022ecc0a4592370148b8da7640ce2d394；全部hash和SQLite integrity通过。出版before/after全字典一致，唯一published actual_release_at保持12:00:32.674400，正文/plan/bundle/5媒体hash未变。出版正独立核验并恢复10cron。
+
+### Build73 生产功能失败与 Build74 补救
+
+生产隔离smoke media.process第一次invoke返回500：Postgres uq_workflow_plan_version冲突。只读合成owner记录证明后台planning_job先生成version1，API同步build_plan再次生成同版本；真实生产功能未通过，不因health通过而宣称VERIFIED。根任务接手现有workflows.py，图片draft不发布后台planning状态；同步规划前复用FOR UPDATE刷新该workflow，避免相同workflow并发建计划。回归在API规划前执行独立Session的后台orphan scan断言无任务入队。增量/tmp/build74-planning-race.patch SHA256=730e020c5721bf39e20b303f3afe98f3e25bc669c7f0172e8c74ca54bfeee558，本地54通过、Ruff/diff通过，真实隔离Postgres+worker验证进行中。
+
+图片真实UI成功：系统PhotosPicker选会场照片→上传→一条16:9/JPG指令→自动处理→自动预览；无中间确认，action SUCCEEDED、execution completed、HTTP200 JPEG1920x1080/938236bytes/hash d42e752cd34feafd2fddaafa673112488bace0c586aab0777161ef84b064f53b。证据/tmp/image-direct-real-device-evidence.json。失败风景图为JPEG5304x7952=42177408像素，超过既有2400万限制；仅修正PlusMenuSheet错误文案，不改原图/限额/架构。手机已恢复生产Build70正常无E2E环境启动，Keychain/原会话保持。
+
+统一补发Build74（73已经上传无法替换），后端规划增量与准确图片提示一起发布，待真实Postgres回归后推送部署。出版已独立验证c533且10cron/wrapper pin c533恢复原enabled，active=[]，没有残留暂停。
+
+### Build74 PostgreSQL 对照验收
+
+独立本机PostgreSQL15，127.0.0.1:55474，cluster=/tmp/travel-build74-pg，数据库travel_old/travel_fixed；没有连接生产库/worker。对照探针/tmp/travel-build74-race-source/race_probe.py使用真实backfill→claim_next→process_job。旧c533：orphan_jobs=1、worker completed、API IntegrityError uq_workflow_plan_version、plan_count=1/job_count=1；修复：相同调度orphan_jobs=0、plan_count=1/job_count=0，完整generated/chat回归通过，含invoke/replay、取消及失败后新attempt/instruction、旧回执409、Bridge不可用503、最终JPEG下载与跨用户404。两进程exit0，日志/tmp/travel-build74-pg-old.log和/tmp/travel-build74-pg-fixed.log。探针原生处理使用fixture，与真机证据分开。
+
+Build74 Release archive成功，/private/tmp/Quantumn-1.0.3-74.xcarchive，签名exit0，203个iOS源码文件快照一致；相对73客户端只有一行限额提示与build值，原203项组合测试保留、最终归档编译通过。开始统一74提交推送，生产目前仍c533。
