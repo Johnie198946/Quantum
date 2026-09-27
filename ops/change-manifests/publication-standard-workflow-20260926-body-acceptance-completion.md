@@ -34,9 +34,9 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - commit: 74c23c574cbef7a7aa8224829448b0ed7c9fd5af
 - remote_sha: git ls-remote origin refs/heads/codex/publication-standard-workflow-20260926 = 74c23c574cbef7a7aa8224829448b0ed7c9fd5af；已独立核对。
 - runtime_before: b696d13bdcef18cc23b1707dc00501ca012ee224
-- runtime_after: a8cc2954e13a40732fc36444df6beaf81f05b80b；10cron与wrapper绑定一致，原enabled/prompt/schedule保持；controller wrapper SHA256 06b11a807c2428cadc465fa30c8b36435d22479acccdccf34d95df0c85de18c8。先前74c自然取稿已通过，联合a8cc包含相同修复。
+- runtime_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c；10cron与wrapper绑定一致，原enabled/prompt/schedule保持；controller wrapper SHA256 06ae83b4e1d50898b8a6492e8c8156d87028a136f8de6a56611e1311c9380872。先前74c自然取稿、a8cc自然配图重试已通过，0704保留相同修复。
 - server_before: b696d13bdcef18cc23b1707dc00501ca012ee224
-- server_after: a8cc2954e13a40732fc36444df6beaf81f05b80b；与阅读优化/笔记修复共同交付，由阅读优化任务独占部署。release=/opt/releases/ai-lab-platform-a8cc2954e13a.swjper。
+- server_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c；本轮共享Chat修复由cleanup任务独占部署。release=/opt/releases/ai-lab-platform-0704ddf5a54b.IXeolO。
 - health_check: 三个Python入口--help通过（handoff/editorial仍0644）；最终a8cc runtime _status生产只读调用成功，今日计划7期已发行6期、20:00期未到时。独立核API镜像revision和服务器.deployed-sha=a8cc、/ready返回ready；首次误查/health/ready为404，改用代码声明/ready确认通过。协调任务8容器healthy、回滚备份哈希通过，记录 /private/tmp/bookshelf-functionality-20260927/server-verification.json 已读取。
 - functional_check: 自然controller 32fee8d7a885459cb797b6677566b9af 于16:09:27完成native_fetch；生成Story20目录且作者SHA256一致，body SHA256 076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f。16:10:42自然素材任务566d2ea508784ed1b48deea4a47e1f1f已启动，新稿完整链待验收。
 - rollback_point: /Users/dengzhaoyu/.hermes/backups/publication-fetch-74c23c574cbe 保存原10任务设置与所有切换wrapper；旧b696不可变release保留。导出时安全拒绝仓库tools绝对符号链接，保留.incomplete-export后排除唯一tools链接重新导出，未跳过任何出版源码。回滚需先暂停并自然清空任务，再恢复原绑定与原enabled；不得覆盖业务台账。
@@ -68,3 +68,23 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 
 - a8cc runtime原生controller执行082640b3d7b7455aa86dfb415954821a，于16:39:10完成并返回phase=assets/action=triggered；材料哈希仍为382d219637ff63c9ff170880d68aa34f9216515f526038432dede472533bc1db。
 - 原生素材执行a01a6b179ebc4189b8f393a46ee4ef26于16:39:10.117315启动，查询时running。确认自然有界恢复已继续，不将running当作生成成功；新计划媒体和发行留待20:10续查及后续证据。
+
+## 17:00 新计划素材及独立审核补证
+
+- 第二次素材执行a01a6b179ebc4189b8f393a46ee4ef26已成功，16:52:33回执为await_review；首次失败后由自然controller派发，没有人工配图或改正文。
+- 原生Codex线程01a0e206-0c31-7a31-a26c-b19ee3e26407的rollout中核验5次实际tools.image_gen__imagegen调用（16:41:42至16:46:18），不能只看exec JSONL摘要中的command/file_change事件。返回原图路径、保留原图哈希、最终5JPEG哈希均匹配image-manifest；双封面尺寸1440x2560/2560x1440，3插图1600x900，全部小于2MiB。五图已独立目视检查。
+- illustration_plan=3图，body SHA256绑定通过，3个完整普通段落锚点均唯一；计划文件SHA256=74daf26acf7e50bf238aa9130bd270a9acf957c8aa8e462ee92101721a0a471f。image-manifest SHA256=8d62a7ee25735a76e57e08569375b5df1ac7ab6d3789425a96d84bb7f1d86b12。
+- 独立审核hermes:cron_0dd3884f173c_20260927_165323，decision=approved，target=adb79173012b430d64fee1f7effa754fbb348ede1ffb1f273de00bf4f5b753d3；review SHA256=51ac8dd8148b49228432268d4755730c3326a97c9c49e859ff4172c21840acef，proof SHA256=cfe45cef704d4df5dad8ee8f9ae2413536d85f01168f78b2ff5f0df9411cb8f3。
+- 本地冻结receipt edition-bd22b975b1adbff7ddf1c3eadf515a6b，publication-6d65e4fff6f4ae7734d1585c3a05a80a，state=staged，release_at=2026-09-27T12:00:00+00:00（20:00 CST）。未提前发行；发行后API与手机实际位置仍待验证。
+- 追加共享Chat后端修复协调：曾因目标SHA未确定短暂停后立即恢复10cron；0704ddf5a54bf9739e506652e7b60fa2f22f564c最终push并经本任务ls-remote核验后再次暂停，active=[]。本轮唯一服务器部署者改为cleanup，恢复点=/Users/dengzhaoyu/.hermes/backups/publication-chat-followup-0704ddf5；等待其部署验收再pin/恢复。
+
+- 已准备 /private/tmp/publication-planned-reader-readback.py（py_compile通过），供20:10在隔离ASGI进程读取真实生产数据：从required_publication_media和illustration_plan推导数量，逐项比较caption/alt/完整段落/section_id/content_version/URL和媒体哈希，不固定3图。尚未对暂存稿调用读者接口，不提前发行；实际功能运行结果需发行后补记。
+
+## 0704 最终部署后恢复与新稿保存检查
+
+- git ls-remote origin refs/heads/main独立核验0704ddf5a54bf9739e506652e7b60fa2f22f564c；共享后端干净快照110 passed/6 warnings日志已读取。
+- health_check: 本任务独立核API镜像revision、服务器.deployed-sha均0704，/ready返回ready；同版本本机_status通过（今日6/7，20:00尚未到期）。协作server-verification.json为8容器healthy，server-functional.json为session_registration/owner_isolation/tenant_isolation/owner_conflict全部pass、production_user_writes=0，两份原记录均已读取。
+- runtime_after: 0704；原10cron全部恢复原enabled，prompt/schedule/script/deliver/failure_deliver/model/provider逐项保持。恢复回读active=[]。
+- rollback_point: 本机 /Users/dengzhaoyu/.hermes/backups/publication-chat-followup-0704ddf5；服务器 /opt/ai-lab-shared/rollbacks/bookshelf-functionality-0704ddf5a54b，数据库及publication SQLite备份哈希通过，a8cc原release保留。
+- functional_check: 直接只读生产publication.sqlite3，publication-6d65e4fff6f4ae7734d1585c3a05a80a仅一个edition-bd22b975b1adbff7ddf1c3eadf515a6b，state=staged、actual_release_at=null、release_at=2026-09-27T12:00:00+00:00；正文文件/content_hash/plan.body_sha256均076cbb...c9f一致，计划3图、assets5项。部署没有回退稿件。
+- remaining_risks: 新版自动配图、独立审核、暂存已通过；正常到期发行、发行后读者API与实际手机段落位置未验证，20:10自动续查保持ACTIVE。8本历史无媒体、1本仅封面的冻结缺口仍存在，未静默覆盖。
