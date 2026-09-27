@@ -1,8 +1,8 @@
 {
   "task_id": "publication-standard-workflow-20260926",
   "followup": "protocol-and-20-books-media-audit",
-  "status": "TESTED",
-  "source_and_server_sha": "5cd60e418d7b462568469d49782bb90f9d78e381",
+  "status": "DEPLOYED",
+  "source_and_server_sha": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
   "inventory": {
     "count": 20,
     "rows": [
@@ -842,14 +842,17 @@
     "Private media GET requires authentication; generic AsyncImage is insufficient."
   ],
   "limits": [
-    "User has not identified actual client/build; iOS source findings do not verify installed application version.",
-    "Media success tested against real production data in isolated ASGI process with test principal; real user authentication/UI not tested."
+    "Current server c030b9c contains unchanged publication runtime code from pinned local runtime 7414b4e; the two Git SHAs differ.",
+    "Specified real-book iOS debug UI and five images verified; Build 67 archived by coordinated task but TestFlight upload remains incomplete.",
+    "Nine legacy publications have incomplete media and were not silently overwritten or backfilled.",
+    "Isolated ASGI readback validates real data and media hashes, not production login; authentication and real-device evidence are recorded separately.",
+    "Story13 complete automatic publication and reader five-media readback passed; toolkit revision2 prepare requires the tested 64-character receipt repair to be deployed."
   ],
   "changes": [
     "docs/runbooks/publication-standard-workflow.md",
     "docs/publication-operations-runbook.md"
   ],
-  "runtime_or_content_modified": false,
+  "runtime_or_content_modified": true,
   "validation": "Inventory counts, all57 media bytes, bodies,401 boundary, historical cutoff, schema fields, retry limit, local Markdown links and git diff --check passed.",
   "pre_fix_automatic_evidence": {
     "scope": "pre-fix normal Story 08:00; not proof of this new release",
@@ -1398,5 +1401,1184 @@
         ]
       }
     }
+  },
+  "builder_repair_delivery": {
+    "sha": "7414b4e77303ee2aee217a57200806be97ce8ef2",
+    "server_before": {
+      "server_before": "b07e2cc4fd6c0bcd299990ec58d474761134e577",
+      "release": "/opt/releases/ai-lab-platform-b07e2cc4fd6c.NVjqCO",
+      "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b07e2cc4fd6c",
+      "images": {
+        "api": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy"
+        },
+        "workflow-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy"
+        },
+        "planning-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:c7b2d80e8af09bd8a0a4f0335256fce0983026c548ae3b3198d40a0e33c755c3",
+          "health": "healthy"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy"
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy"
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy"
+        }
+      },
+      "publication_db_bytes": 2584576
+    },
+    "server_after": {
+      "server_after": "7414b4e77303ee2aee217a57200806be97ce8ef2",
+      "release": "/opt/releases/ai-lab-platform-7414b4e77303.QdpNjt",
+      "containers": {
+        "api": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "workflow-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "planning-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 38,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "pause": {
+      "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/builder-deploy-pause-20260927-1139",
+      "paused": {
+        "default": [
+          "5a3f2a2eb988",
+          "b52aa900ac12",
+          "fbd1cd1217d7",
+          "171a125ddb63",
+          "94f82c141295",
+          "1ad93e85cec2",
+          "106a9cfabae1",
+          "b8c4c5e40bb1"
+        ],
+        "story": [
+          "d3e461e0578c"
+        ],
+        "supervision": [
+          "0dd3884f173c"
+        ]
+      },
+      "active": [],
+      "budget_reset": false
+    },
+    "real_history_readback": [
+      {
+        "series": "ai-toolkit",
+        "issue_key": "2026-09-27",
+        "directory": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-16f0dcc3ae06306b0675eaa2-2026-09-27",
+        "same_occurrence_rejection": false,
+        "history_scan_passed": true,
+        "read_only": true
+      },
+      {
+        "series": "tang-history",
+        "issue_key": "2026-09-27T13:00",
+        "directory": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300",
+        "same_occurrence_rejection": false,
+        "history_scan_passed": true,
+        "read_only": true
+      }
+    ],
+    "timed_recovery": {
+      "id": "82f150bfae99",
+      "name": "publication builder recovery automatic acceptance",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "publication-builder-timed-start.py",
+      "no_agent": true,
+      "monitor_script": null,
+      "monitor_url": null,
+      "monitor_state": null,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 1,
+        "display": "every 1m"
+      },
+      "schedule_display": "every 1m",
+      "repeat": {
+        "times": 1,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-09-27T11:49:51.036818+08:00",
+      "next_run_at": "2026-09-27T11:50:51.038336+08:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "last_delivery_unverified": null,
+      "failure_streak": 0,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+      "failure_deliver": "local"
+    },
+    "budget_reset": false,
+    "uninterrupted_end_to_end": false,
+    "status": "DEPLOYED; post-repair automatic publication pending",
+    "timed_recovery_receipt": {
+      "job": {
+        "id": "82f150bfae99",
+        "name": "publication builder recovery automatic acceptance",
+        "prompt": "",
+        "skills": [],
+        "skill": null,
+        "model": null,
+        "provider": null,
+        "provider_snapshot": null,
+        "model_snapshot": null,
+        "base_url": null,
+        "script": "publication-builder-timed-start.py",
+        "no_agent": true,
+        "monitor_script": null,
+        "monitor_url": null,
+        "monitor_state": null,
+        "context_from": null,
+        "schedule": {
+          "kind": "interval",
+          "minutes": 1,
+          "display": "every 1m"
+        },
+        "schedule_display": "every 1m",
+        "repeat": {
+          "times": 1,
+          "completed": 1
+        },
+        "enabled": false,
+        "state": "completed",
+        "paused_at": null,
+        "paused_reason": null,
+        "created_at": "2026-09-27T11:49:51.036818+08:00",
+        "next_run_at": null,
+        "last_run_at": "2026-09-27T11:52:05.053200+08:00",
+        "last_status": "ok",
+        "last_error": null,
+        "last_delivery_error": null,
+        "last_delivery_unverified": null,
+        "failure_streak": 0,
+        "deliver": "local",
+        "origin": null,
+        "enabled_toolsets": null,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "failure_deliver": "local",
+        "last_dispatch": {
+          "scheduled_at": "2026-09-27T11:50:51.038336+08:00",
+          "dispatched_at": "2026-09-27T11:51:50.546357+08:00",
+          "lateness_seconds": 59.5,
+          "kind": "on_time"
+        },
+        "fire_claim": null
+      },
+      "executions": [
+        {
+          "id": "544a2582450047749fa7ab80e3545fd1",
+          "job_id": "82f150bfae99",
+          "source": "builtin",
+          "process_id": "610244952c9945e28daf1ea328dea5f1",
+          "pid": 80589,
+          "process_started_at": 179040069549,
+          "status": "completed",
+          "claimed_at": "2026-09-27T11:51:50.575162+08:00",
+          "started_at": "2026-09-27T11:51:50.616670+08:00",
+          "finished_at": "2026-09-27T11:52:05.055644+08:00",
+          "error": null,
+          "handoff_pending": 0,
+          "handoff_started_at": null
+        }
+      ]
+    },
+    "temporary_job_removed": true,
+    "temporary_script_removed": true,
+    "normal_jobs_after_recovery": [
+      {
+        "profile": "default",
+        "id": "1ad93e85cec2",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T12:00:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "fbd1cd1217d7",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T12:00:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "5a3f2a2eb988",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T14:05:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "171a125ddb63",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T12:00:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "b8c4c5e40bb1",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-28T01:00:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "106a9cfabae1",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T23:40:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "94f82c141295",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T12:00:00+08:00"
+      },
+      {
+        "profile": "default",
+        "id": "b52aa900ac12",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T14:05:00+08:00"
+      },
+      {
+        "profile": "story",
+        "id": "d3e461e0578c",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T18:00:00+08:00"
+      },
+      {
+        "profile": "supervision",
+        "id": "0dd3884f173c",
+        "enabled": true,
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/7414b4e77303ee2aee217a57200806be97ce8ef2",
+        "next_run_at": "2026-09-27T12:10:00+08:00"
+      }
+    ],
+    "noon_other_series_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-cb4a65e4e6a1488e02440127f2c0316b",
+          "series_id": "ai-history",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "ac205e456d5bffef26bf975a3cc38b807ba48b5164e9bb6fd4e422ede1a85a38",
+          "section_count": 9,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 0,
+          "code_block_hashes": [],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 1460378,
+              "sha256": "439b75c36c0d0bb621d3547867f60276e0ba84aa30a1275142267b7e0b4d6d20"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1705104,
+              "sha256": "0c4fc463ff4837dfc97df56754da9fd896cd956e0cee7b034127dacc58a66df9"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 864375,
+              "sha256": "ec6de583c6f89b56c221ebbc6f8c8e4ea064379c7835f5899e37414c9f3a6846"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 649380,
+              "sha256": "57af6131479122dc416ef014f6610588349a7aa29550c23a4f5c1589b8e70747"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 715228,
+              "sha256": "ddb8033a0f6e77f9db1db40d5a80d83bd4d1058b2385cf9e68e3118bf4f03672"
+            }
+          ]
+        },
+        {
+          "publication_id": "publication-01c2cef7d2593952bcd4d5547b1c5785",
+          "series_id": "concept-fables",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "ebe8a638a965fd70e4cf4665758e4b3130d934da6affc8b50d9e20c0df56a679",
+          "section_count": 8,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 0,
+          "code_block_hashes": [],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 2093518,
+              "sha256": "f6c7f579e031f9a7f6ee2c90e6acdc1f4e58919fa4bd458550844aafa4d12d7b"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 2067674,
+              "sha256": "feb9b15ab9d50800d9e15a139125af773329e41ec3846fad10ae6e78fd764bdc"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 1995832,
+              "sha256": "79016b74b428a069a1175fdf4c971ffddeba9fd6a4b44f8778dd0ccdbfc5b2fb"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 1889672,
+              "sha256": "932e02e2d3662bf6789e6f637c3cb172e655935cb4ffd5b3cc2661403e1da41f"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 1974455,
+              "sha256": "834119aefcc90a729963c8f3738b0202c035476f7478e0ebab51417a6cc1ee0b"
+            }
+          ]
+        },
+        {
+          "publication_id": "publication-237a6fa83889846600f1ac8e1eec5e9d",
+          "series_id": "ai-practice",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "113dc3b2c8e2de098e0e65aea756e7fe2e21b62e787f9db5a5b85672f660ce66",
+          "section_count": 10,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 7,
+          "code_block_hashes": [
+            "f46f2abf85cf77988d6731c8fecf2169cf2b630b935fecab59535be59a74ef10",
+            "f5794270cbd95dfaa1494345f8cf423998091933564feab4203032b07d6fc1d4",
+            "7d37af3061bbcb56f5c36bbaccd4968408f20923826d3580cde5bf1279b0bdd6",
+            "69b933d68bf64fd122bdbf9cf5687c2b4922c252abef3b2fa05b4c454762f5d3",
+            "f1a3b0af2a30db6619a3d55db4e31cabd14ae528ad4c3e85c5d470767410d835",
+            "84a5eaa92a654fa9f0f6a0ff25bda091bddeef6bb5bf07777b2636ef3ff452a1",
+            "bf2d31520e0f07f6e7d8f3fa490d14c2299bcc1c2ba7364390e2c1cec28a8df0"
+          ],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 685532,
+              "sha256": "160e7b5e9cd72c15813769f043de8c2c46d3022a3d22a0f79b207a9189ff5c56"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 385012,
+              "sha256": "1364683c054a65a18af03c5a0cb0715016a6fcd16981019f869b8e4b79b19d8b"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 236854,
+              "sha256": "a19ecd91845958d10ca668c11545a314c614e127aca1616241b92b9d14daab69"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 290913,
+              "sha256": "3ec069ce90e51dc6dd16552d1694e3d8cfb3953920b6062e6b033020d48b426f"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 224828,
+              "sha256": "4c90905df2c976681f93a55a60464e0180d37ffffffd908563480d298556753c"
+            }
+          ]
+        }
+      ]
+    },
+    "story_generation_launch": {
+      "native_execution_id": "ad547213a3a747798d353bdec32d8afb",
+      "native_session": "cron_171a125ddb63_20260927_120104",
+      "first_launch_flags": [
+        "exec",
+        "--json",
+        "--sandbox",
+        "workspace-write",
+        "--skip-git-repo-check",
+        "-C",
+        "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300"
+      ],
+      "process_handle": "proc_b146d759e3f5",
+      "pid": 43532,
+      "stderr_empty": true,
+      "process_manage_discrepancy": "reported exited with null exit code while subsequent ps showed active",
+      "agent_fallback_wait": {
+        "deadline_seconds": 540,
+        "poll_seconds": 5,
+        "terminal_timeout_seconds": 600,
+        "zombie_check": true
+      },
+      "manual_intervention": false,
+      "image_completion": "pending independent tool and file verification"
+    },
+    "toolkit_rejection_recorded": {
+      "attempt_id": "attempt-2fb9f7db7cd0496d97df96df5aa1e92d",
+      "issue_id": "issue-dc6e2ea2dc24a3999ba01da33613d4db",
+      "revision": 1,
+      "state": "rejected",
+      "closed_at": "2026-09-27T04:06:07.939539+00:00",
+      "review_hash": "ed966b30b46ed584deae213ee26ad1f6cc48cd47577707686b1dfa8bd9726b3c",
+      "target_hash": "42498d63cee8eba1826609305c5e709819a460be2b2d35b52711132a82dd9902",
+      "body_hash": "2479fedb874c8f4f10cee0ef383255497244d2cc6e787b5c40629ce28d781466",
+      "gaps": [
+        {
+          "acceptance_criterion": "使用指定 Python 3.12 复跑时，任一 kind 缺少合同声明的必填字段均以非零退出码和明确错误拒绝；原正例继续通过，既有三个负例继续拒绝，正文、脚本哈希与执行记录同步更新。",
+          "chapter": "chapter-001",
+          "id": "required_claim_fields_not_enforced",
+          "question": "当前校验器是否真的逐项强制 claim 合同声明的七个字段齐全？",
+          "required_evidence": "修订校验器，显式检查每个 claim 的键集合或逐项必填字段；增加至少一个仅省略 basis_claim_ids、next_check 等字段的冻结负例，并保存 Python 3.12 的真实失败输出与退出码。",
+          "resolution": "",
+          "source_urls": [],
+          "state": "open",
+          "why_reader_needs_it": "读者会把 RESULT=PASS 当作已满足教程定义的本地合同；若必填字段可直接省略，正文的核心验收边界和可复制结论会被高估。"
+        }
+      ],
+      "native_review_session": "hermes:cron_fbd1cd1217d7_20260927_115722",
+      "finalize_native_release_execution": "30e07adc55024a31b5d29c86944a8371"
+    },
+    "story_generated_images": {
+      "rollout": "/Users/dengzhaoyu/.codex/sessions/2026/09/27/rollout-2026-09-27T12-03-16-01a0e108-0eee-7aa0-af81-481d53a415e8.jsonl",
+      "thread": "01a0e108-0eee-7aa0-af81-481d53a415e8",
+      "tool_calls": [
+        {
+          "timestamp": "2026-09-27T04:04:26.710Z",
+          "call_id": "call_J5TeY5aY0p8w37FoTMIl8Nxn",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e108-0eee-7aa0-af81-481d53a415e8/exec-3818d1e3-9f9a-4abd-a3e7-20cdccda966e.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:05:33.309Z",
+          "call_id": "call_8cfbAQPHT7TeE22QlxSMVNyC",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e108-0eee-7aa0-af81-481d53a415e8/exec-964425e1-b35e-47c3-9602-9990b59766dc.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:06:45.493Z",
+          "call_id": "call_k3M7YKHVYZK3nYko5hTeZWMR",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e108-0eee-7aa0-af81-481d53a415e8/exec-d7b03053-72cc-4939-a546-ef1935d43cc0.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:08:05.056Z",
+          "call_id": "call_SaDwaSEuzRyp8o2LVi8dcl5N",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e108-0eee-7aa0-af81-481d53a415e8/exec-ab2af40b-f329-434d-bb5a-b1bf226f6a62.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:09:37.677Z",
+          "call_id": "call_8AnVLNENUVPjcZQ1Y58wrtnE",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e108-0eee-7aa0-af81-481d53a415e8/exec-938b5fd2-a460-4ffe-9e7a-1114da73d935.png"
+          ]
+        }
+      ],
+      "image_manifest_sha256": "ed643e53d23d62eaf4592e24164a630b545ebbe556e8695ab875e4e268b03587",
+      "images": [
+        {
+          "role": "shelf_cover",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300/shelf_cover.jpg",
+          "size": [
+            1440,
+            2560
+          ],
+          "sha256": "bc4025a5b2f445dc9b86d609794399ab42f83f8498ebf1f804f0ee31371e26c4",
+          "final_hash_matches": true,
+          "original_sha256": "9f8d795362a5f6db947a8e9ebb08c2bb619b62a07e55a44f5ca1ad7900d22224",
+          "original_hash_matches": true,
+          "tool_source_matches": true
+        },
+        {
+          "role": "reader_cover",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300/reader_cover.jpg",
+          "size": [
+            2560,
+            1440
+          ],
+          "sha256": "077d2562413c3727ad29fc4c7f1c118d9d10761a9baa72cb85b885d3aa509061",
+          "final_hash_matches": true,
+          "original_sha256": "54c44b77bf2d18d5e6feb9df4da05964c3c52b7e37e4c46b784ce095b6a9f9e8",
+          "original_hash_matches": true,
+          "tool_source_matches": true
+        },
+        {
+          "role": "illustration_01",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300/illustration_01.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "3d275a80932b90b45bdb6c59492731ec70ef0e2fd3a9b286ad88d4981bac1810",
+          "final_hash_matches": true,
+          "original_sha256": "23e728568586c9e4922a35e5326da042ca0511e9e46a59dd98c047271b29a45e",
+          "original_hash_matches": true,
+          "tool_source_matches": true
+        },
+        {
+          "role": "illustration_02",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300/illustration_02.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "f64c286e9ff1be91b5401121950345d8061f4da8df0e47a9a9ae8c89a9f51772",
+          "final_hash_matches": true,
+          "original_sha256": "487b1092a0ecb6d2dbfb63f4322aba8244c33827f705613aa5272e8440d9c124",
+          "original_hash_matches": true,
+          "tool_source_matches": true
+        },
+        {
+          "role": "illustration_03",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/tang-history-native-9f0e37cb9f9656dd897f4c66-2026-09-27T1300/illustration_03.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "a38d9bbb68e95c6045ee09624f34813dc5888c6a176b653c334df96e388e927c",
+          "final_hash_matches": true,
+          "original_sha256": "bbabd17671d28911aeeb882ed4e2e93de54c0cb507aeee510536d8c8f13bfb5c",
+          "original_hash_matches": true,
+          "tool_source_matches": true
+        }
+      ],
+      "observed_at": "2026-09-27T12:12:00+08:00"
+    },
+    "health_during_automatic_recovery": {
+      "server_after": "7414b4e77303ee2aee217a57200806be97ce8ef2",
+      "release": "/opt/releases/ai-lab-platform-7414b4e77303.QdpNjt",
+      "containers": {
+        "api": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "workflow-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "planning-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:a3f10610bc2a3d12827f2f9b504bdc1f9324c78d41665e714414c89e3d936610",
+          "health": "healthy",
+          "revision": "7414b4e77303ee2aee217a57200806be97ce8ef2"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 38,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "story_finalize_transient_readback": {
+      "returncode": 0,
+      "ok": true,
+      "attempts": [
+        {
+          "issue_id": "issue-8040b6323c0ad848e2e84b036a38cbf4",
+          "attempt_id": "attempt-461283e5b1824393b2c5054996759686",
+          "state": "approved",
+          "revision": 1,
+          "review_hash": "4a82f6e592c4dc89246ad6df7025472ea8a8505cd9bf9b6442644d35bd85ec4f",
+          "target_hash": "8f5a0662f94b259f4783c0710ce52c439ea1730192ac057d6bfebf065ef4a358"
+        }
+      ],
+      "items": []
+    },
+    "status_repeat_probe": [
+      {
+        "index": 0,
+        "returncode": 0,
+        "stdout_bytes": 1704397,
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ok": true,
+        "story": [
+          {
+            "edition_id": "edition-220ff2b0c89f611a49f119d9422f8d63",
+            "issue_id": "issue-8040b6323c0ad848e2e84b036a38cbf4",
+            "state": "staged",
+            "content_hash": "c489480888766bd7d373a0a2560368d366839bf6619197177b50696a0ee884e1"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "returncode": 0,
+        "stdout_bytes": 1704397,
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ok": true,
+        "story": [
+          {
+            "edition_id": "edition-220ff2b0c89f611a49f119d9422f8d63",
+            "issue_id": "issue-8040b6323c0ad848e2e84b036a38cbf4",
+            "state": "staged",
+            "content_hash": "c489480888766bd7d373a0a2560368d366839bf6619197177b50696a0ee884e1"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "returncode": 0,
+        "stdout_bytes": 1704397,
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ok": true,
+        "story": [
+          {
+            "edition_id": "edition-220ff2b0c89f611a49f119d9422f8d63",
+            "issue_id": "issue-8040b6323c0ad848e2e84b036a38cbf4",
+            "state": "staged",
+            "content_hash": "c489480888766bd7d373a0a2560368d366839bf6619197177b50696a0ee884e1"
+          }
+        ]
+      }
+    ],
+    "story_finalize_recovered_execution": {
+      "profile": "default",
+      "id": "45b081e1b0734f489df163c86060ac7a",
+      "job_id": "94f82c141295",
+      "status": "completed",
+      "started_at": "2026-09-27T12:28:17.919140+08:00",
+      "finished_at": "2026-09-27T12:31:39.999667+08:00",
+      "error": null
+    },
+    "coordinated_deployment": {
+      "main_sha": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+      "publication_runtime_sha": "7414b4e77303ee2aee217a57200806be97ce8ef2",
+      "ancestor_verified": true,
+      "publication_code_unchanged": true,
+      "server_health": {
+        "server_after": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+        "release": "/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1",
+        "containers": {
+          "api": {
+            "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+            "health": "healthy",
+            "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+          },
+          "workflow-worker": {
+            "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+            "health": "healthy",
+            "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+          },
+          "planning-worker": {
+            "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+            "health": "healthy",
+            "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+          },
+          "agent-evaluation-worker": {
+            "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+            "health": "healthy",
+            "revision": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8"
+          },
+          "frontend": {
+            "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+            "health": "healthy",
+            "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+          },
+          "postgres": {
+            "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+            "health": "healthy",
+            "revision": null
+          },
+          "redis": {
+            "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+            "health": "healthy",
+            "revision": null
+          },
+          "taskboard": {
+            "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+            "health": "healthy",
+            "revision": null
+          }
+        },
+        "health_check": {
+          "api": {
+            "status": "ready",
+            "version": "0.8.0"
+          },
+          "bridge": {
+            "status": "ok",
+            "service": "hermes-bridge",
+            "version": "v6.0",
+            "sessions": 53,
+            "workflow_runs": 46,
+            "workflow_orchestration": true,
+            "streaming": true,
+            "ws_pty": "ws://127.0.0.1:9119/api/pty"
+          }
+        },
+        "deploy_lock_free": true
+      },
+      "rollback_release": "/opt/releases/ai-lab-platform-7414b4e77303.QdpNjt",
+      "rollback_backup": "/opt/ai-lab-shared/rollbacks/chat-cleanup-pcm-c030b9cbba7a",
+      "rollback_evidence_source": "note-organization-v2-20260927 manifest (coordinated task)",
+      "app_build_67": "archived by coordinated task, not uploaded to TestFlight"
+    },
+    "toolkit_automatic_revision": {
+      "execution_id": "6d273d025a6a425ab1c96a2642544053",
+      "author_job_id": "b52aa900ac12",
+      "session_id": "cron_b52aa900ac12_20260927_123252",
+      "issue_key": "2026-09-27",
+      "dispatch_at": "2026-09-27T12:32:35.055344+08:00",
+      "reason": "native_content_rejected",
+      "author_claim_material": "ed3d743afe66f8bae7eef2409e6224c1a549a4dc3ce8ce297d54253b5c7a5107",
+      "attempts": 1,
+      "actual_gap_read_message_id": 546638,
+      "actual_gap_id": "required_claim_fields_not_enforced",
+      "manual_intervention": false
+    },
+    "story_1300_automatic_release": {
+      "output_path": "/Users/dengzhaoyu/.hermes/cron/output/1ad93e85cec2/2026-09-27_13-01-20.md",
+      "native_execution_id": "5f51c708de624937a2e5c0cbd62d80d6",
+      "started_at": "2026-09-27T13:00:47.411911+08:00",
+      "finished_at": "2026-09-27T13:01:20.271028+08:00",
+      "released_edition_ids": [
+        "edition-220ff2b0c89f611a49f119d9422f8d63"
+      ],
+      "published_delta": [
+        "publication-8040b6323c0ad848e2e84b036a38cbf4"
+      ],
+      "story": {
+        "body_available": false,
+        "expected": 3,
+        "media_roles": [],
+        "published": 2,
+        "slots": [
+          {
+            "body_available": true,
+            "issue_key": "2026-09-27T08:00",
+            "issue_slot": "08:00",
+            "media_roles": [
+              "illustration_01",
+              "illustration_02",
+              "illustration_03",
+              "reader_cover",
+              "shelf_cover"
+            ],
+            "published": 1,
+            "release_at": "2026-09-27T08:00:00+08:00"
+          },
+          {
+            "body_available": true,
+            "issue_key": "2026-09-27T13:00",
+            "issue_slot": "13:00",
+            "media_roles": [
+              "illustration_01",
+              "illustration_02",
+              "illustration_03",
+              "reader_cover",
+              "shelf_cover"
+            ],
+            "published": 1,
+            "release_at": "2026-09-27T13:00:00+08:00"
+          },
+          {
+            "body_available": false,
+            "issue_key": "2026-09-27T20:00",
+            "issue_slot": "20:00",
+            "media_roles": [],
+            "published": 0,
+            "release_at": "2026-09-27T20:00:00+08:00"
+          }
+        ]
+      }
+    },
+    "story_1300_reader_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-8040b6323c0ad848e2e84b036a38cbf4",
+          "series_id": "tang-history",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "c489480888766bd7d373a0a2560368d366839bf6619197177b50696a0ee884e1",
+          "section_count": 10,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 0,
+          "code_block_hashes": [],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 1304134,
+              "sha256": "bc4025a5b2f445dc9b86d609794399ab42f83f8498ebf1f804f0ee31371e26c4"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1684173,
+              "sha256": "077d2562413c3727ad29fc4c7f1c118d9d10761a9baa72cb85b885d3aa509061"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 716971,
+              "sha256": "3d275a80932b90b45bdb6c59492731ec70ef0e2fd3a9b286ad88d4981bac1810"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 751531,
+              "sha256": "f64c286e9ff1be91b5401121950345d8061f4da8df0e47a9a9ae8c89a9f51772"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 588803,
+              "sha256": "a38d9bbb68e95c6045ee09624f34813dc5888c6a176b653c334df96e388e927c"
+            }
+          ]
+        }
+      ]
+    },
+    "toolkit_r2_generated_images": {
+      "rollout": "/Users/dengzhaoyu/.codex/sessions/2026/09/27/rollout-2026-09-27T12-44-46-01a0e12e-0dd1-72f1-ab14-19cbf53de64e.jsonl",
+      "thread": "01a0e12e-0dd1-72f1-ab14-19cbf53de64e",
+      "tool_calls": [
+        {
+          "timestamp": "2026-09-27T04:45:47.566Z",
+          "call_id": "call_o8ENCUndyiIsK1YDIJ8nA5h2",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-900ed99d-410b-4c5b-b2ed-c7d3a8b8432b.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:46:27.328Z",
+          "call_id": "call_evtbrYS9rZI0Q469RZSe0sp5",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-7d400e4c-1606-4c5c-999a-6dd4d83c04dc.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:47:06.754Z",
+          "call_id": "call_uqHWnQDkao5WGRLHytu8egFm",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-c2a8059f-1d8b-4c1c-9a9d-f7b46a845293.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:47:36.625Z",
+          "call_id": "call_PsVbiZrkyWmgvQZo6ejWJzc5",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-5d32ef24-372c-462a-97fc-9e6d7568a321.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:48:32.723Z",
+          "call_id": "call_hjsiAhuMrNlZnsez0zKSrWGl",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-dfb6b0e2-e562-4634-8327-587f6fd0ea0d.png"
+          ]
+        },
+        {
+          "timestamp": "2026-09-27T04:49:32.931Z",
+          "call_id": "call_Bf8zmIJWYjmLCuARmkApOYxa",
+          "returned_paths": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-19d69e76-f4a6-46e0-acdd-a975d8294a20.png"
+          ]
+        }
+      ],
+      "image_manifest_sha256": "1dc4978b4e83e7334a475b52b9228cdba5f43cf36f9f8cc7189a83dca54f1bdb",
+      "images": [
+        {
+          "role": "shelf_cover",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-29874ecde8d0c1133417cc2e-2026-09-27/shelf_cover.jpg",
+          "size": [
+            1440,
+            2560
+          ],
+          "sha256": "6520b68003f77af5d136f47c111cb0c1947adaa4d31bdf067cb4764effdab9ab",
+          "final_hash_matches": true,
+          "original_sha256": "c845ee178610822c66f0d3dae0c3981550323ded9517ff1e15009270cb99d7c1",
+          "original_hash_matches": true,
+          "tool_source_matches": true,
+          "tool_source_files": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-19d69e76-f4a6-46e0-acdd-a975d8294a20.png"
+          ]
+        },
+        {
+          "role": "reader_cover",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-29874ecde8d0c1133417cc2e-2026-09-27/reader_cover.jpg",
+          "size": [
+            2560,
+            1440
+          ],
+          "sha256": "73eaf2e8ea91e6b38512f4a2692365e1977dbd8d72d119a065f6ef8ec7db7e99",
+          "final_hash_matches": true,
+          "original_sha256": "028e4a9ec7a6f4a7e0635ef9906d7e2109a00c69f0586923864929ccb385f916",
+          "original_hash_matches": true,
+          "tool_source_matches": true,
+          "tool_source_files": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-7d400e4c-1606-4c5c-999a-6dd4d83c04dc.png"
+          ]
+        },
+        {
+          "role": "illustration_01",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-29874ecde8d0c1133417cc2e-2026-09-27/illustration_01.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "071f5ee88f251b82eea6b1afebecc2faa27e8b152845c4fc9c0879f64ba07e92",
+          "final_hash_matches": true,
+          "original_sha256": "4bb17f8b4b5946c9c950d1c598916ca3988e66786a566a616ea624a3e8dd9c87",
+          "original_hash_matches": true,
+          "tool_source_matches": true,
+          "tool_source_files": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-c2a8059f-1d8b-4c1c-9a9d-f7b46a845293.png"
+          ]
+        },
+        {
+          "role": "illustration_02",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-29874ecde8d0c1133417cc2e-2026-09-27/illustration_02.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "0c70a81657dfdde9e5983536aa54a81fa93f9455f406501cfb13bd46709b8a86",
+          "final_hash_matches": true,
+          "original_sha256": "a6130157f308907e869bf9f79d23ea82346c2cd6c46c3ba4919060f737f84e65",
+          "original_hash_matches": true,
+          "tool_source_matches": true,
+          "tool_source_files": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-5d32ef24-372c-462a-97fc-9e6d7568a321.png"
+          ]
+        },
+        {
+          "role": "illustration_03",
+          "final_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/ai-toolkit-native-29874ecde8d0c1133417cc2e-2026-09-27/illustration_03.jpg",
+          "size": [
+            1600,
+            900
+          ],
+          "sha256": "8233db61da4ee4adede62f9f66ab3edc4562aaa54fb59061386becd007b968f1",
+          "final_hash_matches": true,
+          "original_sha256": "2351aaa00a98c1928a2aaaa24ddb71caa138fb2937f9bbda3c7ba1b068a03375",
+          "original_hash_matches": true,
+          "tool_source_matches": true,
+          "tool_source_files": [
+            "/Users/dengzhaoyu/.codex/generated_images/01a0e12e-0dd1-72f1-ab14-19cbf53de64e/exec-dfb6b0e2-e562-4634-8327-587f6fd0ea0d.png"
+          ]
+        }
+      ],
+      "final_after_asset_execution_completed": true,
+      "asset_execution_finished_at": "2026-09-27T12:58:10.150685+08:00"
+    }
+  },
+  "initial_audit_snapshot": {
+    "status": "TESTED",
+    "source_and_server_sha": "5cd60e418d7b462568469d49782bb90f9d78e381",
+    "runtime_or_content_modified": false,
+    "limits": [
+      "User has not identified actual client/build; iOS source findings do not verify installed application version.",
+      "Media success tested against real production data in isolated ASGI process with test principal; real user authentication/UI not tested."
+    ]
+  },
+  "inventory_scope": "Original 20-book diagnostic snapshot before media repairs; counts are not the current publication inventory. ios_findings describe pre-fix causes; media_fix_delivery records repairs and real-device validation.",
+  "receipt_kind_repair": {
+    "status": "TESTED",
+    "base_sha": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+    "cause": "content producer and local relay accept 64-character kind, shared receipt validator limited it to 40; actual 41-character execution_negative_fixture_missing_fields failed prepare",
+    "change": "shared _receipts limit 40 -> 64, preserve frozen content and hashes",
+    "boundary_tests": 8,
+    "independent_boundary_tests": 8,
+    "related_regression": "116 passed, 4 existing deprecation warnings; initial sandbox ps denials resolved by identical authorized rerun",
+    "runtime_pause": {
+      "all_10_paused": true,
+      "active": [],
+      "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/receipt-kind-deploy-pause-20260927"
+    },
+    "rollback": {
+      "server_before": "c030b9cbba7a2d16e7d94bbb6541a069ae7442e8",
+      "release": "/opt/releases/ai-lab-platform-c030b9cbba7a.8k10j1",
+      "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/c030b9cbba7a",
+      "images": {
+        "api": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy"
+        },
+        "workflow-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy"
+        },
+        "planning-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:9ed7b7514ebfd8ffac5a3b925b144f845e921e283ff1a527912147dc6252beaa",
+          "health": "healthy"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy"
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy"
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy"
+        }
+      },
+      "publication_db_bytes": 2584576
+    },
+    "deployment": "pending"
   }
 }

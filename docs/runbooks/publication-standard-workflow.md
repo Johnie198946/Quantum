@@ -49,7 +49,7 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 | 采集 | 采集 cron；配置的候选来源 | 至少1个可用候选与 CONTENT_AVAILABLE 收据；区分 saved/queued/compiled | 不要求各主题齐备；不得把排队或收据冒充已编译正文 |
 | 编译/选题 | 既有知识入口；已保存候选或授权知识 | 可读、可引用的来源正文；冻结本期选中输入 | 无正文就等待；非本期选中候选失败不扩大为全栏目失败 |
 | 作者请求 | 程序 `author-input` | `PUBLICATION_CONTENT_REQUEST`：series_id、issue_date、issue_key、issue_slot、release_at、author_job_id | 由配置及服务端期次生成；无任务返回 NO_NEW_DRAFT |
-| 作者内容 | main/Story；只读本期请求、来源与返工缺口 | `publication-content-v1` 的六个字段：schema_version、title、summary、body、source_documents、execution_documents；文档项仅 kind/content | 来源列表非空；真实执行材料按体裁需要。禁止添加批准、发行、身份及状态字段；校验器在 `backend/services/publication_workflow_handoff.py` |
+| 作者内容 | main/Story；只读本期请求、来源与返工缺口 | `publication-content-v1` 的六个字段：schema_version、title、summary、body、source_documents、execution_documents；文档项仅 kind/content | kind 为1–64字符的小写字母、数字、下划线，且以字母开头；程序收据沿用原值与同一上限，不截断冻结类型。来源列表非空；真实执行材料按体裁需要。禁止添加批准、发行、身份及状态字段；校验器在 `backend/services/publication_workflow_handoff.py` |
 | 作者回执 | 作者完成当前原生会话 | `publication_content_result` 仅含 series_id、issue_date、issue_slot、artifact_file；前三项原样回显请求 | 程序验证真实终态、请求匹配、路径和产物哈希，生成 `publication-native-author-v1` 身份绑定；回显不构成作者自行决定期次的授权 |
 | 素材/prepare | 素材角色；冻结正文及来源 | shelf_cover、reader_cover、illustration_01..03、image-manifest.json 与真实生成证据 | 素材角色不改正文或作者；start 构建合同，prepare 返回 issue/revision/attempt/target_hash；正文、来源、素材共同受审核绑定 |
 | 独立审核 | 独立 reviewer；`PUBLICATION_REVIEW_REQUEST` 精确指定的本期材料 | 原始审核 JSON、publication_review_result 回执；按实际请求绑定目标及 publication_material_hash（若提供） | 读取全部正文与五图证据；拒绝则结构化 research_gaps；已有 open 缺口通过 gap_resolutions 逐项确认；不得 stage、改合同或自签名 |

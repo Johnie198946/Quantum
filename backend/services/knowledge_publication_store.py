@@ -368,7 +368,7 @@ def _receipts(value: Any, field: str, maximum: int = 100) -> list[dict[str, str]
         artifact_id, digest = str(item["artifact_id"]), str(item["sha256"])
         if not _SAFE_ID.fullmatch(artifact_id) or not _HASH.fullmatch(digest):
             raise PublicationError(f"invalid {field} receipt")
-        result.append({"artifact_id": artifact_id, "sha256": digest, "kind": _text(item["kind"], f"{field}.kind", 40)})
+        result.append({"artifact_id": artifact_id, "sha256": digest, "kind": _text(item["kind"], f"{field}.kind", 64)})
     return result
 
 
