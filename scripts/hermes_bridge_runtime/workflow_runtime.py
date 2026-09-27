@@ -138,7 +138,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                     str(run.get("knowledge_capability") or ""),
                     query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                     category_scope=requested_scope,
-                )
+                ) if requested_scope else []
                 node_network_allowed = bool(
                     effective_allow_network
                     and params.get("allow_network")

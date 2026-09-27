@@ -1,0 +1,5 @@
+workflow_started {'execution_id': 'wfr_cloud_maps_6fa3ec745271', 'status': 'queued'}
+{"status": "failed", "error": "timed out", "elapsed": 21.53, "tools": [], "nodes": {"travel_research": {"status": "failed", "attempt": 1}}}
+Traceback (most recent call last):
+  File "<string>", line 29, in <module>
+AssertionError: timed out

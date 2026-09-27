@@ -1,0 +1,96 @@
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  4.508MB
+
+Step 1/8 : FROM ai-lab-platform-api:travel-parent-f8c7d064c959
+ ---> 52e852e6fc80
+Step 2/8 : USER root
+ ---> Running in 9a9b8e466675
+ ---> Removed intermediate container 9a9b8e466675
+ ---> 03e866ebe076
+Step 3/8 : RUN rm -rf /app/backend /app/config /app/scripts
+ ---> Running in a4730dfd9306
+ ---> Removed intermediate container a4730dfd9306
+ ---> ba62d74fd999
+Step 4/8 : COPY backend /app/backend
+ ---> ec751955a710
+Step 5/8 : COPY config /app/config
+ ---> 4fa2a94f8d5f
+Step 6/8 : COPY scripts /app/scripts
+ ---> b642120d90e0
+Step 7/8 : LABEL org.opencontainers.image.revision=f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
+ ---> Running in df0e022ae7ee
+ ---> Removed intermediate container df0e022ae7ee
+ ---> fd5ec51854ef
+Step 8/8 : USER ailab
+ ---> Running in d103d9319cf2
+ ---> Removed intermediate container d103d9319cf2
+ ---> 071c7a3fbb7c
+Successfully built 071c7a3fbb7c
+Successfully tagged ai-lab-platform-api:travel-f8c7d064c959
+No broken requirements found.
+candidate_travel_import=passed
+ROLLBACK_READY=/opt/ai-lab-shared/rollbacks/chat-travel-pcm-f8c7d064c959
+==> [1/6] 下载并解包 SHA f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+==> [3a/6] 执行 QuantumWorkspace additive schema migration
+{"dry_run": false, "orphan_conversation_ids": [], "orphan_conversation_references": [], "projects_scanned": 22, "projects_to_backfill": 0, "revisions_written": 0}
+ Container ai-lab-platform-postgres-1  Running
+ Container ai-lab-platform-workflow-worker-1  Recreate
+ Container ai-lab-platform-taskboard-1  Running
+ Container ai-lab-platform-redis-1  Running
+ Container ai-lab-platform-api-1  Recreate
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreated
+ Container ai-lab-platform-frontend-1  Recreate
+ Container ai-lab-platform-planning-worker-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreated
+ Container ai-lab-platform-workflow-worker-1  Recreated
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreated
+ Container ai-lab-platform-redis-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-agent-evaluation-worker-1  Starting
+ Container ai-lab-platform-redis-1  Healthy
+ Container ai-lab-platform-api-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-workflow-worker-1  Starting
+ Container ai-lab-platform-api-1  Started
+ Container ai-lab-platform-frontend-1  Starting
+ Container ai-lab-platform-api-1  Waiting
+ Container ai-lab-platform-agent-evaluation-worker-1  Started
+ Container ai-lab-platform-workflow-worker-1  Started
+ Container ai-lab-platform-frontend-1  Started
+ Container ai-lab-platform-api-1  Healthy
+ Container ai-lab-platform-planning-worker-1  Starting
+ Container ai-lab-platform-planning-worker-1  Started
+==> [4/6] API 健康检查与运行契约审计
+✅ runtime contract audit passed
+ - data_dir: /app/data
+ - matrix: /app/data/knowledge_matrix.json
+==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [5/6] 原子切换 release 并重启 Hermes runtime
+hermes_restart_status=skipped_absent unit=hermes-serve.service
+hermes_restart_status=skipped_absent unit=hermes-serve-forward.service
+hermes_restart_status=skipped_absent unit=hermes-gateway.service
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [6/6] 最终健康检查
+curl: (28) Operation timed out after 5004 milliseconds with 0 bytes received
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+curl: (28) Operation timed out after 5002 milliseconds with 0 bytes received
+{"status":"ready","version":"0.8.0"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":85,"workflow_runs":46,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":85,"workflow_runs":46,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+deployed_sha=f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
+release=/opt/releases/ai-lab-platform-f8c7d064c959.229Byr
+rollback_point=/opt/releases/ai-lab-platform-21250c7b8a52.rS7UdR

@@ -1,16 +1,16 @@
 # Travel notes local implementation completion record
 
 - task_id: travel-notes-20260927
-- status: COMMITTED
+- status: DEPLOYED
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1 / 未生成本地 commit
-- remote_sha: 未核验；未授权/未执行 push
-- server_before: a8cc2954e13a40732fc36444df6beaf81f05b80b（本轮云端只读盘点）
-- server_after: 0704ddf5a54bf9739e506652e7b60fa2f22f564c（外部流程更新，本任务未部署）
-- health_check: 初始服务器 /health 返回 ok/0.8.0，Bridge/Worker active；非本任务部署后验收
-- functional_check: 本地完整客户端、Office/多轮/离线测试已通过；本轮云端隔离环境 Google Maps 地点与指定日期公交查询、官网截图字节归档通过。生产客户端查询尚待发布验收；本机 Chrome 不再作为前提。
-- rollback_point: 基线 c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1；变更只在独立工作树，原 main 的他人改动未触碰
+- head/local_commit: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe（首轮已部署版本；后续修复见文末）
+- remote_sha: origin refs/heads/main=f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；git ls-remote 已核对
+- server_before: 21250c7b8a5290abcf649b9279bbd91b9af1db88（并行发布完成后重新建立基线）
+- server_after: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；/opt/releases/ai-lab-platform-f8c7d064c959.229Byr
+- health_check: 更新器最终 /ready、Bridge、所有服务检查通过；独立公开 /health=ok/0.8.0；.deployed-sha 和 API 镜像 revision 一致。切换时 ready 五次 5 秒超时，随后恢复，未掩盖该时延。
+- functional_check: 正式服务环境原生浏览器指定日期公交通过；真实 Bridge 研究前置空范围知识检索 20 秒超时，尚未完成生产全链路。不能标 VERIFIED。
+- rollback_point: /opt/releases/ai-lab-platform-21250c7b8a52.rS7UdR；镜像、数据库备份 /opt/ai-lab-shared/rollbacks/chat-travel-pcm-f8c7d064c959；浏览器配置/包清单 /opt/ai-lab-shared/rollbacks/travel-browser-20260927
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
 
 ## 目标与复用
@@ -248,3 +248,12 @@
 ## 发布前整合验收
 
 旅行功能提交 2930bde8，合并最新主分支提交 56a10118；主分支全部变更保留，冲突仅为两组追加测试，均保留。整合后后端 237 passed、产品契约 36 passed、iOS WorkflowLifecycleDTOTests 194 passed，0 failures。日志 release-*.txt。服务器发布前仍为 0704ddf5a54bf9739e506652e7b60fa2f22f564c；浏览器依赖安装前的包清单和配置已备份到 /opt/ai-lab-shared/rollbacks/travel-browser-20260927。
+
+## 正式云端部署与前置检索缺陷
+
+- 用户明确授权提交、推送、部署，并进一步授权与笔记验收及出版两个任务协调。并行21250发布期间预检自动退出，无覆盖；确认其发布锁释放后，以21250为before继续。收到暂缓消息时容器切换已启动，由更新器完整结束，随后停止进一步版本切换并同步两任务。
+- 从GitHub codeload精确SHA下载，源码归档SHA256=5feeca107a7b77c5423b7cba2bd298e44b4f42d894159984eda48aab299efd84。包锁与父镜像匹配、pip check、候选导入、运行契约检查通过。
+- agent-browser=0.26.0；Chrome for Testing=154.0.8037.57；Chrome SHA256=e528b77a8b250c48a5bbd7aeeabbc2813940c0a2fe39b1b11fbaf1f01fb04f18。系统库40个新装、0升级0删除，Noto Sans CJK JP生效。调用现有prepare_browser，不修改provider配置或个人浏览器。
+- 指定日期查询：正式环境9月28日09:00条件，实际页面显示中央线09:03–09:17、14分钟、¥260，dated_route_verified=True。是服务账号的独立验收进程，尚不能代替正式Bridge完整研究流程。
+- Bridge生产研究 wfr_cloud_maps_6fa3ec745271 21.53秒失败，未执行浏览器。直接空知识范围网关请求200、27.0秒，超过已有20秒超时。最小修复在现有Workflow入口：空requested_scope不发起知识网关搜索；非空范围与联网权限保持。63项测试通过（含空/非空×联网/离线四组合），未部署此修复，等待共享窗口。
+- 今晚publication-6d65e4fff6f4ae7734d1585c3a05a80a只读验证：唯一staged，release_at=2026-09-27T12:00:00+00:00，actual_release_at=null，正文/plan SHA=076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3图计划保持；没有改变cron/额度账本。
