@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PIL import Image
 
 from backend.services.knowledge_publication_store import (
-    PUBLICATION_MEDIA, PublicationError, PublicationStore, receipt_set_hash,
+    PUBLICATION_MEDIA, publication_media_spec, PublicationError, PublicationStore, receipt_set_hash,
 )
 from backend.services.follow_builders_publication import load_candidate
 from backend.services.publication_workflow_handoff import (
@@ -96,8 +96,8 @@ def _asset_file(value: str) -> tuple[str, Path]:
 
 def _illustration_file(value: str) -> tuple[str, Path]:
     role, path = _file(value)
-    if role not in {f"illustration_{index:02d}" for index in range(1, 4)} or not path.is_absolute():
-        raise argparse.ArgumentTypeError("expected illustration_01..03=/absolute/path")
+    if not publication_media_spec(role) or not role.startswith("illustration_") or not path.is_absolute():
+        raise argparse.ArgumentTypeError("expected illustration_01..12=/absolute/path")
     return role, path
 
 
@@ -109,9 +109,9 @@ def _media(store: PublicationStore, path: Path, role: str) -> dict:
     except OSError as exc:
         raise PublicationError(f"invalid {role} image") from exc
     media_type = {"PNG": "image/png", "JPEG": "image/jpeg"}.get(image_format)
-    if not media_type or size != PUBLICATION_MEDIA[role]["size"]:
+    if not media_type or size != publication_media_spec(role)["size"]:
         raise PublicationError(f"invalid {role} format or dimensions")
-    return {"role": role, "receipt": store.ingest_file(path, PUBLICATION_MEDIA[role]["kind"]),
+    return {"role": role, "receipt": store.ingest_file(path, publication_media_spec(role)["kind"]),
             "media_type": media_type, "width": size[0], "height": size[1]}
 
 

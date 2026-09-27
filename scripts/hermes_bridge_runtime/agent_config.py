@@ -467,7 +467,7 @@ def _knowledge_public_fallback_allowed(goal: str, agent_config: dict, triage: di
     if "user_note_search" in set((triage or {}).get("evidence_requirements") or []):
         return False
     return not re.search(
-        r"离线|不要联网|禁止联网|不联网|仅内部|只[看用查].{0,8}(?:笔记|内部|知识库)|"
+        r"离线|不要联网|禁止联网|不联网|仅内部|(?:仅|只)(?:根据|依据|用|看)?(?:本文|原文)|只[看用查].{0,8}(?:笔记|内部|知识库)|"
         r"offline|no (?:web|network|internet)|do not (?:browse|search)|only.{0,20}(?:notes|internal)",
         _receipts._routing_user_goal(goal), re.I,
     )

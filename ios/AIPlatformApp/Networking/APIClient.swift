@@ -515,6 +515,18 @@ public struct KnowledgeBookSectionDTO: Codable, Identifiable, Hashable {
     public let markdown: String
 }
 
+public struct PublicationIllustrationDTO: Codable, Hashable, Identifiable {
+    public let id: String
+    public let url: String
+    public let sectionId: String
+    public let afterParagraph: String
+    public let caption: String
+    public let alt: String
+    public let width: Int
+    public let height: Int
+    public let contentVersion: String
+}
+
 public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public let bookId: String
     public let title: String
@@ -526,6 +538,7 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public var shelfCoverUrl: String? = nil
     public var readerCoverUrl: String? = nil
     public var illustrationUrls: [String]? = nil
+    public var illustrations: [PublicationIllustrationDTO]? = nil
     public var seriesId: String? = nil
     public var seriesTitle: String? = nil
     public var issueId: String? = nil
@@ -3785,7 +3798,7 @@ public final class APIClient: ObservableObject {
         let prefix = "/api/v1/knowledge-publications/"
         let safeID = bookID.range(of: "^[a-z0-9][a-z0-9._:-]{1,159}$", options: .regularExpression) != nil
         let suffix = String(path.dropFirst((prefix + bookID + "/").count))
-        let allowed = ["covers/shelf_cover", "covers/reader_cover", "media/illustration_01", "media/illustration_02", "media/illustration_03"]
+        let allowed = ["covers/shelf_cover", "covers/reader_cover"] + (1...12).map { String(format: "media/illustration_%02d", $0) }
         guard safeID, path.hasPrefix(prefix + bookID + "/"), allowed.contains(suffix),
               var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               ["https", "http"].contains(parts.scheme), parts.host != nil,
