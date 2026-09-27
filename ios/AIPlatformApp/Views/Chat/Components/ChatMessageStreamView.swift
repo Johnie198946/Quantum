@@ -759,7 +759,6 @@ struct HomeJourneyView: View {
                 initialQuestion: item.question,
                 initialTurns: item.previousTurns,
                 submitsOnAppear: item.submitsOnAppear,
-                automaticallySaveAnswer: true,
                 onSaveAnswer: { question, answer, sessionID in
                     saveLearningAnnotation(item: item, question: question, answer: answer, sessionID: sessionID)
                 }
