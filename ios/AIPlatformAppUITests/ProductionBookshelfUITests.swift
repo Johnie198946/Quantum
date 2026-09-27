@@ -240,7 +240,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(app.buttons["今日日记"].frame.minY, app.buttons["note-create"].frame.maxY,
                                     "Accessibility sizes must stack the primary actions")
         attachScreenshot(named: "notes-large-text")
-        app.segmentedControls["knowledge-section"].buttons["书架"].tap()
+        app.buttons["knowledge-section-bookshelf"].tap()
         XCTAssertFalse(app.textFields["note-search"].exists)
         XCTAssertFalse(app.buttons["note-create"].exists)
         attachScreenshot(named: "notes-bookshelf")
@@ -1125,9 +1125,9 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
         XCTAssertTrue(knowledgeTab.waitForExistence(timeout: 8), "未找到已认证主导航；请解锁真机并保留现有登录会话。")
         knowledgeTab.tap()
         if !knowledgeTab.isSelected { knowledgeTab.tap() }
-        let section = app.segmentedControls["knowledge-section"]
+        let section = app.buttons["knowledge-section-bookshelf"]
         XCTAssertTrue(section.waitForExistence(timeout: 10), "现有阅读页未出现。")
-        let shelfTab = section.buttons["书架"]
+        let shelfTab = section
         shelfTab.tap()
         if !shelfTab.isSelected { shelfTab.tap() }
         XCTAssertTrue(shelfTab.isSelected, "真实阅读页未切换到书架。")

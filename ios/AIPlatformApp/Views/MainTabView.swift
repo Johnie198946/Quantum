@@ -60,8 +60,8 @@ public struct MainTabView: View {
 
             if !keyboardObserver.isKeyboardVisible {
                 bottomChrome
-                    .padding(.top, AppTheme.Spacing.xs)
-                    .padding(.bottom, 10)
+                    .padding(.top, appState.activeTab == 2 ? 0 : AppTheme.Spacing.xs)
+                    .padding(.bottom, appState.activeTab == 2 ? 0 : 10)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -325,7 +325,7 @@ private struct QuantumFloatingTabBar: View {
                     }
                     .foregroundStyle(selection == item.tag ? AppTheme.Colors.primary : AppTheme.Icons.navigationInactive)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(selection == item.tag ? Color.white.opacity(0.70) : Color.clear, in: Capsule())
+                    .background(selection == item.tag && selection != 2 ? Color.white.opacity(0.70) : Color.clear, in: Capsule())
                     .contentShape(Capsule())
                 }
                 .buttonStyle(SoftButtonStyle())
@@ -335,13 +335,18 @@ private struct QuantumFloatingTabBar: View {
             }
         }
         .padding(6)
-        .frame(height: 68)
-        .background(.ultraThinMaterial)
-        .background(Color.white.opacity(0.42))
-        .clipShape(Capsule())
-        .overlay { Capsule().stroke(Color.white.opacity(0.82), lineWidth: 0.8) }
-        .shadow(color: Color(hex: "385A58").opacity(0.13), radius: 18, y: 7)
-        .padding(.horizontal, AppTheme.Spacing.lg)
+        .frame(height: selection == 2 ? 64 : 68)
+        .background {
+            if selection == 2 { AppTheme.Reading.paper }
+            else { Capsule().fill(.ultraThinMaterial).background(Capsule().fill(.white.opacity(0.42))) }
+        }
+        .overlay {
+            if selection == 2 {
+                Rectangle().fill(AppTheme.Reading.border).frame(height: 0.5).frame(maxHeight: .infinity, alignment: .top)
+            } else { Capsule().stroke(Color.white.opacity(0.82), lineWidth: 0.8) }
+        }
+        .shadow(color: selection == 2 ? .clear : Color(hex: "385A58").opacity(0.13), radius: 18, y: 7)
+        .padding(.horizontal, selection == 2 ? 0 : AppTheme.Spacing.lg)
     }
 }
 

@@ -49,7 +49,18 @@ public struct KnowledgeView: View {
     @State private var busyBookID: String?
     @State private var contentRevealed = false
 
-    public init() {}
+    public init() {
+        #if DEBUG
+        _showingBookshelf = State(initialValue: ProcessInfo.processInfo.arguments.contains("-readingBookshelfPreview"))
+        #endif
+    }
+
+    private var bookshelfPreview: SubscriptionCenterResponse? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-readingDesignPreview") { return .readingDesignPreview }
+        #endif
+        return nil
+    }
 
     public var body: some View {
         let visibleNotes = store.search(searchText, tags: selectedTags).filter { note in
@@ -64,47 +75,57 @@ public struct KnowledgeView: View {
 
         return NavigationStack(path: $path) {
             VStack(spacing: 0) {
+                libraryHeader.padding(.horizontal, AppTheme.Reading.gutter)
                 if showingBookshelf {
-                    libraryHeader.padding(.horizontal, AppTheme.Metrics.contentGutter)
-                    SubscriptionCenterView(showsBackButton: false)
+                    SubscriptionCenterView(previewCenter: bookshelfPreview, showsBackButton: false)
                 } else {
-            List {
-                libraryHeader
-                if let error = store.lastError,
-                   !ProcessInfo.processInfo.arguments.contains("-knowledgeHomePreview") {
-                    syncErrorBanner(error)
-                }
-                if showingBookshelf {
-                    subscribedBookshelf
-                } else {
-                    knowledgeSearchField
-                    scopePicker
-                    if !store.allTags.isEmpty { tagFilter }
-                    if store.isLoading && store.notes.isEmpty {
-                        loadingRow
-                    } else if visibleNotes.isEmpty {
-                        emptyState
-                    } else {
-                        if scope == .all && !pinnedNotes.isEmpty {
-                            noteSection(title: "置顶", systemImage: "pin", notes: pinnedNotes)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            if let error = store.lastError,
+                               !ProcessInfo.processInfo.arguments.contains("-knowledgeHomePreview") {
+                                syncErrorBanner(error)
+                            }
+                            knowledgeSearchField
+                            scopePicker
+                            if !store.allTags.isEmpty { tagFilter }
+                            if store.isLoading && store.notes.isEmpty {
+                                loadingRow
+                            } else if visibleNotes.isEmpty {
+                                emptyState
+                            } else {
+                                if scope == .all && !pinnedNotes.isEmpty {
+                                    noteSection(title: "置顶", systemImage: "pin", notes: pinnedNotes)
+                                }
+                                if !recentNotes.isEmpty {
+                                    noteSection(title: scope == .all ? "最近修改" : scope.rawValue,
+                                                systemImage: scope == .daily ? "calendar" : "clock", notes: recentNotes)
+                                }
+                            }
                         }
-                        if !recentNotes.isEmpty {
-                            noteSection(title: scope == .all ? "最近修改" : scope.rawValue,
-                                        systemImage: scope == .daily ? "calendar" : "clock",
-                                        notes: recentNotes)
+                        .padding(.horizontal, AppTheme.Reading.gutter)
+                        .padding(.bottom, 16)
+                    }
+                    .accessibilityIdentifier("reading-notes-scroll")
+                    .scrollDismissesKeyboard(.interactively)
+                    .refreshable { await refreshNotes() }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Group {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(spacing: 8) { noteActions }
+                            } else {
+                                HStack(spacing: 12) { noteActions }
+                            }
                         }
+                        .padding(.horizontal, AppTheme.Reading.gutter)
+                        .padding(.vertical, 12)
+                        .background(AppTheme.Reading.paper)
                     }
                 }
-
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(AppTheme.Colors.background)
-                }
-            }
+            .background(AppTheme.Reading.paper)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(showingBookshelf ? .automatic : .hidden, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 await refreshNotes()
             }
@@ -217,7 +238,11 @@ public struct KnowledgeView: View {
     #if DEBUG
     private func seedKnowledgeHomePreview() {
         store.activate(tenantKey: "knowledge-preview", userId: ProcessInfo.processInfo.environment["AI_LAB_E2E_NOTE_NAMESPACE"] ?? "preview")
-        let fixtures: [(String, String, String, [String])] = [
+        let fixtures: [(String, String, String, [String])] = ProcessInfo.processInfo.arguments.contains("-readingDesignPreview") ? [
+            ("design-history", "李世民也打过败仗：浅水原的胜负", "为什么不能只看冲锋？", ["历史", "读书笔记"]),
+            ("design-audit-cn", "只读审计 8 已完成。", "扫描结果 活跃笔记：133 篇", ["research"]),
+            ("design-audit", "Read-only audit complete:", "Scanned notes: 134 Candidate groups: 36", ["auto-ingested"])
+        ] : [
             ("preview-reading", "阅读的意义", "阅读不是逃离，而是带着新的目光重新回到生活。", ["阅读"]),
             ("preview-design", "设计思考", "好的界面让信息自然出现，也让复杂能力保持克制。", ["灵感"]),
             ("preview-idea", "一些想法", "把零散灵感变成可以继续生长的知识。", ["学习"])
@@ -388,40 +413,40 @@ public struct KnowledgeView: View {
     }
 
     private var libraryHeader: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("阅读与记录")
-                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                    if !dynamicTypeSize.isAccessibilitySize {
-                        Text(showingBookshelf ? "继续读，慢慢积累。" : "小灵感，慢慢长成大想法。")
-                            .font(.subheadline)
-                            .foregroundStyle(AppTheme.Colors.textSecondary)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("阅读与记录").font(.caption.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .overlay(alignment: .trailing) { knowledgeMenu }
+            HStack(alignment: .bottom, spacing: 26) {
+                ForEach([false, true], id: \.self) { shelf in
+                    Button {
+                        withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) { showingBookshelf = shelf }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(shelf ? "书架" : "笔记")
+                                .font(.title.weight(.bold))
+                                .foregroundStyle(showingBookshelf == shelf ? AppTheme.Reading.ink : AppTheme.Reading.secondary)
+                            Capsule().fill(showingBookshelf == shelf ? AppTheme.Colors.primary : .clear)
+                                .frame(width: 52, height: 2)
+                        }
+                        .frame(minWidth: 52, minHeight: 48)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(shelf ? "knowledge-section-bookshelf" : "knowledge-section-notes")
+                    .accessibilityAddTraits(showingBookshelf == shelf ? .isSelected : [])
                 }
-                Spacer(minLength: 8)
-                knowledgeMenu
-                    .background(AppTheme.Colors.cardBackground, in: Circle())
+                Spacer(minLength: 0)
             }
-            Picker("阅读内容", selection: $showingBookshelf) {
-                Text("笔记").tag(false)
-                Text("书架").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("knowledge-section")
-            if !showingBookshelf {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) { noteActions }
-                } else {
-                    HStack { noteActions }
-                }
+            .padding(.bottom, 12)
+        }
+        .foregroundStyle(AppTheme.Reading.ink)
+        .overlay(alignment: .bottomTrailing) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                ReadingArtwork(kind: showingBookshelf ? .reading : .notes, width: 126, height: 80)
+                    .padding(.trailing, 4).padding(.bottom, 10)
             }
         }
-        .padding(.vertical, AppTheme.Spacing.md)
-        .listRowInsets(pageInsets(vertical: 0))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
     @ViewBuilder
@@ -430,8 +455,8 @@ public struct KnowledgeView: View {
             Label("新建笔记", systemImage: "square.and.pencil")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(AppTheme.Colors.onPrimary)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .background(AppTheme.Colors.primary, in: RoundedRectangle(cornerRadius: 20))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(AppTheme.Colors.primary, in: RoundedRectangle(cornerRadius: AppTheme.Reading.radius))
         }
         .buttonStyle(SoftButtonStyle())
         .accessibilityIdentifier("note-create")
@@ -439,8 +464,9 @@ public struct KnowledgeView: View {
             Label("今日日记", systemImage: "sun.max")
                 .font(.body.weight(.medium))
                 .foregroundStyle(AppTheme.Colors.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .background(AppTheme.Colors.mistMint, in: RoundedRectangle(cornerRadius: 20))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(.white, in: RoundedRectangle(cornerRadius: AppTheme.Reading.radius))
+                .overlay(RoundedRectangle(cornerRadius: AppTheme.Reading.radius).stroke(AppTheme.Reading.border))
         }
         .buttonStyle(SoftButtonStyle())
     }
@@ -498,8 +524,9 @@ public struct KnowledgeView: View {
         }
         .padding(.leading, AppTheme.Spacing.lg)
         .padding(.trailing, AppTheme.Spacing.sm)
-        .frame(minHeight: 52)
-        .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        .frame(minHeight: 48)
+        .background(.white, in: RoundedRectangle(cornerRadius: AppTheme.Reading.radius))
+        .overlay(RoundedRectangle(cornerRadius: AppTheme.Reading.radius).stroke(AppTheme.Reading.border, lineWidth: 0.8))
         .listRowInsets(pageInsets(vertical: AppTheme.Spacing.xs))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -513,7 +540,7 @@ public struct KnowledgeView: View {
                     tagButton(title: "#\(tag)", tag: tag)
                 }
             }
-            .padding(.vertical, AppTheme.Spacing.xs)
+            .padding(.vertical, 0)
         }
         .listRowInsets(pageInsets(vertical: AppTheme.Spacing.xs))
         .listRowSeparator(.hidden)
@@ -522,31 +549,15 @@ public struct KnowledgeView: View {
     }
 
     private func tagButton(title: String, tag: String?) -> some View {
-        let selected = tag == nil ? selectedTags.isEmpty : selectedTags.contains(tag!)
-        return Button {
+        let selected = tag.map { selectedTags.contains($0) } ?? selectedTags.isEmpty
+        return ReadingChip(title: title, selected: selected) {
             withAnimation(reduceMotion ? nil : AppTheme.Motion.quick) {
                 if let tag {
-                    if selectedTags.contains(tag) {
-                        selectedTags.remove(tag)
-                    } else {
-                        selectedTags.insert(tag)
-                    }
-                } else {
-                    selectedTags.removeAll()
-                }
+                    if selectedTags.contains(tag) { selectedTags.remove(tag) }
+                    else { selectedTags.insert(tag) }
+                } else { selectedTags.removeAll() }
             }
-        } label: {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(selected ? AppTheme.Colors.primary : AppTheme.Colors.textSecondary)
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .frame(minHeight: AppTheme.Metrics.minimumTouchTarget)
-                .background(selected ? AppTheme.Colors.mistMint : AppTheme.Colors.cardBackground)
-                .overlay(Capsule().stroke(selected ? AppTheme.Colors.primary.opacity(0.35) : .clear, lineWidth: 1))
-                .clipShape(Capsule())
         }
-        .buttonStyle(SoftButtonStyle())
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var scopePicker: some View {
@@ -576,50 +587,41 @@ public struct KnowledgeView: View {
     }
 
     private func noteSection(title: String, systemImage: String, notes: [KnowledgeNote]) -> some View {
-        Section {
-            ForEach(notes) { note in
-                NavigationLink(value: note.id) {
-                    KnowledgeNoteRow(note: note, preview: store.index.previewsByNoteID[note.id] ?? note.preview,
-                                     backlinkCount: store.index.backlinkCountsByNoteID[note.id] ?? 0)
-                }
-                .accessibilityIdentifier("note-row-\(note.id)")
-                .buttonStyle(.plain)
-                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    Button {
-                        store.togglePin(id: note.id)
-                    } label: {
-                        Label(note.isPinned ? "取消置顶" : "置顶", systemImage: note.isPinned ? "pin.slash" : "pin")
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.caption).foregroundStyle(AppTheme.Reading.secondary)
+                .accessibilityAddTraits(.isHeader)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top),
+                                     count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+                      alignment: .leading, spacing: 10) {
+                ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
+                    ReadingNoteTile(open: { path.append(note.id) },
+                                    pin: { store.togglePin(id: note.id) }, trash: { requestTrash(note) }) {
+                        ReadingNoteCard(note: note,
+                                        preview: store.index.previewsByNoteID[note.id] ?? note.preview,
+                                        backlinkCount: store.index.backlinkCountsByNoteID[note.id] ?? 0,
+                                        index: index)
                     }
-                    .tint(AppTheme.Colors.primary)
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        notePendingTrash = note
-                        showingTrashConfirmation = true
-                    } label: {
-                        Label("移到废纸篓", systemImage: "trash")
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("note-row-\(note.id)")
+                    .contextMenu {
+                        Button(note.isPinned ? "取消置顶" : "置顶", systemImage: "pin") { store.togglePin(id: note.id) }
+                        Button("移到废纸篓", systemImage: "trash", role: .destructive) { requestTrash(note) }
                     }
+                    .accessibilityAction(named: note.isPinned ? "取消置顶" : "置顶") { store.togglePin(id: note.id) }
+                    .accessibilityAction(named: "移到废纸篓") { requestTrash(note) }
+
                 }
-                .listRowInsets(EdgeInsets(
-                    top: AppTheme.Spacing.sm,
-                    leading: AppTheme.Metrics.contentGutter + 16,
-                    bottom: AppTheme.Spacing.sm,
-                    trailing: AppTheme.Metrics.contentGutter + 12
-                ))
-                .listRowSeparator(.hidden)
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(AppTheme.Colors.cardBackground)
-                        .padding(.horizontal, AppTheme.Metrics.contentGutter)
-                        .padding(.vertical, 4)
-                )
+                if notes.count % 2 == 1 && !dynamicTypeSize.isAccessibilitySize {
+                    ReadingArtwork(kind: .growth, width: 144, height: 140)
+                        .frame(maxWidth: .infinity, minHeight: 182)
+                }
             }
-        } header: {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-                .textCase(nil)
         }
+    }
+
+    private func requestTrash(_ note: KnowledgeNote) {
+        notePendingTrash = note
+        showingTrashConfirmation = true
     }
 
     private var loadingRow: some View {
@@ -1019,65 +1021,6 @@ private struct KnowledgeArchiveView: View {
                 recoveryError = "云端恢复暂未完成，笔记仍保留在原位置，可重试。"
             }
         }
-    }
-}
-
-private struct KnowledgeNoteRow: View {
-    let note: KnowledgeNote
-    let preview: String
-    let backlinkCount: Int
-
-    var body: some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-            Image(systemName: note.isDailyNote ? "calendar" : "doc.text")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(note.isDailyNote ? AppTheme.Icons.intelligence : AppTheme.Icons.interactive)
-                .frame(width: 40, height: 40)
-                .background(note.isDailyNote ? AppTheme.Colors.mistLilac : AppTheme.Colors.mistMint)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
-                    Text(note.title)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if note.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.caption2)
-                            .foregroundStyle(AppTheme.Colors.textSecondary)
-                            .accessibilityLabel("已置顶")
-                    }
-                }
-
-                if !preview.isEmpty {
-                    Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                        .lineLimit(2)
-                }
-
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Text(note.updatedAt, style: .relative)
-                    if !note.tags.isEmpty {
-                        Text("·")
-                        Text(note.tags.prefix(2).map { "#\($0)" }.joined(separator: "  "))
-                    }
-                    if backlinkCount > 0 {
-                        Text("·")
-                        Label("\(backlinkCount)", systemImage: "link")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-                .lineLimit(1)
-            }
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(note.title)，\(note.tags.map { "标签 \($0)" }.joined(separator: "，"))")
-        .accessibilityHint("打开笔记")
     }
 }
 

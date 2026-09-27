@@ -44,11 +44,38 @@ public struct ChatView: View {
 
     public init() {}
 
+    private var homeBackground: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                AppTheme.Reading.paper
+                Ellipse()
+                    .fill(AppTheme.Colors.mistMint.opacity(0.65))
+                    .frame(width: 300, height: 370)
+                    .rotationEffect(.degrees(-24))
+                    .offset(x: proxy.size.width - 190, y: -150)
+                Ellipse()
+                    .fill(AppTheme.Reading.lilac.opacity(0.55))
+                    .frame(width: 260, height: 340)
+                    .rotationEffect(.degrees(20))
+                    .offset(x: -170, y: proxy.size.height * 0.48)
+                Ellipse()
+                    .fill(AppTheme.Colors.mistMint.opacity(0.30))
+                    .frame(width: 220, height: 280)
+                    .offset(x: proxy.size.width - 110, y: proxy.size.height * 0.76)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
     public var body: some View {
         NavigationStack {
             ZStack {
                 if coordinator.messages.isEmpty {
-                    QuantumMistBackground()
+                    homeBackground
                 } else {
                     Color(hex: "FCFBF7").ignoresSafeArea()
                 }

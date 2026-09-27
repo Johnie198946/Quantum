@@ -391,8 +391,10 @@ public struct IllustratedBookCover: View {
     private let seed: String
     private let width: CGFloat
     private let image: UIImage?
+    private let showsCaption: Bool
+    private let aspectRatio: CGFloat
 
-    public init(title: String, author: String, theme: String?, variant: Int? = nil, seed: String? = nil, width: CGFloat, image: UIImage? = nil) {
+    public init(title: String, author: String, theme: String?, variant: Int? = nil, seed: String? = nil, width: CGFloat, image: UIImage? = nil, showsCaption: Bool = true, aspectRatio: CGFloat = 9 / 16) {
         self.title = title
         self.author = author
         self.theme = theme
@@ -400,6 +402,8 @@ public struct IllustratedBookCover: View {
         self.seed = seed ?? title
         self.width = width
         self.image = image
+        self.showsCaption = showsCaption
+        self.aspectRatio = aspectRatio
     }
 
     public var body: some View {
@@ -412,7 +416,7 @@ public struct IllustratedBookCover: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: width, height: width * 16 / 9)
+                    .frame(width: width, height: width / aspectRatio)
                     .background(colors.first ?? AppTheme.Colors.secondaryBackground)
                     .accessibilityHidden(true)
             } else if let asset = ContentAssetLibrary.publicationCoverAssetName(for: seed) {
@@ -430,6 +434,7 @@ public struct IllustratedBookCover: View {
                 coverMotif(identity: identity, foreground: colors.last ?? AppTheme.Colors.leaf)
                     .accessibilityHidden(true)
             }
+            if showsCaption {
             VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
                 if image == nil {
                     Text(coverKicker)
@@ -458,8 +463,9 @@ public struct IllustratedBookCover: View {
             }
             .foregroundStyle(Color(hex: "132A35"))
             .padding(width < 80 ? 7 : 10)
+            }
         }
-        .frame(width: width, height: width * 16 / 9)
+        .frame(width: width, height: width / aspectRatio)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.74), lineWidth: 0.7) }
         .shadow(color: AppTheme.Colors.primary.opacity(0.12), radius: 12, x: 3, y: 8)
@@ -800,11 +806,13 @@ struct PublicationBookCover: View {
     let coverAvailable: Bool
     var mediaPath: String? = nil
     let width: CGFloat
+    var showsCaption = true
+    var aspectRatio: CGFloat = 9 / 16
 
     var body: some View {
         AuthenticatedBookImage(bookID: seed, path: mediaPath, legacyCover: coverAvailable) { image in
             IllustratedBookCover(title: title, author: author, theme: theme, variant: variant,
-                                 seed: seed, width: width, image: image)
+                                 seed: seed, width: width, image: image, showsCaption: showsCaption, aspectRatio: aspectRatio)
         }
     }
 }

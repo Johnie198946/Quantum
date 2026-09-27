@@ -1,0 +1,57 @@
+reading-refresh-tests-3
+Test Case '-[AIPlatformAppUITests.ProductionBookshelfUITests testBookListReadingPreservesUnsavedDraft]' passed (24.179 seconds).
+Test Case '-[AIPlatformAppUITests.ProductionBookshelfUITests testBookshelfEmptyScopesAndRealListEditor]' passed (19.565 seconds).
+
+reading-refresh-tests-4
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testBookshelfDisclosureSelectionAndDraftPreservation]' passed (24.206 seconds).
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testLargeTextAndLandscape]' passed (17.279 seconds).
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testNotesGridSearchPinAndDeleteConfirmation]' passed (14.952 seconds).
+	 Executed 3 tests, with 0 failures (0 unexpected) in 56.437 (56.456) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 56.437 (56.458) seconds
+	 Executed 3 tests, with 0 failures (0 unexpected) in 56.437 (56.475) seconds
+** TEST SUCCEEDED **
+
+reading-refresh-unit
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testArchiveExcludesNoteFromActiveSearchAndCanRestore]' passed (0.035 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testChineseTagsRoundTripThroughSaveAndReload]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testCloudRestoreRemovesArchivedDuplicateOfActiveNoteID]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testCloudSnapshotWithoutFrontmatterPreservesServerNoteID]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testCloudTrashAndExplicitRestorePropagateWithoutBackgroundResurrection]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testCreateNoteWritesObsidianCompatibleMarkdown]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testExecutorUsesAtomicMergeContractWithExactVersions]' passed (0.030 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testExplicitTargetAndSourceMergeNeverCreatesReplacementID]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testExplicitTargetOnlyMergeUpdatesInPlaceAndPreservesMetadata]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testFailedSaveKeepsInMemoryContentAndReportsFailure]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testKnowledgeMergePrimaryRequiresExplicitTarget]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testLegacyDraftMergeNeverArchivesUpdatedPrimaryOrDuplicates]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMergedSourceLinksResolveToRetainedNoteIncludingCloudRecovery]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMergeRejectsChangedTargetAndSourceVersionsBeforeMutation]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMergeRejectsMissingMalformedHashesAndSourceOnlyLegacyRequestsBeforeMutation]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMergeRejectsMissingOrArchivedTargetBeforeMutation]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMergeRetryPreservesEditsAndWaitsForContributionWithdrawal]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testMultiTagSearchUsesLogicalAnd]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testNewerLocalEditWinsOverServerSnapshotOfSameNote]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testNotesAreIsolatedByTenantAndUser]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testReloadAndIndexedSearchScaleToOneThousandNotes]' passed (35.597 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testRenamingNoteUpdatesIncomingWikiLinks]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testSaveIntentRequiresProposalButUnrelatedSaveQuestionDoesNot]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testServerSyncedNotesParticipateInKnowledgeWorkspaceSnapshot]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testSourceOnlySavedReceiptIsRejectedDuringRecoveryWithoutCreatingID]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testStaleUpdateAndArchiveCASFailBeforeLocalMutation]' passed (0.082 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testSyncStatusRequiresServerConfirmationOfTheCurrentContent]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testTextPresentationProposalPreservesRegistryInput]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testTrashIsIsolatedAcrossAccounts]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testTrashSurvivesReloadAndCloudRefreshThenRestoresWithoutOverwritingSameTitle]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testUnchangedSavePreservesContentHashTimestampAndFile]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.KnowledgeNoteStoreTests testUpdateCarriesCASAndOrdinaryArchiveHasNoMergeTarget]' passed (0.015 seconds).
+	 Executed 32 tests, with 0 failures (0 unexpected) in 35.903 (35.910) seconds
+	 Executed 32 tests, with 0 failures (0 unexpected) in 35.903 (35.911) seconds
+	 Executed 32 tests, with 0 failures (0 unexpected) in 35.903 (35.912) seconds
+** TEST SUCCEEDED **
+
+reading-card-tests
+Test Case '-[AIPlatformAppUITests.ReadingDesignUITests testBookshelfDisclosureSelectionAndDraftPreservation]' passed (22.907 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 22.907 (22.909) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 22.907 (22.911) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 22.907 (22.912) seconds
+** TEST SUCCEEDED **
