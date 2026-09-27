@@ -2,7 +2,7 @@
 
 - task_id: publication-standard-workflow-20260926
 - followup: 2026-09-27 用户截图指出真实封面没有可见书名。
-- status: PUSHED；客户端修复已测试并推送，联合 Build 69 打包/真机验收待接手任务回执，不冒充已安装。
+- status: VERIFIED（客户端标题修复）；main b696d13已核验，联合Build69已安装真机，root独立查看真实书架截图确认系统书名可见。App Store上传仍由联合任务负责。
 - branch: codex/publication-standard-workflow-20260926
 - worktree: /Users/dengzhaoyu/Documents/AI Lab/.worktrees/publication-standard-workflow-20260926
 - head/local_commit: ec6b633c8926a4a6334384f3b7c005f2d32f1f62（标题代码与测试）；后续仅交付记录提交。
@@ -10,7 +10,7 @@
 - server_before: 不适用，本补修只涉及 iOS；未部署服务器。
 - server_after: 不适用，保持其他任务管理的服务器版本。
 - health_check: 不适用，本补修不涉及服务端。
-- functional_check: 3项iOS模拟器测试通过；5种封面OCR、鉴权图片渲染、账号切换清图。已人工查看长中文和84px小封面截图，文字可读。真机新包尚待协调任务验收。
+- functional_check: 3项iOS模拟器测试通过；5种封面OCR、鉴权图片渲染、账号切换清图。已人工查看长中文和84px小封面截图，文字可读。联合任务提供Build69真机截图，root已独立查看并确认图片上系统标题/作者可见。
 - rollback_point: 修复前任务HEAD 9bf22c559e3f44caa240bd5df8be403215d9c256；只有标题代码需要撤销时，由集成任务显式revert对应cherry-pick提交，不回退缓存/鉴权或后端。
 - remaining_risks: 未安装新客户端前仍显示旧行为；极长标题沿用既有2/3行截断，完整标题保留于数据与详情。
 
@@ -39,3 +39,13 @@
 ## 协调交付
 
 已把精确代码SHA ec6b633c8926a4a6334384f3b7c005f2d32f1f62、测试记录和验收要求发给用户授权协调的清理任务01a0de14-6e79-7cc2-9765-5313560c4dcb。其负责重归档尚未上传的联合69及真机/上传；reader任务负责唯一服务器/runtime切换。本任务不并行操作设备、归档或服务器。
+
+## 联合主线集成确认
+
+清理任务只cherry-pick标题修复为main b696d13bdcef18cc23b1707dc00501ca012ee224。root独立git ls-remote确认origin/main精确匹配；任务文档分支为b7380cfb0f72a5e513e5608a13c4d349d9f6e901。接手任务正在重归档69并负责真机验收，尚未用归档成功冒充已安装或上传。
+
+## 真机标题验证
+
+联合任务确认Build69基于main b696d13bdcef18cc23b1707dc00501ca012ee224已安装到连接的iPhone。真实书架截图由其控制手机取得，root通过view_image独立查看：两本加载真实插画的封面现有可见系统书名及作者；既有卡片文字保留。
+
+真实设备截图仅在本地保存，不加入Git或推送；自动审批拒绝截图外传后采用此安全替代。原始本地证据/private/tmp/note69-final-bookshelf-titles.jpg；本地副本ops/reports/publication-cover-title-20260927/device-build69-bookshelf.jpg（未跟踪）。本补修不依赖图片包含文字，未重新生成旧图。
