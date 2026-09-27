@@ -487,12 +487,15 @@ async def _call_hermes(
     client_session_context: Optional[Dict[str, Any]] = None,
     client_context_capability: Optional[str] = None,
     client_capabilities: Optional[List[str]] = None,
+    client_session_id: Optional[str] = None,
 ) -> tuple[str, List[ReasoningStep]]:
     """透传 Hermes bridge，返回 (reply, reasoning)。"""
     _last_hermes_usage.set({})
     payload: Dict[str, Any] = {"goal": _bounded_bridge_goal(goal, knowledge_capability)}
     if session_id:
         payload["session_id"] = session_id
+    if client_session_id:
+        payload["client_session_id"] = client_session_id
     if skill_id:
         payload["skill_id"] = skill_id
     if knowledge_capability:
@@ -551,6 +554,7 @@ async def _call_hermes_recorded(
     client_session_context: Optional[Dict[str, Any]] = None,
     client_context_capability: Optional[str] = None,
     client_capabilities: Optional[List[str]] = None,
+    client_session_id: Optional[str] = None,
 ) -> tuple[str, List[ReasoningStep]]:
     started = time.perf_counter()
     quota_owned = bool((agent_config or {}).get("inference_policy"))
@@ -559,6 +563,7 @@ async def _call_hermes_recorded(
         reply, reasoning = await _call_hermes(
             goal,
             session_id=session_id,
+            client_session_id=client_session_id,
             skill_id=skill_id,
             knowledge_capability=knowledge_capability,
             policy_version=policy_version,
@@ -1119,6 +1124,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             model_attempted = True
             reply, reasoning = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id, skill_id=skill_id,
+                client_session_id=req.session_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
@@ -1133,6 +1139,7 @@ async def chat(req: ChatRequest, payload=Depends(require_auth)) -> ChatResponse:
             model_attempted = True
             reply, reasoning = await _call_hermes_recorded(
                 goal, session_id=isolated_session_id,
+                client_session_id=req.session_id,
                 auth_payload=payload,
                 knowledge_capability=source_context.capability,
                 policy_version=source_context.policy_version,
@@ -1410,6 +1417,7 @@ async def _call_bridge_stream(
     qws_business_context: Optional[Dict[str, Any]] = None,
     qws_context_capability: Optional[str] = None,
     client_capabilities: Optional[List[str]] = None,
+    client_session_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """转发 bridge /v1/chat/stream（SSE 透传）。"""
     async with httpx.AsyncClient(timeout=httpx.Timeout(STREAM_IDLE_TIMEOUT)) as client:
@@ -1423,6 +1431,7 @@ async def _call_bridge_stream(
             json={
                 "goal": _bounded_bridge_goal(goal, knowledge_capability),
                 "session_id": session_id,
+                "client_session_id": client_session_id,
                 "regenerate": regenerate,
                 "skill_id": skill_id,
                 "request_id": request_id,
@@ -1875,6 +1884,7 @@ async def stream_chat(
                 "qws_business_context": qws_business_context,
                 "qws_context_capability": qws_context_capability,
                 "client_capabilities": req.client_capabilities,
+                "client_session_id": req.session_id,
             }
             kwargs["request_id"] = effective_request_id
             model_attempted = True

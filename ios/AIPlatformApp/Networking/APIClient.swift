@@ -1571,7 +1571,7 @@ public struct WorkflowAgentCompositionDTO: Codable, Hashable {
     public let invokedAgentIds: [String]?
     public let delegation: WorkflowAgentDelegationDTO
     public let knowledgeScope: [String]
-    public let planId: String
+    public let planId: String?
 }
 
 public struct WorkflowTaskAgentDTO: Codable, Identifiable, Hashable {
@@ -2139,9 +2139,16 @@ public struct QCPReceiptDTO: Decodable, Sendable, Hashable {
     public let eventType: String
 }
 
-public struct QCPErrorDTO: Decodable, Sendable, Hashable {
+public struct QCPErrorDTO: Decodable, Sendable, Hashable, Error, LocalizedError {
     public let code: String
     public let message: String
+
+    public var errorDescription: String? {
+        if code == "confirmation_invalid" && message.lowercased().contains("confirmation session mismatch") {
+            return "确认单与当前会话不匹配，请重试生成新确认单后再次确认"
+        }
+        return message
+    }
 }
 
 public struct QCPEventDTO<Payload: Decodable>: Decodable {

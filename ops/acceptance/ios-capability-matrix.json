@@ -4062,7 +4062,7 @@
           "authenticated_generated_artifact_owner",
           "bounded_generation_input"
         ],
-        "confirmation": "required",
+        "confirmation": "none",
         "idempotency": "required"
       },
       "event": "workflow.created",

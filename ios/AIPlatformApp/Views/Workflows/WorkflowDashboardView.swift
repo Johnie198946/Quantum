@@ -436,7 +436,7 @@ struct WorkflowCreateSheet: View {
                         Text("想完成什么？")
                             .font(.system(size: 30, weight: .semibold, design: .serif))
 
-                        TextField("例如：写一篇关于人工智能的课程论文…", text: $description, axis: .vertical)
+                        TextField(outputKind == "image" ? "例如：裁成 16:9，再转成 JPG" : "例如：写一篇关于人工智能的课程论文…", text: $description, axis: .vertical)
                             .lineLimit(6...8)
                             .padding(AppTheme.Spacing.lg)
                             .frame(minHeight: 160, alignment: .top)
@@ -501,7 +501,7 @@ struct WorkflowCreateSheet: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(isSubmitting ? "正在生成…" : "生成计划", action: submit)
+                Button(isSubmitting ? "正在提交…" : (outputKind == "image" ? "处理图片" : "生成计划"), action: submit)
                     .buttonStyle(QuantumPrimaryButtonStyle())
                     .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || isSubmitting || uploadingAttachment || uploadingImage || (outputKind == "image" && imageReceipt == nil))
                     .padding(AppTheme.Metrics.contentGutter)
@@ -3212,7 +3212,7 @@ private struct WorkflowExecutionView: View {
                     WorkflowFailureCard(failure: failure)
                 }
                 if isImage && execution.status == "awaiting_approval" {
-                    Label("处理参数已准备好，打开本机图片处理即可继续。", systemImage: "iphone")
+                    Label("正在准备本机图片处理…", systemImage: "iphone")
                         .foregroundStyle(AppTheme.Colors.textSecondary)
                 } else if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
                     artifactReview
@@ -3240,13 +3240,15 @@ private struct WorkflowExecutionView: View {
                 }
             )
         }
-        .sheet(item: $imageAction) { action in
+        .sheet(item: $imageAction, onDismiss: {
+            if execution.status == "completed" { selectedArtifact = visibleArtifacts.last }
+        }) { action in
             NativeClientActionHost(action: action) { status, metadata in
                 perform {
                     _ = try await CapabilityClient().recordClientActionReceipt(actionId: action.id, status: status, resultMetadata: metadata)
                     guard workflowActivities.isCurrent(scope) else { return }
-                    imageAction = nil
                     await monitor()
+                    imageAction = nil
                 }
             }
             .overlay(alignment: .bottom) {
@@ -3472,7 +3474,7 @@ private struct WorkflowExecutionView: View {
 
     private var stagedReviewHelp: String {
         if isTravel { return "查看每日时间、交通与待核实项；不合适的安排可以继续讨论，确认后再生成笔记。" }
-        if isImage { return "打开图片检查效果，确认后导出。需要继续调整时，可回到 Chat 上传结果并说明要求。" }
+        if isImage { return "图片已保存，可直接预览、下载或分享。需要继续调整时，可回到 Chat 上传结果并说明要求。" }
         if isPresentation { return presentationReviewHelp }
         if execution.status == "completed" { return "文档已确认，可预览、下载 DOCX 或用系统分享。" }
         if execution.status == "awaiting_review" { return "检查完整正文；可退回修改，确认后开放 DOCX 下载与系统分享。" }
@@ -3517,7 +3519,7 @@ private struct WorkflowExecutionView: View {
                     .buttonStyle(.borderedProminent)
                     .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
             } else if execution.status == "awaiting_approval" && isImage {
-                Button("在本机处理图片", systemImage: "iphone") {
+                Button("重试图片处理", systemImage: "arrow.clockwise") {
                     perform { imageAction = try await APIClient.shared.prepareImageAction(executionId: execution.id) }
                 }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_approval" && isPresentation {
@@ -3594,6 +3596,14 @@ private struct WorkflowExecutionView: View {
                     let loaded = try await APIClient.shared.fetchWorkflowArtifacts(executionId: execution.id)
                     guard workflowActivities.isCurrent(scope) else { return }
                     artifacts = loaded
+                    if isImage && execution.status == "awaiting_approval" && imageAction == nil {
+                        let action = try await APIClient.shared.prepareImageAction(executionId: execution.id)
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        imageAction = action
+                    }
+                    if isImage && execution.status == "completed" && imageAction == nil {
+                        selectedArtifact = visibleArtifacts.last
+                    }
                     if selectedArtifacts.isEmpty {
                         selectedArtifacts = Set(artifacts.filter(\.selectedForPublish).map(\.id))
                     }

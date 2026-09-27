@@ -760,6 +760,43 @@ async def _create_workflow(
     requirements_explicit: bool | None = None,
     requirements_snapshot_overrides: dict[str, Any] | None = None,
 ):
+    result = await _create_workflow_draft(
+        body, payload, workflow_id=workflow_id, qcp_request_hash=qcp_request_hash,
+        requirements_explicit=requirements_explicit,
+        requirements_snapshot_overrides=requirements_snapshot_overrides,
+    )
+    if body.output_kind != "image":
+        return result
+    workflow_id = result["workflow"]["id"]
+    # Image edits already carry the user's instruction; reuse the validated
+    # plan/agent/start path without asking the user to approve the same edit again.
+    from backend.services.workflow_planner import build_plan
+    async with SessionLocal() as db:
+        workflow = await owned_workflow(db, workflow_id, payload)
+        if not workflow.active_plan_id:
+            plan = await build_plan(db, workflow)
+            if plan.validation_errors:
+                raise HTTPException(422, "图片处理参数未通过校验")
+            workflow.status = "awaiting_approval"
+            await db.commit()
+            await db.refresh(workflow)
+        needs_approval = workflow.status in {"awaiting_approval", "agent_ready"}
+    if needs_approval:
+        await approve_plan(workflow_id, ApprovalRequest(comment="按用户图片指令直接执行"), payload)
+    await start_workflow(workflow_id, ApprovalRequest(request_id=f"image:{workflow_id}"), payload)
+    result["workflow"] = await get_workflow(workflow_id, payload)
+    return result
+
+
+async def _create_workflow_draft(
+    body: WorkflowCreate,
+    payload: dict,
+    *,
+    workflow_id: str | None = None,
+    qcp_request_hash: str | None = None,
+    requirements_explicit: bool | None = None,
+    requirements_snapshot_overrides: dict[str, Any] | None = None,
+):
     source_client_session_id = body.source_client_session_id or (
         (requirements_snapshot_overrides or {}).get("source_client_session_id")
     )
@@ -926,6 +963,13 @@ async def _create_workflow(
             role="user",
             content=description,
         )
+        if body.output_kind == "image":
+            clarification.phase = "planning"
+            row.status = "planning"
+            await db.commit()
+            await db.refresh(row)
+            await db.refresh(clarification)
+            return {"workflow": workflow_out(row), "clarification_session": clarification_out(clarification)}
         if not explicit and body.clarification_mode == "dynamic":
             clarification.phase = "clarifying_pending"
             row.status = "clarifying_pending"
@@ -3189,10 +3233,24 @@ async def retry_execution(execution_id: str, payload: dict = Depends(require_aut
             )
         ).scalar_one_or_none()
         from_node_id = failed_node.node_id if failed_node else None
+        device_retry = False
+        if from_node_id is None:
+            workflow = await owned_workflow(db, execution.workflow_id, payload)
+            if (workflow.requirements_snapshot or {}).get("output_kind") == "image":
+                # Device cancellation/failure happens after parameter generation.
+                # Rerun that node so the next attempt gets a fresh device action.
+                from_node_id = await db.scalar(select(WorkflowNodeRun.node_id).where(
+                    WorkflowNodeRun.execution_id == execution.id,
+                    WorkflowNodeRun.node_id == "image_edit",
+                    WorkflowNodeRun.status == "succeeded",
+                ))
+                device_retry = from_node_id is not None
         await _reset_from_node(db, execution, from_node_id)
         try:
             await retry_remote(execution.id, from_node_id)
-        except Exception:
+        except Exception as exc:
+            if device_retry:
+                raise HTTPException(503, "图片重试暂不可用，请稍后重试") from exc
             # 持久 Worker 会在 Bridge 恢复后用同一 execution/idempotency key 续跑。
             pass
         await db.commit()

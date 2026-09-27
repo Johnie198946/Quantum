@@ -462,6 +462,7 @@ private struct NativeImageProcessAction: View {
     let action: ClientActionDTO
     let onComplete: (String, [String: String]) -> Void
     @State private var processing = false
+    @State private var started = false
     @State private var cancelled = false
     @State private var errorMessage: String?
     @State private var result: ImageReceiptDTO?
@@ -471,21 +472,29 @@ private struct NativeImageProcessAction: View {
             VStack(spacing: AppTheme.Spacing.xl) {
                 Image(systemName: "photo.badge.sparkles")
                     .font(.system(size: 54)).foregroundStyle(AppTheme.Colors.quantumBlue)
-                Text(processing ? "正在你的 iPhone 上处理" : "准备好焕新这张照片")
+                Text(errorMessage == nil ? "正在你的 iPhone 上处理" : "图片处理未完成")
                     .font(AppTheme.Typography.screenTitle)
                 Text("裁切、转码和主体提取均在本机完成，完成后保存结果。")
                     .foregroundStyle(AppTheme.Colors.textSecondary).multilineTextAlignment(.center)
                 if processing { ProgressView() }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
-                Button(errorMessage == nil ? "开始处理" : "重试") { run() }
-                    .buttonStyle(.borderedProminent).disabled(processing)
-                    .accessibilityIdentifier("image-device-process")
+                if errorMessage != nil || (result != nil && !processing) {
+                    Button(result == nil ? "重试" : "重试保存") { run() }
+                        .buttonStyle(.borderedProminent).disabled(processing)
+                        .accessibilityIdentifier("image-device-process")
+                }
             }.padding(AppTheme.Spacing.xl)
         }
         .interactiveDismissDisabled()
+        .task {
+            guard !started else { return }
+            started = true
+            run()
+        }
     }
 
     private func run() {
+        guard !processing else { return }
         processing = true; cancelled = false; errorMessage = nil
         let account = TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint
         Task {

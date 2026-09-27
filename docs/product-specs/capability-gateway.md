@@ -122,7 +122,7 @@ invoke(
 
 ### 4. 副作用与确认规范
 
-所有 `write` / `execute` 能力统一采用：
+`write` / `execute` 能力默认采用：
 
 ```text
 Proposal -> Confirm -> Execute -> Verify -> Receipt
@@ -133,6 +133,8 @@ Proposal -> Confirm -> Execute -> Verify -> Receipt
 - 确认之前资源版本变化、策略变化、客户端已不支持结果 renderer 或 token 过期时，调用必须失败关闭并要求重新提案。
 - 跨服务动作使用可恢复步骤、明确超时和 compensation receipt；不得伪装成无法提供的全局事务。
 - 客户端设备动作（文件选择、打开页面、系统分享）作为 `client_action` 事件交给 Native Executor，并要求客户端回传 receipt；它不是领域 Handler，也不是第二套 Runtime。
+
+图片编辑例外：`media.process` 按用户已输入的图片指令直接执行，不再要求提案、需求单、方案、启动或成果确认。例外仅适用于 `generated-artifact-owner` 策略下保留原图、另存结果的低风险编辑；仍须验证可信租户/用户/会话、原图归属与哈希、参数边界、幂等键及端侧结果回执。缺少原图或必要参数时失败关闭。旅行、文档、笔记删除及其他写能力的确认规则不变。
 
 ### 5. 开发规范
 

@@ -87,7 +87,7 @@ async def image_device_action(db, execution, workflow, payload):
     """Resume the same owner-bound device task after reconnecting or relaunching."""
     from fastapi import HTTPException
     from sqlalchemy import select
-    from backend.models.workflow import WorkflowArtifact
+    from backend.models.workflow import WorkflowArtifact, WorkflowNodeRun
     from backend.services.client_actions import issue_client_action
     from backend.services.workflow_artifacts import read_verified_artifact, run_root
 
@@ -96,7 +96,14 @@ async def image_device_action(db, execution, workflow, payload):
     artifacts = list((await db.scalars(select(WorkflowArtifact).where(
         WorkflowArtifact.execution_id == execution.id,
     ).order_by(WorkflowArtifact.created_at.desc()))).all())
-    instruction = next((a for a in artifacts if (a.metadata_json or {}).get("render_type") == "image_edit"), None)
+    instruction = None
+    for candidate in artifacts:
+        if (candidate.metadata_json or {}).get("render_type") != "image_edit":
+            continue
+        node = await db.get(WorkflowNodeRun, candidate.node_run_id)
+        if node and node.attempt == (candidate.metadata_json or {}).get("artifact_version"):
+            instruction = candidate
+            break
     if instruction is None:
         raise HTTPException(409, "图片参数尚未就绪")
     edit = ImageEdit.model_validate_json(read_verified_artifact(run_root(execution) / instruction.relative_path, instruction.content_hash))
@@ -160,7 +167,7 @@ async def finish_device_image(db, action, status, metadata):
                   "source_content_hash": source["content_hash"], "operations": edit.model_dump()})
     db.add(artifact)
     instruction.selected_for_publish = False
-    execution.status = "awaiting_review"
+    execution.status = "completed"
     execution.progress = 100
     execution.artifact_count += 1
     execution.finished_at = datetime.now(timezone.utc)

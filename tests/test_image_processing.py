@@ -13,8 +13,8 @@ from backend.api.auth import require_auth
 from backend.api.documents import router
 from backend.api.tenant import current_tenant
 from backend.db import SessionLocal
-from backend.models.workflow import WorkflowDefinition, WorkflowPlanVersion, WorkflowExecution, WorkflowNodeRun, WorkflowArtifact
-from backend.services.capability_catalog import execute_verified_capability
+from backend.models.workflow import WorkflowDefinition, WorkflowExecution, WorkflowNodeRun, WorkflowArtifact
+from backend.services.capability_catalog import invoke_capability
 from backend.services.generated_artifacts import GeneratedArtifactError
 from backend.services.image_processing import (
     ImageEdit, build_image_plan, decode_image, image_device_action,
@@ -26,7 +26,8 @@ from backend.services.workflow_executor import project_event
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("source_kind", ["generated", "document"])
-async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch, source_kind):
+@pytest.mark.parametrize("entry", ["chat", "workflow"])
+async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch, source_kind, entry):
     monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path / "generated"))
     monkeypatch.setenv("AI_LAB_HOME", str(tmp_path / "vault"))
     image = Image.new("RGBA", (640, 480), (200, 30, 50, 0))
@@ -36,6 +37,8 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
     actor = {"tenant_key": "image-tenant", "user_id": "image-user", "sub": "image-user"}
     app = FastAPI()
     app.include_router(router)
+    from backend.api.workflows import router as workflow_router
+    app.include_router(workflow_router)
     app.dependency_overrides[require_auth] = lambda: actor
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         queued = []
@@ -71,7 +74,12 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         edit = {"format": "jpg", "aspect_ratio": "16:9"}
         context = current_tenant.set(actor["tenant_key"])
         try:
-            result = await execute_verified_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
+            if entry == "chat":
+                result = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
+            else:
+                response = await client.post("/api/v1/workflows", json={"title": "图片处理", "description": "裁成16:9并转为JPG", "output_kind": "image", "source_image_id": source_id})
+                assert response.status_code == 201, response.text
+                result = {"status": "completed", "events": [{"renderer": "workflow", "payload": response.json()}]}
         finally:
             current_tenant.reset(context)
         assert result["status"] == "completed", str(result)
@@ -80,21 +88,23 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         async with SessionLocal() as db:
             workflow = await db.get(WorkflowDefinition, workflow_id)
             plan = build_image_plan(workflow, plan_id="test-image-plan")
-            assert plan["nodes"][0]["parameters"]["image_edit"]["aspect_ratio"] == "16:9"
+            if entry == "chat":
+                assert plan["nodes"][0]["parameters"]["image_edit"]["aspect_ratio"] == "16:9"
+        execution_id = result["events"][0]["payload"]["workflow"]["latest_execution"]["id"]
+        context = current_tenant.set(actor["tenant_key"])
+        try:
+            if entry == "chat":
+                replay = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
+                assert replay["events"][0]["payload"]["workflow"]["latest_execution"]["id"] == execution_id
+        finally:
+            current_tenant.reset(context)
         async with SessionLocal() as db:
             workflow = await db.get(WorkflowDefinition, workflow_id)
-            version = WorkflowPlanVersion(id=f"image-plan-{source_kind}", workflow_id=workflow_id, version=1,
-                dsl=plan, goal="crop", deliverable="image")
-            execution = WorkflowExecution(id=f"image-run-{source_kind}", workflow_id=workflow_id, plan_id=version.id,
-                tenant_key=actor["tenant_key"], status="awaiting_approval", idempotency_key=f"image-test-{source_kind}")
-            node = WorkflowNodeRun(id=f"image-node-{source_kind}", execution_id=execution.id, node_id="image_edit",
-                node_type="OUTPUT_FORMAT", name="parameters", attempt=1)
-            db.add(version)
-            await db.flush()
-            db.add(execution)
-            await db.flush()
-            db.add(node)
-            await db.flush()
+            execution = await db.get(WorkflowExecution, execution_id)
+            assert execution.status == "queued"
+            node = await db.scalar(select(WorkflowNodeRun).where(WorkflowNodeRun.execution_id == execution_id))
+            node.attempt = 1
+            node.status = "succeeded"
             instruction = store_artifact(execution, node_run_id=node.id, kind="draft", title="parameters",
                 content=ImageEdit(**edit).model_dump_json(), extension="json",
                 metadata={"render_type": "image_edit", "artifact_version": 1})
@@ -107,12 +117,70 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
             replay = await image_device_action(db, execution, workflow, actor)
             assert replay["action_id"] == action["action_id"]
             assert action["payload"]["image_edit"]["aspect_ratio"] == "16:9"
+        if source_kind == "generated" and entry == "chat":
+            from unittest.mock import AsyncMock
+            from backend.api import workflows
+            remote_retry = AsyncMock()
+            monkeypatch.setattr(workflows, "retry_remote", remote_retry)
+            # Both device terminal failures happen after the parameter node succeeds.
+            for terminal in ("CANCELLED", "FAILED"):
+                old_action = action
+                await record_client_action_receipt(action["action_id"], terminal, {}, actor)
+                context = current_tenant.set(actor["tenant_key"])
+                try:
+                    # The exception must not change ordinary workflow retries.
+                    async with SessionLocal() as db:
+                        row = await db.get(WorkflowDefinition, workflow_id)
+                        row.requirements_snapshot = {**row.requirements_snapshot, "output_kind": "general"}
+                        await db.commit()
+                    rejected = await client.post(f"/api/v1/workflow-executions/{execution_id}/retry")
+                    assert rejected.status_code == 409
+                    async with SessionLocal() as db:
+                        row = await db.get(WorkflowDefinition, workflow_id)
+                        row.requirements_snapshot = {**row.requirements_snapshot, "output_kind": "image"}
+                        await db.commit()
+                    remote_retry.side_effect = OSError("bridge unavailable")
+                    unavailable = await client.post(f"/api/v1/workflow-executions/{execution_id}/retry")
+                    assert unavailable.status_code == 503
+                    async with SessionLocal() as db:
+                        assert (await db.get(WorkflowExecution, execution_id)).status == ("cancelled" if terminal == "CANCELLED" else "failed")
+                    remote_retry.side_effect = None
+                    retried = await client.post(f"/api/v1/workflow-executions/{execution_id}/retry")
+                    assert retried.status_code == 200, retried.text
+                    assert retried.json()["status"] == "queued"
+                    remote_retry.assert_called_with(execution_id, "image_edit")
+                finally:
+                    current_tenant.reset(context)
+                async with SessionLocal() as db:
+                    execution = await db.get(WorkflowExecution, execution_id)
+                    node = await db.scalar(select(WorkflowNodeRun).where(WorkflowNodeRun.execution_id == execution_id))
+                    previous_attempt = node.attempt
+                    await project_event(db, execution, {node.node_id: node}, {"type": "node_started", "node_id": node.node_id})
+                    assert node.attempt == previous_attempt + 1
+                    node.status = "succeeded"
+                    instruction = store_artifact(execution, node_run_id=node.id, kind="draft", title="parameters",
+                        content=ImageEdit(**edit).model_dump_json(), extension="json",
+                        metadata={"render_type": "image_edit", "artifact_version": node.attempt})
+                    previous_instruction = await db.get(WorkflowArtifact, old_action["payload"]["instruction_id"])
+                    instruction.created_at = previous_instruction.created_at
+                    db.add(instruction)
+                    await project_event(db, execution, {node.node_id: node}, {"type": "run_completed"})
+                    await db.commit()
+                    action = await image_device_action(db, execution, workflow, actor)
+                    assert action["action_id"] != old_action["action_id"]
+                    assert action["payload"]["instruction_id"] != old_action["payload"]["instruction_id"]
+                with pytest.raises(HTTPException) as stale:
+                    await record_client_action_receipt(old_action["action_id"], "SUCCEEDED", {"artifact_id": source_id}, actor)
+                assert stale.value.status_code == 409
+                assert (await record_client_action_receipt(old_action["action_id"], terminal, {}, actor))["state"] == terminal
+                async with SessionLocal() as db:
+                    assert (await db.get(WorkflowExecution, execution_id)).status == "awaiting_approval"
         # Invalid device bytes cannot move the workflow to success.
         with pytest.raises(HTTPException) as invalid:
             await record_client_action_receipt(action["action_id"], "SUCCEEDED", {"artifact_id": source_id}, actor)
         assert invalid.value.status_code == 422
         async with SessionLocal() as db:
-            assert (await db.get(WorkflowExecution, f"image-run-{source_kind}")).status == "awaiting_approval"
+            assert (await db.get(WorkflowExecution, execution_id)).status == "awaiting_approval"
         output = io.BytesIO()
         Image.new("RGB", (640, 360), "white").save(output, format="JPEG")
         result = (await client.post("/api/v1/documents/images", content=output.getvalue())).json()
@@ -126,9 +194,16 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         assert accepted["state"] == "SUCCEEDED"
         assert await record_client_action_receipt(action["action_id"], "SUCCEEDED", metadata, actor) == accepted
         async with SessionLocal() as db:
-            assert (await db.get(WorkflowExecution, f"image-run-{source_kind}")).status == "awaiting_review"
-            outputs = list((await db.scalars(select(WorkflowArtifact).where(WorkflowArtifact.source_kind == "ios_native", WorkflowArtifact.execution_id == f"image-run-{source_kind}"))).all())
+            assert (await db.get(WorkflowExecution, execution_id)).status == "completed"
+            outputs = list((await db.scalars(select(WorkflowArtifact).where(WorkflowArtifact.source_kind == "ios_native", WorkflowArtifact.execution_id == execution_id))).all())
             assert len(outputs) == 1 and outputs[0].metadata_json["operations"]["format"] == "jpg"
+        context = current_tenant.set(actor["tenant_key"])
+        try:
+            download = await client.get(f"/api/v1/workflow-executions/{execution_id}/artifacts/{outputs[0].id}/download")
+            assert download.status_code == 200, download.text
+            assert download.content == output.getvalue()
+        finally:
+            current_tenant.reset(context)
         if source_kind == "document":
             from backend.services.document_sources import document_original_path
             path, _ = document_original_path(actor["tenant_key"], actor["user_id"], source_id)
@@ -178,3 +253,69 @@ def test_signed_image_context_preserves_policy_for_confirmation(monkeypatch, tmp
         qcp_enabled=True,
     )
     assert observed["knowledge_policy_version"] == "signed-policy-v2"
+
+
+@pytest.mark.asyncio
+async def test_image_direct_bridge_uses_trusted_session_and_replays_once(tmp_path, monkeypatch):
+    import asyncio
+    import json
+    import scripts.hermes_bridge as bridge
+    from backend.services.image_processing import save_image
+    from backend.services.workflow_session_scope import register_client_session
+
+    monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path))
+    actor = {"tenant_key": "direct-bridge", "user_id": "alice"}
+    raw = io.BytesIO()
+    Image.new("RGB", (160, 90), "blue").save(raw, format="PNG")
+    source = save_image(actor["tenant_key"], actor["user_id"], raw.getvalue())
+    events = []
+    previous_loop = bridge._bridge_async_loop
+    bridge._bridge_async_loop = asyncio.get_running_loop()
+
+    def invoke(session_id, identity=actor, data=None):
+        bridge._client_context_tool_context.value = {
+            "identity": identity, "request_id": "direct-image-bridge-request",
+            "client_session_id": session_id, "emit": events.append,
+        }
+        try:
+            return json.loads(bridge._app_capability_invoke_tool({
+                "capability_id": "media.process", "input": data if data is not None else {
+                    "source_artifact_id": source["artifact_id"], "format": "jpg",
+                    "source_client_session_id": "model-invented-session",
+                },
+            }))
+        finally:
+            bridge._client_context_tool_context.value = None
+
+    try:
+        missing_session = await asyncio.to_thread(invoke, None)
+        assert missing_session["error"] == "trusted_invocation_context_required"
+        missing_image = await asyncio.to_thread(invoke, "trusted-image-chat", data={"format": "jpg"})
+        assert missing_image["error"] == "contract_invalid"
+        await register_client_session({**actor, "user_id": "bob"}, "bob-image-chat", "bind-bob")
+        foreign_session = await asyncio.to_thread(invoke, "bob-image-chat")
+        assert foreign_session["status"] != "completed"
+        first = await asyncio.to_thread(invoke, "trusted-image-chat")
+        second = await asyncio.to_thread(invoke, "trusted-image-chat")
+        assert first["status"] == second["status"] == "completed", str(first)
+        workflow = first["events"][0]["payload"]["workflow"]
+        replay = second["events"][0]["payload"]["workflow"]
+        assert workflow["source_client_session_id"] == "trusted-image-chat"
+        assert workflow["latest_execution"]["id"] == replay["latest_execution"]["id"]
+        assert [event["type"] for event in events] == ["workflow.created", "workflow.created"]
+    finally:
+        bridge._bridge_async_loop = previous_loop
+
+
+@pytest.mark.asyncio
+async def test_image_exception_does_not_remove_other_mutation_confirmation():
+    from backend.services.capability_catalog import describe_capability
+    actor = {"tenant_key": "image-boundary", "user_id": "alice"}
+    assert describe_capability("media.process")["confirmation"] == "none"
+    for capability in ("knowledge.note.trash", "workflow.create", "workflow.start", "presentation.create_from_text", "media.create"):
+        assert describe_capability(capability)["confirmation"] == "required"
+        result = await invoke_capability(capability, {}, payload=actor, idempotency_key="image-boundary-check")
+        assert result["error"]["code"] == "confirmation_protocol_upgrade_required"
+    for data in ({"format": "jpg"}, {"source_artifact_id": "ga_" + "0" * 32}, {"source_artifact_id": "ga_" + "0" * 32, "focus_x": 2}):
+        result = await invoke_capability("media.process", data, payload=actor, idempotency_key="image-invalid-check")
+        assert result["status"] != "completed"

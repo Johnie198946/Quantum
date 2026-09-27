@@ -3774,7 +3774,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                     guard response.status == "awaiting_confirmation",
                           let refreshed = response.events.first(where: { $0.type == "capability.proposed" })?.payload
                     else {
-                        throw APIError.network(response.error?.message ?? "未能生成新的确认提案")
+                        throw response.error ?? QCPErrorDTO(code: "proposal_failed", message: "未能生成新的确认提案")
                     }
                     guard let self, self.tenantEpoch == expectedEpoch else { return }
                     self.replaceCapabilityProposal(
@@ -3782,11 +3782,11 @@ public final class TenantSessionCoordinator: ObservableObject {
                         proposalId: proposalId,
                         with: refreshed
                     )
-                    self.showToast("策略已更新，请确认新的提案")
+                    self.showToast("已生成新确认单，请核对后再次确认")
                     return
                 }
                 guard let confirmationToken = proposal.confirmationToken, !confirmationToken.isEmpty else {
-                    throw APIError.network("确认凭证已失效，请重新发起操作")
+                    throw QCPErrorDTO(code: "confirmation_invalid", message: "确认凭证已失效，请重新发起操作")
                 }
                 let response: QCPInvokeResponseDTO<JSONScalar> = try await capabilityClient.confirm(
                     proposalId: proposal.id,
@@ -3798,7 +3798,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                     await KnowledgeNoteStore.shared.restoreFromCloud()
                 }
                 guard response.status == "completed" else {
-                    throw APIError.network(response.error?.message ?? "能力调用失败")
+                    throw response.error ?? QCPErrorDTO(code: "invocation_failed", message: "能力调用失败")
                 }
                 var learningResults: [LearningExerciseBlock] = []
                 var completedWorkflow: WorkflowDTO?
@@ -3864,7 +3864,9 @@ public final class TenantSessionCoordinator: ObservableObject {
     static func requiresFreshCapabilityProposal(errorMessage: String?) -> Bool {
         guard let errorMessage else { return false }
         let normalized = errorMessage.lowercased()
-        return normalized.contains("policy changed")
+        return normalized.contains("confirmation session mismatch")
+            || normalized.contains("确认单与当前会话不匹配")
+            || normalized.contains("policy changed")
             || normalized.contains("create a new proposal")
             || normalized.contains("proposal expired")
             || normalized.contains("confirmation token expired")

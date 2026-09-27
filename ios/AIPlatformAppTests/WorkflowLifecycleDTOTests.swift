@@ -108,6 +108,8 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
              (true, "GET", "/api/v1/knowledge-publications/pub-1/media/illustration_01"):
             responseHeaders = ["Content-Type": "image/png"]
             responseBody = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAIAAAD/zu84AAAAPklEQVR4nO3OMQ0AMAwDwXDpUgaFU5xlUFjB4DHSSb9a5/pnR637ogoAAAAAAABgCJAO0kMAAAAAAAAAQ4AGj3smapRSVxkAAAAASUVORK5CYII=")!
+        case (true, "POST", "/api/v1/capabilities/proposals") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("session-retry-test") == true:
+            responseBody = Data(#"{"status":"awaiting_confirmation","capability_id":"workflow.create","events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"fresh-session-proposal","confirmation_token":"fresh-token","capability_id":"workflow.create","input":{"title":"session-retry-test"},"summary":"Review again","risk":"medium","state":"awaiting_confirmation"}}],"error":null}"#.utf8)
         case (true, "POST", "/api/v1/capabilities/confirm") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("cleanup-proposal") == true:
             responseBody = Data(#"{"status":"failed","capability_id":"task.update","events":[],"receipt":null,"error":{"code":"confirmation_invalid","message":"already consumed"}}"#.utf8)
         case (true, "GET", "/api/v1/capabilities/proposals/cleanup-proposal/status"):
@@ -2428,6 +2430,30 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(response.workflow.status, "clarifying")
         XCTAssertEqual(response.workflow.clarificationSessionId, "wfs_1")
         XCTAssertEqual(response.clarificationSession.lastEventSeq, 2)
+    }
+
+    func testCompositionDecodesMissingNullAndPresentPlanId() throws {
+        for field in ["", ", \"plan_id\": null", ", \"plan_id\": \"wfp_1\""] {
+            let data = Data("""
+                {"capability_agent_ids":["main_agent"],
+                 "delegation":{"max_concurrent_children":3,"max_spawn_depth":1},
+                 "knowledge_scope":[]\(field)}
+                """.utf8)
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let value = try decoder.decode(WorkflowAgentCompositionDTO.self, from: data)
+            XCTAssertEqual(value.planId, field.contains("wfp_1") ? "wfp_1" : nil)
+            XCTAssertEqual(value.capabilityAgentIds, ["main_agent"])
+        }
+    }
+
+    @MainActor
+    func testConfirmationMismatchIsActionableAndRefreshable() {
+        let error = QCPErrorDTO(code: "confirmation_invalid", message: "Confirmation session mismatch")
+        XCTAssertEqual(error.localizedDescription, "确认单与当前会话不匹配，请重试生成新确认单后再次确认")
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(errorMessage: error.localizedDescription))
+        XCTAssertTrue(TenantSessionCoordinator.requiresFreshCapabilityProposal(errorMessage: "网络不可用: Confirmation session mismatch"))
+        XCTAssertFalse(TenantSessionCoordinator.requiresFreshCapabilityProposal(errorMessage: "Confirmation token already consumed"))
     }
 
     func testAgentBuildResponseDecodesCompositionAndDelegationPolicy() throws {
@@ -5930,6 +5956,52 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testSessionMismatchRetryRequiresAnotherConfirmation() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"), performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        var proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: Data(
+            #"{"proposal_id":"old-session-proposal","confirmation_token":"old-token","capability_id":"workflow.create","input":{"title":"session-retry-test"},"summary":"Create","risk":"medium","state":"failed"}"#.utf8
+        ))
+        proposal.errorMessage = "网络不可用: Confirmation session mismatch"
+        manager.setMessages([ChatMessage(
+            id: "proposal-message", sessionId: sessionId, role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal)]
+        )], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager, appState: AppState(),
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "test-token"
+            ))
+        )
+        coordinator.handleCapabilityProposal(messageId: "proposal-message", proposalId: proposal.id, verb: "confirm")
+        for _ in 0..<100 {
+            if case .capabilityProposal(let value) = coordinator.messages[0].blocks[0],
+               value.state != .applying { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard case .capabilityProposal(let refreshed) = coordinator.messages[0].blocks[0] else {
+            return XCTFail("Expected a new confirmation card")
+        }
+        XCTAssertEqual(refreshed.id, "fresh-session-proposal")
+        XCTAssertEqual(refreshed.state, .awaitingConfirmation)
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/api/v1/capabilities/proposals"])
+        let body = try XCTUnwrap(requests.first?.body)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(payload["session_id"] as? String, sessionId)
+    }
+
+    @MainActor
     func testFailedCapabilityProposalWithoutTokenFailsClosedAndCanDiscard() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }
@@ -7185,8 +7257,7 @@ final class ImageWorkflowDeviceIntegrationTests: XCTestCase {
         XCTAssertEqual(receipt.state, "SUCCEEDED")
         let artifacts = try await api.fetchWorkflowArtifacts(executionId: executionID)
         let artifact = try XCTUnwrap(artifacts.first { $0.sourceKind == "ios_native" })
-        let completed = try await api.reviewPresentationStage(executionId: executionID, artifact: artifact,
-            decision: "approve", comment: "Real-device image acceptance")
+        let completed = try await api.fetchWorkflowExecution(id: executionID)
         XCTAssertEqual(completed.status, "completed")
         let downloaded = try await api.downloadAuthenticated(
             path: "workflow-executions/\(executionID)/artifacts/\(artifact.id)/download",
@@ -7196,5 +7267,47 @@ final class ImageWorkflowDeviceIntegrationTests: XCTestCase {
         let attachment = XCTAttachment(image: picture)
         attachment.name = "real-device-processed-image"; attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+extension WorkflowLifecycleDTOTests {
+    @MainActor
+    func testDirectImageWorkflowEventOpensWithoutProposalAndRejectsForeignSession() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"), performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        manager.setMessages([ChatMessage(id: "image-output", sessionId: sessionId, role: .assistant, content: "")], for: sessionId)
+        let appState = AppState(activeTab: 0)
+        appState.currentTenantKey = "image-direct-tenant"
+        appState.currentUserId = "image-direct-user"
+        let coordinator = TenantSessionCoordinator(sessionManager: manager, appState: appState)
+        defer { WorkflowActivityCoordinator.shared.deactivate() }
+        func event(session: String) throws -> QCPStreamEvent {
+            let payload: [String: Any] = ["workflow": [
+                "id": "direct-image-workflow", "title": "图片处理", "description": "裁成16:9",
+                "desired_output": "JPG 图片", "status": "ready", "source_client_session_id": session,
+            ], "clarification_session": [
+                "id": "image-session", "workflow_id": "direct-image-workflow", "phase": "agent_ready",
+                "round_number": 1, "last_event_seq": 0,
+            ]]
+            return QCPStreamEvent(type: "workflow.created", version: 1,
+                payload: try JSONSerialization.data(withJSONObject: payload), renderer: "workflow", rendererVersion: 1)
+        }
+        let rejected = await coordinator.dispatchCapabilityEvent(try event(session: "foreign"), outputMessageId: "image-output")
+        XCTAssertFalse(rejected)
+        XCTAssertNil(appState.pendingWorkflowId)
+        let opened = await coordinator.dispatchCapabilityEvent(try event(session: sessionId), outputMessageId: "image-output")
+        XCTAssertTrue(opened)
+        XCTAssertEqual(appState.pendingWorkflowId, "direct-image-workflow")
+        XCTAssertEqual(appState.activeTab, 1)
+        _ = await coordinator.dispatchCapabilityEvent(try event(session: sessionId), outputMessageId: "image-output")
+        let workflows = coordinator.messages.flatMap(\.blocks).filter {
+            if case .workflow = $0 { return true }; return false
+        }
+        XCTAssertEqual(workflows.count, 1)
     }
 }

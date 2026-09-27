@@ -1039,7 +1039,8 @@ async def test_attachment_context_is_owner_scoped_versioned_and_bounded(monkeypa
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_chat_binds_client_session_before_workflow(streaming, monkeypatch):
+@pytest.mark.parametrize("with_context", [False, True])
+async def test_chat_binds_client_session_before_workflow(streaming, with_context, monkeypatch):
     import uuid
     from backend.api.auth import require_auth
     import backend.api.chat as chat_api
@@ -1048,10 +1049,14 @@ async def test_chat_binds_client_session_before_workflow(streaming, monkeypatch)
     actor = {"tenant_key": "registered-session-tenant", "user_id": "registered-session-user", "sub": "registered-session-user"}
     sid = str(uuid.uuid4())
 
+    observed = {}
+
     async def answer(*args, **kwargs):
+        observed.update(kwargs)
         return "ready", []
 
     async def stream(*args, **kwargs):
+        observed.update(kwargs)
         yield 'data: {"type":"done","session_id":"test"}\n\n'
 
     monkeypatch.setattr(chat_api, "_call_hermes", answer)
@@ -1062,8 +1067,37 @@ async def test_chat_binds_client_session_before_workflow(streaming, monkeypatch)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/chat" + ("/stream" if streaming else ""), json={
             "question": "请为我制定旅行计划", "request_id": str(uuid.uuid4()), "session_id": sid,
-            "client_session_context": {"session_id": sid, "messages": []},
+            "client_session_context": {"session_id": sid, "messages": []} if with_context else None,
         })
     assert response.status_code == 200, response.text
     binding = await require_registered_client_session(actor, sid)
     assert binding.owner_user_id == actor["user_id"]
+    assert observed["client_session_id"] == sid
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_bridge_transports_preserve_client_session_without_transcript(streaming, monkeypatch):
+    import backend.api.chat as chat_api
+
+    observed = []
+    original_client = httpx.AsyncClient
+
+    def handle(request):
+        observed.append(json.loads(request.content))
+        if streaming:
+            return httpx.Response(200, text='data: {"type":"done","answer":"ok"}\n\n')
+        return httpx.Response(200, json={"reply": "ok", "reasoning": []})
+
+    monkeypatch.setattr(chat_api.httpx, "AsyncClient", lambda **kwargs: original_client(
+        transport=httpx.MockTransport(handle), **kwargs))
+    args = {"session_id": "tenant-agent-isolated-session", "client_session_id": "device-session"}
+    if streaming:
+        frames = [frame async for frame in chat_api._call_bridge_stream("清理笔记", **args)]
+        assert frames
+    else:
+        answer, _ = await chat_api._call_hermes("清理笔记", **args)
+        assert answer == "ok"
+    assert observed[0]["client_session_id"] == "device-session"
+    assert observed[0]["session_id"] == "tenant-agent-isolated-session"
+    assert not observed[0].get("client_session_context")

@@ -1624,7 +1624,7 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
     if capability.get("effect") != "read" and capability_id not in {
         "workflow.create", "workflow.open", "workflow.status", "workflow.start",
         "presentation.create_from_document", "artifact.open", "artifact.download",
-        "artifact.consume_structured",
+        "artifact.consume_structured", "media.process",
     }:
         return json.dumps({"success": False, "error": "bridge_execution_unavailable"})
     context = getattr(_client_context_tool_context, "value", None)
@@ -1637,6 +1637,11 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
         or len(request_id) < 8
     ):
         return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+    if capability_id == "media.process":
+        session_id = str(context.get("client_session_id") or "")
+        if not session_id:
+            return json.dumps({"success": False, "error": "trusted_invocation_context_required"})
+        data = {**data, "source_client_session_id": session_id}
     full_catalog = capability_id == "knowledge.note.search" and data.get("mode") == "catalog" and data.get("include_content") is True
     catalog_scope = bool(data.get("include_archived"))
     if full_catalog:

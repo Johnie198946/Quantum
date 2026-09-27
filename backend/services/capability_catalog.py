@@ -165,7 +165,14 @@ def validate_catalog(catalog: dict[str, Any]) -> None:
             raise CapabilityContractError(f"{capability['id']}: invalid renderer")
         if capability["effect"] != "read" and capability["effect"] != "client":
             if (
-                capability["confirmation"] != "required"
+                (capability["confirmation"] != "required" and not (
+                    capability["id"] == "media.process"
+                    and capability["confirmation"] == "none"
+                    and capability["risk"] == "low"
+                    and capability["effect"] == "write"
+                    and capability["handler_binding"] == "media.process"
+                    and capability["policy_ref"] == "generated-artifact-owner"
+                ))
                 or capability["idempotency"] != "required"
                 or capability["receipt"] != "required"
             ):
@@ -273,9 +280,9 @@ async def invoke_capability(
     payload: dict[str, Any],
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """Execute read/client effects only; mutations require the durable Gateway flow.
+    """Execute capabilities whose contract needs no additional confirmation.
 
-    Mutation attempts receive a stable upgrade error; no boolean grants authority.
+    Confirmed mutations still require the durable Gateway; no boolean grants authority.
     """
     capability = describe_capability(capability_id)
     if capability is not None and capability["confirmation"] == "required":
@@ -298,7 +305,7 @@ async def execute_verified_capability(
     invocation_id: str | None = None,
     resource_versions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Internal dispatcher called only after Gateway confirmation or for reads."""
+    """Internal dispatcher for contract-authorized calls or Gateway confirmations."""
     from fastapi import HTTPException
     from backend.capability_handlers import HANDLERS, verify_resource_versions
 

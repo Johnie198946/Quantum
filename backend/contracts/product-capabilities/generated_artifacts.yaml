@@ -117,7 +117,7 @@ capabilities:
   - id: media.process
     version: 1.0.0
     domain: generated_artifact
-    description: Create an image-processing workflow for an uploaded private image through the existing workflow lifecycle. On iPhone, convert to PNG/JPG, crop to a ratio, or extract the subject at a normalized point into transparent PNG. Use the active uploaded artifact ID. Never invent a source or claim a cutout from generated artwork. For an unclear subject ask the user to select its position; do not infer unseen objects. JPG flattens transparency on white; extraction requires PNG.
+    description: Directly process an uploaded private image using the existing workflow. The user's edit request authorizes execution; do not ask for requirement, plan, start, or result confirmation. On iPhone, convert to PNG/JPG, crop to a ratio, or extract the subject at a normalized point into transparent PNG. Use the active uploaded artifact ID. Never invent a source or claim a cutout from generated artwork. For an unclear subject ask the user to select its position; do not infer unseen objects. JPG flattens transparency on white; extraction requires PNG.
     positive_examples: ["帮我改成16:9的比例，从png改为jpg", "帮我把中间的人物抠出来", "Crop this uploaded photo and convert to JPG"]
     negative_examples: ["Generate a new illustration without an uploaded image"]
     input_schema:
@@ -135,7 +135,7 @@ capabilities:
     output_schema: {type: object, required: [workflow]}
     effect: write
     risk: low
-    confirmation: required
+    confirmation: none
     preconditions: [authenticated_generated_artifact_owner, bounded_generation_input]
     policy_ref: generated-artifact-owner
     handler_binding: media.process
