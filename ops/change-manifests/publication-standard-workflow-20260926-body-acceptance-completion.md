@@ -153,3 +153,13 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - build70-new-illustration-02.png: 78761b1b32301cdcfe289181a70a231937ae1eece964994d3d25fae1587d29f3
 - build70-new-illustration-03.png: 65e25618bb48850f5fd4c1ecca56ff08e1234a743ea25eb7db1ce2c89e286d14
 - build70-new-sources.png: 66bcc1a9fff4bdc46b91589b48b764d85f57a37421a12cd044b168cc83f6599a
+
+## 真机验收后联合b9部署与出版恢复
+
+- server_before: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；server_after/runtime_after: b9e4d128dd5839bae89cff39790fb8240297e23e；release=/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT。旅行唯一部署，cleanup协调，本任务仅出版窗口及runtime同步。
+- remote_sha: 本任务暂停前及安装时git ls-remote确认main=b9；验收记录仅推本任务分支，未推进main。
+- health_check: 独立服务器.deployed-sha/API镜像revision均b9、healthy、/ready返回ready；读取/tmp/travel-build72-release/verify.log，8容器healthy、Bridge/ChatWorker active、三份备份哈希及SQLite integrity通过。
+- functional_check: 部署后再次实际读者API回读，10章正文版本保持，3图after_paragraph/caption/alt/section_id/content_version逐项匹配，5媒体均200且SHA一致。结果/tmp/publication-body-acceptance-20260927/b9-new-plan-readback.json。publication-after.json确认唯一published、actual_release_at=2026-09-27T12:00:32.674400+00:00、正文076cbb...c9f及5媒体保持。
+- cron: 暂停前保存10原配置，自然active=[]后交窗；所有cron/wrapper绑定b9，原enabled全部恢复，prompt/schedule/script/model/provider/delivery逐项保持，恢复active=[]。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-b9e4d128；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-b9e4d128dd58，含PG/出版SQLite/完整稿件媒体/env/旧镜像引用。
+- status: VERIFIED（出版恢复和本期已完成验收）。remaining_risks: 真机证据来自生产Build70；Build72仅其他任务上传，不计入本轮UI验收。历史9本图片缺口、历史版权绑定及临时12m配额后续恢复保持原记录；本轮未改变这些事项。
