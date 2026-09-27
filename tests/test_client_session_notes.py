@@ -1274,3 +1274,28 @@ def test_user_note_search_recalls_signed_unsynced_local_note():
     finally:
         bridge._knowledge_tool_context.value = None
         bridge._client_context_tool_context.value = None
+
+
+def test_note_tool_projection_is_client_scoped_and_does_not_mutate_registry(monkeypatch):
+    import sys
+    import types
+    from backend.services.capability_catalog import describe_capability
+    from scripts.hermes_bridge_runtime import knowledge, receipts
+
+    schemas = [{"type": "function", "function": knowledge._app_capability_native_tool_schema(describe_capability(name))}
+               for name in ("knowledge.note.create", "knowledge.note.update", "knowledge.note.illustration.generate")]
+    monkeypatch.setitem(sys.modules, "model_tools", types.SimpleNamespace(get_tool_definitions=lambda **_: schemas))
+    old = types.SimpleNamespace()
+    receipts._expose_eager_request_tools(old, ["app_capabilities"])
+    assert "app_knowledge_note_illustration_generate" not in old.valid_tool_names
+    for tool in old.tools:
+        properties = tool["function"]["parameters"]["properties"]
+        assert "layout" not in properties and "automatic_illustrations" not in properties
+        assert "title" in properties
+    new = types.SimpleNamespace()
+    receipts._expose_eager_request_tools(new, ["app_capabilities"], note_illustration_v1=True)
+    assert new.tools == schemas
+    assert "app_knowledge_note_illustration_generate" in new.valid_tool_names
+    assert "layout" in new.tools[0]["function"]["parameters"]["properties"]
+    receipts._expose_eager_request_tools(new, ["app_capabilities"])
+    assert new.tools == old.tools

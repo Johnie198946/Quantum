@@ -534,8 +534,9 @@ def test_native_capability_handler_binds_one_id_without_model_supplied_routing(m
         (False, False, set()),
     ],
 )
+@pytest.mark.parametrize("note_illustration_v1", [False, True])
 def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
-    monkeypatch, tmp_path, qcp_enabled, knowledge_enabled, expected_toolsets
+    monkeypatch, tmp_path, qcp_enabled, knowledge_enabled, expected_toolsets, note_illustration_v1
 ):
     registered = {}
     captured = {}
@@ -570,6 +571,16 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
     monkeypatch.setattr(bridge.agent_execution, "persist_agent_snapshot", lambda *_args: None)
     monkeypatch.setattr("agent.runtime_cwd.set_session_cwd", lambda _value: None)
 
+    monkeypatch.setattr(bridge._client_context_tool_context, "value", {"transcript": {"note_illustration_v1": note_illustration_v1}}, raising=False)
+    original_signature = bridge._agent_cache_signature
+    def signature(**kwargs):
+        assert json.loads(kwargs["prompt"])["note_illustration_v1"] is note_illustration_v1
+        actual = original_signature(**kwargs)
+        opposite = json.loads(kwargs["prompt"])
+        opposite["note_illustration_v1"] = not note_illustration_v1
+        assert actual != original_signature(**{**kwargs, "prompt": json.dumps(opposite, ensure_ascii=False, sort_keys=True, default=str)})
+        return actual
+    monkeypatch.setattr(bridge, "_agent_cache_signature", signature)
     agent, _, route = bridge._build_in_process_agent(
         "inspect application data",
         f"route-{int(qcp_enabled)}-{int(knowledge_enabled)}",
@@ -592,7 +603,10 @@ def test_request_build_routes_qcp_and_knowledge_toolsets_independently(
     }
     assert (app_tools <= set(registered)) is qcp_enabled
     if qcp_enabled:
-        assert app_tools <= {item["function"]["name"] for item in agent.tools}
+        expected = app_tools if note_illustration_v1 else {name for name in app_tools if not name.startswith("app_knowledge_note_illustration_")}
+        assert expected <= {item["function"]["name"] for item in agent.tools}
+        if not note_illustration_v1:
+            assert not any(item["function"]["name"].startswith("app_knowledge_note_illustration_") for item in agent.tools)
         assert not {
             "app_capability_search", "app_capability_describe", "app_capability_invoke",
         } & {item["function"]["name"] for item in agent.tools}

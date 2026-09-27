@@ -446,6 +446,8 @@ def _build_in_process_agent(
         str(runtime.get("provider") or ""),
         {"service_tier": "priority"} if interactive_chat else None,
     )
+    client_context = getattr(_knowledge._client_context_tool_context, "value", {}) or {}
+    note_illustration_v1 = (client_context.get("transcript") or {}).get("note_illustration_v1") is True
     cache_signature = _agent_config._agent_cache_signature(
         model=cfg_model,
         runtime=runtime,
@@ -457,6 +459,7 @@ def _build_in_process_agent(
                 "legacy_client_context": legacy_client_context_enabled,
                 "knowledge_action": knowledge_action_enabled,
                 "qcp": qcp_enabled,
+                "note_illustration_v1": note_illustration_v1,
                 "fast_general": fast_general,
             },
             ensure_ascii=False,
@@ -601,7 +604,9 @@ def _build_in_process_agent(
         reasoning_config={"effort": "minimal"},
     )
     if knowledge_action_enabled or qcp_enabled:
-        _receipts._expose_eager_request_tools(agent, toolsets_list)
+        _receipts._expose_eager_request_tools(
+            agent, toolsets_list, note_illustration_v1=note_illustration_v1,
+        )
 
     # 支柱二兜底：若模型能力检测不支持 reasoning_effort 字段注入，保留 prompt 级限词约束
     try:
@@ -1231,19 +1236,3 @@ from . import (  # noqa: E402
     agent_config as _agent_config, contracts as _contracts, knowledge as _knowledge, memory as _memory, persistence as _persistence, receipts as _receipts,
     session_runtime as _session_runtime, workflow_artifacts as _workflow_artifacts,
 )
-
-from . import knowledge as _knowledge
-
-from . import agent_config as _agent_config
-
-from . import memory as _memory
-
-from . import contracts as _contracts
-
-from . import receipts as _receipts
-
-from . import session_runtime as _session_runtime
-
-from . import workflow_artifacts as _workflow_artifacts
-
-from . import persistence as _persistence

@@ -529,7 +529,9 @@ def _legacy_client_context_enabled(
     return False
 
 
-def _expose_eager_request_tools(agent: Any, toolsets: list[str]) -> None:
+def _expose_eager_request_tools(
+    agent: Any, toolsets: list[str], *, note_illustration_v1: bool = False,
+) -> None:
     """Expose the small authorized write surface without discovery round trips."""
     from model_tools import get_tool_definitions
 
@@ -538,6 +540,20 @@ def _expose_eager_request_tools(agent: Any, toolsets: list[str]) -> None:
         quiet_mode=True,
         skip_tool_search_assembly=True,
     )
+    # Request-local copies: narrowing an old client must not mutate the registry.
+    agent.tools = json.loads(json.dumps(agent.tools))
+    if not note_illustration_v1:
+        agent.tools = [item for item in agent.tools if not item["function"]["name"].startswith("app_knowledge_note_illustration_")]
+        for item in agent.tools:
+            function = item["function"]
+            if function["name"].startswith("app_knowledge_note_"):
+                properties = function.get("parameters", {}).get("properties", {})
+                for field in ("layout", "automatic_illustrations"):
+                    properties.pop(field, None)
+            if function["name"] == "knowledge_action_propose":
+                kinds = function.get("parameters", {}).get("properties", {}).get("steps", {}).get("items", {}).get("properties", {}).get("kind", {}).get("enum", [])
+                if "illustrate_note" in kinds:
+                    kinds.remove("illustrate_note")
     agent.valid_tool_names = {
         item["function"]["name"] for item in agent.tools
     }
