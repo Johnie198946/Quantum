@@ -1,18 +1,18 @@
 # 阅读页视觉重构
 
 task_id: reading-refresh-20260927
-status: TESTED
+status: COMMITTED
 branch: codex/knowledge-ui-refresh-20260927
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/knowledge-ui-refresh-20260927
-head/local_commit: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe / 未提交
-remote_sha: 未授权push；仅fetch origin/main作为干净基线
+head/local_commit: d38170ce6a0c25f325245c03f66f7563f0bee21a（UI实现提交）
+remote_sha: 已授权联合发布；本任务尚未推送，统一发版任务负责主线合并与远端核验
 server_before: 不适用，本地iOS展示层
 server_after: 未部署
 health_check: 不适用
 functional_check: 3项ReadingDesign UI测试通过；2项既有书架UI测试通过；KnowledgeNoteStoreTests通过
 rollback_point: 独立任务分支基线f8c7d064，原main及用户未提交文件未编辑
 manifest: ops/change-manifests/reading-refresh-20260927-completion.md
-remaining_risks: 离线预览使用通用封面，未进行登录账号真实封面验收；未声称像素级1:1；未提交、推送或部署
+remaining_risks: 离线预览使用通用封面，未进行登录账号真实封面验收；未声称像素级1:1；已本地提交，联合推送/TestFlight待执行
 
 目标：按批准的四屏设计重构SwiftUI展示层，拆分组件/图标/装饰，保留原功能，系统刊物默认折叠。
 
@@ -80,3 +80,5 @@ remaining_risks: 离线预览使用通用封面，未进行登录账号真实封
 
 用户最新要求“要推送、部署吗？testflight合并一起提交”，授权将本任务整合提交并纳入TestFlight。已发现清理任务统一协调旅行/图片联合发布；本任务仅iOS展示层，无独立服务器部署。先生成本任务独立提交，待联合主线整合后重验。当前origin/main跟踪167fba5c，包含图片处理，两个重叠文件为ChatView与工程/测试登记，必须保留两侧能力。
 本次检查：git diff --check通过；既有Debug编译与阅读回归见上。当前提交不包含规范源目录的未提交图片/工作流文件。TestFlight尚未上传，不宣称已发布。
+
+交接确认：联合发版线程01a0de14-6e79-7cc2-9765-5313560c4dcb已接收d38170ce并开始核对纳入，明确保留图片上传状态、Mantis依赖和统一版本号。本任务不重复上传，不直接改共享main。最终推送SHA、Apple回执与测试组可用性以联合发版记录为准，尚未完成时不得标记PUSHED或VERIFIED。
