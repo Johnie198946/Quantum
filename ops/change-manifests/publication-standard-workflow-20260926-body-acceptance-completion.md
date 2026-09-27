@@ -88,3 +88,13 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - rollback_point: 本机 /Users/dengzhaoyu/.hermes/backups/publication-chat-followup-0704ddf5；服务器 /opt/ai-lab-shared/rollbacks/bookshelf-functionality-0704ddf5a54b，数据库及publication SQLite备份哈希通过，a8cc原release保留。
 - functional_check: 直接只读生产publication.sqlite3，publication-6d65e4fff6f4ae7734d1585c3a05a80a仅一个edition-bd22b975b1adbff7ddf1c3eadf515a6b，state=staged、actual_release_at=null、release_at=2026-09-27T12:00:00+00:00；正文文件/content_hash/plan.body_sha256均076cbb...c9f一致，计划3图、assets5项。部署没有回退稿件。
 - remaining_risks: 新版自动配图、独立审核、暂存已通过；正常到期发行、发行后读者API与实际手机段落位置未验证，20:10自动续查保持ACTIVE。8本历史无媒体、1本仅封面的冻结缺口仍存在，未静默覆盖。
+
+## 分页修复联合部署后的出版恢复（21250）
+
+- server_before: 0704ddf5a54bf9739e506652e7b60fa2f22f564c。server_after/runtime_after: 21250c7b8a5290abcf649b9279bbd91b9af1db88；release=/opt/releases/ai-lab-platform-21250c7b8a52.rS7UdR。cleanup独占服务器部署，本任务独占出版cron切换。
+- remote_sha: 切换准备时独立git ls-remote确认main=21250；安装前main前进至f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe，精确保护阻止安装且未修改绑定。fetch/diff确认包含其他功能变更，git merge-base --is-ancestor确认21250为其祖先；与部署方协调后固定已部署21250，不引入未部署main代码。
+- health_check: 本任务独立核对服务器.deployed-sha、API镜像revision均21250，/ready返回ready。已读取pages-server-verification.json：8容器healthy、数据库和publication SQLite备份哈希通过。
+- functional_check: 生产SQLite只读确认目标publication仅一个edition，state=staged，actual_release_at=null，release_at=20:00 CST；正文文件/content_hash/plan.body_sha256一致为076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，计划3图。catalog-functional.json记录136正文/5页/hash一致、note_mutations=0；semantic_review_complete=false，不能称136笔记语义审核完成。
+- cron: 备份暂停10任务，三profile active=[]后交接部署；最终10任务原enabled全部恢复，提示词/计划/script/model/provider/delivery逐项保持，runtime=21250，恢复回读active=[]。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-pagination-followup-21250c7b；服务器/opt/ai-lab-shared/rollbacks/bookshelf-functionality-21250c7b8a52。
+- status: VERIFIED仅针对此次版本恢复及已完成检查；新刊到期发行与读者端段落位置仍未验收，20:10一次性续查保持。历史9本媒体缺口未改写。
