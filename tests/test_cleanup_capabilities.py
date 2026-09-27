@@ -477,7 +477,7 @@ def test_full_catalog_rejects_guessed_offsets_and_counts_actual_bodies(monkeypat
         offsets.append(offset)
         end = min(offset + 2, 5)  # Body budget can return fewer than limit=100.
         return {"status": "completed", "events": [{"type": "knowledge.results", "payload": {
-            "items": [{"note_id": str(i), "markdown": "body", "content_complete": True} for i in range(offset, end)],
+            "items": [{"note_id": str(i), "markdown": "body", "snippet": "body" * 1000, "content_complete": True} for i in range(offset, end)],
             "total_count": 5, "next_offset": end if end < 5 else None,
         }}]}
 
@@ -490,7 +490,13 @@ def test_full_catalog_rejects_guessed_offsets_and_counts_actual_bodies(monkeypat
             "offset": offset, "limit": 100, "include_archived": archived,
         }}))
 
-    first = page(0)["catalog_progress"]
+    first_result = page(0)
+    first = first_result["catalog_progress"]
+    model_note = first_result["events"][0]["payload"]["items"][0]
+    assert model_note["markdown"] == "body" and "snippet" not in model_note
+    assert events[0]["payload"]["items"][0]["snippet"] == "body" * 1000
+    assert context["inline_notes"][0]["snippet"] == "body" * 1000
+    assert "evidence checkpoint" in first_result["review_instruction"]
     assert first["full_bodies_read"] == 2 and not first["all_bodies_read"]
     skipped = page(4)
     assert skipped["error"] == "catalog_page_out_of_sequence" and skipped["next_offset"] == 2

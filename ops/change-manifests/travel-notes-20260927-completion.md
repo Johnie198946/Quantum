@@ -1,11 +1,11 @@
 # Travel notes local implementation completion record
 
 - task_id: travel-notes-20260927
-- status: DEPLOYED
+- status: PUSHED
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe（首轮已部署版本；后续修复见文末）
-- remote_sha: origin refs/heads/main=f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；git ls-remote 已核对
+- head/local_commit: 260d0ccb784e51fc44515e871213708ffb01adb7（最新修复；首轮f8已部署）
+- remote_sha: origin refs/heads/codex/travel-notes-20260927=260d0ccb784e51fc44515e871213708ffb01adb7；main=f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；两者均已用 git ls-remote 核对
 - server_before: 21250c7b8a5290abcf649b9279bbd91b9af1db88（并行发布完成后重新建立基线）
 - server_after: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe；/opt/releases/ai-lab-platform-f8c7d064c959.229Byr
 - health_check: 更新器最终 /ready、Bridge、所有服务检查通过；独立公开 /health=ok/0.8.0；.deployed-sha 和 API 镜像 revision 一致。切换时 ready 五次 5 秒超时，随后恢复，未掩盖该时延。
@@ -267,3 +267,16 @@
 ### 浏览器交互预算修复（待协调发布）
 
 真实模型通过已有旅行research节点操作服务器Google Maps，在6轮工具上限触发强制摘要后失败。仅该scenario的KNOWLEDGE_RETRIEVAL节点上限提高到12，其他节点沿用原配置；提示直接进入含起终点地址的路线页，减少重复地点搜索。66项相关回归和Ruff通过，覆盖旅行研究/其他研究/旅行推理构造器实际获得的预算，正在独立服务账号进程实测12轮。未切版、未重启、未修改其他任务临时配额。
+
+### 最终候选状态与真实模型复测
+
+- 最新运行代码260d0ccb784e51fc44515e871213708ffb01adb7已推送独立分支，远端SHA一致；main/服务器仍f8c7。按最新候选状态记录PUSHED，不能把首轮DEPLOYED当成最新补丁已部署。
+- 独立云端验收进程使用原生Agent、12轮预算和最终提示，成功获取指定日期路线、地址、班次、票价、来源链接：98.85秒，12次模型调用；这是单次冷进程样本，不是p95，也不代表已发布Bridge完整HTTP通过。证据production-model-twelve-rounds.txt。
+- 已授权跨任务协调，并与笔记验收/出版任务明确共享窗口。笔记用户临时额度及账本由其任务负责；本任务不修改、不重置，不提前重启Worker。发现笔记也有待发布补丁，提议联合一次部署，尚待唯一部署方和最终窗口确认。
+- remaining_risks: 最终修复未部署，生产Bridge研究全链路待重测；单次98.85秒不能证明并发/SLO；用户私有社交登录资料未在服务器授权，未宣称访问；iOS整合构建/194测试通过，但本任务未发布新TestFlight二进制。整体旅行验收不能报全部完成。
+
+## 联合发布候选
+
+用户授权协调后，笔记任务明确由本任务作为唯一联合部署方，交付/private/tmp/note70-context-evidence.patch：仅knowledge.py和test_cleanup_capabilities.py，模型侧剔除重复snippet等字段，客户端事件/原始正文不动，逐页保留证据指令；其58项PCM回归通过、真实笔记added/removed/changed均0。已审查并应用于本隔离工作树，未接触脏主工作区。联合152项测试通过7.37秒，Ruff/git diff --check通过。
+
+部署方案增加publication SQLite原生backup、integrity_check、SHA256，以及root-only环境备份，保留既有PG dump与镜像/发布目录回滚。最终暂保持12000000月额度用于用户剩余验收，完整部署后的实际覆盖范围需回读；本任务不更改账本。等待笔记/出版确认暂停与空闲窗口，未执行联合发布。
