@@ -1,0 +1,92 @@
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  4.509MB
+
+Step 1/8 : FROM ai-lab-platform-api:travel-parent-d228c06d6865
+ ---> 071c7a3fbb7c
+Step 2/8 : USER root
+ ---> Running in d97b4dceddbb
+ ---> Removed intermediate container d97b4dceddbb
+ ---> 0e741ca48944
+Step 3/8 : RUN rm -rf /app/backend /app/config /app/scripts
+ ---> Running in 06f2cca8cd91
+ ---> Removed intermediate container 06f2cca8cd91
+ ---> 31a870290a65
+Step 4/8 : COPY backend /app/backend
+ ---> f830c00d3b06
+Step 5/8 : COPY config /app/config
+ ---> 56750ad691f6
+Step 6/8 : COPY scripts /app/scripts
+ ---> 2ec7898a5d85
+Step 7/8 : LABEL org.opencontainers.image.revision=d228c06d6865bdbca9329f264acfe4cf0e8fc5f7
+ ---> Running in 67938cdbe7a9
+ ---> Removed intermediate container 67938cdbe7a9
+ ---> 0bec13e2d01d
+Step 8/8 : USER ailab
+ ---> Running in 644a35b81e72
+ ---> Removed intermediate container 644a35b81e72
+ ---> 9b4272fd9bff
+Successfully built 9b4272fd9bff
+Successfully tagged ai-lab-platform-api:travel-d228c06d6865
+No broken requirements found.
+candidate_travel_import=passed
+publication_backup_integrity=ok
+ROLLBACK_READY=/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865
+==> [1/6] 下载并解包 SHA d228c06d6865bdbca9329f264acfe4cf0e8fc5f7
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+==> [3a/6] 执行 QuantumWorkspace additive schema migration
+{"dry_run": false, "orphan_conversation_ids": [], "orphan_conversation_references": [], "projects_scanned": 22, "projects_to_backfill": 0, "revisions_written": 0}
+ Container ai-lab-platform-taskboard-1  Running
+ Container ai-lab-platform-postgres-1  Running
+ Container ai-lab-platform-redis-1  Running
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreate
+ Container ai-lab-platform-workflow-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreated
+ Container ai-lab-platform-workflow-worker-1  Recreated
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreated
+ Container ai-lab-platform-redis-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-workflow-worker-1  Starting
+ Container ai-lab-platform-redis-1  Healthy
+ Container ai-lab-platform-api-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-agent-evaluation-worker-1  Starting
+ Container ai-lab-platform-workflow-worker-1  Started
+ Container ai-lab-platform-agent-evaluation-worker-1  Started
+ Container ai-lab-platform-api-1  Started
+ Container ai-lab-platform-api-1  Waiting
+ Container ai-lab-platform-frontend-1  Starting
+ Container ai-lab-platform-frontend-1  Started
+ Container ai-lab-platform-api-1  Healthy
+ Container ai-lab-platform-planning-worker-1  Starting
+ Container ai-lab-platform-planning-worker-1  Started
+==> [4/6] API 健康检查与运行契约审计
+✅ runtime contract audit passed
+ - data_dir: /app/data
+ - matrix: /app/data/knowledge_matrix.json
+==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [5/6] 原子切换 release 并重启 Hermes runtime
+hermes_restart_status=skipped_absent unit=hermes-serve.service
+hermes_restart_status=skipped_absent unit=hermes-serve-forward.service
+hermes_restart_status=skipped_absent unit=hermes-gateway.service
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [6/6] 最终健康检查
+{"status":"ready","version":"0.8.0"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":88,"workflow_runs":47,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":88,"workflow_runs":47,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+deployed_sha=d228c06d6865bdbca9329f264acfe4cf0e8fc5f7
+release=/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W
+rollback_point=/opt/releases/ai-lab-platform-f8c7d064c959.229Byr
