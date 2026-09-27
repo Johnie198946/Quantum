@@ -173,3 +173,13 @@ controller 的 native_fetch 连续返回 action_exception。只读执行固定 b
 - cron: 10原配置备份暂停，自然active=[]后交窗；最终全部pin c533并恢复原enabled，prompt/schedule/script/model/provider/delivery逐项保持，active=[]，无遗留暂停。
 - rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-c5331384；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-c5331384d0f8完整备份。
 - status: VERIFIED限出版恢复与已刊完整性；不代替其他任务Build73新UI或图片场景验收。remaining_risks: 历史9本图片缺口、历史版权绑定、临时配额后续恢复保持原记录；已刊三图真机证据仍为生产Build70。
+
+## Build74联合ae11部署后的出版恢复
+
+- server_before: c5331384d0f895ddd94cc385d6ef69b7d4d9d9cf；server_after/runtime_after: ae11b9bd8e30c89269ea8c59da7cf239fac86920；release=/opt/releases/ai-lab-platform-ae11b9bd8e30.K1hkwb（协调方回执）。
+- remote_sha: 暂停前及安装时git ls-remote main=ae11独立核对；本任务未更新main。
+- health_check: 独立服务器.deployed-sha/API镜像revision=ae11、healthy、/ready返回ready；PG/出版SQLite/完整媒体备份三份sha256sum -c全部OK。
+- functional_check: 真实生产数据读者API检查通过，正文10章节/content_version哈希076cbb...c9f，3插图anchor/caption/alt/section/version一致，5媒体HTTP200且实际字节SHA保持。原始结果/tmp/publication-body-acceptance-20260927/ae11-new-plan-readback.json；协调方确认唯一published与actual12:00:32.674400保持。
+- cron: 原10任务备份暂停后active=[]交窗；部署检查通过再pin ae11、恢复原enabled，prompt/schedule/script/model/provider/delivery逐项保持，恢复active=[]。
+- rollback_point: 本机/Users/dengzhaoyu/.hermes/backups/publication-joint-ae11b9bd/receipt.json（stage=resumed）；服务器/opt/ai-lab-shared/rollbacks/chat-travel-pcm-ae11b9bd8e30完整备份。
+- status: VERIFIED仅出版调度恢复及已刊完整性，非Build74全部功能验收。remaining_risks: 历史9本媒体缺口、版权绑定、临时配额后续恢复如前；真机三图证据来自生产Build70，未据此宣称新构建全部UI通过。
