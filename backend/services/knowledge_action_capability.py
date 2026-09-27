@@ -29,10 +29,12 @@ class KnowledgeActionDenied(ValueError):
 
 def note_capability_step(capability_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
     """Project the existing PCM note contract onto the local-first executor."""
+    if capability_id == "knowledge.note.trash" and (data.get("all_active") or data.get("note_versions")):
+        return None  # Existing durable Gateway confirmation executes a frozen cloud batch.
     kind = {
         "knowledge.note.create": "create_note", "knowledge.note.update": "update_note",
         "knowledge.note.merge": "merge_notes", "knowledge.note.archive": "archive_note",
-        "knowledge.note.restore": "restore_note",
+        "knowledge.note.restore": "restore_note", "knowledge.note.trash": "move_to_trash",
     }.get(capability_id)
     illustration_action = capability_id.removeprefix("knowledge.note.illustration.") if capability_id.startswith("knowledge.note.illustration.") else None
     if illustration_action in {"generate", "cancel", "apply", "undo", "configure"}:
@@ -76,7 +78,7 @@ def note_action_summary(step: dict[str, Any]) -> str:
         return {"cancel": "停止本篇配图", "apply": "将候选插图插入笔记", "undo": "撤销本批配图"}[action]
     if step.get("layout") == "travel":
         return "保存旅行笔记"
-    return {"merge_notes": "合并笔记", "archive_note": "归档笔记", "restore_note": "恢复笔记"}.get(step.get("kind"), "保存笔记")
+    return {"merge_notes": "合并笔记", "archive_note": "归档笔记", "restore_note": "恢复笔记", "move_to_trash": "移到最近删除"}.get(step.get("kind"), "保存笔记")
 
 
 def note_presentation_fields(raw: dict[str, Any]) -> dict[str, Any]:
@@ -249,8 +251,31 @@ def note_merge_preview(target: dict[str, Any], source: dict[str, Any]) -> dict[s
     coarse = max(len(before), len(after)) > 256
     if coarse:
         before, after = [target_body], [source_body]
+    # Align unique H2 sections before comparing blocks. Reordered chapters must
+    # not be duplicated or inserted under an unrelated heading. Ambiguous or
+    # unheaded documents retain the exact block comparison and explicit choices.
+    def sections(text: str) -> list[tuple[str, str]]:
+        from markdown_it import MarkdownIt
+        lines = text.splitlines(keepends=True)
+        headings = [(token.map[0], lines[token.map[0]].strip())
+                    for token in MarkdownIt("commonmark").parse(text)
+                    if token.type == "heading_open" and token.tag == "h2" and token.map]
+        starts = [(0, "")] + headings
+        return [(label, "".join(lines[start:(starts[index + 1][0] if index + 1 < len(starts) else len(lines))]))
+                for index, (start, label) in enumerate(starts)]
+
+    comparisons = [(before, after)]
+    left_sections, right_sections = sections(target_body), sections(source_body)
+    left_keys, right_keys = [key for key, _ in left_sections], [key for key, _ in right_sections]
+    if not coarse and len(set(left_keys)) == len(left_keys) and len(set(right_keys)) == len(right_keys) and (set(left_keys) & set(right_keys)) - {""}:
+        source_sections = dict(right_sections)
+        comparisons = [(blocks(text), blocks(source_sections.pop(key, ""))) for key, text in left_sections]
+        comparisons.extend(([], blocks(text)) for text in source_sections.values())
+    edits = [(kind, left, right, a, b, c, d)
+             for left, right in comparisons
+             for kind, a, b, c, d in difflib.SequenceMatcher(None, left, right, autojunk=False).get_opcodes()]
     segments = []
-    for kind, a, b, c, d in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+    for kind, before, after, a, b, c, d in edits:
         left, right = "".join(before[a:b]), "".join(after[c:d])
         left_runs, right_runs = [], []
         if kind == "replace" and max(len(left), len(right)) <= 2000:

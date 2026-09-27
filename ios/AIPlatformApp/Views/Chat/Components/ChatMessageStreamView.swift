@@ -970,7 +970,7 @@ struct HomeJourneyView: View {
     }
 
     private var cleanupPage: some View {
-        CleanupWorkspaceView(onLater: closeJourney)
+        CleanupWorkspaceView(onLater: closeJourney, onDeepReview: { onPrompt(CleanupWorkspaceView.deepReviewPrompt) })
     }
 
     private var attentionPage: some View {
@@ -2386,6 +2386,18 @@ private struct CleanupConflict: Decodable, Identifiable {
     let allowedChoices: [String]
     var id: String { field }
 }
+private struct CleanupOrganization: Decodable {
+    struct Report: Decodable {
+        struct Group: Decodable {
+            struct Note: Decodable { let noteId: String; let title: String; let contentHash: String }
+            let id: String; let relation: String; let notes: [Note]; let evidence: String
+        }
+        let candidates: [Group]; let scannedNotes: Int; let totalCandidates: Int
+        let nextOffset: Int?; let notice: String
+    }
+    let organization: Report
+}
+
 private struct CleanupProject: Decodable { let id: String; let name: String }
 private struct CleanupProjects: Decodable { let projects: [CleanupProject] }
 private struct CleanupTask: Decodable {
@@ -2427,6 +2439,8 @@ struct CleanupWorkspaceView: View {
     @State private var clientActions: [String: ClientActionDTO] = [:]
     @State private var requestIDs: [String: String] = [:]
     let onLater: () -> Void
+    let onDeepReview: () -> Void
+    static let deepReviewPrompt = "请深度整理我的全部活跃笔记：先检查重复并分页读取完整目录，再读取候选全文，区分同义重复、同主题互补、不同主题相关和局部引用。每组列出依据、保留建议与章节位置；相关笔记用双链，局部引用不要归档整篇。报告检查总数和未完成范围。只生成可审核建议，所有修改、归档、删除都等我确认。"
 
     private var visible: [CleanupCandidate] { candidates.filter { filter == 0 || $0.domain == filter } }
     private var counts: [Int] { [candidates.count] + (1...3).map { domain in candidates.filter { $0.domain == domain }.count } }
@@ -2444,6 +2458,12 @@ struct CleanupWorkspaceView: View {
     var body: some View {
         Group {
             CleanupHero(count: candidates.count)
+            Button(action: onDeepReview) {
+                Label("深度整理：检查语义与引用关系", systemImage: "text.magnifyingglass")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }.buttonStyle(.bordered).disabled(executing)
+            Text("下方快速检查正文与段落重复；深度整理会在对话中读取候选全文，判断互补与相关关系，再由你确认修改。")
+                .font(.caption).foregroundStyle(HomePalette.secondary)
             CleanupFilterBar(selection: $filter, counts: counts, taskAvailable: tasksAvailable)
             Toggle("查看已归档内容并恢复", isOn: $archived).font(.subheadline)
                 .onChange(of: archived) { _, _ in Task { await refresh() } }
@@ -2490,7 +2510,7 @@ struct CleanupWorkspaceView: View {
             } label: {
                 Image(systemName: selected.contains(item.id) ? "checkmark.square.fill" : "square")
                     .font(.title2).frame(width: 44, height: 44)
-            }.disabled(item.completed || reviewLocked)
+            }.disabled(item.completed || reviewLocked || item.capability == "knowledge.note.compare")
                 .accessibilityLabel("\(selected.contains(item.id) ? "取消选择" : "选择")\(item.title)")
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).font(.headline).lineLimit(3)
@@ -2547,7 +2567,7 @@ struct CleanupWorkspaceView: View {
                 if item.reviewed {
                     DisclosureGroup("已确认的合并全文") { Text(item.after).font(.body).textSelection(.enabled) }
                 }
-                Text("保留较新的笔记，合并来源归档；不会删除原始记录。").font(.caption)
+                Text("保留你选择的目标笔记，合并来源归档；不会删除原始记录。").font(.caption)
             } else if !item.before.isEmpty {
                 Text(item.before).font(.body).textSelection(.enabled)
             }
@@ -2572,13 +2592,19 @@ struct CleanupWorkspaceView: View {
 
     @ViewBuilder private func inspection(_ index: Int) -> some View {
         let item = candidates[index]
-        if item.capability == "knowledge.note.merge",
+        if ["knowledge.note.merge", "knowledge.note.compare"].contains(item.capability),
            case .string(let targetID) = item.input["target_note_id"],
            case .object(let versions) = item.input["source_versions"], let sourceID = versions.keys.sorted().first {
             CleanupMergeReviewView(title: item.title, targetID: targetID, sourceID: sourceID,
-                                   snapshots: item.localNotes, locked: reviewLocked || item.completed || (!selected.contains(item.id) && selected.count >= 32)) { markdown in
+                                   snapshots: item.localNotes, locked: reviewLocked || item.completed || (!selected.contains(item.id) && selected.count >= 32), allowsMerge: item.capability == "knowledge.note.merge") { markdown, retainedID, archivedID in
                 guard !reviewLocked, notes.authorizationScope == scope,
                       let current = candidates.firstIndex(where: { $0.id == item.id }) else { return }
+                guard let target = item.localNotes.first(where: { $0["id"] == .string(retainedID) }),
+                      let source = item.localNotes.first(where: { $0["id"] == .string(archivedID) }),
+                      let targetHash = target["content_hash"], let sourceHash = source["content_hash"] else { return }
+                candidates[current].input["target_note_id"] = .string(retainedID)
+                candidates[current].input["target_base_hash"] = targetHash
+                candidates[current].input["source_versions"] = .object([archivedID: sourceHash])
                 candidates[current].after = markdown
                 candidates[current].reviewed = true
                 selected.insert(item.id)
@@ -2635,23 +2661,7 @@ struct CleanupWorkspaceView: View {
                 before: before, resourceIDs: ["chat:\(id)"]))
         }
         let local = archived ? notes.archivedNotes : notes.notes
-        let mergeGroups = archived ? [] : Dictionary(grouping: local, by: { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }).values.filter { $0.count > 1 }
-        var mergeIDs = Set<String>()
-        for group in mergeGroups {
-            let pair = Array(group.sorted { $0.updatedAt > $1.updatedAt }.prefix(2))
-            guard pair.allSatisfy({ notes.markdown(for: $0).count <= 20_000 }) else {
-                notices.append("同名笔记“\(pair[0].title)”超过单次上下文上限，请在笔记详情中核对完整内容。")
-                continue
-            }
-            let target = pair[0], source = pair[1]
-            mergeIDs.formUnion(pair.map(\.id))
-            result.append(.init(id: "merge:\(target.id):\(source.id)", domain: 2, section: "建议合并",
-                title: "\(target.title)（2 篇同名笔记）", reason: "标题相同，内容是否重复还需核对。点击直接比较，选择要保留的表述。",
-                capability: "knowledge.note.merge", input: ["target_note_id": .string(target.id), "target_base_hash": .string(notes.contentHash(for: target)), "source_versions": .object([source.id: .string(notes.contentHash(for: source))])],
-                localNotes: pair.map(noteSnapshot), before: pair.map { "# \($0.title)\n\n\($0.body)" }.joined(separator: "\n\n---\n\n"),
-                after: "", resourceIDs: Set(pair.map { "note:\($0.id)" })))
-        }
-        for note in local where archived || (!note.isPinned && note.updatedAt < cutoff && !mergeIDs.contains(note.id)) {
+        for note in local where archived || (!note.isPinned && note.updatedAt < cutoff) {
             guard notes.markdown(for: note).count <= 20_000 else {
                 notices.append("笔记“\(note.title)”超过单次上下文上限，请在笔记详情中整理完整内容。")
                 continue
@@ -2662,6 +2672,10 @@ struct CleanupWorkspaceView: View {
                 input: archived ? ["note_id": .string(note.id)] : ["note_id": .string(note.id), "base_hash": .string(notes.contentHash(for: note))],
                 localNotes: [noteSnapshot(note)], before: note.body, resourceIDs: ["note:\(note.id)"]))
         }
+        // Publish ready domains before waiting for unrelated project requests.
+        candidates = result
+        async let noteOrganization: Void = loadNoteOrganization(account: account)
+        guard notes.authorizationScope == account else { return }
         do {
             let client = CapabilityClient()
             let response: QCPInvokeResponseDTO<CleanupProjects> = try await client.invoke("project.list", input: [String: String]())
@@ -2671,16 +2685,76 @@ struct CleanupWorkspaceView: View {
                 do {
                     let response: QCPInvokeResponseDTO<CleanupTaskSnapshot> = try await client.invoke("task.list", input: ["project_id": JSONScalar.string(project.id), "include_cleanup": .bool(true)])
                     guard response.error == nil, let snapshot = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "无法读取待办") }
+                    guard notes.authorizationScope == account else { return }
                     taskProjectionAvailable = true
-                    result += taskCandidates(project, snapshot)
+                    candidates += taskCandidates(project, snapshot)
+                    tasksAvailable = true
                     if snapshot.cleanupTruncated == true { notices.append("\(project.name)：本次查重只覆盖前 100 个有效任务、最多 50 对候选。") }
                 } catch { notices.append("\(project.name)待办加载失败：\(error.localizedDescription)") }
             }
             if projects.count > 20 { notices.append("本次读取前 20 个项目；其他项目请从项目详情整理。") }
         } catch { notices.append("待办服务暂不可用，已隐藏入口。可继续整理对话和笔记，稍后刷新重试。") }
         guard notes.authorizationScope == account else { return }
-        candidates = result
         tasksAvailable = taskProjectionAvailable
+        await noteOrganization
+    }
+
+    @MainActor private func loadNoteOrganization(account: String) async {
+        guard !archived else { return }
+        let started = Date()
+        defer {
+            if notes.authorizationScope == account {
+                notices.append(String(format: "笔记快速检查耗时 %.1f 秒（含网络与分页）。", Date().timeIntervalSince(started)))
+            }
+        }
+        var offset = 0
+        var seen = Set<String>()
+        do {
+            repeat {
+                let response: QCPInvokeResponseDTO<CleanupOrganization> = try await CapabilityClient().invoke(
+                    "knowledge.note.search", input: ["query": JSONScalar.string("整理笔记"),
+                        "mode": .string("organize"), "limit": .integer(100), "offset": .integer(Int64(offset))])
+                guard notes.authorizationScope == account, !Task.isCancelled else { return }
+                guard response.error == nil, let report = response.events.first?.payload.organization else {
+                    throw APIError.network(response.error?.message ?? "无法读取笔记体检")
+                }
+                if offset == 0 {
+                    notices.append("已检查云端 \(report.scannedNotes) 篇活跃笔记，发现 \(report.totalCandidates) 组关系。本机未同步或版本不同的笔记需同步后再检查。")
+                    notices.append(report.notice)
+                }
+                for group in report.candidates {
+                    let members = group.notes.compactMap { item -> KnowledgeNote? in
+                        guard let note = notes.note(id: item.noteId), notes.contentHash(for: note) == item.contentHash else { return nil }
+                        return note
+                    }.sorted { $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt }
+                    guard members.count == group.notes.count, let target = members.first else { continue }
+                    for source in members.dropFirst() {
+                        let pairID = [target.id, source.id].sorted().joined(separator: ":")
+                        guard seen.insert(pairID).inserted else { continue }
+                        let pair = [target, source]
+                        guard pair.allSatisfy({ notes.markdown(for: $0).count <= 20_000 }) else {
+                            notices.append("“\(target.title)”关联组含长篇笔记，已识别关系；完整比较暂需从笔记详情处理。")
+                            continue
+                        }
+                        let mergeable = ["duplicate", "same_topic_candidate"].contains(group.relation)
+                        candidates.append(.init(id: "merge:" + pairID, domain: 2,
+                            section: mergeable ? "建议合并" : "需要你决定",
+                            title: "\(target.title) / \(source.title)（本组 \(members.count) 篇）",
+                            reason: group.evidence,
+                            capability: mergeable ? "knowledge.note.merge" : "knowledge.note.compare",
+                            input: ["target_note_id": .string(target.id), "target_base_hash": .string(notes.contentHash(for: target)),
+                                    "source_versions": .object([source.id: .string(notes.contentHash(for: source))])],
+                            localNotes: pair.map(noteSnapshot), before: pair.map(\.body).joined(separator: "\n\n---\n\n"),
+                            resourceIDs: Set(pair.map { "note:" + $0.id })))
+                    }
+                }
+                guard let next = report.nextOffset, next > offset else { break }
+                offset = next
+            } while !Task.isCancelled
+        } catch {
+            guard notes.authorizationScope == account else { return }
+            notices.append("笔记关系检查暂未完成：\(error.localizedDescription)。已加载的内容仍可查看。")
+        }
     }
 
     private func noteSnapshot(_ note: KnowledgeNote) -> [String: JSONScalar] {

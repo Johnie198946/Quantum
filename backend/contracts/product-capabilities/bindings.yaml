@@ -13,6 +13,8 @@ bindings:
     handler: knowledge.merge
   - id: knowledge.archive
     handler: knowledge.archive
+  - id: knowledge.trash
+    handler: knowledge.trash
   - id: knowledge.restore
     handler: knowledge.restore
   - id: knowledge.navigation

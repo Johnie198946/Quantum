@@ -80,6 +80,8 @@ public struct CloudKnowledgeNoteDTO: Codable, Identifiable, Hashable, Sendable {
     public let updatedAt: String?
     public let archived: Bool
     public let mergedIntoNoteId: String?
+    public var trashed: Bool? = nil
+    public var restoredAt: String? = nil
 
     public var id: String { noteId }
 }
@@ -111,6 +113,7 @@ public struct KnowledgeNoteMergeResponseDTO: Decodable, Sendable {
     public let targetNoteId: String
     public let status: String
     public let revisedHash: String
+    public var contributionStatus: String? = nil
 }
 
 public struct UsageDailyDTO: Codable, Identifiable, Hashable {
@@ -3896,6 +3899,7 @@ public final class APIClient: ObservableObject {
         markdown: String,
         updatedAt: Date,
         baseHash: String? = nil,
+        createOnly: Bool = false,
         credentialGeneration: UInt64
     ) async throws -> KnowledgeNoteSyncResponseDTO {
         let key = "\(credentialGeneration):\(id)"
@@ -3911,7 +3915,8 @@ public final class APIClient: ObservableObject {
             return try await self.performKnowledgeNoteSync(
                 id: id, markdown: markdown, updatedAt: updatedAt,
                 contentHash: contentHash,
-                baseHash: baseHash ?? predecessor?.contentHash ?? knownHash,
+                baseHash: createOnly ? nil : baseHash ?? predecessor?.contentHash ?? knownHash,
+                createOnly: createOnly,
                 credentialGeneration: credentialGeneration
             )
         }
@@ -3937,17 +3942,20 @@ public final class APIClient: ObservableObject {
         updatedAt: Date,
         contentHash: String,
         baseHash: String?,
+        createOnly: Bool,
         credentialGeneration: UInt64
     ) async throws -> KnowledgeNoteSyncResponseDTO {
         struct Body: Encodable {
             let markdown: String
             let contentHash: String
             let baseHash: String?
+            let createOnly: Bool
             let updatedAt: String
             enum CodingKeys: String, CodingKey {
                 case markdown
                 case contentHash = "content_hash"
                 case baseHash = "base_hash"
+                case createOnly = "create_only"
                 case updatedAt = "updated_at"
             }
         }
@@ -3961,6 +3969,7 @@ public final class APIClient: ObservableObject {
                 markdown: markdown,
                 contentHash: contentHash,
                 baseHash: baseHash,
+                createOnly: createOnly,
                 updatedAt: formatter.string(from: updatedAt)
             ),
             credentialGeneration: credentialGeneration
@@ -3977,12 +3986,13 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func fetchKnowledgeNotes(includeArchived: Bool = true) async throws -> CloudKnowledgeNotesResponse {
+    public func fetchKnowledgeNotes(includeArchived: Bool = true, includeTrashed: Bool = false) async throws -> CloudKnowledgeNotesResponse {
         try await request(
             CloudKnowledgeNotesResponse.self,
             path: "me/knowledge-notes",
             queryItems: [
-                URLQueryItem(name: "include_archived", value: includeArchived ? "true" : "false")
+                URLQueryItem(name: "include_archived", value: includeArchived ? "true" : "false"),
+                URLQueryItem(name: "include_trashed", value: includeTrashed ? "true" : "false")
             ]
         )
     }
@@ -4032,14 +4042,15 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func trashKnowledgeNote(id: String) async throws {
+    public func trashKnowledgeNote(id: String, expectedContentHash: String? = nil) async throws {
         struct Body: Encodable {}
         struct Response: Decodable { let trashStatus: String }
         let _: Response = try await request(
             Response.self,
             path: "me/knowledge-notes/\(encodedPath(id))/trash",
             method: "POST",
-            body: Body()
+            body: Body(),
+            queryItems: expectedContentHash.map { [URLQueryItem(name: "expected_content_hash", value: $0)] } ?? []
         )
     }
 

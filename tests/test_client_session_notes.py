@@ -1020,7 +1020,10 @@ def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
         "capability": "signed", "sources": ["user_notes"],
     }
     bridge._client_context_tool_context.value = {
-        "knowledge_action_v1": True, "inline_notes": [],
+        "knowledge_action_v1": True, "inline_notes": [
+            {"id": f"unrelated-{index}", "title": "无关", "markdown": "其他内容"}
+            for index in range(12)
+        ],
     }
     try:
         with patch.object(bridge.persistence, "_knowledge_gateway_search", return_value=[{

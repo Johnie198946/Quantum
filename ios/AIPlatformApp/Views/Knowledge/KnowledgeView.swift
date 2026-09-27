@@ -110,7 +110,7 @@ public struct KnowledgeView: View {
             ) {
                 Button("移到废纸篓", role: .destructive) {
                     if let notePendingTrash {
-                        store.moveToTrash(id: notePendingTrash.id)
+                        Task { await store.deleteNote(id: notePendingTrash.id) }
                     }
                     notePendingTrash = nil
                 }
@@ -118,7 +118,7 @@ public struct KnowledgeView: View {
                     notePendingTrash = nil
                 }
             } message: {
-                Text("可在更多菜单的“最近删除”中恢复本机笔记。云端副本不受影响。")
+                Text("账号中已同步的笔记也会移到最近删除，可随时恢复；平台知识中的引用会撤回。")
             }
             .task {
                 if !contentRevealed {
@@ -450,7 +450,7 @@ public struct KnowledgeView: View {
                 Label("归档（\(store.archivedNotes.count)）", systemImage: "archivebox")
             }
             Button { showingTrash = true } label: {
-                Label("最近删除（本机）", systemImage: "trash")
+                Label("最近删除", systemImage: "trash")
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -904,6 +904,7 @@ private struct SessionOrganizationPicker: View {
 private struct KnowledgeArchiveView: View {
     var isTrash = false
     @State private var recoveryError: String?
+    @State private var readingNote: KnowledgeNote?
     private var recoveryNotes: [KnowledgeNote] { isTrash ? store.trashedNotes : store.archivedNotes }
     @Environment(\.dismiss) private var dismiss
     @StateObject private var store = KnowledgeNoteStore.shared
@@ -915,15 +916,20 @@ private struct KnowledgeArchiveView: View {
                     ContentUnavailableView(
                         isTrash ? "最近没有删除笔记" : "没有归档笔记",
                         systemImage: isTrash ? "trash" : "archivebox",
-                        description: Text(isTrash ? "本机删除的笔记可在这里恢复。" : "合并整理后的旧笔记会保留在这里。")
+                        description: Text(isTrash ? "账号同步的删除副本与本机保留的笔记可在这里查看、恢复。" : "合并整理后的旧笔记会保留在这里。")
                     )
                 } else {
                     Section {
                         ForEach(recoveryNotes) { note in
                             HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                                    Text(note.title)
-                                        .font(.body.weight(.semibold))
+                                    Button { readingNote = note } label: {
+                                        Text(note.title).font(.body.weight(.semibold))
+                                    }.buttonStyle(.plain)
+                                    if let retained = note.mergedIntoNoteId {
+                                        Text("合并至：\(store.note(id: retained)?.title ?? retained)")
+                                            .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                                    }
                                     if !note.preview.isEmpty {
                                         Text(note.preview)
                                             .font(.subheadline)
@@ -948,11 +954,18 @@ private struct KnowledgeArchiveView: View {
                             .accessibilityAction(named: "恢复笔记") { restore(note) }
                         }
                     } footer: {
-                        Text(isTrash ? "恢复后回到笔记列表；这里仅包含本机保留的副本。" : "归档不会删除内容；向右轻扫可恢复到当前笔记列表。")
+                        Text(isTrash ? "已同步笔记的删除副本保存在账号云端，可恢复到笔记列表；未同步笔记保留在本机。" : "归档不会删除内容；向右轻扫可恢复到当前笔记列表。")
                     }
                 }
             }
-            .navigationTitle(isTrash ? "最近删除（本机）" : "归档")
+            .navigationTitle(isTrash ? "最近删除" : "归档")
+            .sheet(item: $readingNote) { note in
+                NavigationStack {
+                    ScrollView { MarkdownText(note.body).textSelection(.enabled).padding(20) }
+                        .navigationTitle(note.title).navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { readingNote = nil } } }
+                }
+            }
             .alert("恢复未完成", isPresented: Binding(get: { recoveryError != nil }, set: { if !$0 { recoveryError = nil } })) {
                 Button("知道了") { recoveryError = nil }
             } message: { Text(recoveryError ?? "") }
@@ -966,12 +979,23 @@ private struct KnowledgeArchiveView: View {
     }
 
     private func restore(_ note: KnowledgeNote) {
-        let restored = isTrash ? store.restoreTrashedNote(id: note.id) : store.restoreArchivedNote(id: note.id)
-        guard restored != nil else { recoveryError = store.lastError ?? "请稍后重试。"; return }
-        guard !isTrash else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-knowledgeHomePreview") {
+            _ = isTrash ? store.restoreTrashedNote(id: note.id) : store.restoreArchivedNote(id: note.id)
+            return
+        }
+        #endif
+        let account = store.accountFingerprint
         Task {
-            do { try await APIClient.shared.restoreKnowledgeNote(id: note.id) }
-            catch { recoveryError = "已恢复到本机，云端恢复暂未完成。" }
+            do {
+                do { try await APIClient.shared.restoreKnowledgeNote(id: note.id) }
+                catch APIError.server(404, _) { /* A note never synced can be recovered locally. */ }
+                guard store.accountFingerprint == account else { return }
+                let restored = isTrash ? store.restoreTrashedNote(id: note.id) : store.restoreArchivedNote(id: note.id)
+                if restored == nil { recoveryError = store.lastError ?? "请稍后重试。" }
+            } catch {
+                recoveryError = "云端恢复暂未完成，笔记仍保留在原位置，可重试。"
+            }
         }
     }
 }
@@ -1119,12 +1143,14 @@ private struct KnowledgeNoteEditor: View {
         ) {
             Button("移到废纸篓", role: .destructive) {
                 saveTask?.cancel()
-                if store.moveToTrash(id: noteID) { dismiss() }
-                else { saveStatus = "保存失败：" + (store.lastError ?? "无法删除笔记") }
+                Task {
+                    if await store.deleteNote(id: noteID) { dismiss() }
+                    else { saveStatus = store.lastError ?? "删除未完成，笔记已保留" }
+                }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("可在“最近删除”中恢复本机笔记。云端副本不受影响。")
+            Text("账号中已同步的笔记也会移到最近删除，可随时恢复；平台知识中的引用会撤回。")
         }
         .safeAreaInset(edge: .bottom) { bottomDock }
         .sheet(isPresented: $showingQuestion) {

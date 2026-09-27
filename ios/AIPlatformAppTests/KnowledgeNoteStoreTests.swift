@@ -361,6 +361,33 @@ final class KnowledgeNoteStoreTests: XCTestCase {
         XCTAssertEqual(synchronizer.legacyMergeMutationCount, 0)
     }
 
+    func testMergeRetryPreservesEditsAndWaitsForContributionWithdrawal() async throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "merge-retry-\(UUID())", userId: "merge-user")
+        defer { removeVault(store) }
+        let synchronizer = FakeKnowledgeActionSynchronizer()
+        synchronizer.contributionStatus = "pending"
+        let executor = KnowledgeActionExecutor(store: store, synchronizer: synchronizer)
+        let target = try XCTUnwrap(store.createNote(id: "retry-target", title: "目标", body: "旧稿"))
+        let source = try XCTUnwrap(store.createNote(id: "retry-source", title: "来源", body: "材料"))
+        let action = mergeAction(step: .init(
+            kind: "merge_notes", targetNoteId: target.id, sourceNoteIds: [source.id],
+            markdown: "合并完成", originalContentHash: store.contentHash(for: target),
+            sourceContentHashes: [source.id: store.contentHash(for: source)]
+        ))
+        let pending = await executor.execute(action)
+        XCTAssertEqual(pending.state, .syncPending)
+        XCTAssertNotNil(store.note(id: source.id))
+        XCTAssertNil(store.archivedNote(id: source.id))
+        _ = store.save(id: target.id, title: target.title, body: "用户后续编辑", tags: [], isPinned: false)
+        synchronizer.contributionStatus = "scheduled"
+        let retry = await executor.execute(action)
+        XCTAssertEqual(retry.state, .syncPending)
+        XCTAssertEqual(synchronizer.mergeRequests.count, 1)
+        XCTAssertEqual(store.note(id: target.id)?.body, "用户后续编辑")
+        XCTAssertNotNil(store.note(id: source.id))
+    }
+
     func testMergeRejectsMissingMalformedHashesAndSourceOnlyLegacyRequestsBeforeMutation() async throws {
         let (store, executor) = isolatedStoreAndExecutor()
         defer { removeVault(store) }
@@ -539,6 +566,46 @@ final class KnowledgeNoteStoreTests: XCTestCase {
         XCTAssertEqual(snapshot.first(where: { $0.id == "server-only" })?.contentHash, server.contentHash)
     }
 
+    func testMergedSourceLinksResolveToRetainedNoteIncludingCloudRecovery() throws {
+        let store = KnowledgeNoteStore()
+        store.activate(tenantKey: "links-\(UUID())", userId: "owner")
+        defer { try? FileManager.default.removeItem(at: store.vaultDirectory) }
+        let target = try XCTUnwrap(store.createNote(id: "retained", title: "总纲", body: "章节正文"))
+        let source = try XCTUnwrap(store.createNote(id: "source", title: "补充材料", body: "材料"))
+        let referring = try XCTUnwrap(store.createNote(title: "引用", body: "[[补充材料]]"))
+        let markdown = store.markdown(for: source)
+        let snapshot = CloudKnowledgeNoteDTO(noteId: source.id, markdown: markdown,
+            contentHash: store.contentHash(for: source), updatedAt: "2099-01-01T00:00:00Z",
+            archived: true, mergedIntoNoteId: target.id)
+        try store.restoreFromCloudSnapshot(.init(items: [snapshot], count: 1, compileStatus: "ready"))
+        store.reload()
+        XCTAssertNil(store.note(id: source.id))
+        XCTAssertEqual(store.note(matchingLink: "补充材料")?.id, target.id)
+        XCTAssertEqual(store.backlinks(to: target).map(\.id), [referring.id])
+        XCTAssertTrue(store.unresolvedLinks(in: referring).isEmpty)
+    }
+
+    func testCloudTrashAndExplicitRestorePropagateWithoutBackgroundResurrection() throws {
+        let store = KnowledgeNoteStore.shared
+        store.activate(tenantKey: "trash-cloud-\(UUID())", userId: "user")
+        let note = try XCTUnwrap(store.createNote(id: "recoverable", title: "保留记录", body: "重要正文"))
+        let markdown = store.markdown(for: note)
+        let hash = store.contentHash(for: note)
+        var snapshot = CloudKnowledgeNoteDTO(noteId: note.id, markdown: markdown, contentHash: hash,
+                                            updatedAt: "2099-01-01T00:00:00Z", archived: false, mergedIntoNoteId: nil)
+        snapshot.trashed = true
+        try store.restoreFromCloudSnapshot(.init(items: [snapshot], count: 1, compileStatus: "private_index_ready"))
+        XCTAssertNil(store.note(id: note.id))
+        XCTAssertEqual(store.trashedNotes.filter { $0.id == note.id }.count, 1)
+        snapshot.trashed = false
+        try store.restoreFromCloudSnapshot(.init(items: [snapshot], count: 1, compileStatus: "private_index_ready"))
+        XCTAssertNil(store.note(id: note.id))
+        snapshot.restoredAt = "2099-01-02T00:00:00Z"
+        try store.restoreFromCloudSnapshot(.init(items: [snapshot], count: 1, compileStatus: "private_index_ready"))
+        XCTAssertEqual(store.note(id: note.id)?.body, note.body)
+        XCTAssertFalse(store.trashedNotes.contains { $0.id == note.id })
+    }
+
     func testCloudSnapshotWithoutFrontmatterPreservesServerNoteID() throws {
         let store = KnowledgeNoteStore.shared
         store.activate(tenantKey: "cloud-id-tenant-\(UUID())", userId: "cloud-id-user")
@@ -666,6 +733,7 @@ final class KnowledgeNoteStoreTests: XCTestCase {
 @MainActor
 private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizing {
     var afterSync: (() -> Void)?
+    var contributionStatus: String? = nil
     private(set) var illustrationRequests: [(String, KnowledgeActionStep, String)] = []
     func enqueueIllustrations(store: KnowledgeNoteStore, id: String, step: KnowledgeActionStep, requestID: String) {
         illustrationRequests.append((id, step, requestID))
@@ -682,8 +750,8 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
         return .init(items: items, count: items.count, compileStatus: "ready")
     }
 
-    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, credentialGeneration: UInt64) async throws {
-        legacyMergeMutationCount += 1
+    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, createOnly: Bool, credentialGeneration: UInt64) async throws {
+        if !createOnly { legacyMergeMutationCount += 1 }
         syncBaseHashes.append(baseHash)
         let hash = SHA256.hash(data: Data(markdown.utf8)).map { String(format: "%02x", $0) }.joined()
         notes[id] = .init(
@@ -719,12 +787,12 @@ private final class FakeKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
         }
         return .init(
             operationId: body.operationId, targetNoteId: body.targetNoteId,
-            status: "completed", revisedHash: hash
+            status: "completed", revisedHash: hash, contributionStatus: contributionStatus
         )
     }
 
     func restoreKnowledgeNote(id: String) async throws {}
-    func trashKnowledgeNote(id: String) async throws {}
+    func trashKnowledgeNote(id: String, expectedContentHash: String?) async throws {}
     func commitKnowledgeAction(id: String, capability: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws {}
     func resumeKnowledgeActionSync(id: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws {}
     func discardKnowledgeAction(id: String, capability: String, actionDigest: String) async throws {}

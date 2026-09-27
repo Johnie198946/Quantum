@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `35faa397e3361cc6b5a1b86bb73797a48bc29de0bb7199f2bcc1ce5cad69f8bb`
+Catalog digest: `8ca259f9577887d7dba132fc7b6d3d578948fe553847d03936360ef293883715`
 
 ## Gateway 核心模块规范
 
@@ -68,40 +68,26 @@ signed capability
 - 快照内的检索、排序和 WikiLink 解析复用已验证元数据，不得对同一路径、同一版本逐链接重复解析 frontmatter。
 - 没有请求级授权快照的直接调用必须继续执行实时文件门禁；不得提供模型或调用方可设置的 `skip_auth`、`trusted`、`bypass` 参数。
 - Gateway 返回前必须重新验证完整响应涉及的授权集合和当前 policy version；任何中途撤回、版本变化或授权读取失败均 fail closed，不返回部分证据。
-- Hermes 发送答案前仍须对实际引用路径执行有界的 `path + version` 复核；该终检不能被 Gateway 内部快照替代。
+- 后续正文读取必须重新经过 Gateway 的当前授权与版本检查，不得用旧检索结果绕过读取。
 - 索引、矩阵、搜索命中和缓存均不授予读取权限；授权真相来自当前策略、实时治理元数据和持久授权状态。
 - 授权错误、系统错误、无命中和证据不足必须使用不同状态；超时不得伪装成无命中。
 
-Bridge 消费裁决合同：
+Bridge 当前消费合同（以 `tests/test_knowledge_access_without_gate.py` 与运行代码为准）：
 
-- Gateway 只裁决“当前请求可返回哪些知识证据”；Hermes Bridge 独占“最终答案是否消费了受控知识、能否发送”的裁决。Backend、Worker、Adapter 和客户端只能透传，不得再次解释或放宽状态。
-- Bridge 必须分别记录权威布尔值 `required_internal_knowledge`、`attempted_internal_search`、`consumed_internal_knowledge`，以及引用复核和最终 `decision`；不得用单个 `knowledge_search:error` 同时表示这些事实。
-- `required_internal_knowledge` 仅由服务端 triage 的明确内部知识证据要求产生，并且与 capability、授权和工具当前是否可用完全独立。能力缺失只能产生 `denied/unavailable`，不能把 required 降成 false。普通问答的后台预读为 optional；客户端、Prompt 和模型不能选择或降低 requirement。
-- 服务端预读、Hermes 直接 `knowledge_search` 和 deferred `tool_call(name=knowledge_search)` 必须进入同一个 observer；任何正文或 title/snippet/path/version 等租户知识元数据进入 Hermes 上下文，都将 `consumed_internal_knowledge` 单调设置为 true，后续零命中不能回退。
-- `optional + not_exposed` 在 Gateway `no_match|insufficient|timeout|system_error` 时不得被知识安全门禁阻断；有成功公开 URL 时记为 `allowed_public_only`，否则记为 `allowed_without_internal_knowledge`。公开问答是否必须联网取证属于独立的回答质量策略，不能由知识授权门禁越权代管。授权拒绝始终阻断。
-- 只要内部正文或元数据已暴露给模型但没有可复核引用，`consumption` 必须为 `unknown` 并 fail closed；外网 URL 不能清洗或替代这次内部知识消费。
-- 内部引用必须经过发送前 `path + version` 复核才能得到 `allowed_internal`；有公开工具证据时得到 `allowed_public_only`，无内部消费且无公开工具证据时得到 `allowed_without_internal_knowledge`。三者的 receipt semantic 不得相同。
-
-稳定状态合同：
-
-| 平面 | 允许值 | 所有者 |
-|---|---|---|
-| Gateway retrieval | `matched / no_match / insufficient / denied / error` | Knowledge Gateway |
-| Failure kind | `none / authorization / timeout / malformed_result / system / revalidation / citation_violation / version_conflict` | Gateway Adapter + Bridge 终检 |
-| Requirement | `required_internal_knowledge: bool` | 服务端 Triage + Bridge 复算 |
-| Attempt | `attempted_internal_search: bool` | Hermes Bridge observer |
-| Consumption | `consumed_internal_knowledge: bool`，附 `cited / not_exposed / unknown` 显示语义 | Hermes Bridge observer |
-| Decision | `allowed_internal / allowed_public_only / allowed_without_internal_knowledge / blocked_*` | Hermes Bridge |
-
-类型化裁决从 `knowledge_gate_receipt.v2` 开始。新增状态必须通过版本化 receipt 扩展；旧字段在迁移期只作兼容显示，不再作为授权或发送判断真相源。任何组件收到未知枚举值时 fail closed，并保留原始错误码用于审计。
+- 普通知识检索是 Hermes 可调用的证据工具，不是回答前的强制预读；不得重新引入 `_KnowledgeBarrierQueue` 或因未检索知识而拦截整条答案。
+- Gateway 的身份、租户范围、实时授权、撤回和文件版本复核继续执行。移除回答等待门禁不等于允许读取未授权材料。
+- `knowledge_search` 返回 `matched / no_match / insufficient / denied / error` 等读取结果。超时不伪装成无命中；失败必须说明未取得内部证据，不能声称已消费知识。
+- 普通知识不可用时，Hermes 可按已有工具权限继续回答或使用公开证据；不得将公开资料当作内部制度。用户指定的书籍问答保持书籍范围，不自动以公网替代原书。
+- 私人笔记沿账号授权的 `user_note_search` 读取，无需等待平台 Wiki 编译；归档或删除后从活跃检索移除。平台贡献仍沿现有独立授权与撤回链执行。
+- 旧 `knowledge_gate_receipt.v2` / `required_internal_knowledge` / observer 裁决描述不是当前运行能力，不作为验收证据或第二套状态源。知识消费是否发生，以本轮实际工具结果和返回的来源为依据。
 
 性能合同：
 
 - 文件门禁读取次数必须随候选文档数线性增长，不得随 WikiLink 边数退化为平方复杂度。
 - 生产形态基准必须覆盖冷/热运行、链接密集文档、中途撤权和并发容量；记录分阶段 P50/P95/P99，不记录查询正文或身份明文。
 - 生产必须启用 `KNOWLEDGE_GATEWAY_PERF_OBSERVE`；tenant Wiki 与 publication 混合范围不得绕过同一分段指标。
-- 当前普通知识预读取目标为 P95 不超过 3 秒，任何单次不得超过 5 秒发送门禁；未达到目标应优化重复工作，不得仅放宽安全超时。
-- 性能优化不得删除请求开始、Gateway 返回前、Hermes 发送前这三道独立复核，也不得引入跨请求授权缓存。
+- 读取延迟按实际 Gateway 调用分段计时；普通回答不等待不存在的后台预读。不得把本地候选算法耗时当作 Chat 端到端性能。
+- 性能优化不得删除请求开始及 Gateway 返回前的授权复核，也不得引入跨请求授权缓存。
 
 ### 3. 统一调用模型
 
@@ -275,7 +261,7 @@ Gateway 作为核心模块达到可发布状态，必须同时满足：
 Debug 必须按以下证据顺序进行，后层不得替代前层：
 
 1. 用 `request_id`、durable run ID 和终态确认请求是否实际执行、重试、取消或恢复。
-2. 读取版本化结构化 receipt；Knowledge 路径先核对 `required_internal_knowledge`、`attempted_internal_search`、`consumed_internal_knowledge`、`retrieval_status`、`failure_kind`、`consumption` 和 `decision`。
+2. 读取版本化结构化 receipt；Knowledge 路径核对实际工具调用、`retrieval_status`、错误类型和来源版本，不使用已移除的旧发送门禁字段。
 3. 读取 Gateway/Handler/Bridge 的分阶段 timing，区分排队、授权、候选构建、检索/执行、返回前复核、发送前终检和客户端渲染。
 4. 回读当前 policy、entitlement、capability/catalog/schema/renderer 版本、资源/CAS 版本和部署 revision；历史 discovery 或缓存不得作为当前授权证据。
 5. 对照脱敏日志、事件和 receipt ID 还原跨组件链路；不得记录或外发 token、密钥、完整敏感正文和跨租户标识。
@@ -349,7 +335,8 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 | `knowledge.note.merge@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.read@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
-| `knowledge.note.search@1.0.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
+| `knowledge.note.search@1.1.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
+| `knowledge.note.trash@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `learning.exercise.answer@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |
 | `learning.exercise.create@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |

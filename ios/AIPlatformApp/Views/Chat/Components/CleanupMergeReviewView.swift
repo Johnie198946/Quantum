@@ -7,8 +7,9 @@ struct CleanupMergeReviewView: View {
     let sourceID: String
     let snapshots: [[String: JSONScalar]]
     let locked: Bool
+    var allowsMerge = true
     var initialPreview: KnowledgeMergePreview? = nil
-    let onAccept: (String) -> Void
+    let onAccept: (String, String, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var preview: KnowledgeMergePreview?
@@ -16,8 +17,22 @@ struct CleanupMergeReviewView: View {
     @State private var error: String?
     @State private var loading = false
     @State private var showResult = false
+    @State private var reversed = false
+    @State private var editedResult: String?
+    @State private var editingResult = false
 
-    private var result: String? { preview?.mergedMarkdown(choices: choices) }
+    private var retainedID: String { reversed ? sourceID : targetID }
+    private var archivedID: String { reversed ? targetID : sourceID }
+    private func noteLabel(_ id: String) -> String {
+        guard let note = snapshots.first(where: { $0["id"] == .string(id) }),
+              case .string(let title) = note["title"] else { return id }
+        return title
+    }
+
+    private var result: String? {
+        if let editedResult { return editedResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editedResult }
+        return preview?.mergedMarkdown(choices: choices)
+    }
     private var remaining: Int { preview?.segments.filter { $0.kind == "replace" && choices[$0.id] == nil }.count ?? 0 }
 
     var body: some View {
@@ -27,9 +42,18 @@ struct CleanupMergeReviewView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("两篇笔记，逐处看清").font(.title2.bold())
                         Text(title).font(.headline).textSelection(.enabled)
-                        Text("保留目标笔记；另一篇合并后归档，可恢复。相同段落只保留一份，不同表述由你决定。")
+                        Text(allowsMerge ? "保留目标笔记；另一篇合并后归档，可恢复。相同段落只保留一份，不同表述由你决定。" : "此处仅核对重叠与引用内容，不执行合并或归档。")
                             .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
                     }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("\(allowsMerge ? "保留" : "笔记一")：\(noteLabel(retainedID))", systemImage: "doc.text")
+                        Label("\(allowsMerge ? "归档" : "笔记二")：\(noteLabel(archivedID))", systemImage: "archivebox")
+                        Button(allowsMerge ? "交换保留与归档" : "交换比较顺序") {
+                            reversed.toggle()
+                            Task { await load() }
+                        }.disabled(locked || loading || snapshots.isEmpty)
+                            .accessibilityIdentifier("cleanup-swap-merge")
+                    }.font(.subheadline)
                     if loading { ProgressView("正在比较两篇笔记…").frame(maxWidth: .infinity).padding(24) }
                     if let error {
                         VStack(alignment: .leading, spacing: 12) {
@@ -49,10 +73,23 @@ struct CleanupMergeReviewView: View {
                             Text("合并后全文").tag(true)
                         }.pickerStyle(.segmented)
                         if showResult {
-                            if let result {
+                            if let result = result ?? (editingResult ? "" : nil) {
+                                if allowsMerge {
+                                    Button(editingResult ? "完成全文调整" : "调整段落位置与内容") {
+                                        if editedResult == nil { editedResult = result }
+                                        editingResult.toggle()
+                                    }.frame(minHeight: 44)
+                                    Text("相同章节优先对齐；新章节放在末尾。可在确认前调整位置，提交的是此处完整正文。")
+                                        .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                                }
+                                if editingResult {
+                                    TextEditor(text: Binding(get: { editedResult ?? result }, set: { editedResult = $0 }))
+                                        .frame(minHeight: 400).accessibilityLabel("合并后完整正文")
+                                } else {
                                 Text(result).font(.body).lineSpacing(5).textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading).padding()
                                     .background(AppTheme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 20))
+                                }
                             } else {
                                 Label("还有 \(remaining) 处差异需要选择，选完即可查看完整结果。", systemImage: "checklist")
                             }
@@ -85,19 +122,25 @@ struct CleanupMergeReviewView: View {
         .task { if let initialPreview { preview = initialPreview } else { await load() } }
     }
 
-    private var acceptance: some View {
-        VStack(spacing: 8) {
-            Button {
-                if let result { onAccept(result) }
-            } label: {
-                Text(remaining > 0 ? "还有 \(remaining) 处待选择" : "采用结果，加入确认单")
-                    .font(.headline).frame(maxWidth: .infinity, minHeight: 48)
-            }
-            .buttonStyle(.borderedProminent).tint(AppTheme.Colors.primary)
-            .disabled(result == nil || locked || loading)
-            .accessibilityIdentifier("cleanup-accept-merge")
-            Text(preview != nil && remaining == 0 && result == nil ? "正文为空，无法加入合并确认单" : "此步只确认预览，不会修改或归档笔记").font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+    @ViewBuilder private var acceptance: some View {
+        if !allowsMerge {
+            Text("局部重叠或引用不代表整篇重复；请保留两篇，核对引用关系。")
+                .font(.subheadline).padding().frame(maxWidth: .infinity)
+                .background(AppTheme.Colors.surfaceElevated)
+        } else {
+            VStack(spacing: 8) {
+                Button {
+                    if let result { onAccept(result, retainedID, archivedID) }
+                } label: {
+                    Text(remaining > 0 ? "还有 \(remaining) 处待选择" : "采用结果，加入确认单")
+                        .font(.headline).frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent).tint(AppTheme.Colors.primary)
+                .disabled(result == nil || locked || loading)
+                .accessibilityIdentifier("cleanup-accept-merge")
+                Text(preview != nil && remaining == 0 && result == nil ? "正文为空，无法加入合并确认单" : "此步只确认预览，不会修改或归档笔记").font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
         }.padding(.horizontal, 20).padding(.vertical, 12).background(AppTheme.Colors.surfaceElevated)
+        }
     }
 
     private func summary(_ preview: KnowledgeMergePreview) -> some View {
@@ -149,7 +192,7 @@ struct CleanupMergeReviewView: View {
     }
 
     private func choice(_ label: String, value: String, segment: KnowledgeMergePreview.Segment) -> some View {
-        Button { choices[segment.id] = value } label: {
+        Button { choices[segment.id] = value; editedResult = nil; editingResult = false } label: {
             HStack(spacing: 12) {
                 Image(systemName: choices[segment.id] == value ? "checkmark.circle.fill" : "circle")
                 Text(label).multilineTextAlignment(.leading)
@@ -162,17 +205,17 @@ struct CleanupMergeReviewView: View {
 
     @MainActor private func load() async {
         guard !loading else { return }
-        loading = true; error = nil; preview = nil; choices = [:]
+        loading = true; error = nil; preview = nil; choices = [:]; editedResult = nil; editingResult = false
         defer { loading = false }
         do {
             let value = try await APIClient.shared.request(KnowledgeMergePreview.self,
                 path: "me/knowledge-actions/merge-preview", method: "POST",
-                body: JSONScalar.object(["target_note_id": .string(targetID), "source_note_id": .string(sourceID),
+                body: JSONScalar.object(["target_note_id": .string(retainedID), "source_note_id": .string(archivedID),
                                          "local_notes": .array(snapshots.map(JSONScalar.object))]))
             guard !Task.isCancelled else { return }
-            guard value.targetNoteId == targetID, value.sourceNoteId == sourceID,
-                  snapshots.contains(where: { $0["id"] == .string(targetID) && $0["content_hash"] == .string(value.targetHash) }),
-                  snapshots.contains(where: { $0["id"] == .string(sourceID) && $0["content_hash"] == .string(value.sourceHash) }) else {
+            guard value.targetNoteId == retainedID, value.sourceNoteId == archivedID,
+                  snapshots.contains(where: { $0["id"] == .string(retainedID) && $0["content_hash"] == .string(value.targetHash) }),
+                  snapshots.contains(where: { $0["id"] == .string(archivedID) && $0["content_hash"] == .string(value.sourceHash) }) else {
                 throw APIError.network("笔记版本已变化，请关闭并刷新建议")
             }
             preview = value
@@ -198,13 +241,13 @@ struct ChatCleanupReviewSheet: View {
         Group {
             if target.destination == "cleanup" {
                 NavigationStack {
-                    ScrollView { VStack(spacing: 16) { CleanupWorkspaceView(onLater: { dismiss() }) }.padding() }
+                    ScrollView { VStack(spacing: 16) { CleanupWorkspaceView(onLater: { dismiss() }, onDeepReview: { dismiss(); coordinator.sendMessage(text: CleanupWorkspaceView.deepReviewPrompt) }) }.padding() }
                         .navigationTitle("整理建议")
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
                 }
             } else if snapshots.count == 2, let targetID = target.noteId, let sourceID = target.sourceNoteId {
-                CleanupMergeReviewView(title: title, targetID: targetID, sourceID: sourceID, snapshots: snapshots, locked: coordinator.cleanupProposalBusy) { markdown in
-                    Task { _ = await coordinator.proposeComparedMerge(targetID: targetID, sourceID: sourceID, snapshots: snapshots, markdown: markdown, sessionID: sessionID, accountScope: scope) }
+                CleanupMergeReviewView(title: title, targetID: targetID, sourceID: sourceID, snapshots: snapshots, locked: coordinator.cleanupProposalBusy) { markdown, retainedID, archivedID in
+                    Task { _ = await coordinator.proposeComparedMerge(targetID: retainedID, sourceID: archivedID, snapshots: snapshots, markdown: markdown, sessionID: sessionID, accountScope: scope) }
                 }
             } else {
                 NavigationStack {
@@ -241,7 +284,7 @@ struct CleanupMergeReviewPreview: View {
     var body: some View {
         if accepted { Text("已加入确认单").accessibilityIdentifier("cleanup-preview-accepted") }
         else {
-            CleanupMergeReviewView(title: "旅行计划", targetID: "target", sourceID: "source", snapshots: [], locked: false, initialPreview: fixture) { _ in accepted = true }
+            CleanupMergeReviewView(title: "旅行计划", targetID: "target", sourceID: "source", snapshots: [], locked: false, initialPreview: fixture) { _, _, _ in accepted = true }
 
         }
     }

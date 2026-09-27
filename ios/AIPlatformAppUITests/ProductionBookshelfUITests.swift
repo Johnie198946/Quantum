@@ -80,7 +80,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.buttons["移到废纸篓"].tap()
         XCTAssertTrue(app.buttons["knowledge-more"].waitForExistence(timeout: 5))
         app.buttons["knowledge-more"].tap()
-        app.buttons["最近删除（本机）"].tap()
+        app.buttons["最近删除"].tap()
         XCTAssertTrue(app.buttons["恢复"].waitForExistence(timeout: 5))
         attachScreenshot(named: "notes-recovery")
         app.buttons["恢复"].tap()

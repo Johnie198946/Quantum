@@ -269,6 +269,14 @@
       ]
     },
     {
+      "id": "knowledge.note.trash",
+      "status": "implemented",
+      "tests": [
+        "tests/test_product_capabilities.py",
+        "ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift"
+      ]
+    },
+    {
       "id": "knowledge.note.update",
       "status": "implemented",
       "tests": [
@@ -664,7 +672,7 @@
       ]
     }
   ],
-  "catalog_digest": "35faa397e3361cc6b5a1b86bb73797a48bc29de0bb7199f2bcc1ce5cad69f8bb",
+  "catalog_digest": "8ca259f9577887d7dba132fc7b6d3d578948fe553847d03936360ef293883715",
   "consumptions": [
     {
       "gates": [
@@ -734,7 +742,7 @@
     }
   ],
   "counts": {
-    "implemented": 90,
+    "implemented": 91,
     "partial": 0,
     "unverified": 0
   },
@@ -3329,6 +3337,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 90,
+  "total": 91,
   "version": "1.0.0"
 }

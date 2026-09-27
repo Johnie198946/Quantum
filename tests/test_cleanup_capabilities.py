@@ -257,3 +257,131 @@ async def test_pcm_compare_uses_authenticated_sync_reader(monkeypatch):
     with pytest.raises(HTTPException) as denied:
         await handlers._knowledge_compare({"target_note_id": "a", "source_note_id": "foreign"}, AUTH, None)
     assert denied.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pcm_search_organization_mode_uses_the_same_owner_snapshot(monkeypatch):
+    import backend.capability_handlers as handlers
+    snapshot = AsyncMock(return_value={"compile_status": "private_index_ready", "items": [
+        {"note_id": str(i), "markdown": "# Different title " + str(i) + "\n\nIdentical full body", "archived": False}
+        for i in range(4)]})
+    monkeypatch.setattr(handlers, "list_synced_notes", snapshot)
+    result = await invoke_capability("knowledge.note.search", {"query": "整理", "mode": "organize", "limit": 20}, payload=AUTH)
+    assert result["error"] is None, result
+    report = result["events"][0]["payload"]["organization"]
+    assert report["scanned_notes"] == 4
+    assert len(report["candidates"][0]["notes"]) == 4
+    assert snapshot.await_args.args == (False, AUTH)
+
+
+@pytest.mark.asyncio
+async def test_trash_uses_signed_existing_executor_and_freezes_note_version():
+    markdown = "# 待删除\n\n可恢复的正文"
+    digest = hashlib.sha256(markdown.encode()).hexdigest()
+    note = {"id": "delete-note", "title": "待删除", "markdown": markdown, "content_hash": digest}
+    proposal = await create_capability_proposal(
+        "knowledge.note.trash", {"note_id": note["id"], "base_hash": digest},
+        local_notes=[note], payload=AUTH, session_id="trash-device",
+        request_id="trash-request", idempotency_key="trash-request",
+    )
+    assert proposal["status"] == "awaiting_confirmation", proposal
+    event = proposal["events"][0]["payload"]
+    assert event["steps"][0]["kind"] == "move_to_trash"
+    claims = verify_knowledge_action_capability(event["knowledge_action_capability"])
+    assert claims["target_hashes"] == {note["id"]: digest}
+
+
+def test_merge_preview_keeps_target_chapter_order_and_preserves_new_material():
+    from backend.services.knowledge_action_capability import note_merge_preview
+    def note(key, text):
+        return {"id": key, "markdown": text, "content_hash": hashlib.sha256(text.encode()).hexdigest()}
+    left = "# 方案\n\n## 原理\n\n基础概念\n\n## 实践\n\n操作步骤\n"
+    right = "# 方案\n\n## 实践\n\n操作步骤\n\n补充细节\n\n## 原理\n\n基础概念\n\n## 参考\n\n引用出处\n"
+    result = note_merge_preview(note("a", left), note("b", right))
+    merged = "".join(s["before"] if s["kind"] in {"equal", "delete"} else s["after"] for s in result["segments"])
+    assert merged.index("## 原理") < merged.index("## 实践") < merged.index("## 参考")
+    assert merged.count("基础概念") == 1 and merged.count("操作步骤") == 1
+    assert "补充细节" in merged and "引用出处" in merged
+
+
+@pytest.mark.asyncio
+async def test_note_catalog_pages_every_note_and_uses_frontmatter_title(monkeypatch):
+    import backend.capability_handlers as handlers
+    snapshot = AsyncMock(return_value={"compile_status": "ready", "items": [
+        {"note_id": str(i), "markdown": f"---\ntitle: 主题{i}\n---\n内容{i}", "content_hash": "a" * 64, "archived": False}
+        for i in range(7)]})
+    monkeypatch.setattr(handlers, "list_synced_notes", snapshot)
+    ids = []
+    offset = 0
+    while True:
+        result = await invoke_capability("knowledge.note.search", {"query": "完整目录", "mode": "catalog", "limit": 3, "offset": offset}, payload=AUTH)
+        assert result["status"] == "completed"
+        page = result["events"][0]["payload"]
+        assert page["total_count"] == 7
+        assert page["items"][0]["title"].startswith("主题")
+        ids.extend(item["note_id"] for item in page["items"])
+        if page["next_offset"] is None:
+            break
+        offset = page["next_offset"]
+    assert ids == [str(i) for i in range(7)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift", [False, True])
+async def test_delete_all_freezes_scope_and_does_not_include_new_notes(tmp_path, monkeypatch, drift):
+    import backend.api.knowledge_sync as sync
+    from backend.services.capability_gateway import proposal_status
+    monkeypatch.setattr(sync, "_sync_root", lambda: tmp_path)
+    monkeypatch.setattr(sync, "enqueue_note_contribution", AsyncMock(return_value=None))
+    monkeypatch.setattr(sync, "_withdraw_note_event", AsyncMock(return_value=[]))
+    for key in ("first", "second"):
+        text = f"# {key}"
+        await sync.sync_note(key, sync.NoteSyncRequest(markdown=text, content_hash=hashlib.sha256(text.encode()).hexdigest()), AUTH)
+    request = "batch-" + uuid.uuid4().hex
+    proposed = await create_capability_proposal("knowledge.note.trash", {"all_active": True}, payload=AUTH,
+        session_id=request, request_id=request, idempotency_key=request)
+    event = proposed["events"][0]["payload"]
+    assert set(event["input"]["note_versions"]) == {"first", "second"}
+    assert "2篇" in event["summary"]
+    text = "# newly created"
+    await sync.sync_note("new", sync.NoteSyncRequest(markdown=text, content_hash=hashlib.sha256(text.encode()).hexdigest()), AUTH)
+    if drift:
+        text = "# first edited after review"
+        await sync.sync_note("first", sync.NoteSyncRequest(markdown=text, content_hash=hashlib.sha256(text.encode()).hexdigest()), AUTH)
+    result = await confirm_capability_proposal(event["proposal_id"], event["confirmation_token"], payload=AUTH, session_id=request)
+    if drift:
+        assert result["error"]["code"] == "resource_conflict"
+        remaining = await sync.list_synced_notes(False, AUTH)
+        assert {item["note_id"] for item in remaining["items"]} == {"first", "second", "new"}
+        return
+    assert result["status"] == "completed", result
+    assert result["events"][0]["payload"]["count"] == 2
+    remaining = await sync.list_synced_notes(False, AUTH)
+    assert [item["note_id"] for item in remaining["items"]] == ["new"]
+    all_notes = await sync.list_synced_notes(False, AUTH, include_trashed=True)
+    assert {item["note_id"] for item in all_notes["items"] if item["trashed"]} == {"first", "second"}
+    status = await proposal_status(event["proposal_id"], payload=AUTH)
+    assert status["status"] == "verified"
+
+
+def test_bridge_cloud_note_read_populates_workspace_for_followup_review(monkeypatch):
+    import asyncio
+    import json
+    import scripts.hermes_bridge as bridge
+    import backend.services.capability_catalog as catalog
+    text = "# 云端独有笔记\n\n完整正文"
+    context = {"knowledge_action_v1": True, "inline_notes": [], "identity": AUTH, "request_id": "cloud-read-123"}
+    monkeypatch.setattr(bridge._client_context_tool_context, "value", context)
+    async def read(capability_id, data, **kwargs):
+        assert capability_id == "knowledge.note.read" and data == {"note_id": "cloud-note"}
+        assert kwargs["payload"] == AUTH
+        return {"status": "completed", "events": [{"type": "knowledge.note", "payload": {"note": {
+            "note_id": "cloud-note", "title": "云端独有笔记", "markdown": text,
+            "content_hash": hashlib.sha256(text.encode()).hexdigest(), "archived": False}}}]}
+    monkeypatch.setattr(catalog, "invoke_capability", read)
+    monkeypatch.setattr(bridge.contracts, "_run_bridge_coroutine", lambda coroutine, **kwargs: asyncio.run(coroutine))
+    result = json.loads(bridge._app_capability_invoke_tool({"capability_id": "knowledge.note.read", "input": {"note_id": "cloud-note"}}))
+    assert result["status"] == "completed"
+    cached = json.loads(bridge._knowledge_workspace_read_tool({"operation": "read", "note_id": "cloud-note"}))
+    assert cached["note"]["markdown"] == text
+    assert context["knowledge_workspace_read_completed"] is True

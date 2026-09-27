@@ -973,6 +973,10 @@ _KNOWLEDGE_NAV_DESTINATIONS = {
 
 _KNOWLEDGE_MERGE_DIRECTIVE = (
     "\n清理入口：用户只说帮我清理或要求批量整理时，先明确笔记/对话/待办范围；可用knowledge.navigation的cleanup展示现有建议，不自行编造候选规则。"
+    "用户要求全量检查/整理笔记时，先调用knowledge.note.search(mode=organize)快速检查，再用mode=catalog按next_offset遍历完整目录；不能只看设备缓存或前两篇。"
+    "对相关候选调用knowledge.note.read读取完整正文后，逐组区分：同义重复、同主题互补、不同主题相关、局部引用；"
+    "同义重复建议去重；互补建议按现有章节合并；不同主题相关保留独立笔记并建议双链；局部引用仅建议具体段落链接，不归档整篇。"
+    "输出已检查数、总数、未读范围、每组理由和引用段落；目录摘要不等于已读全文，预算不足必须说明尚未完成。"
     "用户明确两篇笔记后先调用knowledge.note.compare查看差异，再按用户指定的保留方式生成完整合并提案；不要把比较当成写入。"
     "用户修改方案必须重新调用knowledge_action_propose生成新提案，不复用旧签名；确认只能由客户端对具体提案执行。"
     "当前设备对话归档必须有客户端实际提供的session_id和version，缺少时打开cleanup让用户选取，不猜测。"
@@ -1041,7 +1045,9 @@ def _knowledge_workspace_read_tool(args: dict[str, Any], **_kwargs) -> str:
                     "archived": bool(doc.get("archived")),
                 }
             context["inline_notes"] = list(existing.values())
-            notes = list(existing.values())
+            # Cache the complete workspace, but return only this query's matches.
+            # Old unrelated inline notes must not displace newly retrieved evidence.
+            notes = [existing[str(doc["id"])] for doc in gateway_docs if str(doc.get("id") or "") in existing]
             return json.dumps({
                 "success": True,
                 "notes": [{
@@ -1533,14 +1539,18 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             return json.dumps({"success": False, "error": "comparison_snapshot_invalid"})
         _knowledge_ui_navigate_tool({"destination": "note_comparison", "note_id": data["target_note_id"], "source_note_id": data["source_note_id"]})
         return json.dumps({"success": True, **preview}, ensure_ascii=False)
-    if capability_id == "knowledge.note.search":
+    if capability_id == "knowledge.note.search" and data.get("mode", "search") == "search":
         return _knowledge_workspace_read_tool({"operation": "search", **data})
     if capability_id == "knowledge.note.read":
-        return _knowledge_workspace_read_tool({"operation": "read", **data})
+        local = _knowledge_workspace_read_tool({"operation": "read", **data})
+        if json.loads(local).get("success"):
+            return local
+        # A cloud catalog result can be absent from the device snapshot. The
+        # same owner-authorized PCM read below supplies its complete current body.
     if capability_id == "knowledge.navigation":
         return _knowledge_ui_navigate_tool(data)
     from backend.services.knowledge_action_capability import note_capability_step
-    step = note_capability_step(capability_id, data)
+    step = None if capability_id == "knowledge.note.restore" else note_capability_step(capability_id, data)
     if step:
         target_id = str(step["target_note_id"] or "")
         before = ""
@@ -1662,6 +1672,14 @@ def _app_capability_invoke_tool(args: dict[str, Any], **_kwargs) -> str:
             return json.dumps({"success": False, "error": "async_dispatch_failed"})
     finally:
         current_tenant.reset(tenant_token)
+    if capability_id == "knowledge.note.read" and result.get("status") == "completed":
+        for event in result.get("events") or []:
+            note = (event.get("payload") or {}).get("note")
+            if isinstance(note, dict) and note.get("note_id") == data["note_id"]:
+                current = {str(item.get("id")): item for item in _workspace_notes(context)}
+                current[data["note_id"]] = {**note, "id": note["note_id"]}
+                context["inline_notes"] = list(current.values())
+                context["knowledge_workspace_read_completed"] = True
     emit = context.get("emit")
     if callable(emit):
         for event in result.get("events") or []:

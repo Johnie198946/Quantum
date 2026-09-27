@@ -1424,7 +1424,7 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     static func naturalConfirmationVerb(_ text: String) -> String? {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if ["确认", "确认执行", "确认合并", "确认归档", "确认恢复", "按这个方案执行"].contains(value) { return "apply" }
+        if ["确认", "确认执行", "确认合并", "确认归档", "确认恢复", "确认删除", "按这个方案执行"].contains(value) { return "apply" }
         if ["取消", "取消这次操作", "放弃这个方案"].contains(value) { return "discard" }
         return nil
     }
@@ -1463,8 +1463,11 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("有多个待确认方案，请在对应卡片上确认")
             return true
         }
-        let expected = ["确认合并": "merge_notes", "确认归档": "archive_note", "确认恢复": "restore_note"][text.trimmingCharacters(in: .whitespacesAndNewlines)]
-        if let expected, pending[0].kinds != [expected] {
+        let expected = ["确认合并": "merge_notes", "确认归档": "archive_note", "确认恢复": "restore_note", "确认删除": "move_to_trash"][text.trimmingCharacters(in: .whitespacesAndNewlines)]
+        let aliases = ["knowledge.note.merge": "merge_notes", "knowledge.note.archive": "archive_note",
+                       "knowledge.note.restore": "restore_note", "knowledge.note.trash": "move_to_trash"]
+        let actualKinds = Set(pending[0].kinds.map { aliases[$0] ?? $0 })
+        if let expected, actualKinds != [expected] {
             showToast("当前方案与要确认的操作不一致，请核对卡片")
             return true
         }
@@ -3488,15 +3491,65 @@ public final class TenantSessionCoordinator: ObservableObject {
             showToast("账号已切换，不能保存其他账号的笔记草稿")
             return
         }
-        let shouldMerge = action == "merge"
-        let resolvedDraft = Self.resolveLegacyNoteDraft(draft, shouldMerge: shouldMerge)
+        if action == "merge" {
+            // Historical cards also use the signed executor; never create a third
+            // note or archive sources before the server has verified the target.
+            guard !cleanupProposalBusy, appState?.isLoggedIn == true,
+                  draft.mergedMarkdown?.isEmpty == false else {
+                showToast("合并稿不可用或正在处理，请稍后重新生成方案")
+                return
+            }
+            let store = KnowledgeNoteStore.shared
+            var seen = Set<String>()
+            let ids = (draft.mergeCandidates ?? []).map(\.id).filter { seen.insert($0).inserted }
+            let existing = ids.compactMap { store.note(id: $0) }
+            guard !ids.isEmpty, existing.count == ids.count, ids.count <= 17 else {
+                showToast("来源笔记已变化，请重新生成合并方案")
+                return
+            }
+            let primary = existing.first(where: { $0.id == draft.targetNoteId }) ?? existing[0]
+            let sources = existing.filter { $0.id != primary.id }
+            let snapshots: [[String: JSONScalar]] = existing.map { note in
+                ["id": .string(note.id), "title": .string(note.title),
+                 "markdown": .string(store.markdown(for: note)),
+                 "content_hash": .string(store.contentHash(for: note)),
+                 "tags": .array(note.tags.map(JSONScalar.string)), "archived": .bool(false)]
+            }
+            guard let request = Self.legacyMergeInput(draft, targetID: primary.id,
+                targetHash: store.contentHash(for: primary),
+                sourceVersions: Dictionary(uniqueKeysWithValues: sources.map { ($0.id, store.contentHash(for: $0)) })) else {
+                showToast("目标或正文版本已变化，请重新生成方案")
+                return
+            }
+            let expectedEpoch = tenantEpoch
+            let sessionID = sessionManager.activeSessionID()
+            cleanupProposalBusy = true
+            Task { [weak self] in
+                guard let self else { return }
+                defer { self.cleanupProposalBusy = false }
+                do {
+                    let proposal = try await CapabilityClient().proposeLocalNote(
+                        request.capability,
+                        input: request.input, notes: snapshots, sessionId: sessionID, requestId: UUID().uuidString)
+                    guard self.tenantEpoch == expectedEpoch,
+                          let mi = self.messages.firstIndex(where: { $0.id == messageId }),
+                          let bi = self.messages[mi].blocks.firstIndex(where: {
+                              if case .noteDraft(let value) = $0 { return value.id == draftId && value.state == .awaitingConfirmation }
+                              return false
+                          }) else { return }
+                    self.messages[mi].blocks[bi] = .knowledgeAction(proposal)
+                    self.commitSession()
+                    self.showToast("请核对保留笔记与归档来源，再确认执行")
+                } catch {
+                    self.showToast("无法生成确认单，原笔记未修改，请重试")
+                }
+            }
+            return
+        }
+        let resolvedDraft = Self.resolveLegacyNoteDraft(draft, shouldMerge: false)
         let noteTitle = resolvedDraft.title
         let noteMarkdown = resolvedDraft.markdown
         let noteTags = resolvedDraft.tags
-        guard !shouldMerge || (draft.mergeCandidates?.isEmpty == false && draft.mergedMarkdown?.isEmpty == false) else {
-            showToast("合并稿不可用，请保存为新笔记")
-            return
-        }
         guard appState?.isLoggedIn == true else {
             showToast("请先登录后再保存笔记")
             return
@@ -3533,17 +3586,6 @@ public final class TenantSessionCoordinator: ObservableObject {
         draft.savedNoteId = note.id
         messages[messageIndex].blocks[blockIndex] = .noteDraft(draft)
         commitSession()
-        let archivedNotes: [KnowledgeNote]
-        if shouldMerge {
-            archivedNotes = Self.mergeArchiveCandidateIDs(
-                draft.mergeCandidates ?? [], primaryNoteID: note.id
-            ).compactMap { candidateID in
-                KnowledgeNoteStore.shared.archive(id: candidateID, mergedInto: note.id)
-            }
-            showToast("已合并，并将 \(archivedNotes.count) 篇旧笔记归档")
-        } else {
-            archivedNotes = []
-        }
         if draft.isUpdate {
             showToast("已更新原笔记")
         } else if action == "edit" {
@@ -3560,17 +3602,6 @@ public final class TenantSessionCoordinator: ObservableObject {
                     updatedAt: note.updatedAt,
                     credentialGeneration: expectedCredentialGeneration
                 )
-                for archived in archivedNotes {
-                    try await APIClient.shared.syncKnowledgeNote(
-                        id: archived.id,
-                        markdown: KnowledgeNoteStore.shared.markdown(for: archived),
-                        updatedAt: archived.updatedAt,
-                        credentialGeneration: expectedCredentialGeneration
-                    )
-                    try await APIClient.shared.archiveKnowledgeNote(
-                        id: archived.id, mergedIntoNoteId: note.id
-                    )
-                }
                 guard let self, self.tenantEpoch == expectedEpoch,
                       let currentMessageIndex = self.messages.firstIndex(where: { $0.id == messageId }),
                       let currentBlockIndex = self.messages[currentMessageIndex].blocks.firstIndex(where: {
@@ -3584,6 +3615,25 @@ public final class TenantSessionCoordinator: ObservableObject {
                 self?.showToast("笔记已保存到本地，稍后可重试同步")
             }
         }
+    }
+
+    static func legacyMergeInput(
+        _ draft: NoteDraftBlock, targetID: String, targetHash: String,
+        sourceVersions: [String: String]
+    ) -> (capability: String, input: [String: JSONScalar])? {
+        guard draft.targetNoteId == nil || draft.targetNoteId == targetID,
+              !sourceVersions.keys.contains(targetID),
+              draft.targetContentHash == nil || draft.targetContentHash == targetHash,
+              let markdown = draft.isUpdate ? draft.markdown : draft.mergedMarkdown,
+              !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        if sourceVersions.isEmpty {
+            return ("knowledge.note.update", ["note_id": .string(targetID),
+                "base_hash": .string(targetHash), "markdown": .string(markdown)])
+        }
+        return ("knowledge.note.merge", ["target_note_id": .string(targetID),
+            "target_base_hash": .string(targetHash),
+            "source_versions": .object(sourceVersions.mapValues(JSONScalar.string)),
+            "revised_content": .string(markdown)])
     }
 
     static func resolveLegacyNoteDraft(
@@ -3732,6 +3782,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     confirmationToken: confirmationToken,
                     sessionId: sourceClientSessionId
                 )
+                if proposal.capabilityId == "knowledge.note.trash" || proposal.capabilityId == "knowledge.note.restore" {
+                    guard self?.tenantEpoch == expectedEpoch else { return }
+                    await KnowledgeNoteStore.shared.restoreFromCloud()
+                }
                 guard response.status == "completed" else {
                     throw APIError.network(response.error?.message ?? "能力调用失败")
                 }
@@ -3935,7 +3989,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         case "denied": return "私有笔记已入库 · 平台同步未授权"
         case "excluded": return "私有笔记已入库 · 未参与平台同步"
         case "failed": return "私有笔记已入库 · 平台同步失败，可稍后重试"
-        default: return "私有笔记已入库 · 知识审核已完成"
+        default: return "私有笔记可用 · 平台处理状态待确认"
         }
     }
 

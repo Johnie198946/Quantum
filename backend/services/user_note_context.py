@@ -263,6 +263,77 @@ def model_note(note: dict[str, Any]) -> dict[str, Any]:
     return note
 
 
+
+def organize_note_candidates(notes: list[dict[str, Any]], *, offset: int = 0, limit: int = 20) -> dict[str, Any]:
+    """Read-only evidence groups, not semantic verdicts or permission to merge.
+
+    Reuse the current owner's snapshot. Index complete bodies and paragraphs so
+    different titles and more than two sources are covered without an all-pairs scan.
+    """
+    from collections import defaultdict
+
+    active = [note for note in notes if not note.get("archived")]
+    bodies, titles, paragraphs = defaultdict(list), defaultdict(list), defaultdict(list)
+    by_id: dict[str, dict[str, Any]] = {}
+    text_by_id: dict[str, str] = {}
+    def normalize(text: str) -> str:
+        return re.sub(r"\s+", " ", text).strip().casefold()
+
+    for note in active:
+        note_id = str(note.get("note_id") or note.get("id") or "")
+        if not note_id or note_id in by_id:
+            continue
+        text = str(note.get("markdown") or "")
+        title = _frontmatter_value(text, "title") or str(note.get("title") or note_id)
+        if _frontmatter_value(text, "id") == note_id:
+            text = re.sub(r"\A---\r?\n.*?\r?\n---(?:\r?\n|$)", "", text, count=1, flags=re.S)
+        # A display title does not make otherwise identical bodies distinct.
+        text = re.sub(r"\A\s*# [^\n]+(?:\n|$)", "", text, count=1)
+        normalized = text.strip("\r\n")
+        by_id[note_id] = {"note_id": note_id, "title": title,
+            "content_hash": note.get("content_hash") or hashlib.sha256(str(note.get("markdown") or "").encode()).hexdigest()}
+        text_by_id[note_id] = text
+        if normalized:
+            bodies[hashlib.sha256(normalized.encode()).hexdigest()].append(note_id)
+        if normalize(title):
+            titles[normalize(title)].append(note_id)
+        for paragraph in set(part.strip("\r\n") for part in re.split(r"\n[ \t]*\n", text)):
+            if len(paragraph) >= 32:
+                paragraphs[hashlib.sha256(paragraph.encode()).hexdigest()].append(note_id)
+
+    groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    def add(ids: list[str], relation: str, evidence: str, *, exact: bool = False) -> None:
+        members = tuple(sorted(set(ids)))
+        if len(members) < 2 or members in groups:
+            return
+        digest = hashlib.sha256(json.dumps([relation, [(i, by_id[i]["content_hash"]) for i in members]]).encode()).hexdigest()
+        groups[members] = {"id": digest, "relation": relation,
+            "notes": [by_id[i] for i in members], "evidence": evidence,
+            "requires_semantic_review": not exact,
+            "suggested_action": "compare" if relation != "reference" else "inspect_link"}
+
+    for ids in bodies.values():
+        add(ids, "duplicate", "正文相同（忽略首个标题及首尾空行），请核对后决定保留项。", exact=True)
+    for ids in paragraphs.values():
+        add(ids, "partial_overlap", "存在相同段落；可能是局部引用，不能据此归档整篇笔记。")
+    for ids in titles.values():
+        add(ids, "same_topic_candidate", "标题相同；需区分互补、重复和不同时间版本，不能仅凭标题合并。")
+    title_ids = {key: ids[0] for key, ids in titles.items() if len(ids) == 1}
+    for note_id, text in text_by_id.items():
+        for target in re.findall(r"\[\[([^]#|]+)(?:#[^]|]+)?(?:\|[^]]+)?\]\]", text):
+            linked = title_ids.get(normalize(target))
+            if linked and linked != note_id:
+                add([note_id, linked], "reference", "已有显式笔记引用，建议保留两篇并检查引用位置。", exact=True)
+    candidates = sorted(groups.values(), key=lambda group: (
+        {"duplicate": 0, "partial_overlap": 1, "same_topic_candidate": 2, "reference": 3}[group["relation"]], group["id"]))
+    offset, limit = max(0, offset), max(1, min(limit, 100))
+    end = min(len(candidates), offset + limit)
+    return {"candidates": candidates[offset:end], "scanned_notes": len(by_id),
+        "total_candidates": len(candidates), "next_offset": end if end < len(candidates) else None,
+        "scan_kind": "exact_content_and_links", "semantic_scan_complete": False,
+        "notice": "已检查全部活跃快照的正文、段落、标题和显式引用；不同说法及隐含主题关联仍需语义复核。"}
+
+
 def search_user_notes(
     *,
     tenant_key: str,

@@ -179,7 +179,7 @@ public final class KnowledgeNoteStore: ObservableObject {
                 includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
                 options: []
             ) {
-                for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
+                for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" && !url.path.contains("/.actions/") {
                     if let note = try parseNote(at: url) {
                         if url.path.contains("/.trash/") {
                             trashed.append(note)
@@ -212,7 +212,7 @@ public final class KnowledgeNoteStore: ObservableObject {
         guard accountFingerprint != "unconfigured" else { return }
         let expectedFingerprint = accountFingerprint
         do {
-            let response = try await APIClient.shared.fetchKnowledgeNotes()
+            let response = try await APIClient.shared.fetchKnowledgeNotes(includeTrashed: true)
             guard accountFingerprint == expectedFingerprint else { return }
             try restoreFromCloudSnapshot(response)
             lastError = nil
@@ -232,34 +232,67 @@ public final class KnowledgeNoteStore: ObservableObject {
     }
 
     private func applyCloudSnapshot(_ snapshot: CloudKnowledgeNoteDTO) throws {
-        // A refresh must not undo a deletion on this device. Restore explicitly.
-        guard !trashedNotes.contains(where: { $0.id == snapshot.noteId }) else { return }
+        func persistLifecycle(at noteURL: URL) throws {
+            let metadata: [String: Any] = [
+                "archived_at": snapshot.archived ? (snapshot.updatedAt ?? "") : "",
+                "merged_into_note_id": snapshot.mergedIntoNoteId ?? ""
+            ]
+            try JSONSerialization.data(withJSONObject: metadata).write(
+                to: noteURL.deletingPathExtension().appendingPathExtension("sync.json"), options: .atomic)
+        }
+        if snapshot.trashed == true {
+            let directory = vaultDirectory.appendingPathComponent(".trash", isDirectory: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            // Persist the server copy before removing active files; failed writes retain local data.
+            let destination = directory.appendingPathComponent("\(snapshot.noteId).md")
+            if let local = anyNote(id: snapshot.noteId) ?? trashedNotes.first(where: { $0.id == snapshot.noteId }),
+               snapshot.updatedAt.flatMap(Self.parseServerDate).map({ local.updatedAt > $0 }) ?? true {
+                lastError = "云端已删除的笔记在本机有更新，请先恢复笔记再同步。"
+                return
+            }
+            try snapshot.markdown.write(to: destination, atomically: true, encoding: .utf8)
+            for local in notes + archivedNotes + trashedNotes where local.id == snapshot.noteId && local.fileURL != destination {
+                try fileManager.removeItem(at: local.fileURL)
+            }
+            return
+        }
+        // Only a newer explicit cloud restore may undo a local deletion.
+        if let localTrash = trashedNotes.first(where: { $0.id == snapshot.noteId }) {
+            let deletedAt = (try? fileManager.attributesOfItem(atPath: localTrash.fileURL.path)[.modificationDate]) as? Date
+            guard let restoredAt = snapshot.restoredAt.flatMap(Self.parseServerDate),
+                  let deletedAt, restoredAt > deletedAt else { return }
+            let destination = vaultDirectory.appendingPathComponent("\(snapshot.noteId).md")
+            try snapshot.markdown.write(to: destination, atomically: true, encoding: .utf8)
+            try fileManager.removeItem(at: localTrash.fileURL)
+            return
+        }
         let sameState = (snapshot.archived ? archivedNotes : notes).filter { $0.id == snapshot.noteId }
         let oppositeState = (snapshot.archived ? notes : archivedNotes).filter { $0.id == snapshot.noteId }
+        var obsolete: [URL] = []
         if let preferred = sameState.first {
-            // One logical note ID may never exist in both active and archived views.
-            // Remove stale duplicates even when the preferred copy already matches cloud.
-            for duplicate in Array(sameState.dropFirst()) + oppositeState {
-                try? fileManager.removeItem(at: duplicate.fileURL)
-            }
+            obsolete = (Array(sameState.dropFirst()) + oppositeState).map(\.fileURL)
             let localHash = SHA256.hash(data: Data(markdown(for: preferred).utf8))
                 .map { String(format: "%02x", $0) }.joined()
-            if localHash == snapshot.contentHash { return }
+            if localHash == snapshot.contentHash {
+                try persistLifecycle(at: preferred.fileURL)
+                for duplicate in obsolete { try fileManager.removeItem(at: duplicate) }
+                return
+            }
             let remoteUpdatedAt = snapshot.updatedAt.flatMap(Self.parseServerDate)
             if remoteUpdatedAt == nil || remoteUpdatedAt! <= preferred.updatedAt { return }
-            try? fileManager.removeItem(at: preferred.fileURL)
+            obsolete.append(preferred.fileURL)
         } else if let existing = oppositeState.first {
             let remoteUpdatedAt = snapshot.updatedAt.flatMap(Self.parseServerDate)
             if remoteUpdatedAt == nil || remoteUpdatedAt! <= existing.updatedAt { return }
-            for duplicate in oppositeState {
-                try? fileManager.removeItem(at: duplicate.fileURL)
-            }
+            obsolete = oppositeState.map(\.fileURL)
         }
 
         let directory = snapshot.archived ? archiveDirectory : vaultDirectory
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent("\(snapshot.noteId).md")
         try snapshot.markdown.write(to: destination, atomically: true, encoding: .utf8)
+        try persistLifecycle(at: destination)
+        for previous in obsolete where previous != destination { try fileManager.removeItem(at: previous) }
     }
 
     private static func parseServerDate(_ value: String) -> Date? {
@@ -381,6 +414,28 @@ public final class KnowledgeNoteStore: ObservableObject {
         _ = save(id: id, title: note.title, body: note.body, tags: note.tags, isPinned: !note.isPinned)
     }
 
+    /// One confirmed manual delete updates the account before removing the local copy.
+    public func deleteNote(id: String) async -> Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-knowledgeHomePreview") { return moveToTrash(id: id) }
+        #endif
+        guard let note = note(id: id) else { return false }
+        let account = accountFingerprint
+        let hash = contentHash(for: note)
+        do {
+            do { try await APIClient.shared.trashKnowledgeNote(id: id, expectedContentHash: hash) }
+            catch APIError.server(404, _) { /* Never-synced notes have only a local copy. */ }
+            guard accountFingerprint == account, let current = self.note(id: id), contentHash(for: current) == hash else {
+                lastError = "笔记或账号已变化，请刷新后重试。"
+                return false
+            }
+            return moveToTrash(id: id)
+        } catch {
+            lastError = "删除未完成，笔记已保留。请刷新同步后重试：\(error.localizedDescription)"
+            return false
+        }
+    }
+
     /// Recoverable deletion: notes are moved into KnowledgeVault/.trash.
     @discardableResult
     public func moveToTrash(id: String) -> Bool {
@@ -393,6 +448,7 @@ public final class KnowledgeNoteStore: ObservableObject {
                 destination = trash.appendingPathComponent("\(UUID().uuidString)-\(note.fileURL.lastPathComponent)")
             }
             try fileManager.moveItem(at: note.fileURL, to: destination)
+            try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: destination.path)
             note.fileURL = destination
             notes.removeAll { $0.id == id }
             trashedNotes = sorted(trashedNotes + [note])
@@ -500,20 +556,29 @@ public final class KnowledgeNoteStore: ObservableObject {
     }
 
     public func note(matchingLink link: String) -> KnowledgeNote? {
-        let target = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        return notes.first { note in
-            note.title.caseInsensitiveCompare(target) == .orderedSame
+        let target = link.split(separator: "#", maxSplits: 1).first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? link
+        func matches(_ note: KnowledgeNote) -> Bool {
+            note.id == target || note.title.caseInsensitiveCompare(target) == .orderedSame
                 || note.fileURL.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(target) == .orderedSame
                 || note.aliases.contains(where: { $0.caseInsensitiveCompare(target) == .orderedSame })
         }
+        let active = notes.filter(matches)
+        if active.count == 1 { return active[0] }
+        guard active.isEmpty else { return nil }
+        let archived = archivedNotes.filter(matches)
+        guard archived.count == 1 else { return nil }
+        var next = archived[0].mergedIntoNoteId
+        var visited: Set<String> = [archived[0].id]
+        while let id = next, visited.insert(id).inserted {
+            if let retained = note(id: id) { return retained }
+            next = archivedNote(id: id)?.mergedIntoNoteId
+        }
+        return nil
     }
 
     public func backlinks(to note: KnowledgeNote) -> [KnowledgeNote] {
         notes.filter { candidate in
-            candidate.id != note.id && candidate.outgoingLinks.contains { link in
-                link.caseInsensitiveCompare(note.title) == .orderedSame
-                    || note.aliases.contains(where: { $0.caseInsensitiveCompare(link) == .orderedSame })
-            }
+            candidate.id != note.id && candidate.outgoingLinks.contains { self.note(matchingLink: $0)?.id == note.id }
         }
     }
 
@@ -552,6 +617,11 @@ public final class KnowledgeNoteStore: ObservableObject {
                 titleOwners[normalizedLinkKey(title)] = note.id
             }
         }
+        for archived in archivedNotes {
+            for title in [archived.title] + archived.aliases where titleOwners[normalizedLinkKey(title)] == nil {
+                if let retained = note(matchingLink: title) { titleOwners[normalizedLinkKey(title)] = retained.id }
+            }
+        }
         for source in notes {
             for link in source.outgoingLinks {
                 guard let targetID = titleOwners[normalizedLinkKey(link)], targetID != source.id else { continue }
@@ -573,7 +643,7 @@ public final class KnowledgeNoteStore: ObservableObject {
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
-    private func parseNote(at url: URL) throws -> KnowledgeNote? {
+    fileprivate func parseNote(at url: URL) throws -> KnowledgeNote? {
         let content = try String(contentsOf: url, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines)
         var metadata: [String: String] = [:]
@@ -612,6 +682,12 @@ public final class KnowledgeNoteStore: ObservableObject {
             ?? attributes?.creationDate
             ?? fallbackDate
         let updated = metadata["updated"].flatMap(isoFormatter.date(from:)) ?? fallbackDate
+        if url.path.contains("/.archive/"),
+           let data = try? Data(contentsOf: url.deletingPathExtension().appendingPathExtension("sync.json")),
+           let cloud = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            metadata["archived_at"] = cloud["archived_at"]
+            metadata["merged_into"] = cloud["merged_into_note_id"]
+        }
 
         return KnowledgeNote(
             id: metadata["id"].flatMap { $0.isEmpty ? nil : $0 }
@@ -625,7 +701,7 @@ public final class KnowledgeNoteStore: ObservableObject {
             isPinned: metadata["pinned"] == "true",
             fileURL: url,
             outgoingLinks: extractWikiLinks(from: body),
-            archivedAt: metadata["archived_at"].flatMap(isoFormatter.date(from:)),
+            archivedAt: metadata["archived_at"].flatMap(Self.parseServerDate),
             mergedIntoNoteId: metadata["merged_into"].flatMap { $0.isEmpty ? nil : $0 }
         )
     }
@@ -637,6 +713,7 @@ public final class KnowledgeNoteStore: ObservableObject {
         )
         let content = encode(note)
         try content.write(to: note.fileURL, atomically: true, encoding: .utf8)
+        try? fileManager.removeItem(at: note.fileURL.deletingPathExtension().appendingPathExtension("sync.json"))
     }
 
     private func encode(_ note: KnowledgeNote) -> String {
@@ -815,17 +892,18 @@ private struct KnowledgeActionReceipt: Codable {
     var status: KnowledgeActionState
     var resultNoteIds: [String]
     var updatedAt: Date
+    var resultHashes: [String: String]? = nil
 }
 
 @MainActor
 protocol KnowledgeActionSynchronizing: AnyObject {
     func enqueueIllustrations(store: KnowledgeNoteStore, id: String, step: KnowledgeActionStep, requestID: String)
     func fetchKnowledgeNotes(includeArchived: Bool) async throws -> CloudKnowledgeNotesResponse
-    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, credentialGeneration: UInt64) async throws
+    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, createOnly: Bool, credentialGeneration: UInt64) async throws
     func archiveKnowledgeNote(id: String, mergedIntoNoteId: String?, expectedContentHash: String?) async throws
     func mergeKnowledgeNotes(_ body: KnowledgeNoteMergeRequestDTO) async throws -> KnowledgeNoteMergeResponseDTO
     func restoreKnowledgeNote(id: String) async throws
-    func trashKnowledgeNote(id: String) async throws
+    func trashKnowledgeNote(id: String, expectedContentHash: String?) async throws
     func commitKnowledgeAction(id: String, capability: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws
     func resumeKnowledgeActionSync(id: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws
     func discardKnowledgeAction(id: String, capability: String, actionDigest: String) async throws
@@ -847,9 +925,9 @@ private final class LiveKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
         try await APIClient.shared.fetchKnowledgeNotes(includeArchived: includeArchived)
     }
 
-    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, credentialGeneration: UInt64) async throws {
+    func syncKnowledgeNote(id: String, markdown: String, updatedAt: Date, baseHash: String?, createOnly: Bool, credentialGeneration: UInt64) async throws {
         try await APIClient.shared.syncKnowledgeNote(
-            id: id, markdown: markdown, updatedAt: updatedAt, baseHash: baseHash,
+            id: id, markdown: markdown, updatedAt: updatedAt, baseHash: baseHash, createOnly: createOnly,
             credentialGeneration: credentialGeneration
         )
     }
@@ -866,8 +944,8 @@ private final class LiveKnowledgeActionSynchronizer: KnowledgeActionSynchronizin
         try await APIClient.shared.restoreKnowledgeNote(id: id)
     }
 
-    func trashKnowledgeNote(id: String) async throws {
-        try await APIClient.shared.trashKnowledgeNote(id: id)
+    func trashKnowledgeNote(id: String, expectedContentHash: String?) async throws {
+        try await APIClient.shared.trashKnowledgeNote(id: id, expectedContentHash: expectedContentHash)
     }
 
     func commitKnowledgeAction(id: String, capability: String, actionDigest: String, status: String, resultNoteIds: [String], errorCode: String?) async throws {
@@ -950,9 +1028,11 @@ public final class KnowledgeActionExecutor {
             saveReceipt(.init(
                 actionId: action.id, actionDigest: action.actionDigest,
                 accountFingerprint: store.accountFingerprint, status: .localApplied,
-                resultNoteIds: ids, updatedAt: Date()
+                resultNoteIds: ids, updatedAt: Date(),
+                resultHashes: Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+                    store.anyNote(id: id).map { (id, store.contentHash(for: $0)) }
+                })
             ))
-            try? fileManager.removeItem(at: backup)
             return await synchronize(action, capability: capability, noteIds: ids, expectedFingerprint: expectedFingerprint)
         } catch {
             try? restoreBackup(from: backup)
@@ -1094,7 +1174,7 @@ public final class KnowledgeActionExecutor {
                 changed.append(id)
             case "move_to_trash":
                 guard let id = step.targetNoteId, store.note(id: id) != nil else { throw ActionError.targetMissing }
-                store.moveToTrash(id: id)
+                guard store.moveToTrash(id: id) else { throw ActionError.writeFailed }
                 changed.append(id)
             default:
                 throw ActionError.unsupported
@@ -1114,15 +1194,24 @@ public final class KnowledgeActionExecutor {
     private func synchronize(_ action: KnowledgeActionBlock, capability: String?, noteIds: [String], expectedFingerprint: String) async -> KnowledgeActionExecutionResult {
         let credentialGeneration = APIClient.shared.currentCredentialGeneration()
         do {
+            let baselineSteps = action.steps.filter { ["merge_notes", "archive_note", "move_to_trash"].contains($0.kind) }
+            if !baselineSteps.isEmpty {
+                let cloud = try await synchronizer.fetchKnowledgeNotes(includeArchived: true)
+                let existing = Set(cloud.items.map(\.noteId))
+                let needed = Set(baselineSteps.flatMap { [$0.targetNoteId].compactMap { $0 } + $0.sourceNoteIds }).subtracting(existing)
+                for file in markdownFiles(at: backupDirectory(action.id)) {
+                    guard store.accountFingerprint == expectedFingerprint else { throw ActionError.accountChanged }
+                    guard let original = try store.parseNote(at: file), needed.contains(original.id) else { continue }
+                    try await synchronizer.syncKnowledgeNote(id: original.id, markdown: String(contentsOf: file, encoding: .utf8),
+                        updatedAt: original.updatedAt, baseHash: nil, createOnly: true, credentialGeneration: credentialGeneration)
+                }
+            }
             var mergeHandledIDs = Set<String>()
             for step in action.steps {
                 guard store.accountFingerprint == expectedFingerprint else { throw ActionError.accountChanged }
                 if step.kind == "move_to_trash", let id = step.targetNoteId {
-                    try await synchronizer.trashKnowledgeNote(id: id)
+                    try await synchronizer.trashKnowledgeNote(id: id, expectedContentHash: step.originalContentHash)
                 } else if step.kind == "archive_note", let id = step.targetNoteId {
-                    if let archived = store.archivedNote(id: id) {
-                        try await synchronizer.syncKnowledgeNote(id: id, markdown: store.markdown(for: archived), updatedAt: archived.updatedAt, baseHash: step.originalContentHash, credentialGeneration: credentialGeneration)
-                    }
                     try await synchronizer.archiveKnowledgeNote(id: id, mergedIntoNoteId: nil, expectedContentHash: step.originalContentHash)
                 } else if step.kind == "restore_note", let id = step.targetNoteId {
                     try await synchronizer.restoreKnowledgeNote(id: id)
@@ -1144,7 +1233,7 @@ public final class KnowledgeActionExecutor {
                 guard store.accountFingerprint == expectedFingerprint else { throw ActionError.accountChanged }
                 if let note = store.note(id: id) {
                     let baseHash = action.steps.first(where: { $0.targetNoteId == id })?.originalContentHash
-                    try await synchronizer.syncKnowledgeNote(id: id, markdown: store.markdown(for: note), updatedAt: note.updatedAt, baseHash: baseHash, credentialGeneration: credentialGeneration)
+                    try await synchronizer.syncKnowledgeNote(id: id, markdown: store.markdown(for: note), updatedAt: note.updatedAt, baseHash: baseHash, createOnly: false, credentialGeneration: credentialGeneration)
                 }
             }
             for step in action.steps where step.kind == "illustrate_note" && ["generate", "retry"].contains(step.illustrationAction ?? "") {
@@ -1163,6 +1252,7 @@ public final class KnowledgeActionExecutor {
                     }
                 }
             }
+            try? fileManager.removeItem(at: backupDirectory(action.id))
             updateReceipt(action, state: .synced, ids: noteIds)
             return .init(state: .synced, noteIds: noteIds, message: nil)
         } catch ActionError.targetChanged where action.steps.contains(where: { $0.kind == "illustrate_note" }) {
@@ -1178,7 +1268,7 @@ public final class KnowledgeActionExecutor {
                 noteIds: noteIds, errorCode: "sync_failed"
             )
             updateReceipt(action, state: .syncPending, ids: noteIds)
-            return .init(state: .syncPending, noteIds: noteIds, message: "已保存合并进度，可重试完成同步与归档")
+            return .init(state: .syncPending, noteIds: noteIds, message: "本机操作已保存，云端同步尚未完成，可重试")
         }
     }
 
@@ -1193,6 +1283,11 @@ public final class KnowledgeActionExecutor {
         guard let primary = store.note(id: primaryID) else { throw ActionError.targetMissing }
         let primaryMarkdown = store.markdown(for: primary)
         let desiredHash = store.contentHash(for: primary)
+        if let recorded = loadReceipt(operationID)?.resultHashes?[primaryID] {
+            guard recorded == desiredHash else { throw ActionError.targetChanged }
+        } else {
+            guard primary.body == markdownBody(step.markdown ?? "") else { throw ActionError.targetChanged }
+        }
         guard let expectedBaseHash = step.originalContentHash,
               Self.isValidContentHash(expectedBaseHash)
         else { throw ActionError.targetChanged }
@@ -1203,12 +1298,15 @@ public final class KnowledgeActionExecutor {
         })
         guard sourceVersions.count == sourceIDs.count,
               store.accountFingerprint == expectedFingerprint else { throw ActionError.accountChanged }
-        _ = try await synchronizer.mergeKnowledgeNotes(.init(
+        guard validateMergeTargets([step], requireOriginalTargetVersion: false) else { throw ActionError.targetChanged }
+        let mergeResponse = try await synchronizer.mergeKnowledgeNotes(.init(
             operationId: operationID, targetNoteId: primaryID,
             targetBaseHash: expectedBaseHash, sourceVersions: sourceVersions,
             revisedContent: primaryMarkdown
         ))
         guard store.accountFingerprint == expectedFingerprint else { throw ActionError.accountChanged }
+        guard mergeResponse.contributionStatus != "pending" else { throw ActionError.writeFailed }
+        guard validateMergeTargets([step], requireOriginalTargetVersion: false) else { throw ActionError.targetChanged }
         let cloud = try await synchronizer.fetchKnowledgeNotes(includeArchived: true)
         guard cloud.items.contains(where: {
             $0.noteId == primaryID && !$0.archived && $0.contentHash == desiredHash
@@ -1308,7 +1406,7 @@ public final class KnowledgeActionExecutor {
     }
 
     private func updateReceipt(_ action: KnowledgeActionBlock, state: KnowledgeActionState, ids: [String]) {
-        saveReceipt(.init(actionId: action.id, actionDigest: action.actionDigest, accountFingerprint: store.accountFingerprint, status: state, resultNoteIds: ids, updatedAt: Date()))
+        saveReceipt(.init(actionId: action.id, actionDigest: action.actionDigest, accountFingerprint: store.accountFingerprint, status: state, resultNoteIds: ids, updatedAt: Date(), resultHashes: loadReceipt(action.id)?.resultHashes))
     }
 
     private func backupDirectory(_ actionId: String) -> URL {
