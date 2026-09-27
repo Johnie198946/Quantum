@@ -1,0 +1,19 @@
+release /opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT sha b9e4d128dd5839bae89cff39790fb8240297e23e
+{"service": "api", "health": "healthy", "revision": "b9e4d128dd5839bae89cff39790fb8240297e23e", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "workflow-worker", "health": "healthy", "revision": "b9e4d128dd5839bae89cff39790fb8240297e23e", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "planning-worker", "health": "healthy", "revision": "b9e4d128dd5839bae89cff39790fb8240297e23e", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "agent-evaluation-worker", "health": "healthy", "revision": "b9e4d128dd5839bae89cff39790fb8240297e23e", "quota": ["QUANTUM_MONTHLY_TOKEN_LIMIT=12000000"]}
+{"service": "frontend", "health": "healthy", "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515", "quota": []}
+{"service": "taskboard", "health": "healthy", "revision": null, "quota": []}
+{"service": "postgres", "health": "healthy", "revision": null, "quota": []}
+{"service": "redis", "health": "healthy", "revision": null, "quota": []}
+hermes-bridge.service active quota 12000000
+hermes-chat-worker.service active quota 12000000
+health http://127.0.0.1:8000/ready 200 {"status":"ready","version":"0.8.0"}
+health http://172.18.0.1:9118/health 200 {"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":88,"workflow_runs":78,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+health https://t-react.com/health 200 {"status":"ok","version":"0.8.0"}
+backup_hash database-before 12040648ca51849ddbe3f1c8f4ee18009437d6d4a78a34eb95d603fbf824b46e
+backup_hash publication-before 863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209
+backup_hash publication-files-before 02e9ea55f8852fff51c02b700decea1fbfba99b40d35846714b9da4dfb619642
+publication {"count": 1, "state": "published", "release_at": "2026-09-27T12:00:00+00:00", "actual_release_at": "2026-09-27T12:00:32.674400+00:00", "body_sha256": "076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f", "plan_keys": ["body_sha256", "illustrations", "reason"]}
+joint_verification=passed

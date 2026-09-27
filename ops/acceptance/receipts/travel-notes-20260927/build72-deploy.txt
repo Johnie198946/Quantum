@@ -1,0 +1,96 @@
+Original log: /tmp/travel-build72-release/deploy.log
+SHA256: efc2c4c94b89cc71f0329b16d1d0e8b40bfad137a7bf6750414df6d47a3455d9
+Carriage-return progress output normalized below.
+
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  4.529MB
+
+Step 1/8 : FROM ai-lab-platform-api:travel-parent-b9e4d128dd58
+ ---> 9b4272fd9bff
+Step 2/8 : USER root
+ ---> Running in c80106686291
+ ---> Removed intermediate container c80106686291
+ ---> 608e4b13f96d
+Step 3/8 : RUN rm -rf /app/backend /app/config /app/scripts
+ ---> Running in f228aebaa63e
+ ---> Removed intermediate container f228aebaa63e
+ ---> a1c328294cc4
+Step 4/8 : COPY backend /app/backend
+ ---> 11cca2acb464
+Step 5/8 : COPY config /app/config
+ ---> a0f8c9ff5727
+Step 6/8 : COPY scripts /app/scripts
+ ---> 1837a1d20598
+Step 7/8 : LABEL org.opencontainers.image.revision=b9e4d128dd5839bae89cff39790fb8240297e23e
+ ---> Running in 15c974bd416b
+ ---> Removed intermediate container 15c974bd416b
+ ---> fd30fa7abd36
+Step 8/8 : USER ailab
+ ---> Running in f7a89af5eebb
+ ---> Removed intermediate container f7a89af5eebb
+ ---> 9f8219702aac
+Successfully built 9f8219702aac
+Successfully tagged ai-lab-platform-api:travel-b9e4d128dd58
+No broken requirements found.
+candidate_travel_import=passed
+publication_backup_integrity=ok
+ROLLBACK_READY=/opt/ai-lab-shared/rollbacks/chat-travel-pcm-b9e4d128dd58
+==> [1/6] 下载并解包 SHA b9e4d128dd5839bae89cff39790fb8240297e23e
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+==> [3a/6] 执行 QuantumWorkspace additive schema migration
+{"dry_run": false, "orphan_conversation_ids": [], "orphan_conversation_references": [], "projects_scanned": 22, "projects_to_backfill": 0, "revisions_written": 0}
+ Container ai-lab-platform-redis-1  Running
+ Container ai-lab-platform-postgres-1  Running
+ Container ai-lab-platform-workflow-worker-1  Recreate
+ Container ai-lab-platform-taskboard-1  Running
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreate
+ Container ai-lab-platform-api-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreated
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreated
+ Container ai-lab-platform-workflow-worker-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreated
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-redis-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-redis-1  Healthy
+ Container ai-lab-platform-api-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-agent-evaluation-worker-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-workflow-worker-1  Starting
+ Container ai-lab-platform-agent-evaluation-worker-1  Started
+ Container ai-lab-platform-workflow-worker-1  Started
+ Container ai-lab-platform-api-1  Started
+ Container ai-lab-platform-frontend-1  Starting
+ Container ai-lab-platform-api-1  Waiting
+ Container ai-lab-platform-frontend-1  Started
+ Container ai-lab-platform-api-1  Healthy
+ Container ai-lab-platform-planning-worker-1  Starting
+ Container ai-lab-platform-planning-worker-1  Started
+==> [4/6] API 健康检查与运行契约审计
+✅ runtime contract audit passed
+ - data_dir: /app/data
+ - matrix: /app/data/knowledge_matrix.json
+==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [5/6] 原子切换 release 并重启 Hermes runtime
+hermes_restart_status=skipped_absent unit=hermes-serve.service
+hermes_restart_status=skipped_absent unit=hermes-serve-forward.service
+hermes_restart_status=skipped_absent unit=hermes-gateway.service
+user_note_permissions directories=27 files=343 skipped_symlinks=0
+==> [6/6] 最终健康检查
+{"status":"ready","version":"0.8.0"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":88,"workflow_runs":78,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":88,"workflow_runs":78,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+deployed_sha=b9e4d128dd5839bae89cff39790fb8240297e23e
+release=/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT
+rollback_point=/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W

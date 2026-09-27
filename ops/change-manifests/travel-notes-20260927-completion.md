@@ -1,18 +1,18 @@
 # Travel notes implementation and cloud release record
 
 - task_id: travel-notes-20260927
-- status: COMMITTED（导出资料补丁与图片代码联合本地提交；此前 d228 云端发布已 VERIFIED，联合新版本尚未部署）
+- status: DEPLOYED（共同后端b9发布及版本/健康/功能检查通过；整体笔记语义、私人资料和性能门槛未全部完成）
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
-- head/local_commit: 31f46ac4169c0e650f565368e5d39745ec3eed6f（联合运行代码；本文件所在后续文档提交由 git log 核对）
-- remote_sha: 2026-09-27 19:18 CST git ls-remote origin 核对：refs/heads/main=167fba5c956ade6daba6568fc70c35d7f679406b；refs/heads/codex/travel-notes-20260927=f23773272369ac31e17d89254eaf0448baa3242d；31f46ac4 未推送
-- server_before: f8c7d064c959312e54fcb1dcaf3a08f5bbf19dfe
-- server_after: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；/opt/releases/ai-lab-platform-d228c06d6865.CbxC2W
-- health_check: 8 容器 healthy；4 个 Python 运行镜像 revision=d228；Bridge/ChatWorker active；/ready、Bridge /health、公开 /health 全部 HTTP200
-- functional_check: 联合152测试通过；备份哈希/SQLite完整性/唯一staged稿校验通过；生产Bridge Maps HTTP工作流87.83秒成功；笔记任务独立136正文/5页/hash/精简/防跳页验证通过；出版10cron已由其任务pin d228恢复
-- rollback_point: /opt/releases/ai-lab-platform-f8c7d064c959.229Byr；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-d228c06d6865（PG、SQLite、稿件媒体、env、8镜像）；浏览器配置/包清单 /opt/ai-lab-shared/rollbacks/travel-browser-20260927
+- head/local_commit: b9e4d128dd5839bae89cff39790fb8240297e23e（共同发布源码；本任务文档提交见git log）
+- remote_sha: origin refs/heads/main=b9e4d128dd5839bae89cff39790fb8240297e23e；发布前后git ls-remote独立核对一致
+- server_before: d228c06d6865bdbca9329f264acfe4cf0e8fc5f7
+- server_after: b9e4d128dd5839bae89cff39790fb8240297e23e；/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT
+- health_check: 8容器healthy；4个Python运行镜像revision=b9；Bridge/ChatWorker active；ready/Bridge/public health均200；6进程配额12000000保持
+- functional_check: 图片上传下载/422/跨用户404/doc图片工作流/PCM确认通过；CSV/JSON/TXT/MD真实API导入原件文本私有笔记及跨用户404通过；已发布新刊正文/bundle/5媒体前后一致
+- rollback_point: /opt/releases/ai-lab-platform-d228c06d6865.CbxC2W；/opt/ai-lab-shared/rollbacks/chat-travel-pcm-b9e4d128dd58（PG、SQLite、稿件文件、env、8旧镜像，hash和integrity通过）
 - manifest: ops/change-manifests/travel-notes-20260927-completion.md
-- remaining_risks: 核心节点各30次生产样本已完成，但部分时延未达标且未覆盖完整弱网/端上/大附件矩阵；真实私人收藏/社交资料未验收；新版相册入库回归已交图片任务修复；统一TestFlight尚未上传；临时配额由笔记验收任务协调
+- remaining_risks: 笔记完整语义复测仍待额度答复；真实私人收藏/社交资料未输入；部分时延目标和完整端上性能矩阵未通过；Build72据Apple日志已上传，但整体验收未完成、可安装状态未由本任务核验；出版10cron已独立核验pin b9并恢复，active=[]
 
 本节与文末记录为当前状态；中间各节保留当时发现、失败与授权历史，不代表当前仍未部署。
 
@@ -365,3 +365,22 @@
 按协调要求仅准备、不部署：从GitHub精确SHA下载服务器offline-source，tar根路径校验通过，归档71,379,877字节，SHA256=aaa818f7259da22b865d6374b4842194996f83f39bfd8ec6ee3dda6b664cebff。requirements/requirements-build/requirements-bridge-worker三个lock与当前运行release完全一致，归档project.pbxproj为Build72。前后.deployed-sha均d228c06d6865bdbca9329f264acfe4cf0e8fc5f7；未切镜像、未执行update.sh、未重启、未改cron或配额。
 
 完整回滚wrapper原样复用、bash -n通过。/tmp/travel-build72-release准备发布wrapper和图片server-functional.py；仅新副本fixture绑定b9e4，不改图片任务原件。现有d228回滚点仍有效，新版本的数据库/稿件/环境/镜像备份将在获得正式空闲窗口后、切换前由同一wrapper生成，本阶段未伪造新回滚点。图片HTTP smoke与健康检查尚未针对b9e4执行。记录build72-package-prepared.json；等待出版生产真机验收释放窗口及唯一协调方的发布通知。
+
+
+## Build72共同后端正式部署与功能验收（2026-09-27）
+
+唯一协调方收到出版10cron暂停、三profile active=[]确认后明确放行。发布前再次git ls-remote确认main=b9e4d128，发布后再次一致。执行既有完整wrapper exit0：依赖锁与父镜像一致、候选pip check/import通过；持久部署锁与expected-before=d228检查通过；先建立完整可恢复备份，再复用update.sh切版，不修改生产额度账本。8旧镜像与root-only环境备份保留。数据库迁移projects_to_backfill=0/revisions_written=0。
+
+回滚点chat-travel-pcm-b9e4d128dd58：PG SHA256=12040648ca51849ddbe3f1c8f4ee18009437d6d4a78a34eb95d603fbf824b46e；publication SQLite SHA256=863c14f2bea070089baf2930c794ce5fe21dd6fcef184e5786c0fea18be53209、integrity_check=ok；publication文件tar SHA256=02e9ea55f8852fff51c02b700decea1fbfba99b40d35846714b9da4dfb619642。回滚先恢复旧release/镜像，禁止盲目覆盖部署后的合法用户写入。
+
+独立verify全部通过：server_after=/opt/releases/ai-lab-platform-b9e4d128dd58.gR3lJT，8healthy、4运行镜像精确b9、Bridge/ChatWorker active；API ready/Bridge health/公开health全部200；4容器和2Hermes进程配额均12000000。前端镜像仍0b04edc3，不把后端发布当作网页改版。
+
+已发布新刊保护：原按扩展名枚举媒体的预检失败（媒体实际使用evidence blob），未部署前改为读取既有evidence.private_ref并核对receipt.sha256。正式before/after快照完整相等：唯一publication-6d65e4fff6f4ae7734d1585c3a05a80a仍published，actual_release_at=2026-09-27T12:00:32.674400+00:00，正文/content_hash/plan为076cbb867c99609ea8ff09322ffcdf5f391990a6df7960c7f708f6776d5c5c9f，3插图计划、5媒体实际字节与bundle完全保持。after在恢复cron前采集。
+
+生产功能检查全部通过：合成短期测试身份image-release-acceptance-b9e4d128dd58；图片上传/原字节下载、无效输入422、跨用户404，原生fixture JPEG656x369 SHA80b88ed9b4ba5971591240d2d7f059b5f21c27f60724d3196609ef48e11d3a3c，doc原件与私有笔记、doc引用图片工作流、PCM确认创建wf_8816528c1886c007449e3773320467b6。此服务器fixture尺寸与先前真机1200x675是不同样例，未混作同一证据。CSV BOM、含envelope同名字段的普通JSON、TXT和MD原件/解析文本/私有笔记/跨用户404亦通过。model_calls=0，功能smoke主动opt-out共享编译，因此不把该轮冒烟当真实模型编译验收。
+
+部署窗口已交回笔记协调与出版任务，由出版独立pin b9并恢复10cron；本任务不改cron。Build72上传状态更正：协调任务依据Xcode及ContentDelivery.log确认21:19:03 UPLOAD SUCCEEDED，build id=0e03ed6f-0bde-4ba1-88c5-aa45abb7429c；旅行未执行Apple上传，不重复上传。此前要求笔记语义先通过的门禁顺序未满足，必须保留偏差，不能以已上传反推全部验收完成。正式平台可安装/分组分发状态未由旅行核验。
+
+收据build72-deploy.txt、build72-verify.txt、build72-functional.txt、build72-publication-before/after.json以及校验脚本。没有提交图片fixture、数据库、环境或凭据。
+
+出版最终独立回执：server/API b9 healthy，读者API10章、3插图及5媒体200/hash通过；10cron和wrapper pin b9恢复原enabled，prompt/schedule/model不变，三profile active=[]。保护窗口已关闭，未留下临时暂停。
