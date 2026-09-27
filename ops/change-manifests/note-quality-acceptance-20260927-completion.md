@@ -37,3 +37,33 @@ remaining_risks: pairwise integer comparisons scale quadratically with owner not
 ## Joint local validation
 
 Reader owner reports213 iOS unit tests (KnowledgeNoteStoreTests and WorkflowLifecycleDTOTests) and3 UI tests passed; final reader UI delta remains its separate scope. Ruff passes changed note handlers/services/tests; agent_config has the same3 F811 duplicate-import diagnostics reproduced from HEAD, no new diagnostic. git diff --check passed. PCM generated documents independently match a clean HEAD catalog plus only knowledge.note.search changes, excluding media work.
+
+## Committed and jointly pushed
+
+local_commit: ac78d723865cb93d7fb30f7fc8b82914e18f889e
+status: PUSHED
+remote/ref: https://github.com/Johnie198946/Quantum.git refs/heads/main
+remote_sha: 878744d9d3a2164a39409557b2de53617c279043 (includes note ac78d723, publication9d1e2f02, bookshelf878744d9)
+Independent `git ls-remote origin refs/heads/main` returned the exact above SHA. Reader owns one deployment window, awaiting existing publication work to finish naturally.
+
+Clean candidate independent rerun:108 backend tests passed (/private/tmp/note70-clean-source-tests.log), excluding all unrelated media dirty changes. Real owner snapshot full-body pagination verified135 unique notes across5 pages,219549 characters, every body SHA-256 matches its content_hash;174.8ms. No note writes in this pure read path. This proves transport completeness, not completed Hermes semantic review.
+
+Build70 archive started from `git archive 878744d9 ios` into /private/tmp/quantum-build70-878744d9. Device independently reports installed1.0.3(69), still no new version acceptance. Server-only hash baseline saved for278 Markdown/metadata files at /tmp/note70-quality-acceptance-baseline.json (0600); only aggregate count returned locally. UI mirror requires Mac login; user has been asked asynchronously without requesting credentials.
+
+Build70 candidate878744d9 archive succeeded (/private/tmp/note70-archive.log).193 exported iOS files byte-match the committed source. Info.plist confirms1.0.3(70),com.ailab.AIPlatformApp. Codesign deep/strict and profile verification passed with system trust access; initial restricted-shell trust failure was environmental, not a signing failure. Archive uses a development-installable profile. Installation/upload held while reader owner verifies a booklist editor reading-navigation edge case; a corrective SHA will require rearchive before upload. No Build70 upload or device installation has occurred.
+
+Final joint source updated to a8cc2954e13a40732fc36444df6beaf81f05b80b for reader booklist-draft navigation fix; independent ls-remote confirms a8cc2954. Re-archive in progress from /private/tmp/quantum-build70-a8cc2954 to /private/tmp/Quantumn-1.0.3-70-a8cc2954.xcarchive. Prior878 archive is superseded and must not upload. Mirror now observed connected; agent did not access or enter credentials. Existing Build69 Tang-history third illustration fully visible including lower edge (/private/tmp/build69-tang-three-images-complete.png); this is old-content rendering evidence only.
+
+Additional production-only count check: no active note exceeds client's20000-character comparison ceiling and no candidate group is hidden by that limit. Same135/68 result; repeat candidate scan198.8ms. New code does not claim semantic completeness. Baseline278 server note/metadata files awaits post-test comparison.
+
+## Build70 actual device and continued fixes
+
+Build70 final archivea8cc passed signing and installed on connected iPhone; device info independently confirms1.0.3(70). Servera8cc release/health verified from /private/tmp/bookshelf-functionality-20260927/server-verification.json:8 healthy containers,API ok, rollback /opt/ai-lab-shared/rollbacks/bookshelf-functionality-a8cc2954e13a with backup hashes passed. Separate isolated server bookshelf functional checks passed,25 books; catalog2.095/1.746/1.587s. Overall note acceptance remains incomplete.
+
+Real quick run c7f2b91ddaf848508fde131214a45723 completed135 notes/68 candidates,semantic_scan_complete=false, no mutation tool. Server30.853s; UI displays47s. Context build4.173s, model-before-tool12.256s, tool998ms including scan855.7ms. Performance not accepted from this run. New evidence: the artificial marker QuickAudit plus report caused PROFESSIONAL_TASK/balanced. Plain QuickCheck and equivalent Chinese request classify GENERAL_QA; ordinary-query retest pending. API policy154.9ms/setup59.2ms, worker startup prewarm32.39s. No inference-policy change justified by this run.
+
+Code inspection found a deterministic connection leak: builder opens SessionDB before cache lookup, then overwrites it on hit. Moved allocation to cold-agent path, reusing existing owner/signature/message-count validation. Existing8-case builder regression now checks cache hit reuses its DB without another open. Coordinated shared signed policy key repair c156bb50 from media task (no image feature included); existing note no-increment regression verifies both policy_version and legacy knowledge_policy_version.79 related tests pass (/private/tmp/note70-shared-runtime-tests.log). These runtime fixes pending joint push/deploy and real retest; iOS tree unchanged.
+
+After quick Chat and opening Notes, server hash comparison found added2 files (one Markdown+metadata),removed0,changed0. Server-only provenance check: new note has683 chars, client_updated_at2026-09-25T03:27:48.350000+00:00, no match to current quick-test or draft marker. Old local-note synchronization is the current hypothesis; synced timestamp attribution and a fresh isolated Chat baseline still required. Do not report global zero-write from this baseline.
+
+Provenance follow-up: added note synced_at2026-09-27T08:38:36.713306+00:00, source=user_markdown, source_changed_at equals client_updated_at2026-09-25T03:27:48.350000+00:00. Consistent with old device-note sync, not current Chat-generated content; retain original baseline and create a separate Chat-only baseline. Resume inventory: main c156bb50e1519154088677c8fe28884daf5bd290, origin/main a8cc2954, all unrelated media/manifest modifications preserved. Cache fix and policy compatibility regression79passed; no new dependency or cache.

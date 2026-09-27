@@ -1055,7 +1055,8 @@ def test_v1_workspace_search_supplements_device_cache_from_private_gateway():
         bridge._client_context_tool_context.value = None
 
 
-def test_save_request_allows_verified_no_increment_without_action(monkeypatch, tmp_path):
+@pytest.mark.parametrize("policy_field", ["policy_version", "knowledge_policy_version"])
+def test_save_request_allows_verified_no_increment_without_action(monkeypatch, tmp_path, policy_field):
     import queue
     import sys
     import types
@@ -1066,6 +1067,7 @@ def test_save_request_allows_verified_no_increment_without_action(monkeypatch, t
         session_id = "hermes-no-increment"
 
         def run_conversation(self, *_args, **_kwargs):
+            assert bridge._client_context_tool_context.value["identity"]["knowledge_policy_version"] == "policy-v2"
             result = json.loads(bridge._knowledge_workspace_read_tool({"operation": "list"}))
             assert result["success"] is True
             return {"final_response": "没有新增内容"}
@@ -1094,6 +1096,7 @@ def test_save_request_allows_verified_no_increment_without_action(monkeypatch, t
         "关于雾岛交通，帮我保存", "stable-ios-session", "hermes-no-increment",
         events, [None], client_context_claims={
             "tenant_key": "tenant-a", "user_id": "user-a", "request_id": "request-save",
+            policy_field: "policy-v2",
         }, sandbox=cast(Any, types.SimpleNamespace(state_db=tmp_path / "state.db")),
         knowledge_action_enabled=True,
     )
