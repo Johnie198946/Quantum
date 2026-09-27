@@ -1471,6 +1471,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
     }
 
     @MainActor
+    func testPublicationCacheDoesNotKeepItsCredentialOwnerAlive() {
+        weak var owner: APIClient?
+        autoreleasepool {
+            let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: .ephemeral, inMemoryToken: "fixture")
+            PublicationReaderImage.cacheAPI = api
+            owner = api
+            XCTAssertTrue(PublicationReaderImage.cacheAPI === api)
+        }
+        XCTAssertNil(owner)
+        XCTAssertNil(PublicationReaderImage.cacheAPI)
+    }
+
+    @MainActor
     func testPublicationCoverAndReaderImagesRenderAuthenticatedFixture() async throws {
         APIContractURLProtocol.reset()
         defer { APIContractURLProtocol.reset() }

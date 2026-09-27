@@ -744,8 +744,9 @@ struct AuthenticatedBookImage<Content: View>: View {
                 loadedIdentity = requestedIdentity
                 guard (path != nil || legacyCover), api.currentToken() != nil else { return }
                 let account = "\(ObjectIdentifier(api)):\(api.baseURL):\(api.currentCredentialGeneration())"
-                if PublicationReaderImage.cacheAccount != account {
+                if PublicationReaderImage.cacheAPI !== api || PublicationReaderImage.cacheAccount != account {
                     PublicationReaderImage.cache.removeAll()
+                    PublicationReaderImage.cacheAPI = api
                     PublicationReaderImage.cacheAccount = account
                 }
                 if let cached = PublicationReaderImage.cache.get(tenantId: account, namespace: "publication", key: identity) {
@@ -801,6 +802,7 @@ struct PublicationBookCover: View {
 
 struct PublicationReaderImage: View {
     static let cache = TenantScopedCache<UIImage>(countLimit: 32, totalCostLimit: 48 * 1024 * 1024)
+    static weak var cacheAPI: APIClient?
     static var cacheAccount = ""
     let bookID: String
     let path: String
