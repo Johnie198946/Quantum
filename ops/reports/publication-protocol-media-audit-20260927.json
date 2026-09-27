@@ -1,0 +1,1031 @@
+{
+  "task_id": "publication-standard-workflow-20260926",
+  "followup": "protocol-and-20-books-media-audit",
+  "status": "TESTED",
+  "source_and_server_sha": "5cd60e418d7b462568469d49782bb90f9d78e381",
+  "inventory": {
+    "count": 20,
+    "rows": [
+      {
+        "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+        "actual_release_at": "2026-09-26T21:20:44.262010+00:00",
+        "date": "2026-09-27",
+        "series": "ai-toolkit",
+        "title": "先别把代码审查 Agent 放进定时任务：用离线预检守住只读边界",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+        "actual_release_at": "2026-09-26T22:05:56.822040+00:00",
+        "date": "2026-09-27",
+        "series": "tang-history",
+        "title": "李渊打进长安，为何先让别人当皇帝？",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-975d8cd9380e62b582864c800ba1881d",
+        "actual_release_at": "2026-09-27T00:01:16.532778+00:00",
+        "date": "2026-09-27",
+        "series": "tang-history",
+        "title": "李世民也打过败仗：浅水原的胜负，为什么不能只看冲锋？",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-ef8f00a741c201a77d6952f383ed5cb9",
+        "actual_release_at": "2026-09-26T04:00:36.318000+00:00",
+        "date": "2026-09-26",
+        "series": "ai-history",
+        "title": "一句话如何追上几秒钟的声音：端到端语音识别转折前的对齐难题",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-112feaa04063daa4af7bc7a46bf7c8d9",
+        "actual_release_at": "2026-09-26T04:35:36.373261+00:00",
+        "date": "2026-09-26",
+        "series": "ai-practice",
+        "title": "八成准确率，不等于八成把握：给分类模型做一次概率体检",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-677bef6b531f863517bc8163155c64ec",
+        "actual_release_at": "2026-09-26T04:00:36.318000+00:00",
+        "date": "2026-09-26",
+        "series": "concept-fables",
+        "title": "万路城的最后一张地图",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-5151f775b03a07f096b31416a03306fa",
+        "actual_release_at": "2026-09-25T08:13:16.038571+00:00",
+        "date": "2026-09-25",
+        "series": "ai-history",
+        "title": "不是一张显卡创造了 2012：ImageNet、AlexNet 与深度学习转折",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-d6e845ea2a3acda3f0d7cae02b41b3df",
+        "actual_release_at": "2026-09-25T06:39:35.974754+00:00",
+        "date": "2026-09-25",
+        "series": "ai-practice",
+        "title": "九成准确率为何上线就塌：用分组交叉验证抓住“熟人泄漏”",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-f0ed45929f1f67eca3e9a6eff225e0a8",
+        "actual_release_at": "2026-09-26T00:29:12.633738+00:00",
+        "date": "2026-09-25",
+        "series": "ai-toolkit",
+        "title": "把一个故事点子变成可验收分镜：用 Codex 与 Drama Skills 做五文档闭环",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-23378fc94fecf8802a03fc4d82046789",
+        "actual_release_at": "2026-09-25T08:21:20.471073+00:00",
+        "date": "2026-09-25",
+        "series": "concept-fables",
+        "title": "两座码头的金色账簿",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-3310460aed5decafa5ef2acc7d4e4faf",
+        "actual_release_at": "2026-09-24T08:04:12.251592+00:00",
+        "date": "2026-09-24",
+        "series": "ai-history",
+        "title": "从“堆参数”到“喂数据”：大模型算力分配法则的因果演进",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-2672b9562c25014e2dc6a4e43e2f27e6",
+        "actual_release_at": "2026-09-24T08:10:21.259322+00:00",
+        "date": "2026-09-24",
+        "series": "ai-practice",
+        "title": "别替截断的 JSON 猜结尾：一条可运行、可回滚的防御性解析流水线",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-ba63df8c93444d40f9e12c9edf627a0b",
+        "actual_release_at": "2026-09-24T04:01:07.564241+00:00",
+        "date": "2026-09-24",
+        "series": "ai-toolkit",
+        "title": "用 Gemini Notebook 把一份长 PDF 变成可核对的学习笔记",
+        "assets": [
+          "shelf_cover",
+          "reader_cover"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-b7a66d95fffaf1ab2e975ac7004495a1",
+        "actual_release_at": "2026-09-25T04:49:23.320914+00:00",
+        "date": "2026-09-24",
+        "series": "concept-fables",
+        "title": "群岛灯塔的潮汐日志",
+        "assets": [
+          "shelf_cover",
+          "reader_cover",
+          "illustration_01",
+          "illustration_02",
+          "illustration_03"
+        ],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-01f24971feeb023d69da79e2f05e6129",
+        "actual_release_at": "2026-09-23T13:59:40.574415+00:00",
+        "date": "2026-09-23",
+        "series": "ai-history",
+        "title": "从“把整句塞进瓶子”到注意力机制：机器翻译为何改变路线",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-e7cb8f3397988e37367ecbeeaf754e20",
+        "actual_release_at": "2026-09-23T13:59:40.574415+00:00",
+        "date": "2026-09-23",
+        "series": "ai-practice",
+        "title": "把一批文件交给 AI 之前：用清单、哈希和原子替换做出可恢复流程",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-e1e02beb258aa637301e7f757a954674",
+        "actual_release_at": "2026-09-23T14:23:31.549311+00:00",
+        "date": "2026-09-23",
+        "series": "concept-fables",
+        "title": "没有人改过账本，为什么昨天变了",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-a997229a1b1efd600b9d21e69080d669",
+        "actual_release_at": "2026-09-19T08:40:45.446558+00:00",
+        "date": "2026-09-19",
+        "series": "ai-history",
+        "title": "GPU 为什么不再只是“更快的显卡”：一场关于等待的战争",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-9e5e04c6c07dc21ce840680202c9e15a",
+        "actual_release_at": "2026-09-19T08:40:45.446558+00:00",
+        "date": "2026-09-19",
+        "series": "ai-practice",
+        "title": "AI 说“完成了”，为什么你还要看收据",
+        "assets": [],
+        "contract": true
+      },
+      {
+        "publication_id": "publication-0a002a4a42c4dc9a1d0962ea13950675",
+        "actual_release_at": "2026-09-19T08:40:45.446558+00:00",
+        "date": "2026-09-19",
+        "series": "concept-fables",
+        "title": "七座门为什么同时打开了",
+        "assets": [],
+        "contract": true
+      }
+    ]
+  },
+  "reader_checks": {
+    "mode": "isolated_asgi_live_data",
+    "real_user_login_tested": false,
+    "unauthenticated_cover_status": 401,
+    "count": 20,
+    "rows": [
+      {
+        "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+        "title": "先别把代码审查 Agent 放进定时任务：用离线预检守住只读边界",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-234c61fdd8aacdf10057f6d6c6434fc8/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+        "title": "李渊打进长安，为何先让别人当皇帝？",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-40380deb936907737fda3763801a2a5c/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-975d8cd9380e62b582864c800ba1881d",
+        "title": "李世民也打过败仗：浅水原的胜负，为什么不能只看冲锋？",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-975d8cd9380e62b582864c800ba1881d/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-ef8f00a741c201a77d6952f383ed5cb9",
+        "title": "一句话如何追上几秒钟的声音：端到端语音识别转折前的对齐难题",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-ef8f00a741c201a77d6952f383ed5cb9/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-112feaa04063daa4af7bc7a46bf7c8d9",
+        "title": "八成准确率，不等于八成把握：给分类模型做一次概率体检",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-112feaa04063daa4af7bc7a46bf7c8d9/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-677bef6b531f863517bc8163155c64ec",
+        "title": "万路城的最后一张地图",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-677bef6b531f863517bc8163155c64ec/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-5151f775b03a07f096b31416a03306fa",
+        "title": "不是一张显卡创造了 2012：ImageNet、AlexNet 与深度学习转折",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-5151f775b03a07f096b31416a03306fa/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-d6e845ea2a3acda3f0d7cae02b41b3df",
+        "title": "九成准确率为何上线就塌：用分组交叉验证抓住“熟人泄漏”",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-d6e845ea2a3acda3f0d7cae02b41b3df/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-f0ed45929f1f67eca3e9a6eff225e0a8",
+        "title": "把一个故事点子变成可验收分镜：用 Codex 与 Drama Skills 做五文档闭环",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-f0ed45929f1f67eca3e9a6eff225e0a8/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-23378fc94fecf8802a03fc4d82046789",
+        "title": "两座码头的金色账簿",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-23378fc94fecf8802a03fc4d82046789/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-3310460aed5decafa5ef2acc7d4e4faf",
+        "title": "从“堆参数”到“喂数据”：大模型算力分配法则的因果演进",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-2672b9562c25014e2dc6a4e43e2f27e6",
+        "title": "别替截断的 JSON 猜结尾：一条可运行、可回滚的防御性解析流水线",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-ba63df8c93444d40f9e12c9edf627a0b",
+        "title": "用 Gemini Notebook 把一份长 PDF 变成可核对的学习笔记",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-ba63df8c93444d40f9e12c9edf627a0b/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-ba63df8c93444d40f9e12c9edf627a0b/covers/reader_cover",
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-b7a66d95fffaf1ab2e975ac7004495a1",
+        "title": "群岛灯塔的潮汐日志",
+        "body_status": 200,
+        "shelf_cover_url": "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/covers/shelf_cover",
+        "cover_available": null,
+        "reader_cover_url": "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/covers/reader_cover",
+        "illustration_urls": [
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_01",
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_02",
+          "/api/v1/knowledge-publications/publication-b7a66d95fffaf1ab2e975ac7004495a1/media/illustration_03"
+        ],
+        "inline_image_count": 0,
+        "media_checks": [
+          {
+            "role": "shelf_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "reader_cover",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_01",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_02",
+            "status": 200,
+            "hash_matches": true
+          },
+          {
+            "role": "illustration_03",
+            "status": 200,
+            "hash_matches": true
+          }
+        ]
+      },
+      {
+        "publication_id": "publication-01f24971feeb023d69da79e2f05e6129",
+        "title": "从“把整句塞进瓶子”到注意力机制：机器翻译为何改变路线",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-e7cb8f3397988e37367ecbeeaf754e20",
+        "title": "把一批文件交给 AI 之前：用清单、哈希和原子替换做出可恢复流程",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-e1e02beb258aa637301e7f757a954674",
+        "title": "没有人改过账本，为什么昨天变了",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-a997229a1b1efd600b9d21e69080d669",
+        "title": "GPU 为什么不再只是“更快的显卡”：一场关于等待的战争",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-9e5e04c6c07dc21ce840680202c9e15a",
+        "title": "AI 说“完成了”，为什么你还要看收据",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      },
+      {
+        "publication_id": "publication-0a002a4a42c4dc9a1d0962ea13950675",
+        "title": "七座门为什么同时打开了",
+        "body_status": 200,
+        "shelf_cover_url": null,
+        "cover_available": null,
+        "reader_cover_url": null,
+        "illustration_urls": [],
+        "inline_image_count": 0,
+        "media_checks": []
+      }
+    ]
+  },
+  "summary": {
+    "full_five_images": 11,
+    "covers_only": 1,
+    "no_images": 8,
+    "media_gets_passed": 57,
+    "all_incomplete_predate_media_gate": true,
+    "media_gate_started_at": "2026-09-25T02:17:28+00:00",
+    "all_bodies_have_no_inline_images": true
+  },
+  "ios_findings": [
+    "KnowledgeBookDTO omits shelfCoverUrl and illustrationUrls; KnowledgeBookBodyDTO omits readerCoverUrl and illustrationUrls.",
+    "Subscription cover fetch is gated on coverAvailable, absent in publication projection; alternate book cover and detail cover use decorative IllustratedBookCover.",
+    "Reader renders markdown but never consumes illustration_urls; all 20 bodies contain zero inline images.",
+    "Private media GET requires authentication; generic AsyncImage is insufficient."
+  ],
+  "limits": [
+    "User has not identified actual client/build; iOS source findings do not verify installed application version.",
+    "Media success tested against real production data in isolated ASGI process with test principal; real user authentication/UI not tested."
+  ],
+  "changes": [
+    "docs/runbooks/publication-standard-workflow.md",
+    "docs/publication-operations-runbook.md"
+  ],
+  "runtime_or_content_modified": false,
+  "validation": "Inventory counts, all57 media bytes, bodies,401 boundary, historical cutoff, schema fields, retry limit, local Markdown links and git diff --check passed.",
+  "pre_fix_automatic_evidence": {
+    "scope": "pre-fix normal Story 08:00; not proof of this new release",
+    "author": {
+      "artifact_file": "/Users/dengzhaoyu/.hermes/outputs/quantumn-editorial-v2/author-content/tang-history-2026-09-27-0800-a6735bc94619/content.json",
+      "artifact_sha256": "45b8db464bf5d545fb006f9df0cd309358bf07ebb3200c6447a883f5bdd014e4",
+      "author_job_id": "d3e461e0578c",
+      "author_profile": "story",
+      "issue_date": "2026-09-27",
+      "issue_key": "2026-09-27T08:00",
+      "issue_slot": "08:00",
+      "release_at": "2026-09-27T08:00:00+08:00",
+      "series_id": "tang-history",
+      "version": "publication-native-author-v1",
+      "writer_session": "hermes:cron_d3e461e0578c_20260927_060656"
+    },
+    "controller_execution": {
+      "id": "43ccb47c727949ceb3e92d473039173e",
+      "job_id": "94f82c141295",
+      "source": "builtin",
+      "status": "completed",
+      "started_at": "2026-09-27T06:24:36.163969+08:00",
+      "finished_at": "2026-09-27T06:24:47.421518+08:00",
+      "error": null
+    },
+    "assets_execution": {
+      "id": "9adb6ade1a874d49bb5d077356acdae7",
+      "job_id": "171a125ddb63",
+      "source": "direct",
+      "status": "completed",
+      "started_at": "2026-09-27T06:24:47.336256+08:00",
+      "finished_at": "2026-09-27T06:45:12.400369+08:00",
+      "error": null
+    },
+    "dispatch_correlation": {
+      "claim_created_at": "2026-09-27T06:24:46.641776+08:00",
+      "claim_finished_at": "2026-09-27T06:24:47.346394+08:00",
+      "inference": "builtin controller execution brackets exact-material asset claim; direct asset execution begins during dispatch; direct is native CLI dispatch, not by itself proof of manual user action"
+    },
+    "generation_thread": "01a0dfdb-7cb0-7572-bb0d-14d28d723229",
+    "image_manifest_sha256": "b852fa239ea3c1c11cc4d0d005a7d89630591c5dd7d9503a2e4dd3449e7de13b",
+    "assets": [
+      {
+        "role": "illustration_01",
+        "sha256": "951399ebc9b4681f68c8acc8223e753dd15aececb4df68d1ac7117ecd57acf2f"
+      },
+      {
+        "role": "illustration_02",
+        "sha256": "a41c25e4e7a83dec36de619545927320d0576cecd802f3676bbc2d24b9fb1b00"
+      },
+      {
+        "role": "illustration_03",
+        "sha256": "fd5de99209773f6aca58afc3964f3a05cd0a70da992dd1253049fdfeaaa64548"
+      },
+      {
+        "role": "reader_cover",
+        "sha256": "1dee4e5f10cbf8850fc7ad3a9797939fe9778ceab34179045e6dc1614c5127a4"
+      },
+      {
+        "role": "shelf_cover",
+        "sha256": "948e9ecaee25c9b2ae77c474e0126777b5575665a05693d078c9b4f045f5a07f"
+      }
+    ],
+    "review": {
+      "attempt_id": "attempt-57ed03ba2cf541d68fcfa0b20ff9126b",
+      "decision": "approved",
+      "reviewer_session": "hermes:cron_0dd3884f173c_20260927_064657",
+      "native_started_at": 1790462818.083112,
+      "native_ended_at": 1790462976.9744608,
+      "review_file_hash": "4b21ea63b3321aa6dcf11ab7d8ae38d79c2ae3d012e4b42ccc7b3ca7c221f230",
+      "publication_material_hash": "3740c2467603fea34ff4e1d9eb3148735323ba62d8d907f2df03c450e3dbf207"
+    },
+    "publication_id": "publication-975d8cd9380e62b582864c800ba1881d",
+    "actual_release_at": "2026-09-27T00:01:16.532778+00:00"
+  },
+  "agent_rules_install": {
+    "backup": "/Users/dengzhaoyu/.hermes/backups/publication-standard-workflow-20260926/agent-rules-20260927-103900",
+    "rules": [
+      {
+        "profile": "default",
+        "path": "/Users/dengzhaoyu/.hermes/AGENTS.md",
+        "sha256": "8434c787733b636b0e94e78b9dddbdcb48bd93c76cea84b3f495dd202e1844d1"
+      },
+      {
+        "profile": "story",
+        "path": "/Users/dengzhaoyu/.hermes/profiles/story/AGENTS.md",
+        "sha256": "e08cf974fc5048d498d9b0c413b685dc93e22fdf73ed7cd16ca2c7dde4465f02"
+      },
+      {
+        "profile": "supervision",
+        "path": "/Users/dengzhaoyu/.hermes/profiles/supervision/AGENTS.md",
+        "sha256": "31a07c8d5f75e8ced237c5b17023108f0c98a3e012d79f9de7b2063a40d8bcd0"
+      }
+    ]
+  },
+  "author_selector_readback": {
+    "recorded_at": "2026-09-27T10:42:03.762631+08:00",
+    "read_only": true,
+    "evidence": "Existing server operator status read via configured SSH transport; existing local native handoffs and real recovery claims; worktree author_input implementation. No cron, sessions, drafts or claims mutated.",
+    "actual_ledger": {
+      "ai-toolkit": "NO_NEW_DRAFT",
+      "tang-history": {
+        "series_id": "tang-history",
+        "author_job_id": "d3e461e0578c",
+        "issue_date": "2026-09-27",
+        "issue_key": "2026-09-27T13:00",
+        "issue_slot": "13:00",
+        "release_at": "2026-09-27T13:00:00+08:00"
+      }
+    },
+    "simulation_only": {
+      "method": "Temporarily patch Claims.exhausted in this Python process to remove only the exact specified exhausted key; no database writes.",
+      "exact_key": "publication-recovery-v1:2026-09-27:ai-toolkit:8355a588349131db512268399dd0e919e7c6cbe6e9c3e968ae58000dbadca4e9:author",
+      "request": {
+        "series_id": "ai-toolkit",
+        "author_job_id": "b52aa900ac12",
+        "issue_date": "2026-09-27",
+        "issue_key": "2026-09-27",
+        "issue_slot": "12:00",
+        "release_at": "2026-09-27T12:00:00+08:00"
+      }
+    },
+    "budget_snapshot": {
+      "ai-toolkit": {
+        "attempts": 6,
+        "state": "dispatched",
+        "remaining": 0
+      },
+      "tang-history-13:00": {
+        "attempts": 3,
+        "state": "dispatched",
+        "remaining": 3,
+        "last_claim": "2026-09-27T10:35:08.939668+08:00"
+      }
+    },
+    "regression_log": "/tmp/publication-budget-author-regressions-20260927.txt",
+    "regression_result": "143 passed, 4 existing Pydantic warnings"
+  },
+  "media_fix_server_before": {
+    "server_before": "5cd60e418d7b462568469d49782bb90f9d78e381",
+    "release": "/opt/releases/ai-lab-platform-5cd60e418d7b.FqF0Eq",
+    "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/5cd60e418d7b",
+    "images": {
+      "api": {
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+        "health": "healthy"
+      },
+      "workflow-worker": {
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+        "health": "healthy"
+      },
+      "planning-worker": {
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+        "health": "healthy"
+      },
+      "agent-evaluation-worker": {
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+        "health": "healthy"
+      },
+      "frontend": {
+        "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+        "health": "healthy"
+      },
+      "postgres": {
+        "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+        "health": "healthy"
+      },
+      "redis": {
+        "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+        "health": "healthy"
+      },
+      "taskboard": {
+        "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+        "health": "healthy"
+      }
+    },
+    "publication_db_bytes": 2584576
+  }
+}

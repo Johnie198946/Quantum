@@ -39,6 +39,8 @@ Mac 当前已验证入口为 `/Applications/ChatGPT.app/Contents/Resources/codex
 
 保存原始生成图与每图调用记录。生成 `image-manifest.json`，记录每个角色的 prompt、实际模型（工具没有返回则标未知，不猜测）、生成 thread/调用记录、原图路径和 SHA-256、最终文件名、尺寸与 SHA-256。该文件由 builder 自动登记为 `publication_image_generation` 来源证据，供独立审核核验；不得改作者 source/execution documents，也不得把图片生成成功写成教程执行成功。
 
+新原生交接必须有该清单；`images` 恰好包含五个不重复角色。每项必须有 `role`、非空 `prompt`、`final_file`（本目录内角色文件名）和 `sha256`（最终字节）；兼容既有 `final.relative_path`/`final.sha256` 结构。程序核验清单与五张最终图一致，独立审核继续核对原图、真实工具调用记录和视觉内容。只写清单不等于已生成图片。配图由既有 loop 自动派发，不等待用户逐期请求；失败交回同一材料的有界恢复账本。
+
 官方非交互接口约定：https://developers.openai.com/codex/noninteractive/ 。五图和证据全部完成后再构建，单张成功不能报告素材任务完成。
 
 ## 确定性构建

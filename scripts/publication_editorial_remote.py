@@ -208,6 +208,32 @@ def _same_initial_item(existing: dict, expected: dict) -> bool:
     return all(existing.get(field) == expected.get(field) for field in fields)
 
 
+def _validate_image_manifest(base: Path, item: dict) -> None:
+    """Bind generated assets to this packet; visual/tool evidence needs review."""
+    value = json.loads(read(local_path(base, "image-manifest.json")))
+    images = value.get("images") if isinstance(value, dict) else None
+    if not isinstance(images, list) or len(images) != len(MEDIA_ROLES):
+        raise ValueError("image generation manifest requires all five roles")
+    seen = set()
+    for image in images:
+        if not isinstance(image, dict):
+            raise ValueError("invalid image generation record")
+        role = image.get("role")
+        if not isinstance(role, str) or role not in MEDIA_ROLES or role in seen:
+            raise ValueError("image generation roles must be unique")
+        seen.add(role)
+        # Both existing asset agents' manifest shapes bind the same final bytes.
+        final = image.get("final", {})
+        if not isinstance(final, dict):
+            raise ValueError("invalid image generation final record")
+        path = image.get("final_file", final.get("relative_path"))
+        digest = image.get("sha256", final.get("sha256"))
+        prompt = image.get("prompt")
+        if (path != item[f"{role}_file"] or digest != item[f"{role}_sha256"]
+                or not isinstance(prompt, str) or not prompt.strip()):
+            raise ValueError("image generation evidence conflicts with final media")
+
+
 def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
                   issue_date: str, format: str, owner_policy_id: str,
                   writer_session: str | None = None, issue_slot: str | None = None) -> Path:
@@ -352,6 +378,8 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
         input_paths.add(path)
         groups["source_files"].append(entry)
     item = _initial_item(base, body_raw, groups["source_files"], groups["execution_files"])
+    if native_path.exists():
+        _validate_image_manifest(base, item)
     media_paths = {local_path(base, item[f"{role}_file"]) for role in MEDIA_ROLES}
     if input_paths & media_paths or len(media_paths) != len(MEDIA_ROLES):
         raise ValueError("publication media paths must be unique")

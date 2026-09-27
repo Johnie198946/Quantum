@@ -81,3 +81,24 @@ async def test_bookshelf_subscribe_rejects_unknown_action_before_handler():
     )
     assert result["status"] == "failed"
     assert result["error"]["code"] == "contract_invalid"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("external", [False, True])
+async def test_bookshelf_media_contract_preserves_authenticated_relative_paths(external):
+    book_id = "publication-" + "a" * 32
+    prefix = f"/api/v1/knowledge-publications/{book_id}"
+    cover = f"{prefix}/covers/reader_cover"
+    if external:
+        cover = "https://outside.example/image.jpg"
+    body = {**BODY, "book_id": book_id, "reader_cover_url": cover,
+            "illustration_urls": [f"{prefix}/media/illustration_0{i}" for i in range(1, 4)]}
+    with patch("backend.api.subscriptions.knowledge_book_body", new=AsyncMock(return_value=body)):
+        result = await execute_verified_capability("bookshelf.open", {"book_id": book_id},
+            payload=AUTH, idempotency_key=None)
+    if external:
+        assert result["error"]["code"] == "contract_invalid"
+    else:
+        assert result["status"] == "completed"
+        assert result["events"][0]["payload"]["reader_cover_url"] == cover
+        assert result["events"][0]["payload"]["illustration_urls"] == body["illustration_urls"]

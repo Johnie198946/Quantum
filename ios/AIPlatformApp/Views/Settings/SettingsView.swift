@@ -784,29 +784,6 @@ private enum BookshelfContentKind: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private struct KnowledgeBookCover: View {
-    @EnvironmentObject private var api: APIClient
-    let title: String
-    let author: String
-    let seed: String
-    let theme: String?
-    let variant: Int?
-    let coverAvailable: Bool
-    let width: CGFloat
-    @State private var image: UIImage?
-
-    var body: some View {
-        IllustratedBookCover(
-            title: title, author: author, theme: theme, variant: variant,
-            seed: seed, width: width, image: image
-        )
-        .task(id: "\(seed):\(coverAvailable)") {
-            guard coverAvailable, image == nil,
-                  let data = try? await api.fetchKnowledgeBookCover(id: seed) else { return }
-            image = UIImage(data: data)
-        }
-    }
-}
 
 public struct SubscriptionCenterView: View {
     @EnvironmentObject private var api: APIClient
@@ -1258,7 +1235,7 @@ public struct SubscriptionCenterView: View {
             HStack(spacing: AppTheme.Spacing.md) {
                 bookCover(
                     title: book.title, author: book.author, seed: book.id,
-                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 78
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 78
                 )
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text(book.title)
@@ -1396,7 +1373,7 @@ public struct SubscriptionCenterView: View {
             HStack(spacing: 9) {
                 bookCover(
                     title: book.title, author: book.author, seed: book.id,
-                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 62
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 62
                 )
                 VStack(alignment: .leading, spacing: 6) {
                     Text(book.title).font(.caption.weight(.bold)).lineLimit(2)
@@ -1425,7 +1402,7 @@ public struct SubscriptionCenterView: View {
             VStack(alignment: .leading, spacing: 7) {
                 bookCover(
                     title: book.title, author: book.author, seed: book.id,
-                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 116
+                    theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 116
                 )
                 .frame(maxWidth: .infinity)
                 Text(book.title)
@@ -1704,7 +1681,7 @@ public struct SubscriptionCenterView: View {
                         HStack(spacing: AppTheme.Spacing.md) {
                             bookCover(
                                 title: book.title, author: book.author, seed: book.id,
-                                theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 58
+                                theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 58
                             )
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(book.title)
@@ -1884,7 +1861,7 @@ public struct SubscriptionCenterView: View {
                 ZStack(alignment: .bottom) {
                     HStack(alignment: .bottom, spacing: -12) {
                         ForEach(Array(shelf.books.prefix(3).enumerated()), id: \.element.id) { index, book in
-                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 82)
+                            bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 82)
                                 .rotationEffect(.degrees(Double(index - 1) * 5))
                                 .zIndex(Double(index == 1 ? 2 : index))
                                 .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
@@ -1936,7 +1913,7 @@ public struct SubscriptionCenterView: View {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .center, spacing: AppTheme.Spacing.xl) {
                         ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
                             Button { inspectedBook = book } label: {
-                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, width: 140)
+                                bookCover(title: book.title, author: book.author, seed: book.id, theme: book.coverTheme, variant: book.coverVariant, coverAvailable: book.coverAvailable, mediaPath: book.shelfCoverUrl, width: 140)
                                     .matchedGeometryEffect(id: "\(shelf.id)-\(book.id)", in: bookshelfTransition)
                                     .opacity(booksRevealed ? 1 : 0)
                                     .offset(y: booksRevealed ? (index.isMultiple(of: 2) ? 0 : 36) : 54)
@@ -1982,10 +1959,11 @@ public struct SubscriptionCenterView: View {
         theme: String? = nil,
         variant: Int? = nil,
         coverAvailable: Bool? = nil,
+        mediaPath: String? = nil,
         width: CGFloat = 112
     ) -> some View {
-        KnowledgeBookCover(title: title, author: author, seed: seed, theme: theme, variant: variant,
-                           coverAvailable: coverAvailable == true, width: width)
+        PublicationBookCover(title: title, author: author, seed: seed, theme: theme, variant: variant,
+                           coverAvailable: coverAvailable == true, mediaPath: mediaPath, width: width)
     }
 
     private var shelfPlank: some View {
@@ -2852,11 +2830,12 @@ public struct SubscriptionCenterView: View {
                 ForEach(bookSubscriptions, id: \.book.id) { item in
                     Button { inspectedBook = item.book } label: {
                         HStack(spacing: AppTheme.Spacing.md) {
-                            KnowledgeBookCover(
+                            PublicationBookCover(
                                 title: item.book.title, author: item.book.author,
                                 seed: item.book.id, theme: item.book.coverTheme,
                                 variant: item.book.coverVariant,
-                                coverAvailable: false, width: 56
+                                coverAvailable: item.book.coverAvailable == true,
+                                mediaPath: item.book.shelfCoverUrl, width: 56
                             )
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.book.title).font(.headline).lineLimit(2)
@@ -3321,13 +3300,10 @@ struct KnowledgeBookReaderView: View {
     }
 
     private var editorialCover: some View {
-        IllustratedBookCover(
-            title: book.title,
-            author: book.author,
-            theme: book.coverTheme,
-            variant: book.coverVariant,
-            width: 176
-        )
+        PublicationBookCover(title: book.title, author: book.author, seed: book.id,
+                             theme: book.coverTheme, variant: book.coverVariant,
+                             coverAvailable: book.coverAvailable == true,
+                             mediaPath: book.shelfCoverUrl, width: 176)
     }
 
     private func readerPill(_ text: String, icon: String) -> some View {
@@ -3675,9 +3651,20 @@ private struct KnowledgeBookReadingView: View {
                             .accessibilityIdentifier("publication-reader-progress-warning.\(book.id)")
                     }
                 }
+                if let cover = bookBody.readerCoverUrl {
+                    PublicationReaderImage(bookID: book.id, path: cover, label: "阅读封面")
+                }
                 LazyVStack(alignment: .leading, spacing: 44) {
                     ForEach(Array(bookBody.sections.enumerated()), id: \.element.id) { index, section in
                         readingSection(section, index: index, bookBody: bookBody)
+                    }
+                    if let illustrations = bookBody.illustrationUrls, !illustrations.isEmpty {
+                        VStack(alignment: .leading, spacing: 20) {
+                            Text("本期配图").font(.headline)
+                            ForEach(Array(illustrations.enumerated()), id: \.offset) { index, path in
+                                PublicationReaderImage(bookID: book.id, path: path, label: "配图 \(index + 1)")
+                            }
+                        }
                     }
                 }
                 .padding(.top, 22)

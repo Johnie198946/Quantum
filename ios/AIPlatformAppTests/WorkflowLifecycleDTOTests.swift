@@ -92,6 +92,11 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         var responseError: URLError?
         var responseHeaders = ["Content-Type": "application/json"]
         switch (isContractOrigin, method, path) {
+        case (true, "GET", "/api/v1/knowledge-publications/pub-1/covers/shelf_cover"),
+             (true, "GET", "/api/v1/knowledge-publications/pub-1/covers/reader_cover"),
+             (true, "GET", "/api/v1/knowledge-publications/pub-1/media/illustration_01"):
+            responseHeaders = ["Content-Type": "image/png"]
+            responseBody = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAIAAAD/zu84AAAAPklEQVR4nO3OMQ0AMAwDwXDpUgaFU5xlUFjB4DHSSb9a5/pnR637ogoAAAAAAABgCJAO0kMAAAAAAAAAQ4AGj3smapRSVxkAAAAASUVORK5CYII=")!
         case (true, "POST", "/api/v1/capabilities/confirm") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("cleanup-proposal") == true:
             responseBody = Data(#"{"status":"failed","capability_id":"task.update","events":[],"receipt":null,"error":{"code":"confirmation_invalid","message":"already consumed"}}"#.utf8)
         case (true, "GET", "/api/v1/capabilities/proposals/cleanup-proposal/status"):
@@ -165,7 +170,8 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
         default:
             responseBody = Data(#"{"detail":"unexpected contract request"}"#.utf8)
         }
-        let isAllowed = !(String(data: responseBody, encoding: .utf8)?.contains("unexpected contract") ?? true)
+        let isAllowed = responseHeaders["Content-Type"] == "image/png"
+            || !(String(data: responseBody, encoding: .utf8)?.contains("unexpected contract") ?? true)
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: isAllowed ? responseStatus : 418,
@@ -1464,9 +1470,153 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(plan.stops.map(\.name), ["京都站", "清水寺"])
     }
 
+    @MainActor
+    func testPublicationCoverAndReaderImagesRenderAuthenticatedFixture() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "fixture")
+        let prefix = "/api/v1/knowledge-publications/pub-1/"
+        let host = UIHostingController(rootView: VStack {
+            PublicationBookCover(title: "Fixture", author: "Test", seed: "pub-1", theme: nil,
+                                 variant: nil, coverAvailable: false, mediaPath: prefix + "covers/shelf_cover", width: 100)
+            PublicationReaderImage(bookID: "pub-1", path: prefix + "covers/reader_cover", label: "阅读封面")
+            PublicationReaderImage(bookID: "pub-1", path: prefix + "media/illustration_01", label: "配图 1")
+        }.frame(width: 300, height: 700).environmentObject(api))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<40 {
+            if APIContractURLProtocol.requests().count == 3 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        host.view.layoutIfNeeded()
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(Set(requests.compactMap { $0.request.url?.path }), Set([
+            prefix + "covers/shelf_cover", prefix + "covers/reader_cover", prefix + "media/illustration_01"
+        ]))
+        XCTAssertTrue(requests.allSatisfy { $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture" })
+        let rendered = UIGraphicsImageRenderer(size: window.bounds.size).image { _ in
+            host.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: rendered)
+        let pixels = try XCTUnwrap(rendered.cgImage?.dataProvider?.data)
+        let bytes = try XCTUnwrap(CFDataGetBytePtr(pixels))
+        let pixelCount = CFDataGetLength(pixels) / 4
+        var warmPixels = 0
+        var coolPixels = 0
+        for pixel in 0..<pixelCount {
+            let offset = pixel * 4
+            if bytes[offset + 1] < 140 {
+                if bytes[offset] > 150 && bytes[offset + 2] < 120 { warmPixels += 1 }
+                if bytes[offset + 2] > 150 && bytes[offset] < 120 { coolPixels += 1 }
+            }
+        }
+        XCTAssertGreaterThan(warmPixels, 100, "Rendered screenshot must contain the two-color image fixture")
+        XCTAssertGreaterThan(coolPixels, 100, "Placeholder alone must not pass as a loaded image")
+        attachment.name = "publication-authenticated-synthetic-images-not-production"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testPublicationImageClearsOnCredentialChangeAndDisappearance() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "fixture")
+        var hasImage = false
+        let host = UIHostingController(rootView:
+            AuthenticatedBookImage(bookID: "pub-1", path: "/api/v1/knowledge-publications/pub-1/covers/shelf_cover") { image in
+                Color.clear.onChange(of: image != nil, initial: true) { _, present in hasImage = present }
+            }.environmentObject(api)
+        )
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        for _ in 0..<40 {
+            if hasImage { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(hasImage)
+        api.clearToken()
+        for _ in 0..<40 {
+            if !hasImage { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(hasImage)
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 1, "Sign-out must not launch an unauthenticated image request")
+        window.rootViewController = UIViewController()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(hasImage)
+    }
+
+    @MainActor
+    func testPublicationMediaRejectsUntrustedRoutesBeforeAuthentication() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "fixture")
+        let path = "/api/v1/knowledge-publications/pub-1/covers/shelf_cover"
+        XCTAssertEqual(try api.publicationMediaURL(path: path, bookID: "pub-1").absoluteString, "https://contract.invalid" + path)
+        for invalid in ["https://evil.invalid" + path, "//evil.invalid" + path, path + "?token=x", path + "#x", path + "/../reader_cover", path.replacingOccurrences(of: "pub-1", with: "pub-2"), path.replacingOccurrences(of: "pub-1", with: "%70ub-1")] {
+            do {
+                _ = try await api.fetchPublicationMedia(path: invalid, bookID: "pub-1")
+                XCTFail("Untrusted media route was accepted")
+            } catch { }
+        }
+        XCTAssertTrue(APIContractURLProtocol.requests().isEmpty)
+        _ = try await api.fetchPublicationMedia(path: path, bookID: "pub-1")
+        let request = try XCTUnwrap(APIContractURLProtocol.requests().last?.request)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/*")
+    }
+
+    @MainActor
+    func testPublicationMediaFailureAndCancellationDoNotReturnImageBytes() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "fixture")
+        do {
+            _ = try await api.fetchPublicationMedia(path: "/api/v1/knowledge-publications/pub-1/media/illustration_02", bookID: "pub-1")
+            XCTFail("Failed image response must not be returned as image bytes")
+        } catch { }
+        let request = Task {
+            try await api.fetchPublicationMedia(path: "/api/v1/knowledge-publications/pub-1/covers/shelf_cover", bookID: "pub-1")
+        }
+        request.cancel()
+        do {
+            _ = try await request.value
+            XCTFail("Cancelled image load must not complete successfully")
+        } catch {
+            XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled)
+        }
+        XCTAssertFalse(api.isOfflineMode)
+    }
+
+    func testPublicationBodyMediaDecodeAndLegacyDefaults() throws {
+        let data = Data(#"{"book_id":"pub-1","title":"Title","author":"Author","content_version":"v1","edition":1,"citation":"Source","sections":[],"reader_cover_url":"/api/v1/knowledge-publications/pub-1/covers/reader_cover","illustration_urls":["/api/v1/knowledge-publications/pub-1/media/illustration_01"]}"#.utf8)
+        let body = try decoder().decode(KnowledgeBookBodyDTO.self, from: data)
+        XCTAssertEqual(body.readerCoverUrl, "/api/v1/knowledge-publications/pub-1/covers/reader_cover")
+        XCTAssertEqual(body.illustrationUrls?.count, 1)
+        XCTAssertNil(body.shelfCoverUrl)
+        let legacy = try decoder().decode(KnowledgeBookDTO.self, from: Data(#"{"id":"kn-1","title":"Title","author":"Author","summary":"Summary","security_level":"green","knowledge_level":"K5","freshness":"current","source_count":1}"#.utf8))
+        XCTAssertNil(legacy.shelfCoverUrl)
+        XCTAssertNil(legacy.illustrationUrls)
+    }
+
     func testDailyPublicationDTOFieldsDecode() throws {
-        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","cover_available":true,"security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
+        let data = Data(#"{"id":"publication-1","title":"第一期","author":"Quantumn","summary":"测试","cover_available":true,"shelf_cover_url":"/api/v1/knowledge-publications/publication-1/covers/shelf_cover","security_level":"green","knowledge_level":"editorial","freshness":"daily","source_count":1,"series_id":"ai-history","series_title":"AI的前世今生","issue_id":"issue-1","issue_date":"2026-09-08","test_serial":true,"release_at":"2026-09-08T04:00:00+00:00","actual_release_at":"2026-09-08T04:00:01+00:00","edition_id":"edition-1","edition":1,"source_urls":["https://example.com/source"],"publication_format":"chapter","editorial_genre":"popular_science","completeness":"full"}"#.utf8)
         let book = try decoder().decode(KnowledgeBookDTO.self, from: data)
+        XCTAssertEqual(book.shelfCoverUrl, "/api/v1/knowledge-publications/publication-1/covers/shelf_cover")
         XCTAssertEqual(book.seriesId, "ai-history")
         XCTAssertEqual(book.issueDate, "2026-09-08")
         XCTAssertEqual(book.testSerial, true)

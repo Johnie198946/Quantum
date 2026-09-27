@@ -751,13 +751,10 @@ private struct KnowledgeBookCover: View {
     let width: CGFloat
 
     var body: some View {
-        IllustratedBookCover(
-            title: book.title,
-            author: book.author,
-            theme: book.coverTheme,
-            variant: book.coverVariant,
-            width: width
-        )
+        PublicationBookCover(title: book.title, author: book.author, seed: book.id,
+                             theme: book.coverTheme, variant: book.coverVariant,
+                             coverAvailable: book.coverAvailable == true,
+                             mediaPath: book.shelfCoverUrl, width: width)
     }
 }
 

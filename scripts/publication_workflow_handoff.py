@@ -547,6 +547,12 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
     expected = status.get("expected_issues")
     if not isinstance(expected, list) or not isinstance(status.get("items"), list):
         raise PublicationHandoffError("server publication occurrence status is unavailable")
+    expected = [row for row in expected if row.get("series_id") in configured and row.get("issue_date") == day]
+    for row in expected:
+        occurrence = publication_slot(row["series_id"], day, row.get("issue_slot"))
+        if any(row.get(key) != value for key, value in occurrence.items()):
+            raise PublicationHandoffError("server occurrence conflicts with configured release slots")
+    expected_keys = {(row["series_id"], row["issue_key"]) for row in expected}
     occupied = {(row.get("series_id"), row.get("issue_key", row.get("issue_date")))
                 for row in status["items"] if row.get("state") in {"published", "scheduled", "staged"}}
     for path in editorial.manifests(native_output_root()) if native_output_root().exists() else []:
@@ -570,6 +576,19 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
                 continue
         if state.get("series_id") not in configured:
             continue
+        issue_key = state.get("issue_key", state.get("issue_date"))
+        # Historical material retains its original slot after configuration
+        # changes. Do not validate a retired slot against today's schedule.
+        # Malformed identity is not evidence that a current handoff is retired.
+        if not isinstance(issue_key, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d)?", issue_key):
+            raise PublicationHandoffError("pending handoff occurrence identity is invalid")
+        parsed_day, _, parsed_slot = issue_key.partition("T")
+        datetime.strptime(parsed_day, "%Y-%m-%d")
+        if (parsed_day != state.get("issue_date") or parsed_slot == "12:00"
+                or state.get("issue_slot", parsed_slot or "12:00") != (parsed_slot or "12:00")):
+            raise PublicationHandoffError("pending handoff occurrence identity is invalid")
+        if (state["series_id"], issue_key) not in expected_keys:
+            continue
         if state_path.name == "native-content-state.json":
             found = native_content_binding(state["series_id"], state["issue_key"], writer_session=state.get("writer_session"))
             if (found is None or editorial.read(editorial.local_path(state_path.parent, "native-author.json")) != canonical_json(found[0])
@@ -590,11 +609,7 @@ def author_input(job_id: str, profile: str, remote, *, now: datetime | None = No
     material_items = _manifest_items(native_output_root()) if native_output_root().exists() else []
     candidates = []
     for row in expected:
-        if row.get("series_id") not in configured or row.get("issue_date") != day:
-            continue
         occurrence = publication_slot(row["series_id"], day, row.get("issue_slot"))
-        if any(row.get(key) != value for key, value in occurrence.items()):
-            raise PublicationHandoffError("server occurrence conflicts with configured release slots")
         if (row["series_id"], row["issue_key"]) not in occupied:
             materials = [item for item in material_items if item.series == row["series_id"] and item.day == day
                          and (item.issue_key or item.day) == row["issue_key"]]
@@ -614,7 +629,7 @@ def assets_input() -> str:
     root = native_output_root()
     if not root.exists():
         return "NO_NEW_DRAFT"
-    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims
+    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims, native_assets_execution
     recovery = Claims(Path.home() / ".hermes/cron/publication-recovery.db")
     pending = []
     for state_path in [*root.glob("*/native-content-state.json"), *root.glob("*/workflow-handoff-state.json")]:
@@ -627,6 +642,7 @@ def assets_input() -> str:
     pending.sort(key=lambda row: (row[1].get("release_at") or
         f"{row[1].get('issue_date', '')}T{row[1].get('issue_slot', '12:00')}:00+08:00",
         row[1]["series_id"], str(row[0])))
+    execution = None
     for state_path, state in pending:
         base = state_path.parent
         manifest_path = base / "draft-manifest.json"
@@ -651,7 +667,18 @@ def assets_input() -> str:
         material_hash = state["artifact_sha256"] if state_path.name == "native-content-state.json" else hashlib.sha256(
             f"{state['artifact_id']}:{state['artifact_sha256']}:{state['envelope_sha256']}".encode()).hexdigest()
         barrier = Barrier(state["series_id"], material_hash, state.get("issue_key", state["issue_date"]))
-        if recovery.exhausted(state["issue_date"], Action("assets", (barrier,))):
+        from backend.services.knowledge_publication_store import SERIES
+        spec = SERIES[state["series_id"]]
+        if spec.get("assets_profile", "default") not in {"default", "main"}:
+            raise PublicationHandoffError("native asset profile is not allowed")
+        action = Action("assets", (barrier,), job_id=spec.get("assets_job_id"))
+        if recovery.exhausted(state["issue_date"], action):
+            continue
+        if execution is None:
+            execution = native_assets_execution()
+        if execution["job_id"] != action.job_id:
+            continue
+        if not recovery.claim(state["issue_date"], action, native_execution=execution):
             continue
         request = {"output_directory": str(base), "series_id": state["series_id"],
                    "issue_date": state["issue_date"], "issue_slot": state.get("issue_slot", "12:00"),

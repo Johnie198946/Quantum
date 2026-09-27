@@ -1013,8 +1013,13 @@ async def test_generic_author_binding_survives_approved_staged_ack(handoff_db, m
 def native_author(tmp_path, monkeypatch):
     from backend.services.knowledge_publication_store import SERIES
     from scripts import publication_workflow_handoff as handoff
+    from scripts import publication_scheduler_watchdog as watchdog
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setitem(SERIES, "ai-toolkit", {**SERIES["ai-toolkit"], "author_profile": "default", "author_job_id": "nativejob", "release_times": ["12:00"]})
+    monkeypatch.setattr(watchdog, "native_assets_execution", lambda: {
+        "id": "fixture-assets-execution", "job_id": SERIES["ai-toolkit"]["assets_job_id"],
+        "pid": 99123, "process_started_at": 12345,
+        "started_at": datetime.now(timezone.utc).isoformat()})
     root = handoff.native_output_root()
     root.mkdir(parents=True)
     artifact = root / "author-content.json"
@@ -1041,6 +1046,10 @@ def test_native_terminal_content_materializes_and_builder_binds_author(native_au
     assert handoff.fetch_native("ai-toolkit", "2026-09-26", root) == result
     for role, (_, width, height) in publication_editorial_remote.MEDIA_CONTRACT.items():
         Image.new("RGB", (width, height), "#456789").save(base / f"{role}.jpg", "JPEG")
+    (base / "image-manifest.json").write_text(json.dumps({"images": [
+        {"role": role, "prompt": "synthetic test fixture", "final_file": role + ".jpg",
+         "sha256": hashlib.sha256((base / f"{role}.jpg").read_bytes()).hexdigest()}
+        for role in publication_editorial_remote.MEDIA_CONTRACT]}))
     monkeypatch.setenv("HERMES_SESSION_ID", "asset-session")
     manifest = publication_editorial_remote.build_initial(base / "content-submission.json", base,
         series_id="ai-toolkit", issue_date="2026-09-26", format="chapter", owner_policy_id="test-native")
@@ -1159,6 +1168,10 @@ def test_assets_input_skips_progressed_directory_and_selects_next_native(native_
     base = Path(first["output_directory"])
     for role, (_, width, height) in publication_editorial_remote.MEDIA_CONTRACT.items():
         Image.new("RGB", (width, height), "#567890").save(base / f"{role}.jpg", "JPEG")
+    (base / "image-manifest.json").write_text(json.dumps({"images": [
+        {"role": role, "prompt": "synthetic test fixture", "final_file": role + ".jpg",
+         "sha256": hashlib.sha256((base / f"{role}.jpg").read_bytes()).hexdigest()}
+        for role in publication_editorial_remote.MEDIA_CONTRACT]}))
     publication_editorial_remote.build_initial(base / "content-submission.json", base,
         series_id="ai-toolkit", issue_date="2026-09-26", issue_slot="12:00", format="chapter", owner_policy_id="test-native")
     progressed = root / "00-progressed"
@@ -1196,6 +1209,60 @@ def test_author_input_does_not_reassign_native_content_waiting_for_assets(native
     assert "PUBLICATION_CONTENT_REQUEST" in handoff.author_input("nativejob", "default", remote, now=now)
     handoff.fetch_native("ai-toolkit", day, root)
     assert handoff.author_input("nativejob", "default", remote, now=now) == "NO_NEW_DRAFT"
+
+
+@pytest.mark.parametrize("series,profile,current_slot", [("ai-toolkit", "default", "12:00"), ("tang-history", "story", "13:00")])
+def test_author_input_retired_slot_does_not_poison_current_occurrence(native_author, monkeypatch, series, profile, current_slot):
+    from backend.services.knowledge_publication_store import SERIES, publication_slot
+    handoff, root, database, artifact = native_author
+    day = "2026-09-26"
+    monkeypatch.setitem(SERIES, series, {**SERIES["ai-toolkit"], "id": series,
+                        "author_profile": profile, "release_times": ["00:01", current_slot]})
+    if profile == "story":
+        story_database = database.parent / "profiles/story/state.db"
+        story_database.parent.mkdir(parents=True)
+        database.rename(story_database)
+        database = story_database
+    def bind_author(slot):
+        request = {"series_id": series, "issue_date": day,
+                   **publication_slot(series, day, slot), "author_job_id": "nativejob"}
+        final = {"publication_content_result": {"series_id": series, "issue_date": day,
+                 "issue_slot": slot, "artifact_file": str(artifact)}}
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE sessions SET profile_name=?", (profile,))
+            db.execute("UPDATE messages SET content=? WHERE role='user'",
+                       ("PUBLICATION_CONTENT_REQUEST\n" + json.dumps(request) + "\nEND_PUBLICATION_CONTENT_REQUEST",))
+            db.execute("UPDATE messages SET content=? WHERE role='assistant'", (json.dumps(final),))
+    bind_author("00:01")
+    historical = Path(handoff.fetch_native(series, day + "T00:01", root)["output_directory"])
+    original_state = (historical / "native-content-state.json").read_bytes()
+    monkeypatch.setitem(SERIES, series, {**SERIES[series], "release_times": [current_slot]})
+    class Remote:
+        def operator(self, action):
+            assert action == "status"
+            return {"items": [], "expected_issues": [{"series_id": series, "issue_date": day,
+                    **publication_slot(series, day, current_slot)}]}
+    now = datetime.fromisoformat(day + "T10:00:00+08:00")
+    packet = handoff.author_input("nativejob", profile, Remote(), now=now)
+    assert json.loads(packet.splitlines()[1])["issue_slot"] == current_slot
+    assert (historical / "native-content-state.json").read_bytes() == original_state
+    # Future release time does not defer preparation. Current material still
+    # requires its native identity and immutable bytes, even with old siblings.
+    bind_author(current_slot)
+    key = publication_slot(series, day, current_slot)["issue_key"]
+    current = Path(handoff.fetch_native(series, key, root)["output_directory"])
+    assert handoff.author_input("nativejob", profile, Remote(), now=now) == "NO_NEW_DRAFT"
+    state_path = current / "native-content-state.json"
+    state_bytes = state_path.read_bytes()
+    broken = json.loads(state_bytes)
+    broken["issue_key"] = day + "T01:01"
+    state_path.write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="occurrence identity is invalid"):
+        handoff.author_input("nativejob", profile, Remote(), now=now)
+    state_path.write_bytes(state_bytes)
+    (current / "body.md").write_text("tampered")
+    with pytest.raises(ValueError, match="pending native author content binding is invalid"):
+        handoff.author_input("nativejob", profile, Remote(), now=now)
 
 
 def test_obsolete_workflow_handoff_does_not_block_native_author_or_assets(native_author, monkeypatch):
@@ -1272,6 +1339,12 @@ def test_shared_author_skips_exact_exhausted_issue_and_rearm_restores_it(native_
 def test_shared_assets_selects_earliest_release_not_directory_name(native_author, monkeypatch):
     from backend.services.knowledge_publication_store import SERIES, publication_slot
     handoff, root, database, artifact = native_author
+    from scripts import publication_scheduler_watchdog as watchdog
+    original_claim = watchdog.Claims.claim
+    # This fixture exercises selector order and exact exhaustion/rearm. Native
+    # execution ownership is exercised separately with a real executions ledger.
+    monkeypatch.setattr(watchdog.Claims, "claim", lambda self, day, action, **kwargs:
+                        True if kwargs.get("native_execution") else original_claim(self, day, action))
     day = "2026-09-26"
     directories = {}
     for index, (name, slot) in enumerate([("a-late", "18:00"), ("z-early", "08:00")], 1):
@@ -1318,3 +1391,52 @@ def test_shared_assets_selects_earliest_release_not_directory_name(native_author
     body.write_text(body.read_text() + "tampered")
     with pytest.raises(ValueError, match="existing native content output conflicts"):
         handoff.assets_input()
+
+
+def test_direct_cron_assets_input_consumes_exact_budget_and_pins_execution(native_author, monkeypatch):
+    from scripts import publication_scheduler_watchdog as watchdog
+    from datetime import timedelta
+    handoff, root, _, artifact = native_author
+    result = handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    database = Path.home() / ".hermes/cron/executions.db"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,pid INTEGER,process_started_at INTEGER,started_at TEXT,finished_at TEXT)")
+    ledger = watchdog.Claims(database.with_name("publication-recovery.db"))
+    old = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+    for attempt in range(1, 7):
+        execution = {"id": f"periodic-{attempt}", "job_id": watchdog.PUBLICATION_SERIES["ai-toolkit"]["assets_job_id"],
+                     "status": "running", "pid": 99123, "process_started_at": 12345,
+                     "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None}
+        with sqlite3.connect(database) as db:
+            db.execute("INSERT INTO executions VALUES(:id,:job_id,:status,:pid,:process_started_at,:started_at,:finished_at)", execution)
+        monkeypatch.setattr(watchdog, "native_assets_execution", lambda: execution)
+        packet = handoff.assets_input()
+        assert json.loads(packet)["publication_asset_request"]["output_directory"] == result["output_directory"]
+        assert handoff.assets_input() == packet
+        with sqlite3.connect(ledger.path) as db:
+            assert db.execute("SELECT attempts FROM recovery_claims").fetchone()[0] == attempt
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE executions SET status='failed',finished_at=? WHERE id=?", (old, execution["id"]))
+        with sqlite3.connect(ledger.path) as db:
+            db.execute("UPDATE recovery_claims SET finished_at=?", (old,))
+    assert handoff.assets_input() == "NO_NEW_DRAFT"
+    # A replacement material is independently eligible, but this execution
+    # already owns the previous material and cannot secretly consume another.
+    content = json.loads(artifact.read_text())
+    content["body"] += "\n新的已核实素材证据。\n"
+    artifact.write_bytes(canonical_json(content))
+    handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    assert handoff.assets_input() == "NO_NEW_DRAFT"
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts FROM recovery_claims").fetchall() == [(6,)]
+
+
+def test_assets_input_rejects_cross_profile_asset_route(native_author, monkeypatch):
+    from backend.services.knowledge_publication_store import SERIES
+    handoff, root, _, _ = native_author
+    handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    monkeypatch.setitem(SERIES["ai-toolkit"], "assets_profile", "story")
+    with pytest.raises(ValueError, match="asset profile is not allowed"):
+        handoff.assets_input()
+    assert not (Path.home() / ".hermes/cron/publication-recovery.db").exists()

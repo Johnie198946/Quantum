@@ -140,6 +140,29 @@
           "type": "object"
         },
         "output": {
+          "properties": {
+            "items": {
+              "items": {
+                "properties": {
+                  "illustration_urls": {
+                    "items": {
+                      "pattern": "^/api/v1/knowledge-publications/publication-[a-f0-9]{32}/media/illustration_0[1-3]$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "shelf_cover_url": {
+                    "pattern": "^/api/v1/knowledge-publications/publication-[a-f0-9]{32}/covers/shelf_cover$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
           "required": [
             "items"
           ],
@@ -276,6 +299,21 @@
           "type": "object"
         },
         "output": {
+          "properties": {
+            "illustration_urls": {
+              "items": {
+                "pattern": "^/api/v1/knowledge-publications/publication-[a-f0-9]{32}/media/illustration_0[1-3]$",
+                "type": "string"
+              },
+              "maxItems": 3,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "reader_cover_url": {
+              "pattern": "^/api/v1/knowledge-publications/publication-[a-f0-9]{32}/covers/reader_cover$",
+              "type": "string"
+            }
+          },
           "required": [
             "book_id",
             "content_version",

@@ -635,6 +635,49 @@ def _execution_blockers(
     return sorted(blockers)
 
 
+def _native_execution(execution_id: str) -> dict:
+    database = Path.home() / ".hermes/cron/executions.db"
+    with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        db.row_factory = sqlite3.Row
+        row = db.execute("SELECT * FROM executions WHERE id=?", (execution_id,)).fetchone()
+    if row is None:
+        raise RuntimeError("native asset execution is unavailable")
+    return dict(row)
+
+
+def _native_execution_active(execution_id: str) -> bool:
+    row = _native_execution(execution_id)
+    if row["status"] in {"completed", "failed"} or (row["status"] == "unknown" and row["finished_at"]):
+        return False
+    return _owner_alive(row["pid"], row["process_started_at"]) is not False
+
+
+def native_assets_execution() -> dict:
+    """Bind the pre-script to its running native ancestor, never an asserted ID."""
+    _default_profile_only()
+    ancestors = set()
+    pid = os.getpid()
+    while pid > 1 and pid not in ancestors:
+        ancestors.add(pid)
+        result = subprocess.run(["ps", "-p", str(pid), "-o", "ppid="],
+                                text=True, capture_output=True, timeout=5, check=False)
+        try:
+            pid = int(result.stdout.strip())
+        except ValueError as exc:
+            raise RuntimeError("native asset process ancestry is unavailable") from exc
+    database = Path.home() / ".hermes/cron/executions.db"
+    with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        db.row_factory = sqlite3.Row
+        rows = db.execute("SELECT * FROM executions WHERE status='running'").fetchall()
+    jobs = {spec.get("assets_job_id") for spec in PUBLICATION_SERIES.values()
+            if spec.get("enabled", True) and spec.get("assets_profile", "default") in {"default", "main"}}
+    matches = [dict(row) for row in rows if row["job_id"] in jobs and row["pid"] in ancestors
+               and _owner_alive(row["pid"], row["process_started_at"]) is True]
+    if len(matches) != 1:
+        raise RuntimeError("native asset execution identity is missing or ambiguous")
+    return matches[0]
+
+
 class Claims:
     # Six bounded attempts survive transient scheduler restarts without
     # turning a durable claim into a permanent dead letter before noon.
@@ -659,6 +702,9 @@ class Claims:
             db.execute("ALTER TABLE recovery_claims ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1")
         if "rearm_history" not in columns:
             db.execute("ALTER TABLE recovery_claims ADD COLUMN rearm_history TEXT NOT NULL DEFAULT '[]'")
+        if "native_execution_id" not in columns:
+            db.execute("ALTER TABLE recovery_claims ADD COLUMN native_execution_id TEXT")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS recovery_native_execution ON recovery_claims(native_execution_id) WHERE native_execution_id IS NOT NULL")
         return db
 
     @staticmethod
@@ -670,13 +716,18 @@ class Claims:
             return []
         exhausted = []
         with sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+            native_column = "native_execution_id" if "native_execution_id" in {
+                row[1] for row in db.execute("PRAGMA table_info(recovery_claims)")
+            } else "NULL"
             for barrier in action.barriers:
                 key = self.key(day, action.phase, barrier)
-                row = db.execute("SELECT state,owner_pid,owner_started_at,finished_at FROM recovery_claims WHERE idempotency_key=? AND attempts>=? AND state!='completed'",
+                row = db.execute(f"SELECT state,owner_pid,owner_started_at,finished_at,{native_column} FROM recovery_claims WHERE idempotency_key=? AND attempts>=? AND state!='completed'",
                                  (key, self.MAX_ATTEMPTS)).fetchone()
                 if row is None:
                     continue
-                state, pid, started, finished_at = row
+                state, pid, started, finished_at, native_id = row
+                if native_id and _native_execution_active(native_id):
+                    continue
                 if state == "running" and _owner_alive(pid, started) is not False:
                     continue
                 if state == "dispatched":
@@ -698,19 +749,37 @@ class Claims:
             row = db.execute("SELECT * FROM recovery_claims WHERE idempotency_key=?", (key,)).fetchone()
             if row is None or row["material_hash"] != material_hash or row["attempts"] != expected_attempts:
                 raise ValueError("rearm compare-and-set mismatch")
-            if row["state"] != "failed" or _owner_alive(row["owner_pid"], row["owner_started_at"]) is not False:
+            native_finished = False
+            if row["native_execution_id"]:
+                native_finished = not _native_execution_active(row["native_execution_id"])
+                native_finished = native_finished and datetime.now(ZoneInfo("Asia/Shanghai")) - datetime.fromisoformat(row["finished_at"]) >= self.DISPATCH_RETRY_AFTER
+            legacy_dispatch = not row["native_execution_id"] and row["state"] == "dispatched"
+            legacy_finished = False
+            if legacy_dispatch:
+                try:
+                    cooled = datetime.now(ZoneInfo("Asia/Shanghai")) - datetime.fromisoformat(row["finished_at"]) >= self.DISPATCH_RETRY_AFTER
+                    legacy_finished = cooled and _owner_alive(row["owner_pid"], row["owner_started_at"]) is False
+                except (TypeError, ValueError):
+                    pass
+            if not (native_finished or legacy_finished) and (row["native_execution_id"] or row["state"] != "failed" or _owner_alive(row["owner_pid"], row["owner_started_at"]) is not False):
                 raise ValueError("rearm requires failed claim with proven-dead owner")
-            if any(not entry.endswith(":unknown-dead") for entry in blockers(row["day"])):
+            if row["state"] == "completed":
+                raise ValueError("rearm cannot reopen completed work")
+            pending = blockers(row["day"])
+            if (legacy_dispatch and pending) or any(not entry.endswith(":unknown-dead") for entry in pending):
                 raise ValueError("rearm blocked by live or unverified execution")
             history = json.loads(row["rearm_history"])
             history.append({"at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
                             "reason": reason, "previous": {k: row[k] for k in row.keys() if k != "rearm_history"}})
-            db.execute("UPDATE recovery_claims SET attempts=0,rearm_history=? WHERE idempotency_key=?",
+            db.execute("UPDATE recovery_claims SET attempts=0,state='failed',native_execution_id=NULL,rearm_history=? WHERE idempotency_key=?",
                        (json.dumps(history, sort_keys=True), key))
             db.commit()
         return {"ok": True, "action": "rearmed", "idempotency_key": key, "previous_attempts": expected_attempts}
 
-    def claim(self, day: str, action: Action) -> bool:
+    def claim(self, day: str, action: Action, *, native_execution: dict | None = None) -> bool:
+        if native_execution is not None and (action.phase != "assets" or len(action.barriers) != 1
+                or action.job_id != native_execution["job_id"]):
+            raise ValueError("native asset claim scope mismatch")
         now = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
         completed = subprocess.run(
             ["ps", "-p", str(os.getpid()), "-o", "lstart="], text=True, capture_output=True,
@@ -723,17 +792,35 @@ class Claims:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             keys = [self.key(day, action.phase, barrier) for barrier in action.barriers]
+            if native_execution is not None:
+                bound = db.execute("SELECT idempotency_key FROM recovery_claims WHERE native_execution_id=?",
+                                   (native_execution["id"],)).fetchone()
+                if bound is not None:
+                    db.rollback()
+                    return bound[0] == keys[0]
             rows = {
                 key: db.execute(
-                    "SELECT state,owner_pid,owner_started_at,attempts,finished_at FROM recovery_claims WHERE idempotency_key=?",
+                    "SELECT state,owner_pid,owner_started_at,attempts,finished_at,native_execution_id,created_at FROM recovery_claims WHERE idempotency_key=?",
                     (key,),
                 ).fetchone()
                 for key in keys
             }
+            adopting = False
             for row in rows.values():
                 if row is None:
                     continue
-                state, pid, started, attempts, finished_at = row
+                state, pid, started, attempts, finished_at, native_id, created_at = row
+                # A controller reservation already paid for this exact work.
+                # An expired/failed reservation cannot give a new run free work.
+                if native_execution is not None and native_id is None and state in {"running", "dispatched"}:
+                    created = datetime.fromisoformat(created_at)
+                    adopting = (created <= datetime.fromisoformat(native_execution["started_at"])
+                                and datetime.fromisoformat(now) - created < self.DISPATCH_RETRY_AFTER)
+                    if adopting:
+                        continue
+                if native_id and _native_execution_active(native_id):
+                    db.rollback()
+                    return False
                 if state == "completed" or attempts >= self.MAX_ATTEMPTS:
                     db.rollback()
                     return False
@@ -758,9 +845,12 @@ class Claims:
                     )
                 else:
                     db.execute(
-                        "UPDATE recovery_claims SET state='running',owner_pid=?,owner_started_at=?,created_at=?,finished_at=NULL,attempts=attempts+1 WHERE idempotency_key=?",
-                        (os.getpid(), owner_started, now, key),
+                        "UPDATE recovery_claims SET state='running',owner_pid=?,owner_started_at=?,created_at=?,finished_at=NULL,attempts=attempts+?,native_execution_id=NULL WHERE idempotency_key=?",
+                        (os.getpid(), owner_started, now, 0 if adopting else 1, key),
                     )
+                if native_execution is not None:
+                    db.execute("UPDATE recovery_claims SET state='dispatched',owner_pid=?,owner_started_at=?,native_execution_id=?,finished_at=? WHERE idempotency_key=?",
+                               (native_execution["pid"], native_execution["process_started_at"], native_execution["id"], now, key))
             db.commit()
         return True
 
@@ -772,8 +862,8 @@ class Claims:
             db.execute("BEGIN IMMEDIATE")
             for barrier in action.barriers:
                 db.execute(
-                    "UPDATE recovery_claims SET state=?,finished_at=? WHERE idempotency_key=? AND state='running'",
-                    (state, now, self.key(day, action.phase, barrier)),
+                    "UPDATE recovery_claims SET state=?,finished_at=? WHERE idempotency_key=? AND state='running' AND owner_pid=? AND native_execution_id IS NULL",
+                    (state, now, self.key(day, action.phase, barrier), os.getpid()),
                 )
             db.commit()
 

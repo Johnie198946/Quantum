@@ -1371,6 +1371,10 @@ def test_rejected_native_content_enters_revision_two_and_independent_approval(fl
     base = Path(material["output_directory"])
     for role in relay.MEDIA_ROLES:
         shutil.copyfile(local / f"{role}.jpg", base / f"{role}.jpg")
+    relay.save(base / "image-manifest.json", {"images": [
+        {"role": role, "prompt": "synthetic test fixture", "final_file": f"{role}.jpg",
+         "sha256": relay.sha((base / f"{role}.jpg").read_bytes())}
+        for role in relay.MEDIA_ROLES]})
     manifest = relay.build_initial(base / "content-submission.json", base, series_id="ai-history",
         issue_date="2026-09-08", issue_slot="12:00", format="chapter", owner_policy_id="fixture-policy")
     item = json.loads(manifest.read_text())["items"][0]
@@ -1451,6 +1455,34 @@ def test_native_rejected_revision_fails_closed_for_damaged_same_occurrence(flow,
     with pytest.raises((ValueError, OSError)):
         relay._native_rejected_revision(local.parent / "new-native", "ai-history", "2026-09-08",
                                         "f" * 64, synthetic_brief())
+
+@pytest.mark.parametrize("damage", [None, "missing", "duplicate", "hash", "path", "prompt", "nested"])
+def test_native_image_manifest_binds_exact_five_final_assets(tmp_path, damage):
+    base, _ = initial_submission(tmp_path)
+    item = relay._initial_item(base, (base / "body.md").read_bytes(), [], [])
+    images = [{"role": role, "prompt": "synthetic test fixture",
+               "final_file": item[f"{role}_file"], "sha256": item[f"{role}_sha256"]}
+              for role in relay.MEDIA_ROLES]
+    if damage == "missing":
+        images.pop()
+    elif damage == "duplicate":
+        images[-1] = images[0]
+    elif damage == "hash":
+        images[0]["sha256"] = "0" * 64
+    elif damage == "path":
+        images[0]["final_file"] = "../shelf_cover.jpg"
+    elif damage == "prompt":
+        images[0]["prompt"] = ""
+    elif damage == "nested":
+        for image in images:
+            image["final"] = {"relative_path": image.pop("final_file"), "sha256": image.pop("sha256")}
+    relay.save(base / "image-manifest.json", {"images": images})
+    if damage in {None, "nested"}:
+        relay._validate_image_manifest(base, item)
+    else:
+        with pytest.raises(ValueError, match="image generation"):
+            relay._validate_image_manifest(base, item)
+
 
 def test_initial_builder_binds_asset_generation_evidence_without_author_mutation_or_execution_claim(flow, tmp_path):
     _, _, remote, _, *_ = flow

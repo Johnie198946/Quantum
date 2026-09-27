@@ -1091,6 +1091,13 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
 
         let book = try findBook(id: bookID)
         book.tap()
+        if environment["QUANTUMN_UI_REQUIRE_MEDIA"] == "1" {
+            let cover = app.descendants(matching: .any).matching(
+                NSPredicate(format: "value == %@", "图片已加载")
+            ).firstMatch
+            XCTAssertTrue(cover.waitForExistence(timeout: 20), "真实书籍概述封面未加载。")
+            attachScreenshot(named: "production-publication-shelf-cover")
+        }
         let readingControl = app.buttons["publication-subscription-control.\(bookID)"]
         XCTAssertTrue(readingControl.waitForExistence(timeout: 10), "目标书没有可阅读正文。")
         guard readingControl.value as? String == "subscribed" else {
@@ -1103,6 +1110,12 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
         let content = app.descendants(matching: .any)["publication-reader-content.\(bookID)"]
         XCTAssertTrue(content.waitForExistence(timeout: 20), "真实正文标记未出现。")
         XCTAssertFalse(((content.value as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "真实正文为空。")
+        if environment["QUANTUMN_UI_REQUIRE_MEDIA"] == "1" {
+            let cover = app.descendants(matching: .any)["publication-image.reader_cover"]
+            XCTAssertTrue(cover.waitForExistence(timeout: 20))
+            XCTAssertTrue(XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "value == %@", "图片已加载"), evaluatedWith: cover)], timeout: 20) == .completed)
+            attachScreenshot(named: "production-publication-reader-cover")
+        }
 
         let sections = try tableOfContentsSections(bookID: bookID)
         guard sections.count >= 3 else {
@@ -1113,6 +1126,16 @@ final class ProductionLongBookAcceptanceUITests: XCTestCase {
         for (index, target) in targets.enumerated() {
             navigate(bookID: bookID, sectionID: target.id, openMenu: index != 0)
             attachScreenshot(named: String(format: "real-long-book-%02d-%@", index + 1, target.id))
+        }
+
+        if environment["QUANTUMN_UI_REQUIRE_MEDIA"] == "1" {
+            for role in ["illustration_01", "illustration_02", "illustration_03"] {
+                let image = app.descendants(matching: .any)["publication-image.\(role)"]
+                for _ in 0..<12 where !image.isHittable { app.scrollViews.firstMatch.swipeUp() }
+                XCTAssertTrue(image.waitForExistence(timeout: 20))
+                XCTAssertTrue(XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "value == %@", "图片已加载"), evaluatedWith: image)], timeout: 20) == .completed)
+                attachScreenshot(named: "production-publication-\(role)")
+            }
         }
 
         guard environment["QUANTUMN_UI_ALLOW_TEST_QUESTION"] == "1" else { return }

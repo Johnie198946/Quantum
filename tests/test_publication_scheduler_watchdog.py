@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import importlib.util
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -1254,3 +1255,192 @@ def test_shared_review_uses_release_order_and_skips_exact_exhaustion(tmp_path, m
     assert any(error.get("idempotency_keys") == [key] for error in result["blocked"])
     with sqlite3.connect(ledger.path) as db:
         assert db.execute("SELECT attempts,state FROM recovery_claims WHERE idempotency_key=?", (key,)).fetchone() == (6, "failed")
+
+
+@pytest.fixture
+def asset_execution_ledger(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    database = tmp_path / ".hermes/cron/executions.db"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE executions(id TEXT PRIMARY KEY,job_id TEXT,status TEXT,pid INTEGER,process_started_at INTEGER,started_at TEXT,finished_at TEXT)")
+    def execution(identity="asset-run", status="running"):
+        started = subprocess.run(["ps", "-p", str(os.getpid()), "-o", "lstart="],
+                                 text=True, capture_output=True, check=True).stdout.strip()
+        row = dict(id=identity, job_id="asset-job", status=status, pid=os.getpid(),
+                   process_started_at=round(datetime.strptime(started, "%a %b %d %H:%M:%S %Y").timestamp() * 100),
+                   started_at=datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(), finished_at=None)
+        with sqlite3.connect(database) as db:
+            db.execute("INSERT INTO executions VALUES(:id,:job_id,:status,:pid,:process_started_at,:started_at,:finished_at)", row)
+        return row
+    return database, execution
+
+
+def test_direct_native_asset_claim_is_atomic_once_per_execution(asset_execution_ledger, tmp_path):
+    _, make_execution = asset_execution_ledger
+    execution = make_execution()
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    ledger._connect().close()
+    actions = [watchdog.Action("assets", (watchdog.Barrier(name, name * 64, DAY),), job_id="asset-job")
+               for name in ("a", "b")]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        accepted = list(pool.map(lambda action: ledger.claim(DAY, action, native_execution=execution), actions))
+    assert sum(accepted) == 1
+    selected = actions[accepted.index(True)]
+    assert ledger.claim(DAY, selected, native_execution=execution)
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts,native_execution_id FROM recovery_claims").fetchall() == [(1, execution["id"])]
+
+
+def test_watchdog_reservation_native_adoption_and_finish_cas(asset_execution_ledger, tmp_path):
+    _, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    assert ledger.claim(DAY, action)
+    execution = make_execution()
+    assert ledger.claim(DAY, action, native_execution=execution)
+    ledger.finish(DAY, action, "failed")
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts,state,native_execution_id FROM recovery_claims").fetchone() == (1, "dispatched", execution["id"])
+
+
+def test_native_assets_terminal_cooldown_budget_and_audited_rearm(asset_execution_ledger, tmp_path):
+    database, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    old = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(minutes=20)).isoformat()
+    for attempt in range(1, 7):
+        execution = make_execution(f"run-{attempt}")
+        assert ledger.claim(DAY, action, native_execution=execution)
+        with sqlite3.connect(ledger.path) as db:
+            assert db.execute("SELECT attempts FROM recovery_claims").fetchone()[0] == attempt
+            db.execute("UPDATE recovery_claims SET finished_at=?", (old,))
+        # Even beyond cooldown, the native execution, not its age, owns work.
+        assert not ledger.claim(DAY, action)
+        assert ledger.exhausted(DAY, action) == []
+        with pytest.raises(ValueError, match="proven-dead"):
+            ledger.rearm(ledger.key(DAY, "assets", action.barriers[0]), attempt, "a" * 64, "fixed", lambda _: [])
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE executions SET status='failed',finished_at=? WHERE id=?", (old, execution["id"]))
+        # The gateway process remains alive; terminal execution releases it.
+    key = ledger.key(DAY, "assets", action.barriers[0])
+    assert ledger.exhausted(DAY, action) == [key]
+    assert not ledger.claim(DAY, action, native_execution=make_execution("seventh"))
+    ledger.rearm(key, 6, "a" * 64, "asset provider repaired", lambda _: [])
+    with sqlite3.connect(ledger.path) as db:
+        attempts, native_id, history = db.execute("SELECT attempts,native_execution_id,rearm_history FROM recovery_claims").fetchone()
+    assert attempts == 0 and native_id is None
+    assert json.loads(history)[0]["previous"]["native_execution_id"] == "run-6"
+    assert ledger.claim(DAY, action, native_execution=make_execution("after-repair"))
+
+
+def test_native_asset_identity_requires_unique_live_ancestor(asset_execution_ledger, monkeypatch):
+    database, make_execution = asset_execution_ledger
+    monkeypatch.setattr(watchdog, "PUBLICATION_SERIES", {"a": {"assets_job_id": "asset-job"}})
+    execution = make_execution()
+    assert watchdog.native_assets_execution()["id"] == execution["id"]
+    make_execution("ambiguous")
+    with pytest.raises(RuntimeError, match="ambiguous"):
+        watchdog.native_assets_execution()
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE executions SET process_started_at=0")
+    with pytest.raises(RuntimeError, match="missing"):
+        watchdog.native_assets_execution()
+
+
+def test_native_asset_failed_or_expired_reservation_is_not_free(asset_execution_ledger, tmp_path):
+    _, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "failed")
+    assert ledger.claim(DAY, action, native_execution=make_execution())
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts FROM recovery_claims").fetchone()[0] == 2
+
+
+def test_native_asset_expired_reservation_and_terminal_cooldown(asset_execution_ledger, tmp_path):
+    database, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "dispatched")
+    old = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(minutes=20)).isoformat()
+    with sqlite3.connect(ledger.path) as db:
+        db.execute("UPDATE recovery_claims SET created_at=?,finished_at=?", (old, old))
+    first = make_execution()
+    assert ledger.claim(DAY, action, native_execution=first)
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT attempts FROM recovery_claims").fetchone()[0] == 2
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE executions SET status='failed',finished_at=?", (old,))
+    assert not ledger.claim(DAY, action, native_execution=make_execution("next"))
+    with pytest.raises(ValueError, match="proven-dead"):
+        ledger.rearm(ledger.key(DAY, "assets", action.barriers[0]), 2, "a" * 64, "fixed", lambda _: [])
+
+
+def test_old_claim_schema_readonly_exhaustion_then_native_migration(asset_execution_ledger, tmp_path):
+    _, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    with sqlite3.connect(ledger.path) as db:
+        db.execute("CREATE TABLE recovery_claims (idempotency_key TEXT PRIMARY KEY,day TEXT,series TEXT,material_hash TEXT,phase TEXT,state TEXT,owner_pid INTEGER,owner_started_at INTEGER,created_at TEXT,finished_at TEXT,attempts INTEGER)")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    assert ledger.exhausted(DAY, action) == []
+    assert ledger.claim(DAY, action, native_execution=make_execution())
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT native_execution_id,attempts FROM recovery_claims").fetchone() == ("asset-run", 1)
+
+
+def test_native_asset_registry_failure_is_closed(asset_execution_ledger, tmp_path):
+    database, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("assets", (watchdog.Barrier("a", "a" * 64, DAY),), job_id="asset-job")
+    assert ledger.claim(DAY, action, native_execution=make_execution())
+    database.unlink()
+    with pytest.raises(sqlite3.OperationalError):
+        ledger.claim(DAY, action)
+    with pytest.raises(sqlite3.OperationalError):
+        watchdog.native_assets_execution()
+
+
+@pytest.mark.parametrize("finished,alive,blocker,allowed", [
+    ("old", False, None, True),
+    ("now", False, None, False),
+    ("future", False, None, False),
+    (None, False, None, False),
+    ("malformed", False, None, False),
+    ("2026-01-01T00:00:00", False, None, False),
+    ("old", True, None, False),
+    ("old", None, None, False),
+    ("old", False, "job:exec:live", False),
+    ("old", False, "job:exec:unknown-dead", False),
+    ("old", False, "job:exec:unknown-unverified", False),
+])
+def test_legacy_dispatched_rearm_requires_expired_dead_verified_owner(tmp_path, monkeypatch, finished, alive, blocker, allowed):
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    action = watchdog.Action("author", (watchdog.Barrier("ai-toolkit", "a" * 64, DAY),))
+    assert ledger.claim(DAY, action)
+    ledger.finish(DAY, action, "dispatched")
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    finished_at = {"old": (now - timedelta(minutes=20)).isoformat(), "now": now.isoformat(),
+                   "future": (now + timedelta(minutes=20)).isoformat()}.get(finished, finished)
+    with sqlite3.connect(ledger.path) as db:
+        db.execute("UPDATE recovery_claims SET attempts=6,finished_at=?", (finished_at,))
+    monkeypatch.setattr(watchdog, "_owner_alive", lambda *_: alive)
+    key = ledger.key(DAY, "author", action.barriers[0])
+    def rearm():
+        return ledger.rearm(key, 6, "a" * 64, "retired slot selector repaired", lambda _: [blocker] if blocker else [])
+    if allowed:
+        assert rearm()["previous_attempts"] == 6
+    else:
+        with pytest.raises(ValueError):
+            rearm()
+    with sqlite3.connect(ledger.path) as db:
+        attempts, state, history = db.execute("SELECT attempts,state,rearm_history FROM recovery_claims").fetchone()
+    assert (attempts, state) == ((0, "failed") if allowed else (6, "dispatched"))
+    history = json.loads(history)
+    if allowed:
+        assert history[0]["previous"]["state"] == "dispatched"
+        assert history[0]["previous"]["attempts"] == 6
+    else:
+        assert history == []

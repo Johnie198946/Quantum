@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `f6d61b36f3a342e72a9eb53cf12d25d7817317f412dfe6b59aeae725e9e68af8`
+Catalog digest: `35faa397e3361cc6b5a1b86bb73797a48bc29de0bb7199f2bcc1ce5cad69f8bb`
 
 ## Gateway 核心模块规范
 
@@ -411,6 +411,7 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 |---|---|---|---|
 | `artifact.structured_consumption` | artifact | `durable_structured_consumption_receipt` | implemented |
 | `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
+| `publication.illustrated_delivery` | publication | `native_dispatch_and_generation_evidence_signed_review_edition_and_reader_media_readback` | partial |
 | `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
 
 ## iOS document-class E2E coverage

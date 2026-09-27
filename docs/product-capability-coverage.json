@@ -664,7 +664,7 @@
       ]
     }
   ],
-  "catalog_digest": "f6d61b36f3a342e72a9eb53cf12d25d7817317f412dfe6b59aeae725e9e68af8",
+  "catalog_digest": "35faa397e3361cc6b5a1b86bb73797a48bc29de0bb7199f2bcc1ce5cad69f8bb",
   "consumptions": [
     {
       "gates": [
@@ -693,6 +693,31 @@
       ],
       "receipt": "durable_answer_and_source_events",
       "status": "implemented"
+    },
+    {
+      "gates": [
+        "configured_role_binding",
+        "frozen_author_content",
+        "bounded_material_claim",
+        "five_verified_media_receipts",
+        "independent_native_review_proof",
+        "due_release",
+        "authenticated_reader_media",
+        "client_visible_images"
+      ],
+      "id": "publication.illustrated_delivery",
+      "implementation_refs": [
+        "scripts/publication_scheduler_watchdog.py",
+        "scripts/publication_workflow_handoff.py",
+        "scripts/publication_editorial_remote.py",
+        "backend/services/knowledge_publication_store.py",
+        "backend/api/subscriptions.py",
+        "ios/AIPlatformApp/Networking/APIClient.swift",
+        "ios/AIPlatformApp/Views/Settings/SettingsView.swift",
+        "docs/runbooks/publication-standard-workflow.md"
+      ],
+      "receipt": "native_dispatch_and_generation_evidence_signed_review_edition_and_reader_media_readback",
+      "status": "partial"
     },
     {
       "gates": [

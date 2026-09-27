@@ -2,28 +2,28 @@
   "task_id": "publication-standard-workflow-20260926",
   "production_acceptance": true,
   "deployment": {
-    "server_after": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
-    "release": "/opt/releases/ai-lab-platform-0832e95ae252.sKcoYr",
+    "server_after": "5cd60e418d7b462568469d49782bb90f9d78e381",
+    "release": "/opt/releases/ai-lab-platform-5cd60e418d7b.FqF0Eq",
     "containers": {
       "api": {
-        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
         "health": "healthy",
-        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
       },
       "workflow-worker": {
-        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
         "health": "healthy",
-        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
       },
       "planning-worker": {
-        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
         "health": "healthy",
-        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
       },
       "agent-evaluation-worker": {
-        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+        "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
         "health": "healthy",
-        "revision": "0832e95ae252a99ecf8e17b44f85b67346e6f783"
+        "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
       },
       "frontend": {
         "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
@@ -65,24 +65,24 @@
     "deploy_lock_free": true
   },
   "rollback": {
-    "server_before": "b74a528886d399615d4dedefc7aeae766c49c09e",
-    "release": "/opt/releases/ai-lab-platform-b74a528886d3.93egPT",
-    "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/b74a528886d3",
+    "server_before": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+    "release": "/opt/releases/ai-lab-platform-0832e95ae252.sKcoYr",
+    "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/0832e95ae252",
     "images": {
       "api": {
-        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
         "health": "healthy"
       },
       "workflow-worker": {
-        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
         "health": "healthy"
       },
       "planning-worker": {
-        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
         "health": "healthy"
       },
       "agent-evaluation-worker": {
-        "image": "sha256:8d961951c1679154bffdba4e9291e25f5a500549d1db3ad44a14e968652d76e3",
+        "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
         "health": "healthy"
       },
       "frontend": {
@@ -104,10 +104,10 @@
     },
     "publication_db_bytes": 2584576
   },
-  "remote_sha": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+  "remote_sha": "5cd60e418d7b462568469d49782bb90f9d78e381",
   "remaining": [
-    "Deploy cleanup removing temporary 00:01 slots; restore normal role schedules; verify both historical publications after cleanup.",
-    "Authenticated user/mobile UI not tested."
+    "Authenticated user/mobile UI, reading progress and book QA not tested.",
+    "Quality/evidence failures or exhausted retries remain fail-closed with retained records."
   ],
   "timed_trigger": {
     "job_id": "a8a830958fb6",
@@ -2241,5 +2241,440 @@
         "reviewed_by": "hermes:cron_0dd3884f173c_20260927_053444"
       }
     }
+  },
+  "final_cleanup": {
+    "status": "VERIFIED",
+    "server_before": {
+      "server_before": "0832e95ae252a99ecf8e17b44f85b67346e6f783",
+      "release": "/opt/releases/ai-lab-platform-0832e95ae252.sKcoYr",
+      "rollback_point": "/opt/ai-lab-shared/deploy-backups/publication-standard-workflow-20260926/0832e95ae252",
+      "images": {
+        "api": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy"
+        },
+        "workflow-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy"
+        },
+        "planning-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:e4c25453a7a7d4e1195d92348eef723b67a96227edc153d2019297e2aeff06b3",
+          "health": "healthy"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy"
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy"
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy"
+        }
+      },
+      "publication_db_bytes": 2584576
+    },
+    "server_after": {
+      "server_after": "5cd60e418d7b462568469d49782bb90f9d78e381",
+      "release": "/opt/releases/ai-lab-platform-5cd60e418d7b.FqF0Eq",
+      "containers": {
+        "api": {
+          "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+          "health": "healthy",
+          "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
+        },
+        "workflow-worker": {
+          "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+          "health": "healthy",
+          "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
+        },
+        "planning-worker": {
+          "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+          "health": "healthy",
+          "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
+        },
+        "agent-evaluation-worker": {
+          "image": "sha256:1b11225fa2c21ef414ebe403d553d00460eb377b4631383a755ad14b6c72199f",
+          "health": "healthy",
+          "revision": "5cd60e418d7b462568469d49782bb90f9d78e381"
+        },
+        "frontend": {
+          "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+          "health": "healthy",
+          "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+        },
+        "postgres": {
+          "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+          "health": "healthy",
+          "revision": null
+        },
+        "redis": {
+          "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+          "health": "healthy",
+          "revision": null
+        },
+        "taskboard": {
+          "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+          "health": "healthy",
+          "revision": null
+        }
+      },
+      "health_check": {
+        "api": {
+          "status": "ready",
+          "version": "0.8.0"
+        },
+        "bridge": {
+          "status": "ok",
+          "service": "hermes-bridge",
+          "version": "v6.0",
+          "sessions": 16,
+          "workflow_runs": 46,
+          "workflow_orchestration": true,
+          "streaming": true,
+          "ws_pty": "ws://127.0.0.1:9119/api/pty"
+        }
+      },
+      "deploy_lock_free": true
+    },
+    "reader_readback": {
+      "mode": "isolated_asgi_live_publication_data",
+      "authentication_tested": false,
+      "request_methods": [
+        "GET"
+      ],
+      "results": [
+        {
+          "publication_id": "publication-234c61fdd8aacdf10057f6d6c6434fc8",
+          "series_id": "ai-toolkit",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "7b96ef77f44ca025aad3c7555195fc2db81458e46c665c8d524b856f184ecffb",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 7,
+          "code_block_hashes": [
+            "1318022abd5d1057eb3aecc6bbd5cbca8e1573ef7658243d6e04b52319496a1f",
+            "ef6c579eacae778249b003d57e26a30d68501661b4b3334f4ce2a79914be2024",
+            "2cfc0e4f7b9282e2367ac3f466dbd72a437babfdac153c55069ff9becf521165",
+            "27f252139084a49bd2c8a96cebbd68b18130c229e0aae5704296949a968b905a",
+            "685849972ea524b1b0122dd81f5ba98041e84cbc05282c3f7ec739999d8c174c",
+            "fa628f3d133161047e434359779de1958931e70ec074df53a8896b3727fa2503",
+            "cb2ffb3eade73ff65d5f160c23338d81a6707874e4cc739e591d37f668d8d5cd"
+          ],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 1011134,
+              "sha256": "7d1194809b3c0c36fbabb63e93aa6ca02b271e0e4f9e10d96a2ae7cee6e26dd0"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1140002,
+              "sha256": "cc910139e7e67a36069150ad24c176c7f3a6e62f92e6da43d05b2b798eda9830"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 389788,
+              "sha256": "945acb5b077ed86a697d605aa17fb45de974eb4cebdca751bf489ed5bcb8178b"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 593066,
+              "sha256": "d90c7c8e716ce6880c364d955ccf4df1fb678a1bee3a34896e42622e231315bc"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 558687,
+              "sha256": "5322c7d4339ddf1242d326cfc14489c9be242dbc6813c018394a42b69eeedf3b"
+            }
+          ]
+        },
+        {
+          "publication_id": "publication-40380deb936907737fda3763801a2a5c",
+          "series_id": "tang-history",
+          "issue_date": "2026-09-27",
+          "body_status": 200,
+          "body_hash": "64e0a343ea28bcfe95e96c5ab8f7020ca87ffc59c70f77c46eb357ded32ef6a1",
+          "section_count": 11,
+          "last_section_nonempty": true,
+          "code_blocks_preserved": 0,
+          "code_block_hashes": [],
+          "illustration_links": 3,
+          "media": [
+            {
+              "role": "shelf_cover",
+              "status": 200,
+              "bytes": 986933,
+              "sha256": "ad518f0c59487ae52c8f4e3e47b64ba28386ca9f8da252c8d2adba2a93794e16"
+            },
+            {
+              "role": "reader_cover",
+              "status": 200,
+              "bytes": 1094288,
+              "sha256": "10c60058c1163dca220e1c703baca4bbe9c879bf792a12033dc20546d89dc084"
+            },
+            {
+              "role": "illustration_01",
+              "status": 200,
+              "bytes": 450066,
+              "sha256": "d62a8251bf7e5edd747bdfcfb0583493994532e61ebd6413a1fdaf8c291d5545"
+            },
+            {
+              "role": "illustration_02",
+              "status": 200,
+              "bytes": 455250,
+              "sha256": "c62f94685f1ce73fe58d27ea1b29f78f945c9f816222c2012cf21fbb0ca8db34"
+            },
+            {
+              "role": "illustration_03",
+              "status": 200,
+              "bytes": 675483,
+              "sha256": "191f261e653943558cc7f466c7efa7e6a3633c64358fb3cb45a55a7d4bee90b2"
+            }
+          ]
+        }
+      ]
+    },
+    "server_config": {
+      "expected_daily_occurrences": 7,
+      "occurrences": [
+        {
+          "series_id": "ai-history",
+          "issue_key": "2026-09-27",
+          "issue_slot": "12:00",
+          "release_at": "2026-09-27T12:00:00+08:00"
+        },
+        {
+          "series_id": "ai-practice",
+          "issue_key": "2026-09-27",
+          "issue_slot": "12:00",
+          "release_at": "2026-09-27T12:00:00+08:00"
+        },
+        {
+          "series_id": "concept-fables",
+          "issue_key": "2026-09-27",
+          "issue_slot": "12:00",
+          "release_at": "2026-09-27T12:00:00+08:00"
+        },
+        {
+          "series_id": "ai-toolkit",
+          "issue_key": "2026-09-27",
+          "issue_slot": "12:00",
+          "release_at": "2026-09-27T12:00:00+08:00"
+        },
+        {
+          "series_id": "tang-history",
+          "issue_key": "2026-09-27T08:00",
+          "issue_slot": "08:00",
+          "release_at": "2026-09-27T08:00:00+08:00"
+        },
+        {
+          "series_id": "tang-history",
+          "issue_key": "2026-09-27T13:00",
+          "issue_slot": "13:00",
+          "release_at": "2026-09-27T13:00:00+08:00"
+        },
+        {
+          "series_id": "tang-history",
+          "issue_key": "2026-09-27T20:00",
+          "issue_slot": "20:00",
+          "release_at": "2026-09-27T20:00:00+08:00"
+        }
+      ]
+    },
+    "runtime_roles": [
+      {
+        "id": "5a3f2a2eb988",
+        "name": "Quantumn 原有三条连载·独立撰写与返工",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "5 8,14,18 * * *",
+          "display": "5 8,14,18 * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T08:05:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "b52aa900ac12",
+        "name": "Quantumn AI工具实战 · 原生内容作者",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "5 8,14,18 * * *",
+          "display": "5 8,14,18 * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T08:05:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "fbd1cd1217d7",
+        "name": "Quantumn 独立书级审稿·逐章事实与新手复核",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "*/10 * * * *",
+          "display": "*/10 * * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T06:30:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "171a125ddb63",
+        "name": "Quantumn《AI工具实战》·出版资产生成与返工",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "*/5 * * * *",
+          "display": "*/5 * * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T06:25:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "94f82c141295",
+        "name": "Quantumn publication controller · every 2m (no agent)",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "*/2 * * * *",
+          "display": "*/2 * * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T06:22:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "1ad93e85cec2",
+        "name": "Quantumn 到期发行·每5分钟",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "*/5 * * * *",
+          "display": "*/5 * * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T06:25:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "106a9cfabae1",
+        "name": "Quantumn 每日出版完成回执·23:40",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "40 23 * * *",
+          "display": "40 23 * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T23:40:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "b8c4c5e40bb1",
+        "name": "AI工具实战·教程供给·每日03:00前完成",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "0 1 * * *",
+          "display": "0 1 * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-28T01:00:00+08:00",
+        "profile": "default"
+      },
+      {
+        "id": "d3e461e0578c",
+        "name": "趣味说唐史｜每日三期制作与发布门禁",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "0 6,11,18 * * *",
+          "display": "0 6,11,18 * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T11:00:00+08:00",
+        "profile": "story"
+      },
+      {
+        "id": "0dd3884f173c",
+        "name": "Quantumn Story · 独立监督审核",
+        "enabled": true,
+        "state": "scheduled",
+        "schedule": {
+          "kind": "cron",
+          "expr": "*/10 * * * *",
+          "display": "*/10 * * * *"
+        },
+        "workdir": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+        "deliver": "local",
+        "failure_deliver": "local",
+        "next_run_at": "2026-09-27T06:30:00+08:00",
+        "profile": "supervision"
+      }
+    ],
+    "obsolete_duplicate_release_job_paused": true,
+    "temporary_jobs_removed": true,
+    "test_result": "3 passed; first sandbox attempt failed only on ps permission",
+    "continued_story_author": {
+      "execution_id": "335140923f124b399eab4578695e18e3",
+      "status": "completed",
+      "finished_at": "2026-09-27T06:12:13.622672+08:00"
+    }
+  },
+  "status": "VERIFIED",
+  "runtime_source": "/Users/dengzhaoyu/.hermes/publication-releases/5cd60e418d7b462568469d49782bb90f9d78e381",
+  "post_deployment_evidence_local_only": true,
+  "optional_coordination_notice": {
+    "sent": false,
+    "reason": "Automatic approval rejected cross-thread completion notice due to missing explicit message authorization in visible user context. No retry or workaround. Publication acceptance unaffected."
   }
 }

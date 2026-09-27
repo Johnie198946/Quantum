@@ -273,6 +273,9 @@ public struct KnowledgeBookDTO: Codable, Identifiable, Hashable {
     public let knowledgeLevel: String
     public let freshness: String
     public let sourceCount: Int
+    public var shelfCoverUrl: String? = nil
+    public var readerCoverUrl: String? = nil
+    public var illustrationUrls: [String]? = nil
     public var seriesId: String? = nil
     public var seriesTitle: String? = nil
     public var issueId: String? = nil
@@ -517,6 +520,9 @@ public struct KnowledgeBookBodyDTO: Codable, Hashable {
     public let edition: Int
     public let citation: String
     public let sections: [KnowledgeBookSectionDTO]
+    public var shelfCoverUrl: String? = nil
+    public var readerCoverUrl: String? = nil
+    public var illustrationUrls: [String]? = nil
     public var seriesId: String? = nil
     public var seriesTitle: String? = nil
     public var issueId: String? = nil
@@ -2702,7 +2708,7 @@ public final class APIClient: ObservableObject {
     /// immediate `/me` request must not depend on a second Security-framework
     /// lookup succeeding in the same login transaction.
     private var cachedToken: String?
-    private var credentialGeneration: UInt64 = 0
+    @Published private var credentialGeneration: UInt64 = 0
     private var agreementWaiters: [CheckedContinuation<Bool, Never>] = []
     private var knowledgeNoteSyncTails: [String: (
         token: UUID, contentHash: String, task: Task<KnowledgeNoteSyncResponseDTO, Error>
@@ -2867,14 +2873,15 @@ public final class APIClient: ObservableObject {
         canRetry: Bool,
         reauthOn401: Bool = true,
         credentialGeneration expectedGeneration: UInt64? = nil,
-        anonymous: Bool = false
+        anonymous: Bool = false,
+        taskDelegate: URLSessionTaskDelegate? = nil
     ) async throws -> APIResponse<Data> {
         let requestGeneration = expectedGeneration ?? credentialGeneration
         guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
         var attempt = 0
         while true {
             do {
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: taskDelegate)
                 guard anonymous || requestGeneration == credentialGeneration else { throw CancellationError() }
                 guard let http = response as? HTTPURLResponse else {
                     throw APIError.network("无效响应")
@@ -2920,11 +2927,12 @@ public final class APIClient: ObservableObject {
         canRetry: Bool,
         reauthOn401: Bool = true,
         credentialGeneration expectedGeneration: UInt64? = nil,
-        anonymous: Bool = false
+        anonymous: Bool = false,
+        taskDelegate: URLSessionTaskDelegate? = nil
     ) async throws -> Data {
         try await performResponse(
             request, session: session, canRetry: canRetry, reauthOn401: reauthOn401,
-            credentialGeneration: expectedGeneration, anonymous: anonymous
+            credentialGeneration: expectedGeneration, anonymous: anonymous, taskDelegate: taskDelegate
         ).value
     }
 
@@ -3768,6 +3776,32 @@ public final class APIClient: ObservableObject {
         let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard actual == expectedHash.lowercased() else { throw APIError.network("文件完整性校验失败") }
         return data
+    }
+
+    func publicationMediaURL(path: String, bookID: String) throws -> URL {
+        let prefix = "/api/v1/knowledge-publications/"
+        let safeID = bookID.range(of: "^[a-z0-9][a-z0-9._:-]{1,159}$", options: .regularExpression) != nil
+        let suffix = String(path.dropFirst((prefix + bookID + "/").count))
+        let allowed = ["covers/shelf_cover", "covers/reader_cover", "media/illustration_01", "media/illustration_02", "media/illustration_03"]
+        guard safeID, path.hasPrefix(prefix + bookID + "/"), allowed.contains(suffix),
+              var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              ["https", "http"].contains(parts.scheme), parts.host != nil,
+              parts.user == nil, parts.password == nil else {
+            throw APIError.network("出版物图片地址无效")
+        }
+        parts.path = path
+        parts.query = nil
+        parts.fragment = nil
+        guard let url = parts.url else { throw APIError.network("出版物图片地址无效") }
+        return url
+    }
+
+    public func fetchPublicationMedia(path: String, bookID: String) async throws -> Data {
+        var request = URLRequest(url: try publicationMediaURL(path: path, bookID: bookID))
+        request.httpMethod = "GET"
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        applyClientContract(to: &request)
+        return try await perform(request, session: session, canRetry: true, taskDelegate: PublicationMediaRedirectGuard())
     }
 
     public func fetchKnowledgeBookCover(id: String) async throws -> Data {
@@ -4874,5 +4908,14 @@ extension APIClient {
         try await request(NoteIllustrationResponse.self,
                           path: "me/knowledge-notes/illustrations/\(runId)" + (cancel ? "/cancel" : ""),
                           method: cancel ? "POST" : "GET", credentialGeneration: generation)
+    }
+}
+
+// Media is served by the authenticated publication route, never by a redirected host.
+private final class PublicationMediaRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

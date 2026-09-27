@@ -1,6 +1,6 @@
 # Quantumn publication operator runbook
 
-This runbook stages reviewed bytes into the private publication runtime. It does not install jobs, release, push, or deploy anything.
+This is a command reference for the existing private publication operator. The authoritative role, scheduling, handoff and acceptance contract is [无监督出版标准流程](runbooks/publication-standard-workflow.md). Commands shown here do not themselves authorize cron changes, publication, push or deployment.
 
 ## Preconditions
 
@@ -44,7 +44,7 @@ docker compose -p ai-lab-platform exec -T api python /app/scripts/publication_op
 
 The owner attestation and content review are distinct evidence: the former binds publication authority to the named policy and body hashes; the latter binds editorial review to exact body bytes. A full original must also include a `pinned_original` receipt whose hash equals the body hash.
 
-Every new `ai-toolkit` edition must pass both controlled covers during `stage`:
+Every new daily edition must pass the complete media gate described in the standard workflow: two covers and three illustrations. The following flags illustrate cover intake only and are not a complete five-image submission:
 
 ```bash
 --shelf-cover-file "$PRIVATE_INTAKE/shelf-cover.png" \
@@ -87,16 +87,14 @@ scripts/publication_release_remote.py --status-only
 
 This is not a promise of zero SQLite filesystem effects: the existing store connection may create directories, enable WAL, and initialize or migrate schema. Every due edition is evaluated and released independently. A missing or blocked sibling series is retained in `issues`, `missing`, and `attention_required`, but never changes another qualified edition's release result or the sweep exit status. Series observability is derived from the server status response rather than a client-side all-series constant, so adding a series does not expand an atomic release set. `released_edition_ids` is authoritative release-receipt output, while `observed_published_publication_id_delta` is only the before/after publication-ID set difference and may include concurrent work or omit a same-publication edition upgrade. Response bodies, hashes, titles, and other private metadata are excluded. Malformed/conflicting envelopes, trust failures, transport failures, or failed post-release readback still fail closed. `--target-publication-id` remains an optional exact readback assertion, not an exemption from a global gate.
 
-Publication scheduling is Mac-native and uses only the existing jobs and runtime. Update those jobs with the native `cronjob` tool; do not create duplicates, add server jobs or runtimes, or edit Cron storage by hand. The Asia/Shanghai topology is:
+## Scheduling and role ownership
 
-- The existing `08:00` Hermes writer produces drafts and evidence only. It must not upload, stage, or release.
-- The existing `10:00` Hermes reviewer runs in a fresh, independent context. It validates byte-bound facts, privacy, rights, and execution evidence, then performs only the scoped upload and stage for approved bytes. Do not use child delegation: separate job contexts preserve independent review.
-- The deterministic `no_agent` release sweep runs at noon (`0 12 * * *`). Its deterministic `no_agent` retry job runs every five minutes from `12:05` through `23:55` (`5-59/5 12-23 * * *`); there are no hour-zero retries. The sweep is only shared scheduling infrastructure: each edition keeps its own quality gates and outcome. A future series may use its own Cron without changing release code or an all-series gate.
+Use the existing Mac-native jobs and runtime; do not create duplicate server schedulers or edit cron storage by hand. The current schedule and input/output contracts live only in [the standard workflow](runbooks/publication-standard-workflow.md). The former 08:00 writer / 10:00 reviewer / noon-only release topology is retired.
 
-Both AI jobs use `skills=[]` and load a needed skill on demand with native `skill_view`. Their toolsets are `file`, `terminal`, `web`, `browser`, and `skills`; `execute_code` remains denied. The release jobs call the reviewed local wrapper and add no agent or publication logic. Blocked and overdue items remain visible alerts; only execution/readback failure or an explicitly requested target assertion is nonzero. Keep job identifiers and secret paths out of this runbook, and do not treat job update or start receipts as end-to-end acceptance.
+Authors create or revise content only; the independent reviewer judges frozen material only. Programmatic relay verifies the real terminal session, signs and records the review, stages approved material and releases due editions. The reviewer must not upload/stage/release or self-sign. Keep runtime IDs and credential paths in controlled runtime configuration; a job update or dispatch receipt is not end-to-end acceptance.
 
 ## Verification and rollback
 
-Before release, record `status`. After release, verify catalog, book body, selected-book Chat, source links, subscription, and withdrawal in the deployed UI/API. UI acceptance is not established by local compilation.
+Before release, record `status`. After release, verify catalog, book body, selected-book Chat, source links, subscription, and withdrawal in the deployed UI/API. UI acceptance is not established by local compilation or successful image HTTP responses. Verify the actual client consumes shelf_cover_url, reader_cover_url and illustration_urls and renders authenticated media. Record backend publication, API media readback and client visual acceptance separately.
 
 Rollback is withdrawal first, then restore the verified prior server SHA using the deployment system's rollback point. Preserve the runtime DB/evidence directory for audit; do not delete receipts. If a rights receipt expires or any retained byte changes, reads fail closed immediately even before an operator withdrawal.

@@ -411,13 +411,10 @@ public struct IllustratedBookCover: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
+                    .frame(width: width, height: width * 1.42)
+                    .background(colors.first ?? AppTheme.Colors.secondaryBackground)
                     .accessibilityHidden(true)
-                LinearGradient(
-                    colors: [.clear, Color.white.opacity(0.18), Color(hex: "FFFDF7").opacity(0.96)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
             } else if let asset = ContentAssetLibrary.publicationCoverAssetName(for: seed) {
                 Image(asset)
                     .resizable()
@@ -433,23 +430,25 @@ public struct IllustratedBookCover: View {
                 coverMotif(identity: identity, foreground: colors.last ?? AppTheme.Colors.leaf)
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
-                Text(coverKicker)
-                    .font(.system(size: width < 100 ? 6 : 8, weight: .bold, design: .rounded))
-                    .tracking(width < 100 ? 0.4 : 0.8)
-                    .textCase(.uppercase)
-                    .opacity(0.58)
-                Spacer(minLength: 2)
-                Text(title)
-                    .font(.system(size: width < 100 ? 10 : 15, weight: .bold, design: .serif))
-                    .lineLimit(width < 80 ? 2 : 3)
-                Text(author)
-                    .font(.system(size: width < 100 ? 7 : 9, weight: .medium))
-                    .lineLimit(1)
-                    .opacity(0.62)
+            if image == nil {
+                VStack(alignment: .leading, spacing: width < 100 ? 4 : 7) {
+                    Text(coverKicker)
+                        .font(.system(size: width < 100 ? 6 : 8, weight: .bold, design: .rounded))
+                        .tracking(width < 100 ? 0.4 : 0.8)
+                        .textCase(.uppercase)
+                        .opacity(0.58)
+                    Spacer(minLength: 2)
+                    Text(title)
+                        .font(.system(size: width < 100 ? 10 : 15, weight: .bold, design: .serif))
+                        .lineLimit(width < 80 ? 2 : 3)
+                    Text(author)
+                        .font(.system(size: width < 100 ? 7 : 9, weight: .medium))
+                        .lineLimit(1)
+                        .opacity(0.62)
+                }
+                .foregroundStyle(Color(hex: "132A35"))
+                .padding(width < 80 ? 7 : 10)
             }
-            .foregroundStyle(Color(hex: "132A35"))
-            .padding(width < 80 ? 7 : 10)
         }
         .frame(width: width, height: width * 1.42)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -700,5 +699,109 @@ public struct QuantumMistBackground: View {
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
+    }
+}
+
+/// A view-local image load; credential changes invalidate both the request and displayed bytes.
+struct AuthenticatedBookImage<Content: View>: View {
+    @EnvironmentObject private var api: APIClient
+    let bookID: String
+    let path: String?
+    var legacyCover = false
+    @ViewBuilder let content: (UIImage?) -> Content
+    @State private var image: UIImage?
+    @State private var loadedIdentity: String?
+    @State private var failed = false
+
+    private var identity: String {
+        "\(api.currentCredentialGeneration()):\(api.baseURL.absoluteString):\(bookID):\(path ?? ""):\(legacyCover)"
+    }
+
+    var body: some View {
+        content(loadedIdentity == identity ? image : nil)
+            .accessibilityValue(
+                loadedIdentity == identity && image != nil ? "图片已加载"
+                    : loadedIdentity == identity && failed ? "图片加载失败"
+                    : path == nil && !legacyCover ? "通用封面" : "图片未加载"
+            )
+            .overlay(alignment: .bottom) {
+                if failed && loadedIdentity == identity {
+                    Text("图片暂不可用")
+                        .font(.caption2)
+                        .padding(4)
+                        .background(.regularMaterial, in: Capsule())
+                }
+            }
+            .onDisappear {
+                image = nil
+                loadedIdentity = nil
+                failed = false
+            }
+            .task(id: identity) {
+                let requestedIdentity = identity
+                image = nil
+                failed = false
+                loadedIdentity = requestedIdentity
+                guard (path != nil || legacyCover), api.currentToken() != nil else { return }
+                do {
+                    let data: Data
+                    if let path {
+                        data = try await api.fetchPublicationMedia(path: path, bookID: bookID)
+                    } else {
+                        data = try await api.fetchKnowledgeBookCover(id: bookID)
+                    }
+                    try Task.checkCancellation()
+                    guard identity == requestedIdentity else { return }
+                    guard let decoded = UIImage(data: data) else {
+                        failed = true
+                        return
+                    }
+                    image = decoded
+                } catch {
+                    guard !Task.isCancelled, identity == requestedIdentity else { return }
+                    failed = true
+                }
+            }
+    }
+}
+
+struct PublicationBookCover: View {
+    let title: String
+    let author: String
+    let seed: String
+    let theme: String?
+    let variant: Int?
+    let coverAvailable: Bool
+    var mediaPath: String? = nil
+    let width: CGFloat
+
+    var body: some View {
+        AuthenticatedBookImage(bookID: seed, path: mediaPath, legacyCover: coverAvailable) { image in
+            IllustratedBookCover(title: title, author: author, theme: theme, variant: variant,
+                                 seed: seed, width: width, image: image)
+        }
+    }
+}
+
+struct PublicationReaderImage: View {
+    let bookID: String
+    let path: String
+    let label: String
+
+    var body: some View {
+        AuthenticatedBookImage(bookID: bookID, path: path) { image in
+            Group {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(AppTheme.Colors.secondaryBackground)
+                        .frame(height: 180)
+                        .overlay { Text(label).foregroundStyle(AppTheme.Colors.textSecondary) }
+                }
+            }
+            .accessibilityLabel(label)
+            .accessibilityIdentifier("publication-image.\(path.split(separator: "/").last ?? "image")")
+        }
     }
 }
