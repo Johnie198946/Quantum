@@ -29,6 +29,8 @@ private enum NativeClientActionRegistry {
         onComplete: @escaping (String, [String: String]) -> Void
     ) -> some View {
         switch action.actionType {
+        case "image_process":
+            NativeImageProcessAction(action: action, onComplete: onComplete)
         case "conversation_lifecycle":
             ProgressView("正在整理对话…").task(id: action.id) { @MainActor in
                 do { onComplete("SUCCEEDED", try SessionManager.shared.applyLifecycleAction(action)) }
@@ -452,6 +454,61 @@ private struct UnsupportedNativeAction: View {
         }
         .onAppear {
             onComplete("FAILED", ["error_code": "unsupported_native_action"])
+        }
+    }
+}
+
+private struct NativeImageProcessAction: View {
+    let action: ClientActionDTO
+    let onComplete: (String, [String: String]) -> Void
+    @State private var processing = false
+    @State private var cancelled = false
+    @State private var errorMessage: String?
+    @State private var result: ImageReceiptDTO?
+
+    var body: some View {
+        ActionShell(title: "图片工坊", cancel: { cancelled = true; onComplete("CANCELLED", [:]) }) {
+            VStack(spacing: AppTheme.Spacing.xl) {
+                Image(systemName: "photo.badge.sparkles")
+                    .font(.system(size: 54)).foregroundStyle(AppTheme.Colors.quantumBlue)
+                Text(processing ? "正在你的 iPhone 上处理" : "准备好焕新这张照片")
+                    .font(AppTheme.Typography.screenTitle)
+                Text("裁切、转码和主体提取均在本机完成，完成后保存结果。")
+                    .foregroundStyle(AppTheme.Colors.textSecondary).multilineTextAlignment(.center)
+                if processing { ProgressView() }
+                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                Button(errorMessage == nil ? "开始处理" : "重试") { run() }
+                    .buttonStyle(.borderedProminent).disabled(processing)
+                    .accessibilityIdentifier("image-device-process")
+            }.padding(AppTheme.Spacing.xl)
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private func run() {
+        processing = true; cancelled = false; errorMessage = nil
+        let account = TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint
+        Task {
+            do {
+                guard let id = action.payload.artifactId, let edit = action.payload.imageEdit,
+                      let sourceHash = action.payload.sourceHash else { throw APIError.network("图片任务参数缺失") }
+                if result == nil {
+                    let source = try await APIClient.shared.fetchImageReceipt(id: id)
+                    guard source.contentHash == sourceHash else { throw APIError.network("原图已变化") }
+                    let bytes = try await APIClient.shared.downloadAuthenticated(path: source.downloadPath, expectedHash: sourceHash)
+                    let output = try await Task.detached(priority: .userInitiated) {
+                        try ImageEditSupport.process(bytes, edit: edit)
+                    }.value
+                    guard !cancelled else { return }
+                    guard TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint == account else { throw APIError.network("账号已切换，请重新打开任务") }
+                    result = try await APIClient.shared.uploadImage(data: output)
+                }
+                guard TenantSessionCoordinator.shared.sessionManager.activeAccountFingerprint == account,
+                      let result else { throw APIError.network("账号已切换，请重新打开任务") }
+                guard !cancelled else { return }
+                onComplete("SUCCEEDED", ["artifact_id": result.artifactId])
+            } catch { errorMessage = error.localizedDescription }
+            processing = false
         }
     }
 }

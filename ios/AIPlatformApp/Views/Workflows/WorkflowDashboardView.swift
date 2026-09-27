@@ -4,6 +4,7 @@ import OSLog
 import PDFKit
 import UniformTypeIdentifiers
 import CryptoKit
+import PhotosUI
 
 // MARK: - 工作流主页
 
@@ -408,6 +409,11 @@ struct WorkflowCreateSheet: View {
     @State private var showingAttachmentPicker = false
     @State private var sourceDocument: DocumentReceiptDTO?
     @State private var uploadingAttachment = false
+    @State private var photo: PhotosPickerItem?
+    @State private var imageData: Data?
+    @State private var imageReceipt: ImageReceiptDTO?
+    @State private var uploadingImage = false
+    @State private var editImage = false
     @State private var title = ""
     @State private var description = ""
     @State private var output = "研究报告（Markdown）"
@@ -438,11 +444,13 @@ struct WorkflowCreateSheet: View {
 
                         Text("输出形式").font(AppTheme.Typography.label)
                         HStack(spacing: AppTheme.Spacing.sm) {
+                            compactOutputPreset(title: "图片", icon: "photo", kind: "image", deliverable: "处理后的图片与原尺寸下载")
                             compactOutputPreset(title: "报告", icon: "doc.text", kind: "document", deliverable: "研究报告（Markdown）")
                             compactOutputPreset(title: "PPT", icon: "rectangle.on.rectangle", kind: "presentation", deliverable: "可编辑 PPTX 与渲染预览")
                             compactOutputPreset(title: "旅行计划", icon: "airplane.departure", kind: "travel", deliverable: "图文旅行计划，可确认后转为旅行笔记或 PDF")
                         }
 
+                        if outputKind != "image" {
                         Text("参考资料（可选）").font(AppTheme.Typography.label)
                         Button { showingAttachmentPicker = true } label: {
                             VStack(spacing: AppTheme.Spacing.sm) {
@@ -463,6 +471,26 @@ struct WorkflowCreateSheet: View {
                         if sourceDocument != nil {
                             Button("移除附件") { sourceDocument = nil }.disabled(isSubmitting)
                         }
+                        }
+                        if outputKind == "image" {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("一张照片，无限可能").font(.title3.bold())
+                                Text("上传原图，写下要求。比如：裁成 16:9，再转成 JPG。")
+                                    .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
+                                if let imageData, let image = UIImage(data: imageData) {
+                                    Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220)
+                                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                                    Button("先手动微调", systemImage: "slider.horizontal.3") { editImage = true }
+                                        .disabled(uploadingImage)
+                                }
+                                PhotosPicker(selection: $photo, matching: .images) {
+                                    Label(imageReceipt == nil ? "选择图片" : "更换图片", systemImage: "photo.badge.plus")
+                                        .frame(maxWidth: .infinity, minHeight: 52)
+                                }.buttonStyle(.bordered).disabled(uploadingImage)
+                                if uploadingImage { ProgressView("正在上传原图…") }
+                                if imageReceipt != nil { Label("原图已就绪", systemImage: "checkmark.circle.fill").font(.footnote) }
+                            }.padding(20).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 20))
+                        }
 
                         if let errorMessage {
                             WorkflowErrorBanner(message: errorMessage)
@@ -475,7 +503,7 @@ struct WorkflowCreateSheet: View {
             .safeAreaInset(edge: .bottom) {
                 Button(isSubmitting ? "正在生成…" : "生成计划", action: submit)
                     .buttonStyle(QuantumPrimaryButtonStyle())
-                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || isSubmitting || uploadingAttachment)
+                    .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 || isSubmitting || uploadingAttachment || uploadingImage || (outputKind == "image" && imageReceipt == nil))
                     .padding(AppTheme.Metrics.contentGutter)
                     .background(.ultraThinMaterial)
             }
@@ -487,7 +515,7 @@ struct WorkflowCreateSheet: View {
                         .disabled(isSubmitting)
                 }
             }
-            .interactiveDismissDisabled(isSubmitting || uploadingAttachment)
+            .interactiveDismissDisabled(isSubmitting || uploadingAttachment || uploadingImage)
             .fileImporter(isPresented: $showingAttachmentPicker, allowedContentTypes: [.data]) { result in
                 guard case .success(let url) = result, let scope = workflowActivities.currentScope else { return }
                 uploadingAttachment = true
@@ -500,6 +528,24 @@ struct WorkflowCreateSheet: View {
                         errorMessage = nil
                     } catch {
                         if workflowActivities.isCurrent(scope) { errorMessage = error.localizedDescription }
+                    }
+                }
+            }
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                Task {
+                    do {
+                        guard let raw = try await item.loadTransferable(type: Data.self),
+                              let bytes = ImageEditSupport.uploadData(raw) else { throw APIError.network("请选择 12 MB、2400 万像素以内的静态图片") }
+                        await upload(bytes)
+                    } catch { errorMessage = error.localizedDescription }
+                }
+            }
+            .sheet(isPresented: $editImage) {
+                if let imageData {
+                    ImageWorkbench(data: imageData) { bytes in
+                        editImage = false
+                        Task { await upload(bytes) }
                     }
                 }
             }
@@ -567,6 +613,17 @@ struct WorkflowCreateSheet: View {
         .accessibilityAddTraits(output == deliverable ? .isSelected : [])
     }
 
+    @MainActor private func upload(_ bytes: Data) async {
+        uploadingImage = true; imageReceipt = nil; errorMessage = nil; imageData = bytes
+        let scope = workflowActivities.currentScope
+        defer { uploadingImage = false }
+        do {
+            let receipt = try await APIClient.shared.uploadImage(data: bytes)
+            guard workflowActivities.currentScope == scope else { return }
+            imageReceipt = receipt
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     private func submit() {
         guard let scope = workflowActivities.currentScope else {
             errorMessage = "当前对话会话不可用，请先选择或新建对话。"
@@ -580,8 +637,9 @@ struct WorkflowCreateSheet: View {
                 let created = try await APIClient.shared.createWorkflow(
                     title: title.isEmpty ? String(description.prefix(24)) : title,
                     description: description, desiredOutput: deliverable,
-                    sourceDocumentId: sourceDocument?.sourceId, outputKind: outputKind,
-                    sourceClientSessionId: scope.clientSessionId
+                    sourceDocumentId: outputKind == "image" ? nil : sourceDocument?.sourceId, outputKind: outputKind,
+                    sourceClientSessionId: scope.clientSessionId,
+                    sourceImageId: outputKind == "image" ? imageReceipt?.artifactId : nil
                 )
                 guard workflowActivities.isCurrent(scope),
                       workflowActivities.accepts(created.workflow, in: scope) else { return }
@@ -3110,7 +3168,9 @@ private struct WorkflowExecutionView: View {
         return output.contains("docx") || output.contains("word")
     }
     private var isTravel: Bool { artifacts.contains { $0.metadata.renderType == "travel_plan_v2" } }
-    private var isStagedOutput: Bool { isPresentation || isDocument || isTravel }
+    @State private var imageAction: ClientActionDTO?
+    private var isImage: Bool { artifacts.contains { ["image", "image_edit"].contains($0.metadata.renderType ?? "") } }
+    private var isStagedOutput: Bool { isPresentation || isDocument || isTravel || isImage }
 
     init(
         workflow: WorkflowDTO,
@@ -3151,7 +3211,10 @@ private struct WorkflowExecutionView: View {
                 if let failure = WorkflowFailurePresentation.make(execution: execution) {
                     WorkflowFailureCard(failure: failure)
                 }
-                if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
+                if isImage && execution.status == "awaiting_approval" {
+                    Label("处理参数已准备好，打开本机图片处理即可继续。", systemImage: "iphone")
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                } else if ["awaiting_approval", "awaiting_review", "completed"].contains(execution.status) {
                     artifactReview
                 }
                 if let errorMessage { WorkflowErrorBanner(message: errorMessage) }
@@ -3176,6 +3239,19 @@ private struct WorkflowExecutionView: View {
                     Task { await monitor() }
                 }
             )
+        }
+        .sheet(item: $imageAction) { action in
+            NativeClientActionHost(action: action) { status, metadata in
+                perform {
+                    _ = try await CapabilityClient().recordClientActionReceipt(actionId: action.id, status: status, resultMetadata: metadata)
+                    guard workflowActivities.isCurrent(scope) else { return }
+                    imageAction = nil
+                    await monitor()
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let errorMessage { WorkflowErrorBanner(message: errorMessage).padding() }
+            }
         }
         .sheet(isPresented: $showsStructuredReview) {
             if let artifact = visibleArtifacts.last {
@@ -3212,6 +3288,7 @@ private struct WorkflowExecutionView: View {
             if execution.status == "awaiting_approval" { return travel.filter { $0.metadata.approvalGate == activePresentationGate } }
             return travel.filter { $0.metadata.approvalGate == nil }
         }
+        if isImage { return artifacts.filter { $0.metadata.renderType == "image" } }
         if isDocument {
             if execution.status == "awaiting_approval" {
                 return artifacts.filter { $0.metadata.approvalGate == activePresentationGate }
@@ -3335,7 +3412,7 @@ private struct WorkflowExecutionView: View {
                 .background(AppTheme.Colors.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
-            if isStagedOutput && !isTravel,
+            if isStagedOutput && !isTravel && !isImage,
                ["awaiting_review", "completed"].contains(execution.status),
                visibleArtifacts.last != nil {
                 Button(isPresentation ? "编辑全稿内容" : "填写结构化审核", systemImage: "checklist") {
@@ -3346,7 +3423,7 @@ private struct WorkflowExecutionView: View {
                 .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.minimumTouchTarget)
                 .accessibilityIdentifier("open-structured-review")
             }
-            if isStagedOutput && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
+            if isStagedOutput && !isImage && ["awaiting_approval", "awaiting_review"].contains(execution.status) {
                 TextField(stagedFeedbackPrompt, text: $feedback, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(stagedFeedbackPrompt)
@@ -3388,12 +3465,14 @@ private struct WorkflowExecutionView: View {
 
     private var stagedReviewTitle: String {
         if isTravel { return "一起调整这趟旅行" }
+        if isImage { return "你的图片已就绪" }
         if isPresentation { return presentationReviewTitle }
         return activePresentationGate == "outline" ? "确认 Word 文档大纲" : "确认 Word 文档全文"
     }
 
     private var stagedReviewHelp: String {
         if isTravel { return "查看每日时间、交通与待核实项；不合适的安排可以继续讨论，确认后再生成笔记。" }
+        if isImage { return "打开图片检查效果，确认后导出。需要继续调整时，可回到 Chat 上传结果并说明要求。" }
         if isPresentation { return presentationReviewHelp }
         if execution.status == "completed" { return "文档已确认，可预览、下载 DOCX 或用系统分享。" }
         if execution.status == "awaiting_review" { return "检查完整正文；可退回修改，确认后开放 DOCX 下载与系统分享。" }
@@ -3437,6 +3516,10 @@ private struct WorkflowExecutionView: View {
                 Button("从失败处重试", systemImage: "arrow.clockwise") { retry() }
                     .buttonStyle(.borderedProminent)
                     .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+            } else if execution.status == "awaiting_approval" && isImage {
+                Button("在本机处理图片", systemImage: "iphone") {
+                    perform { imageAction = try await APIClient.shared.prepareImageAction(executionId: execution.id) }
+                }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_approval" && isPresentation {
                 Button(activePresentationGate == "design" ? "修改版式" : "修改大纲") { reviewPresentation(decision: "revise") }.buttonStyle(.bordered)
                 Button(activePresentationGate == "design" ? "确认并生成全稿" : "确认大纲") { reviewPresentation(decision: "approve") }.buttonStyle(.borderedProminent)
@@ -3454,6 +3537,8 @@ private struct WorkflowExecutionView: View {
                 Button(activePresentationGate == "outline" ? "确认大纲" : "确认全文") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_review" && isDocument {
                 Button("退回修改") { reviewStagedOutput(decision: "revise") }.buttonStyle(.bordered)
+                Button("确认并下载") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
+            } else if execution.status == "awaiting_review" && isImage {
                 Button("确认并下载") { reviewStagedOutput(decision: "approve") }.buttonStyle(.borderedProminent)
             } else if execution.status == "awaiting_review" {
                 Button("退回修改") { requestRevision() }
@@ -3583,7 +3668,7 @@ private struct WorkflowExecutionView: View {
             }
             return isTravel
                 ? item.metadata.renderType == "travel_plan_v2" && item.metadata.approvalGate == nil
-                : item.extension == "docx"
+                : item.extension == "docx" || item.metadata.renderType == "image"
         }) else { errorMessage = "待确认成果尚未同步"; return }
         if decision == "revise" && feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             errorMessage = "请填写修改意见"
@@ -3652,6 +3737,7 @@ private struct WorkflowArtifactPreview: View {
     @Binding var currentPage: Int
     let allowsDownload: Bool
     var onReplan: ((WorkflowExecutionDTO) -> Void)? = nil
+    @State private var imagePreview: UIImage?
     @State private var content: String?
     @State private var errorMessage: String?
     @State private var pdfDocument: PDFDocument?
@@ -3834,7 +3920,12 @@ private struct WorkflowArtifactPreview: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let pdfDocument {
+                if let imagePreview {
+                    Image(uiImage: imagePreview).resizable().scaledToFit()
+                        .background(AppTheme.Colors.secondaryBackground)
+                        .padding(AppTheme.Metrics.contentGutter)
+                        .accessibilityLabel("处理后的图片")
+                } else if let pdfDocument {
                     Text("第 \(currentPage) / \(pdfDocument.pageCount) 页").font(AppTheme.Typography.supporting)
                     PDFDeckView(document: pdfDocument, currentPage: $currentPage).frame(minHeight: 620)
                 } else if let content {
@@ -4017,7 +4108,13 @@ private struct WorkflowArtifactPreview: View {
                         try restorePendingTravel()
                         if !pendingTravelChanges.isEmpty { await syncPendingTravel(); return }
                     }
-                    if artifact.extension == "pptx" {
+                    if ["png", "jpg", "jpeg", "webp"].contains(artifact.extension) {
+                        let bytes = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        guard let decoded = UIImage(data: bytes) else { throw APIError.decoding("图片解码失败") }
+                        imagePreview = decoded
+                        downloadURL = try InboxFileManager.shared.storePrivateFile(bytes, sourceId: artifact.id, revision: artifact.metadata.artifactVersion ?? 1, filename: "\(artifact.title).\(artifact.extension)")
+                    } else if artifact.extension == "pptx" {
                         let deck = try await APIClient.shared.downloadAuthenticated(path: "workflow-executions/\(executionId)/artifacts/\(artifact.id)/download", expectedHash: artifact.contentHash)
                         guard workflowActivities.isCurrent(scope) else { return }
                         downloadURL = try InboxFileManager.shared.storePrivateFile(deck, sourceId: artifact.id, revision: artifact.metadata.artifactVersion ?? 1, filename: "\(artifact.title).pptx")

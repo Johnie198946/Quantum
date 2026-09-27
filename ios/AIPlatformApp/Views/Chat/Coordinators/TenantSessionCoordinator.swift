@@ -16,6 +16,13 @@ public final class TenantSessionCoordinator: ObservableObject {
     public static let shared = TenantSessionCoordinator()
 
     @Published public var messages: [ChatMessage] = []
+    @Published public var isUploadingImage = false
+    @Published public var failedImageUpload: Data?
+    public var activeImageArtifactId: String? {
+        messages.filter { $0.sessionId == sessionManager.activeSessionID() }.flatMap(\.blocks).compactMap {
+            if case .image(let image) = $0, image.assetName.hasPrefix("ga_") { return image.assetName }; return nil
+        }.last
+    }
     @Published public var inputText: String = ""
     @Published public var quickCommands: [String] = []
     @Published public var quotedContext: QuotedContext? = nil
@@ -139,6 +146,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let accountFingerprint = sessionManager.activeAccountFingerprint
         guard accountFingerprint != loadedAccountFingerprint else { return }
         loadedAccountFingerprint = accountFingerprint
+        failedImageUpload = nil
         tenantEpoch += 1
         pendingCleanupNavigation = nil
         cancelAllTasksAndAnimations()
@@ -208,6 +216,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func restoreActiveSession(force: Bool = false) {
+        failedImageUpload = nil
         let sid = sessionManager.activeSessionID()
         guard force || loadedSessionId != sid else { return }
         applyHistoryPage(sessionManager.latestVisiblePage(for: sid), isLatest: true, startsAtBottom: true)
@@ -1169,6 +1178,7 @@ public final class TenantSessionCoordinator: ObservableObject {
     public func sendMessage(text explicitText: String? = nil, regenerate: Bool = false) {
         let text = (explicitText ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        guard !isUploadingImage else { showToast("图片还在上传，请稍候"); return }
         guard reconcilingMessageIDs.isEmpty else {
             showToast("正在续接原任务，请稍候")
             return
@@ -1227,7 +1237,7 @@ public final class TenantSessionCoordinator: ObservableObject {
         let learningExerciseId = messages.filter { $0.sessionId == sid }.flatMap(\.blocks).compactMap {
             if case .learningExercise(let item) = $0 { return item.id }; return nil
         }.last
-        let enrichedClientSessionContext = (learningExerciseId != nil || Self.shouldAttachClientSessionContext(
+        let enrichedClientSessionContext = (activeImageArtifactId != nil || learningExerciseId != nil || Self.shouldAttachClientSessionContext(
             userText: text,
             hasRecoveryContext: recoveryContext != nil,
             hasLocalNotes: !localNoteSnapshot.isEmpty
@@ -1237,7 +1247,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             truncated: recoveryContext?.truncated ?? false,
             sourceSessions: recoveryContext?.sourceSessions ?? [],
             localNotes: localNoteSnapshot,
-            learningExerciseId: learningExerciseId
+            learningExerciseId: learningExerciseId, activeImageArtifactId: activeImageArtifactId
         ) : nil
         let userMessage = ChatMessage(
             sessionId: sid, role: .user, content: text, quotedContext: quote
@@ -3738,6 +3748,10 @@ public final class TenantSessionCoordinator: ObservableObject {
             return
         }
         guard verb == "confirm" else { return }
+        if proposal.capabilityId == "media.process" && !proposal.input.hasImageParameters {
+            showToast("图片参数未完整保留，请重新发送处理需求")
+            return
+        }
         let requiresFreshProposal = proposal.state == .failed
             && Self.requiresFreshCapabilityProposal(errorMessage: proposal.errorMessage)
         proposal.state = .applying
@@ -3911,11 +3925,29 @@ public final class TenantSessionCoordinator: ObservableObject {
     }
 
     public func attachPhoto(_ data: Data) {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("photo-\(UUID().uuidString).jpg")
-        do {
-            try data.write(to: url, options: .atomic)
-            attachDocument(url)
-        } catch { showToast(error.localizedDescription) }
+        guard !isUploadingImage else { return }
+        let sid = sessionManager.activeSessionID()
+        let account = sessionManager.activeAccountFingerprint
+        isUploadingImage = true
+        failedImageUpload = nil
+        Task {
+            defer { isUploadingImage = false }
+            do {
+                let receipt = try await APIClient.shared.uploadImage(data: data)
+                guard sessionManager.activeAccountFingerprint == account,
+                      sessionManager.activeSessionID() == sid else { return }
+                let preview = InboxFileManager.shared.downsampleImage(data: data)
+                messages.append(ChatMessage(sessionId: sid, role: .user, content: "已上传图片", blocks: [
+                    .image(ImageBlock(assetName: receipt.artifactId, imageData: preview, caption: "原图已就绪 · 告诉我你想怎么改"))
+                ]))
+                commitSession()
+            } catch {
+                guard sessionManager.activeAccountFingerprint == account,
+                      sessionManager.activeSessionID() == sid else { return }
+                failedImageUpload = data
+                showToast("图片上传失败：\(error.localizedDescription)")
+            }
+        }
     }
 
     public func attachDocument(_ url: URL) {

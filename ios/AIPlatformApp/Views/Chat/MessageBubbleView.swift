@@ -215,7 +215,9 @@ public struct MessageBubbleView: View {
     }
 
     private var userAttachmentBlocks: [MessageBlock] {
-        message.blocks.filter { if case .attachment = $0 { return true }; return false }
+        message.blocks.filter { block in
+            switch block { case .attachment, .image: return true; default: return false }
+        }
     }
 
     // MARK: - Assistant Bubble

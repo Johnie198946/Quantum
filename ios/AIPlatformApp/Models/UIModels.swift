@@ -143,7 +143,7 @@ public struct ChartBlock: Identifiable, Sendable, Hashable {
     }
 }
 
-public struct ImageBlock: Identifiable, Sendable, Hashable {
+public struct ImageBlock: Identifiable, Codable, Sendable, Hashable {
     public let id: String
     public var assetName: String   // 本地资源名（Assets.xcassets），imageData 为空时使用
     public var imageData: Data?    // 运行时照片数据（已降采样 JPEG），非空时优先渲染
@@ -458,8 +458,17 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public var sectionId: String? = nil
     public var contentVersion: String? = nil
     public var minutes: Int? = nil
+    public var format: String? = nil
+    public var aspectRatio: String? = nil
+    public var extractSubject: Bool? = nil
+    public var sourceArtifactId: String? = nil
+    public var focusX: Double? = nil
+    public var focusY: Double? = nil
+    public var hasImageParameters: Bool { sourceArtifactId != nil && format != nil && aspectRatio != nil && extractSubject != nil && focusX != nil && focusY != nil }
 
     enum CodingKeys: String, CodingKey {
+        case sourceArtifactId = "source_artifact_id", focusX = "focus_x", focusY = "focus_y"
+        case format, aspectRatio = "aspect_ratio", extractSubject = "extract_subject"
         case title, description
         case desiredOutput = "desired_output"
         case sourceDocumentId = "source_document_id"
@@ -980,12 +989,18 @@ public struct PersistedMessage: Codable, Sendable {
     public let capabilityProposals: [CapabilityProposalBlock]?
     public let capabilityProposal: CapabilityProposalBlock?
     public let artifactConsumptions: [ArtifactConsumptionBlock]?
+    public let images: [ImageBlock]?
     public let attachments: [AttachmentBlock]?
     public let learningExercises: [LearningExerciseBlock]?
     public let workflows: [WorkflowDTO]?
     public let knowledgeNavigations: [KnowledgeNavigationTarget]?
 
     public init(_ m: ChatMessage) {
+        self.images = m.blocks.compactMap {
+            guard case .image(var image) = $0, image.assetName.hasPrefix("ga_") else { return nil }
+            image.imageData = nil // Persist the private reference, not full-resolution photo bytes.
+            return image
+        }
         self.id = m.id
         self.role = m.role.rawValue
         self.content = m.content
@@ -1082,6 +1097,7 @@ public struct PersistedMessage: Codable, Sendable {
         for receipt in artifactConsumptions ?? [] where restoredReceiptIDs.insert(receipt.id).inserted {
             message.blocks.append(.artifactConsumption(receipt))
         }
+        for image in images ?? [] { message.blocks.append(.image(image)) }
         for attachment in attachments ?? [] { message.blocks.append(.attachment(attachment)) }
         for exercise in learningExercises ?? [] { message.blocks.append(.learningExercise(exercise)) }
         for workflow in workflows ?? [] { message.blocks.append(.workflow(workflow)) }

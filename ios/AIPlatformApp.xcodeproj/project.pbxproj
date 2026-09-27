@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        A10B00000000000000000005 /* Mantis-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = A10B00000000000000000006; };
+		A10B00000000000000000001 /* Mantis in Frameworks */ = {isa = PBXBuildFile; productRef = A10B00000000000000000002 /* Mantis */; };
 		07939825DDB42FFA9B2649ED /* ChatInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB63B402208C7E69F946E7BD /* ChatInputBar.swift */; };
 		0D6B168E6164B25411D9D874 /* BlockCardDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2358634EFA73CA1C68794682 /* BlockCardDispatcher.swift */; };
 		1995D55E8A97BAB4170D7656 /* SpeechRecognizerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6CC416750077F6D7DF859B /* SpeechRecognizerService.swift */; };
@@ -85,6 +87,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        A10B00000000000000000006 /* Mantis-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "AIPlatformApp/Mantis-LICENSE.txt"; sourceTree = SOURCE_ROOT; };
 		064407015708A682A63CF7D8 /* ChatTopBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTopBarView.swift; sourceTree = "<group>"; };
 		0FC76B7071BB7FE6A36B5322 /* MemoryCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCenterView.swift; sourceTree = "<group>"; };
 		13E7BDD63EC61CE3C89D4C05 /* AttachmentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentCard.swift; sourceTree = "<group>"; };
@@ -150,6 +153,14 @@
 		F8E70EAC9E0B5B8A7FA5B187 /* InboxFileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFileManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+        A10B00000000000000000004 /* Frameworks */ = {
+            isa = PBXFrameworksBuildPhase;
+            buildActionMask = 2147483647;
+            files = (A10B00000000000000000001 /* Mantis in Frameworks */,);
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXFrameworksBuildPhase section */
 /* Begin PBXGroup section */
 		1E494BE1071AB4A216C8927B /* Voice */ = {
 			isa = PBXGroup;
@@ -415,6 +426,7 @@
 			buildPhases = (
 				48AAA9836727B98528F3962F /* Sources */,
 				00987747F71BE5DF9E6BA0B2 /* Resources */,
+                A10B00000000000000000004 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -422,6 +434,7 @@
 			);
 			name = AIPlatformApp;
 			packageProductDependencies = (
+                A10B00000000000000000002 /* Mantis */,
 			);
 			productName = AIPlatformApp;
 			productReference = 7CE0824746D5B06C3C2B035E /* AIPlatformApp.app */;
@@ -470,7 +483,8 @@
 				};
 			};
 			buildConfigurationList = CE9BE94AECA5AC64671543B4 /* Build configuration list for PBXProject "AIPlatformApp" */;
-			developmentRegion = en;
+			packageReferences = (A10B00000000000000000003 /* Mantis */,);
+            developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
@@ -497,6 +511,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EB4EC10398BD98D6CA5312C5 /* Assets.xcassets in Resources */,
+                A10B00000000000000000005 /* Mantis-LICENSE.txt in Resources */,
 				1B83E300CE2CE743A621F7C5 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -596,6 +611,20 @@
 		};
 /* End PBXTargetDependency section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+        A10B00000000000000000003 /* Mantis */ = {
+            isa = XCRemoteSwiftPackageReference;
+            repositoryURL = "https://github.com/guoyingtao/Mantis.git";
+            requirement = {kind = exactVersion; version = 3.1.0;};
+        };
+/* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+        A10B00000000000000000002 /* Mantis */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = A10B00000000000000000003 /* Mantis */;
+            productName = Mantis;
+        };
+/* End XCSwiftPackageProductDependency section */
 /* Begin XCBuildConfiguration section */
 		03AA7B22D5AF6588DEBF3E7C /* Debug */ = {
 			isa = XCBuildConfiguration;

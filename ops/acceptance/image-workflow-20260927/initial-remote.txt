@@ -1,0 +1,4 @@
+origin	https://github.com/Johnie198946/Quantum.git (fetch)
+origin	https://github.com/Johnie198946/Quantum.git (push)
+source	https://github.com/Johnie198946/ai-lab-platform.git (fetch)
+source	https://github.com/Johnie198946/ai-lab-platform.git (push)

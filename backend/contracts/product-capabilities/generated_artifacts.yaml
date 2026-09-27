@@ -113,3 +113,36 @@ capabilities:
     renderer_version: 1
     tests: [tests/test_generated_artifact_capabilities.py]
     implementation_status: implemented
+
+  - id: media.process
+    version: 1.0.0
+    domain: generated_artifact
+    description: Create an image-processing workflow for an uploaded private image through the existing workflow lifecycle. On iPhone, convert to PNG/JPG, crop to a ratio, or extract the subject at a normalized point into transparent PNG. Use the active uploaded artifact ID. Never invent a source or claim a cutout from generated artwork. For an unclear subject ask the user to select its position; do not infer unseen objects. JPG flattens transparency on white; extraction requires PNG.
+    positive_examples: ["帮我改成16:9的比例，从png改为jpg", "帮我把中间的人物抠出来", "Crop this uploaded photo and convert to JPG"]
+    negative_examples: ["Generate a new illustration without an uploaded image"]
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [source_artifact_id]
+      properties:
+        source_client_session_id: {type: string, minLength: 1, maxLength: 100}
+        source_artifact_id: {type: string, pattern: '^ga_[a-f0-9]{32}$'}
+        format: {type: string, enum: [png, jpg], default: png}
+        aspect_ratio: {type: string, enum: [original, '16:9', '9:16', '1:1', '4:3', '3:4'], default: original}
+        extract_subject: {type: boolean, default: false}
+        focus_x: {type: number, minimum: 0, maximum: 1, default: 0.5, description: Horizontal target point from left to right.}
+        focus_y: {type: number, minimum: 0, maximum: 1, default: 0.5, description: Vertical target point from top to bottom.}
+    output_schema: {type: object, required: [workflow]}
+    effect: write
+    risk: low
+    confirmation: required
+    preconditions: [authenticated_generated_artifact_owner, bounded_generation_input]
+    policy_ref: generated-artifact-owner
+    handler_binding: media.process
+    idempotency: required
+    receipt: required
+    result_event: workflow.created
+    renderer: workflow
+    renderer_version: 1
+    tests: [tests/test_image_processing.py]
+    implementation_status: implemented

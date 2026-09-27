@@ -174,3 +174,6 @@ bindings:
     handler: learning.exercise.answer
   - id: learning.exercise.submit
     handler: learning.exercise.submit
+
+  - id: media.process
+    handler: media.process
