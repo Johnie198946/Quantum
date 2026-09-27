@@ -314,6 +314,19 @@ def test_cross_chapter_quote_and_missing_checks_fail():
     assert "review.check:chapter-001:limits" in reasons
 
 
+@pytest.mark.parametrize(
+    "check",
+    ["specificity", "causal_chain", "continuity", "authorial_voice"],
+)
+def test_narrative_quality_checks_are_mandatory(check):
+    body, contract, review, receipts = synthetic_fixture("chapter")
+    del review["chapters"][0]["checks"][check]
+    assert (
+        f"review.check:chapter-001:{check}"
+        in validate_editorial(body, contract, review, receipts)
+    )
+
+
 def test_front_matter_cannot_satisfy_chapter_length():
     body, _, _, _ = synthetic_fixture("chapter")
     prose = editorial_metrics(body)["chapters"][0]["paragraphs"][0]

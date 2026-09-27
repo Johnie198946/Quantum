@@ -23,7 +23,10 @@ CHAPTER_MIN_CJK = 3_000
 MAX_DUPLICATE_RATIO = 0.15
 MIN_QUOTE_LENGTH = 20
 MIN_FINDING_LENGTH = 30
-CHAPTER_CHECKS = ("mechanism", "worked_example", "limits", "reader_questions", "evidence")
+CHAPTER_CHECKS = (
+    "mechanism", "worked_example", "limits", "reader_questions", "evidence",
+    "specificity", "causal_chain", "continuity", "authorial_voice",
+)
 BOOK_CHECKS = (
     "coherence", "non_redundancy", "novice_readability", "thesis",
     "counterargument", "uncertainty", "reader_value", "genre_fit",
