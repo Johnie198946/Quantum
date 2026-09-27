@@ -1,0 +1,19 @@
+{'scope': 'local isolated sandbox provisioning; two synthetic users; excludes model/HTTP', 'n': 30, 'cold_first_s': 1.173, 'p50_s': 0.4, 'p95_s': 0.554}
+         24889919 function calls (23919751 primitive calls) in 12.072 seconds
+
+   Ordered by: cumulative time
+   List reduced from 245 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       30    0.001    0.000   12.072    0.402 tenant_hermes_sandbox.py:129(ensure_tenant_sandbox)
+       30    0.118    0.004   11.422    0.381 tenant_hermes_sandbox.py:107(_template_version)
+       62    0.066    0.001    5.010    0.081 tenant_hermes_sandbox.py:89(_template_files)
+    59148    0.235    0.000    4.601    0.000 pathlib.py:663(relative_to)
+     9889    0.042    0.000    3.297    0.000 {built-in method builtins.sorted}
+    76353    0.037    0.000    2.967    0.000 pathlib.py:1097(rglob)
+    76353    0.039    0.000    2.813    0.000 pathlib.py:234(_select_from)
+    59148    0.065    0.000    2.225    0.000 pathlib.py:690(is_relative_to)
+   573717    0.139    0.000    2.175    0.000 <frozen _collections_abc>:1022(__iter__)
+    47730    0.046    0.000    2.039    0.000 pathlib.py:1015(read_bytes)
+   514599    0.327    0.000    2.036    0.000 pathlib.py:277(__getitem__)
+   764117    0.383    0.000    1.800    0.000 pathlib.py:380(with_segments)

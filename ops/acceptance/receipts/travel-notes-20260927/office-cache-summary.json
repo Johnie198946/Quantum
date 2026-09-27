@@ -1,0 +1,18 @@
+[
+  {
+    "kind": "scanned_pdf",
+    "cold_n": 1,
+    "cold_s": 18.435,
+    "warm_n": 29,
+    "warm_p50_s": 0.164,
+    "warm_p95_s": 0.293
+  },
+  {
+    "kind": "40_slide_16_image_pptx",
+    "cold_n": 1,
+    "cold_s": 31.113,
+    "warm_n": 29,
+    "warm_p50_s": 0.181,
+    "warm_p95_s": 0.304
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "scope": "local sandbox, no profiler, independent temporary root, two synthetic users",
+  "n": 30,
+  "first_s": 0.972,
+  "p50_s": 0.131,
+  "p95_s": 0.16
+}
