@@ -42,13 +42,13 @@ SwiftCompile normal arm64 Compiling\ CleanupMergeUITests.swift /Users/dengzhaoyu
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppUITests/CleanupMergeUITests.swift (in target 'AIPlatformAppUITests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformAppUITests (in target 'AIPlatformAppUITests' from project 'AIPlatformApp')
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformAppUITests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformAppUITests (in target 'AIPlatformAppUITests' from project 'AIPlatformApp')
 
@@ -118,7 +118,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testSavedRealNotebookSurvive
     t =    14.45s         Checking existence of `Button (First Match)`
     t =    14.51s Checking existence of `Button (First Match)`
     t =    14.55s Find the Button (First Match)
-    t =    14.59s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    14.59s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    14.59s     Wait for com.ailab.AIPlatformApp to idle
     t =    14.59s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    14.62s     Check for interrupting elements affecting "知识星海" Application

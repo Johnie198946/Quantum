@@ -1,7 +1,7 @@
 # Travel notes local implementation completion record
 
 - task_id: travel-notes-20260927
-- status: LOCAL_ONLY
+- status: COMMITTED
 - branch: codex/travel-notes-20260927
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927
 - head/local_commit: c1c5788c7a94a25f8f4cb6ed81c50614b4feeba1 / 未生成本地 commit
@@ -244,3 +244,7 @@
 ## 发布授权与整合（2026-09-27）
 
 用户回复“授权”，明确授权本任务提交、推送与服务器部署。发布基线 origin/main=0704ddf5a54bf9739e506652e7b60fa2f22f564c；先在本任务独立分支整合，保留他人改动，测试通过后才推送和切换。先前“未授权”字段为历史状态，本节取代其授权判断。
+
+## 发布前整合验收
+
+旅行功能提交 2930bde8，合并最新主分支提交 56a10118；主分支全部变更保留，冲突仅为两组追加测试，均保留。整合后后端 237 passed、产品契约 36 passed、iOS WorkflowLifecycleDTOTests 194 passed，0 failures。日志 release-*.txt。服务器发布前仍为 0704ddf5a54bf9739e506652e7b60fa2f22f564c；浏览器依赖安装前的包清单和配置已备份到 /opt/ai-lab-shared/rollbacks/travel-browser-20260927。

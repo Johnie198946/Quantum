@@ -42,19 +42,19 @@ SwiftCompile normal arm64 Compiling\ WorkflowDashboardView.swift /Users/dengzhao
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ UIModels.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Models/UIModels.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Models/UIModels.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformApp (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:38:16: warning: stored property 'sourceRefs' of 'Sendable'-conforming struct 'InFlightRequest' contains non-Sendable type 'WorkflowSourceReference'; this is an error in the Swift 6 language mode
     public let sourceRefs: [WorkflowSourceReference]
                ^
@@ -92,13 +92,13 @@ SwiftCompile normal arm64 Compiling\ WorkflowLifecycleDTOTests.swift /Users/deng
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 

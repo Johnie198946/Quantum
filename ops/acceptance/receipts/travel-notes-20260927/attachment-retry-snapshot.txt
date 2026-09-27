@@ -42,13 +42,13 @@ SwiftCompile normal arm64 Compiling\ TenantSessionCoordinator.swift /Users/dengz
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformApp (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:38:16: warning: stored property 'sourceRefs' of 'Sendable'-conforming struct 'InFlightRequest' contains non-Sendable type 'WorkflowSourceReference'; this is an error in the Swift 6 language mode
     public let sourceRefs: [WorkflowSourceReference]
                ^
@@ -63,7 +63,7 @@ public struct WorkflowSourceReference: Encodable {
 SwiftCompile normal arm64 Compiling\ ChatStatusCards.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatStatusCards.swift:38:16: warning: stored property 'sourceRefs' of 'Sendable'-conforming struct 'InFlightRequest' contains non-Sendable type 'WorkflowSourceReference'; this is an error in the Swift 6 language mode
     public let sourceRefs: [WorkflowSourceReference]
                ^
@@ -97,13 +97,13 @@ SwiftDriver AIPlatformAppTests normal arm64 com.apple.xcode.tools.swift.compiler
 SwiftCompile normal arm64 Compiling\ WorkflowLifecycleDTOTests.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
@@ -126,24 +126,24 @@ SwiftDriverJobDiscovery normal arm64 Compiling ChatStatusCards.swift (in target 
 SwiftCompile normal arm64 Compiling\ ChatView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/ChatView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/ChatView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ ChatMessageStreamView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatMessageStreamView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatMessageStreamView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ CleanupMergeReviewView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/CleanupMergeReviewView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/CleanupMergeReviewView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ ChatInFlightPlaceholderView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatInFlightPlaceholderView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Chat/Components/ChatInFlightPlaceholderView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Compiling ChatInFlightPlaceholderView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 

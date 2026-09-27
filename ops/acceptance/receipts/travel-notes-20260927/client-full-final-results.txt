@@ -160,7 +160,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    32.59s Checking existence of `"clarify-custom-input" Any`
     t =    32.64s Find the "clarify-custom-input" Any
     t =    32.69s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    32.71s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    32.71s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    32.71s     Wait for com.ailab.AIPlatformApp to idle
     t =    32.72s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    32.75s     Check for interrupting elements affecting "知识星海" Application
@@ -215,7 +215,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    41.64s Checking existence of `"clarify-custom-input" Any`
     t =    41.69s Find the "clarify-custom-input" Any
     t =    41.74s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    41.76s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    41.76s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    41.76s     Wait for com.ailab.AIPlatformApp to idle
     t =    41.77s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    41.79s     Check for interrupting elements affecting "知识星海" Application
@@ -269,7 +269,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    50.79s         Checking existence of `Button (First Match)`
     t =    50.85s Checking existence of `Button (First Match)`
     t =    50.90s Find the Button (First Match)
-    t =    50.97s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    50.97s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    50.97s     Wait for com.ailab.AIPlatformApp to idle
     t =    50.97s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    51.01s     Check for interrupting elements affecting "知识星海" Application
@@ -282,7 +282,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    52.17s     Wait for com.ailab.AIPlatformApp to idle
     t =    53.73s Checking existence of `"未选择，内容准确" Button`
     t =    53.80s Find the "未选择，内容准确" Button
-    t =    53.85s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    53.85s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    53.85s     Wait for com.ailab.AIPlatformApp to idle
     t =    53.85s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    53.89s     Check for interrupting elements affecting "知识星海" Application
@@ -307,7 +307,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    58.49s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    58.58s Find the "requirement-confirm-primary-action" Button
     t =    58.64s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    58.67s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    58.67s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    58.67s     Wait for com.ailab.AIPlatformApp to idle
     t =    58.67s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    58.71s     Check for interrupting elements affecting "知识星海" Application
@@ -321,7 +321,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    60.16s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    60.24s Find the "requirement-confirm-primary-action" Button
     t =    60.31s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    60.34s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    60.34s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    60.34s     Wait for com.ailab.AIPlatformApp to idle
     t =    60.35s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    60.38s     Check for interrupting elements affecting "知识星海" Application
@@ -335,7 +335,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    61.82s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    61.90s Find the "requirement-confirm-primary-action" Button
     t =    61.95s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    61.98s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    61.98s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    61.98s     Wait for com.ailab.AIPlatformApp to idle
     t =    61.98s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    62.01s     Check for interrupting elements affecting "知识星海" Application
@@ -349,7 +349,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    63.45s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    63.50s Find the "requirement-confirm-primary-action" Button
     t =    63.55s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    63.58s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    63.58s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    63.58s     Wait for com.ailab.AIPlatformApp to idle
     t =    63.58s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    63.61s     Check for interrupting elements affecting "知识星海" Application
@@ -363,7 +363,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    65.07s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    65.12s Find the "requirement-confirm-primary-action" Button
     t =    65.17s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    65.20s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    65.20s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    65.20s     Wait for com.ailab.AIPlatformApp to idle
     t =    65.20s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    65.23s     Check for interrupting elements affecting "知识星海" Application
@@ -377,7 +377,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    66.67s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    66.72s Find the "requirement-confirm-primary-action" Button
     t =    66.77s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    66.80s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    66.80s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    66.80s     Wait for com.ailab.AIPlatformApp to idle
     t =    66.80s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    66.83s     Check for interrupting elements affecting "知识星海" Application
@@ -391,7 +391,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    68.53s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    68.59s Find the "requirement-confirm-primary-action" Button
     t =    68.64s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    68.66s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    68.66s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    68.66s     Wait for com.ailab.AIPlatformApp to idle
     t =    68.67s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    68.70s     Check for interrupting elements affecting "知识星海" Application
@@ -405,7 +405,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testFullClientJourneyWithSta
     t =    70.17s Checking existence of `"requirement-confirm-primary-action" Button`
     t =    70.22s Find the "requirement-confirm-primary-action" Button
     t =    70.27s Find the Target Application 'com.ailab.AIPlatformApp'
-    t =    70.30s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    70.30s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.25] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    70.30s     Wait for com.ailab.AIPlatformApp to idle
     t =    70.31s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    70.34s     Check for interrupting elements affecting "知识星海" Application
@@ -843,7 +843,7 @@ Test Case '-[AIPlatformAppUITests.TravelFlowUITests testSavedRealNotebookSurvive
     t =     9.86s         Checking existence of `Button (First Match)`
     t =     9.94s Checking existence of `Button (First Match)`
     t =    10.01s Find the Button (First Match)
-    t =    10.07s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
+    t =    10.07s Press Target Application 'com.ailab.AIPlatformApp'[0.96, 0.55] for 0.1 seconds, then drag to Target Application 'com.ailab.AIPlatformApp'[0.96, 0.20] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
     t =    10.07s     Wait for com.ailab.AIPlatformApp to idle
     t =    10.07s     Find the Target Application 'com.ailab.AIPlatformApp'
     t =    10.09s     Check for interrupting elements affecting "知识星海" Application

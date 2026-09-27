@@ -42,7 +42,7 @@ SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformApp (in target 'AI
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Settings/SettingsView.swift:4477:26: warning: 'UITextItemInteraction' was deprecated in iOS 17.0: UITextItemInteraction has been replaced by text item methods on UITextViewDelegate
             interaction: UITextItemInteraction
                          ^
@@ -50,19 +50,19 @@ EmitSwiftModule normal arm64 (in target 'AIPlatformApp' from project 'AIPlatform
 SwiftCompile normal arm64 Compiling\ KnowledgeView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Knowledge/KnowledgeView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ WorkflowDashboardView.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ APIClient.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Networking/APIClient.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformApp/Networking/APIClient.swift (in target 'AIPlatformApp' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformApp (in target 'AIPlatformApp' from project 'AIPlatformApp')
 
@@ -90,19 +90,19 @@ SwiftEmitModule normal arm64 Emitting\ module\ for\ AIPlatformAppTests (in targe
 
 EmitSwiftModule normal arm64 (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ WorkflowLifecycleDTOTests.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/WorkflowLifecycleDTOTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ KnowledgeNoteStoreTests.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/KnowledgeNoteStoreTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Emitting module for AIPlatformAppTests (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
@@ -130,13 +130,13 @@ SwiftCompile normal arm64 Compiling\ ChatResponseRecoveryRegressionTests.swift /
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/ChatResponseRecoveryRegressionTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftCompile normal arm64 Compiling\ CleanupMergeTests.swift /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/CleanupMergeTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
 SwiftCompile normal arm64 /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios/AIPlatformAppTests/CleanupMergeTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
     cd /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-20260927/ios
-    
+
 
 SwiftDriverJobDiscovery normal arm64 Compiling CleanupMergeTests.swift (in target 'AIPlatformAppTests' from project 'AIPlatformApp')
 
