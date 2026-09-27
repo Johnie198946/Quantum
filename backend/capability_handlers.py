@@ -175,7 +175,8 @@ async def _knowledge_search(data: dict[str, Any], payload: dict[str, Any], _key:
     snapshot = await list_synced_notes(bool(data.get("include_archived", False)), payload)
     if data.get("mode") == "organize":
         from backend.services.user_note_context import organize_note_candidates
-        organization = organize_note_candidates(snapshot["items"], offset=int(data.get("offset", 0)), limit=int(data.get("limit", 20)))
+        from backend.services.knowledge_catalog import run_knowledge_read
+        organization = await run_knowledge_read(organize_note_candidates, snapshot["items"], offset=int(data.get("offset", 0)), limit=int(data.get("limit", 20)))
         organization["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
         return {"items": [], "organization": organization,
                 "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
@@ -184,15 +185,27 @@ async def _knowledge_search(data: dict[str, Any], payload: dict[str, Any], _key:
         term in str(item.get("markdown") or "").casefold() for term in terms
     )]
     offset, limit = max(0, int(data.get("offset", 0))), int(data.get("limit", 5))
-    items = matched[offset:offset + limit]
-    return {
-        "items": [{
-            "note_id": item["note_id"], "title": _note_title(item["markdown"]),
-            "snippet": item["markdown"][:1000], "content_hash": item["content_hash"],
+    items = []
+    content_chars = 0
+    for item in matched[offset:offset + limit]:
+        markdown = str(item.get("markdown") or "")
+        # One oversized note is returned whole; never label a clipped body complete.
+        if data.get("include_content") and items and content_chars + len(markdown) > 48_000:
+            break
+        projected = {
+            "note_id": item["note_id"], "title": _note_title(markdown),
+            "snippet": markdown[:1000], "content_hash": item["content_hash"],
             "updated_at": item.get("updated_at"), "archived": item["archived"],
-        } for item in items],
+        }
+        if data.get("include_content"):
+            projected.update(markdown=markdown, content_complete=True)
+            content_chars += len(markdown)
+        items.append(projected)
+    return {
+        "items": items,
         "total_count": len(matched),
         "next_offset": offset + len(items) if offset + len(items) < len(matched) else None,
+        "content_complete": bool(data.get("include_content")),
         "local_state": "client_managed", "cloud_state": "synced",
         "index_state": snapshot["compile_status"],
     }
@@ -209,10 +222,13 @@ async def _knowledge_read(data: dict[str, Any], payload: dict[str, Any], _key: s
 async def _knowledge_compare(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
     from backend.services.knowledge_action_capability import note_merge_preview
 
+    snapshot = await list_synced_notes(True, payload, include_trashed=True)
+    by_id = {item["note_id"]: item for item in snapshot["items"]}
     notes = []
     for note_id in (data["target_note_id"], data["source_note_id"]):
-        result = await _knowledge_read({"note_id": note_id}, payload, key)
-        notes.append({**result["note"], "id": note_id})
+        if note_id not in by_id:
+            raise HTTPException(status_code=404, detail={"code": "note_not_found"})
+        notes.append({**by_id[note_id], "id": note_id})
     try:
         return note_merge_preview(*notes)
     except ValueError as exc:

@@ -268,7 +268,7 @@ def organize_note_candidates(notes: list[dict[str, Any]], *, offset: int = 0, li
     """Read-only evidence groups, not semantic verdicts or permission to merge.
 
     Reuse the current owner's snapshot. Index complete bodies and paragraphs so
-    different titles and more than two sources are covered without an all-pairs scan.
+    different titles and more than two sources are covered.
     """
     from collections import defaultdict
 
@@ -316,6 +316,39 @@ def organize_note_candidates(notes: list[dict[str, Any]], *, offset: int = 0, li
         add(ids, "duplicate", "正文相同（忽略首个标题及首尾空行），请核对后决定保留项。", exact=True)
     for ids in paragraphs.values():
         add(ids, "partial_overlap", "存在相同段落；可能是局部引用，不能据此归档整篇笔记。")
+    # Candidate recall only: lexical overlap must never authorize an archive.
+    # ponytail: pairwise comparison uses integer bitsets; shard candidate lookup
+    # if measured owner libraries outgrow this in-memory scan.
+    features, vocabulary = {}, {}
+    for note_id, text in text_by_id.items():
+        plain = re.sub(r"[^\w\u4e00-\u9fff]", "", text.casefold())
+        grams = {plain[i:i + 2] for i in range(len(plain) - 1)}
+        features[note_id] = grams
+        for gram in grams:
+            if gram not in vocabulary:
+                vocabulary[gram] = len(vocabulary)
+    masks = {}
+    for note_id, grams in features.items():
+        bits = bytearray((len(vocabulary) + 7) // 8)
+        for gram in grams:
+            index = vocabulary[gram]
+            bits[index // 8] |= 1 << (index % 8)
+        masks[note_id] = int.from_bytes(bits, "little")
+    from itertools import combinations
+    for left, right in combinations(sorted(features), 2):
+        overlap = (masks[left] & masks[right]).bit_count()
+        if overlap < 8:
+            continue
+        a, b = features[left], features[right]
+        dice = 2 * overlap / (len(a) + len(b))
+        containment = overlap / min(len(a), len(b))
+        if dice >= 0.72:
+            add([left, right], "similar_content_candidate",
+                "正文措辞高度重合，可能是改写重复或版本变化；需核对数字、否定词和新增信息，不能直接归档。")
+        elif containment >= 0.85 and min(len(a), len(b)) >= 24:
+            add([left, right], "partial_overlap",
+                "较短正文的大部分措辞出现在另一篇中，可能是局部引用或内容吸收；保留来源并核对具体段落。")
+
     for ids in titles.values():
         add(ids, "same_topic_candidate", "标题相同；需区分互补、重复和不同时间版本，不能仅凭标题合并。")
     title_ids = {key: ids[0] for key, ids in titles.items() if len(ids) == 1}
@@ -325,13 +358,13 @@ def organize_note_candidates(notes: list[dict[str, Any]], *, offset: int = 0, li
             if linked and linked != note_id:
                 add([note_id, linked], "reference", "已有显式笔记引用，建议保留两篇并检查引用位置。", exact=True)
     candidates = sorted(groups.values(), key=lambda group: (
-        {"duplicate": 0, "partial_overlap": 1, "same_topic_candidate": 2, "reference": 3}[group["relation"]], group["id"]))
+        {"duplicate": 0, "partial_overlap": 1, "similar_content_candidate": 2, "same_topic_candidate": 3, "reference": 4}[group["relation"]], group["id"]))
     offset, limit = max(0, offset), max(1, min(limit, 100))
     end = min(len(candidates), offset + limit)
     return {"candidates": candidates[offset:end], "scanned_notes": len(by_id),
         "total_candidates": len(candidates), "next_offset": end if end < len(candidates) else None,
-        "scan_kind": "exact_content_and_links", "semantic_scan_complete": False,
-        "notice": "已检查全部活跃快照的正文、段落、标题和显式引用；不同说法及隐含主题关联仍需语义复核。"}
+        "scan_kind": "content_overlap_and_links", "semantic_scan_complete": False,
+        "notice": "已检查全部活跃快照的正文、段落、措辞重合、标题和显式引用；候选不是语义结论。同义改写、主题互补和隐含关联需读取完整目录正文复核。"}
 
 
 def search_user_notes(

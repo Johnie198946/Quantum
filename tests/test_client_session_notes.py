@@ -331,12 +331,15 @@ def test_bridge_startup_prewarms_configured_runtime_and_closes_agent(monkeypatch
     monkeypatch.setattr(bridge.contracts, "_get_clarify_gateway", lambda: object())
     monkeypatch.setattr(bridge.agent_config, "_get_shared_session_db", lambda: object())
 
+    monkeypatch.setattr(bridge.agent_config.importlib, "import_module",
+                        lambda name: observed.update(prewarmed_module=name))
     worker = bridge._prewarm_bridge_agent()
     worker.join(timeout=2)
 
     assert observed["model"] == "configured-model"
     assert observed["provider"] == "provider"
     assert observed["closed"] is True
+    assert observed["prewarmed_module"] == "backend.capability_handlers"
 
 
 @pytest.mark.asyncio

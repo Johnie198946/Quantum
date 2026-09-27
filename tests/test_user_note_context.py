@@ -189,3 +189,21 @@ def test_organization_checks_all_members_preserves_code_and_pages_evidence():
     second = organize_note_candidates(notes, offset=first["next_offset"], limit=100)
     assert first["candidates"] + second["candidates"] == result["candidates"]
     assert organize_note_candidates(list(reversed(notes)), limit=100)["candidates"] == result["candidates"]
+
+
+def test_organization_recalls_reworded_and_contained_notes_without_claiming_duplicates():
+    from backend.services.user_note_context import organize_note_candidates
+    common = "项目上线前，需要负责人核对预算、交付时间和验收条件，确认依赖任务完成后再通知客户。"
+    notes = [
+        {"id": "original", "title": "发布核对", "markdown": common},
+        {"id": "rewrite", "title": "上线准备", "markdown": "项目上线之前，负责人需要核对预算、交付时间和验收条件；确认依赖任务完成之后再通知客户。"},
+        {"id": "quote", "title": "客户协作", "markdown": common + "另一个独立主题是客户服务的工作流程，包括如何登记问题、分析原因和跟踪满意度。"},
+        {"id": "unrelated", "title": "旅行", "markdown": "京都旅行计划：周六参观寺庙，周日坐火车去大阪。"},
+    ]
+    result = organize_note_candidates(notes, limit=100)
+    groups = {frozenset(n["note_id"] for n in g["notes"]): g for g in result["candidates"]}
+    assert groups[frozenset(("original", "rewrite"))]["relation"] == "similar_content_candidate"
+    assert groups[frozenset(("original", "quote"))]["relation"] == "partial_overlap"
+    assert all(g["requires_semantic_review"] for g in groups.values())
+    assert all("unrelated" not in ids for ids in groups)
+    assert not result["semantic_scan_complete"]

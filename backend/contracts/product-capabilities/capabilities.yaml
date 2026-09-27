@@ -18,12 +18,12 @@ agent_descriptions:
 
 capabilities:
   - id: knowledge.note.search
-    version: 1.1.0
+    version: 1.2.0
     domain: knowledge
-    description: Search the authenticated user's notes; mode=organize checks all active cloud notes for duplicate bodies, shared paragraphs, same titles and explicit references. Page through next_offset; mode=catalog pages every note with IDs and snippets for Hermes semantic review; read candidate bodies before classifying.
+    description: Search the authenticated user's notes; mode=organize checks all active cloud notes for duplicate bodies, shared paragraphs, same titles and explicit references. Page through next_offset; mode=catalog with include_content=true pages complete note bodies for Hermes semantic review in fewer calls. Follow next_offset until null; classify only bodies actually read. Organization also recalls lexical rewrites and containment as unverified candidates.
     positive_examples: ["Find my notes about IPD", "检查我的重复笔记", "整理所有笔记，找出局部重复和引用关系"]
     negative_examples: ["Search the public web"]
-    input_schema: {type: object, properties: {query: {type: string, minLength: 1}, mode: {type: string, enum: [search, organize, catalog]}, offset: {type: integer, minimum: 0}, limit: {type: integer, minimum: 1, maximum: 100}, include_archived: {type: boolean}}, required: [query], additionalProperties: false}
+    input_schema: {type: object, properties: {query: {type: string, minLength: 1}, mode: {type: string, enum: [search, organize, catalog]}, offset: {type: integer, minimum: 0}, limit: {type: integer, minimum: 1, maximum: 100}, include_archived: {type: boolean}, include_content: {type: boolean, description: "Return full owner-authorized bodies for semantic review; pages obey a soft 48000-character budget. Follow next_offset. Never treat snippets as complete bodies."}}, required: [query], additionalProperties: false}
     output_schema: {type: object, required: [items]}
     effect: read
     risk: low

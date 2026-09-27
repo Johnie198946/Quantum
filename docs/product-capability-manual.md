@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `9a419adbc8eccd07165cbf4a3b556d2c37ad5e41264d351efacbe2cd8198ed0f`
+Catalog digest: `95b4bbcbb799323840d3a8fdc64a02463235bf5f31c7f4114c300860beb29c0c`
 
 ## Gateway 核心模块规范
 
@@ -335,7 +335,7 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 | `knowledge.note.merge@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.read@1.0.0` | knowledge | read | none | none | `knowledge.note` | `answer@1` | implemented |
 | `knowledge.note.restore@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
-| `knowledge.note.search@1.1.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
+| `knowledge.note.search@1.2.0` | knowledge | read | none | none | `knowledge.results` | `answer@1` | implemented |
 | `knowledge.note.trash@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `knowledge.note.update@1.0.0` | knowledge | write | required | required | `knowledge.action` | `knowledge_action@1` | implemented |
 | `learning.exercise.answer@1.0.0` | learning | write | required | required | `learning.exercise` | `learning_exercise@1` | implemented |

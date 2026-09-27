@@ -6,6 +6,7 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 import contextvars
 import hashlib
+import importlib
 import ipaddress
 import json
 import os
@@ -512,6 +513,8 @@ def _prewarm_bridge_agent() -> threading.Thread:
             _get_cached_fallback(cfg)
             _contracts._get_clarify_gateway()
             _get_shared_session_db()  # 预热 160MB state.db 的 SessionDB 冷建（6.6s 挪到启动期）
+            # Load PCM handler modules before claiming user runs; no owner data or invocation.
+            importlib.import_module("backend.capability_handlers")
             from run_agent import AIAgent
             runtime = _get_cached_runtime(cfg)
             model_cfg = cfg.get("model") or {}

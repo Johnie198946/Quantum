@@ -253,6 +253,7 @@ async def test_pcm_compare_uses_authenticated_sync_reader(monkeypatch):
     monkeypatch.setattr(handlers, "list_synced_notes", reader)
     result = await handlers._knowledge_compare({"target_note_id": "a", "source_note_id": "b"}, AUTH, None)
     assert result["target_note_id"] == "a"
+    assert reader.await_count == 1
     assert all(call.args == (True, AUTH) for call in reader.call_args_list)
     with pytest.raises(HTTPException) as denied:
         await handlers._knowledge_compare({"target_note_id": "a", "source_note_id": "foreign"}, AUTH, None)
@@ -385,3 +386,76 @@ def test_bridge_cloud_note_read_populates_workspace_for_followup_review(monkeypa
     cached = json.loads(bridge._knowledge_workspace_read_tool({"operation": "read", "note_id": "cloud-note"}))
     assert cached["note"]["markdown"] == text
     assert context["knowledge_workspace_read_completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_catalog_full_body_budget_pages_without_clipping_or_skipping(monkeypatch):
+    import backend.capability_handlers as handlers
+    bodies = ["first" * 6000, "second" * 6000, "oversize" * 7000, "last"]
+    snapshot = AsyncMock(return_value={"compile_status": "ready", "items": [
+        {"note_id": str(i), "markdown": body, "content_hash": hashlib.sha256(body.encode()).hexdigest(), "archived": False}
+        for i, body in enumerate(bodies)]})
+    monkeypatch.setattr(handlers, "list_synced_notes", snapshot)
+    received = []
+    offset = 0
+    while True:
+        result = await invoke_capability("knowledge.note.search", {
+            "query": "完整语义整理", "mode": "catalog", "include_content": True,
+            "limit": 100, "offset": offset}, payload=AUTH)
+        assert result["error"] is None
+        page = result["events"][0]["payload"]
+        assert page["content_complete"]
+        received.extend(item["markdown"] for item in page["items"])
+        assert all(item["content_complete"] for item in page["items"])
+        if page["next_offset"] is None:
+            break
+        assert page["next_offset"] > offset
+        offset = page["next_offset"]
+    assert received == bodies
+    assert all(call.args == (False, AUTH) for call in snapshot.call_args_list)
+    denied = await invoke_capability("knowledge.note.search", {
+        "query": "全部", "mode": "catalog", "include_content": True,
+        "tenant_key": "foreign"}, payload=AUTH)
+    assert denied["error"] is not None
+
+
+def test_bridge_batch_catalog_reuses_complete_bodies_but_not_snippets(monkeypatch):
+    import asyncio
+    import json
+    import scripts.hermes_bridge as bridge
+    import backend.services.capability_catalog as catalog
+    context = {"knowledge_action_v1": True, "inline_notes": [], "identity": AUTH, "request_id": "batch-catalog-test"}
+    monkeypatch.setattr(bridge._client_context_tool_context, "value", context)
+    async def read(capability_id, data, **kwargs):
+        assert kwargs["payload"] == AUTH
+        return {"status": "completed", "events": [{"type": "knowledge.results", "payload": {"items": [
+            {"note_id": "full", "title": "Full", "markdown": "complete", "content_complete": True},
+            {"note_id": "snippet", "title": "Partial", "snippet": "clipped", "content_complete": False},
+        ]}}]}
+    monkeypatch.setattr(catalog, "invoke_capability", read)
+    monkeypatch.setattr(bridge.contracts, "_run_bridge_coroutine", lambda coroutine, **kwargs: asyncio.run(coroutine))
+    bridge._app_capability_invoke_tool({"capability_id": "knowledge.note.search", "input": {"query": "all", "mode": "catalog", "include_content": True}})
+    assert [n["id"] for n in context["inline_notes"]] == ["full"]
+    assert json.loads(bridge._knowledge_workspace_read_tool({"operation": "read", "note_id": "full"}))["note"]["markdown"] == "complete"
+
+
+def test_bridge_fast_audit_emits_actual_counts_before_final_answer(monkeypatch):
+    import asyncio
+    import scripts.hermes_bridge as bridge
+    import backend.services.capability_catalog as catalog
+    events = []
+    context = {"knowledge_action_v1": True, "inline_notes": [], "identity": AUTH,
+               "request_id": "quick-audit-progress", "emit": events.append}
+    monkeypatch.setattr(bridge._client_context_tool_context, "value", context)
+    async def read(*args, **kwargs):
+        return {"status": "completed", "events": [{"type": "knowledge.results", "payload": {
+            "organization": {"scanned_notes": 135, "total_candidates": 68,
+                             "semantic_scan_complete": False}}}]}
+    monkeypatch.setattr(catalog, "invoke_capability", read)
+    monkeypatch.setattr(bridge.contracts, "_run_bridge_coroutine", lambda coroutine, **kwargs: asyncio.run(coroutine))
+    bridge._app_capability_invoke_tool({"capability_id": "knowledge.note.search",
+                                     "input": {"query": "快速体检", "mode": "organize"}})
+    assert [event["type"] for event in events] == ["knowledge.results", "status"]
+    assert events[-1]["detail"] == "已检查 135 篇笔记，发现 68 组候选；正在汇总核对范围。"
+    assert not events[0]["payload"]["organization"]["semantic_scan_complete"]
+    assert not context.get("knowledge_workspace_read_completed")

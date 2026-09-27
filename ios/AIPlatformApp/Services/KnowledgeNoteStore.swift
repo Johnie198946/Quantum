@@ -208,17 +208,20 @@ public final class KnowledgeNoteStore: ObservableObject {
 
     /// Restore the authenticated account's durable server snapshot after login or reinstall.
     /// Existing local edits only yield to a strictly newer cloud copy.
-    public func restoreFromCloud() async {
-        guard accountFingerprint != "unconfigured" else { return }
+    @discardableResult
+    public func restoreFromCloud() async -> CloudKnowledgeNotesResponse? {
+        guard accountFingerprint != "unconfigured" else { return nil }
         let expectedFingerprint = accountFingerprint
         do {
             let response = try await APIClient.shared.fetchKnowledgeNotes(includeTrashed: true)
-            guard accountFingerprint == expectedFingerprint else { return }
+            guard accountFingerprint == expectedFingerprint else { return nil }
             try restoreFromCloudSnapshot(response)
             lastError = nil
+            return response
         } catch {
-            guard accountFingerprint == expectedFingerprint else { return }
+            guard accountFingerprint == expectedFingerprint else { return nil }
             lastError = "云端笔记暂未同步：\(error.localizedDescription)"
+            return nil
         }
     }
 
