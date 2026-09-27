@@ -34,6 +34,7 @@ def bind_runtime_capability_selection(
     decision_id: str,
     catalog_version: str,
     policy_version: str,
+    capability_id: str | None = None,
 ) -> None:
     """Expose one validated JEV result to deterministic execution guards.
 
@@ -42,6 +43,7 @@ def bind_runtime_capability_selection(
     is automatically discarded with the request ContextVar context.
     """
     _RUNTIME_CAPABILITY_SELECTION.set({
+        "capability_id": capability_id,
         "skill_id": str(skill_id or "") or None,
         "agent_id": str(agent_id or "") or None,
         "decision_id": str(decision_id),
@@ -53,6 +55,30 @@ def bind_runtime_capability_selection(
 
 def get_runtime_capability_selection() -> dict[str, Any]:
     return dict(_RUNTIME_CAPABILITY_SELECTION.get() or {})
+
+
+def record_capability_result(capability_id: str, result: dict[str, Any]) -> None:
+    """Only the existing Gateway adapter records results; model text is not evidence."""
+    # Hermes copies the context into tool threads; update the shared request record.
+    selection = _RUNTIME_CAPABILITY_SELECTION.get() or {}
+    if selection.get("validated") and selection.get("capability_id") == capability_id:
+        selection["capability_result"] = (
+            "accepted" if not result.get("error") and (
+                result.get("status") in {"completed", "awaiting_confirmation"}
+                or result.get("success") is True
+            ) else "failed"
+        )
+
+
+def selected_capability_error(protocol_state: dict[str, Any]) -> str | None:
+    selection = get_runtime_capability_selection()
+    if not selection.get("validated") or not selection.get("capability_id"):
+        return None
+    if selection.get("capability_result") == "accepted":
+        return None
+    if int(protocol_state.get("clarify_attempts") or 0) > 0 and not protocol_state.get("clarify_expired"):
+        return None
+    return "selected_capability_failed" if selection.get("capability_result") == "failed" else "selected_capability_not_invoked"
 
 
 def clear_runtime_capability_selection() -> None:

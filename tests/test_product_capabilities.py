@@ -318,10 +318,19 @@ async def test_bridge_mutations_only_emit_identity_free_confirmation_proposals()
             },
         }
         try:
+            from backend.services.capability_projection import (
+                bind_runtime_capability_selection, clear_runtime_capability_selection,
+                selected_capability_error,
+            )
+            bind_runtime_capability_selection(skill_id=None, agent_id=None,
+                capability_id="workflow.create", decision_id="gateway-test",
+                catalog_version="test", policy_version="test")
             created = json.loads(bridge._app_capability_invoke_tool({
                 "capability_id": "workflow.create",
                 "input": {"title": "QCP workflow", "description": "valid workflow description"},
             }))
+            assert selected_capability_error({}) is None
+            clear_runtime_capability_selection()
             started = json.loads(bridge._app_capability_invoke_tool({
                 "capability_id": "workflow.start", "input": {"workflow_id": "wf-1"},
             }))

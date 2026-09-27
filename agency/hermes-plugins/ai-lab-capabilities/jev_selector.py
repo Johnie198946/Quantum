@@ -35,7 +35,7 @@ _REQUIRED_CARD_FIELDS = {
     "id", "kind", "version", "use_when", "do_not_use_when",
     "requires", "risk", "status",
 }
-_VALID_KINDS = {"skill", "agent"}
+_VALID_KINDS = {"skill", "agent", "capability"}
 _VALID_RISKS = {"read", "write", "external_write", "privileged"}
 _CACHE_LOCK = threading.Lock()
 _CACHE: "OrderedDict[str, tuple[float, RouteDecision]]" = OrderedDict()
@@ -74,6 +74,8 @@ class RouteDecision:
     latency_ms: float
     validated: bool
     cache_hit: bool = False
+    capability_id: str | None = None
+    capability_confidence: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,7 +83,9 @@ class RouteDecision:
 
 def compact_card(capability: dict[str, Any]) -> dict[str, Any]:
     """Project runtime/PCM metadata without Skill bodies or Agent prompts."""
-    kind = "agent" if capability.get("kind") in {"agent", "agency_agent"} else "skill"
+    kind = str(capability.get("kind") or "skill")
+    if kind == "agency_agent":
+        kind = "agent"
     use_when = capability.get("use_when") or capability.get("trigger_phrases") or capability.get("description") or []
     do_not_use = capability.get("do_not_use_when") or capability.get("negative_phrases") or []
     if isinstance(use_when, str):
@@ -167,6 +171,7 @@ def _resident_module() -> Any:
 def start_resident_warmup(
     skill_candidates: Iterable[dict[str, Any]],
     agent_candidates: Iterable[dict[str, Any]],
+    capability_candidates: Iterable[dict[str, Any]] = (),
 ) -> None:
     """Preload the optional in-process selector during gateway startup."""
     module = _resident_module()
@@ -174,6 +179,7 @@ def start_resident_warmup(
         return
     cards = [compact_card(item) for item in skill_candidates]
     cards.extend(compact_card(item) for item in agent_candidates)
+    cards.extend(compact_card(item) for item in capability_candidates)
     module.start_warmup(cards)
 
 
@@ -219,12 +225,26 @@ def _validate_output(
     threshold: float, policy_version: str, catalog_version_value: str,
     latency_ms: float, decision_id: str,
     forbid_agent_with_skills: set[str] | None = None,
+    capability_ids: set[str] | None = None,
 ) -> RouteDecision:
     allowed = {"skill_id", "agent_id", "skill_confidence", "agent_confidence", "reason_code"}
+    if capability_ids:
+        allowed |= {"capability_id", "capability_confidence"}
     if set(output) != allowed:
         return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
                               catalog_version_value=catalog_version_value,
                               latency_ms=latency_ms, decision_id=decision_id)
+    capability_id = output.get("capability_id")
+    capability_confidence = output.get("capability_confidence", 0.0)
+    if (capability_id is not None and (not isinstance(capability_id, str) or capability_id not in (capability_ids or set()))
+        or isinstance(capability_confidence, bool) or not isinstance(capability_confidence, (int, float))
+        or not math.isfinite(capability_confidence) or not 0 <= capability_confidence <= 1
+        or (capability_id is None and capability_confidence != 0)):
+        return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
+                              catalog_version_value=catalog_version_value,
+                              latency_ms=latency_ms, decision_id=decision_id)
+    if capability_confidence < threshold:
+        capability_id, capability_confidence = None, 0.0
     skill_id = output.get("skill_id")
     agent_id = output.get("agent_id")
     if skill_id is not None and (not isinstance(skill_id, str) or skill_id not in skill_ids):
@@ -284,16 +304,18 @@ def _validate_output(
         return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
                               catalog_version_value=catalog_version_value,
                               latency_ms=latency_ms, decision_id=decision_id)
-    if (skill_id or agent_id) and reason != "MATCHED":
+    if (skill_id or agent_id or capability_id) and reason != "MATCHED":
         return _null_decision(reason="INVALID_OUTPUT", policy_version=policy_version,
                               catalog_version_value=catalog_version_value,
                               latency_ms=latency_ms, decision_id=decision_id)
-    if not skill_id and not agent_id and reason == "MATCHED":
+    if not skill_id and not agent_id and not capability_id and reason == "MATCHED":
         reason = "LOW_CONFIDENCE"
     return RouteDecision(
         decision_id=decision_id,
         skill_id=skill_id,
         agent_id=agent_id,
+        capability_id=capability_id,
+        capability_confidence=round(capability_confidence, 6),
         skill_confidence=round(skill_confidence, 6),
         agent_confidence=round(agent_confidence, 6),
         reason_code=reason,
@@ -311,6 +333,7 @@ def select_route(
     policy_version: str,
     skill_candidates: Iterable[dict[str, Any]],
     agent_candidates: Iterable[dict[str, Any]],
+    capability_candidates: Iterable[dict[str, Any]] = (),
     tenant_scope: str = "",
     principal_scope: str = "",
     provider: Callable[[dict[str, Any], float], dict[str, Any]] | None = None,
@@ -321,7 +344,10 @@ def select_route(
     try:
         skills = [compact_card(item) for item in skill_candidates]
         agents = [compact_card(item) for item in agent_candidates]
-        ids = [card["id"] for card in skills + agents]
+        capabilities = [compact_card(item) for item in capability_candidates]
+        if any(c["kind"] != kind for kind, group in (("skill", skills), ("agent", agents), ("capability", capabilities)) for c in group):
+            raise ValueError("candidate_kind_mismatch")
+        ids = [card["id"] for card in skills + agents + capabilities]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate_candidate_id")
     except (TypeError, ValueError):
@@ -331,7 +357,7 @@ def select_route(
             catalog_version_value="invalid-catalog",
             decision_id=decision_id,
         )
-    cards = skills + agents
+    cards = skills + agents + capabilities
     version = catalog_version(cards)
     payload = {
         "request": str(request_text or "")[:12000],
@@ -341,6 +367,8 @@ def select_route(
         "skill_candidates": skills,
         "agent_candidates": agents,
     }
+    if capabilities:
+        payload["capability_candidates"] = capabilities
     digest = hashlib.sha256(json.dumps({
         "tenant": tenant_scope,
         "principal": principal_scope,
@@ -384,6 +412,7 @@ def select_route(
             output,
             skill_ids={card["id"] for card in skills},
             agent_ids={card["id"] for card in agents},
+            capability_ids={card["id"] for card in capabilities},
             threshold=min(1.0, max(0.0, threshold)),
             policy_version=policy_version,
             catalog_version_value=version,

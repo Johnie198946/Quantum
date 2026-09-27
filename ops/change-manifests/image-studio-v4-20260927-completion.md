@@ -146,6 +146,13 @@ tests/test_image_studio.py
 - 版本由 1.0.3(74) 调整为 1.0.3(75)，仅改 `ios/project.yml` 与生成工程中的两个构建号。
 - 同步后后端相关测试加新主线出版测试：102 passed，6 个既有弃用警告；PCM manual/matrix `--check`、`git diff --check` 通过。
 - 同步后 `origin/main` 又增加 JEV/PCM 路由提交 `ecf5fd4881a157c6943ce7915db641f6d4dd58cc`；涉及 capability_catalog、Hermes/knowledge 和 PCM 合同，需要集成并复测，禁止覆盖推送。
-- TestFlight 归档：Build75 签名归档正在运行，尚无完成回执；此时不得称已上传。
+- TestFlight 归档已完成并签名校验通过；此时尚未上传。
 - 生产服务器：对 `root@120.79.216.160` 的一次只读查询使用 `ai_lab_deploy_ed25519_20260912b` 失败（publickey）；自动审批明确拒绝随后轮询多个本地密钥，理由是未经授权的凭据探测，不进行替代重试。部署所需的回滚点与服务器当前SHA尚未取得。
 - 当前状态仍 TESTED；commit、remote_sha、server_after、TestFlight 回执均未产生。
+
+## Build 75 候选复核（合并后）
+
+- 本任务源码提交 `1d344f88`；合并最新 JEV/PCM 路由 `ecf5fd4881a157c6943ce7915db641f6d4dd58cc` 已自动合并，三个交叉文件检查保留了媒体 PCM 注册与请求范围内的路由投影。
+- 联合后端/PCM/JEV/出版测试：168 passed、6 个既有弃用警告；`media.save_edit` 与 `media.process` 仍在 PCM 中。
+- Build 75 归档：`/private/tmp/Quantumn-1.0.3-75-image-studio.xcarchive`，`ARCHIVE SUCCEEDED`；`codesign --verify --deep --strict` 通过；Info.plist 为 1.0.3(75)、最低 iOS 17。JEV 合并不改 iOS 源码，归档对应本任务 iOS Build75 文件。
+- 当前尚未 push/deploy/upload；接下来只按经核验的远端 main 快进交付，不使用 force push。

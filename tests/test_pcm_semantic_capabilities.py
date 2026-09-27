@@ -83,7 +83,7 @@ def test_formal_skill_cards_preserve_governed_boundaries_and_candidate_budget(mo
     assert "selected = scored[:top_k]" in resident_source
 
 
-def test_resident_jev_shortlist_is_five_cards_total_across_both_kinds(monkeypatch):
+def test_resident_jev_shortlist_is_five_unique_cards_across_three_kinds(monkeypatch):
     import numpy as np
 
     router = _load_router()
@@ -98,7 +98,8 @@ def test_resident_jev_shortlist_is_five_cards_total_across_both_kinds(monkeypatc
         {"id": f"agency:a{i}", "kind": "agent", "description": f"agent {i}"}
         for i in range(6)
     ]
-    cards = skills + agents
+    capabilities = [{"id": "workflow.create", "kind": "capability", "use_when": ["plan a trip"]}]
+    cards = capabilities + skills + agents + capabilities
     monkeypatch.setattr(resident, "_READY", True)
     monkeypatch.setattr(resident, "_CARD_IDS", [card["id"] for card in cards])
     monkeypatch.setattr(
@@ -114,13 +115,15 @@ def test_resident_jev_shortlist_is_five_cards_total_across_both_kinds(monkeypatc
     monkeypatch.setattr(resident, "_encode", lambda _texts: np.asarray([[1.0, 0.0]]))
     monkeypatch.setattr(resident, "_integer", lambda _name, default: default)
 
-    shortlisted_skills, shortlisted_agents, _, _ = resident._shortlist({
+    shortlisted_skills, shortlisted_agents, _, _, shortlisted_capabilities, _ = resident._shortlist({
         "request": "route this once",
         "skill_candidates": skills,
         "agent_candidates": agents,
+        "capability_candidates": capabilities,
     })
 
-    assert len(shortlisted_skills) + len(shortlisted_agents) == 5
+    assert len(shortlisted_skills) + len(shortlisted_agents) + len(shortlisted_capabilities) == 5
+    assert shortlisted_capabilities == capabilities
 
 
 def test_prefixed_qcp_skill_scope_reaches_the_single_jev_decision(monkeypatch):
@@ -385,3 +388,44 @@ def test_bridge_has_no_legacy_natural_language_capability_classifiers():
         "_skill_management_decision",
     ):
         assert legacy_name not in production
+
+
+def test_pcm_selection_uses_native_tool_and_requires_gateway_evidence(monkeypatch):
+    from backend.services.capability_catalog import routing_capability_cards
+    from backend.services.capability_projection import (
+        set_runtime_routing_scope, reset_runtime_routing_scope,
+        selected_capability_error, record_capability_result,
+    )
+    router = _load_router()
+    card = routing_capability_cards({'workflow.create'})[0]
+    monkeypatch.setattr(router, '_skill_capabilities', lambda: [])
+    monkeypatch.setattr(router, '_agency_capabilities', lambda: [])
+    decisions = []
+    token = set_runtime_routing_scope({'capability_candidates': [card], 'emit_decision': decisions.append})
+    def select(query, **kwargs):
+        assert kwargs['capability_candidates'] == [card]
+        assert kwargs['task_state']['recent_messages'][0]['content'] == '鹿儿岛七天公共交通'
+        return SimpleNamespace(capability_id='workflow.create', skill_id=None,
+            agent_id=None, reason='MATCHED', decision_id='pcm-test',
+            catalog_version='pcm', policy_version='v1', latency_ms=1, cache_hit=False,
+            as_dict=lambda: {'capability_id': 'workflow.create', 'validated': True})
+    monkeypatch.setattr(router, 'select_route', select)
+    try:
+        plan = router._jev_routing_context('把以上做成攻略', state={},
+            task_state={'recent_messages': [{'role': 'user', 'content': '鹿儿岛七天公共交通'}]},
+            policy_version='v1')
+        assert 'app_workflow_create' in plan and len(decisions) == 1
+        assert selected_capability_error({}) == 'selected_capability_not_invoked'
+        record_capability_result('notes.list', {'status': 'completed'})
+        assert selected_capability_error({}) == 'selected_capability_not_invoked'
+        record_capability_result('workflow.create', {'error': 'denied'})
+        assert selected_capability_error({}) == 'selected_capability_failed'
+        from contextvars import copy_context
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(copy_context().run, record_capability_result,
+                        'workflow.create', {'status': 'awaiting_confirmation'}).result()
+        assert selected_capability_error({}) is None
+    finally:
+        clear_runtime_capability_selection()
+        reset_runtime_routing_scope(token)

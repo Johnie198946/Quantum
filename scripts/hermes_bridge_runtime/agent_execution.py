@@ -872,6 +872,20 @@ def _run_agent_sync(
         # 进程内 agent 会话映射（P0 断点恢复关键）：agent 可能自动创建新 session
         # （hermes_sid=None 首请求）。显式迁移/灾备快照必须先进入 Hermes
         # SessionDB，再建立映射；正常空能力信封不会写入任何客户端历史。
+        # Project only tools actually exposed on this request, after client filtering.
+        from backend.services.capability_catalog import load_catalog, routing_capability_cards
+        from backend.services.capability_projection import get_runtime_routing_scope
+
+        scope = get_runtime_routing_scope()
+        exposed = {item["function"]["name"] for item in (getattr(agent, "tools", None) or [])}
+        scope["capability_candidates"] = routing_capability_cards({
+            item["id"] for item in load_catalog()["capabilities"]
+            if qcp_enabled and _knowledge._app_capability_native_tool_name(item["id"]) in exposed
+        })
+        scope["emit_decision"] = lambda decision: _receipts._qput(stream_q, {
+            "type": "capability_decision", **decision,
+        })
+        set_runtime_routing_scope(scope)
         agent_sid = getattr(agent, "session_id", None) or hermes_sid
         if (agent_config or {}).get("knowledge_stage_only") is True:
             if not hermes_sid or getattr(agent, "session_id", None) != hermes_sid:
@@ -995,6 +1009,13 @@ def _run_agent_sync(
             client_tool_context if isinstance(client_tool_context, dict) else {},
         ):
             raise RuntimeError("requirements_clarification_protocol_missing")
+        from backend.services.capability_projection import selected_capability_error
+
+        capability_error = selected_capability_error(
+            client_tool_context if isinstance(client_tool_context, dict) else {},
+        )
+        if capability_error:
+            raise RuntimeError(capability_error)
         personal_knowledge_action = bool(
             selection.get("validated") is True
             and selection.get("skill_id") == "personal-knowledge-action"

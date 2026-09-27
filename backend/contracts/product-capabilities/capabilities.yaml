@@ -21,7 +21,7 @@ capabilities:
     version: 1.2.0
     domain: knowledge
     description: Search the authenticated user's notes; mode=organize checks all active cloud notes for duplicate bodies, shared paragraphs, same titles and explicit references. Page through next_offset; mode=catalog with include_content=true pages complete note bodies for Hermes semantic review in fewer calls. Follow next_offset until null; classify only bodies actually read. Organization also recalls lexical rewrites and containment as unverified candidates.
-    positive_examples: ["Find my notes about IPD", "检查我的重复笔记", "整理所有笔记，找出局部重复和引用关系"]
+    positive_examples: ["查找我的笔记，按主题检索已有笔记", "Find my notes about IPD", "检查我的重复笔记", "整理所有笔记，找出局部重复和引用关系"]
     negative_examples: ["Search the public web"]
     input_schema: {type: object, properties: {query: {type: string, minLength: 1}, mode: {type: string, enum: [search, organize, catalog]}, offset: {type: integer, minimum: 0}, limit: {type: integer, minimum: 1, maximum: 100}, include_archived: {type: boolean}, include_content: {type: boolean, description: "Return full owner-authorized bodies for semantic review; pages obey a soft 48000-character budget. Follow next_offset. Never treat snippets as complete bodies."}}, required: [query], additionalProperties: false}
     output_schema: {type: object, required: [items]}
@@ -63,7 +63,7 @@ capabilities:
     version: 1.0.0
     domain: knowledge
     description: Create a stable personal Markdown note after confirmation.
-    positive_examples: ["Save this as a note"]
+    positive_examples: ["Save this as a note", "把这篇文章保存成我的笔记"]
     negative_examples: ["Draft text without saving"]
     input_schema: {type: object, properties: {markdown: {type: string, minLength: 1, description: 'Complete note body. Supports Markdown images, fenced code, > [!NOTE] callouts, > [!abstract] cards, and fenced chart JSON with title/type/points(label,value)/summary. Use only actual user data; never invent image paths.'}, title: {type: string, minLength: 1, maxLength: 200}, tags: {type: array, items: {type: string}, maxItems: 64}, layout: {type: string, enum: [standard, travel]}, automatic_illustrations: {type: boolean}}, required: [markdown], additionalProperties: false}
     output_schema: {type: object, required: [note_id, content_hash]}
@@ -241,8 +241,8 @@ capabilities:
   - id: workflow.create
     version: 1.0.0
     domain: workflow
-    description: Create a real workflow draft through the existing workflow handler.
-    positive_examples: ["Create a market research workflow", "规划一次小众温泉旅行，安排每日交通、住宿和摄影"]
+    description: Plan and produce a multi-step deliverable as a persistent workflow, including travel itineraries and designed travel notebooks with transport, maps, dining and photography. Continue accumulated chat requirements into a workflow draft.
+    positive_examples: ["Create a market research workflow", "规划一次小众温泉旅行，安排每日交通、住宿和摄影", "结合前面讨论的旅行要求，做成完整攻略和旅行笔记"]
     negative_examples: ["Start an unapproved plan", "日本温泉是什么"]
     input_schema: {type: object, properties: {source_image_id: {type: string, pattern: "^(ga|doc)_[a-f0-9]{32}$"}, title: {type: string, minLength: 1, maxLength: 160}, description: {type: string, minLength: 3, maxLength: 12000}, desired_output: {type: string, minLength: 1, maxLength: 300}, source_document_id: {type: string, minLength: 8, maxLength: 48}, output_kind: {type: string, enum: [general, presentation, document, html, travel, image]}, source_client_session_id: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$'}}, required: [title, description], additionalProperties: false}
     output_schema: {type: object, required: [workflow]}

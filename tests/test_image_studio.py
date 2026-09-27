@@ -52,7 +52,8 @@ async def test_manual_save_owner_contract_and_idempotency(tmp_path, monkeypatch)
     {"filter":"not-installed"},{"subject_x":-1},
 ])
 def test_strict_recipe_boundaries(recipe):
-    with pytest.raises(ValidationError): ImageEdit(studio=recipe)
+    with pytest.raises(ValidationError):
+        ImageEdit(studio=recipe)
 
 
 def test_dimensions_and_pcm_exposure():
@@ -80,9 +81,12 @@ def test_concurrent_save_publishes_one_immutable_artifact(tmp_path,monkeypatch):
 def test_pcm_studio_schema_matches_validated_domain_model():
     schema = ImageEdit.model_json_schema()
     def expanded(v):
-        if isinstance(v,list): return [expanded(x) for x in v]
-        if not isinstance(v,dict): return v
-        if "$ref" in v: return expanded(schema["$defs"][v["$ref"].split("/")[-1]])
+        if isinstance(v,list):
+            return [expanded(x) for x in v]
+        if not isinstance(v,dict):
+            return v
+        if "$ref" in v:
+            return expanded(schema["$defs"][v["$ref"].split("/")[-1]])
         return {k:expanded(x) for k,x in v.items() if k not in {"title","$defs"}}
     expected = expanded(schema)
     assert describe_capability("media.process")["input_schema"]["properties"]["studio"] == expected["properties"]["studio"]
@@ -91,20 +95,25 @@ def test_pcm_studio_schema_matches_validated_domain_model():
 
 @pytest.mark.asyncio
 async def test_chat_bridge_can_save_real_uploaded_pixels(tmp_path,monkeypatch):
-    import asyncio,json
+    import asyncio
+    import json
     import scripts.hermes_bridge as bridge
     monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT",str(tmp_path))
     original = save_image("bridge-studio","alice",picture())
     actor = {"tenant_key":"bridge-studio","user_id":"alice"}
     data = {"source_artifact_id":original["artifact_id"],"source_hash":original["content_hash"],"result_artifact_id":original["artifact_id"],"filename":"copy.png","edit":{"format":"png","studio":{}}}
-    old_loop = bridge._bridge_async_loop;bridge._bridge_async_loop = asyncio.get_running_loop()
+    old_loop = bridge._bridge_async_loop
+    bridge._bridge_async_loop = asyncio.get_running_loop()
     def invoke():
         bridge._client_context_tool_context.value = {"identity":actor,"request_id":"image-studio-bridge-save"}
-        try: return json.loads(bridge._app_capability_invoke_tool({"capability_id":"media.save_edit","input":data}))
-        finally: bridge._client_context_tool_context.value = None
+        try:
+            return json.loads(bridge._app_capability_invoke_tool({"capability_id":"media.save_edit","input":data}))
+        finally:
+            bridge._client_context_tool_context.value = None
     try:
         result = await asyncio.to_thread(invoke)
         assert result["status"] == "completed",result
         assert result["events"][0]["renderer"] == "image_card"
         assert await asyncio.to_thread(invoke) == result
-    finally: bridge._bridge_async_loop = old_loop
+    finally:
+        bridge._bridge_async_loop = old_loop

@@ -1,0 +1,343 @@
+{
+  "date": "2026-09-28",
+  "scope": "synthetic classification only; no product execution or production data",
+  "provider": {
+    "provider": "openai-codex",
+    "model": "gpt-6-luna",
+    "api_mode": "codex_responses"
+  },
+  "catalog": {
+    "capabilities": 92,
+    "skills": 307,
+    "agents": 273
+  },
+  "results": [
+    {
+      "request": "规划七天旅行，公共交通，看海、火山、森林和温泉，最终做成旅行笔记",
+      "expected": "workflow.create",
+      "decision_id": "route_3ad7a70cc593499cb844054466e35ffa",
+      "skill_id": "skill:maps",
+      "agent_id": null,
+      "skill_confidence": 0.94,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 2490.921,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "workflow.create",
+      "capability_confidence": 0.98,
+      "passed": true
+    },
+    {
+      "request": "把以上做成攻略",
+      "expected": "workflow.create",
+      "decision_id": "route_f30cdd86cf574772b6b24c187db7320e",
+      "skill_id": "skill:maps",
+      "agent_id": null,
+      "skill_confidence": 0.95,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 3179.809,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "workflow.create",
+      "capability_confidence": 0.97,
+      "passed": true
+    },
+    {
+      "request": "查找我的项目管理笔记",
+      "expected": "knowledge.note.search",
+      "decision_id": "route_6f0ce60ed68b492da17adef9f9ca47bd",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 2645.282,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "knowledge.note.search",
+      "capability_confidence": 0.99,
+      "passed": true
+    },
+    {
+      "request": "把这篇文章保存成我的笔记",
+      "expected": "knowledge.note.create",
+      "decision_id": "route_9f7dff4c292241799d6d2631db878add",
+      "skill_id": "skill:evidence-first-article-ingestion",
+      "agent_id": null,
+      "skill_confidence": 0.86,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 7801.069,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "knowledge.note.create",
+      "capability_confidence": 0.99,
+      "passed": true
+    },
+    {
+      "request": "你好",
+      "expected": null,
+      "decision_id": "route_93c8905d52f240269fab6d19791232ef",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "NO_MATCH",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 11.811,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": null,
+      "capability_confidence": 0.0,
+      "passed": true
+    },
+    {
+      "request": "火山是怎样形成的",
+      "expected": null,
+      "decision_id": "route_ffa1eb12e1bb449189da2bbd500c3243",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "NO_MATCH",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 5.607,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": null,
+      "capability_confidence": 0.0,
+      "passed": true
+    }
+  ],
+  "raw_log": [
+    {
+      "capabilities": 92,
+      "skills": 307,
+      "agents": 273
+    },
+    {
+      "enabled": true,
+      "provider": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "api_mode": "codex_responses"
+      }
+    },
+    {
+      "raw_decision": {
+        "skill_id": null,
+        "agent_id": null,
+        "skill_confidence": 0,
+        "agent_confidence": 0,
+        "reason_code": "NO_MATCH"
+      },
+      "request": "warm resident selector; select nothing",
+      "candidates": []
+    },
+    {
+      "ready": true,
+      "error": ""
+    },
+    {
+      "raw_decision": {
+        "skill_id": "skill:maps",
+        "agent_id": null,
+        "skill_confidence": 0.94,
+        "agent_confidence": 0,
+        "reason_code": "MATCHED",
+        "capability_id": "workflow.create",
+        "capability_confidence": 0.98
+      },
+      "request": "规划七天旅行，公共交通，看海、火山、森林和温泉，最终做成旅行笔记",
+      "candidates": [
+        "skill:weekly-review-planning",
+        "skill:maps",
+        "knowledge.navigation",
+        "workflow.create",
+        "presentation.create_from_text"
+      ]
+    },
+    {
+      "request": "规划七天旅行，公共交通，看海、火山、森林和温泉，最终做成旅行笔记",
+      "expected": "workflow.create",
+      "decision_id": "route_3ad7a70cc593499cb844054466e35ffa",
+      "skill_id": "skill:maps",
+      "agent_id": null,
+      "skill_confidence": 0.94,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 2490.921,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "workflow.create",
+      "capability_confidence": 0.98,
+      "passed": true
+    },
+    {
+      "raw_decision": {
+        "skill_id": "skill:maps",
+        "agent_id": null,
+        "skill_confidence": 0.95,
+        "agent_confidence": 0,
+        "reason_code": "MATCHED",
+        "capability_id": "workflow.create",
+        "capability_confidence": 0.97
+      },
+      "request": "把以上做成攻略",
+      "candidates": [
+        "skill:maps",
+        "skill:weekly-review-planning",
+        "agency:geographer",
+        "workflow.create",
+        "knowledge.navigation"
+      ]
+    },
+    {
+      "request": "把以上做成攻略",
+      "expected": "workflow.create",
+      "decision_id": "route_f30cdd86cf574772b6b24c187db7320e",
+      "skill_id": "skill:maps",
+      "agent_id": null,
+      "skill_confidence": 0.95,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 3179.809,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "workflow.create",
+      "capability_confidence": 0.97,
+      "passed": true
+    },
+    {
+      "raw_decision": {
+        "skill_id": null,
+        "agent_id": null,
+        "skill_confidence": 0,
+        "agent_confidence": 0,
+        "reason_code": "MATCHED",
+        "capability_id": "knowledge.note.search",
+        "capability_confidence": 0.99
+      },
+      "request": "查找我的项目管理笔记",
+      "candidates": [
+        "skill:document-to-action-items",
+        "agency:meeting-notes-specialist",
+        "knowledge.note.archive",
+        "knowledge.note.search",
+        "project.list"
+      ]
+    },
+    {
+      "request": "查找我的项目管理笔记",
+      "expected": "knowledge.note.search",
+      "decision_id": "route_6f0ce60ed68b492da17adef9f9ca47bd",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 2645.282,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "knowledge.note.search",
+      "capability_confidence": 0.99,
+      "passed": true
+    },
+    {
+      "raw_decision": {
+        "skill_id": "skill:evidence-first-article-ingestion",
+        "agent_id": null,
+        "skill_confidence": 0.86,
+        "agent_confidence": 0,
+        "reason_code": "MATCHED",
+        "capability_id": "knowledge.note.create",
+        "capability_confidence": 0.99
+      },
+      "request": "把这篇文章保存成我的笔记",
+      "candidates": [
+        "skill:evidence-first-article-ingestion",
+        "knowledge.note.create",
+        "knowledge.note.archive",
+        "knowledge.note.illustration.cancel",
+        "knowledge.note.search"
+      ]
+    },
+    {
+      "request": "把这篇文章保存成我的笔记",
+      "expected": "knowledge.note.create",
+      "decision_id": "route_9f7dff4c292241799d6d2631db878add",
+      "skill_id": "skill:evidence-first-article-ingestion",
+      "agent_id": null,
+      "skill_confidence": 0.86,
+      "agent_confidence": 0.0,
+      "reason_code": "MATCHED",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 7801.069,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": "knowledge.note.create",
+      "capability_confidence": 0.99,
+      "passed": true
+    },
+    {
+      "request": "你好",
+      "expected": null,
+      "decision_id": "route_93c8905d52f240269fab6d19791232ef",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "NO_MATCH",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 11.811,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": null,
+      "capability_confidence": 0.0,
+      "passed": true
+    },
+    {
+      "request": "火山是怎样形成的",
+      "expected": null,
+      "decision_id": "route_ffa1eb12e1bb449189da2bbd500c3243",
+      "skill_id": null,
+      "agent_id": null,
+      "skill_confidence": 0.0,
+      "agent_confidence": 0.0,
+      "reason_code": "NO_MATCH",
+      "policy_version": "pcm-live-validation-20260928",
+      "catalog_version": "sha256:091a9408102269bacd1798c9f1307bd39672b61e0c4061de419a7f98172508a9",
+      "latency_ms": 5.607,
+      "validated": true,
+      "cache_hit": false,
+      "capability_id": null,
+      "capability_confidence": 0.0,
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "Four positive examples invoke real model; two negative examples abstain locally.",
+    "Earlier attempts encountered test-path shadowing, missing proxy loading, timeout and semantic misses. Final metadata and follow-up prompt corrected observed semantic misses.",
+    "Six cases are not comprehensive accuracy measurement; no client end-to-end or deployment."
+  ]
+}
