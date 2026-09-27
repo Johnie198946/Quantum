@@ -2,6 +2,7 @@ import XCTest
 import SwiftUI
 import SQLite3
 import Combine
+import Vision
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -1481,6 +1482,46 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         }
         XCTAssertNil(owner)
         XCTAssertNil(PublicationReaderImage.cacheAPI)
+    }
+
+    @MainActor
+    func testBookTitleRemainsVisibleWithLoadedCover() throws {
+        for (name, width, background) in [
+            ("light", CGFloat(180), UIColor.white),
+            ("dark", CGFloat(180), UIColor.black),
+            ("compact", CGFloat(84), UIColor.black),
+            ("long-title", CGFloat(180), UIColor.black),
+            ("placeholder", CGFloat(180), UIColor.clear)
+        ] {
+            let cover = UIGraphicsImageRenderer(size: CGSize(width: 90, height: 160)).image { context in
+                background.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 90, height: 160))
+            }
+            let renderer = ImageRenderer(content: IllustratedBookCover(
+                title: name == "long-title" ? "AI 给了你一份有来源的答案，先用本地证据门验一次" : "VISIBLE BOOK TITLE",
+                author: "Quantumn", theme: nil,
+                seed: "title-regression", width: width,
+                image: name == "placeholder" ? nil : cover
+            ))
+            renderer.scale = 3
+            let rendered = try XCTUnwrap(renderer.uiImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = name == "long-title" ? ["zh-Hans", "en-US"] : ["en-US"]
+            try VNImageRequestHandler(cgImage: XCTUnwrap(rendered.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ").uppercased()
+            if name == "long-title" {
+                XCTAssertTrue(text.contains("来源"), "Long Chinese title must remain visible: \(text)")
+            } else {
+                XCTAssertTrue(text.contains("VISIBLE"), "\(name): visible title missing: \(text)")
+                XCTAssertTrue(text.contains("TITLE"), "\(name): title clipped: \(text)")
+            }
+            let attachment = XCTAttachment(image: rendered)
+            attachment.name = "book-title-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
     }
 
     @MainActor
