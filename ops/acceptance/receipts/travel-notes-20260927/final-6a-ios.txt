@@ -1,0 +1,437 @@
+Candidate: 6a935b01b17fd4355152aead7aa0ba02283672eb
+Original log: /tmp/travel-final-6a-ios.log
+SHA256: 4bbe0da04f8e82c7b370006622a31cfa0700fde1572fa5ab98488aa7bd8af28c
+Result: /tmp/travel-final-6a-ios.xcresult
+
+Test Suite 'Selected tests' started at 2026-09-27 19:28:35.328.
+Test Suite 'AIPlatformAppTests.xctest' started at 2026-09-27 19:28:35.328.
+Test Suite 'ImageProposalContractTests' started at 2026-09-27 19:28:35.328.
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testDocumentImagePersistsOneSharedSourceWithoutPhotoBytes]' started.
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testDocumentImagePersistsOneSharedSourceWithoutPhotoBytes]' passed (0.015 seconds).
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testImageParametersSurviveHistoryWithoutGuessingDefaults]' started.
+Test Case '-[AIPlatformAppTests.ImageProposalContractTests testImageParametersSurviveHistoryWithoutGuessingDefaults]' passed (0.029 seconds).
+Test Suite 'ImageProposalContractTests' passed at 2026-09-27 19:28:35.373.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.043 (0.044) seconds
+Test Suite 'WorkflowLifecycleDTOTests' started at 2026-09-27 19:28:35.373.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAcceptanceFailureRetainsInMemoryCredentialAndReplayIsBounded]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAcceptanceFailureRetainsInMemoryCredentialAndReplayIsBounded]' passed (0.017 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore]' started.
+2026-09-27 19:28:35.427034+0800 AIPlatformApp[44002:22051520] [General] Failed to send CA Event for app launch measurements for ca_event_type: 1 event_name: com.apple.app_launch_measurement.ExtendedLaunchMetrics
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountSwitchAfterFirstBusyTimeoutRetriesOriginalStore]' passed (0.232 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountTransitionsRetainQueuedWritesUntilDurable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAccountTransitionsRetainQueuedWritesUntilDurable]' passed (0.128 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testActivePlanningActivityDecodesStructuredPluginStep]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testActivePlanningActivityDecodesStructuredPluginStep]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentBuildResponseDecodesCompositionAndDelegationPolicy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentBuildResponseDecodesCompositionAndDelegationPolicy]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentRouteSSEEventDecodesProvenance]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAgentRouteSSEEventDecodesProvenance]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnnotatedReadingTextFillsAvailableWidth]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnnotatedReadingTextFillsAvailableWidth]' passed (0.081 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerBlocksPersistAcrossHistoryRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerBlocksPersistAcrossHistoryRoundTrip]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerPageStreamEventParsesBoundedProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAnswerPageStreamEventParsesBoundedProjection]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' started.
+2026-09-27 19:28:35.872019+0800 AIPlatformApp[44002:22051218] Unbalanced calls to begin/end appearance transitions for <_TtGC7SwiftUI19UIHostingControllerGVS_15ModifiedContentGVS_6HStackGVS_9TupleViewTGS1_VS_9RectangleVS_12_FrameLayout_GS1_V13AIPlatformApp21SelectableReadingTextVS_16_FlexFrameLayout_GS1_VS_5ImageS5_____S5___: 0x1068fb000>.
+2026-09-27 19:28:36.132092+0800 AIPlatformApp[44002:22051762] [connection] nw_connection_copy_protocol_metadata_internal_block_invoke [C2] Client called nw_connection_copy_protocol_metadata_internal on unconnected nw_connection
+2026-09-27 19:28:36.132146+0800 AIPlatformApp[44002:22051762] [connection] nw_connection_copy_protocol_metadata_internal_block_invoke [C2] Client called nw_connection_copy_protocol_metadata_internal on unconnected nw_connection
+2026-09-27 19:28:36.132174+0800 AIPlatformApp[44002:22051762] [connection] nw_connection_copy_connected_local_endpoint_block_invoke [C2] Client called nw_connection_copy_connected_local_endpoint on unconnected nw_connection
+2026-09-27 19:28:36.132199+0800 AIPlatformApp[44002:22051762] [connection] nw_connection_copy_connected_remote_endpoint_block_invoke [C2] Client called nw_connection_copy_connected_remote_endpoint on unconnected nw_connection
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAttachmentOCRReadsImageWithoutModelCall]' passed (0.717 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAuthentication401PreservesBackendReason]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAuthentication401PreservesBackendReason]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testAutomaticDurableRecoverySurvivesOutageAndCompletesSameRunWithoutRegeneration]' passed (0.021 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBlankPDFDoesNotCreateFakeOCRContext]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBlankPDFDoesNotCreateFakeOCRContext]' passed (0.215 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookTitleRemainsVisibleWithLoadedCover]' started.
+IOSurfaceClientSetSurfaceNotify failed e00002c7
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookTitleRemainsVisibleWithLoadedCover]' passed (3.342 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookWritesMatchBackendWireContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testBookWritesMatchBackendWireContract]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testByteLimitedAnswerPagesCanExceedBlockLimitCeiling]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testByteLimitedAnswerPagesCanExceedBlockLimitCeiling]' passed (0.017 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCancellingPublicAuthCapabilitiesRemainsCancellation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCancellingPublicAuthCapabilitiesRemainsCancellation]' passed (0.025 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCapabilityRetryCreatesFreshProposalOnlyForStaleAuthority]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionConsumesTextExactlyOnce]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionConsumesTextExactlyOnce]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionKeepsWhitespaceOnlyDraftUnsent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatDraftSubmissionKeepsWhitespaceOnlyDraftUnsent]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreLeavesInvalidLegacyFileRecoverable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreLeavesInvalidLegacyFileRecoverable]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreMigratesLegacyJSONAndKeepsBackup]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreMigratesLegacyJSONAndKeepsBackup]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStorePagesOneThousandMessagesWithinBudgets]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStorePagesOneThousandMessagesWithinBudgets]' passed (0.036 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreRollsBackFailedSessionMigration]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreRollsBackFailedSessionMigration]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreSerializesConcurrentTransactionsAndStatusBackfill]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatHistoryStoreSerializesConcurrentTransactionsAndStatusBackfill]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatPrewarmRequestUsesServerSessionContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatPrewarmRequestUsesServerSessionContract]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesClientSessionContextWithoutTenantClaims]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesClientSessionContextWithoutTenantClaims]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesCurrentServerBookSectionScope]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesCurrentServerBookSectionScope]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesExplicitLocalOnlyNoteScope]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatRequestEncodesExplicitLocalOnlyNoteScope]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStatusDecodesRecoverableClarifyMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStatusDecodesRecoverableClarifyMetadata]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStreamRelayoutsAfterSendingBelowExtraTallMessage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testChatStreamRelayoutsAfterSendingBelowExtraTallMessage]' passed (0.263 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationAlwaysKeepsCustomAnswerAlongsideChoice]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationSelectionSurvivesReconstructionWithoutSelectingChangedChoice]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarificationSelectionSurvivesReconstructionWithoutSelectingChangedChoice]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarifyStateSurvivesSessionPersistenceRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClarifyStateSurvivesSessionPersistenceRoundTrip]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupConfirmationRecoversConsumedTokenFromExistingReceipt]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupConfirmationRecoversConsumedTokenFromExistingReceipt]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearAndDeleteIgnoreOlderPersistenceCompletions]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearAndDeleteIgnoreOlderPersistenceCompletions]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesAfterAccountRoundTrip]' passed (0.388 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testClearBarrierDiscardsExhaustedWritesInsteadOfResurrectingPrivateMessages]' passed (0.382 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCloudKnowledgeSnapshotDecodesForReinstallRestore]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCloudKnowledgeSnapshotDecodesForReinstallRestore]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedLongAnswerUsesBoundedSemanticPreview]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedLongAnswerUsesBoundedSemanticPreview]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedRecoveryPreservesOriginalMessageAndAnswerPageMetadata]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedWhileAwayUpdatesOriginalStoredMessage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCompletedWhileAwayUpdatesOriginalStoredMessage]' passed (0.034 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testComponentAssetLibraryUsesExistingBookAndNoteMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testComponentAssetLibraryUsesExistingBookAndNoteMetadata]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCoordinatorReplacesVisibleHistoryPages]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCoordinatorReplacesVisibleHistoryPages]' passed (0.015 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCreateDraftResponseDecodesClarificationSession]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testCreateDraftResponseDecodesClarificationSession]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDailyPublicationDTOFieldsDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDailyPublicationDTOFieldsDecode]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDelayedSuccessCannotAcknowledgeReplacementAccount]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDelayedSuccessCannotAcknowledgeReplacementAccount]' passed (0.025 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDeveloperCredentialsBypassUnavailableSmsChannel]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDeveloperCredentialsBypassUnavailableSmsChannel]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentCapabilityProposalAndRendererRouteDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentCapabilityProposalAndRendererRouteDecode]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentContributionStatusMapsToVisibleTransferState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDocumentContributionStatusMapsToVisibleTransferState]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunCursorPersistsAcrossColdStart]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunCursorPersistsAcrossColdStart]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplayDecodesKnowledgeActionEvent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplayDecodesKnowledgeActionEvent]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplaySnapshotDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testDurableRunReplaySnapshotDecodes]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testExplicitStopAndRealFailureAreNotAutomaticallyResumed]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testExplicitStopAndRealFailureAreNotAutomaticallyResumed]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearAndDeleteRestoreDurableProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearAndDeleteRestoreDurableProjection]' passed (0.516 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearMergesMessagesSentWhileMutationWasBlocked]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFailedClearMergesMessagesSentWhileMutationWasBlocked]' passed (0.460 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFeedbackReceiptSSEEventDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFeedbackReceiptSSEEventDecodes]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerCancellationRetainsLastCommittedPage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerCancellationRetainsLastCommittedPage]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerErrorRetainsPagesAndNextActionResumesFromSavedCursor]' passed (0.110 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRefreshesStaleStreamingCursorAfterCompletion]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRefreshesStaleStreamingCursorAfterCompletion]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRejectsNoProgressAndNonAdvancingCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testFullAnswerRejectsNoProgressAndNonAdvancingCursor]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDecodesNativeProfileContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDecodesNativeProfileContract]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDoesNotPresentRequestCancellationAsFailure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHermesMemoryCenterDoesNotPresentRequestCancellationAsFailure]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testHistoryAutoLoadOnlyTriggersAtVisibleTopBoundary]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInboxImageDownsamplingBoundsDecodedPixels]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInboxImageDownsamplingBoundsDecodedPixels]' passed (0.014 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInFlightDeleteReservationPreventsDuplicatePromotionAndCapacityOverflow]' passed (0.075 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInterruptionKeepsExistingPartialContentAndRunCursor]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testInterruptionKeepsExistingPartialContentAndRunCursor]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeAccessDecodesRuntimeEffectiveKnowledge]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeAccessDecodesRuntimeEffectiveKnowledge]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeActionSSEDecodesAndCapabilityIsNeverPersisted]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeActionSSEDecodesAndCapabilityIsNeverPersisted]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookshelfDecodesReaderMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookshelfDecodesReaderMetadata]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookSubscriptionDecodesBookAndProgress]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeBookSubscriptionDecodesBookAndProgress]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeMergeRequestEncodesOnlyAtomicTransactionContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnowledgeMergeRequestEncodesOnlyAtomicTransactionContract]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnownRunAlwaysUsesDurableRecoveryIdentity]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testKnownRunAlwaysUsesDurableRecoveryIdentity]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLate401CannotClearReplacementCredential]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLate401CannotClearReplacementCredential]' passed (0.022 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossAccountBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossAccountBoundary]' passed (0.026 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossSessionBoundary]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLateDurableCallbackCannotCrossSessionBoundary]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningAnswerProposalPreservesExactInputForRetry]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningAnswerProposalPreservesExactInputForRetry]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningChatEventPersistsReferenceAndHintWithoutDuplicatingExerciseState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningChatEventPersistsReferenceAndHintWithoutDuplicatingExerciseState]' passed (0.141 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningExerciseTypesSelectionAndRichQuestionRendering]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningExerciseTypesSelectionAndRichQuestionRendering]' passed (1.334 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapPreviewCollapsesWhitespaceWithoutChangingStoredText]' passed (0.128 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapUsesStructuredSavedPreview]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningRecapUsesStructuredSavedPreview]' passed (0.064 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningResumeDecodesExactSectionAndTwoPoints]' started.
+2026-09-27 19:28:44.540351+0800 AIPlatformApp[44002:22051218] [Invalid Configuration] Unable to render flattened version of PlatformViewRepresentableAdaptor<Base>.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLearningResumeDecodesExactSectionAndTwoPoints]' passed (0.115 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLeavingDuringCheckpointDoesNotPollOrCancelUnsubmittedRun]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLeavingDuringCheckpointDoesNotPollOrCancelUnsubmittedRun]' passed (0.241 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPersistedMessageWithoutClarifyStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPersistedMessageWithoutClarifyStillDecodes]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPlanWithoutNestedPlanIdStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacyPlanWithoutNestedPlanIdStillDecodes]' passed (0.023 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySelectedBookScopeStillDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySelectedBookScopeStillDecodes]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySessionRecordDefaultsToMainAgent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLegacySessionRecordDefaultsToMainAgent]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLifecycleEventIgnoresPrivateReasoningPayload]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLifecycleEventIgnoresPrivateReasoningPayload]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsHonorExplicitCapabilityResponse]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsHonorExplicitCapabilityResponse]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsRemainFailClosedBeforeCapabilityProbeCompletes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginChannelsRemainFailClosedBeforeCapabilityProbeCompletes]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentErrorsAreBoundedAndDoNotLeakRawResponses]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentErrorsAreBoundedAndDoNotLeakRawResponses]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginConsentPolicyInvalidatesSelectionWhenVersionChanges]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginInputPolicyKeepsOnlyBoundedDigits]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLoginInputPolicyKeepsOnlyBoundedDigits]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerDisclosureKeepsBubbleLayoutBoundedAcrossAccessibilitySizes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerDisclosureKeepsBubbleLayoutBoundedAcrossAccessibilitySizes]' passed (0.036 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSemanticBlocksPreserveMarkdownStructure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSemanticBlocksPreserveMarkdownStructure]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSheetAppendKeepsScrollViewIdentityAndReadingOffset]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongAnswerSheetAppendKeepsScrollViewIdentityAndReadingOffset]' passed (0.074 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongPreviewHandlesExtendedGraphemeClustersWithoutIndexCrash]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongPreviewHandlesExtendedGraphemeClustersWithoutIndexCrash]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongStreamingPolicyBoundsRefreshAndTypewriterUpdates]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLongStreamingPolicyBoundsRefreshAndTypewriterUpdates]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLostPredecessorResponseStillRequiresItsIntendedHash]' started.
+2026-09-27 19:28:45.013553+0800 AIPlatformApp[44002:22051218] Unbalanced calls to begin/end appearance transitions for <_TtGC7SwiftUI19UIHostingControllerV13AIPlatformApp15LongAnswerSheet_: 0x106a52a00>.
+2026-09-27 19:28:45.118180+0800 AIPlatformApp[44002:22051949] [Default] Task <7F48BFE7-C397-4F7D-9B2F-FF7063FAB6F7>.<1> finished with error [-1001] Error Domain=NSURLErrorDomain Code=-1001 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <7F48BFE7-C397-4F7D-9B2F-FF7063FAB6F7>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <7F48BFE7-C397-4F7D-9B2F-FF7063FAB6F7>.<1>}
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testLostPredecessorResponseStillRequiresItsIntendedHash]' passed (0.212 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserKeepsRepeatedBlocksInSourceOrder]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserKeepsRepeatedBlocksInSourceOrder]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserPreservesNumberedLabelsAndRejectsVersionNumbers]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserReusesBoundedMessageCache]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMarkdownParserReusesBoundedMessageCache]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMemoryReceiptEventDecodesForVisibleConfirmation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMemoryReceiptEventDecodesForVisibleConfirmation]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMetadataWriteFailuresDoNotPublishStaleInMemoryProjection]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMetadataWriteFailuresDoNotPublishStaleInMemoryProjection]' passed (0.592 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeChatPresentationUsesTruthfulSingleRunningState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeChatPresentationUsesTruthfulSingleRunningState]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeQuantumnSyntheticScreenshotFixtures]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeQuantumnSyntheticScreenshotFixtures]' passed (0.519 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeReaderShowsWaitingPartialAndCompletedContentStates]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNativeReaderShowsWaitingPartialAndCompletedContentStates]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNestedPlanIdDecodesWithGlobalSnakeCaseStrategy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNestedPlanIdDecodesWithGlobalSnakeCaseStrategy]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingChatDecodesAndDispatchesQCPEvents]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingChatDecodesAndDispatchesQCPEvents]' passed (0.024 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingFeedbackReceiptDecodes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNonStreamingFeedbackReceiptDecodes]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNoteDraftSSEEventDecodesForConfirmation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testNoteDraftSSEEventDecodesForConfirmation]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfficeUploadUsesBoundedLongRequestAndOriginalBytes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfficeUploadUsesBoundedLongRequestAndOriginalBytes]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineTravelChangesMergeOnlyAnUnchangedActionAndPersistReplayIdentity]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineTravelChangesMergeOnlyAnUnchangedActionAndPersistReplayIdentity]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineWorkflowEntryRestoresButNeverBypassesRevocationOrOwner]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOfflineWorkflowEntryRestoresButNeverBypassesRevocationOrOwner]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOrdinaryChatCarriesVersionedAttachmentReferences]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOrdinaryChatCarriesVersionedAttachmentReferences]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOverlappingKnowledgeSavesSerializeAndUsePriorHashCAS]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testOverlappingKnowledgeSavesSerializeAndUsePriorHashCAS]' passed (0.208 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPendingPlaceholderNeverHidesVisiblePartialAnswer]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPendingPlaceholderNeverHidesVisiblePartialAnswer]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersistedInterruptedRunRestoresVisibleToolTimelineAndAutoCompletes]' passed (0.124 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersonalBookListAndUnifiedCatalogWireContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPersonalBookListAndUnifiedCatalogWireContract]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPlannedIllustrationDTOAndEmptyPlan]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPlannedIllustrationDTOAndEmptyPlan]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPresentationProductStepCollapsesInternalPipelineToThreeUserDecisions]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationBodyMediaDecodeAndLegacyDefaults]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationBodyMediaDecodeAndLegacyDefaults]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCacheDoesNotKeepItsCredentialOwnerAlive]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCacheDoesNotKeepItsCredentialOwnerAlive]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCoverAndReaderImagesRenderAuthenticatedFixture]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationCoverAndReaderImagesRenderAuthenticatedFixture]' passed (0.981 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationFormatLabelsDoNotInferFromCompleteness]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationFormatLabelsDoNotInferFromCompleteness]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationImageClearsOnCredentialChangeAndDisappearance]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationImageClearsOnCredentialChangeAndDisappearance]' passed (0.218 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaFailureAndCancellationDoNotReturnImageBytes]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaFailureAndCancellationDoNotReturnImageBytes]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaRejectsUntrustedRoutesBeforeAuthentication]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicationMediaRejectsUntrustedRoutesBeforeAuthentication]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicAuthCapabilitiesSurviveConcurrentProtected401WithoutAuthorization]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicAuthCapabilitiesSurviveConcurrentProtected401WithoutAuthorization]' passed (0.114 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicFollowBuildersMetadataAndQuarantinedRosterDecode]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testPublicFollowBuildersMetadataAndQuarantinedRosterDecode]' passed (0.011 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRaggedMarkdownTablePreservesCellsAndUsesSharedBoundedWidths]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRaggedMarkdownTablePreservesCellsAndUsesSharedBoundedWidths]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderBodySurvivesSubscriptionFailure]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderBodySurvivesSubscriptionFailure]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderConversationPersistsCompleteTurnsAndSessionAcrossReload]' passed (0.048 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderFollowupAllowsSourcedExtension]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderFollowupAllowsSourcedExtension]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderFontRetainsEmphasisAndScales]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReaderFontRetainsEmphasisAndScales]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerDeckWrapsAtLargeTextSize]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerDeckWrapsAtLargeTextSize]' passed (0.007 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingAnswerTurnsLegacyNumberedLabelsIntoReadableSections]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingQuickActionsRenderVisualsWithoutCodeCards]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingQuickActionsRenderVisualsWithoutCodeCards]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingSelectionQuestionPrioritizesSelectedWord]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReadingSelectionQuestionPrioritizesSelectedWord]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReasoningStepMutationSkipsRepeatedStreamingState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testReasoningStepMutationSkipsRepeatedStreamingState]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunMonitorRemainsPresentationOwnerAfterProbeHandoff]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunMonitorRemainsPresentationOwnerAfterProbeHandoff]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunPresentationReplacesInterruptedCard]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveredRunPresentationReplacesInterruptedCard]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveryBackoffAndAnswerPaginationAreBounded]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRecoveryBackoffAndAnswerPaginationAreBounded]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRepeatedForegroundReconcileStartsOneDurableGET]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRepeatedForegroundReconcileStartsOneDurableGET]' passed (0.009 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunningChatStatusNeverAllowsRegenerate]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunningChatStatusNeverAllowsRegenerate]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunProjectionCheckpointSurvivesImmediateReopenWithoutAsyncFlush]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunReconciliationOwnerIsNotDuplicated]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRunReconciliationOwnerIsNotDuplicated]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionAwayReturnReplaysRunningRunThenCompletesWithoutDuplicateOwner]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerAutomaticallyRetriesTheLastFailedSnapshot]' passed (0.180 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerCoalescesHighFrequencyStreamingPersistence]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerCoalescesHighFrequencyStreamingPersistence]' passed (0.578 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerColdStartLoadsOnlyMetadataAndLatestPageOnDemand]' passed (0.017 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerDoesNotBlockMainActorWhenSQLiteWriterIsBusy]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerOrdersTruncateAndStatusAfterOlderSnapshots]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerOrdersTruncateAndStatusAfterOlderSnapshots]' passed (0.012 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsMessagesOffMainActorInOrder]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsMessagesOffMainActorInOrder]' passed (0.008 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsRunCursorOnlyChanges]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerPersistsRunCursorOnlyChanges]' passed (0.377 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionManagerShutdownClosesExplicitStoreAfterDurableWrites]' passed (0.748 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionOrganizationLifecycleAndSourceContextAreRecoverable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionOrganizationLifecycleAndSourceContextAreRecoverable]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionRecordPersistsSelectedAgent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testSessionRecordPersistsSelectedAgent]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testShutdownFailsAfterQueuedTruncationCannotReachSQLite]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testShutdownFailsAfterQueuedTruncationCannotReachSQLite]' passed (0.411 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStaleKnowledgeSaveCannotStartWithReplacementCredential]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStaleKnowledgeSaveCannotStartWithReplacementCredential]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStartGenerationShowsTruthfulPendingStatusBeforeBackendEvents]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStartGenerationShowsTruthfulPendingStatusBeforeBackendEvents]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewExpandsBackwardInBoundedSteps]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewExpandsBackwardInBoundedSteps]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewKeepsOnlyBoundedTail]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewKeepsOnlyBoundedTail]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewLeavesShortContentUnchanged]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingPreviewLeavesShortContentUnchanged]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingTextChunksKeepCompletedPrefixesStable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStreamingTextChunksKeepCompletedPrefixesStable]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewAPIUsesQuotedETagForSaveUndoAndDecodesConflict]' passed (0.030 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveListsPageStructureAndAssets]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveListsPageStructureAndAssets]' passed (0.002 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveMixedScalarValues]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewDTOsPreserveMixedScalarValues]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRendersAllSchemaFieldTypesOnSimulator]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRendersAllSchemaFieldTypesOnSimulator]' passed (0.370 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRestoresLastSavedAssetValue]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewRestoresLastSavedAssetValue]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewViewModelCreatesOnlyAfterServerNotFound]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testStructuredReviewViewModelCreatesOnlyAfterServerNotFound]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTableRenderingHasOneWholeTableHorizontalScrollForEmptyAndLargeInputs]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTableRenderingHasOneWholeTableHorizontalScrollForEmptyAndLargeInputs]' passed (0.488 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessagePreservesCompletedReasoningCopy]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessagePreservesCompletedReasoningCopy]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessageSettlesGeneratingAnswerReasoning]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTerminalMessageSettlesGeneratingAnswerReasoning]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTokenSummaryCacheBreakdownScreenshotFixtures]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTokenSummaryCacheBreakdownScreenshotFixtures]' passed (0.868 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicDeleteAndPromotionRemainAtomicWhenSQLiteWriteFails]' passed (0.418 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicFinishAndPromotionRemainAtomicWhenSQLiteWriteFails]' passed (0.127 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicSessionsCapQueuePromoteAndPersistMetadata]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTopicSessionsCapQueuePromoteAndPersistMetadata]' passed (0.016 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelMutationRetriesIdenticalPayloadAfterLostResponse]' started.
+2026-09-27 19:28:52.903513+0800 AIPlatformApp[44002:22051949] [Default] Task <CFB95034-1F6E-4653-B73C-27B6ADADEB08>.<1> finished with error [-1005] Error Domain=NSURLErrorDomain Code=-1005 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <CFB95034-1F6E-4653-B73C-27B6ADADEB08>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <CFB95034-1F6E-4653-B73C-27B6ADADEB08>.<1>}
+2026-09-27 19:28:52.906316+0800 AIPlatformApp[44002:22051527] [Default] Task <1FB249E4-C00D-4906-BD39-1353B59F371B>.<1> finished with error [-1005] Error Domain=NSURLErrorDomain Code=-1005 "(null)" UserInfo={_NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <1FB249E4-C00D-4906-BD39-1353B59F371B>.<1>"
+), _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <1FB249E4-C00D-4906-BD39-1353B59F371B>.<1>}
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelMutationRetriesIdenticalPayloadAfterLostResponse]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelOfflineCacheRemainsOwnerScopedAcrossReactivation]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelOfflineCacheRemainsOwnerScopedAcrossReactivation]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelPlanDocumentDecodesSideRouteArtifactContent]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelPlanDocumentDecodesSideRouteArtifactContent]' passed (0.006 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelRoutesIncludeTransportEndpointsAndReturnLegs]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelRoutesIncludeTransportEndpointsAndReturnLegs]' passed (0.003 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testTravelTimelineDecodesUnknownCoordinatesAndRendersLocalTime]' passed (0.588 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUnifiedAgreementDTOAndSnakeCaseAcceptanceNetworkContract]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUnifiedAgreementDTOAndSnakeCaseAcceptanceNetworkContract]' passed (0.013 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDecodesCacheBreakdownWithoutInference]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDecodesCacheBreakdownWithoutInference]' passed (0.004 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDerivesVerifiedCallsFromExplicitCoverage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDerivesVerifiedCallsFromExplicitCoverage]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDoesNotPresentUnverifiedZeroAsOverallZero]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryDoesNotPresentUnverifiedZeroAsOverallZero]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsMissingCacheBreakdownUnavailable]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsMissingCacheBreakdownUnavailable]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownForLegacyBasis]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownForLegacyBasis]' passed (0.000 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownWithoutCoverage]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUsageSummaryKeepsVerifiedCallsUnknownWithoutCoverage]' passed (0.001 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUserDocumentMessageRendersAttachmentCardInsteadOfTextBubble]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testUserDocumentMessageRendersAttachmentCardInsteadOfTextBubble]' passed (0.029 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testWorkflowCreateEncodesExplicitOutputKind]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testWorkflowCreateEncodesExplicitOutputKind]' passed (0.002 seconds).
+Test Suite 'WorkflowLifecycleDTOTests' passed at 2026-09-27 19:28:53.561.
+	 Executed 194 tests, with 0 failures (0 unexpected) in 18.133 (18.189) seconds
+Test Suite 'AIPlatformAppTests.xctest' passed at 2026-09-27 19:28:53.562.
+	 Executed 196 tests, with 0 failures (0 unexpected) in 18.176 (18.233) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 19:28:53.562.
+	 Executed 196 tests, with 0 failures (0 unexpected) in 18.176 (18.234) seconds
+2026-09-27 19:29:08.172 xcodebuild[42934:22042013] [MT] IDETestOperationsObserverDebug: 56.838 elapsed -- Testing started completed.
+2026-09-27 19:29:08.172 xcodebuild[42934:22042013] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-27 19:29:08.172 xcodebuild[42934:22042013] [MT] IDETestOperationsObserverDebug: 56.838 sec, +56.838 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/travel-final-6a-ios.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started
