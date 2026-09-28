@@ -86,6 +86,7 @@ MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_0
 EVIDENCE_GROUPS = ("source_files", "rights_files", "execution_files")
 PHASE_ORDER = {
     "finalize": 0,
+    "refresh_review": 0,
     "handoff_acknowledge": 1,
     "handoff_revision": 1,
     "review": 2,
@@ -203,6 +204,8 @@ def _read_json(path: Path) -> dict:
 
 def _material_hash(item: dict) -> str:
     hashes: list[tuple[str, object]] = [("body", item.get("body_sha256"))]
+    if "review_refresh_hash" in item:
+        hashes.append(("review_refresh", item["review_refresh_hash"]))
     roles = item.get("media_roles", list(MEDIA_ROLES))
     allowed = {"shelf_cover", "reader_cover", *(f"illustration_{i:02d}" for i in range(1, 13))}
     if (not isinstance(roles, list) or any(not isinstance(role, str) for role in roles)
@@ -261,20 +264,29 @@ def _manifest_items(root: Path = OUTPUT_ROOT) -> list[Item]:
             series, day = bundle.get("series_id"), bundle.get("issue_date")
             if series not in AUTHOR_JOBS or not isinstance(day, str):
                 continue
-            review_ready = False
-            if row["status"] == "await_review":
-                review_path = path.parent / row["review_file"]
-                if review_path.is_file() and not review_path.is_symlink():
-                    try:
-                        review_ready = _read_json(review_path).get("decision") in {"approved", "rejected"}
-                    except (OSError, ValueError, json.JSONDecodeError):
-                        review_ready = False
+            review = {}
+            review_path = path.parent / row["review_file"]
+            if row["status"] in {"staged", "await_review"} and review_path.is_file() and not review_path.is_symlink():
+                try:
+                    review = _read_json(review_path)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    pass
+            review_ready = row["status"] == "await_review" and review.get("decision") in {"approved", "rejected"}
+            item_status = row["status"]
+            material_hash = _material_hash(row)
+            if review.get("decision") == "approved":
+                from backend.services.publication_editorial import validate_editorial
+                reasons = validate_editorial((path.parent / row["body_file"]).read_text(),
+                                             row["quality_contract"], review, bundle.get("source_receipts"))
+                if reasons and all(r.startswith("review.check:") for r in reasons):
+                    item_status = "review_invalid"
+                    material_hash = hashlib.sha256((material_hash + hashlib.sha256(review_path.read_bytes()).hexdigest()).encode()).hexdigest()
             slot = bundle.get("issue_slot")
             if slot is None and bundle.get("release_at"):
                 slot = datetime.fromisoformat(bundle["release_at"]).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
             # Historical slots remain identities even after the catalog changes.
             issue_key = bundle.get("issue_key") or (day if slot in {None, "12:00"} else f"{day}T{slot}")
-            found.append(Item(path, series, day, _material_hash(row), row["status"], review_ready, issue_key))
+            found.append(Item(path, series, day, material_hash, item_status, review_ready, issue_key))
     return found
 
 
@@ -488,6 +500,12 @@ def _plan(
                     )
             # Staged non-Workflow items, and acknowledged Workflow items, remain
             # owned by the existing deterministic release job.
+        elif any(item.status == "review_invalid" for item in rows):
+            invalid_reviews = [item for item in rows if item.status == "review_invalid"]
+            if len(invalid_reviews) != 1:
+                return None, "ambiguous_manifests"
+            item = invalid_reviews[0]
+            desired[series] = Action("refresh_review", (Barrier(series, item.material_hash, issue_key),), manifest=item.manifest)
         elif series in PLATFORM_AUTHOR_SERIES and (bool(_schedule_id(series)) or platform_enabled):
             waiting = [item for item in today_handoffs if item.series == series and item.status == "waiting_assets"]
             if len(waiting) > 1:
@@ -650,7 +668,7 @@ def _native_execution(execution_id: str) -> dict:
         db.row_factory = sqlite3.Row
         row = db.execute("SELECT * FROM executions WHERE id=?", (execution_id,)).fetchone()
     if row is None:
-        raise RuntimeError("native asset execution is unavailable")
+        raise ActionFailure("native_asset_execution_missing")
     return dict(row)
 
 
@@ -898,9 +916,13 @@ def _run_action(action: Action) -> None:
         command = "acknowledge" if action.phase == "handoff_acknowledge" else "request-revision"
         commands = [[str(HANDOFF_CLIENT), command, "--manifest", str(action.manifest)]]
         timeout = 600
-    elif action.phase == "prepare":
+    elif action.phase in {"prepare", "refresh_review"}:
         assert action.manifest is not None
-        commands = [[str(EDITORIAL_CLIENT), "prepare", "--manifest", str(action.manifest)]]
+        command = "prepare" if action.phase == "prepare" else "refresh-review"
+        commands = [[str(EDITORIAL_CLIENT), command, "--manifest", str(action.manifest)]]
+        policy = SERIES[action.barriers[0].series].get("review_policy")
+        if action.phase == "prepare" and policy:
+            commands[0].extend(["--review-policy", policy])
         timeout = 600
     elif action.phase == "finalize":
         assert action.manifest is not None
@@ -1053,16 +1075,17 @@ def supervise(
             continue
         try:
             preflight(candidate)
+            if candidate.phase not in {"handoff_fetch", "native_fetch"}:
+                exhausted = ledger.exhausted(day, candidate)
+                if exhausted:
+                    errors.append({"ok": False, "action": "none", "reason": "retry_exhausted", "phase": candidate.phase,
+                                   "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key"})
+                    continue
         except ActionFailure as exc:
             errors.append({"ok": False, "action": "none", "reason": exc.reason,
-                           "phase": candidate.phase, "job_id": candidate.job_id})
+                           "phase": candidate.phase, "job_id": candidate.job_id,
+                           "series": [barrier.series for barrier in candidate.barriers]})
             continue
-        if candidate.phase not in {"handoff_fetch", "native_fetch"}:
-            exhausted = ledger.exhausted(day, candidate)
-            if exhausted:
-                errors.append({"ok": False, "action": "none", "reason": "retry_exhausted", "phase": candidate.phase,
-                               "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key"})
-                continue
         eligible.append(candidate)
     reason = next((reason for candidate, reason in plans if candidate is None
                    and reason not in {"complete", "awaiting_release", "awaiting_platform_author"}), plans[0][1])
@@ -1123,9 +1146,15 @@ def supervise(
                            "phase": action.phase, "job_id": action.job_id,
                            "series": [barrier.series for barrier in action.barriers]})
             continue
-        if ledger.claim(day, action):
-            break
-        exhausted = ledger.exhausted(day, action)
+        try:
+            if ledger.claim(day, action):
+                break
+            exhausted = ledger.exhausted(day, action)
+        except ActionFailure as exc:
+            errors.append({"ok": False, "action": "none", "reason": exc.reason,
+                           "phase": action.phase,
+                           "series": [barrier.series for barrier in action.barriers]})
+            continue
         if exhausted:
             errors.append({"ok": False, "action": "none", "reason": "retry_exhausted", "phase": action.phase,
                            "idempotency_keys": exhausted, "next_action": "repair_cause_then_rearm_exact_key", **input_feedback})

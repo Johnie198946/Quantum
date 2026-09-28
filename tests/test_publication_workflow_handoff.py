@@ -1360,6 +1360,13 @@ def test_shared_assets_selects_earliest_release_not_directory_name(native_author
             db.execute("INSERT INTO messages VALUES(?,?,?,?,?,?,1,0)", (index * 10 + 1, session, "assistant", json.dumps(final), "stop", None))
         directories[name] = handoff.fetch_native(name, occurrence["issue_key"], root)["output_directory"]
     assert directories["a-late"] < directories["z-early"]
+    with monkeypatch.context() as patch:
+        def pruned(self, day, action):
+            if action.barriers[0].series == "z-early":
+                raise watchdog.ActionFailure("native_asset_execution_missing")
+            return []
+        patch.setattr(watchdog.Claims, "exhausted", pruned)
+        assert json.loads(handoff.assets_input())["publication_asset_request"]["series_id"] == "a-late"
     request = json.loads(handoff.assets_input())["publication_asset_request"]
     assert request["series_id"] == "z-early" and request["issue_slot"] == "08:00"
     from scripts import publication_scheduler_watchdog as watchdog
@@ -1484,3 +1491,14 @@ def test_content_document_kind_length_matches_receipt_bundle_boundary(
         normalized, _ = validate_bundle(value)
         assert normalized[receipt_group] == [receipt]
         assert normalized["execution_claim"] == "not_run"
+
+
+def test_assets_input_reports_missing_execution_instead_of_no_draft(native_author, monkeypatch):
+    from scripts import publication_scheduler_watchdog as watchdog
+    handoff, root, _, _ = native_author
+    handoff.fetch_native("ai-toolkit", "2026-09-26", root)
+    def missing(*args, **kwargs):
+        raise watchdog.ActionFailure("native_asset_execution_missing")
+    monkeypatch.setattr(watchdog.Claims, "claim", missing)
+    with pytest.raises(ValueError, match="asset recovery blocked.*native_asset_execution_missing"):
+        handoff.assets_input()

@@ -211,7 +211,7 @@ def flow(tmp_path, monkeypatch):
     )
 
 
-def native(flow, decision="approved", ended=True, *, gap_disposition="resolved", omit_gap_resolutions=False, rejection_gap=None, review_timestamp="2026-09-08T03:00:00+00:00"):
+def native(flow, decision="approved", ended=True, *, gap_disposition="resolved", gap_quote=None, omit_gap_resolutions=False, rejection_gap=None, review_timestamp="2026-09-08T03:00:00+00:00"):
     local, manifest, remote, _, key, _, _ = flow
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     from unittest.mock import patch
@@ -256,7 +256,7 @@ def native(flow, decision="approved", ended=True, *, gap_disposition="resolved",
     if decision == "approved" and not omit_gap_resolutions and any(g.get("state") == "open" for g in c["research_gaps"]):
         review["gap_resolutions"] = [
             {"id": gap["id"], "disposition": gap_disposition,
-             "quote": editorial_metrics((local / "body.md").read_text())["chapters"][-1]["paragraphs"][-1][:40],
+             "quote": gap_quote or editorial_metrics((local / "body.md").read_text())["chapters"][-1]["paragraphs"][-1][:40],
              "finding": "合成独立审核：修订正文明确删除两次在线成功的主张，当前范围仅限离线预检，不再声称在线执行完成。"}
             for gap in c["research_gaps"] if gap.get("state") == "open"
         ]
@@ -1637,3 +1637,87 @@ def test_native_clock_never_uses_unverified_or_future_proof(flow, proof_mutation
         assert db.execute("SELECT COUNT(*) FROM editions WHERE state IN ('staged','scheduled','published')").fetchone()[0] == 0
         assert db.execute("SELECT review_hash FROM editorial_attempts WHERE attempt_id=?",
                           (item["quality_contract"]["attempt_id"],)).fetchone()[0] is None
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_refresh_review_preserves_material_and_requires_new_independent_review(flow, monkeypatch, published):
+    local, manifest, remote, calls, *_ = flow
+    current_checks = CHAPTER_CHECKS
+    monkeypatch.setattr(sys.modules[__name__], "CHAPTER_CHECKS", tuple(
+        name for name in CHAPTER_CHECKS if name not in {"specificity", "causal_chain", "continuity", "authorial_voice"}))
+    db, key = native(flow)
+    with pytest.raises(ValueError, match="attempt ID/hash/state"):
+        relay.finalize(local, remote, db=db, key=key)
+    old = json.loads(manifest.read_text())["items"][0]
+    retained = {name: (local / name).read_bytes() for name in
+                [old["body_file"], old["review_file"], old["proof_file"], *[old[f"{r}_file"] for r in relay.MEDIA_ROLES]]}
+    if published:
+        original = remote.operator
+        def with_published(*args):
+            result = original(*args)
+            if args == ("status",):
+                result["items"].append({"issue_id": old["quality_contract"]["issue_id"], "state": "published"})
+            return result
+        monkeypatch.setattr(remote, "operator", with_published)
+        with pytest.raises(ValueError, match="cannot change published"):
+            relay.refresh_review(manifest, remote)
+        assert not list(local.glob("review-refresh-*"))
+        return
+    from scripts import publication_scheduler_watchdog as watchdog
+    assert watchdog._manifest_items(local)[0].status == "review_invalid"
+    result = relay.refresh_review(manifest, remote)
+    fresh_path = Path(result["manifest"])
+    fresh = json.loads(fresh_path.read_text())["items"][0]
+    assert fresh["status"] == "await_review"
+    assert fresh["body_sha256"] == old["body_sha256"]
+    assert fresh["review_refresh_hash"] == relay.sha(retained[old["review_file"]])
+    assert watchdog._material_hash(fresh) != watchdog._material_hash(old)
+    assert fresh["quality_contract"]["revision"] == old["quality_contract"]["revision"] + 1
+    assert fresh["quality_contract"]["writer_sessions"] == old["quality_contract"]["writer_sessions"]
+    assert len(fresh["quality_contract"]["research_gaps"]) == 4
+    assert not (fresh_path.parent / fresh["review_file"]).exists()
+    assert not (fresh_path.parent / fresh["proof_file"]).exists()
+    assert all((local / name).read_bytes() == raw for name, raw in retained.items())
+    assert all(fresh[f"{r}_sha256"] == old[f"{r}_sha256"] for r in relay.MEDIA_ROLES)
+    assert relay.refresh_review(manifest, remote)["manifest"] == str(fresh_path)
+    monkeypatch.setenv("HERMES_PROFILE", "supervision")
+    assert "PUBLICATION_REVIEW_REQUEST" in relay.review_input(local, remote)
+    assert not any("release-due" in call for call in calls)
+    # Complete the same existing operator chain with a genuinely separate
+    # synthetic reviewer transcript; production signatures are never mocked.
+    fresh_value = json.loads(fresh_path.read_text())
+    fresh_value["items"][0].update(review_file="review.json", proof_file="proof.json")
+    relay.save(fresh_path, fresh_value)
+    (fresh_path.parent / "body.md").write_bytes(retained[old["body_file"]])
+    monkeypatch.setattr(sys.modules[__name__], "CHAPTER_CHECKS", current_checks)
+    new_flow = (fresh_path.parent, fresh_path, remote, calls, flow[4], flow[5], flow[6])
+    new_db, key = native(new_flow, gap_quote=editorial_metrics(
+        retained[old["body_file"]].decode())["chapters"][0]["paragraphs"][0][:40])
+    staged = relay.finalize(fresh_path.parent, remote, db=new_db, key=key)
+    assert staged["items"][0]["status"] == "staged"
+    remote.operator("release-due")
+    items = remote.operator("status")["items"]
+    assert any(row["issue_id"] == old["quality_contract"]["issue_id"] and row["state"] == "published" for row in items)
+
+
+@pytest.mark.parametrize("change", ["none", "identity", "duplicate", "source", "media"])
+def test_native_revision_accepts_real_evidence_or_media_without_body_churn(flow, change):
+    local, manifest, remote, _, key, *_ = flow
+    databases, _ = native(flow, "rejected")
+    relay.finalize(local, remote, db=databases, key=key)
+    old = json.loads(manifest.read_text())["items"][0]
+    material = json.loads(json.dumps(old))
+    if change in {"identity", "source"}:
+        material["source_files"].append({"kind": "native_author_binding" if change == "identity" else "source_snapshot",
+                                         "path": "new.txt", "sha256": "a" * 64})
+    elif change == "duplicate":
+        material["source_files"].append(dict(material["source_files"][0]))
+    elif change == "media":
+        material["illustration_01_sha256"] = "b" * 64
+    args = (local.parent / "new-native", "ai-history", "2026-09-08", old["body_sha256"], synthetic_brief())
+    if change in {"none", "identity", "duplicate"}:
+        with pytest.raises(ValueError, match="materially change"):
+            relay._native_rejected_revision(*args, material=material)
+    else:
+        contract, gaps = relay._native_rejected_revision(*args, material=material)
+        assert contract == old["quality_contract"] and gaps[0]["state"] == "open"

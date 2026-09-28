@@ -49,6 +49,7 @@ FIELDS = {"bundle_file", "bundle_sha256", "body_file", "body_sha256", "source_fi
           "shelf_cover_sha256", "reader_cover_file", "reader_cover_sha256",
           "illustration_01_file", "illustration_01_sha256", "illustration_02_file",
           "illustration_02_sha256", "illustration_03_file", "illustration_03_sha256", "asset_files", "media_roles"}
+FIELDS.add("review_refresh_hash")
 STATES = {"prepared", "await_review", "staged", "rejected", "blocked"}
 GROUPS = {"source_files": "--source-file", "rights_files": "--rights-file", "execution_files": "--execution-file"}
 MEDIA_ROLES = ("shelf_cover", "reader_cover", "illustration_01", "illustration_02", "illustration_03")
@@ -365,11 +366,6 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
         raise ValueError("publication content conflicts with workflow artifact")
     research_gaps = []
     expected_writers = [workflow_writer] if workflow_writer is not None else None
-    if native_path.exists():
-        prior_revision = _native_rejected_revision(base, series_id, occurrence["issue_key"], sha(body_raw), brief)
-        if prior_revision is not None:
-            prior_contract, research_gaps = prior_revision
-            expected_writers = list(dict.fromkeys([*prior_contract["writer_sessions"], workflow_writer]))
     groups = {}
     input_paths = {submission_path, body_path}
     for field in ("source_files", "execution_files"):
@@ -402,6 +398,11 @@ def build_initial(submission_file: Path, body_dir: Path, *, series_id: str,
     item = _initial_item(base, body_raw, groups["source_files"], groups["execution_files"])
     if native_path.exists() or plan is not None:
         _validate_image_manifest(base, item)
+    if native_path.exists():
+        prior_revision = _native_rejected_revision(base, series_id, occurrence["issue_key"], sha(body_raw), brief, material=item)
+        if prior_revision is not None:
+            prior_contract, research_gaps = prior_revision
+            expected_writers = list(dict.fromkeys([*prior_contract["writer_sessions"], workflow_writer]))
     media_paths = {local_path(base, item[f"{role}_file"]) for role in ALL_MEDIA_ROLES if item.get(f"{role}_file")}
     if input_paths & media_paths or len(media_paths) != sum(bool(item.get(f"{role}_file")) for role in ALL_MEDIA_ROLES):
         raise ValueError("publication media paths must be unique")
@@ -496,6 +497,8 @@ def load_manifest(path):
     for item in value["items"]:
         if not isinstance(item, dict) or set(item) - FIELDS or item.get("status") not in STATES:
             raise ValueError("unknown manifest fields or invalid status")
+        if "review_refresh_hash" in item and (not isinstance(item["review_refresh_hash"], str) or not HASH.fullmatch(item["review_refresh_hash"])):
+            raise ValueError("invalid review refresh hash")
         inputs = [(item.get("bundle_file"), item.get("bundle_sha256")),
                   (item.get("body_file"), item.get("body_sha256"))]
         for role in ALL_MEDIA_ROLES:
@@ -620,7 +623,7 @@ def _historical_issue_key(bundle: dict) -> str:
     return key
 
 
-def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_hash: str, brief: dict):
+def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_hash: str, brief: dict, *, material=None):
     """Reuse the latest genuine rejected attempt for the same native occurrence."""
     from backend.services.knowledge_publication_store import PublicationStore
     expected_issue_id = PublicationStore.ids(series_id, issue_key, 1)[1]
@@ -658,7 +661,15 @@ def _native_rejected_revision(base: Path, series_id: str, issue_key: str, body_h
         return None
     _, path, item, contract = max(candidates, key=lambda value: value[0])
     if body_hash == item["body_sha256"]:
-        raise ValueError("revised body must materially change")
+        def substantive(row):
+            ignored = {"native_author_binding", "native_author_content", "publication_image_generation"}
+            evidence = [(group, entry["kind"], entry["sha256"])
+                        for group in ("source_files", "execution_files") for entry in row.get(group, [])
+                        if entry["kind"] not in ignored]
+            return sorted(set(evidence + [("media", role, row[f"{role}_sha256"])
+                                          for role in ALL_MEDIA_ROLES if row.get(f"{role}_sha256")]))
+        if material is None or substantive(material) == substantive(item):
+            raise ValueError("revised body or evidence/media must materially change")
     review = json.loads(read(local_path(path.parent, item["review_file"])))
     if (review.get("decision") != "rejected" or review.get("attempt_id") not in {None, contract.get("attempt_id")}
             or review.get("editorial_target_hash") != contract.get("target_hash")
@@ -952,6 +963,77 @@ def prepare(path, remote, *, review_policy=None):
     return {"manifest": str(path), "statuses": [i["status"] for i in value["items"]]}
 
 
+def refresh_review(path, remote):
+    """Queue a fresh independent review of unchanged, unpublished material."""
+    from backend.services.publication_editorial import validate_editorial
+    path, value = load_manifest(path)
+    if len(value["items"]) != 1:
+        raise ValueError("review refresh requires one manifest item")
+    item = value["items"][0]
+    if item["status"] not in {"staged", "await_review", "blocked"}:
+        raise ValueError("review refresh requires an existing review")
+    base = path.parent
+    bundle = json.loads(read(local_path(base, item["bundle_file"])))
+    contract = item["quality_contract"]
+    raw_review = read(local_path(base, item["review_file"]))
+    review = json.loads(raw_review)
+    body = read(local_path(base, item["body_file"])).decode()
+    reasons = validate_editorial(body, contract, review, bundle["source_receipts"])
+    if review.get("decision") != "approved" or not reasons or any(not r.startswith("review.check:") for r in reasons):
+        raise ValueError("review refresh only repairs invalid chapter review evidence")
+    status = remote.operator("status")
+    if any(row.get("issue_id") == contract["issue_id"] and row.get("state") in {"published", "withdrawn"}
+           for row in status.get("items", [])):
+        raise ValueError("review refresh cannot change published or withdrawn material")
+    target = base / f"review-refresh-{contract['revision'] + 1}-{sha(raw_review)[:12]}"
+    if target.is_symlink() or not target.resolve().is_relative_to(base.resolve()):
+        raise ValueError("review refresh directory escapes manifest")
+    output = target / "draft-manifest.json"
+    if not output.exists():
+        current = attempt(remote, contract, {"approved", "failed"})
+        if current.get("review_hash") != sha(raw_review):
+            raise ValueError("review refresh requires the recorded review bytes")
+        target.mkdir(mode=0o700, exist_ok=True)
+        fresh = {k: v for k, v in item.items()
+                 if k not in {"quality_contract", "receipt", "error", "batch"}}
+        fresh.update(status="prepared", review_file="editorial-review.json", proof_file="editorial-proof.json",
+                     review_refresh_hash=sha(raw_review))
+        fresh["body_file"] = _copy_revision_input(base, target, item["body_file"], namespace="body")
+        for group in (*GROUPS, "asset_files"):
+            fresh[group] = [{**entry, "path": _copy_revision_input(base, target, entry["path"],
+                               namespace=f"{group}-{index}")} for index, entry in enumerate(item.get(group, []))]
+        for role in ALL_MEDIA_ROLES:
+            if item.get(f"{role}_file"):
+                fresh[f"{role}_file"] = _copy_revision_input(base, target, item[f"{role}_file"], namespace=role)
+        options = {k: contract[k] for k in ("format", "writer_sessions", "learning_objectives", "editorial_brief")}
+        gaps = {gap["id"]: gap for gap in contract["research_gaps"]}
+        for reason in reasons:
+            gaps.setdefault(reason, {"id": reason, "question": "需要补充研究并解决审核失败项：" + reason,
+                                    "state": "open", "resolution": "", "source_urls": []})
+        options["research_gaps"] = list(gaps.values())
+        candidate = {**bundle, "quality_contract": options, "state": "draft",
+                     "review": {"content_hash": "", "decision": "pending", "reviewed_by": "",
+                                "reviewed_at": "", "receipt": None}}
+        candidate.pop("editorial_proof_file", None)
+        candidate.pop("editorial_proof_sha256", None)
+        fresh["bundle_file"] = "candidate-bundle.json"
+        save(target / fresh["bundle_file"], candidate)
+        fresh["bundle_sha256"] = sha(read(target / fresh["bundle_file"]))
+        save(output, {"version": VERSION, "items": [fresh]})
+    _, fresh_value = load_manifest(output)
+    fresh = fresh_value["items"][0]
+    if fresh["body_sha256"] != item["body_sha256"]:
+        raise ValueError("review refresh body changed")
+    result = prepare(output, remote, review_policy=contract.get("review_policy"))
+    new_contract = load_manifest(output)[1]["items"][0]["quality_contract"]
+    if new_contract["revision"] != contract["revision"] + 1:
+        raise ValueError("review refresh revision mismatch")
+    attempt(remote, new_contract, {"await_review", "approved", "failed", "rejected"})
+    item.update(status="blocked", error="superseded by independent review: " + str(output))
+    save(path, value)
+    return result
+
+
 def manifests(root):
     root = Path(root).expanduser().absolute()
     if not root.is_dir() or root.is_symlink():
@@ -1234,6 +1316,7 @@ def main(argv=None):
     prepare_parser = sub.add_parser("prepare")
     prepare_parser.add_argument("--manifest", required=True, type=Path)
     prepare_parser.add_argument("--review-policy", choices=("story-supervision-v2",))
+    sub.add_parser("refresh-review").add_argument("--manifest", required=True, type=Path)
     start_parser = sub.add_parser("start")
     start_parser.add_argument("--submission", required=True, type=Path)
     start_parser.add_argument("--body-dir", required=True, type=Path)
@@ -1251,7 +1334,7 @@ def main(argv=None):
     try:
         remote = Remote(*transport._trust(args))
         # Existing Cron jobs are serial; flock also rejects accidental overlap.
-        if args.action in {"prepare", "revise"}:
+        if args.action in {"prepare", "revise", "refresh-review"}:
             directory = args.manifest.expanduser().absolute().parent
         elif args.action == "start":
             directory = args.body_dir.expanduser().absolute()
@@ -1263,6 +1346,8 @@ def main(argv=None):
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if args.action == "prepare":
                 result = prepare(args.manifest, remote, review_policy=args.review_policy)
+            elif args.action == "refresh-review":
+                result = refresh_review(args.manifest, remote)
             elif args.action == "start":
                 initial_manifest = build_initial(
                     args.submission, args.body_dir, series_id=args.series_id,

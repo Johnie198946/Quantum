@@ -1513,3 +1513,32 @@ def test_review_plan_does_not_treat_malformed_slot_as_retired():
     malformed = replace(current, manifest=Path("/malformed/draft-manifest.json"), issue_key=DAY + "Tgarbage")
     with pytest.raises(ValueError):
         watchdog._plan(DAY, {current.series}, [malformed, current], issue_key=DAY)
+
+
+@pytest.mark.parametrize("attempts", [1, watchdog.Claims.MAX_ATTEMPTS])
+def test_pruned_execution_blocks_own_claim_but_not_other_issue(asset_execution_ledger, tmp_path, attempts):
+    database, make_execution = asset_execution_ledger
+    ledger = watchdog.Claims(tmp_path / "claims.db")
+    missing = item("ai-history", "await_review", review_ready=True)
+    other = item("ai-practice", "prepared")
+    action, _ = watchdog._plan(DAY, {"ai-history"}, [missing])
+    assert ledger.claim(DAY, action)
+    with sqlite3.connect(ledger.path) as db:
+        db.execute("UPDATE recovery_claims SET attempts=?,state='dispatched',native_execution_id='pruned'", (attempts,))
+        before = db.execute("SELECT * FROM recovery_claims").fetchall()
+    result, calls = run(tmp_path, summary("ai-history", "ai-practice"), [missing, other])
+    assert result["phase"] == "prepare" and calls[0].manifest == other.manifest
+    assert result["blocked"][0]["reason"] == "native_asset_execution_missing"
+    with sqlite3.connect(ledger.path) as db:
+        assert db.execute("SELECT * FROM recovery_claims WHERE native_execution_id='pruned'").fetchall() == before
+    with pytest.raises(watchdog.ActionFailure, match="native_asset_execution_missing"):
+        ledger.rearm(ledger.key(DAY, action.phase, action.barriers[0]), attempts,
+                     action.barriers[0].material_hash, "missing is not proof of termination", lambda _: [])
+
+
+def test_invalid_review_is_refreshed_only_for_unpublished_occurrence(tmp_path):
+    invalid = item("ai-history", "review_invalid")
+    result, calls = run(tmp_path, summary("ai-history"), [invalid])
+    assert result["phase"] == "refresh_review" and calls[0].manifest == invalid.manifest
+    result, calls = run(tmp_path, summary(), [invalid])
+    assert result["reason"] == "complete" and not calls

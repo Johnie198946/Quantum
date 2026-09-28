@@ -629,7 +629,7 @@ def assets_input() -> str:
     root = native_output_root()
     if not root.exists():
         return "NO_NEW_DRAFT"
-    from scripts.publication_scheduler_watchdog import Action, Barrier, Claims, native_assets_execution
+    from scripts.publication_scheduler_watchdog import Action, ActionFailure, Barrier, Claims, native_assets_execution
     recovery = Claims(Path.home() / ".hermes/cron/publication-recovery.db")
     pending = []
     for state_path in [*root.glob("*/native-content-state.json"), *root.glob("*/workflow-handoff-state.json")]:
@@ -643,6 +643,7 @@ def assets_input() -> str:
         f"{row[1].get('issue_date', '')}T{row[1].get('issue_slot', '12:00')}:00+08:00",
         row[1]["series_id"], str(row[0])))
     execution = None
+    blocked = []
     for state_path, state in pending:
         base = state_path.parent
         manifest_path = base / "draft-manifest.json"
@@ -672,18 +673,24 @@ def assets_input() -> str:
         if spec.get("assets_profile", "default") not in {"default", "main"}:
             raise PublicationHandoffError("native asset profile is not allowed")
         action = Action("assets", (barrier,), job_id=spec.get("assets_job_id"))
-        if recovery.exhausted(state["issue_date"], action):
-            continue
-        if execution is None:
-            execution = native_assets_execution()
-        if execution["job_id"] != action.job_id:
-            continue
-        if not recovery.claim(state["issue_date"], action, native_execution=execution):
+        try:
+            if recovery.exhausted(state["issue_date"], action):
+                continue
+            if execution is None:
+                execution = native_assets_execution()
+            if execution["job_id"] != action.job_id:
+                continue
+            if not recovery.claim(state["issue_date"], action, native_execution=execution):
+                continue
+        except ActionFailure as exc:
+            blocked.append(f"{state['series_id']}:{state.get('issue_key', state['issue_date'])}:{exc.reason}")
             continue
         request = {"output_directory": str(base), "series_id": state["series_id"],
                    "issue_date": state["issue_date"], "issue_slot": state.get("issue_slot", "12:00"),
                    "artifact_sha256": state["artifact_sha256"]}
         return canonical_json({"publication_asset_request": request}).decode("utf-8")
+    if blocked:
+        raise PublicationHandoffError("asset recovery blocked: " + "; ".join(blocked))
     return "NO_NEW_DRAFT"
 
 
