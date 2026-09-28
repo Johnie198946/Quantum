@@ -19,6 +19,7 @@ public struct BlockCardDispatcher: View {
     public var onNoteDraftAction: ((String, String) -> Void)? = nil
     public var onKnowledgeAction: ((String, String) -> Void)? = nil
     public var onCapabilityProposal: ((String, String) -> Void)? = nil
+    public var onTravelProposalEdit: ((String, CapabilityProposalInput) -> Void)? = nil
     public var onWorkflowOpen: ((String) -> Void)? = nil
     public var onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil
 
@@ -32,6 +33,7 @@ public struct BlockCardDispatcher: View {
         onNoteDraftAction: ((String, String) -> Void)? = nil,
         onKnowledgeAction: ((String, String) -> Void)? = nil,
         onCapabilityProposal: ((String, String) -> Void)? = nil,
+        onTravelProposalEdit: ((String, CapabilityProposalInput) -> Void)? = nil,
         onWorkflowOpen: ((String) -> Void)? = nil,
         onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil
     ) {
@@ -44,6 +46,7 @@ public struct BlockCardDispatcher: View {
         self.onNoteDraftAction = onNoteDraftAction
         self.onKnowledgeAction = onKnowledgeAction
         self.onCapabilityProposal = onCapabilityProposal
+        self.onTravelProposalEdit = onTravelProposalEdit
         self.onWorkflowOpen = onWorkflowOpen
         self.onKnowledgeNavigation = onKnowledgeNavigation
     }
@@ -109,7 +112,8 @@ public struct BlockCardDispatcher: View {
             CapabilityProposalCard(
                 proposal: proposal,
                 onConfirm: { onCapabilityProposal?(proposal.id, "confirm") },
-                onDiscard: { onCapabilityProposal?(proposal.id, "discard") }
+                onDiscard: { onCapabilityProposal?(proposal.id, "discard") },
+                onTravelEdit: { onTravelProposalEdit?(proposal.id, $0) }
             )
         case .artifactConsumption(let receipt):
             ArtifactConsumptionCard(receipt: receipt)

@@ -275,6 +275,28 @@ async def test_first_class_document_capabilities_bind_format_evidence_and_review
     assert text_material not in body.description
 
 
+@pytest.mark.asyncio
+async def test_travel_confirmed_fields_reach_existing_workflow_description():
+    created = {"workflow": {"id": "wf-kyushu", "status": "clarifying"},
+               "clarification_session": {"id": "wfs-kyushu", "phase": "awaiting_requirement_confirmation"}}
+    data = {"title": "九州七日", "description": "今年十一去九州，七天",
+            "output_kind": "travel", "destination": "九州",
+            "travel_dates": "2026 年国庆，具体日期待定", "travelers": "两人",
+            "travel_preferences": "温泉与公共交通",
+            "source_client_session_id": "travel-session"}
+    with patch("backend.capability_handlers._create_workflow", new=AsyncMock(return_value=created)) as create:
+        result = await execute_verified_capability(
+            "workflow.create", data, payload={"tenant_key": "tenant-a", "user_id": "user-a"},
+            idempotency_key="travel-confirmed-1")
+    assert result["status"] == "completed"
+    body = create.await_args.args[0]
+    assert body.output_kind == "travel"
+    assert "目的地：九州" in body.description
+    assert "出行时间：2026 年国庆，具体日期待定" in body.description
+    assert "原始需求：今年十一去九州，七天" in body.description
+    assert create.await_args.kwargs["requirements_snapshot_overrides"]["travel_details"]["同行人"] == "两人"
+
+
 def test_workflow_creation_capabilities_accept_bounded_client_session_provenance():
     catalog = {item["id"]: item for item in load_catalog()["capabilities"]}
     for capability_id in (

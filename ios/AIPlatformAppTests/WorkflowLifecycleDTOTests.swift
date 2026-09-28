@@ -108,6 +108,8 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
              (true, "GET", "/api/v1/knowledge-publications/pub-1/media/illustration_01"):
             responseHeaders = ["Content-Type": "image/png"]
             responseBody = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAIAAAD/zu84AAAAPklEQVR4nO3OMQ0AMAwDwXDpUgaFU5xlUFjB4DHSSb9a5/pnR637ogoAAAAAAABgCJAO0kMAAAAAAAAAQ4AGj3smapRSVxkAAAAASUVORK5CYII=")!
+        case (true, "POST", "/api/v1/capabilities/proposals") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("travel-edit-test") == true:
+            responseBody = Data(#"{"status":"awaiting_confirmation","capability_id":"workflow.create","events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"fresh-travel-proposal","confirmation_token":"fresh-travel-token","capability_id":"workflow.create","input":{"title":"travel-edit-test","description":"九州七天","output_kind":"travel","destination":"九州","travel_dates":"2026 年国庆"},"summary":"Review travel","risk":"medium","state":"awaiting_confirmation"}}],"error":null}"#.utf8)
         case (true, "POST", "/api/v1/capabilities/proposals") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("session-retry-test") == true:
             responseBody = Data(#"{"status":"awaiting_confirmation","capability_id":"workflow.create","events":[{"type":"capability.proposed","version":1,"payload":{"proposal_id":"fresh-session-proposal","confirmation_token":"fresh-token","capability_id":"workflow.create","input":{"title":"session-retry-test"},"summary":"Review again","risk":"medium","state":"awaiting_confirmation"}}],"error":null}"#.utf8)
         case (true, "POST", "/api/v1/capabilities/confirm") where String(data: requestBody ?? Data(), encoding: .utf8)?.contains("cleanup-proposal") == true:
@@ -2957,6 +2959,19 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertTrue(TenantSessionCoordinator.statusAllowsRegenerate("failed"))
         XCTAssertTrue(TenantSessionCoordinator.statusAllowsRegenerate("timeout"))
         XCTAssertTrue(TenantSessionCoordinator.statusAllowsRegenerate("not_found"))
+    }
+
+    func testTravelProposalFieldsRoundTripWithoutInventedDefaults() throws {
+        let data = Data(#"{"proposal_id":"travel-qcp","capability_id":"workflow.create","input":{"title":"九州七日","description":"今年十一去九州","output_kind":"travel","destination":"九州","travel_dates":"2026 年国庆，具体日期待定"},"summary":"创建旅行计划","risk":"medium","state":"awaiting_confirmation"}"#.utf8)
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: data)
+        XCTAssertEqual(proposal.input.destination, "九州")
+        XCTAssertEqual(proposal.input.travelDates, "2026 年国庆，具体日期待定")
+        XCTAssertNil(proposal.input.travelers)
+        var edited = proposal.input
+        edited.travelers = "两人"
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(edited)) as? [String: Any])
+        XCTAssertEqual(encoded["travelers"] as? String, "两人")
+        XCTAssertEqual(encoded["output_kind"] as? String, "travel")
     }
 
     @MainActor
@@ -5953,6 +5968,52 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(legacyRestored.map(\.id), ["proposal-1"])
+    }
+
+    @MainActor
+    func testEditingTravelProposalCreatesBoundNewConfirmation() throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"), performLegacyMigration: false
+        ))
+        let sessionId = manager.createSession()
+        let proposal = try JSONDecoder().decode(CapabilityProposalBlock.self, from: Data(
+            #"{"proposal_id":"old-travel-proposal","confirmation_token":"old-token","capability_id":"workflow.create","input":{"title":"travel-edit-test","description":"旧需求","output_kind":"travel"},"summary":"Create","risk":"medium","state":"awaiting_confirmation"}"#.utf8
+        ))
+        manager.setMessages([ChatMessage(id: "travel-message", sessionId: sessionId,
+            role: .assistant, content: "", blocks: [.capabilityProposal(proposal)])], for: sessionId)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIContractURLProtocol.self]
+        let coordinator = TenantSessionCoordinator(sessionManager: manager, appState: AppState(),
+            capabilityClient: CapabilityClient(apiClient: APIClient(
+                baseURL: try XCTUnwrap(URL(string: "https://contract.invalid")),
+                sessionConfiguration: configuration, inMemoryToken: "test-token")))
+        var edited = proposal.input
+        edited.description = "九州七天"
+        edited.destination = "九州"
+        edited.travelDates = "2026 年国庆"
+        coordinator.handleTravelProposalEdit(messageId: "travel-message", proposalId: proposal.id, input: edited)
+        for _ in 0..<100 {
+            if case .capabilityProposal(let value) = coordinator.messages[0].blocks[0],
+               value.state != .applying { break }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        guard case .capabilityProposal(let refreshed) = coordinator.messages[0].blocks[0] else {
+            return XCTFail("Expected new travel confirmation")
+        }
+        XCTAssertEqual(refreshed.id, "fresh-travel-proposal")
+        XCTAssertEqual(refreshed.input.destination, "九州")
+        let requests = APIContractURLProtocol.requests()
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/api/v1/capabilities/proposals"])
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(requests.first?.body)) as? [String: Any])
+        XCTAssertEqual(envelope["session_id"] as? String, sessionId)
+        let input = try XCTUnwrap(envelope["input"] as? [String: Any])
+        XCTAssertEqual(input["description"] as? String, "九州七天")
+        XCTAssertEqual(input["travel_dates"] as? String, "2026 年国庆")
     }
 
     @MainActor

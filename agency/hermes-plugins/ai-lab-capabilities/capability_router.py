@@ -1475,6 +1475,12 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             research_stage=stage,
             research_turn_id=str(kwargs.get("turn_id") or ""),
         )
+    user_history = [
+        {"role": "user", "content": item["content"][:300]}
+        for item in (kwargs.get("conversation_history") or [])
+        if isinstance(item, dict) and item.get("role") == "user"
+        and isinstance(item.get("content"), str) and item["content"]
+    ]
     context = _jev_routing_context(
         query,
         state,
@@ -1482,12 +1488,10 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             "session_id": session_id,
             "turn_id": str(kwargs.get("turn_id") or kwargs.get("task_id") or ""),
             "platform": platform,
-            "recent_messages": [
-                {"role": item["role"], "content": item["content"][:1000]}
-                for item in (kwargs.get("conversation_history") or [])
-                if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
-                and isinstance(item.get("content"), str) and item["content"]
-            ][-4:],
+            "recent_messages": (
+                user_history[-6:] if len(user_history) <= 6
+                else [user_history[0], *user_history[-5:]]
+            ),
         },
         policy_version=str(
             kwargs.get("policy_version")

@@ -481,6 +481,9 @@ public struct MessageBubbleView: View {
             onCapabilityProposal: { proposalId, action in
                 context?.onCapabilityProposal?(proposalId, action)
             },
+            onTravelProposalEdit: { proposalId, input in
+                context?.onTravelProposalEdit?(proposalId, input)
+            },
             onWorkflowOpen: { workflowId in
                 context?.onWorkflowOpen?(workflowId)
             },

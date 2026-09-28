@@ -34,7 +34,7 @@ from backend.models.agent_registry import (
     DEFAULT_AGENT_ID,
     session_prefix_for,
 )
-from backend.services.workflow_session_scope import register_client_session
+from backend.services.workflow_session_scope import register_client_session, latest_client_session_workflow
 from backend.services.reasoning_extractor import ReasoningStep
 from backend.services.knowledge_policy import KnowledgePolicy, mint_capability, resolve_policy
 from backend.services.client_context_capability import (
@@ -1824,6 +1824,14 @@ async def stream_chat(
                 prefetch_platform=False,
             )
             routed_goal = goal + source_context.evidence
+            current_workflow = await latest_client_session_workflow(payload, req.session_id)
+            if current_workflow:
+                routed_goal += (
+                    "\n\n本会话已确认工作流（服务端记录，按当前用户指令使用；"
+                    "如与旧聊天内容冲突，以此需求为准）："
+                    f"ID={current_workflow['id']}；标题={current_workflow['title']}；"
+                    f"状态={current_workflow['status']}；需求={current_workflow['description']}"
+                )
 
             setup_started = time.monotonic()
             agent = await _resolve_agent_route(
@@ -1872,6 +1880,14 @@ async def stream_chat(
             )
 
             routed_goal = goal + source_context.evidence
+            current_workflow = await latest_client_session_workflow(payload, req.session_id)
+            if current_workflow:
+                routed_goal += (
+                    "\n\n本会话已确认工作流（服务端记录，按当前用户指令使用；"
+                    "如与旧聊天内容冲突，以此需求为准）："
+                    f"ID={current_workflow['id']}；标题={current_workflow['title']}；"
+                    f"状态={current_workflow['status']}；需求={current_workflow['description']}"
+                )
             kwargs = {
                 "regenerate": req.regenerate,
                 "skill_id": skill_id,

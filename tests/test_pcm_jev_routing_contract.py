@@ -420,9 +420,16 @@ def test_bridge_request_scope_removes_agents_before_jev(monkeypatch):
             session_id="bridge-scoped",
             platform="cli",
             sender_id="tenant-user",
+            conversation_history=[
+                {"role": "user", "content": "今年十一去九州"},
+                *[{"role": "user", "content": f"follow-up {n}"} for n in range(8)],
+            ],
         )
     finally:
         reset_runtime_routing_scope(token)
     assert observed["agent_candidates"] == []
     assert observed["policy_version"] == "tenant-policy-3"
     assert observed["tenant_scope"] == "tenant:ta:user:ua"
+    assert [item["content"] for item in observed["task_state"]["recent_messages"]] == [
+        "今年十一去九州", *(f"follow-up {n}" for n in range(3, 8))
+    ]

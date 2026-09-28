@@ -1283,6 +1283,7 @@ public struct CapabilityProposalCard: View {
     public let proposal: CapabilityProposalBlock
     public let onConfirm: () -> Void
     public let onDiscard: () -> Void
+    public var onTravelEdit: ((CapabilityProposalInput) -> Void)? = nil
     @State private var showsTravelDetails = false
 
     public var body: some View {
@@ -1294,9 +1295,9 @@ public struct CapabilityProposalCard: View {
             }
         }
         .sheet(isPresented: $showsTravelDetails) {
-            TravelPlanPreferencesView {
+            TravelPlanPreferencesView(input: proposal.input) { updated in
                 showsTravelDetails = false
-                onConfirm()
+                onTravelEdit?(updated)
             }
         }
     }
@@ -1396,38 +1397,36 @@ public struct CapabilityProposalCard: View {
 
     private var travelProposal: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                Label("转为旅行计划任务", systemImage: "airplane.circle.fill")
-                    .font(.headline)
-                Spacer()
-                Image(systemName: "pencil.circle.fill")
-                    .foregroundStyle(AppTheme.Icons.interactive)
-            }
-            Text("已根据对话内容智能提取关键信息，\n你可以修改后继续。")
+            Label("核对旅行计划需求", systemImage: "airplane.circle.fill")
+                .font(.headline)
+            Text("以下信息将用于创建工作流。缺失内容请先补充。")
                 .font(AppTheme.Typography.supporting)
                 .foregroundStyle(AppTheme.Colors.textSecondary)
-
             VStack(spacing: 0) {
-                travelRow("mappin.and.ellipse", "目的地", proposal.input.title ?? "京都 · 日本")
+                travelRow("text.alignleft", "任务标题", proposal.input.title)
                 Divider().padding(.leading, 42)
-                travelRow("calendar", "出行时间", "2024年10月1日 – 10月5日（5天）")
+                travelRow("mappin.and.ellipse", "目的地", proposal.input.destination)
                 Divider().padding(.leading, 42)
-                travelRow("person.2.fill", "同行人", "1–2人")
+                travelRow("calendar", "出行时间", proposal.input.travelDates)
                 Divider().padding(.leading, 42)
-                travelRow("heart", "偏好", "经典景点、在地美食、拍照")
+                travelRow("person.2.fill", "同行人", proposal.input.travelers)
+                Divider().padding(.leading, 42)
+                travelRow("heart", "偏好", proposal.input.travelPreferences)
             }
             .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-
+            if let description = proposal.input.description {
+                Text(description).font(AppTheme.Typography.supporting).lineLimit(6)
+            }
+            if let error = proposal.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
             if proposal.state == .awaitingConfirmation || proposal.state == .failed {
-                Button(action: { showsTravelDetails = true }) {
-                    HStack {
-                        Spacer()
-                        Text(proposal.state == .failed ? "重新完善计划" : "继续完善计划")
-                        Image(systemName: "chevron.right")
-                        Spacer()
-                    }
+                Button("核对并修改需求") { showsTravelDetails = true }
+                    .buttonStyle(QuantumPrimaryButtonStyle())
+                if proposal.state == .awaitingConfirmation {
+                    Button("按以上需求创建", action: onConfirm)
+                        .buttonStyle(.bordered)
                 }
-                .buttonStyle(QuantumPrimaryButtonStyle())
                 Button("放弃", action: onDiscard)
                     .font(AppTheme.Typography.supporting)
                     .frame(maxWidth: .infinity)
@@ -1439,27 +1438,24 @@ public struct CapabilityProposalCard: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border) }
     }
 
-    private func travelRow(_ icon: String, _ title: String, _ value: String) -> some View {
+    private func travelRow(_ icon: String, _ title: String, _ value: String?) -> some View {
         HStack(spacing: AppTheme.Spacing.sm) {
             Image(systemName: icon)
                 .foregroundStyle(AppTheme.Icons.interactive)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
-                Text(value).font(AppTheme.Typography.supporting.weight(.medium))
+                Text(value?.isEmpty == false ? value! : "待补充")
+                    .font(AppTheme.Typography.supporting.weight(.medium))
             }
             Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppTheme.Colors.textTertiary)
         }
         .padding(.horizontal, AppTheme.Spacing.sm)
         .frame(minHeight: 54)
     }
 
     private var isTravelProposal: Bool {
-        let text = [proposal.summary, proposal.input.title, proposal.input.description,
-                    proposal.input.desiredOutput, proposal.input.outputKind]
-            .compactMap { $0 }.joined(separator: " ")
-        return text.contains("旅行") || text.contains("京都") || text.localizedCaseInsensitiveContains("travel")
+        proposal.capabilityId == "workflow.create" && proposal.input.outputKind == "travel"
     }
 
     private var stateLabel: String {
@@ -1474,86 +1470,57 @@ public struct CapabilityProposalCard: View {
 }
 
 struct TravelPlanPreferencesView: View {
-    let onGenerate: () -> Void
+    let input: CapabilityProposalInput
+    let onSave: (CapabilityProposalInput) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var companion = "一个人"
-    @State private var budget = "经济"
-    @State private var pace = "轻松"
-    @State private var interests: Set<String> = ["寺社文化", "自然风光", "在地美食", "拍照打卡"]
+    @State private var title: String
+    @State private var destination: String
+    @State private var travelDates: String
+    @State private var travelers: String
+    @State private var travelPreferences: String
+    @State private var details: String
+
+    init(input: CapabilityProposalInput, onSave: @escaping (CapabilityProposalInput) -> Void) {
+        self.input = input
+        self.onSave = onSave
+        _title = State(initialValue: input.title ?? "")
+        _destination = State(initialValue: input.destination ?? "")
+        _travelDates = State(initialValue: input.travelDates ?? "")
+        _travelers = State(initialValue: input.travelers ?? "")
+        _travelPreferences = State(initialValue: input.travelPreferences ?? "")
+        _details = State(initialValue: input.description ?? "")
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                    Text("补充以下信息，让计划更符合你的需求。")
-                        .font(AppTheme.Typography.supporting)
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                    field("mappin.circle.fill", "目的地", "京都 · 日本")
-                    field("calendar", "出行日期", "2024年10月1日 – 10月5日")
-                    choice("person.2.fill", "同行人", ["一个人", "情侣", "朋友", "家人"], $companion)
-                    choice("coins", "预算（人均）", ["经济", "适中", "舒适", "不限"], $budget)
-                    choice("clock", "旅行节奏", ["轻松", "适中", "充实"], $pace)
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        Label("感兴趣的内容（可多选）", systemImage: "heart")
-                            .font(AppTheme.Typography.body.weight(.semibold))
-                        LazyVGrid(columns: [.init(.flexible()), .init(.flexible()), .init(.flexible())], spacing: 8) {
-                            ForEach(["寺社文化", "自然风光", "在地美食", "拍照打卡", "购物", "动漫圣地", "小众体验"], id: \.self) { item in
-                                Button {
-                                    if interests.contains(item) { interests.remove(item) } else { interests.insert(item) }
-                                } label: {
-                                    Text(item + (interests.contains(item) ? " ✓" : ""))
-                                        .font(AppTheme.Typography.supporting)
-                                        .padding(.horizontal, 12).frame(minHeight: 34)
-                                        .background(interests.contains(item) ? AppTheme.Colors.primary.opacity(0.12) : AppTheme.Colors.surfaceTint, in: Capsule())
-                                        .overlay { Capsule().stroke(interests.contains(item) ? AppTheme.Colors.primary : AppTheme.Colors.border) }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    Label("生成图片", systemImage: "photo.on.rectangle")
-                        .font(AppTheme.Typography.supporting.weight(.semibold))
-                        .foregroundStyle(AppTheme.Icons.interactive)
-                    Label("地图搜索", systemImage: "mappin.and.ellipse")
-                        .font(AppTheme.Typography.supporting.weight(.semibold))
-                        .foregroundStyle(AppTheme.Icons.interactive)
+            Form {
+                TextField("任务标题", text: $title)
+                TextField("目的地（如：九州）", text: $destination)
+                TextField("出行时间（如：2026 年国庆，具体日期待定）", text: $travelDates)
+                TextField("同行人", text: $travelers)
+                TextField("偏好", text: $travelPreferences)
+                Section("完整需求") {
+                    TextEditor(text: $details).frame(minHeight: 130)
                 }
-                .padding(AppTheme.Metrics.contentGutter)
             }
-            .navigationTitle("完善旅行计划")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("核对旅行需求")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .safeAreaInset(edge: .bottom) {
-                Button("✦  生成我的旅行计划", action: onGenerate)
-                    .buttonStyle(QuantumPrimaryButtonStyle())
-                    .padding(AppTheme.Metrics.contentGutter)
-                    .background(.ultraThinMaterial)
-            }
-        }
-    }
-
-    private func field(_ icon: String, _ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Label(title, systemImage: icon).font(AppTheme.Typography.body.weight(.semibold))
-            HStack { Text(value); Spacer(); Image(systemName: "chevron.right").foregroundStyle(AppTheme.Colors.textTertiary) }
-                .font(AppTheme.Typography.supporting)
-                .padding(.horizontal, AppTheme.Spacing.md).frame(minHeight: 44)
-                .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-        }
-    }
-
-    private func choice(_ icon: String, _ title: String, _ values: [String], _ selection: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Label(title, systemImage: icon).font(AppTheme.Typography.body.weight(.semibold))
-            HStack(spacing: AppTheme.Spacing.sm) {
-                ForEach(values, id: \.self) { value in
-                    Button(value) { selection.wrappedValue = value }
-                        .font(AppTheme.Typography.supporting)
-                        .frame(maxWidth: .infinity, minHeight: 38)
-                        .background(selection.wrappedValue == value ? AppTheme.Colors.primary.opacity(0.12) : AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-                        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.sm).stroke(selection.wrappedValue == value ? AppTheme.Colors.primary : .clear) }
-                        .buttonStyle(.plain)
+                Button("保存并生成新确认单") {
+                    var updated = input
+                    updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.description = details.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.destination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.travelDates = travelDates.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.travelers = travelers.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.travelPreferences = travelPreferences.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave(updated)
                 }
+                .buttonStyle(QuantumPrimaryButtonStyle())
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          details.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                .padding(AppTheme.Metrics.contentGutter)
+                .background(.ultraThinMaterial)
             }
         }
     }
@@ -1675,7 +1642,7 @@ struct V4TravelPrototypeHost: View {
 
     var body: some View {
         if pageID.hasSuffix("p03") {
-            TravelPlanPreferencesView(onGenerate: {})
+            TravelPlanPreferencesView(input: Self.proposal.input, onSave: { _ in })
         } else if pageID.hasSuffix("p04") {
             TravelWorkflowPlanView(onStart: {})
         } else {
@@ -1719,7 +1686,7 @@ struct V4TravelPrototypeHost: View {
         id: "travel-plan-preview", capabilityId: "workflow.create",
         input: CapabilityProposalInput(
             title: "京都 · 日本", description: "京都五日旅行计划", desiredOutput: "图文旅行计划",
-            sourceDocumentId: nil, outputKind: "travel_plan", workflowId: nil, textMaterial: nil,
+            sourceDocumentId: nil, outputKind: "travel", workflowId: nil, textMaterial: nil,
             audience: nil, intendedUse: nil, layoutStyle: nil, slideCount: nil, clarificationStrategy: nil,
             researchQuestion: nil, thesis: nil, language: nil, citationStyle: nil, evidencePolicy: nil
         ),

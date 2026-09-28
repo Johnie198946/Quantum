@@ -306,12 +306,27 @@ async def _workflow_create(data: dict[str, Any], payload: dict[str, Any], key: s
     workflow_id, request_hash = _qcp_workflow_identity("workflow.create", payload, key, data)
     workflow_data = dict(data)
     source_client_session_id = workflow_data.pop("source_client_session_id", None)
+    travel_fields = {
+        label: str(workflow_data.pop(key, "") or "").strip()
+        for key, label in (
+            ("destination", "目的地"), ("travel_dates", "出行时间"),
+            ("travelers", "同行人"), ("travel_preferences", "偏好"),
+        )
+    }
+    if workflow_data.get("output_kind") == "travel":
+        confirmed = "；".join(f"{label}：{value}" for label, value in travel_fields.items() if value)
+        if confirmed:
+            workflow_data["description"] = (
+                f"已确认旅行信息（与原始需求冲突时以此为准）：{confirmed}。\n"
+                f"原始需求：{workflow_data['description']}"
+            )
     return await _create_workflow(
         WorkflowCreate(**workflow_data), payload,
         workflow_id=workflow_id, qcp_request_hash=request_hash,
         requirements_snapshot_overrides={
-            "source_client_session_id": source_client_session_id
-        } if source_client_session_id else None,
+            **({"source_client_session_id": source_client_session_id} if source_client_session_id else {}),
+            **({"travel_details": travel_fields} if workflow_data.get("output_kind") == "travel" else {}),
+        },
     )
 
 

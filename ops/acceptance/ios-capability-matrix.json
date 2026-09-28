@@ -1903,6 +1903,10 @@
               "minLength": 1,
               "type": "string"
             },
+            "destination": {
+              "maxLength": 160,
+              "type": "string"
+            },
             "output_kind": {
               "enum": [
                 "general",
@@ -1932,6 +1936,18 @@
             "title": {
               "maxLength": 160,
               "minLength": 1,
+              "type": "string"
+            },
+            "travel_dates": {
+              "maxLength": 160,
+              "type": "string"
+            },
+            "travel_preferences": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "travelers": {
+              "maxLength": 160,
               "type": "string"
             }
           },

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from backend.db import SessionLocal
-from backend.models.workflow import WorkflowClientSessionBinding
+from backend.models.workflow import WorkflowClientSessionBinding, WorkflowDefinition
 
 _CLIENT_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$")
 
@@ -99,3 +99,23 @@ async def require_registered_client_session(
                 detail={"code": "client_session_not_registered"},
             )
         return row
+
+
+async def latest_client_session_workflow(payload: dict[str, Any], session_id: str | None) -> dict[str, str] | None:
+    """Read the owner's latest confirmed workflow for this chat session."""
+    if not session_id:
+        return None
+    value = validate_client_session_id(session_id)
+    tenant_key, owner_user_id = _identity(payload)
+    async with SessionLocal() as db:
+        row = await db.scalar(
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.tenant_key == tenant_key,
+                WorkflowDefinition.created_by == owner_user_id,
+                WorkflowDefinition.source_client_session_id == value,
+                WorkflowDefinition.archived_at.is_(None),
+            ).order_by(WorkflowDefinition.created_at.desc(), WorkflowDefinition.id.desc()).limit(1)
+        )
+    if row is None:
+        return None
+    return {"id": row.id, "title": row.title, "description": row.description, "status": row.status}

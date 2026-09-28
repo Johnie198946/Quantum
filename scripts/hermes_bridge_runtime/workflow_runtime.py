@@ -134,11 +134,19 @@ def _workflow_run_sync(execution_id: str) -> None:
                 )
                 if not set(requested_scope).issubset(run_scope & agent_scope):
                     raise RuntimeError("workflow_node_knowledge_scope_denied")
-                docs = _persistence._knowledge_gateway_search(
-                    str(run.get("knowledge_capability") or ""),
-                    query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
-                    category_scope=requested_scope,
-                ) if requested_scope else []
+                docs = []
+                if requested_scope:
+                    for gateway_attempt in range(2):
+                        try:
+                            docs = _persistence._knowledge_gateway_search(
+                                str(run.get("knowledge_capability") or ""),
+                                query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
+                                category_scope=requested_scope,
+                            )
+                            break
+                        except httpx.TimeoutException as exc:
+                            if gateway_attempt:
+                                raise RuntimeError("knowledge_gateway_timeout: 检索服务连续两次超时，可从失败节点重试") from exc
                 node_network_allowed = bool(
                     effective_allow_network
                     and params.get("allow_network")

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+import httpx
 
 from backend.services.travel_plan import build_travel_plan, revise_travel_document, validate_travel_document
 
@@ -449,6 +450,15 @@ def test_first_workflow_registers_session_without_cross_owner_claim(tmp_path, mo
         first = harness.request("POST", "/api/v1/workflows", json=body)
         assert first.status_code == 201, first.text
         assert first.json()["workflow"]["source_client_session_id"] == body["source_client_session_id"]
+        from backend.services.workflow_session_scope import latest_client_session_workflow
+        import asyncio
+        owner = {"tenant_key": "tenant-alpha", "user_id": "alpha"}
+        current = asyncio.run(latest_client_session_workflow(owner, body["source_client_session_id"]))
+        assert current and current["id"] == first.json()["workflow"]["id"]
+        assert current["description"] == body["description"]
+        assert asyncio.run(latest_client_session_workflow(
+            {"tenant_key": "tenant-alpha", "user_id": "gamma"}, body["source_client_session_id"])) is None
+        assert asyncio.run(latest_client_session_workflow(owner, "other-session")) is None
         again = harness.request("POST", "/api/v1/workflows", json=body)
         assert again.status_code == 201, again.text
         other = harness.request("POST", "/api/v1/workflows", sub="gamma", json=body)
@@ -459,7 +469,8 @@ def test_first_workflow_registers_session_without_cross_owner_claim(tmp_path, mo
 
 @pytest.mark.parametrize("scope", [[], ["travel-guides"]])
 @pytest.mark.parametrize("network", [False, True])
-def test_research_queries_only_selected_knowledge_without_changing_network_authority(monkeypatch, scope, network):
+@pytest.mark.parametrize("timeout_once", [False, True])
+def test_research_queries_only_selected_knowledge_without_changing_network_authority(monkeypatch, scope, network, timeout_once):
     from scripts import hermes_bridge as bridge
     runtime = bridge.workflow_runtime
     persistence = bridge.persistence
@@ -479,6 +490,8 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     searches, models = [], []
     def search(*args, **kwargs):
         searches.append(kwargs["category_scope"])
+        if timeout_once and len(searches) == 1:
+            raise httpx.ReadTimeout("temporary gateway timeout")
         return []
     def model(*args, **kwargs):
         models.append(True)
@@ -487,7 +500,7 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", model)
     runtime._workflow_run_sync("test")
     assert run["status"] == "awaiting_review", run.get("error")
-    assert searches == ([scope] if scope else [])
+    assert searches == ([scope] * (2 if timeout_once else 1) if scope else [])
     assert bool(models) == network
 
 

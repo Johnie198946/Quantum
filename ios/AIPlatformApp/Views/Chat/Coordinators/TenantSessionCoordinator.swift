@@ -200,6 +200,9 @@ public final class TenantSessionCoordinator: ObservableObject {
             onCapabilityProposal: { [weak self] proposalId, verb in
                 self?.handleCapabilityProposal(messageId: message?.id, proposalId: proposalId, verb: verb)
             },
+            onTravelProposalEdit: { [weak self] proposalId, input in
+                self?.handleTravelProposalEdit(messageId: message?.id, proposalId: proposalId, input: input)
+            },
             onWorkflowOpen: { [weak self] workflowId in
                 self?.appState?.openWorkflow(workflowId)
             },
@@ -3734,6 +3737,42 @@ public final class TenantSessionCoordinator: ObservableObject {
         }
     }
 
+    public func handleTravelProposalEdit(messageId: String?, proposalId: String, input: CapabilityProposalInput) {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
+              let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
+                  if case .capabilityProposal(let item) = $0 { return item.id == proposalId }
+                  return false
+              }), case .capabilityProposal(var proposal) = messages[messageIndex].blocks[blockIndex],
+              proposal.capabilityId == "workflow.create", proposal.input.outputKind == "travel",
+              proposal.state == .awaitingConfirmation || proposal.state == .failed
+        else { return }
+        proposal.input = input
+        proposal.state = .applying
+        messages[messageIndex].blocks[blockIndex] = .capabilityProposal(proposal)
+        commitSession()
+        let expectedEpoch = tenantEpoch
+        let sourceClientSessionId = messages[messageIndex].sessionId
+        let capabilityClient = capabilityClient
+        Task { [weak self] in
+            do {
+                let response = try await capabilityClient.propose(
+                    "workflow.create", input: input, sessionId: sourceClientSessionId,
+                    requestId: UUID().uuidString, idempotencyKey: UUID().uuidString
+                )
+                guard response.status == "awaiting_confirmation",
+                      let refreshed = response.events.first(where: { $0.type == "capability.proposed" })?.payload
+                else { throw response.error ?? QCPErrorDTO(code: "proposal_failed", message: "未能生成新的确认单") }
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                self.replaceCapabilityProposal(messageId: messageId, proposalId: proposalId, with: refreshed)
+                self.showToast("需求已更新，请核对新确认单")
+            } catch {
+                guard let self, self.tenantEpoch == expectedEpoch else { return }
+                self.updateCapabilityProposal(messageId: messageId, proposalId: proposalId,
+                                              state: .failed, error: error.localizedDescription)
+            }
+        }
+    }
+
     public func handleCapabilityProposal(messageId: String?, proposalId: String, verb: String) {
         guard let messageIndex = messages.firstIndex(where: { $0.id == messageId }),
               let blockIndex = messages[messageIndex].blocks.firstIndex(where: {
@@ -3749,6 +3788,11 @@ public final class TenantSessionCoordinator: ObservableObject {
             return
         }
         guard verb == "confirm" else { return }
+        if proposal.capabilityId == "workflow.create" && proposal.input.outputKind == "travel"
+            && proposal.state == .failed {
+            showToast("请先保存修改并核对新的确认单")
+            return
+        }
         if proposal.capabilityId == "media.process" && !proposal.input.hasImageParameters {
             showToast("图片参数未完整保留，请重新发送处理需求")
             return

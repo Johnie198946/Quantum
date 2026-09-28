@@ -430,8 +430,8 @@ public enum CapabilityProposalState: String, Codable, Sendable, Hashable {
 }
 
 public struct CapabilityProposalInput: Codable, Sendable, Hashable {
-    public let title: String?
-    public let description: String?
+    public var title: String?
+    public var description: String?
     public let desiredOutput: String?
     public let sourceDocumentId: String?
     public let outputKind: String?
@@ -447,6 +447,10 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let language: String?
     public let citationStyle: String?
     public let evidencePolicy: String?
+    public var destination: String? = nil
+    public var travelDates: String? = nil
+    public var travelers: String? = nil
+    public var travelPreferences: String? = nil
     public var noteVersions: [String: String]? = nil
     public var noteId: String? = nil
     public var exerciseId: String? = nil
@@ -473,6 +477,7 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
         case desiredOutput = "desired_output"
         case sourceDocumentId = "source_document_id"
         case outputKind = "output_kind"
+        case destination, travelDates = "travel_dates", travelers, travelPreferences = "travel_preferences"
         case workflowId = "workflow_id"
         case textMaterial = "text_material"
         case audience
@@ -493,7 +498,7 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
 public struct CapabilityProposalBlock: Identifiable, Codable, Sendable, Hashable {
     public let id: String
     public let capabilityId: String
-    public let input: CapabilityProposalInput
+    public var input: CapabilityProposalInput
     public let summary: String
     public let risk: String
     /// One-time server token. Decoded from the live event and never persisted.
