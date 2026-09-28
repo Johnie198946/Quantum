@@ -23,10 +23,9 @@ CHAPTER_MIN_CJK = 3_000
 MAX_DUPLICATE_RATIO = 0.15
 MIN_QUOTE_LENGTH = 20
 MIN_FINDING_LENGTH = 30
-CHAPTER_CHECKS = (
-    "mechanism", "worked_example", "limits", "reader_questions", "evidence",
-    "specificity", "causal_chain", "continuity", "authorial_voice",
-)
+LEGACY_CHAPTER_CHECKS = ("mechanism", "worked_example", "limits", "reader_questions", "evidence")
+NARRATIVE_CHAPTER_CHECKS = ("specificity", "causal_chain", "continuity", "authorial_voice")
+CHAPTER_CHECKS = LEGACY_CHAPTER_CHECKS + NARRATIVE_CHAPTER_CHECKS
 BOOK_CHECKS = (
     "coherence", "non_redundancy", "novice_readability", "thesis",
     "counterargument", "uncertainty", "reader_value", "genre_fit",
@@ -228,7 +227,7 @@ def validate_editorial_brief(value) -> list[str]:
     return sorted(reasons)
 
 
-def validate_editorial(body, contract, review=None, source_receipts=None) -> list[str]:
+def validate_editorial(body, contract, review=None, source_receipts=None, *, published_read=False) -> list[str]:
     """Sorted unique reason codes; [] means prerequisites only, NOT publication
     authorization. Requires a review, but cannot authenticate its claimed author.
     Existing review envelope fields are allowed for upstream receipt validation.
@@ -392,7 +391,12 @@ def validate_editorial(body, contract, review=None, source_receipts=None) -> lis
         if r.get("body_hash") != c["body_hash"] or r.get("decision") != "approved":
             reasons.add(f"review.chapter:{rid}")
         checks = r.get("checks")
-        for name in CHAPTER_CHECKS:
+        # Only authenticated, already-published reviews may predate narrative checks.
+        # A partial/new review must still satisfy every current check.
+        required_checks = (LEGACY_CHAPTER_CHECKS if published_read and isinstance(checks, dict)
+                           and not any(name in checks for name in NARRATIVE_CHAPTER_CHECKS)
+                           else CHAPTER_CHECKS)
+        for name in required_checks:
             item = checks.get(name) if isinstance(checks, dict) else None
             if not isinstance(item, dict):
                 reasons.add(f"review.check:{rid}:{name}")

@@ -567,3 +567,35 @@ def test_legacy_raw_review_clock_envelope_still_releases_and_is_readable(tmp_pat
     assert store.stage(value, now=at(4))["state"] == "published"
     with sqlite3.connect(tmp_path / "publication.sqlite3") as db:
         assert db.execute("SELECT bundle_json FROM editions WHERE edition_id=?", (staged["edition_id"],)).fetchone()[0] == frozen
+
+
+@pytest.mark.parametrize("tamper", ["body", "review", "proof"])
+def test_published_old_chapter_checks_survive_upgrade_without_weakening_release(tmp_path, monkeypatch, tamper):
+    from backend.services import publication_editorial as editorial
+    import publication_editorial_fixture as fixture
+
+    store = PublicationStore(tmp_path)
+    # Publish an authentic synthetic old-schema review using the original rules.
+    with monkeypatch.context() as old:
+        old.setattr(editorial, "CHAPTER_CHECKS", editorial.LEGACY_CHAPTER_CHECKS)
+        old.setattr(fixture, "CHAPTER_CHECKS", editorial.LEGACY_CHAPTER_CHECKS)
+        value = ready(store, bundle())
+        item = store.stage(value, now=at(3))
+        assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+        pending = store.stage(ready(store, bundle(series="ai-practice")), now=at(3))
+
+    # Reads retain their signed historical review; unissued work needs new checks.
+    assert store.get_published(item["publication_id"], now=at(4)) is not None
+    assert len(store.published(now=at(4))) == 1
+    blocked = store.release_due(now=at(4))["blocked"]
+    assert blocked[0]["edition_id"] == pending["edition_id"]
+    assert "review.check:chapter-001:specificity" in blocked[0]["reasons"]
+    assert store.stage(value, now=at(4))["state"] == "published"
+
+    if tamper == "body":
+        store._path(item["body_ref"], ".md").write_text("changed")
+    elif tamper == "review":
+        (store.evidence / (value["review"]["receipt"]["sha256"] + ".bin")).write_text("{}")
+    else:
+        Path(value["editorial_proof_file"]).write_text("{}")
+    assert store.get_published(item["publication_id"], now=at(4)) is None

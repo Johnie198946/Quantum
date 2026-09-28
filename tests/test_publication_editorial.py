@@ -383,3 +383,20 @@ def test_open_gap_requires_independent_per_gap_disposition(disposition):
     rejected = {**review, "decision": "rejected", "gap_resolutions": []}
     assert "research_gaps.open" not in validate_editorial(body, contract, rejected, receipts)
     assert contract["research_gaps"][0]["state"] == "open"
+
+
+def test_published_compatibility_only_accepts_complete_legacy_checks():
+    from backend.services.publication_editorial import NARRATIVE_CHAPTER_CHECKS
+    body, contract, review, receipts = synthetic_fixture("chapter")
+    checks = review["chapters"][0]["checks"]
+    for name in NARRATIVE_CHAPTER_CHECKS:
+        checks.pop(name)
+    assert validate_editorial(body, contract, review, receipts, published_read=True) == []
+    assert len(validate_editorial(body, contract, review, receipts)) == 4
+    checks["specificity"] = None
+    assert "review.check:chapter-001:specificity" in validate_editorial(
+        body, contract, review, receipts, published_read=True)
+    checks.pop("specificity")
+    checks.pop("evidence")
+    assert "review.check:chapter-001:evidence" in validate_editorial(
+        body, contract, review, receipts, published_read=True)

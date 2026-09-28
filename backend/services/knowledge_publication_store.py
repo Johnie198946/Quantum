@@ -878,7 +878,8 @@ class PublicationStore:
                             (row["edition_id"], row["content_hash"], hashlib.sha256(row["bundle_json"].encode()).hexdigest())).fetchone()
         if bundle.get("content_kind") == "commentary" and not (row["state"] == "published" and legacy):
             try:
-                reasons.extend(self._editorial_check(db, {**bundle, "body": artifact_bytes.decode("utf-8")}, frozen=row["state"] == "published"))
+                reasons.extend(self._editorial_check(db, {**bundle, "body": artifact_bytes.decode("utf-8")}, frozen=row["state"] == "published",
+                                                     published_read=row["state"] == "published"))
             except UnicodeError:
                 reasons.append("editorial_body_invalid")
         if bundle.get("content_kind") == "source_index":
@@ -1051,7 +1052,7 @@ class PublicationStore:
 
     def _editorial_check(
         self, db, bundle, *, require_approved=True, frozen=False,
-        verified=None, allow_failed_revalidation=False, derive_review_time=False,
+        verified=None, allow_failed_revalidation=False, derive_review_time=False, published_read=False,
     ):
         if bundle.get("content_kind") != "commentary":
             return []
@@ -1112,7 +1113,8 @@ class PublicationStore:
                 elif _parse_datetime(envelope_time, "review.reviewed_at") > _now() + timedelta(minutes=5):
                     binding_reasons.append("editorial_review_envelope_mismatch")
             reasons = binding_reasons + validate_editorial(
-                bundle["body"], contract, review, bundle["source_receipts"]
+                bundle["body"], contract, review, bundle["source_receipts"],
+                published_read=published_read and require_approved and frozen and not binding_reasons,
             )
             if require_approved and (row["review_hash"] != review_hash or row["proof_json"] != _canonical(proof).decode()):
                 reasons.append("editorial_review_not_recorded")
