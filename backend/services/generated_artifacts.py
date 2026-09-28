@@ -6,6 +6,8 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import tempfile
 import textwrap
 import uuid
 from datetime import datetime, timezone
@@ -47,13 +49,14 @@ def _owner_root(tenant_key: str, user_id: str) -> Path:
 
 def _save(
     *, tenant_key: str, user_id: str, filename: str, media_type: str,
-    data: bytes, kind: str, metadata: dict[str, Any] | None = None,
+    data: bytes, kind: str, metadata: dict[str, Any] | None = None, idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     if not data:
         raise GeneratedArtifactError("empty_artifact", "generated artifact is empty")
-    artifact_id = f"ga_{uuid.uuid4().hex}"
-    directory = _owner_root(tenant_key, user_id) / artifact_id
-    directory.mkdir(mode=0o700)
+    owner = _owner_root(tenant_key, user_id)
+    artifact_id = "ga_" + (uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant_key}:{user_id}:{idempotency_key}").hex if idempotency_key else uuid.uuid4().hex)
+    target = owner / artifact_id
+    directory = Path(tempfile.mkdtemp(prefix=".pending-", dir=owner))
     suffix = Path(filename).suffix.lower()
     content_path = directory / f"content{suffix}"
     content_path.write_bytes(data)
@@ -73,6 +76,20 @@ def _save(
     (directory / "receipt.json").write_text(
         json.dumps(receipt, ensure_ascii=False, sort_keys=True), encoding="utf-8"
     )
+    try:
+        directory.rename(target)
+    except OSError:
+        if not target.is_dir():
+            raise
+        previous = read_generated_artifact(tenant_key, user_id, artifact_id)
+        keys = ("filename", "kind", "media_type", "content_hash", "metadata")
+        if any(previous[key] != receipt[key] for key in keys):
+            raise GeneratedArtifactError("idempotency_conflict", "同一个保存请求的内容发生变化")
+        generated_artifact_path(tenant_key, user_id, artifact_id)
+        return previous
+    finally:
+        if directory.exists():
+            shutil.rmtree(directory)
     return receipt
 
 

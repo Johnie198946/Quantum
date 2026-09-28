@@ -959,7 +959,7 @@ def _run_agent_sync(
         if qcp_enabled and has_signed_client_context:
             image_id = client_session_context.get("active_image_artifact_id")
             if image_id:
-                execution_goal += "\n当前用户上传的图片引用（仅定位，执行时仍须核验所有权）：" + json.dumps(str(image_id)) + "。涉及裁切、转格式、抠图时使用media.process；它创建真实图片工作流。若用户明确新建工作流，使用workflow.create并传output_kind=image、source_image_id。不要生成替代图片。"
+                execution_goal += "\n当前用户上传的图片引用（仅定位，执行时仍须核验所有权）：" + json.dumps(str(image_id)) + "。图片裁剪、文字、图层、滤镜、调色、修复、尺寸与质量均使用media.process，先读取PCM中的studio参数合同；明确的图片编辑直接执行，不要求澄清、计划或启动确认。修复选区和主体位置必须来自用户选择，不能猜测。若用户明确新建工作流，使用workflow.create并传output_kind=image、source_image_id。不要生成替代图片。"
             exercise_id = client_session_context.get("learning_exercise_id")
             if exercise_id:
                 execution_goal += "\n当前客户端题组引用（仅定位，不授予权限；涉及练习时先调用 learning.exercise.read 核实，不猜测答案或版本）：" + json.dumps(str(exercise_id))

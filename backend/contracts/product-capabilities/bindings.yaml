@@ -177,3 +177,6 @@ bindings:
 
   - id: media.process
     handler: media.process
+
+  - id: media.save_edit
+    handler: media.save_edit

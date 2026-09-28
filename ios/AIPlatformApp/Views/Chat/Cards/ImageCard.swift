@@ -58,13 +58,13 @@ public struct ImageCard: View {
         }
     }
 
-    nonisolated static func thumbnailData(from data: Data) -> Data? {
+    nonisolated static func thumbnailData(from data: Data, maxPixelSize: Int = 1_600) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: false,
-                kCGImageSourceThumbnailMaxPixelSize: 1_600,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
               ] as CFDictionary) else { return nil }
         return UIImage(cgImage: image).pngData()
     }
@@ -122,6 +122,7 @@ enum ImageEditSupport {
 
 
     static func process(_ data: Data, edit: ImageEditDTO) throws -> Data {
+        if edit.studio != nil { return try renderStudio(data, edit: edit) }
         guard uploadData(data) != nil, let original = UIImage(data: data),
               ["png", "jpg"].contains(edit.format), edit.focusX.isFinite, edit.focusY.isFinite,
               (0...1).contains(edit.focusX), (0...1).contains(edit.focusY),
@@ -179,112 +180,5 @@ enum ImageEditSupport {
         guard let cg = CIContext().createCGImage(ciImage, from: ciImage.extent),
               let png = UIImage(cgImage: cg).pngData() else { throw APIError.network("无法生成抠图结果") }
         return png
-    }
-}
-
-/// Mantis owns crop gestures, aspect ratios, rotation and undo. Vision owns subject segmentation.
-struct ImageWorkbench: View {
-    let data: Data
-    let onUse: (Data) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var edited: UIImage?
-    @State private var format = "PNG"
-    @State private var showCrop = false
-    @State private var busy = false
-    @State private var error: String?
-    @State private var focusX = 0.5
-    @State private var focusY = 0.5
-    @State private var compareOriginal = false
-    private var current: UIImage? { edited ?? UIImage(data: data) }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("让照片，刚刚好。")
-                            .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        Text("调一调构图，或把喜欢的主角留下来。")
-                            .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
-                    }
-                    if let image = compareOriginal ? UIImage(data: data) : current {
-                        Image(uiImage: image).resizable().scaledToFit()
-                            .overlay {
-                                GeometryReader { geometry in
-                                    Circle().stroke(.white, lineWidth: 2)
-                                        .background(Circle().fill(AppTheme.Colors.quantumBlue.opacity(0.5)))
-                                        .frame(width: 24, height: 24)
-                                        .position(x: geometry.size.width * focusX, y: geometry.size.height * focusY)
-                                        .allowsHitTesting(false)
-                                    Color.clear.contentShape(Rectangle()).onTapGesture { point in
-                                        focusX = min(1, max(0, point.x / geometry.size.width))
-                                        focusY = min(1, max(0, point.y / geometry.size.height))
-                                    }
-                                }
-                            }
-                            .background(AppTheme.Colors.secondaryBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 20))
-                            .accessibilityLabel("图片预览，使用下方滑块选择抠图主体位置")
-                    }
-                    Toggle("对比原图", isOn: $compareOriginal).disabled(edited == nil)
-                    HStack(spacing: 12) {
-                        Button("调整构图", systemImage: "crop.rotate") { showCrop = true }
-                        Spacer()
-                        Button("提取主体", systemImage: "person.crop.rectangle") { extract() }
-                    }.buttonStyle(.bordered).controlSize(.large).disabled(busy || compareOriginal)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("点选主角，再提取").font(.headline)
-                        Text("保留选中的人物或物品，背景变透明。")
-                            .font(.footnote).foregroundStyle(AppTheme.Colors.textSecondary)
-                        Slider(value: $focusX, in: 0...1) { Text("主体水平位置") }
-                        Slider(value: $focusY, in: 0...1) { Text("主体垂直位置") }
-                    }
-                    Picker("输出格式", selection: $format) {
-                        Text("PNG · 保留透明").tag("PNG")
-                        Text("JPG · 白色背景").tag("JPG")
-                    }.pickerStyle(.segmented)
-                    if busy { ProgressView("正在提取主体…") }
-                    if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(AppTheme.Colors.securityRed) }
-                }.padding(24)
-            }
-            .background(AppTheme.Colors.groupedBackground)
-            .navigationTitle("图片工作台").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
-            .safeAreaInset(edge: .bottom) {
-                Button("使用这张图片", systemImage: "checkmark") {
-                    guard let current, let bytes = ImageEditSupport.encode(current, format: format),
-                          bytes.count <= 12 * 1024 * 1024 else { error = "图片超过 12 MB，请先裁切或选择 JPG"; return }
-                    onUse(bytes)
-                }.buttonStyle(QuantumPrimaryButtonStyle()).disabled(busy || current == nil)
-                    .padding().background(.ultraThinMaterial)
-            }
-            .fullScreenCover(isPresented: $showCrop) {
-                if let current {
-                    Mantis.ImageCropper(image: current)
-                        .appearance(.system)
-                        .configure { $0.enableUndoRedo = true; $0.cropMode = .async }
-                        .onCrop { result in edited = result.croppedImage; showCrop = false; compareOriginal = false }
-                        .onCancel { showCrop = false }
-                        .onCropFailed { _ in error = "裁切未完成，请重试"; showCrop = false }
-                        .ignoresSafeArea()
-                }
-            }
-            .interactiveDismissDisabled(busy)
-        }
-    }
-
-    private func extract() {
-        guard let current, let bytes = current.pngData() else { return }
-        busy = true; error = nil
-        let x = focusX, y = focusY
-        Task {
-            do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try ImageEditSupport.extract(bytes, x: x, y: y)
-                }.value
-                edited = UIImage(data: result); format = "PNG"; compareOriginal = false
-            } catch { self.error = error.localizedDescription }
-            busy = false
-        }
     }
 }

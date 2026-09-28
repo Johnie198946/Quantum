@@ -405,6 +405,7 @@ struct WorkflowSummaryCard: View {
 struct WorkflowCreateSheet: View {
     let onCreated: (WorkflowCreateResponseDTO) async -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @State private var showingAttachmentPicker = false
     @State private var sourceDocument: DocumentReceiptDTO?
@@ -414,6 +415,7 @@ struct WorkflowCreateSheet: View {
     @State private var imageReceipt: ImageReceiptDTO?
     @State private var uploadingImage = false
     @State private var editImage = false
+    @State private var imageStudio = false
     @State private var title = ""
     @State private var description = ""
     @State private var output = "研究报告（Markdown）"
@@ -444,7 +446,7 @@ struct WorkflowCreateSheet: View {
 
                         Text("输出形式").font(AppTheme.Typography.label)
                         HStack(spacing: AppTheme.Spacing.sm) {
-                            compactOutputPreset(title: "图片", icon: "photo", kind: "image", deliverable: "处理后的图片与原尺寸下载")
+                            compactOutputPreset(title: "处理图像", icon: "photo", kind: "image", deliverable: "处理后的图片与原尺寸下载")
                             compactOutputPreset(title: "报告", icon: "doc.text", kind: "document", deliverable: "研究报告（Markdown）")
                             compactOutputPreset(title: "PPT", icon: "rectangle.on.rectangle", kind: "presentation", deliverable: "可编辑 PPTX 与渲染预览")
                             compactOutputPreset(title: "旅行计划", icon: "airplane.departure", kind: "travel", deliverable: "图文旅行计划，可确认后转为旅行笔记或 PDF")
@@ -541,6 +543,10 @@ struct WorkflowCreateSheet: View {
                     } catch { errorMessage = error.localizedDescription }
                 }
             }
+            .onAppear { if outputKind == "image" { imageStudio = true; outputKind = "document" } }
+            .fullScreenCover(isPresented: $imageStudio) { ImageStudioEntry { data in
+                TenantSessionCoordinator.shared.attachPhoto(data); appState.activeTab = 0; imageStudio = false; dismiss()
+            } }
             .sheet(isPresented: $editImage) {
                 if let imageData {
                     ImageWorkbench(data: imageData) { bytes in
@@ -554,6 +560,7 @@ struct WorkflowCreateSheet: View {
 
     private func compactOutputPreset(title: String, icon: String, kind: String, deliverable: String) -> some View {
         Button {
+            if kind == "image" { imageStudio = true; return }
             outputKind = kind
             output = deliverable
         } label: {

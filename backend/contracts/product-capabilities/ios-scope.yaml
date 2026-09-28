@@ -53,6 +53,7 @@ capabilities:
   - office.pdf.create
   - data.analyze
   - media.process
+  - media.save_edit
   - media.create
   - hermes.session.list
   - hermes.session.open
@@ -102,6 +103,9 @@ annotations:
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   data.analyze:
     ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
+    qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
+  media.save_edit:
+    ios_consumer: ios/AIPlatformApp/Views/ImageStudio/ImageWorkbench.swift
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   media.process:
     ios_consumer: ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift

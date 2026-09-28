@@ -1,0 +1,223 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -xctestrun /private/tmp/image-studio-v4-build/Build/Products/ImageStudioAcceptance.xctestrun -destination "platform=iOS Simulator,id=801B82BB-4B7F-449D-82C0-01DF69E93ED6" "-only-testing:AIPlatformAppTests/ImageStudioTests" "-only-testing:AIPlatformAppUITests/ImageStudioUITests" -parallel-testing-enabled NO -resultBundlePath /private/tmp/image-studio-v4-acceptance.xcresult
+
+2026-09-28 00:44:13.363 xcodebuild[6329:23497362] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+Writing result bundle at path:
+	/private/tmp/image-studio-v4-acceptance.xcresult
+
+2026-09-28 00:44:13.367 xcodebuild[6329:23497362] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-09-28 00:44:14.786 xcodebuild[6329:23497362] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+2026-09-28 00:44:19.607576+0800 AIPlatformApp[6413:23497677] [SwiftUI] Publishing changes from within view updates is not allowed, this will cause undefined behavior.
+IOSurfaceClientSetSurfaceNotify failed e00002c7
+Test Suite 'Selected tests' started at 2026-09-28 00:44:22.281.
+Test Suite 'AIPlatformAppTests.xctest' started at 2026-09-28 00:44:22.282.
+Test Suite 'ImageStudioTests' started at 2026-09-28 00:44:22.282.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testCropRotationAndBounds]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testCropRotationAndBounds]' passed (0.065 seconds).
+Test Case '-[AIPlatformAppTests.ImageStudioTests testLiveManualSaveAndBatchThroughPCM]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testLiveManualSaveAndBatchThroughPCM]' passed (0.412 seconds).
+Test Case '-[AIPlatformAppTests.ImageStudioTests testPixelsTextLayersFiltersDimensionsAndEncoding]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testPixelsTextLayersFiltersDimensionsAndEncoding]' passed (0.045 seconds).
+Test Case '-[AIPlatformAppTests.ImageStudioTests testPrivateLayerResourcesRequiredAndPCMEncodingRoundTrip]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testPrivateLayerResourcesRequiredAndPCMEncodingRoundTrip]' passed (0.005 seconds).
+Test Case '-[AIPlatformAppTests.ImageStudioTests testSpotRepairChangesMaskAndPreservesAlpha]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testSpotRepairChangesMaskAndPreservesAlpha]' passed (0.010 seconds).
+Test Case '-[AIPlatformAppTests.ImageStudioTests testUndoRedoAndDraftRestore]' started.
+Test Case '-[AIPlatformAppTests.ImageStudioTests testUndoRedoAndDraftRestore]' passed (0.003 seconds).
+Test Suite 'ImageStudioTests' passed at 2026-09-28 00:44:22.824.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.541 (0.543) seconds
+Test Suite 'AIPlatformAppTests.xctest' passed at 2026-09-28 00:44:22.825.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.541 (0.543) seconds
+Test Suite 'Selected tests' passed at 2026-09-28 00:44:22.825.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.541 (0.544) seconds
+2026-09-28 00:44:23.784460+0800 AIPlatformAppUITests-Runner[6436:23498101] [Default] Running tests...
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-09-28 00:44:25.205.
+Test Suite 'AIPlatformAppUITests.xctest' started at 2026-09-28 00:44:25.206.
+Test Suite 'ImageStudioUITests' started at 2026-09-28 00:44:25.206.
+Test Case '-[AIPlatformAppUITests.ImageStudioUITests testManualToolsAndSevenScreens]' started.
+    t =     0.00s Start Test at 2026-09-28 00:44:25.206
+    t =     0.05s Set Up
+    t =     0.06s Open com.ailab.AIPlatformApp
+    t =     0.06s     Launch com.ailab.AIPlatformApp
+    t =     0.27s         Setting up automation session
+    t =     1.17s         Wait for com.ailab.AIPlatformApp to idle
+    t =     2.74s Waiting 20.0s for "studio-tool-文字" Button to exist
+    t =     3.79s     Checking `Expect predicate `existsNoRetry == 1` for object "studio-tool-文字" Button`
+    t =     3.79s         Checking existence of `"studio-tool-文字" Button`
+    t =     3.87s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =     3.99s Added attachment named '01-editor'
+    t =     3.99s Tap "studio-tool-文字" Button
+    t =     3.99s     Wait for com.ailab.AIPlatformApp to idle
+    t =     3.99s     Find the "studio-tool-文字" Button
+    t =     4.01s     Check for interrupting elements affecting "studio-tool-文字" Button
+    t =     4.03s     Synthesize event
+    t =     4.33s     Wait for com.ailab.AIPlatformApp to idle
+    t =     4.37s Checking existence of `"studio-text-input" TextField`
+    t =     4.39s Waiting 5.0s for "studio-text-input" TextField to exist
+    t =     5.46s     Checking `Expect predicate `existsNoRetry == 1` for object "studio-text-input" TextField`
+    t =     5.46s         Checking existence of `"studio-text-input" TextField`
+    t =     5.48s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =     5.59s Added attachment named '02-text'
+    t =     5.59s Tap "studio-save" Button
+    t =     5.59s     Wait for com.ailab.AIPlatformApp to idle
+    t =     5.59s     Find the "studio-save" Button
+    t =     5.60s     Check for interrupting elements affecting "studio-save" Button
+    t =     5.62s     Synthesize event
+    t =     5.91s     Wait for com.ailab.AIPlatformApp to idle
+    t =     5.92s Tap "图层" Button
+    t =     5.92s     Wait for com.ailab.AIPlatformApp to idle
+    t =     5.92s     Find the "图层" Button
+    t =     5.94s     Check for interrupting elements affecting "square.3.layers.3d" Button
+    t =     5.96s     Synthesize event
+    t =     6.25s     Wait for com.ailab.AIPlatformApp to idle
+    t =     6.25s Waiting 5.0s for "复制" Button to exist
+    t =     7.32s     Checking `Expect predicate `existsNoRetry == 1` for object "复制" Button`
+    t =     7.32s         Checking existence of `"复制" Button`
+    t =     7.37s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =     7.48s Added attachment named '03-layers'
+    t =     7.48s Tap "复制" Button
+    t =     7.48s     Wait for com.ailab.AIPlatformApp to idle
+    t =     7.48s     Find the "复制" Button
+    t =     7.50s     Check for interrupting elements affecting "复制" Button
+    t =     7.51s     Synthesize event
+    t =     7.80s     Wait for com.ailab.AIPlatformApp to idle
+    t =     7.81s Tap "返回工具" Button
+    t =     7.81s     Wait for com.ailab.AIPlatformApp to idle
+    t =     7.81s     Find the "返回工具" Button
+    t =     7.84s     Check for interrupting elements affecting "chevron.left" Button
+    t =     7.86s     Synthesize event
+    t =     8.14s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.15s Tap "studio-tool-调色" Button
+    t =     8.15s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.15s     Find the "studio-tool-调色" Button
+    t =     8.18s     Check for interrupting elements affecting "studio-tool-调色" Button
+    t =     8.20s     Synthesize event
+    t =     8.48s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.49s Set normalized position of Slider (First Match) to 0.60
+    t =     8.49s     Wait for com.ailab.AIPlatformApp to idle
+    t =     8.49s     Find the Slider (First Match)
+    t =     8.50s     Check for interrupting elements affecting "0" Slider
+    t =     8.52s     Synthesize event
+    t =     9.09s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.09s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =     9.22s Added attachment named '04-color'
+    t =     9.22s Tap "滤镜" Button
+    t =     9.22s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.22s     Find the "滤镜" Button
+    t =     9.24s     Check for interrupting elements affecting "滤镜" Button
+    t =     9.26s     Synthesize event
+    t =     9.54s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.54s Tap "晴日" Button
+    t =     9.54s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.55s     Find the "晴日" Button
+    t =     9.56s     Check for interrupting elements affecting "晴日" Button
+    t =     9.58s     Synthesize event
+    t =     9.87s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.87s Tap "studio-save" Button
+    t =     9.87s     Wait for com.ailab.AIPlatformApp to idle
+    t =     9.88s     Find the "studio-save" Button
+    t =     9.89s     Check for interrupting elements affecting "studio-save" Button
+    t =     9.90s     Synthesize event
+    t =    10.19s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.20s Tap "studio-tool-修复" Button
+    t =    10.20s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.20s     Find the "studio-tool-修复" Button
+    t =    10.23s     Check for interrupting elements affecting "studio-tool-修复" Button
+    t =    10.25s     Synthesize event
+    t =    10.54s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.54s Press "studio-canvas" Any[0.40, 0.50] for 0.1 seconds, then drag to "studio-canvas" Any[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds
+    t =    10.54s     Wait for com.ailab.AIPlatformApp to idle
+    t =    10.54s     Find the "studio-canvas" Any
+    t =    10.55s     Check for interrupting elements affecting "studio-canvas" Other
+    t =    10.57s     Synthesize event
+    t =    10.57s         Find the "studio-canvas" Other
+    t =    10.58s         Find the "studio-canvas" Other
+    t =    10.59s         Find the "studio-canvas" Other
+    t =    10.60s         Find the "studio-canvas" Other
+    t =    10.61s         Find the "studio-canvas" Other
+    t =    11.04s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.05s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    11.19s Added attachment named '05-repair'
+    t =    11.19s Tap "预览修复" Button
+    t =    11.19s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.19s     Find the "预览修复" Button
+    t =    11.20s     Check for interrupting elements affecting "预览修复" Button
+    t =    11.22s     Synthesize event
+    t =    11.51s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.51s Tap "studio-save" Button
+    t =    11.51s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.51s     Find the "studio-save" Button
+    t =    11.52s     Check for interrupting elements affecting "studio-save" Button
+    t =    11.53s     Synthesize event
+    t =    11.83s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.83s Tap "studio-save" Button
+    t =    11.83s     Wait for com.ailab.AIPlatformApp to idle
+    t =    11.84s     Find the "studio-save" Button
+    t =    11.86s     Check for interrupting elements affecting "studio-save" Button
+    t =    11.88s     Synthesize event
+    t =    12.17s     Wait for com.ailab.AIPlatformApp to idle
+    t =    12.17s Waiting 10.0s for "studio-save-copy" Button to exist
+    t =    13.24s     Checking `Expect predicate `existsNoRetry == 1` for object "studio-save-copy" Button`
+    t =    13.24s         Checking existence of `"studio-save-copy" Button`
+    t =    13.28s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    13.37s Added attachment named '06-save'
+    t =    13.37s Find the "studio-save-copy" Button
+    t =    13.39s Tap "studio-save-copy" Button
+    t =    13.39s     Wait for com.ailab.AIPlatformApp to idle
+    t =    13.39s     Find the "studio-save-copy" Button
+    t =    13.41s     Check for interrupting elements affecting "studio-save-copy" Button
+    t =    13.42s     Synthesize event
+    t =    13.71s     Wait for com.ailab.AIPlatformApp to idle
+    t =    13.71s Waiting 20.0s for "已保存到作品文件" StaticText to exist
+    t =    14.78s     Checking `Expect predicate `existsNoRetry == 1` for object "已保存到作品文件" StaticText`
+    t =    14.78s         Checking existence of `"已保存到作品文件" StaticText`
+    t =    14.82s Swipe up Target Application 'com.ailab.AIPlatformApp'
+    t =    14.83s     Wait for com.ailab.AIPlatformApp to idle
+    t =    14.83s     Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    14.84s     Check for interrupting elements affecting "知识星海" Application
+    t =    14.85s     Synthesize event
+    t =    15.27s     Wait for com.ailab.AIPlatformApp to idle
+    t =    15.77s Waiting 10.0s for "已存入相册" Button to exist
+    t =    16.83s     Checking `Expect predicate `existsNoRetry == 1` for object "已存入相册" Button`
+    t =    16.83s         Checking existence of `"已存入相册" Button`
+    t =    16.86s Tap "批量处理更多照片" Button
+    t =    16.86s     Wait for com.ailab.AIPlatformApp to idle
+    t =    16.86s     Find the "批量处理更多照片" Button
+    t =    16.87s     Check for interrupting elements affecting "批量处理更多照片" Button
+    t =    16.89s     Synthesize event
+    t =    17.17s     Wait for com.ailab.AIPlatformApp to idle
+    t =    17.18s Waiting 5.0s for "同步当前样张的设置" StaticText to exist
+    t =    18.24s     Checking `Expect predicate `existsNoRetry == 1` for object "同步当前样张的设置" StaticText`
+    t =    18.24s         Checking existence of `"同步当前样张的设置" StaticText`
+    t =    18.27s Find the Target Application 'com.ailab.AIPlatformApp'
+    t =    18.39s Added attachment named '07-batch'
+    t =    18.39s Checking existence of `"生成计划" StaticText`
+    t =    18.40s Tap "studio-save-batch" Button
+    t =    18.40s     Wait for com.ailab.AIPlatformApp to idle
+    t =    18.41s     Find the "studio-save-batch" Button
+    t =    18.42s     Check for interrupting elements affecting "studio-save-batch" Button
+    t =    18.44s     Synthesize event
+    t =    18.73s     Wait for com.ailab.AIPlatformApp to idle
+    t =    18.73s Waiting 30.0s for "已完成 5 张" StaticText to exist
+    t =    19.79s     Checking `Expect predicate `existsNoRetry == 1` for object "已完成 5 张" StaticText`
+    t =    19.79s         Checking existence of `"已完成 5 张" StaticText`
+    t =    19.83s Checking existence of `"studio-error" StaticText`
+    t =    19.85s Tear Down
+Test Case '-[AIPlatformAppUITests.ImageStudioUITests testManualToolsAndSevenScreens]' passed (20.155 seconds).
+Test Suite 'ImageStudioUITests' passed at 2026-09-28 00:44:45.362.
+	 Executed 1 test, with 0 failures (0 unexpected) in 20.155 (20.156) seconds
+Test Suite 'AIPlatformAppUITests.xctest' passed at 2026-09-28 00:44:45.362.
+	 Executed 1 test, with 0 failures (0 unexpected) in 20.155 (20.157) seconds
+Test Suite 'Selected tests' passed at 2026-09-28 00:44:45.363.
+	 Executed 1 test, with 0 failures (0 unexpected) in 20.155 (20.158) seconds
+2026-09-28 00:44:59.403 xcodebuild[6329:23497362] [MT] IDETestOperationsObserverDebug: 44.590 elapsed -- Testing started completed.
+2026-09-28 00:44:59.404 xcodebuild[6329:23497362] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-28 00:44:59.404 xcodebuild[6329:23497362] [MT] IDETestOperationsObserverDebug: 44.590 sec, +44.590 sec -- end
+
+Test session results, code coverage, and logs:
+	/tmp/image-studio-v4-acceptance.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started

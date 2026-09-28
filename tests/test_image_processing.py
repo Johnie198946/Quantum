@@ -27,7 +27,8 @@ from backend.services.workflow_executor import project_event
 @pytest.mark.asyncio
 @pytest.mark.parametrize("source_kind", ["generated", "document"])
 @pytest.mark.parametrize("entry", ["chat", "workflow"])
-async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch, source_kind, entry):
+@pytest.mark.parametrize("studio", [False, True])
+async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypatch, source_kind, entry, studio):
     monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path / "generated"))
     monkeypatch.setenv("AI_LAB_HOME", str(tmp_path / "vault"))
     image = Image.new("RGBA", (640, 480), (200, 30, 50, 0))
@@ -82,10 +83,12 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         assert downloaded.content == original
         source_id = receipt["artifact_id"]
         edit = {"format": "jpg", "aspect_ratio": "16:9"}
+        if studio:
+            edit["studio"] = {"layers": [{"id": "title", "text": "校园午后"}], "exposure": 0.3}
         context = current_tenant.set(actor["tenant_key"])
         try:
             if entry == "chat":
-                result = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
+                result = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}-{studio}")
             else:
                 response = await client.post("/api/v1/workflows", json={"title": "图片处理", "description": "裁成16:9并转为JPG", "output_kind": "image", "source_image_id": source_id})
                 assert response.status_code == 201, response.text
@@ -104,7 +107,7 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
         context = current_tenant.set(actor["tenant_key"])
         try:
             if entry == "chat":
-                replay = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}")
+                replay = await invoke_capability("media.process", {"source_artifact_id": source_id, **edit}, payload=actor, idempotency_key=f"image-direct-check-{source_kind}-{studio}")
                 assert replay["events"][0]["payload"]["workflow"]["latest_execution"]["id"] == execution_id
         finally:
             current_tenant.reset(context)
@@ -124,6 +127,7 @@ async def test_upload_to_image_workflow_and_downloadable_jpeg(tmp_path, monkeypa
             assert execution.finished_at is None
             await db.commit()
             action = await image_device_action(db, execution, workflow, actor)
+            assert action["action_type"] == ("image_studio_v1" if studio else "image_process")
             replay = await image_device_action(db, execution, workflow, actor)
             assert replay["action_id"] == action["action_id"]
             assert action["payload"]["image_edit"]["aspect_ratio"] == "16:9"
@@ -292,6 +296,7 @@ async def test_image_direct_bridge_uses_trusted_session_and_replays_once(tmp_pat
                 "capability_id": "media.process", "input": data if data is not None else {
                     "source_artifact_id": source["artifact_id"], "format": "jpg",
                     "source_client_session_id": "model-invented-session",
+                    "studio": {"exposure": 0.3, "layers": [{"id": "caption", "text": "校园午后"}]},
                 },
             }))
         finally:

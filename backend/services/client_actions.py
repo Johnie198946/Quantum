@@ -76,7 +76,10 @@ async def issue_client_action(
             tenant_key=tenant_key,
             user_id=user_id,
             capability_id=capability_id,
-            action_type=_ACTIONS[capability_id],
+            # Old clients must reject advanced recipes instead of silently ignoring them.
+            action_type=("image_studio_v1" if capability_id == "media.process"
+                         and (data.get("image_edit") or {}).get("studio") is not None
+                         else _ACTIONS[capability_id]),
             idempotency_key_hash=key_hash,
             input_digest=input_digest,
             request_payload=data,

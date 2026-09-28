@@ -66,9 +66,8 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-imageWorkbenchPreview"),
-                   let photo = UIImage(named: "travel_kyoto_street")?.pngData() {
-                    ImageWorkbench(data: photo) { _ in }
+                if ProcessInfo.processInfo.arguments.contains("-imageWorkbenchPreview") {
+                    ImageStudioPreview()
                 } else if ProcessInfo.processInfo.arguments.contains("-cleanupMergePreview") {
                     CleanupMergeReviewPreview()
                 } else if ProcessInfo.processInfo.arguments.contains("-exerciseHintPreview") {
@@ -101,6 +100,23 @@ public struct AIPlatformApp: App {
         }
     }
 }
+
+#if DEBUG
+private struct ImageStudioPreview: View {
+    init() {
+        if ProcessInfo.processInfo.environment["IMAGE_STUDIO_LIVE"] == "1" {
+            InboxFileManager.shared.activatePrivateCache(tenantKey:"image-studio-test",userId:"alice")
+        }
+    }
+    private static let samples: [Data] = ["travel_kyoto_street", "travel_kyoto_bamboo", "travel_kyoto_camera", "travel_kyoto_bridge", "travel_kyoto_moment"].compactMap { name in
+        guard let data = UIImage(named:name)?.pngData() else { return nil }
+        return try? ImageEditSupport.process(data,edit:ImageEditDTO(format:"png",aspectRatio:"3:4",extractSubject:false,focusX:0.5,focusY:0.5))
+    }
+    var body: some View {
+        if let first = Self.samples.first { ImageWorkbench(data:first,photos:Self.samples) { _ in } }
+    }
+}
+#endif
 
 #if DEBUG
 private struct LearningExerciseHintPreview: View {
