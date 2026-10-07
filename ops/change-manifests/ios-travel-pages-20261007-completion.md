@@ -5,7 +5,7 @@
 - branch: codex/ios-travel-pages-20261007
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/ios-travel-pages-20261007
 - head/local_commit: 功能源码提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7；最终证据提交仅含文档/图片，见 Git HEAD。
-- remote_sha: 功能源码 3c62aa01594b8ff624ac2cc29704d9c005a6deb7，git ls-remote origin refs/heads/codex/ios-travel-pages-20261007 独立确认一致；最终证据提交在推送后再次核对。
+- remote_sha: 功能源码 3c62aa01594b8ff624ac2cc29704d9c005a6deb7，git ls-remote origin refs/heads/codex/ios-travel-pages-20261007 独立确认一致；最终证据提交补推三次被 GitHub Internal Server Error 拒绝，远端仍为已部署功能提交 3c62aa01；证据提交仅本地。
 - server_before: 不适用（客户端任务）；device_before=1.0.3(75.1)。
 - server_after: 不适用（无后端变更）；device_after=1.0.3(76)，安装后及测试后两次回读一致。
 - health_check: 客户端签名核验通过、真机安装成功、测试后正常启动成功；服务器健康不适用。
@@ -31,7 +31,7 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 
 仓库规则要求 main-only，与用户本次明确给出的“一任务一分支、一 Worktree”冲突，按用户明确指令使用隔离工作区。执行了读取最新 origin/main 的 fetch，未修改原 main。当前聊天的托管 Worktree 工具绑定 AI Lab 仓库，不支持指定 Quantum 仓库，因此以 git worktree 为目标产品创建隔离目录。
 
-未使用 git add .、共享 stash、reset --hard、提交、推送或部署。
+未使用 git add .、共享 stash 或 reset --hard。本地开发阶段未提交、推送或部署；下方继续阶段在用户明确授权后执行。
 
 ## 变更文件
 
@@ -103,3 +103,9 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 23:07:56 测试后以无 DEBUG 参数正常启动 com.ailab.AIPlatformApp 成功，最终安装版本再次回读 76，证据 /tmp/travel-device-normal-launch.json、/tmp/travel-device-final-apps.json。脱敏综合回执 physical-device-verification.json 随本任务提交。
 
 本轮按 iOS 真机安装交付；未额外上传 TestFlight。客户端改动无需重启后端，因此 server_before/server_after 均不适用。健康/功能核验仅指本次客户端页面，不宣称全流程云端验收或生产服务器已上线。
+
+### GitHub 验收记录补推失败（23:10—23:12）
+
+功能提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7 已成功推送并部署真机。证据提交 2164be6f891aeda4cd0c2ee328df2ea2919b7291 不含 iOS 源码变更；普通推送两次、HTTP/1.1 推送一次均返回 GitHub `remote rejected / Internal Server Error`。对应 request IDs：0E5F:11D892:14E070:1CA60B:6AC660DE、61D1:103791:148DFD:1C50D9:6AC6610F、0505:B130:147952:1C4B58:6AC6616B。每次 ls-remote 均确认远端仍是 3c62aa01594b8ff624ac2cc29704d9c005a6deb7。不是自动审批拒绝，未使用 force push 或更改其他分支。
+
+remaining_risks 更新：真机功能版本核验完成；真机截图及验收文档的后置提交尚未同步 GitHub，保留本地待补推。不能声称本地最新 HEAD 已推送。main 未合并，TestFlight 未上传，后台真实生成/修订全流程未复验。
