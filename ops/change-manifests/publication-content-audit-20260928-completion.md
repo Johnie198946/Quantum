@@ -1,4 +1,73 @@
-# 接受建议后的修复交付记录（以本节为最新状态）
+# 2026-10-07 自动出版完整验收续修（最新）
+
+用户授权继续核实并修复完整自动上线链路，明确不管理 2026-09-09 旧稿。沿用本任务独立分支/worktree，不触碰 Quantum-2.0 共享 main 的用户与其他任务改动。用户本会话“一任务一分支/worktree”规则优先于仓库文件中的 main-only 旧规则。
+
+判定：自动写作→素材→独立审核→发行主链已实现；共享发行 attention 判断固定要求每个系列只发表 1 期，导致每日 3 期唐史全部齐全仍报异常。原先认为历史 blocked 导致日终失败的结论不正确：代码已经按当日过滤 blocked；新增代码追踪发现多期数量比较才是直接根因。
+
+最小修复：`scripts/publication_release_remote.py::_attention` 复用配置导出的 `expected`（旧单期协议默认 1）；不改变门禁或历史稿。不新增调度器。新增 `ops/launchd/ai.hermes.publication-awake.plist` 使用 macOS 原生 `caffeinate -s`/launchd，在插电及用户会话运行时防闲置休眠；不要求管理员权限，不保证关机/合盖/主动休眠/断网。独立反方三轮收敛。
+
+新证据：Story 06:00 和 11:00 原生作者输出均明确 `PUBLICATION_CONTENT_INPUT_ERROR` / `remote command failed (exit 255)`，无稿件生成；11:48 控制器恢复派发后才完成 08:00 稿。因此早间延迟同样已有服务器传输失败证据，不再将故障起点断言为 16:20。OOM 的最早发生时刻仍未知。
+
+测试：发行传输、共享发行、日终回执三组共 59 passed；新增回归覆盖真实五系列七期形状、唐史三期齐全、缺期、重复、正文不可读、缺媒体、当日 blocked 与历史 blocked 隔离。ruff、git diff --check、plutil -lint 通过。
+
+status: TESTED（本节修复尚未提交/推送/安装）
+server_before: fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114，/opt/releases/ai-lab-platform-fc1b2f88c4a4.y8AxOV
+server_after: 尚未变更
+health_check: 既有服务健康，未见重启后 OOM；约 0.95 GiB MemAvailable，2 GiB swap 已持久启用
+functional_check: 2026-10-07 生产七期全部正文/计划媒体可用；新修复真实回执与真实用户 UI 验收待执行
+rollback_point: 旧 SHA、本机旧版本快照、系统盘快照 s-wz99gy04j7r9wxruzc9d；本轮运行时安装前另备份
+remaining_risks: 真实用户阅读验收、原生新版本定时触发和下一发行日完整自动周期尚未完成
+
+# 2026-10-07 定期发行故障续查（历史处置快照）
+
+## 23:09 后云控制台补充证据与恢复结果
+
+- 用户解锁 Mac 并提供阿里云轻量应用服务器实例页；核对实例 `da02df9de0a44fc1a202501ddc737802`、公网 IP `120.24.248.58`、地域深圳、运行状态“运行中”。这里的运行中不等于操作系统和应用健康。
+- 23:09 阿里云自助诊断报告 `dr-wz921pum5hglhluaaavn`：严重项为系统画面识别出的内存不足/OOM 启动异常（Code 1684829582），另有系统崩溃并重启警告和 22:52 CPU 80% 警告。此为云平台诊断结论，需服务器恢复后核实实际进程和日志。
+- 阿里云救援 VNC 成功连接；实际屏幕显示多个 `Out of memory: Killed process ... (python)`（约 0.9–1.0 GiB anon RSS），`systemd-journald.service` 反复启动失败、`systemd-resolved.service` watchdog 超时。按 Enter 出现 Linux login 提示；没有输入或读取任何密码。
+- 实例监控 22:10–23:05 CPU 大致 68–82%，系统盘读请求约 2200–2400 次/秒；内存图无数据，云监控插件未安装。9 月 28 日旧诊断曾报告云盘读写受限及高负载，仅作为历史信号，不能当作当日根因。
+- 原本没有云盘快照。约 23:12 创建系统盘快照 `s-wz99gy04j7r9wxruzc9d`，名称 `publication-incident-20261007-before-reboot`；页面从“创建中”转为创建时间 `2026-10-07 23:12:08` 且显示可回滚，作为当前系统盘恢复点。该快照为实例故障时的云盘状态，不声称数据库应用一致性。
+- 快照完成后正常重启（未勾选强制重启）；阿里云要求账号本人安全验证，用户亲自完成。实例 `uptime -s` 为 2026-10-07 23:28:49，SSH 与 HTTPS 传输恢复，未发起第二次重启。
+- 重启后 `.deployed-sha` 为 `fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114`，与 Quantum main 一致。8 个 Compose 容器均 healthy，API 本地 `/ready` 返回 `{"status":"ready","version":"0.8.0"}`，Hermes Bridge 在 `172.18.0.1:9118/health` 返回 `status=ok`，`systemctl --failed` 无失败单元，重启后的内核日志未见新的 OOM。
+- 主机约 3.4 GiB 可用物理内存，重启后 Hermes Bridge 和 chat-worker 常驻内存合计约 1 GiB；事发前无 swap。已在建立快照后用平台原生能力启用 2 GiB `/swapfile`，并将唯一挂载项写入 `/etc/fstab`；原文件备份为 `/etc/fstab.publication-incident-20261007.bak`，`swapon -a` 与 `swapon --show` 通过。此措施缓冲内存峰值，不证明 OOM 根因已经消除。
+- 23:31 与 23:36 原生每 5 分钟发行 cron 均成功；23:33 与 23:35 每 2 分钟 controller 返回 `ok=true, reason=complete`。23:31 发行自动补出唐史 20:00 期；未绕过独立审核或门禁。
+- 发行调度运行于本机 Hermes，而非服务器独立定时器。现场 `pmset -g custom` 的 AC `sleep=1`；23:39 有另一进程的 `caffeinate` 提供 `PreventSystemSleep`，不能将这项当前防休眠断言视为出版系统自身的持续运行保证。本机休眠或离线仍是下一日自动发行风险。
+- 生产只读状态回读：2026-10-07 预期 7 期、已发表 7 期，五个系列均齐，7 期 `body_available=true` 且预期媒体角色齐全。唐史 08:00/13:00/20:00 实发 12:26:16/15:31:03/23:31:18；其余四期 12:00 实发 12:55:22/13:37:12/14:20:54/14:51:00。均非准点。历史 AI 实践 2026-09-09 期仍因 `rights_attestation_missing_or_unbound` blocked，不能混同为今日缺刊。读者鉴权端点未在真实用户会话逐篇测试；长期无人值守稳定性须观察下一发行日。
+
+task_id: publication-content-audit-20260928
+status: DEPLOYED（2026-09-29 已部署；2026-10-07 恢复并通过服务与出版状态回读，但未完成真实用户端逐篇阅读及下一日定时验收，不标记 VERIFIED）
+branch: codex/publication-content-audit-20260928
+worktree: /Users/dengzhaoyu/.codex/worktrees/publication-content-audit/AI Lab
+head/local_commit: fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114；本次续查仅更新本地记录，未提交
+remote_sha: Quantum main 于本次续查核对仍为 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114；本 worktree 的 origin 指向另一仓库，禁止误推
+server_before: 2026-09-29 部署前 eff52c518555b510370ca5cad0c544f3e9fc465f
+server_after: 2026-10-07 23:28:49 正常重启后 `.deployed-sha` 回读 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114
+health_check: 2026-10-07 8/8 Compose healthy、API 本地 /ready=ready、Hermes Bridge /health=ok、systemctl --failed=0，公网 HTTPS 恢复
+functional_check: 生产 status-only 回读 2026-10-07 expected=7、published=7、missing=0；7 期正文和预期媒体均可用；发行和 controller 原生 cron 连续成功。真实鉴权读者端逐篇阅读与下一日准点发行未验收
+rollback_point: 阿里云系统盘快照 s-wz99gy04j7r9wxruzc9d（故障态）；既有发布回滚目录 /opt/releases/ai-lab-platform-eff52c518555.FKxhs3 及镜像备份 /opt/ai-lab-shared/deploy-backups/publication-content-repair-before-fc1b2f88；未执行回滚
+remaining_risks: 今日七期全部延迟 55 分钟至 4 小时 26 分；OOM 确有证据，2 GiB swap 仅缓冲，内存峰值来源和长期稳定性未完全查清。发行 cron 运行于本机，休眠或离线会中断调度。历史 AI 实践 9 月 9 日期仍因版权声明证据未绑定而 blocked。真实鉴权读者端及下一日自动准点发行未验收。
+
+## 续查证据与处置
+
+- 2026-10-07 本机 Hermes 到期发行 `1ad93e85cec2` 与 controller `94f82c141295` 均 `enabled=true`，最近状态均 `error`；前者报 `pre-release status command failed (exit 255)`，后者报 `status_check_failed`。发行任务自 16:20 起连续失败，不能用启用状态推断已发表。
+- 同日 AI 历史、AI 实践、AI 工具、概念寓言、唐史 08/13/20 共七篇本地稿件均见 staged 材料。这里的 staged 是本机证据，不等于服务器已暂存或已发表。
+- 故障期间精确 SSH 目标 `deploy@120.24.248.58` 在 banner 阶段超时，公网 HTTPS 在 TLS 阶段超时；随后经已登录阿里云控制台建立快照并正常重启，详见上方恢复结果。`https://t-react.com/ready` 返回前端 SPA，不可用作 API 健康证据；API 应检查本地 `127.0.0.1:8000/ready`。
+- `backend/services/knowledge_publication_store.py:1343` 的 `release_due` 会扫描到期的服务器端 staged/scheduled 期次；因而服务器恢复后定时任务可重试服务器端已暂存期次，但仍必须逐期核验。不能保证只在本机暂存的稿件自动发表。
+- 本次续查未修改功能代码；只增加系统 swap 与 `/etc/fstab` 持久项。原修复 commit 和部署记录见下方历史节；以下原首节的 TESTED 状态是发布前快照，不代表当前状态。
+
+## 本次开工 Git 盘点
+
+```text
+status: clean (## codex/publication-content-audit-20260928)
+branch: codex/publication-content-audit-20260928
+HEAD: fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114
+remote: origin https://github.com/Johnie198946/ai-lab-platform.git (fetch/push)；Quantum 仓库须用显式 URL
+worktree: /Users/dengzhaoyu/.codex/worktrees/publication-content-audit/AI Lab，独立任务分支；git worktree list --porcelain 另列共享仓库及其他任务，不覆盖其改动
+```
+
+---
+
+# 接受建议后的修复交付记录（历史发布前快照）
 
 task_id: publication-content-audit-20260928
 status: TESTED

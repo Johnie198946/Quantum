@@ -13,6 +13,8 @@
 
 时间安排：采集 01:00，收据目标 02:00，异步编译目标 03:00。watchdog 每 2 分钟检查当天全部期次并提前准备；作者每次实际开始时冻结本期输入，08:05 等固定作者 cron 是额外唤醒，不是阻止提前写作的时间门禁。ai-toolkit 先满足至少一个候选可用的采集条件，再优先使用已编译正文；新候选尚未编译时可使用既有授权知识，不以采集回执代替正文。发行以各主题 release_times 为准，到期才发布；写作/素材/审核应在对应 slot 前完成，延期保留原 issue_key，不借下一期掩盖。公共审核轮询每 10 分钟，公共到期发行每 5 分钟，由 store 判断是否到期，不为每个主题硬编码发行 cron。配置文件不会自动修改 cron，新增主题复用已绑定角色并由 watchdog 轮转。
 
+定时执行由已登录的 Mac Hermes gateway/launchd 承载，须保持插电、联网且运行。`ops/launchd/ai.hermes.publication-awake.plist` 安装到用户 `~/Library/LaunchAgents/` 后以平台原生 `caffeinate -s` 防止插电时闲置休眠，不新增发行定时器；登录时自启动。用 `launchctl print gui/$(id -u)/ai.hermes.publication-awake` 与 `pmset -g assertions` 回读。关机、退出登录、合盖/主动休眠及断网不在此保证范围。日终完成按各系列配置的 expected 和每个 slot 的正文、计划媒体验收；历史 blocked 不改变今日完成判断。
+
 ## 增删主题
 
 增加 `series` 行：稳定 id、title、kind=daily、enabled、genre、release_times、starts_on（可选）、execution_enabled；本机主题绑定 author_job_id / author_profile、素材 job、review_job_id / review_profile；服务器受管 Workflow 主题才绑定 workflow_schedule_id，不可将远端会话冒充本机作者。多时段采用独立 issue_key，12:00 保留旧日期键。修改配置后同步客户端和服务端并重启对应进程。

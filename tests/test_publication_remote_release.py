@@ -484,3 +484,42 @@ def test_observed_delta_is_not_attributed_to_empty_release_receipt(monkeypatch, 
     summary = json.loads(capsys.readouterr().out)
     assert summary["released_edition_ids"] == []
     assert summary["observed_published_publication_id_delta"] == ["history", "practice"]
+
+
+@pytest.mark.parametrize("fault", [None, "missing", "duplicate", "body", "media", "blocked"])
+def test_multi_slot_attention_and_daily_completion(monkeypatch, tmp_path, capsys, fault):
+    from scripts.publication_daily_completion import evaluate
+
+    module = _module()
+    identity, known_hosts = _files(tmp_path)
+    occurrences, items = [], []
+    for series in ("ai-history", "ai-practice", "ai-toolkit", "concept-fables", "tang-history"):
+        for slot in (["08:00", "13:00", "20:00"] if series == "tang-history" else ["12:00"]):
+            occurrence = {"series_id": series, "issue_date": DAY, "issue_slot": slot,
+                          "issue_key": DAY if slot == "12:00" else f"{DAY}T{slot}",
+                          "release_at": f"{DAY}T{slot}:00+08:00"}
+            occurrences.append(occurrence)
+            item = _item(f"{series}-{slot.replace(':', '')}", series, DAY, "published")
+            roles = ["shelf_cover", "reader_cover", *(["illustration_01"] if slot != "20:00" else [])]
+            items.append({**item, **occurrence, "body_available": True,
+                          "media_roles": roles, "expected_media_roles": roles})
+    if fault == "missing":
+        items.pop()
+    elif fault == "duplicate":
+        items.append({**items[-1], "publication_id": "duplicate", "edition_id": "edition-duplicate"})
+    elif fault == "body":
+        items[-1]["body_available"] = False
+    elif fault == "media":
+        items[-1]["media_roles"] = ["shelf_cover"]
+    items.append(_item("historical-blocked", "ai-practice", "2026-09-09", "blocked", ["rights_missing"]))
+    if fault == "blocked":
+        items.append(_item("current-blocked", "tang-history", DAY, "blocked", ["review_missing"]))
+    result = {"items": items, "missing": [], "expected_issues": occurrences}
+    _run(module, monkeypatch, [subprocess.CompletedProcess([], 0, json.dumps({"ok": True, "result": result}), "")])
+
+    assert module.main(["--status-only", "--identity-file", str(identity), "--known-hosts-file", str(known_hosts)]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["global_attention"] is (fault is not None)
+    receipt, code = evaluate(summary)
+    assert code == (2 if fault else 0)
+    assert receipt["status"] == ("incomplete" if fault else "complete")

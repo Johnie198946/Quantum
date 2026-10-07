@@ -351,7 +351,7 @@ def _attention(summary: dict) -> bool:
     day = summary["today"]["date"]
     current_blocked = [item for item in summary["issues"]["blocked"] if item.get("issue_date") == day]
     return bool(current_blocked or summary["issues"]["missing"] or any(
-        item.get("published") != 1 or item.get("body_available") is not True
+        item.get("published") != item.get("expected", 1) or item.get("body_available") is not True
         or set(item.get("media_roles", [])) != set(item.get("expected_media_roles", REQUIRED_DAILY_MEDIA))
         for item in summary["today"]["by_series"].values()
     ))
