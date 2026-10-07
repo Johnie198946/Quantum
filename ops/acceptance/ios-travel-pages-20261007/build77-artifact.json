@@ -1,0 +1,14 @@
+{
+  "source_sha": "d3d1b9e6345a8976085ba160ed33c2eebc1fff7d",
+  "version": "1.0.3",
+  "build": "77",
+  "bundle": "com.ailab.AIPlatformApp",
+  "non_exempt_encryption": false,
+  "binary_sha256": "aa85fed2c935e5c2dd7f54965ce31c4b4497060113717cd126001ba72f38576c",
+  "resources": {
+    "journey.html": "91467e41e67678b6e333c5a8eb61ba31057cebb12e8586579230eb8b12a3c19d",
+    "journey.js": "aa4b91bb171f940130aa9e14796961b75bce49e85ee3d1c86a8f44725487bf35"
+  },
+  "archive_result": "ARCHIVE SUCCEEDED",
+  "signature_verified": true
+}

@@ -1,15 +1,15 @@
 # iOS 旅行页面开发完成记录
 
 - task_id: ios-travel-pages-20261007
-- status: VERIFIED（仅 iOS 客户端真机安装与旅行页面验收，不代表完整云端工作流或服务器发布）
+- status: DEPLOYED（Build 77 已上传 Apple，回执 PROCESSING；先前真机页面验收已通过，TestFlight 处理与测试组可用性待核验）
 - branch: codex/ios-travel-pages-20261007
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/ios-travel-pages-20261007
-- head/local_commit: 功能源码提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7；最终证据提交仅含文档/图片，见 Git HEAD。
-- remote_sha: 功能源码 3c62aa01594b8ff624ac2cc29704d9c005a6deb7，git ls-remote origin refs/heads/codex/ios-travel-pages-20261007 独立确认一致；最终证据提交补推三次被 GitHub Internal Server Error 拒绝，远端仍为已部署功能提交 3c62aa01；证据提交仅本地。
+- head/local_commit: Build 77 发布源 d3d1b9e6345a8976085ba160ed33c2eebc1fff7d；后置回执提交仅含文档/JSON，见 Git HEAD。
+- remote_sha: Build 77 发布源 d3d1b9e6345a8976085ba160ed33c2eebc1fff7d，git ls-remote origin refs/heads/codex/ios-travel-pages-20261007 独立确认一致。完整 pack（git push --no-thin）重试成功，此前后置证据未同步的问题已解决。
 - server_before: 不适用（客户端任务）；device_before=1.0.3(75.1)。
 - server_after: 不适用（无后端变更）；device_after=1.0.3(76)，安装后及测试后两次回读一致。
 - health_check: 客户端签名核验通过、真机安装成功、测试后正常启动成功；服务器健康不适用。
-- functional_check: 模拟器 7 项通过；iPhone 17 Pro/iOS 26.6 真机 4 项单元 + 1 项页面操作通过，实际截图已检查。
+- functional_check: 前阶段真机 5 项通过；Build 77 向下兼容回归 244 项通过，Release 归档/签名/资源核对通过，Apple 上传成功回执已核验。
 - rollback_point: Git 基线 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114；已有签名有效且注册此设备的 1.0.3(75) 归档可重装，完整路径与二进制 SHA 在下方回执。它不是原手机 75.1 的逐字节备份。
 - manifest: ops/change-manifests/ios-travel-pages-20261007-completion.md
 
@@ -73,7 +73,7 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 
 ## remaining_risks / 未完成项
 
-- 已推送隔离分支并完成真机安装，未合并 main、未部署服务器、未上传 TestFlight。
+- 已推送隔离分支、完成真机安装，Build 77 已上传 Apple；未合并 main、无服务器改动，TestFlight 可安装/测试组状态尚未核验。
 - 汽车/步行尝试 Apple Maps 规划，可用时替换路线；这次截图仍为示意连线，不能声称已经验证该地点的真实道路规划成功。飞机/列车始终为示意，并非真实航线或铁路。
 - 使用当前文档经纬度；没有新增 Google Maps 坐标提取器，也没有使用 Google 卫星或摄影测量模型。
 - 国家/城市/区域/地点是连续相机尺度展示，不是行政区识别与自动边界检索。
@@ -113,3 +113,23 @@ remaining_risks 更新：真机功能版本核验完成；真机截图及验收�
 ## 2026-10-07 用户明确授权 TestFlight 上传
 
 用户补充“需要上传testflight”。本轮上传 1.0.3(77)，只把 project.yml/pbxproj 构建号 76 改为 77，不改已真机通过的旅行代码。复用 ios/ExportOptions.plist 自动签名/App Store Connect upload 配置。开工分支 codex/ios-travel-pages-20261007，HEAD 8443956693d67696dca4016d37a7bb2b680cab5c，工作区干净，远端功能版 3c62aa01。77 的可用性以 Apple 实际校验结果为准；已有 76 归档不用于这次新发布。
+
+### Build 76 兼容核验与 Build 77 上传成功
+
+用户明确补充“今天我上传了一个build 76，新的77需要基于76向下兼容”，随后以实际上传的 /tmp/Quantumn-1.0.3-76-travel-20261007.xcarchive 追踪来源：其 Release SwiftFileList 指向 travel-context-fix-20260928 工作区；HEAD=fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114，iOS 源码无未提交修改。该工作区仅既有 manifest 有修改，未覆盖或动用。
+
+Git ancestry 证明 77 发布源 d3d1b9e6 是 76 源 fc1b2f88 的后代。逐文件核对 198 个既有 App 文件保持一致，只有 AIPlatformApp.swift 和 KnowledgeView.swift 扩展了本次旅行 UI，没有删除旧文件。Info.plist、entitlements、Models、Networking、Services 和既有 Assets 一致，无 bundle ID/Keychain/网络合同/存储格式变化，无迁移。版本文件仅 76→77；77 新增全屏旅程源码与两项网页资源。
+
+兼容验收 /tmp/QuantumTravel77Compatibility-20261007.xcresult：WorkflowLifecycleDTOTests 198、ClarifyAnswerPaginationRegressionTests 42、TravelJourneyTests 4，共 244 项零失败，TEST SUCCEEDED。日志 /tmp/quantum-travel77-compatibility.log。此验证不代替真实云端全流程和每个用户旧数据的逐个升级验收；相同数据合同和旧能力保留有源码与回归证据。
+
+GitHub 全 pack 推送成功；ls-remote 确认 refs/heads/codex/ios-travel-pages-20261007=d3d1b9e6345a8976085ba160ed33c2eebc1fff7d，包含此前所有验收记录。Release ARCHIVE SUCCEEDED，/tmp/Quantumn-1.0.3-77-travel.xcarchive，codesign --verify --deep --strict 通过。归档 version=1.0.3、build=77、bundle=com.ailab.AIPlatformApp；地图资源 SHA 与源码一致，二进制 SHA256=aa85fed2c935e5c2dd7f54965ce31c4b4497060113717cd126001ba72f38576c。
+
+通过已登录 Xcode Organizer 的 App Store Connect 推荐配置上传；23:29 UI 显示“Upload completed with warnings”，确认 Done 后 Organizer 77 明确显示 Uploaded to Apple。ContentDelivery.log 2026-10-07 23:29:24 记录 UPLOAD SUCCEEDED with no errors；Apple build ID=4e161951-8df3-4cbd-87d7-e3cb29978751，processingState=PROCESSING。Apple 接收不等于测试组可安装。未重复上传 76，未修改旧构建或发布 App Store 正式版。
+
+非阻断警告：opencv2.framework 缺 dSYM UUID EDC048F5-637A-3FF4-9B4A-6CC8E77A46A0，影响该第三方框架崩溃符号化，未阻止上传；76 也记录过同类缺符号警告。未为本次 UI 改动更换框架或扩大依赖。
+
+server_before/server_after：不适用，无后端变更；device_after 仍为已验收的本机安装 76，TestFlight 上传为 77。rollback_point：保留今天已上传的 76 与其源 fc1b2f88、原归档；未移除该构建，测试组可用性尚未知。已有开发签名 75 归档仅作为本机安装恢复备选，与 TestFlight 回滚区分。
+
+remaining_risks：77 仍需 Apple 完成处理，测试组/可安装状态未核验；OpenCV dSYM 缺失；真实云端全流程和 iOS 17 真机未全面复验。上传、244 项兼容测试、前阶段真机验收有明确证据。本任务 scope 为 iOS 发布，不宣称生产服务器已上线。
+
+脱敏收据：ops/acceptance/ios-travel-pages-20261007/build77-upload-receipt.json、build77-artifact.json、build77-compatibility.json。
