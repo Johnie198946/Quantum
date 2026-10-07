@@ -1,16 +1,16 @@
 # iOS 旅行页面开发完成记录
 
 - task_id: ios-travel-pages-20261007
-- status: TESTED
+- status: VERIFIED（仅 iOS 客户端真机安装与旅行页面验收，不代表完整云端工作流或服务器发布）
 - branch: codex/ios-travel-pages-20261007
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/ios-travel-pages-20261007
-- head/local_commit: fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114 / 无新增 commit
-- remote_sha: 未执行推送，未进行发布 SHA 核验；origin/main 是开发基线，不是本次交付 SHA。
-- server_before: 不适用，未访问生产服务器。
-- server_after: 不适用，未部署。
-- health_check: 不适用，未部署；本机 iOS 编译与模拟器测试通过。
-- functional_check: 6 个单元/既有回归测试 + 1 个完整 UI 操作测试通过；真实模拟器截图已检查。
-- rollback_point: 独立 worktree 的基线 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114；按本任务文件 diff 撤回，不操作原主工作区。
+- head/local_commit: 功能源码提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7；最终证据提交仅含文档/图片，见 Git HEAD。
+- remote_sha: 功能源码 3c62aa01594b8ff624ac2cc29704d9c005a6deb7，git ls-remote origin refs/heads/codex/ios-travel-pages-20261007 独立确认一致；最终证据提交在推送后再次核对。
+- server_before: 不适用（客户端任务）；device_before=1.0.3(75.1)。
+- server_after: 不适用（无后端变更）；device_after=1.0.3(76)，安装后及测试后两次回读一致。
+- health_check: 客户端签名核验通过、真机安装成功、测试后正常启动成功；服务器健康不适用。
+- functional_check: 模拟器 7 项通过；iPhone 17 Pro/iOS 26.6 真机 4 项单元 + 1 项页面操作通过，实际截图已检查。
+- rollback_point: Git 基线 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114；已有签名有效且注册此设备的 1.0.3(75) 归档可重装，完整路径与二进制 SHA 在下方回执。它不是原手机 75.1 的逐字节备份。
 - manifest: ops/change-manifests/ios-travel-pages-20261007-completion.md
 
 ## 目标、复用与架构命中
@@ -73,13 +73,13 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 
 ## remaining_risks / 未完成项
 
-- 未推送、未部署、未集成原主工作区、未发布 TestFlight；完成的是可编译和验收的隔离本地版本。
+- 已推送隔离分支并完成真机安装，未合并 main、未部署服务器、未上传 TestFlight。
 - 汽车/步行尝试 Apple Maps 规划，可用时替换路线；这次截图仍为示意连线，不能声称已经验证该地点的真实道路规划成功。飞机/列车始终为示意，并非真实航线或铁路。
 - 使用当前文档经纬度；没有新增 Google Maps 坐标提取器，也没有使用 Google 卫星或摄影测量模型。
 - 国家/城市/区域/地点是连续相机尺度展示，不是行政区识别与自动边界检索。
 - 旅行控制中的交通模式是展示方式，不会擅自改写真实行程交通安排。
 - 缺坐标显示待定位；零坐标使用原生空态，不补造地点。离线球体只有位置示意，不含道路/地形。
-- 未在物理 iPhone 或 iOS 17 真机验收；未重新执行真实云端研究/生成/修订全过程，相关后台主路径本次未修改。
+- 已在物理 iPhone 17 Pro/iOS 26.6 验收，iOS 17 未验收；真机 UI 使用 DEBUG 行程 fixture 进入实际共享成果视图，未重新执行真实云端研究/生成/修订全过程，相关后台主路径本次未修改。
 - CDN/底图服务可用性与低端设备 WebGL 性能仍受环境影响；加载失败提供重试和既有离线视图。
 
 ## 2026-10-07 用户授权的推送与真机部署
@@ -87,3 +87,19 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 用户明确要求“推送 部署 使用真机测试”，授权本任务 commit、GitHub 推送和 iPhone 安装验收。继续使用本任务隔离分支，不把规范 main 的其他修改带入。重新盘点 branch/HEAD/remote/worktrees，与前段记录一致；fetch 后 origin/main 仍为 fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114。
 
 部署范围为 iOS 客户端，后端无本次代码变更，因此不重启或部署服务器。已连接设备 iPhone 17 Pro（00008150-000C50980244401C / CoreDevice CFE79F35-1270-527D-8BD7-9AB60449B6DF），iOS 26.6。部署前 installed version=1.0.3(75.1)，证据 /tmp/travel-device-apps-before.json。当前准备 1.0.3(76) 签名包，尚未执行安装或声称真机测试通过。TestFlight 是否需要额外发布已向用户提出可选澄清。
+
+### 已执行的最终真机部署回执
+
+功能提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7 已 push 到 origin/codex/ios-travel-pages-20261007，ls-remote 完整 SHA 一致。未移动 main；仓库记录的其他任务脏工作区保持不动。
+
+真机 build-for-testing 成功，/tmp/QuantumTravelDeviceDerived/Build/Products/Debug-iphoneos/AIPlatformApp.app；codesign --verify --deep --strict 通过。二进制 SHA256=4241546130c5c2a13a443d6cbb0b058b66f66db71d680d251a015ac77abd89fa，旅程 HTML/JS 打包资源与已推送源码哈希一致。
+
+安装前已核验旧版 75 归档的签名与 development profile（包含该 UDID），二进制 SHA256=663ba14577fa62d4823a3e5405a385a21e37f29bd497a498760a5b1fe4254f67。归档位于 /Users/dengzhaoyu/Library/Developer/Xcode/Archives/2026-09-28/Quantumn-1.0.3-75-image-studio.xcarchive/Products/Applications/AIPlatformApp.app。此回滚包是 75，非手机原 75.1 的逐字节备份。无卸载、无清空 App 数据。
+
+2026-10-07 23:06 安装成功，devicectl apps 回读 1.0.3(76)。真机测试 23:07 完成：TEST EXECUTE SUCCEEDED，4 单元 + 1 UI，共 5 项零失败；UI 包含全屏、交通弹层、汽车模式选择、播放/暂停、关闭并返回原笔记。结果 /tmp/QuantumTravelPhysical-20261007.xcresult，日志 /tmp/quantum-travel-physical-tests.log。
+
+真机截图 ops/acceptance/ios-travel-pages-20261007/physical-fullscreen.png、physical-transport-sheet.png 已人工检查：整段路线与汽车模型可见，底图加载正常，弹层与主题显示一致。当前截图仍为点间示意，不能把汽车真实道路规划成功当作已验收。
+
+23:07:56 测试后以无 DEBUG 参数正常启动 com.ailab.AIPlatformApp 成功，最终安装版本再次回读 76，证据 /tmp/travel-device-normal-launch.json、/tmp/travel-device-final-apps.json。脱敏综合回执 physical-device-verification.json 随本任务提交。
+
+本轮按 iOS 真机安装交付；未额外上传 TestFlight。客户端改动无需重启后端，因此 server_before/server_after 均不适用。健康/功能核验仅指本次客户端页面，不宣称全流程云端验收或生产服务器已上线。

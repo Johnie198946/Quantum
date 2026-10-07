@@ -1,0 +1,38 @@
+{
+  "task_id": "ios-travel-pages-20261007",
+  "scope": "iOS physical installation and travel page fixture acceptance; no server deployment, no TestFlight upload",
+  "source_commit": "3c62aa01594b8ff624ac2cc29704d9c005a6deb7",
+  "remote_ref": "refs/heads/codex/ios-travel-pages-20261007",
+  "source_remote_sha": "3c62aa01594b8ff624ac2cc29704d9c005a6deb7",
+  "device": "iPhone 17 Pro",
+  "os": "26.6",
+  "udid": "00008150-000C50980244401C",
+  "core_device": "CFE79F35-1270-527D-8BD7-9AB60449B6DF",
+  "before": {
+    "version": "1.0.3",
+    "build": "75.1"
+  },
+  "after": {
+    "version": "1.0.3",
+    "build": "76"
+  },
+  "build": "TEST BUILD SUCCEEDED",
+  "signature_verification_exit": 0,
+  "install": "success",
+  "normal_launch_after_tests": "success",
+  "unit_tests_passed": 4,
+  "ui_tests_passed": 1,
+  "xcresult": "/tmp/QuantumTravelPhysical-20261007.xcresult",
+  "log": "/tmp/quantum-travel-physical-tests.log",
+  "rollback_package": "/Users/dengzhaoyu/Library/Developer/Xcode/Archives/2026-09-28/Quantumn-1.0.3-75-image-studio.xcarchive/Products/Applications/AIPlatformApp.app",
+  "rollback_version": "1.0.3(75), not byte-identical to formerly installed 75.1",
+  "rollback_binary_sha256": "663ba14577fa62d4823a3e5405a385a21e37f29bd497a498760a5b1fe4254f67",
+  "rollback_signature_verified": true,
+  "rollback_profile_registers_device": true,
+  "uninstall_or_data_clear": false,
+  "binary_sha256": "4241546130c5c2a13a443d6cbb0b058b66f66db71d680d251a015ac77abd89fa",
+  "resource_sha256": {
+    "journey.html": "91467e41e67678b6e333c5a8eb61ba31057cebb12e8586579230eb8b12a3c19d",
+    "journey.js": "aa4b91bb171f940130aa9e14796961b75bce49e85ee3d1c86a8f44725487bf35"
+  }
+}
