@@ -109,3 +109,7 @@ origin: https://github.com/Johnie198946/Quantum.git；source: https://github.com
 功能提交 3c62aa01594b8ff624ac2cc29704d9c005a6deb7 已成功推送并部署真机。证据提交 2164be6f891aeda4cd0c2ee328df2ea2919b7291 不含 iOS 源码变更；普通推送两次、HTTP/1.1 推送一次均返回 GitHub `remote rejected / Internal Server Error`。对应 request IDs：0E5F:11D892:14E070:1CA60B:6AC660DE、61D1:103791:148DFD:1C50D9:6AC6610F、0505:B130:147952:1C4B58:6AC6616B。每次 ls-remote 均确认远端仍是 3c62aa01594b8ff624ac2cc29704d9c005a6deb7。不是自动审批拒绝，未使用 force push 或更改其他分支。
 
 remaining_risks 更新：真机功能版本核验完成；真机截图及验收文档的后置提交尚未同步 GitHub，保留本地待补推。不能声称本地最新 HEAD 已推送。main 未合并，TestFlight 未上传，后台真实生成/修订全流程未复验。
+
+## 2026-10-07 用户明确授权 TestFlight 上传
+
+用户补充“需要上传testflight”。本轮上传 1.0.3(77)，只把 project.yml/pbxproj 构建号 76 改为 77，不改已真机通过的旅行代码。复用 ios/ExportOptions.plist 自动签名/App Store Connect upload 配置。开工分支 codex/ios-travel-pages-20261007，HEAD 8443956693d67696dca4016d37a7bb2b680cab5c，工作区干净，远端功能版 3c62aa01。77 的可用性以 Apple 实际校验结果为准；已有 76 归档不用于这次新发布。
