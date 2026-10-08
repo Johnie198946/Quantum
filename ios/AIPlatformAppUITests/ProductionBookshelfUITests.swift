@@ -42,13 +42,13 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
-    func testTravelWorkflowUsesCompactBriefAndVisibleAttachmentEntry() {
+    func testTravelWorkflowUsesCompactBriefWithoutAttachmentEntry() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview"]
         app.launch()
         XCTAssertTrue(app.staticTexts["开启一趟旅行"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["这趟旅行，你更倾向哪种预算安排？"].exists)
-        XCTAssertTrue(app.buttons["补充图片或文档"].isHittable)
+        XCTAssertFalse(app.buttons["补充图片或文档"].exists)
         XCTAssertFalse(app.buttons["返回任务"].exists)
         XCTAssertFalse(app.staticTexts["构建"].exists)
         attachScreenshot(named: "travel-workflow-clarification")
@@ -59,6 +59,32 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["出行时间"].exists)
         XCTAssertTrue(app.staticTexts["同行人"].exists)
         attachScreenshot(named: "travel-workflow-create")
+    }
+
+    func testTravelClarificationInputOpensKeyboard() {
+        assertTravelInputOpensKeyboard(arguments: ["-travelWorkflowPreview"])
+    }
+
+    func testTravelFreeTextInputOpensKeyboard() {
+        assertTravelInputOpensKeyboard(arguments: ["-travelWorkflowPreview", "-travelFreeTextPreview"])
+    }
+
+    private func assertTravelInputOpensKeyboard(arguments: [String]) {
+        app.terminate()
+        app.launchArguments = arguments
+        app.launch()
+        let input = app.textFields["clarify-custom-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        for _ in 0..<8 where !input.isHittable { app.swipeUp() }
+        XCTAssertTrue(input.isHittable)
+        // The padded trailing area must focus the field too.
+        input.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        input.typeText("From Hong Kong, ten days")
+        let confirm = app.buttons["clarify-keyboard-primary-action"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(confirm.isEnabled && confirm.isHittable)
+        attachScreenshot(named: "travel-clarification-keyboard")
     }
 
     func testTravelProposalActionsAlignAndOpenEditor() {

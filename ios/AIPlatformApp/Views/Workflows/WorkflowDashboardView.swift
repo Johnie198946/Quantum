@@ -1322,7 +1322,6 @@ private struct WorkflowClarificationView: View {
     let workflow: WorkflowDTO
     let onFinished: () async -> Void
     @ObservedObject private var model: WorkflowClarificationModel
-    @State private var showsAttachmentPicker = false
     private var tracksActivity = true
 
     #if DEBUG
@@ -1416,33 +1415,7 @@ private struct WorkflowClarificationView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
-            if ["clarifying", "awaiting_requirement_confirmation"].contains(model.phase) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.attachments, id: \.sourceId) { receipt in
-                        HStack {
-                            Label(receipt.filename, systemImage: "doc.text").lineLimit(1)
-                            Text(receipt.contributionStatus == "completed" ? "已编译" : "已保存 · 编译状态待核实").font(.caption)
-                            Button("移除") { model.attachments.removeAll { $0.sourceId == receipt.sourceId } }
-                        }
-                    }
-                    HStack {
-                        Button { showsAttachmentPicker = true } label: {
-                            Label("补充图片或文档", systemImage: "paperclip")
-                                .font(AppTheme.Typography.supporting)
-                                .foregroundStyle(AppTheme.Colors.primary)
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                .padding(.horizontal, AppTheme.Spacing.md)
-                                .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(model.isUploadingAttachment || model.isSubmitting)
-                        if model.isUploadingAttachment { ProgressView("上传与解析中") }
-                        if !model.attachments.isEmpty {
-                            Button("提交附件回答") { Task { await model.respond("") } }.disabled(model.isSubmitting)
-                        }
-                    }.frame(minHeight: 44)
-                }.padding().background(AppTheme.Colors.cardBackground)
-            } else if ["awaiting_approval", "agent_ready"].contains(model.phase) {
+            if ["awaiting_approval", "agent_ready"].contains(model.phase) {
                 Button(model.phase == "agent_ready" ? "查看专属 Agent" : "查看并确认方案") {
                     Task { await onFinished() }
                 }
@@ -1457,9 +1430,6 @@ private struct WorkflowClarificationView: View {
         .background(AppTheme.Colors.background)
         .navigationTitle(workflow.title)
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(isPresented: $showsAttachmentPicker, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result, let url = urls.first { Task { await model.attach(url) } }
-        }
         .task { if tracksActivity { WorkflowActivityCoordinator.shared.track(workflow) } }
     }
 
@@ -5132,7 +5102,9 @@ struct TravelWorkflowPreviewHost: View {
         }
     }
     private var snapshot: WorkflowClarificationSnapshotDTO {
-        let data = Data(#"{"workflow":{"id":"travel-preview","title":"鹿儿岛温泉与自然之旅","description":"旅行需求","desiredOutput":"图文旅行攻略","status":"clarifying"},"session":{"id":"preview-session","workflowId":"travel-preview","phase":"clarifying","roundNumber":1,"lastEventSeq":0},"messages":[{"id":"brief","seq":1,"role":"user","messageType":"text","content":"已确认旅行信息：目的地：鹿儿岛，日本；出行时间：2026年12月1日至12月20日；同行人：2人；偏好：温泉与自然；香港出发；预算和交通偏好未定。原始需求：请安排往返交通、鹿儿岛及周边温泉旅馆、住宿区域建议、每日行程和当地交通方式。请保留待核验事项，不要替我决定预算。","payload":{}},{"id":"question","seq":2,"role":"assistant","messageType":"clarify","content":"预算偏好","payload":{"question":"这趟旅行，你更倾向哪种预算安排？","choices":["舒适适中","优先温泉旅馆体验","暂时不确定"],"multiSelect":false,"submitLabel":"确认并继续"}}],"events":[]}"#.utf8)
+        let choices = ProcessInfo.processInfo.arguments.contains("-travelFreeTextPreview")
+            ? "[]" : #"["舒适适中","优先温泉旅馆体验","暂时不确定"]"#
+        let data = Data(#"{"workflow":{"id":"travel-preview","title":"鹿儿岛温泉与自然之旅","description":"旅行需求","desiredOutput":"图文旅行攻略","status":"clarifying"},"session":{"id":"preview-session","workflowId":"travel-preview","phase":"clarifying","roundNumber":1,"lastEventSeq":0},"messages":[{"id":"brief","seq":1,"role":"user","messageType":"text","content":"已确认旅行信息：目的地：鹿儿岛，日本；出行时间：2026年12月1日至12月20日；同行人：2人；偏好：温泉与自然；香港出发；预算和交通偏好未定。原始需求：请安排往返交通、鹿儿岛及周边温泉旅馆、住宿区域建议、每日行程和当地交通方式。请保留待核验事项，不要替我决定预算。","payload":{}},{"id":"question","seq":2,"role":"assistant","messageType":"clarify","content":"预算偏好","payload":{"question":"这趟旅行，你更倾向哪种预算安排？","choices":\#(choices),"multiSelect":false,"submitLabel":"确认并继续"}}],"events":[]}"#.utf8)
         return try! JSONDecoder().decode(WorkflowClarificationSnapshotDTO.self, from: data)
     }
 }

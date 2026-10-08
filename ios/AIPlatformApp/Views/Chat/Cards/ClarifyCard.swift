@@ -288,10 +288,13 @@ public struct ClarifyCard: View {
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
                     .stroke(AppTheme.Colors.border.opacity(0.5), lineWidth: 0.5)
+                    .allowsHitTesting(false)
             )
             .accessibilityLabel("需求补充内容")
             .accessibilityIdentifier("clarify-custom-input")
             .focused($customInputFocused)
+            .contentShape(Rectangle())
+            .onTapGesture { customInputFocused = true }
     }
 
     // MARK: - Multi-select Submit Button

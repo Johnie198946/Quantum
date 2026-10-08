@@ -632,6 +632,7 @@ public struct QuantumCardModifier: ViewModifier {
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
                     .stroke(Color.white.opacity(0.76), lineWidth: 0.8)
+                    .allowsHitTesting(false)
             }
             .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .shadow(
