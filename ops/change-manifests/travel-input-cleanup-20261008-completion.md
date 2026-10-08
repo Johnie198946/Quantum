@@ -1,14 +1,14 @@
 # travel-input-cleanup-20261008
 
 task_id: travel-input-cleanup-20261008
-status: PUSHED
+status: DEPLOYED
 branch: codex/travel-input-cleanup-20261008
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-input-cleanup-20261008
 head/local_commit: 发布源 3b22df1965378725bd9084bfd0b9615054618795；功能提交 15d8ca71
-remote_sha: origin/refs/heads/codex/travel-input-cleanup-20261008 = 3b22df1965378725bd9084bfd0b9615054618795（git ls-remote 已核验）；main 等待明确授权
+remote_sha: 发布源 3b22df1965378725bd9084bfd0b9615054618795 和证据提交 99639193a0812f3b05f0d71f8a5f2c73e17e1d32 均经 origin 任务分支 git ls-remote 核验；main 等待明确授权
 server_before: 不适用，未授权部署
-server_after: 不适用，未执行部署
-health_check: 不适用，无服务器变更
+server_after: 后端不适用；Apple 已接收 1.0.3(82)，PROCESSING
+health_check: 后端不适用；Release 归档和签名通过，Apple 上传成功
 functional_check: iOS 模拟器 4 项 UI 回归通过；15 项 iOS 合同检查通过；真机待验证
 rollback_point: 本地起点 f098218bd7d37a6c5fb986523cab0c50ccb411f9；仅撤销本任务文件可回滚，不执行全局 reset
 
@@ -357,3 +357,23 @@ pytest 命令使用 CLANG_MODULE_CACHE_PATH=/tmp/quantum-travel-clang-cache、SW
 - remaining_risks: 等待 Mac 解锁与 main 授权；Apple 上传、处理、测试组状态及安装未验证。不声称已上线或可安装。
 
 本节覆盖前文未授权/未提交的历史阶段描述；归档与测试使用 release_source，后续仅发布证据更新不改变二进制。
+
+## 最终：Build 82 上传成功（2026-10-08 23:48，中国时间）
+
+用户已手动解锁 Mac。Xcode 成功访问 App Store Connect；关闭 Manage version and build number，保持版本 1.0.3(82)。自动审批拒绝自动签名（可能更新 profiles/App IDs/certificates），改查手动签名及下载已有描述文件后明确返回 No Eligible Profiles。用户明确答复“授权本次自动签名并上传”，限定现有团队 AALA948YY5 / 应用 com.ailab.AIPlatformApp；随后自动签名获准。复用 Cloud Managed Apple Distribution / iOS Team Store Provisioning Profile: com.ailab.AIPlatformApp（到期 2027-08-30），上传摘要 application-identifier=AALA948YY5.com.ailab.AIPlatformApp、get-task-allow=false、beta-reports-active=true、arm64。
+
+- status: DEPLOYED（客户端已上传 Apple；不代表后端部署、TestFlight 已可安装或真机验证）
+- release_source: 3b22df1965378725bd9084bfd0b9615054618795。后续提交只更新交付证据，没有改变归档代码。
+- remote: origin / refs/heads/codex/travel-input-cleanup-20261008，发布源已 git ls-remote 核验；上传前证据提交 99639193a0812f3b05f0d71f8a5f2c73e17e1d32 也已核验。最终回执提交 SHA 由推送后 ls-remote 结果记录于当前对话。
+- upload: ContentDelivery.log 返回 UPLOAD SUCCEEDED with no errors。Apple build ID f57f0f7c-19a0-43ae-a1a9-93a8a27a7a8f，version=82，processingState=PROCESSING，processingErrors=[]。
+- UI verification: Xcode Upload completed with warnings；Done 后 Organizer version=1.0.3(82)、Uploaded to Apple、Submission Build Number=82、Today at 11:48 PM。
+- receipt: ops/acceptance/travel-input-cleanup-20261008/build82-upload-receipt.json，仅保存所需字段，不复制认证信息或完整传输日志。
+- warning: opencv2.framework dSYM UUID 4B054500-6848-3A63-A940-95D649F815D3 缺失，只影响该框架崩溃符号化，Apple 接受上传。
+- server_before: 后端不适用；Apple 上一成功上传 1.0.3(81)。
+- server_after: 后端不适用；Apple 已接受 1.0.3(82)，PROCESSING。
+- health_check: Release 归档、签名通过，Apple 接收成功。
+- functional_check: 323 单元通过/2 skip，4 UI 回归通过，15 iOS 合同检查通过；未真机安装或真实远端旅行生成验收。
+- rollback_point: origin/main@3be75d49119912f6be2f456ce3ecb642167d4c84、原 Build 81 归档及 Apple 原 81 构建保留，未覆盖。
+- remaining_risks: Apple 处理、测试组可见性和安装未独立验证；main 未获具体更新授权，仍未更新。用户的原始手机键盘故障未在模拟器直接复现，保留真机验收限制。
+
+本节覆盖前文“锁屏/等待签名授权/上传失败”等历史阶段描述。无后端部署，不宣称已上线。
