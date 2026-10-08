@@ -363,3 +363,42 @@ def test_native_review_timestamp_uses_utc_and_original_future_tolerance(native):
     assert "provenance.native_terminal" in verify_review_proof(proof, public, now=20, **expected)
     proof["native_ended_at"] = 20
     assert "provenance.signature" in verify_review_proof(proof, public, now=20, **expected)
+
+
+@pytest.mark.parametrize("wrapper,accepted", [
+    ("{}", True),
+    ("```json\n{}\n```", True),
+    (" \n```json\n{}\n```\n ", True),
+    ("Approved:\n```json\n{}\n```", False),
+    ("```json\n{}\n```\nApproved", False),
+    ("```json\n{}\n```\n```json\n{{}}\n```", False),
+    ("```json\n{}", False),
+    ("```python\n{}\n```", False),
+])
+def test_native_final_accepts_only_complete_json_receipt(native, wrapper, accepted):
+    db, review, private, public, expected = native
+    with sqlite3.connect(db) as connection:
+        raw = connection.execute("SELECT content FROM messages WHERE id=2").fetchone()[0]
+        final = wrapper.format(raw)
+        connection.execute("UPDATE messages SET content=? WHERE id=2", (final,))
+    if not accepted:
+        with pytest.raises(ValueError, match="exact publication_review_result JSON"):
+            attest_native_review(db, review, private)
+        return
+    proof = attest_native_review(db, review, private)
+    assert proof["native_final_hash"] == hashlib.sha256(final.encode()).hexdigest()
+    assert verify_review_proof(proof, public, **expected) == []
+
+
+@pytest.mark.parametrize("field", ["review_file_hash", "publication_material_hash"])
+def test_fenced_story_receipt_still_rejects_changed_hash(cross_profile_native, field):
+    writer_db, reviewer_db, review, private, public, expected = cross_profile_native
+    with sqlite3.connect(reviewer_db) as connection:
+        raw = connection.execute("SELECT content FROM messages WHERE id=2").fetchone()[0]
+        result = json.loads(raw)
+        result["publication_review_result"][field] = "0" * 64
+        final = "```json\n" + json.dumps(result) + "\n```"
+        connection.execute("UPDATE messages SET content=? WHERE id=2", (final,))
+    with pytest.raises(ValueError, match="native (final does not bind actual review bytes|actual publication material mismatch)"):
+        attest_native_review(reviewer_db, review, private, profile="supervision",
+                            writer_profile="story", writer_db_path=writer_db)

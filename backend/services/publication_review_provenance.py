@@ -111,8 +111,12 @@ def attest_native_review(db_path: Path, review_path: Path, private_key_pem: byte
         if first is None or final is None or final["role"] != "assistant" or final["finish_reason"] != "stop" or final["tool_calls"]:
             raise ValueError("native review has no successful final output")
         request = _request(first["content"] or "")
+        content = (final["content"] or "").strip()
+        # Native reviewers may wrap the complete receipt in a JSON code block.
+        if content.startswith("```json\n") and content.endswith("\n```"):
+            content = content[len("```json\n"):-len("\n```")]
         try:
-            result = json.loads(final["content"] or "")["publication_review_result"]
+            result = json.loads(content)["publication_review_result"]
         except (ValueError, TypeError, KeyError) as exc:
             raise ValueError("native final must contain exact publication_review_result JSON") from exc
         if not isinstance(result, dict):

@@ -1,0 +1,23 @@
+{
+  "baseline_source": "91f0d2756fc0eda5bd31bd893de0f46045d389e5",
+  "baseline_archive": "/Users/dengzhaoyu/Library/Developer/Xcode/Archives/2026-10-08/AIPlatformApp-1.0.3-78 2.xcarchive",
+  "baseline_source_workspace": "/tmp/quantum-bookshelf-perf-20261008",
+  "baseline_source_clean": true,
+  "archive_build": 78,
+  "organizer_submission_build": 79,
+  "target_build": 80,
+  "tests": {
+    "unit": 246,
+    "ui": 2,
+    "failures": 0,
+    "result": "/tmp/QuantumTravel79Compatibility.xcresult"
+  },
+  "unchanged_from_build78": [
+    "Models",
+    "Services",
+    "Networking",
+    "Info.plist",
+    "entitlements"
+  ],
+  "note": "Compatibility run initially numbered 79; release number advanced to 80 after Organizer showed existing upload consumed 79. No functional code change."
+}

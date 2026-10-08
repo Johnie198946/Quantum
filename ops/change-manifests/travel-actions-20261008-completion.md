@@ -63,3 +63,13 @@
 - 昨日改动完整保留；当前 backend/agency/scripts/APIClient 相对最新 main 无差异。
 - functional_check: 本地编译及上述 9 项通过。server_before/server_after/health_check：不适用，未部署；rollback_point：最新 main 基线 f66bffeb。remote_sha：本任务未推送。历史前阶段记录中的“未提交”仅描述当时状态，当前以顶部和本节为准。
 - 尚未执行 GitHub main 推送或 Apple 上传；本机 main 有其他任务未提交修改，没有强行切换或覆盖它。
+
+## 用户授权推送 main 和 TestFlight（2026-10-08）
+
+用户明确授权“推送 提交 发布到testflight”，要求基于最新 Build 78。重新 fetch 后 main 为 91f0d2756fc0eda5bd31bd893de0f46045d389e5，已 merge，所有新后端改动保留。Build 78 归档日志 /tmp/AIPlatformApp-build78-archive.log 指向 /tmp/quantum-bookshelf-perf-20261008，其 HEAD=91f0d275、git status 干净，与最新 main 一致。
+
+Xcode Organizer 实测上一归档 version=1.0.3(78)，但 Submission Status Build Number=79、Uploaded to Apple（20:23）。因此本次最终号为 1.0.3(80)，不重复使用 78 或 79。project.yml 与 pbxproj 同步为 80，纠正此前 yml 仍为 76 的漂移。初始 79 编号的兼容验收 246 项单元测试 + 2 项 UI 测试全部通过，之后只改版本号，没有功能改动。正式 Release 归档待完成。
+
+Build 78 的 Models、Services、Networking、Info.plist、entitlements 与本次逐文件 diff 为空。昨天旅行入口、完整地图与路线播放、本次按钮排版全部保留；已有存储、权限和网络合同不变。
+
+发布回滚点：远端 main 发布前 91f0d275；上一归档 /Users/dengzhaoyu/Library/Developer/Xcode/Archives/2026-10-08/AIPlatformApp-1.0.3-78 2.xcarchive 保留，Apple 已上传的 79 不删除。无服务端部署。后续状态以最后的发布回执为准。
