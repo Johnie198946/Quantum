@@ -2710,13 +2710,6 @@ struct TravelNoteReadingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            if showsPagePicker {
-                Picker("旅行笔记页面", selection: $page) {
-                    ForEach(Page.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-
             TravelPlanResultView(title: title, content: content, initialPage: resultPage, baseURL: baseURL, onIllustrate: onIllustrate)
                 .id(page)
         }
@@ -3183,82 +3176,6 @@ struct TravelRouteMap: View {
     }
 }
 
-// Native, offline position globe. No road geometry or transit claims are inferred.
-private struct TravelGlobeView: View {
-    let stops: [TravelRouteStop]
-    @State private var scene: SCNScene?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let scene {
-                SceneView(scene: scene, options: [.allowsCameraControl, .autoenablesDefaultLighting])
-                    .frame(height: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .accessibilityLabel("可旋转的全球目的地位置示意图")
-            } else { ProgressView().frame(height: 300) }
-            Text("拖动旋转 · 双指缩放 · 位置示意，不含地形与实际道路")
-                .font(.caption).foregroundStyle(.secondary)
-            ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
-                Text("\(index + 1)  \(stop.name)" + (stop.coordinate == nil ? " · 坐标待核实" : ""))
-                    .font(.subheadline)
-            }
-        }.task(id: stops) { scene = makeScene() }
-    }
-
-    private func makeScene() -> SCNScene {
-        let scene = SCNScene()
-        scene.background.contents = UIColor(red: 0.035, green: 0.10, blue: 0.15, alpha: 1)
-        let sphere = SCNSphere(radius: 1)
-        sphere.segmentCount = 64
-        sphere.firstMaterial?.diffuse.contents = UIColor(red: 0.08, green: 0.23, blue: 0.28, alpha: 1)
-        sphere.firstMaterial?.roughness.contents = 0.85
-        scene.rootNode.addChildNode(SCNNode(geometry: sphere))
-        func point(_ latitude: Double, _ longitude: Double, radius: Double = 1.008) -> SCNVector3 {
-            let lat = latitude * .pi / 180, lon = longitude * .pi / 180
-            return SCNVector3(Float(radius * cos(lat) * sin(lon)), Float(radius * sin(lat)), Float(radius * cos(lat) * cos(lon)))
-        }
-        func line(_ points: [SCNVector3], color: UIColor) {
-            guard points.count > 1 else { return }
-            let indices = (0..<(points.count - 1)).flatMap { [Int32($0), Int32($0 + 1)] }
-            let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: points)], elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
-            geometry.firstMaterial?.diffuse.contents = color
-            geometry.firstMaterial?.lightingModel = .constant
-            scene.rootNode.addChildNode(SCNNode(geometry: geometry))
-        }
-        for latitude in stride(from: -60.0, through: 60.0, by: 30) {
-            line(stride(from: -180.0, through: 180.0, by: 4).map { point(latitude, $0) }, color: .systemTeal.withAlphaComponent(0.35))
-        }
-        for longitude in stride(from: -180.0, to: 180.0, by: 30) {
-            line(stride(from: -90.0, through: 90.0, by: 3).map { point($0, longitude) }, color: .systemTeal.withAlphaComponent(0.35))
-        }
-        let located = stops.compactMap(\.coordinate)
-        for (from, to) in zip(located, located.dropFirst()) {
-            let delta = (to.longitude - from.longitude + 540).truncatingRemainder(dividingBy: 360) - 180
-            let arc = (0...48).map { step -> SCNVector3 in
-                let fraction = Double(step) / 48
-                return point(from.latitude + (to.latitude - from.latitude) * fraction,
-                             from.longitude + delta * fraction, radius: 1.025 + 0.12 * sin(.pi * fraction))
-            }
-            line(arc, color: .systemOrange)
-        }
-        for location in located {
-            let pin = SCNSphere(radius: 0.018)
-            pin.firstMaterial?.diffuse.contents = UIColor.systemOrange
-            pin.firstMaterial?.lightingModel = .constant
-            let node = SCNNode(geometry: pin)
-            node.position = point(location.latitude, location.longitude, radius: 1.025)
-            scene.rootNode.addChildNode(node)
-        }
-        let camera = SCNNode()
-        camera.camera = SCNCamera()
-        camera.camera?.fieldOfView = 45
-        let focus = located.first ?? CLLocationCoordinate2D(latitude: 25, longitude: 100)
-        camera.position = point(focus.latitude, focus.longitude, radius: 3.4)
-        camera.look(at: SCNVector3Zero)
-        scene.rootNode.addChildNode(camera)
-        return scene
-    }
-}
-
 private struct TravelInfoCard: View {
     let icon: String
     let title: String
@@ -3371,6 +3288,9 @@ struct TravelPlanResultView: View {
             }
         }
         .animation(AppTheme.Motion.standard, value: page)
+        .fullScreenCover(isPresented: $showingGlobe) {
+            TravelJourneyView(title: title, plan: plan)
+        }
     }
 
     private var sourceList: some View {
@@ -3397,13 +3317,13 @@ struct TravelPlanResultView: View {
                             .frame(width: geometry.size.width, height: geometry.size.height).clipped()
                     } else {
                         AppTheme.Colors.mistMint
-                        Image(systemName: "map")
+                        Image(systemName: "globe.asia.australia.fill")
                             .font(.system(size: 150, weight: .ultraLight))
                             .foregroundStyle(AppTheme.Colors.quantumBlue.opacity(0.22))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                LinearGradient(colors: [.clear, .black.opacity(0.12), .black.opacity(0.78)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [.clear, AppTheme.Colors.primary.opacity(0.18), AppTheme.Colors.primary.opacity(0.9)], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plan.destination ?? "我的旅行").font(.caption.weight(.semibold))
                     Text(title.isEmpty ? "我的旅行" : title).font(.system(size: 36, weight: .semibold, design: .serif))
@@ -3467,12 +3387,24 @@ struct TravelPlanResultView: View {
                 planStat("旅行风格", plan.style ?? "自由探索", "camera.fill")
             }
             if !plan.stops.isEmpty {
-                Picker("路线视图", selection: $showingGlobe) {
-                    Text("设计路线图").tag(false)
-                    Text("3D 位置总览").tag(true)
-                }.pickerStyle(.segmented)
-                if showingGlobe { TravelGlobeView(stops: plan.orderedStops) }
-                else { TravelRouteMap(stops: plan.orderedStops, height: 270) }
+                Button { showingGlobe = true } label: {
+                    HStack(spacing: 16) {
+                        Image(systemName: "globe.asia.australia.fill")
+                            .font(.system(size: 34, weight: .light))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("旅行小世界").font(.system(.headline, design: .serif))
+                            Text("转动地球，重走这趟旅程")
+                                .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .foregroundStyle(AppTheme.Colors.primary)
+                    .padding(20).frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+                    .background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("travel-journey-open")
+                TravelRouteMap(stops: plan.orderedStops, height: 200)
             }
             Button("查看完整行程  →") { page = .day }
                 .buttonStyle(QuantumPrimaryButtonStyle())

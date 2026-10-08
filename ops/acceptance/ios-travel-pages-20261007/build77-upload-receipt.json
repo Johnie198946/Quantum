@@ -1,0 +1,18 @@
+{
+  "task_id": "ios-travel-pages-20261007",
+  "version": "1.0.3",
+  "build": "77",
+  "source_sha": "d3d1b9e6345a8976085ba160ed33c2eebc1fff7d",
+  "source_remote_sha_verified": true,
+  "archive": "/tmp/Quantumn-1.0.3-77-travel.xcarchive",
+  "upload_succeeded": true,
+  "upload_time_china": "2026-10-07 23:29:24",
+  "apple_build_id": "4e161951-8df3-4cbd-87d7-e3cb29978751",
+  "processing_state": "PROCESSING",
+  "organizer_status": "Uploaded to Apple",
+  "log": "/private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/AIPlatformApp_2026-10-07_23-27-26.586.xcdistributionlogs/ContentDelivery.log",
+  "warning": "opencv2.framework missing dSYM EDC048F5-637A-3FF4-9B4A-6CC8E77A46A0; upload accepted",
+  "testflight_group_availability_verified": false,
+  "compatibility_baseline": "user-uploaded Build 76 from fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114",
+  "compatibility_tests_passed": 244
+}

@@ -42,6 +42,28 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testTravelProposalActionsAlignAndOpenEditor() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v4/06-travel-chat-to-workflow-v4-p02"]
+        app.launch()
+        let edit = app.buttons["travel-proposal-edit"]
+        let create = app.buttons["travel-proposal-create"]
+        let discard = app.buttons["travel-proposal-discard"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 15))
+        for _ in 0..<5 where !discard.isHittable { app.swipeUp() }
+        XCTAssertTrue(create.isHittable)
+        XCTAssertTrue(discard.isHittable)
+        XCTAssertGreaterThanOrEqual(create.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(discard.frame.height, 44)
+        XCTAssertEqual(create.frame.minY, discard.frame.minY, accuracy: 1)
+        XCTAssertEqual(create.frame.width, discard.frame.width, accuracy: 1)
+        attachScreenshot(named: "travel-proposal-actions")
+        edit.tap()
+        XCTAssertTrue(app.navigationBars["核对旅行需求"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+    }
+
     func testBookshelfEmptyScopesAndRealListEditor() {
         app.terminate()
         app.launchArguments = ["-bookshelfPreview"]

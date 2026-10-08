@@ -1,0 +1,18 @@
+{
+  "build76_source_sha": "fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114",
+  "build77_source_sha": "d3d1b9e6345a8976085ba160ed33c2eebc1fff7d",
+  "build76_archive": "/tmp/Quantumn-1.0.3-76-travel-20261007.xcarchive",
+  "build76_source_tree_has_no_ios_changes": true,
+  "build77_descends_from_build76": true,
+  "unchanged_legacy_app_files": 198,
+  "changed_legacy_app_files": [
+    "AIPlatformApp/AIPlatformApp.swift",
+    "AIPlatformApp/Views/Knowledge/KnowledgeView.swift"
+  ],
+  "missing_legacy_app_files": [],
+  "native_bundle_and_storage_contract": "Info.plist, entitlements, Models, Networking, Services unchanged; no migration or bundle-id change",
+  "compatibility_test_result": "TEST SUCCEEDED",
+  "tests_passed": 244,
+  "test_log": "/tmp/quantum-travel77-compatibility.log",
+  "xcresult": "/tmp/QuantumTravel77Compatibility-20261007.xcresult"
+}

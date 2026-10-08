@@ -1421,21 +1421,61 @@ public struct CapabilityProposalCard: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
             if proposal.state == .awaitingConfirmation || proposal.state == .failed {
-                Button("核对并修改需求") { showsTravelDetails = true }
-                    .buttonStyle(QuantumPrimaryButtonStyle())
-                if proposal.state == .awaitingConfirmation {
-                    Button("按以上需求创建", action: onConfirm)
-                        .buttonStyle(.bordered)
+                VStack(spacing: AppTheme.Spacing.sm) {
+                    Button { showsTravelDetails = true } label: {
+                        Label("核对并修改需求", systemImage: "slider.horizontal.3")
+                            .font(AppTheme.Typography.supporting.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, AppTheme.Spacing.sm)
+                            .padding(.vertical, AppTheme.Spacing.sm)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .foregroundStyle(AppTheme.Colors.onPrimary)
+                            .background(AppTheme.Colors.primary, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .accessibilityIdentifier("travel-proposal-edit")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: AppTheme.Spacing.sm) { travelSecondaryActions }
+                        VStack(spacing: AppTheme.Spacing.sm) { travelSecondaryActions }
+                    }
                 }
-                Button("放弃", action: onDiscard)
-                    .font(AppTheme.Typography.supporting)
-                    .frame(maxWidth: .infinity)
             }
         }
         .padding(AppTheme.Spacing.md)
         .background(AppTheme.Colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(AppTheme.Colors.border) }
+    }
+
+    @ViewBuilder private var travelSecondaryActions: some View {
+        if proposal.state == .awaitingConfirmation {
+            Button(action: onConfirm) {
+                Text("直接创建")
+                    .font(AppTheme.Typography.supporting.weight(.semibold))
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, AppTheme.Spacing.sm)
+                    .padding(.vertical, AppTheme.Spacing.sm)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .foregroundStyle(AppTheme.Colors.primary)
+                    .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            }
+            .buttonStyle(SoftButtonStyle())
+            .accessibilityLabel("按以上需求创建")
+            .accessibilityIdentifier("travel-proposal-create")
+        }
+        Button(action: onDiscard) {
+            Text("放弃")
+                .font(AppTheme.Typography.supporting)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.sm)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(AppTheme.Colors.border) }
+                .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(SoftButtonStyle())
+        .accessibilityIdentifier("travel-proposal-discard")
     }
 
     private func travelRow(_ icon: String, _ title: String, _ value: String?) -> some View {
