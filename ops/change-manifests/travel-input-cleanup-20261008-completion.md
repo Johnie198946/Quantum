@@ -1,11 +1,11 @@
 # travel-input-cleanup-20261008
 
 task_id: travel-input-cleanup-20261008
-status: TESTED
+status: PUSHED
 branch: codex/travel-input-cleanup-20261008
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-input-cleanup-20261008
-head/local_commit: f098218bd7d37a6c5fb986523cab0c50ccb411f9 / 未提交
-remote_sha: 未执行任务推送；origin/main 仅作为开发起点，不作为交付证据
+head/local_commit: 发布源 3b22df1965378725bd9084bfd0b9615054618795；功能提交 15d8ca71
+remote_sha: origin/refs/heads/codex/travel-input-cleanup-20261008 = 3b22df1965378725bd9084bfd0b9615054618795（git ls-remote 已核验）；main 等待明确授权
 server_before: 不适用，未授权部署
 server_after: 不适用，未执行部署
 health_check: 不适用，无服务器变更
@@ -336,3 +336,24 @@ pytest 命令使用 CLANG_MODULE_CACHE_PATH=/tmp/quantum-travel-clang-cache、SW
 2026-10-08 当前任务用户明确授权“提交推送上传testflight”。复核任务分支只有本任务已列修改；远端 main 新增 cdd896ef、3be75d49，仅更新 gemini-review-gate 运维记录，与本任务代码无冲突。构建号 81 → 82，project.yml / pbxproj 同步，营销版本仍为 1.0.3。版本号更改不改变运行逻辑。提交前 diff --check 通过；后续记录精确发布源、远端核验、归档与 Apple 回执。无后端部署。
 
 新增发布文件：ios/project.yml、ios/AIPlatformApp.xcodeproj/project.pbxproj。发布前回滚点 origin/main@3be75d49119912f6be2f456ce3ecb642167d4c84；上一份 /tmp/Quantumn-1.0.3-81-travel.xcarchive 保留。
+
+## Build 82 发布检查点
+
+- status: PUSHED
+- release_source: 3b22df1965378725bd9084bfd0b9615054618795，功能提交 15d8ca71，合入 origin/main@3be75d49 仅运维记录变更。
+- origin refs/heads/codex/travel-input-cleanup-20261008 已 push，并以 git ls-remote 核验为 3b22df1965378725bd9084bfd0b9615054618795。当时 refs/heads/main = 3be75d49119912f6be2f456ce3ecb642167d4c84。
+- 用户已授权提交、推送及 TestFlight；自动审批拒绝同时更新任务分支与 main（要求具体 main 授权），已推送独立任务分支，已向用户询问 main。
+- 单元测试执行 325 项，2 项原测试 skip，初始唯一失败测试 SignedKeychainAcceptanceTests 因 CODE_SIGNING_ALLOWED=NO，5 个断言返回 -34018；采用项目现有签名重测该项 1 test / 0 failures。其余 322 项通过，总计 323 passed / 2 skipped。未修改测试逻辑或豁免 Keychain。
+- 4 项 UI 回归全部通过；/tmp/QuantumTravelInput82.xcresult；/tmp/quantum-travel82-tests.log。签名重测 /tmp/QuantumTravelInput82SignedKeychain.xcresult；/tmp/quantum-travel82-keychain.log。
+- Release archive: /tmp/Quantumn-1.0.3-82-travel-input.xcarchive；/tmp/quantum-travel82-archive.log，ARCHIVE SUCCEEDED。
+- bundle: com.ailab.AIPlatformApp / 1.0.3(82)。binary SHA256: 3f1156a9144e2d63d2bc326d080c283a5720700debbaa738f7cc5fa68e27a5c5。
+- codesign --verify --deep --strict: 最初沙箱内返回 CSSMERR_TP_NOT_TRUSTED，获得系统信任链读取权限后同一归档 exit 0。
+- 自动审批初次拒绝上传（引用上述尚未通过的 Keychain 与签名校验旧状态）；提供上述修复后证据，重新审批获准。CLI 上传实际执行后 exit 70：exportArchive Failed to Use Accounts；/tmp/quantum-travel82-upload.log。无上传成功证据。
+- Xcode CUA: Mac is locked and automatic unlock could not unlock it；已请求用户手动解锁。尚未操作分发或上传按钮。
+- server_before/server_after: 后端不适用；Apple 上一成功上传 1.0.3(81)，本次 82 未上传。
+- health_check: Release 归档及本机签名核验通过；Apple 接收未执行成功。
+- functional_check: 上述 323 单元通过/2 skip、4 UI通过；未真机安装验收。
+- rollback_point: origin/main@3be75d49 与 /tmp/Quantumn-1.0.3-81-travel.xcarchive 保留，未覆盖旧包。
+- remaining_risks: 等待 Mac 解锁与 main 授权；Apple 上传、处理、测试组状态及安装未验证。不声称已上线或可安装。
+
+本节覆盖前文未授权/未提交的历史阶段描述；归档与测试使用 release_source，后续仅发布证据更新不改变二进制。
