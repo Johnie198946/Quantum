@@ -42,6 +42,25 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testTravelWorkflowUsesCompactBriefAndVisibleAttachmentEntry() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["开启一趟旅行"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["这趟旅行，你更倾向哪种预算安排？"].exists)
+        XCTAssertTrue(app.buttons["补充图片或文档"].isHittable)
+        XCTAssertFalse(app.buttons["返回任务"].exists)
+        XCTAssertFalse(app.staticTexts["构建"].exists)
+        attachScreenshot(named: "travel-workflow-clarification")
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelCreatePreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["想去哪里"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["出行时间"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        attachScreenshot(named: "travel-workflow-create")
+    }
+
     func testTravelProposalActionsAlignAndOpenEditor() {
         app.terminate()
         app.launchArguments = ["-prototypePreview", "v4/06-travel-chat-to-workflow-v4-p02"]

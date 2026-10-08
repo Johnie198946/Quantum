@@ -1,17 +1,16 @@
-# 旅行确认按钮与任务流入口诊断
+# 旅行确认按钮与旅行攻略制作流程对齐
 
 - task_id: travel-actions-20261008
-- status: DEPLOYED（Build 80 已上传 Apple；处理与测试组可安装状态待核验）
+- status: TESTED（最新 Build 81 修正；Build 80 的上传是历史状态）
 - branch: codex/travel-actions-20261008
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-actions-20261008
-- head/local_commit: 本分支最新 merge commit；父提交 f66bffebff666cd37de5d398446c05dc458bf3ea + 0ab83f67bc89501f91d989444414d21796ca95a3
-- remote_sha: 本任务未推送。只读核验 origin/main=6bab547e8cb0c49a4a72208144c9777a1f96a3c6；origin/codex/ios-travel-pages-20261007=0ab83f67bc89501f91d989444414d21796ca95a3
-- server_before: 不适用，未读取服务器
-- server_after: 不适用，未部署
-- health_check: 不适用，本地 iOS UI 调整
-- functional_check: iPhone 17 Pro / iOS 26.1 模拟器 UI 测试 1 项通过，0 failures，22.013 秒；布局和编辑弹窗通过
-- rollback_point: 本任务基线 6bab547e8cb0c49a4a72208144c9777a1f96a3c6；仅需撤销本任务 diff
-- remaining_risks: 尚未推送 main 或发布客户端；未核验用户手机版本；早期专属方案原型仍未接入正式入口（非昨天分支的改动）
+- head/local_commit: 86bb7126e3de36651bc5b503f2c38e82886b3498，最新修正待提交
+- remote_sha: origin/main=86bb7126e3de36651bc5b503f2c38e82886b3498
+- server_before/server_after: 不适用；未部署后端，Apple 上一上传为 1.0.3(80)
+- health_check: 247 单元 + 2 UI 回归通过；最终布局与状态文案针对性重跑通过
+- functional_check: 原生创建与澄清截图检查通过；真实后端生成/真机安装未检查
+- rollback_point: 86bb7126e3de36651bc5b503f2c38e82886b3498 及 Build 80 归档
+- remaining_risks: Build 81 尚未上传；Mac 锁定，Xcode UI 暂不可用
 
 ## 盘点与规则
 
@@ -105,3 +104,13 @@ ContentDelivery.log 返回 UPLOAD SUCCEEDED with no errors，Apple processingSta
 - receipt: ops/acceptance/travel-actions-20261008/build80-upload-receipt.json
 
 本节覆盖前文“等待授权/未上传”等历史阶段描述。未声称 App Store 正式发布或生产服务器上线。
+
+## 用户指出制作页面未对齐后的纠正（Build 81）
+
+前次将昨天的工作范围缩小为地图与结果页，判断不完整。已读取原任务与 ios-travel-design 的完整原型（create/generating/guide/save/note/reading/appendix/adjust/diff/history），它明确包含旅行攻略制作。此次直接复用正式生命周期实现，未接入固定京都数据、未创建第二条服务链路。
+
+最新修改：WorkflowDashboardView.swift 统一直接创建与聊天打开的详情容器；旅行需求输入、长需求折叠、单一三段业务进度、无重复返回；附件栏改为正常布局紧凑按钮；方案审批/准备/执行沿用真实 API，技术配置收纳；AIPlatformApp.swift 仅 DEBUG 新增真实组件隔离预览；现有测试文件补需求内容与阶段边界、实际原生 UI 验证；project.yml/pbxproj 构建号同步 81。新增两个展示组件在原文件内，无新增模型/服务/状态容器/依赖。
+
+续做前 status clean，branch codex/travel-actions-20261008，HEAD 86bb7126，remote origin=现有 Quantum GitHub，原 task worktree 不变。2026-10-08 21:53 fetch origin main 无新提交，继续保留 Build 78 基线及昨天旅行分支的全部合并。
+
+测试证据：ops/acceptance/travel-actions-20261008/build81-tests.json；原生画面 travel-workflow-create.png / travel-workflow-clarification.png。归档与上传结果追加在下一节。更新描述已保存 build81-testflight-notes.txt。

@@ -1,0 +1,10 @@
+{
+  "baseline": "86bb7126e3de36651bc5b503f2c38e82886b3498",
+  "unit_tests": 247,
+  "ui_tests": 2,
+  "failures": 0,
+  "regression_result": "/tmp/QuantumTravel81RegressionRun.xcresult",
+  "final_copy_and_config_result": "/tmp/QuantumTravel81FinalUI.xcresult",
+  "final_layout_result": "/tmp/QuantumTravel81LayoutFinal.xcresult",
+  "note": "After full regression, changed status copy, hid technical node editor under advanced, and corrected native button styling; targeted test + UI re-run passed. No real backend generation or real-device install checked."
+}

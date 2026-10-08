@@ -6581,6 +6581,14 @@ final class ClarifyAnswerPaginationRegressionTests: XCTestCase {
         XCTAssertNotNil(artifact.metadata.previewContentHash)
     }
 
+    func testTravelBriefPreservesOnlyProvidedFactsAndConfirmationStaysVisible() {
+        XCTAssertEqual(WorkflowDetailTransitionPolicy.travelBrief(destination: " 鹿儿岛 ", dates: "", travelers: "两人", preferences: "预算未定"), "目的地：鹿儿岛\n同行人：两人\n偏好与预算：预算未定")
+        for phase in ["awaiting_requirement_confirmation", "needs_attention"] {
+            XCTAssertTrue(WorkflowDetailTransitionPolicy.showsLifecycleSession(status: phase, hasExecution: false))
+            XCTAssertFalse(WorkflowDetailTransitionPolicy.showsLifecycleSession(status: phase, hasExecution: true))
+        }
+    }
+
     func testWorkflowDetailKeepsBuildingAgentVisibleAndRejectsStaleRegression() {
         XCTAssertTrue(
             WorkflowDetailTransitionPolicy.showsLifecycleSession(
