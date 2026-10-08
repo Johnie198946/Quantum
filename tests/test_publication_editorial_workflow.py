@@ -328,7 +328,7 @@ def test_new_pending_invalidates_prior_approved_and_reversion(tmp_path):
 
 @pytest.mark.parametrize("tamper", ["proof", "review", "contract", "key"])
 @pytest.mark.parametrize("prior_gap", [False, True])
-def test_release_rechecks_proof_review_and_contract(tmp_path, tamper, prior_gap):
+def test_release_reuses_admission_and_rejects_binding_drift(tmp_path, tamper, prior_gap):
     store = PublicationStore(tmp_path)
     if prior_gap:
         from publication_editorial_fixture import approve_fixture
@@ -352,9 +352,15 @@ def test_release_rechecks_proof_review_and_contract(tmp_path, tamper, prior_gap)
         db.execute("UPDATE editions SET bundle_json=?", (json.dumps(changed),))
         db.close()
     result = store.release_due(now=at(4))
-    assert result["released"] == [] and result["blocked"]
-    if tamper != "contract":
-        assert store.stage(value, now=at(4))["state"] == "blocked"
+    if tamper == "contract":
+        # DB payload drift invalidates the persisted admission binding.
+        assert result["released"] == [] and result["blocked"]
+    else:
+        # Proof, review and key bytes were validated at admission. Release reuses
+        # that persisted result instead of repeating cryptographic/file checks.
+        assert result["released"] == [edition["edition_id"]]
+        store.withdraw(edition["publication_id"])
+        assert store.get_published(edition["publication_id"], now=at(4)) is None
 
 
 def test_legacy_published_is_readable_pending_is_not_and_restage_frozen(tmp_path):
@@ -369,11 +375,11 @@ def test_legacy_published_is_readable_pending_is_not_and_restage_frozen(tmp_path
     db = store._connect()
     db.execute("UPDATE editions SET state='scheduled',blocked_reasons='[]'")
     db.close()
-    assert store.release_due(now=at(4))["blocked"][0]["reasons"] == ["editorial_contract_required"]
+    assert store.release_due(now=at(4))["blocked"][0]["reasons"] == ["publication_not_admitted"]
     db = store._connect()
     db.execute("UPDATE editions SET state='published',actual_release_at=?,blocked_reasons='[]'", (at(4).isoformat(),))
     # Recreate pre-migration state; migration freezes only this initial snapshot.
-    db.execute("DELETE FROM publication_migrations WHERE name='editorial-v1'")
+    db.execute("DELETE FROM publication_migrations WHERE name IN ('editorial-v1', 'publication-admission-v1')")
     db.close()
     original = store.get_published(item["publication_id"], now=at(4))
     assert original and original["publication_format"] == "article"
@@ -584,14 +590,24 @@ def test_published_old_chapter_checks_survive_upgrade_without_weakening_release(
         assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
         pending = store.stage(ready(store, bundle(series="ai-practice")), now=at(3))
 
+    # Recreate the pre-admission database to exercise the one-time historical backfill.
+    with sqlite3.connect(store.db_path) as db:
+        db.execute("DELETE FROM publication_admissions")
+        db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
     # Reads retain their signed historical review; unissued work needs new checks.
     assert store.get_published(item["publication_id"], now=at(4)) is not None
     assert len(store.published(now=at(4))) == 1
     blocked = store.release_due(now=at(4))["blocked"]
     assert blocked[0]["edition_id"] == pending["edition_id"]
-    assert "review.check:chapter-001:specificity" in blocked[0]["reasons"]
+    # Pre-admission pending rows have no reusable admission marker and must be
+    # restaged once under current rules; release does not recalculate them.
+    assert blocked[0]["reasons"] == ["publication_not_admitted"]
     assert store.stage(value, now=at(4))["state"] == "published"
 
+    # A corrupt historical backup must fail admission, not trigger repeated read-time scans.
+    with sqlite3.connect(store.db_path) as db:
+        db.execute("DELETE FROM publication_admissions")
+        db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
     if tamper == "body":
         store._path(item["body_ref"], ".md").write_text("changed")
     elif tamper == "review":

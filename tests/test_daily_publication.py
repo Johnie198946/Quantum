@@ -7,6 +7,7 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -155,6 +156,8 @@ def test_pre_media_published_edition_remains_visible_without_new_assets(tmp_path
         value["assets"] = []
         db.execute("UPDATE editions SET bundle_json=? WHERE edition_id=?",
                    (json.dumps(value), item["edition_id"]))
+        db.execute("DELETE FROM publication_admissions")
+        db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
         db.commit()
     finally:
         db.close()
@@ -167,6 +170,8 @@ def test_pre_media_published_edition_remains_visible_without_new_assets(tmp_path
     try:
         db.execute("UPDATE editions SET actual_release_at=? WHERE edition_id=?",
                    (DAILY_MEDIA_REQUIRED_FROM.isoformat(), item["edition_id"]))
+        db.execute("DELETE FROM publication_admissions")
+        db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
         db.commit()
     finally:
         db.close()
@@ -404,7 +409,7 @@ def test_ai_toolkit_missing_cover_is_blocked_and_old_edition_stays_readable(tmp_
     legacy_bundle["assets"] = []
     db.execute("UPDATE editions SET state='published',actual_release_at=?,blocked_reasons='[]',bundle_json=?",
                (at(4).isoformat(), json.dumps(legacy_bundle)))
-    db.execute("DELETE FROM publication_migrations WHERE name='editorial-v1'")
+    db.execute("DELETE FROM publication_migrations WHERE name IN ('editorial-v1', 'publication-admission-v1')")
     db.close()
     assert store.get_published(item["publication_id"], now=at(4))
 
@@ -522,8 +527,12 @@ def test_hash_receipt_tamper_and_rights_expiry_hide_at_access(tmp_path):
 
     store2 = PublicationStore(tmp_path / "tamper")
     item2 = stage(store2, now=at(3))
+    # Admission is the single integrity checkpoint. Later storage mutation does not
+    # trigger another hash pass during release; operators must withdraw explicitly.
     (store2.root / item2["body_ref"]).write_text("tampered", encoding="utf-8")
-    assert "artifact_missing_or_hash_mismatch" in store2.release_due(now=at(4))["blocked"][0]["reasons"]
+    assert store2.release_due(now=at(4))["released"] == [item2["edition_id"]]
+    store2.withdraw(item2["publication_id"])
+    assert store2.get_published(item2["publication_id"], now=at(4)) is None
 
 
 def test_rights_evidence_and_external_link_only_gate(tmp_path):
@@ -663,7 +672,7 @@ def test_withdrawal_removes_all_read_search_chat_paths(monkeypatch, tmp_path):
         ))
 
 
-def test_tampered_receipt_revokes_targeted_detail(monkeypatch, tmp_path):
+def test_published_detail_uses_admission_then_explicit_withdrawal(monkeypatch, tmp_path):
     runtime, vault = tmp_path / "runtime", tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(runtime))
@@ -674,12 +683,12 @@ def test_tampered_receipt_revokes_targeted_detail(monkeypatch, tmp_path):
     receipt = staged["bundle"]["review"]["receipt"]
     (runtime / "evidence" / f"{receipt['sha256']}.bin").write_text("tampered", encoding="utf-8")
 
+    payload = {"tenant_key": "tenant-a", "visible_categories": frozenset({PUBLICATION_CATEGORY})}
+    # Source receipts are admission evidence, not mutable read-time authorization.
+    assert asyncio.run(subscriptions._available_book_body(payload, staged["publication_id"]))
+    store.withdraw(staged["publication_id"])
     with pytest.raises(HTTPException) as error:
-        asyncio.run(subscriptions._available_book_body(
-            {"tenant_key": "tenant-a", "visible_categories": frozenset({PUBLICATION_CATEGORY})},
-            staged["publication_id"],
-        ))
-
+        asyncio.run(subscriptions._available_book_body(payload, staged["publication_id"]))
     assert error.value.status_code == 404
 
 
@@ -700,3 +709,161 @@ def test_source_catalog_filters_before_expensive_access_validation(tmp_path, mon
     monkeypatch.setattr(store, "_access_reasons", unexpected)
     assert store.public_source_catalog(now=at(5)) == ([], [])
     assert store.get_public_source("follow-builders-public-source-" + "a" * 24, now=at(5)) is None
+
+
+def test_admission_runs_once_and_all_release_read_paths_reuse_it(tmp_path, monkeypatch):
+    store = PublicationStore(tmp_path)
+    value = add_inline_image(store, ready(store, bundle()))
+    calls = []
+    validator = store._media_assets_valid
+    def validate(*args):
+        calls.append("media")
+        return validator(*args)
+    monkeypatch.setattr(store, "_media_assets_valid", validate)
+    item = store.stage(value, now=at(3))
+    assert calls == ["media"]
+    assert store.stage(value, now=at(3))["edition_id"] == item["edition_id"]
+    assert calls == ["media"]
+    assert store.release_due(now=at(4))["released"] == [item["edition_id"]]
+    assert calls == ["media"]
+    assert store.stage(value, now=at(5))["state"] == "published"
+    assert calls == ["media"]
+    def forbidden(*args, **kwargs):
+        raise AssertionError("published read repeated admission/image validation")
+    for name in ("_admission_reasons", "_bundle_receipts_valid", "_receipt_valid", "_media_asset_valid",
+                 "_inline_asset_valid", "_editorial_check", "_wiki_valid"):
+        monkeypatch.setattr(PublicationStore, name, forbidden)
+    monkeypatch.setattr(store, "_admission_reasons", forbidden)
+    for reader in (store, PublicationStore(tmp_path)):
+        assert reader.status_report(now=at(5))["items"][0]["body_available"]
+        assert reader.published(now=at(5), include_body=False)
+        assert reader.get_published(item["publication_id"], now=at(5))
+        assert reader.get_published_cover(item["publication_id"], "shelf_cover", now=at(5))
+        assert reader.get_published_media(item["publication_id"], "illustration_01", now=at(5))
+        digest = next(a for a in value["assets"] if "url" in a)["receipt"]["sha256"]
+        assert reader.get_published_asset(item["publication_id"], digest, now=at(5))
+
+
+def test_admission_rejects_state_flip_and_changed_binding(tmp_path):
+    store = PublicationStore(tmp_path)
+    item = stage(store, now=at(3))
+    db = store._connect()
+    db.execute("UPDATE editions SET state='published',actual_release_at=?", (at(4).isoformat(),))
+    db.close()
+    assert store.published(now=at(4)) == []
+    db = store._connect()
+    db.execute("UPDATE editions SET state='scheduled',actual_release_at=NULL")
+    db.close()
+    assert store.release_due(now=at(4))["released"]
+    for column, value in (("content_hash", "a" * 64), ("bundle_json", "{}"), ("body_ref", "artifacts/other.md")):
+        db = store._connect()
+        original = db.execute(f"SELECT {column} FROM editions").fetchone()[0]
+        db.execute(f"UPDATE editions SET {column}=?", (value,))
+        assert store.get_published(item["publication_id"], now=at(4)) is None
+        db.execute(f"UPDATE editions SET {column}=?", (original,))
+        db.close()
+    store.withdraw(item["publication_id"], now=at(5))
+    db = store._connect()
+    db.execute("UPDATE editions SET state='published'")
+    db.close()
+    assert store.published(now=at(5)) == []
+
+
+def test_legacy_admission_backfill_runs_once_including_failures(tmp_path, monkeypatch):
+    store = PublicationStore(tmp_path)
+    first = stage(store, now=at(3))
+    second = stage(store, bundle(series="ai-practice"), now=at(3))
+    store.release_due(now=at(4))
+    path = store._path(second["body_ref"])
+    original = path.read_bytes()
+    path.write_bytes(b"corrupt before migration")
+    db = store._connect()
+    db.execute("DELETE FROM publication_admissions")
+    db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
+    db.close()
+    calls = []
+    validator = PublicationStore._admission_reasons
+    def validate(self, db, row, *args):
+        calls.append(row["edition_id"])
+        return validator(self, db, row, *args)
+    monkeypatch.setattr(PublicationStore, "_admission_reasons", validate)
+    for _ in range(2):
+        assert [b["edition_id"] for b in PublicationStore(tmp_path).published(now=at(5))] == [first["edition_id"]]
+        path.write_bytes(original)
+    assert sorted(calls) == sorted([first["edition_id"], second["edition_id"]])
+
+
+def test_legacy_staged_admission_is_validated_once_then_released(tmp_path, monkeypatch):
+    store = PublicationStore(tmp_path)
+    pending = stage(store, now=at(3))
+    db = store._connect()
+    db.execute("DELETE FROM publication_admissions")
+    db.execute("DELETE FROM publication_migrations WHERE name='publication-admission-v1'")
+    db.close()
+    calls = []
+    validator = PublicationStore._admission_reasons
+    def validate(self, db, row, *args):
+        calls.append(row["edition_id"])
+        return validator(self, db, row, *args)
+    monkeypatch.setattr(PublicationStore, "_admission_reasons", validate)
+    migrated = PublicationStore(tmp_path)
+    assert migrated.release_due(now=at(4))["released"] == [pending["edition_id"]]
+    assert calls == [pending["edition_id"]]
+    assert migrated.published(now=at(5))[0]["edition_id"] == pending["edition_id"]
+    assert calls == [pending["edition_id"]]
+
+
+@pytest.mark.parametrize("role,endpoint", [
+    ("shelf_cover", subscriptions.knowledge_publication_cover),
+    ("illustration_01", subscriptions.knowledge_publication_media),
+    ("inline", subscriptions.knowledge_publication_asset),
+])
+def test_publication_image_cache_revalidates_after_authorization(tmp_path, monkeypatch, role, endpoint):
+    monkeypatch.setenv("KNOWLEDGE_PUBLICATION_DIR", str(tmp_path))
+    store = PublicationStore(tmp_path)
+    value = add_inline_image(store, ready(store, bundle()))
+    item = store.stage(value, now=at(3))
+    store.release_due(now=at(4))
+    asset = next(a for a in value["assets"] if ("url" in a if role == "inline" else a.get("role") == role))
+    digest = asset["receipt"]["sha256"]
+    selector = digest if role == "inline" else role
+    payload = {"tenant_key": "tenant-a", "user_id": "reader", "visible_categories": {PUBLICATION_CATEGORY}}
+    def forbidden(*args):
+        raise AssertionError("image read hashed or decoded a receipt")
+    monkeypatch.setattr(PublicationStore, "_receipt_valid", forbidden)
+    monkeypatch.setattr(Image, "open", forbidden)
+    sha256 = hashlib.sha256
+    def no_image_hash(data=b"", **kwargs):
+        assert not data.startswith(b"\x89PNG"), "media read recomputed image SHA"
+        return sha256(data, **kwargs)
+    monkeypatch.setattr(hashlib, "sha256", no_image_hash)
+    response = asyncio.run(endpoint(item["publication_id"], selector, payload))
+    assert response.headers["cache-control"] == "private, no-cache, max-age=0, must-revalidate"
+    assert response.headers["etag"] == f'"{digest}"'
+    read_bytes = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", forbidden)
+    for tag in (response.headers["etag"], 'W/' + response.headers["etag"], '*', '"other", ' + response.headers["etag"]):
+        cached = asyncio.run(endpoint(item["publication_id"], selector, payload, tag))
+        assert cached.status_code == 304 and cached.body == b""
+        assert cached.headers["etag"] == response.headers["etag"]
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    assert asyncio.run(endpoint(item["publication_id"], selector, payload, '"stale"')).status_code == 200
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(endpoint(item["publication_id"], selector, {**payload, "visible_categories": set()}, '*'))
+    assert denied.value.status_code == 404
+    store.withdraw(item["publication_id"])
+    with pytest.raises(HTTPException) as withdrawn:
+        asyncio.run(endpoint(item["publication_id"], selector, payload, '*'))
+    assert withdrawn.value.status_code == 404
+
+
+def test_publication_conditional_media_reads_still_require_authentication():
+    import httpx
+    from backend.main import app
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for suffix in ("covers/shelf_cover", "media/illustration_01", "assets/" + "a" * 64):
+                response = await client.get("/api/v1/knowledge-publications/publication-" + "a" * 32 + "/" + suffix,
+                                            headers={"If-None-Match": "*"})
+                assert response.status_code == 401
+    asyncio.run(check())

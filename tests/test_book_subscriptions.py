@@ -478,9 +478,9 @@ def test_reader_catalog_reuses_one_catalog_and_keeps_completed_issues(book_db, m
     first = {**BOOK, "id": "first", "series_id": "history", "issue_date": "2026-09-26", "content_version": VERSION}
     latest = {**BOOK, "id": "latest", "series_id": "history", "issue_date": "2026-09-27", "content_version": VERSION}
     calls = []
-    async def visible(_payload):
+    async def visible(_payload, **_kwargs):
         calls.append(1)
-        return [{"id": "history", "title": "唐史", "books": [first, latest]}]
+        return [{"id": "history", "title": "唐史", "books": [first, {**first, "id": "unread", "issue_date": "2026-09-25"}, latest]}]
     monkeypatch.setattr(subscriptions, "_visible_bookshelves", visible)
     async def seed():
         async with subscriptions.SessionLocal() as db:
@@ -490,7 +490,31 @@ def test_reader_catalog_reuses_one_catalog_and_keeps_completed_issues(book_db, m
     run(seed())
     response = run(subscriptions.knowledge_bookshelves(AUTH, include_reader=True))
     assert len(calls) == 1
+    assert response["subscribed_book_ids"] == ["first", "latest"]
     assert {s["book"]["id"]: s["progress"] for s in response["subscriptions"]} == {"first": 1, "latest": 0}
     assert response["book_lists"] == []
     other = run(subscriptions.knowledge_bookshelves({**AUTH, "user_id": "other"}, include_reader=True))
     assert other["subscriptions"] == []
+    assert other["subscribed_book_ids"] == []
+    run(subscriptions.unsubscribe_book(subscriptions.BookSubscriptionWrite(book_id="latest"), AUTH))
+    assert run(subscriptions.knowledge_bookshelves(AUTH))["subscribed_book_ids"] == []
+
+
+def test_bookshelf_subscription_ids_are_direct_scoped_and_visible(book_db, monkeypatch):
+    run(subscriptions.subscribe_book(subscriptions.BookSubscriptionWrite(book_id=BOOK["id"]), AUTH))
+    calls = []
+    async def visible(payload, **_kwargs):
+        calls.append(payload)
+        return [{"id": "public", "title": "Public", "books": [BOOK]}]
+    def forbidden(*args, **kwargs):
+        raise AssertionError("subscription IDs must not compute another catalog or reader projection")
+    monkeypatch.setattr(subscriptions, "_visible_bookshelves", visible)
+    monkeypatch.setattr(subscriptions, "_available_books", forbidden)
+    monkeypatch.setattr(subscriptions, "_book_subscriptions", forbidden)
+    result = run(subscriptions.knowledge_bookshelves(AUTH))
+    assert result["subscribed_book_ids"] == [BOOK["id"]]
+    assert "subscriptions" not in result
+    assert len(calls) == 1
+    for other in ({**AUTH, "user_id": "other"}, {**AUTH, "tenant_key": "other"}):
+        assert run(subscriptions.knowledge_bookshelves(other))["subscribed_book_ids"] == []
+    assert run(subscriptions._subscribed_book_ids(AUTH, {})) == []

@@ -160,7 +160,7 @@ def test_pending_public_index_is_hidden_then_shared_without_private_body(monkeyp
     asyncio.run(engine.dispose())
 
 
-def test_public_index_corruption_fails_closed_and_private_prefix_stays_distinct(tmp_path):
+def test_public_index_uses_admission_until_withdrawn_and_private_prefix_stays_distinct(tmp_path):
     store = PublicationStore(tmp_path / "runtime")
     bundle, source, _ = candidate(store, tmp_path)
     staged = store.stage(approve(store, tmp_path, bundle), now=NOW)
@@ -168,6 +168,8 @@ def test_public_index_corruption_fails_closed_and_private_prefix_stays_distinct(
     assert not source["book_id"].startswith("follow-builders-source-")
     receipt = staged["bundle"]["source_receipts"][0]
     (store.evidence / f"{receipt['sha256']}.bin").write_text("corrupt")
+    assert store.get_public_source(source["book_id"], now=NOW) is not None
+    store.withdraw(staged["publication_id"], now=NOW)
     assert store.get_public_source(source["book_id"], now=NOW) is None
     assert store.public_source_catalog(now=NOW) == ([], [])
 
@@ -206,7 +208,7 @@ def test_public_index_db_payload_tamper_blocks_release(tmp_path):
     db.close()
     result = store.release_due(now=NOW)
     assert result["released"] == []
-    assert result["blocked"][0]["reasons"] == ["source_index_runtime_binding_mismatch"]
+    assert result["blocked"][0]["reasons"] == ["publication_not_admitted"]
 
 
 def test_metadata_only_statuses_cannot_be_promoted_by_rehash(tmp_path):

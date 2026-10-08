@@ -169,7 +169,7 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
                 responseBody = Data(#"{"agreement_version":"2026-09-06","accepted_at":"2026-09-06T08:00:00Z"}"#.utf8)
             }
         case (true, "GET", "/api/v1/knowledge-bookshelves"):
-            responseBody = Data(#"{"bookshelves":[],"subscriptions":[],"book_lists":[{"id":"list-1","title":"History","book_ids":["kn-1"]}]}"#.utf8)
+            responseBody = Data(#"{"bookshelves":[],"subscribed_book_ids":["kn-1"],"subscriptions":[],"book_lists":[{"id":"list-1","title":"History","book_ids":["kn-1"]}]}"#.utf8)
         case (true, "PUT", "/api/v1/me/book-lists/list-1"):
             responseBody = Data(#"{"id":"list-1","title":"History","book_ids":["kn-1"]}"#.utf8)
         case (true, "DELETE", "/api/v1/me/book-lists/list-1"):
@@ -779,6 +779,8 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         let catalog = try await client.fetchKnowledgeBookshelves()
         XCTAssertEqual(catalog.bookLists?.first?.bookIds, ["kn-1"])
         XCTAssertEqual(catalog.subscriptions?.count, 0)
+        XCTAssertEqual(catalog.subscribedBookIds, ["kn-1"])
+        XCTAssertFalse(catalog.requiresSubscriptionFetch)
         let saved = try await client.saveBookList(id: "list-1", title: "History", bookIds: ["kn-1"])
         XCTAssertEqual(saved.bookIds, ["kn-1"])
         try await client.deleteBookList(id: "list-1")
@@ -1518,12 +1520,9 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         weak var owner: APIClient?
         autoreleasepool {
             let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: .ephemeral, inMemoryToken: "fixture")
-            PublicationReaderImage.cacheAPI = api
             owner = api
-            XCTAssertTrue(PublicationReaderImage.cacheAPI === api)
         }
         XCTAssertNil(owner)
-        XCTAssertNil(PublicationReaderImage.cacheAPI)
     }
 
     @MainActor
@@ -1650,6 +1649,58 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         window.rootViewController = UIViewController()
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertFalse(hasImage)
+    }
+
+    func testBookshelfSubscriptionIDsAreOptionalAndSuppressLegacyFetch() throws {
+        for ids in ["[]", "[\"pub-1\"]"] {
+            let response = try decoder().decode(KnowledgeBookshelvesResponse.self,
+                from: Data("{\"bookshelves\":[],\"subscribed_book_ids\":\(ids)}".utf8))
+            XCTAssertNotNil(response.subscribedBookIds)
+            XCTAssertFalse(response.requiresSubscriptionFetch)
+        }
+        let legacy = try decoder().decode(KnowledgeBookshelvesResponse.self,
+            from: Data(#"{"bookshelves":[]}"#.utf8))
+        XCTAssertNil(legacy.subscribedBookIds)
+        XCTAssertTrue(legacy.requiresSubscriptionFetch)
+        let expanded = try decoder().decode(KnowledgeBookshelvesResponse.self,
+            from: Data(#"{"bookshelves":[],"subscriptions":[]}"#.utf8))
+        XCTAssertFalse(expanded.requiresSubscriptionFetch)
+    }
+
+    @MainActor
+    func testPublicationMediaCoalescesRequestsAndUsesProtocolCache() async throws {
+        APIContractURLProtocol.reset()
+        defer { APIContractURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [APIContractURLProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://contract.invalid")!, sessionConfiguration: config, inMemoryToken: "fixture")
+        let path = "/api/v1/knowledge-publications/pub-1/covers/shelf_cover"
+        async let first = api.fetchPublicationMedia(path: path, bookID: "pub-1")
+        async let second = api.fetchPublicationMedia(path: path, bookID: "pub-1")
+        let (a, b) = try await (first, second)
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+        XCTAssertEqual(APIContractURLProtocol.requests().first?.request.cachePolicy, .useProtocolCachePolicy)
+        XCTAssertEqual(api.publicationMediaSession.configuration.requestCachePolicy, .useProtocolCachePolicy)
+        XCTAssertGreaterThan(try XCTUnwrap(api.publicationMediaSession.configuration.urlCache).memoryCapacity, 0)
+        let production = APIClient(baseURL: URL(string: "https://contract.invalid")!)
+        XCTAssertGreaterThan(try XCTUnwrap(production.publicationMediaSession.configuration.urlCache).diskCapacity, 0)
+        // Credential changes discard both cached bytes and in-flight ownership.
+        let cache = try XCTUnwrap(api.publicationMediaSession.configuration.urlCache)
+        let request = URLRequest(url: URL(string: "https://contract.invalid" + path)!)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+        cache.storeCachedResponse(CachedURLResponse(response: response, data: a), for: request)
+        api.clearToken()
+        XCTAssertNil(cache.cachedResponse(for: request))
+        do {
+            _ = try await api.fetchPublicationMedia(path: path, bookID: "pub-1")
+            XCTFail("Signed-out media read must be rejected before touching cache")
+        } catch { }
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 1)
+        api.saveToken("next-user")
+        _ = try await api.fetchPublicationMedia(path: path, bookID: "pub-1")
+        XCTAssertEqual(APIContractURLProtocol.requests().count, 2)
+        XCTAssertEqual(APIContractURLProtocol.requests().last?.request.value(forHTTPHeaderField: "Authorization"), "Bearer next-user")
     }
 
     @MainActor

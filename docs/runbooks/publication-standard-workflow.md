@@ -78,6 +78,8 @@ author_profile=story 使用本机 Story 原生 cron 和独立 supervision 审核
 - 书架 JSON：`shelf_cover_url` 指向 `/api/v1/knowledge-publications/{id}/covers/shelf_cover`。
 - 正文 JSON：`reader_cover_url` 指向同一路径族的 reader_cover；`illustration_urls` 列出 `/media/illustration_01..12`。插图列表不等于已插入 Markdown；客户端不得仅扫描正文图片语法。
 - 媒体接口需要认证及可见性检查。客户端应复用既有认证请求，不将私有媒体简单交给无认证的图片加载器，不向外部URL转发凭据。
+- 完整收据、正文哈希与图片格式/尺寸验证只在 stage 准入时执行一次，并在同一事务保存绑定 edition_id、content_hash、bundle hash 与 body_ref 的持久准入标记；release 只复用该标记并检查发布时间、系列状态、权利期限及绑定是否漂移，不再次读取或哈希整套证据/图片。历史 published 行由 publication-admission-v1 迁移一次性验证；历史未发行行须按当前规则重新 stage，失败行不自动重试。不能靠手工切换 published 状态获得准入。读取保留状态、实际发行时间、撤回、权利期限、授权和媒体路径/收据元数据检查，不重扫冻结文件；存储损坏须显式撤回并经审核发布新版本。
+- 图片响应使用已存素材 receipt SHA 作为 ETag，采用 private, no-cache, max-age=0, must-revalidate：允许私有磁盘缓存，但每次复用必须先鉴权并确认仍可读，才返回 304。iOS 专用 URLSession/URLCache 使用协议缓存并合并并发同图请求，切换凭据时清除缓存。
 - 新版通过 illustration_plan 提供正文版本绑定的精确段落锚点，并投影为 illustrations；旧无锚点版本仍兼容文末区域，禁止猜测历史插图位置。
 - 缺失图片与加载失败须可区分；占位图不作为图片验收通过证据。历史补图须走可审计的新版本/补充流程，不静默覆盖已冻结版。
 

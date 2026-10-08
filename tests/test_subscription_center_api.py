@@ -86,7 +86,7 @@ class TestSubscriptionCenterProxy(unittest.TestCase):
             "category_count": 0,
             "categories": [],
         }
-        subscriptions.bookshelf_catalog = lambda _tenant, _vault, _visible=None, _documents=None: [{
+        subscriptions.bookshelf_catalog = lambda _tenant, _vault, _visible=None, _documents=None, _publications=None: [{
             "id": "knowledge/product/public",
             "title": "产品与方案",
             "security_level": "green",

@@ -162,7 +162,7 @@ def validate_illustration_plan(plan: Any, body: str) -> dict:
 def required_publication_media(bundle: dict) -> set[str]:
     if bundle.get("illustration_plan") is None:
         return set(PUBLICATION_MEDIA)
-    # Full plan/body/receipt validation runs at prepare and every published read.
+    # Full plan/body/receipt validation runs at stage and release.
     return set(PUBLICATION_COVERS) | {item["role"] for item in bundle["illustration_plan"]["illustrations"]}
 
 
@@ -673,6 +673,9 @@ class PublicationStore:
           review_hash TEXT, proof_json TEXT, created_at TEXT NOT NULL, closed_at TEXT,
           PRIMARY KEY(issue_id, revision));
         CREATE TABLE IF NOT EXISTS publication_migrations (name TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS publication_admissions (
+          edition_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, bundle_hash TEXT NOT NULL,
+          body_ref TEXT NOT NULL, released_at TEXT);
         CREATE TABLE IF NOT EXISTS legacy_published_editions (
           edition_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, bundle_hash TEXT NOT NULL);
         """)
@@ -680,6 +683,9 @@ class PublicationStore:
         if "issue_key" not in columns:
             db.execute("ALTER TABLE editions ADD COLUMN issue_key TEXT NOT NULL DEFAULT ''")
             db.execute("UPDATE editions SET issue_key=issue_date WHERE issue_key='' ")
+        admission_columns = {row[1] for row in db.execute("PRAGMA table_info(publication_admissions)")}
+        if "released_at" not in admission_columns:
+            db.execute("ALTER TABLE publication_admissions ADD COLUMN released_at TEXT")
         db.execute("BEGIN IMMEDIATE")
         try:
             if not db.execute("SELECT 1 FROM publication_migrations WHERE name='edition-material-revisions-v1'").fetchone():
@@ -710,6 +716,26 @@ class PublicationStore:
                     db.execute("INSERT OR IGNORE INTO legacy_published_editions VALUES (?,?,?)",
                                (row["edition_id"], row["content_hash"], hashlib.sha256(row["bundle_json"].encode()).hexdigest()))
                 db.execute("INSERT INTO publication_migrations VALUES ('editorial-v1')")
+            if not db.execute("SELECT 1 FROM publication_migrations WHERE name='publication-admission-v1'").fetchone():
+                for row in db.execute("SELECT * FROM editions WHERE state IN ('published','staged','scheduled')").fetchall():
+                    try:
+                        admission_at = (_parse_datetime(row["actual_release_at"], "actual_release_at")
+                                        if row["state"] == "published" else _now())
+                        reasons = self._admission_reasons(db, row, admission_at, None)
+                    except (ValueError, KeyError, TypeError, OSError):
+                        reasons = ["invalid_legacy_admission"]
+                    if not reasons and not row["withdrawn_at"]:
+                        self._save_admission(
+                            db, row, released_at=row["actual_release_at"] if row["state"] == "published" else None,
+                        )
+                db.execute("INSERT INTO publication_migrations VALUES ('publication-admission-v1')")
+            if not db.execute("SELECT 1 FROM publication_migrations WHERE name='publication-release-v1'").fetchone():
+                db.execute("""UPDATE publication_admissions SET released_at=(
+                    SELECT actual_release_at FROM editions WHERE editions.edition_id=publication_admissions.edition_id
+                ) WHERE edition_id IN (
+                    SELECT edition_id FROM editions WHERE state='published' AND actual_release_at IS NOT NULL
+                )""")
+                db.execute("INSERT INTO publication_migrations VALUES ('publication-release-v1')")
             db.commit()
         except Exception:
             db.rollback()
@@ -861,7 +887,44 @@ class PublicationStore:
                 return False
         return True
 
+    @staticmethod
+    def _save_admission(
+        db: sqlite3.Connection, row: sqlite3.Row, *, released_at: str | None = None,
+    ) -> None:
+        db.execute("INSERT OR REPLACE INTO publication_admissions VALUES (?,?,?,?,?)",
+                   (row["edition_id"], row["content_hash"],
+                    hashlib.sha256(row["bundle_json"].encode()).hexdigest(), row["body_ref"], released_at))
+
+    def _admission_binding_reasons(self, db: sqlite3.Connection, row: sqlite3.Row, now: datetime) -> list[str]:
+        admitted = db.execute(
+            "SELECT 1 FROM publication_admissions WHERE edition_id=? AND content_hash=? AND bundle_hash=? AND body_ref=?",
+            (row["edition_id"], row["content_hash"], hashlib.sha256(row["bundle_json"].encode()).hexdigest(), row["body_ref"]),
+        ).fetchone()
+        if not admitted:
+            return ["publication_not_admitted"]
+        try:
+            until = json.loads(row["bundle_json"]).get("rights_valid_until")
+            if until and date.fromisoformat(until) < now.astimezone(SHANGHAI).date():
+                return ["rights_expired"]
+            if not self._path(row["body_ref"], ".md").is_file():
+                return ["artifact_missing"]
+        except (ValueError, TypeError, OSError):
+            return ["invalid_runtime_bundle"]
+        return []
+
     def _access_reasons(self, db: sqlite3.Connection, row: sqlite3.Row, now: datetime, vault: Path | None) -> list[str]:
+        del vault
+        if row["state"] != "published" or row["withdrawn_at"] or not row["actual_release_at"]:
+            return ["not_published"]
+        released = db.execute(
+            "SELECT 1 FROM publication_admissions WHERE edition_id=? AND released_at=?",
+            (row["edition_id"], row["actual_release_at"]),
+        ).fetchone()
+        if not released:
+            return ["publication_not_released"]
+        return self._admission_binding_reasons(db, row, now)
+
+    def _admission_reasons(self, db: sqlite3.Connection, row: sqlite3.Row, now: datetime, vault: Path | None) -> list[str]:
         reasons = []
         try:
             bundle = json.loads(row["bundle_json"])
@@ -1270,6 +1333,36 @@ class PublicationStore:
         db = self._connect()
         try:
             db.execute("BEGIN IMMEDIATE")
+            _, issue_id, _ = self.ids(normalized["series_id"], normalized["issue_key"], 1)
+            candidates = db.execute(
+                "SELECT * FROM editions WHERE issue_id=? AND content_hash=? ORDER BY edition DESC",
+                (issue_id, normalized["body_hash"]),
+            ).fetchall()
+            attempt_id = (normalized.get("quality_contract") or {}).get("attempt_id")
+            existing = next((row for row in candidates
+                             if (json.loads(row["bundle_json"]).get("quality_contract") or {}).get("attempt_id") == attempt_id), None)
+            if existing is None and candidates and (
+                not attempt_id
+                or candidates[0]["state"] not in {"published", "withdrawn"}
+                or not (json.loads(candidates[0]["bundle_json"]).get("quality_contract") or {}).get("attempt_id")
+            ):
+                existing = candidates[0]
+            payload = json.dumps({key: value for key, value in normalized.items() if key != "body"}, ensure_ascii=False, sort_keys=True)
+            if existing and existing["state"] in {"published", "withdrawn"}:
+                frozen = json.loads(existing["bundle_json"])
+                if any(frozen.get(k) != normalized.get(k) for k in
+                       ("quality_contract", "review", "content_kind", "authored_by", "editorial_proof_sha256")):
+                    raise PublicationError("frozen edition cannot change review, contract or publication type")
+                db.commit()
+                return self._record(existing)
+            if existing and existing["state"] in {"staged", "scheduled"} and existing["bundle_json"] == payload:
+                admitted = db.execute(
+                    "SELECT 1 FROM publication_admissions WHERE edition_id=? AND content_hash=? AND bundle_hash=? AND body_ref=?",
+                    (existing["edition_id"], existing["content_hash"], hashlib.sha256(payload.encode()).hexdigest(), existing["body_ref"]),
+                ).fetchone()
+                if admitted:
+                    db.commit()
+                    return self._record(existing)
             if not self._media_assets_valid(db, normalized):
                 raise PublicationError("publication media bytes, format or dimensions mismatch")
             if not self._inline_assets_valid(db, normalized):
@@ -1309,6 +1402,10 @@ class PublicationStore:
                     db.execute("UPDATE editions SET source_snapshot_hash=?,title=?,summary=?,author=?,institution=?,release_at=?,state=?,bundle_json=?,blocked_reasons=? WHERE edition_id=?",
                                (normalized["source_snapshot_hash"], normalized["title"], normalized["summary"], normalized["author"], normalized["institution"], normalized["release_at"], state, payload, json.dumps(sorted(set(blocked))), existing["edition_id"]))
                     existing = db.execute("SELECT * FROM editions WHERE edition_id=?", (existing["edition_id"],)).fetchone()
+                    if state in {"staged", "scheduled"}:
+                        self._save_admission(db, existing)
+                    else:
+                        db.execute("DELETE FROM publication_admissions WHERE edition_id=?", (existing["edition_id"],))
                 db.commit()
                 return self._record(existing)
             edition = db.execute("SELECT COALESCE(MAX(edition),0)+1 FROM editions WHERE series_id=? AND issue_key=?", (normalized["series_id"], normalized["issue_key"])).fetchone()[0]
@@ -1325,6 +1422,8 @@ class PublicationStore:
                         normalized["body_hash"], normalized["source_snapshot_hash"], normalized["title"], normalized["summary"], normalized["author"],
                         normalized["institution"], normalized["release_at"], None, state, ref, payload, json.dumps(sorted(set(blocked))), _iso(now or _now()), None))
             row = db.execute("SELECT * FROM editions WHERE edition_id=?", (edition_id,)).fetchone()
+            if state in {"staged", "scheduled"}:
+                self._save_admission(db, row)
             db.commit()
             return self._record(row)
         except Exception:
@@ -1352,7 +1451,7 @@ class PublicationStore:
                 if row["series_id"] not in SERIES or not SERIES[row["series_id"]].get("enabled", True):
                     blocked.append({"edition_id": row["edition_id"], "reasons": ["publication_series_disabled"]})
                     continue
-                reasons = self._access_reasons(db, row, actual, vault)
+                reasons = self._admission_binding_reasons(db, row, actual)
                 if db.execute("SELECT 1 FROM editions WHERE issue_id=? AND edition>? AND state='published'", (row["issue_id"], row["edition"])).fetchone():
                     reasons.append("newer_edition_already_published")
                 if reasons:
@@ -1362,6 +1461,7 @@ class PublicationStore:
                     continue
                 db.execute("UPDATE editions SET state='withdrawn',withdrawn_at=? WHERE issue_id=? AND state='published'", (_iso(actual), row["issue_id"]))
                 db.execute("UPDATE editions SET state='published',actual_release_at=? WHERE edition_id=?", (_iso(actual), row["edition_id"]))
+                db.execute("UPDATE publication_admissions SET released_at=? WHERE edition_id=?", (_iso(actual), row["edition_id"]))
                 released.append(row["edition_id"])
             db.commit()
         except Exception:
@@ -1441,7 +1541,7 @@ class PublicationStore:
                 item["expected_media_roles"] = sorted(required_publication_media(item["bundle"])) if published else []
                 item["media_roles"] = sorted(
                     asset["role"] for asset in item["bundle"].get("assets", [])
-                    if publication_media_spec(asset.get("role")) and self._media_asset_valid(db, asset)
+                    if publication_media_spec(asset.get("role")) and self._admitted_asset_valid(db, asset)
                 ) if published else []
             return {"items": items, "missing": self.missing(now), "expected_issues": self.expected_issues(now),
                     "editorial_attempts": attempts, "open_gaps": gaps}
@@ -1485,11 +1585,28 @@ class PublicationStore:
         finally:
             db.close()
 
-    def get_published_media(
-        self, publication_id: str, role: str, *, now: datetime | None = None,
-        vault: Path | None = None,
-    ) -> tuple[bytes, str] | None:
-        if not publication_media_spec(role) or not self.db_path.exists():
+    def _admitted_asset_valid(self, db: sqlite3.Connection, asset: dict[str, Any]) -> bool:
+        receipt = asset.get("receipt", {})
+        if asset.get("media_type") not in _IMAGE_MEDIA_TYPES.values():
+            return False
+        evidence = db.execute(
+            "SELECT private_ref,byte_count FROM evidence WHERE artifact_id=? AND sha256=? AND kind=?",
+            (receipt.get("artifact_id"), receipt.get("sha256"), receipt.get("kind")),
+        ).fetchone()
+        if not evidence:
+            return False
+        path = self._path(evidence["private_ref"])
+        return path.is_file() and path.stat().st_size == evidence["byte_count"]
+
+    def _published_media_descriptor(
+        self, publication_id: str, *, role: str | None = None, digest: str | None = None,
+        now: datetime | None = None, vault: Path | None = None,
+    ) -> tuple[Path, str, str] | None:
+        if (role is None) == (digest is None) or (role is not None and not publication_media_spec(role)):
+            return None
+        if digest is not None and not _HASH.fullmatch(digest):
+            return None
+        if not self.db_path.exists():
             return None
         db, actual = self._connect(), now or _now()
         try:
@@ -1500,47 +1617,68 @@ class PublicationStore:
             if row is None or self._access_reasons(db, row, actual, vault):
                 return None
             bundle = json.loads(row["bundle_json"])
-            asset = next((item for item in bundle.get("assets", []) if item.get("role") == role), None)
-            if not asset or not self._media_asset_valid(db, asset):
+            asset = next((item for item in bundle.get("assets", [])
+                          if (item.get("role") == role if role is not None else
+                              item.get("url") and item.get("receipt", {}).get("sha256") == digest)), None)
+            if not asset or not self._admitted_asset_valid(db, asset):
                 return None
             evidence = db.execute(
                 "SELECT private_ref FROM evidence WHERE artifact_id=?", (asset["receipt"]["artifact_id"],)
             ).fetchone()
-            return self._path(evidence["private_ref"]).read_bytes(), asset["media_type"]
-        except (KeyError, TypeError, json.JSONDecodeError, OSError):
+            return self._path(evidence["private_ref"]), asset["media_type"], asset["receipt"]["sha256"]
+        except (KeyError, TypeError, ValueError, OSError):
             return None
         finally:
             db.close()
+
+    def get_published_media_descriptor(
+        self, publication_id: str, role: str, **kwargs: Any,
+    ) -> tuple[Path, str, str] | None:
+        return self._published_media_descriptor(publication_id, role=role, **kwargs)
+
+    def get_published_asset_descriptor(
+        self, publication_id: str, digest: str, **kwargs: Any,
+    ) -> tuple[Path, str, str] | None:
+        return self._published_media_descriptor(publication_id, digest=digest, **kwargs)
+
+    @staticmethod
+    def _read_published_media(
+        descriptor: tuple[Path, str, str] | None, *, include_hash: bool,
+    ) -> tuple[bytes, str] | tuple[bytes, str, str] | None:
+        if descriptor is None:
+            return None
+        path, media_type, digest = descriptor
+        try:
+            result = (path.read_bytes(), media_type)
+        except OSError:
+            return None
+        return (*result, digest) if include_hash else result
+
+    def get_published_media(
+        self, publication_id: str, role: str, *, now: datetime | None = None,
+        vault: Path | None = None, include_hash: bool = False,
+    ) -> tuple[bytes, str] | tuple[bytes, str, str] | None:
+        return self._read_published_media(
+            self.get_published_media_descriptor(publication_id, role, now=now, vault=vault),
+            include_hash=include_hash,
+        )
 
     def get_published_asset(
         self, publication_id: str, digest: str, *, now: datetime | None = None,
-        vault: Path | None = None,
-    ) -> tuple[bytes, str] | None:
-        if not _HASH.fullmatch(digest) or not self.db_path.exists():
-            return None
-        db, actual = self._connect(), now or _now()
-        try:
-            row = db.execute(
-                "SELECT * FROM editions WHERE state='published' AND publication_id=?", (publication_id,),
-            ).fetchone()
-            if row is None or self._access_reasons(db, row, actual, vault):
-                return None
-            bundle = json.loads(row["bundle_json"])
-            asset = next((item for item in bundle.get("assets", [])
-                          if item.get("url") and item.get("receipt", {}).get("sha256") == digest), None)
-            if not asset or not self._inline_asset_valid(db, asset):
-                return None
-            evidence = db.execute(
-                "SELECT private_ref FROM evidence WHERE artifact_id=?", (asset["receipt"]["artifact_id"],)
-            ).fetchone()
-            return self._path(evidence["private_ref"]).read_bytes(), asset["media_type"]
-        except (KeyError, TypeError, json.JSONDecodeError, OSError):
-            return None
-        finally:
-            db.close()
+        vault: Path | None = None, include_hash: bool = False,
+    ) -> tuple[bytes, str] | tuple[bytes, str, str] | None:
+        return self._read_published_media(
+            self.get_published_asset_descriptor(publication_id, digest, now=now, vault=vault),
+            include_hash=include_hash,
+        )
 
-    def get_published_cover(self, publication_id: str, role: str, **kwargs: Any) -> tuple[bytes, str] | None:
+    def get_published_cover(self, publication_id: str, role: str, **kwargs: Any) -> tuple[bytes, str] | tuple[bytes, str, str] | None:
         return self.get_published_media(publication_id, role, **kwargs) if role in PUBLICATION_COVERS else None
+
+    def get_published_cover_descriptor(
+        self, publication_id: str, role: str, **kwargs: Any,
+    ) -> tuple[Path, str, str] | None:
+        return self.get_published_media_descriptor(publication_id, role, **kwargs) if role in PUBLICATION_COVERS else None
 
     @staticmethod
     def _public_source_book(source: dict[str, Any], edition: dict[str, Any]) -> dict[str, Any]:
@@ -1562,11 +1700,16 @@ class PublicationStore:
             "edition": edition["edition"], "edition_id": edition["edition_id"],
         }
 
-    def public_source_catalog(self, *, now: datetime | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def public_source_catalog(
+        self, *, now: datetime | None = None, published: list[dict[str, Any]] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         books, collections = [], []
-        for edition in self.published(now=now, include_body=False, content_kind="source_index"):
+        editions = published if published is not None else self.published(now=now, include_body=False, content_kind="source_index")
+        for edition in editions:
+            if edition["bundle"].get("content_kind") != "source_index":
+                continue
             index = edition["bundle"].get("source_index")
-            if edition["bundle"].get("content_kind") != "source_index" or not index:
+            if not index:
                 continue
             books.extend(self._public_source_book(source, edition) for source in index["sources"])
             collections.append({

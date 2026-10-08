@@ -9,13 +9,14 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from pathlib import Path
 from uuid import UUID
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from markdown_it import MarkdownIt
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -299,11 +300,14 @@ async def knowledge_bookshelves(payload=Depends(require_auth), include_reader: b
     """Reader catalog independent of organization subscription state."""
     tenant_key, user_id = _owner_reader_identity(payload)
     collection = await run_knowledge_read(_owner_private_store(payload).collection, tenant_key, user_id) if tenant_key and user_id else None
-    _, public_collections = await run_knowledge_read(PublicationStore().public_source_catalog)
-    shelves = await _visible_bookshelves(payload)
+    publication_store = PublicationStore()
+    publications = await run_knowledge_read(publication_store.published, include_body=False)
+    _, public_collections = publication_store.public_source_catalog(published=publications)
+    shelves = await _visible_bookshelves(payload, publications=publications)
     available = {book["id"]: book for shelf in shelves for book in shelf["books"]}
     return {
         "bookshelves": _public_bookshelves(shelves),
+        "subscribed_book_ids": await _subscribed_book_ids(payload, available),
         **({"subscriptions": await _book_subscriptions(payload, available, include_history=True),
             "book_lists": await _book_lists(payload, available)} if include_reader else {}),
         "public_collections": public_collections,
@@ -331,13 +335,15 @@ def _owner_private_store(payload: dict[str, Any]) -> OwnerPrivateBookshelfStore:
     return OwnerPrivateBookshelfStore()
 
 
-async def _visible_bookshelves(payload: dict[str, Any]) -> list[dict[str, Any]]:
+async def _visible_bookshelves(
+    payload: dict[str, Any], *, publications: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     vault = knowledge._vault()
     documents = await filter_database_live_documents(
         list((await run_knowledge_read(bookshelf_document_index, vault)).values()), vault
     )
     shelves = await run_knowledge_read(
-        bookshelf_catalog, payload["tenant_key"], vault, payload.get("visible_categories"), documents
+        bookshelf_catalog, payload["tenant_key"], vault, payload.get("visible_categories"), documents, publications
     )
     tenant_key, user_id = _owner_reader_identity(payload)
     if user_id:
@@ -578,24 +584,43 @@ async def knowledge_book_body(book_id: str, payload=Depends(require_auth)):
     return {**body, "edition": edition}
 
 
+def _publication_image_response(media: tuple[Path, str, str], if_none_match: str | None) -> Response:
+    path, media_type, digest = media
+    etag = f'"{digest}"'
+    # Store bytes privately, but authorize every reuse so withdrawal takes effect immediately.
+    headers = {"Cache-Control": "private, no-cache, max-age=0, must-revalidate", "ETag": etag}
+    matches = isinstance(if_none_match, str) and any(
+        tag.strip().removeprefix("W/") in {etag, "*"} for tag in if_none_match.split(",")
+    )
+    if matches:
+        return Response(content=None, status_code=304, media_type=media_type, headers=headers)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        raise _error(404, code="media_not_found", message="图片已下架或当前无权读取",
+                     action="refresh_catalog", retryable=True)
+    return Response(content=data, status_code=200, media_type=media_type, headers=headers)
+
+
 @router.get("/knowledge-publications/{publication_id}/covers/{role}")
-async def knowledge_publication_cover(publication_id: str, role: str, payload=Depends(require_auth)):
+async def knowledge_publication_cover(publication_id: str, role: str, payload=Depends(require_auth),
+                                      if_none_match: str | None = Header(default=None)):
     if role not in {"shelf_cover", "reader_cover"}:
         raise HTTPException(status_code=422, detail="unknown publication cover role")
     if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
         raise HTTPException(status_code=422, detail="invalid publication_id")
     visible = payload.get("visible_categories")
-    cover = (PublicationStore().get_published_cover(publication_id, role, vault=knowledge._vault())
+    cover = (PublicationStore().get_published_cover_descriptor(publication_id, role, vault=knowledge._vault())
              if visible is None or PUBLICATION_CATEGORY in visible else None)
     if cover is None:
         raise _error(404, code="cover_not_found", message="封面已下架或当前无权读取",
                      action="refresh_catalog", retryable=True)
-    data, media_type = cover
-    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+    return _publication_image_response(cover, if_none_match)
 
 
 @router.get("/knowledge-publications/{publication_id}/assets/{digest}")
-async def knowledge_publication_asset(publication_id: str, digest: str, payload=Depends(require_auth)):
+async def knowledge_publication_asset(publication_id: str, digest: str, payload=Depends(require_auth),
+                                      if_none_match: str | None = Header(default=None)):
     if (
         not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id)
         or not re.fullmatch(r"[a-f0-9]{64}", digest)
@@ -603,7 +628,7 @@ async def knowledge_publication_asset(publication_id: str, digest: str, payload=
         raise HTTPException(status_code=422, detail="invalid publication asset path")
     visible = payload.get("visible_categories")
     asset = (
-        PublicationStore().get_published_asset(
+        PublicationStore().get_published_asset_descriptor(
             publication_id, digest, vault=knowledge._vault()
         )
         if visible is None or PUBLICATION_CATEGORY in visible
@@ -614,29 +639,50 @@ async def knowledge_publication_asset(publication_id: str, digest: str, payload=
             404, code="asset_not_found", message="插图已下架或当前无权读取",
             action="refresh_catalog", retryable=True,
         )
-    data, media_type = asset
-    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=300"})
+    return _publication_image_response(asset, if_none_match)
 
 
 @router.get("/knowledge-publications/{publication_id}/media/{role}")
-async def knowledge_publication_media(publication_id: str, role: str, payload=Depends(require_auth)):
+async def knowledge_publication_media(publication_id: str, role: str, payload=Depends(require_auth),
+                                      if_none_match: str | None = Header(default=None)):
     if not role.startswith("illustration_") or not publication_media_spec(role):
         raise HTTPException(status_code=422, detail="unknown publication media role")
     if not re.fullmatch(r"publication-[a-f0-9]{32}", publication_id):
         raise HTTPException(status_code=422, detail="invalid publication_id")
     visible = payload.get("visible_categories")
-    media = (PublicationStore().get_published_media(publication_id, role, vault=knowledge._vault())
+    media = (PublicationStore().get_published_media_descriptor(publication_id, role, vault=knowledge._vault())
              if visible is None or PUBLICATION_CATEGORY in visible else None)
     if media is None:
         raise _error(404, code="media_not_found", message="插图已下架或当前无权读取",
                      action="refresh_catalog", retryable=True)
-    data, media_type = media
-    return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, no-store"})
+    return _publication_image_response(media, if_none_match)
 
 
 @router.get("/me/book-subscriptions")
 async def my_book_subscriptions(payload=Depends(require_auth)):
     return {"subscriptions": await _book_subscriptions(payload, await _available_books(payload))}
+
+
+async def _subscribed_book_ids(payload, available):
+    tenant_key, user_id = _reader_identity(payload)
+    async with SessionLocal() as db:
+        books = (await db.execute(select(KnowledgeBookSubscription.book_id, KnowledgeBookSubscription.series_id).where(
+            KnowledgeBookSubscription.tenant_key == tenant_key,
+            KnowledgeBookSubscription.owner_user_id == user_id,
+        ))).all()
+        series = set((await db.execute(select(KnowledgeSeriesSubscription.series_id).where(
+            KnowledgeSeriesSubscription.tenant_key == tenant_key,
+            KnowledgeSeriesSubscription.owner_user_id == user_id,
+        ))).scalars().all())
+    book_ids = {book_id for book_id, series_id in books
+                if book_id in available and (not series_id or series_id in series)}
+    latest = {}
+    for book in available.values():
+        series_id = book.get("series_id")
+        if series_id in series and (series_id not in latest
+                or str(book.get("issue_date") or "") > str(latest[series_id].get("issue_date") or "")):
+            latest[series_id] = book
+    return sorted(book_ids | {book["id"] for book in latest.values()})
 
 
 async def _book_subscriptions(payload, available, *, include_history=False):

@@ -344,6 +344,8 @@ public struct KnowledgeBookListDTO: Codable, Identifiable, Hashable {
 }
 
 public struct KnowledgeBookshelvesResponse: Codable {
+    public var subscribedBookIds: [String]? = nil
+    var requiresSubscriptionFetch: Bool { subscriptions == nil && subscribedBookIds == nil }
     public var subscriptions: [KnowledgeBookSubscriptionDTO]? = nil
     public var bookLists: [KnowledgeBookListDTO]? = nil
     public let bookshelves: [KnowledgeBookshelfDTO]
@@ -2772,6 +2774,8 @@ public final class APIClient: ObservableObject {
 
     public var baseURL: URL
     private let session: URLSession
+    let publicationMediaSession: URLSession
+    private var publicationMediaTasks: [URL: Task<Data, Error>] = [:]
     private let chatSession: URLSession
     /// 交互式 Agent SSE 可能跨越多轮 Clarify，资源总时长必须独立于普通问答超时。
     private let streamSession: URLSession
@@ -2838,6 +2842,13 @@ public final class APIClient: ObservableObject {
         config.connectionProxyDictionary = [:]
         self.session = URLSession(configuration: config)
 
+        let mediaConfig = sessionConfiguration.copy() as! URLSessionConfiguration
+        mediaConfig.requestCachePolicy = .useProtocolCachePolicy
+        mediaConfig.urlCache = URLCache(memoryCapacity: 24 * 1024 * 1024,
+                                       diskCapacity: persistsCredentials ? 160 * 1024 * 1024 : 0,
+                                       diskPath: persistsCredentials ? "publication-images" : nil)
+        self.publicationMediaSession = URLSession(configuration: mediaConfig)
+
         // 对话专用会话：超时 200s（后端 HERMES_TIMEOUT=180s 兜底），避免被默认 15s resource 超时截断
         let chatConfig = sessionConfiguration.copy() as! URLSessionConfiguration
         chatConfig.timeoutIntervalForRequest = 200
@@ -2863,6 +2874,7 @@ public final class APIClient: ObservableObject {
 
     @discardableResult
     public func saveToken(_ token: String) -> Bool {
+        resetPublicationMediaCache()
         resetKnowledgeNoteSyncLanes()
         guard persistsCredentials else {
             cachedToken = token
@@ -2895,6 +2907,7 @@ public final class APIClient: ObservableObject {
     }
 
     public func clearToken() {
+        resetPublicationMediaCache()
         resetKnowledgeNoteSyncLanes()
         cachedToken = nil
         credentialGeneration &+= 1
@@ -2904,6 +2917,12 @@ public final class APIClient: ObservableObject {
     }
 
     public func currentCredentialGeneration() -> UInt64 { credentialGeneration }
+
+    private func resetPublicationMediaCache() {
+        publicationMediaTasks.values.forEach { $0.cancel() }
+        publicationMediaTasks.removeAll()
+        publicationMediaSession.configuration.urlCache?.removeAllCachedResponses()
+    }
 
     private func resetKnowledgeNoteSyncLanes() {
         knowledgeNoteSyncTails.values.forEach { $0.task.cancel() }
@@ -4014,11 +4033,34 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchPublicationMedia(path: String, bookID: String) async throws -> Data {
-        var request = URLRequest(url: try publicationMediaURL(path: path, bookID: bookID))
+        try Task.checkCancellation()
+        let url = try publicationMediaURL(path: path, bookID: bookID)
+        guard let token = currentToken(), !token.isEmpty else { throw APIError.unauthorized }
+        let generation = credentialGeneration
+        if let pending = publicationMediaTasks[url] {
+            let data = try await pending.value
+            try Task.checkCancellation()
+            guard generation == credentialGeneration else { throw CancellationError() }
+            return data
+        }
+        var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy)
         request.httpMethod = "GET"
         request.setValue("image/*", forHTTPHeaderField: "Accept")
         applyClientContract(to: &request)
-        return try await perform(request, session: session, canRetry: true, taskDelegate: PublicationMediaRedirectGuard())
+        // Only coalesce active loads; completed bytes obey the server's revalidation policy.
+        let task = Task {
+            try await perform(request, session: publicationMediaSession, canRetry: true,
+                              credentialGeneration: generation, taskDelegate: PublicationMediaRedirectGuard())
+        }
+        let tracked = publicationMediaTasks.count < 32
+        if tracked { publicationMediaTasks[url] = task }
+        defer {
+            if tracked && generation == credentialGeneration { publicationMediaTasks[url] = nil }
+        }
+        let data = try await task.value
+        try Task.checkCancellation()
+        guard generation == credentialGeneration else { throw CancellationError() }
+        return data
     }
 
     public func fetchKnowledgeBookCover(id: String) async throws -> Data {

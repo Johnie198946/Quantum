@@ -991,6 +991,7 @@ def bookshelf_catalog(
     vault: Path | None = None,
     visible_categories: set[str] | frozenset[str] | None = frozenset(),
     documents: list[dict[str, Any]] | None = None,
+    publications: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Reader projection of every admitted Wiki book, without tenant/color ACLs."""
     vault = vault or _vault()
@@ -1048,8 +1049,9 @@ def bookshelf_catalog(
     from backend.services.knowledge_publication_store import (
         PUBLICATION_CATEGORY, PublicationStore,
     )
+    publication_store = PublicationStore()
+    published = publications if publications is not None else publication_store.published(include_body=False)
     if visible_categories is None or PUBLICATION_CATEGORY in visible_categories:
-        published = PublicationStore().published(include_body=False)
         serials = [item for item in published if item["bundle"].get("content_kind") != "source_index"]
         if serials:
             shelf = shelves.setdefault(PUBLICATION_CATEGORY, {
@@ -1059,7 +1061,7 @@ def bookshelf_catalog(
             shelf["books"].extend(
                 publication_book(item) for item in serials if item.get("artifact_valid")
             )
-    public_sources, _ = PublicationStore().public_source_catalog()
+    public_sources, _ = publication_store.public_source_catalog(published=published)
     if public_sources:
         shelf = shelves.setdefault("knowledge/publication/follow-builders", {
             "id": "knowledge/publication/follow-builders", "title": "Follow Builders 公开来源索引",

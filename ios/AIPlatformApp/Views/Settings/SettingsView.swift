@@ -2878,10 +2878,12 @@ public struct SubscriptionCenterView: View {
             // Compatibility only while the server is rolling forward.
             if let subscriptions = response.subscriptions {
                 bookSubscriptions = subscriptions
-            } else {
+            } else if response.requiresSubscriptionFetch {
                 bookSubscriptions = try await api.fetchBookSubscriptions()
+            } else {
+                bookSubscriptions = []
             }
-            subscribedBookIDs = Set(bookSubscriptions.map(\.book.id))
+            subscribedBookIDs = Set(response.subscribedBookIds ?? bookSubscriptions.map(\.book.id))
         } catch { errorMessage = actionableMessage(for: error) }
     }
 
@@ -2935,9 +2937,11 @@ public struct SubscriptionCenterView: View {
         do {
             if isBookSubscribed(book) {
                 try await api.unsubscribeBook(id: book.id)
-                subscribedBookIDs.remove(book.id)
+                let removedIDs = bookshelves.flatMap(\.books).filter {
+                    $0.id == book.id || (book.seriesId != nil && $0.seriesId == book.seriesId)
+                }.map(\.id)
+                subscribedBookIDs.subtract(removedIDs + [book.id])
                 bookSubscriptions.removeAll { $0.book.id == book.id || (book.seriesId != nil && $0.book.seriesId == book.seriesId) }
-                subscribedBookIDs = Set(bookSubscriptions.map(\.book.id))
             } else {
                 let subscription = try await api.subscribeBook(id: book.id)
                 subscribedBookIDs.insert(book.id)
