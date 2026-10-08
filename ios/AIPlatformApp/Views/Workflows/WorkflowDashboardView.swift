@@ -427,6 +427,7 @@ struct WorkflowCreateSheet: View {
     @State private var travelDestination = ""
     @State private var travelDates = ""
     @State private var travelTravelers = ""
+    @State private var travelBudget = ""
     @State private var output = "研究报告（Markdown）"
     @State private var outputKind = "document"
     @State private var isSubmitting = false
@@ -449,7 +450,10 @@ struct WorkflowCreateSheet: View {
                             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                                 travelField("想去哪里", placeholder: "目的地，还没确定也可以", value: $travelDestination)
                                 travelField("出行时间", placeholder: "如：12 月 1 日至 20 日，或暂未确定", value: $travelDates)
-                                travelField("同行人", placeholder: "如：两人同行", value: $travelTravelers)
+                                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                                    travelField("同行人数", placeholder: "如：2 人", value: $travelTravelers)
+                                    travelField("人均预算", placeholder: "如：6000 元", value: $travelBudget)
+                                }
                                 travelField("想怎样玩", placeholder: "偏好、预算、出发城市和想保留的体验", value: $description)
                             }
                             Text("不确定的信息可以先留空，我们会一起完善。")
@@ -675,7 +679,7 @@ struct WorkflowCreateSheet: View {
             do {
                 let deliverable = output
                 let brief = outputKind == "travel"
-                    ? WorkflowDetailTransitionPolicy.travelBrief(destination: travelDestination, dates: travelDates, travelers: travelTravelers, preferences: description)
+                    ? WorkflowDetailTransitionPolicy.travelBrief(destination: travelDestination, dates: travelDates, travelers: travelTravelers, preferences: [description, travelBudget.isEmpty ? "" : "人均预算：" + travelBudget].filter { !$0.isEmpty }.joined(separator: "；"))
                     : description
                 let created = try await APIClient.shared.createWorkflow(
                     title: title.isEmpty ? String((outputKind == "travel" && !travelDestination.isEmpty ? travelDestination + "旅行攻略" : description).prefix(24)) : title,
@@ -1375,7 +1379,9 @@ private struct WorkflowClarificationView: View {
                             )
                         }
                         ForEach(model.snapshot?.messages ?? []) { message in
-                            workflowMessage(message)
+                            if !WorkflowDetailTransitionPolicy.isTravel(workflow) || message.role == "user" || message.id == model.snapshot?.messages.last?.id {
+                                workflowMessage(message)
+                            }
                         }
                         if let error = model.errorMessage {
                             WorkflowErrorBanner(message: error)
@@ -1772,6 +1778,7 @@ private struct WorkflowPlanReviewView: View {
     @State private var replanErrorMessage: String?
     @State private var isGoalExpanded = false
     @State private var approvalRequestId = UUID().uuidString
+    @State private var travelStartRequestId = UUID().uuidString
     @State private var replanEvents: [WorkflowLifecycleEventDTO] = []
     @State private var showingCanvas = false
     @State private var showsAdvancedOptions = false
@@ -1785,7 +1792,7 @@ private struct WorkflowPlanReviewView: View {
                             TravelWorkflowHeader(phase: "awaiting_approval")
                             Text("确认制作方案")
                                 .font(AppTheme.Typography.sectionTitle)
-                            Text("确认后准备制作攻略，再由你启动。")
+                            Text("确认需求与制作方案后，开始整理你的旅行攻略。")
                                 .font(AppTheme.Typography.supporting)
                                 .foregroundStyle(AppTheme.Colors.textSecondary)
                         } else {
@@ -1830,7 +1837,7 @@ private struct WorkflowPlanReviewView: View {
                                 .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                                 .frame(maxWidth: .infinity)
                         }
-                        Button(isSaving ? "正在处理…" : (WorkflowDetailTransitionPolicy.isTravel(workflow) ? "确认方案，准备制作" : "确认并构建 Agent")) { approve() }
+                        Button(isSaving ? "正在处理…" : (WorkflowDetailTransitionPolicy.isTravel(workflow) ? "确认方案，开始制作攻略" : "确认并构建 Agent")) { approve() }
                             .buttonStyle(.borderedProminent)
                             .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                             .frame(maxWidth: .infinity)
@@ -2060,6 +2067,17 @@ private struct WorkflowPlanReviewView: View {
                     requestId: approvalRequestId
                 )
                 guard workflowActivities.isCurrent(scope) else { return }
+                if WorkflowDetailTransitionPolicy.isTravel(workflow) {
+                    do {
+                        _ = try await APIClient.shared.startWorkflow(workflowId: workflow.id, requestId: travelStartRequestId)
+                    } catch {
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        // 已批准的方案保留在既有待启动页，网络失败后可继续。
+                        onApproved(buildResult)
+                        return
+                    }
+                    guard workflowActivities.isCurrent(scope) else { return }
+                }
                 onApproved(buildResult)
             } catch {
                 guard workflowActivities.isCurrent(scope) else { return }
@@ -3924,6 +3942,8 @@ private struct WorkflowArtifactPreview: View {
     @Environment(\.scenePhase) private var travelScenePhase
     @State private var savedTravelNote = false
     @State private var showingTravelNoteSave = false
+    @State private var savedTravelNoteID: String?
+    @State private var showingSavedTravelNote = false
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
 
@@ -4100,7 +4120,7 @@ private struct WorkflowArtifactPreview: View {
                         PresentationOutlinePreview(outline: outline)
                             .padding(AppTheme.Metrics.contentGutter)
                     } else if isTravelArtifact {
-                        TravelPlanResultView(title: artifact.title, content: content,
+                        TravelPlanResultView(title: artifact.title, content: content, initialPage: .day,
                             onProgress: allowsDownload && !savingProgress ? { action, status in recordProgress(action, status) } : nil,
                             onEdit: allowsDownload && !savingProgress ? { editingTravelAction = $0 } : nil)
                         .padding(AppTheme.Metrics.contentGutter)
@@ -4149,11 +4169,11 @@ private struct WorkflowArtifactPreview: View {
                         if isTravelArtifact, content != nil {
                             Button("旧版本", systemImage: "clock.arrow.circlepath") { showingTravelHistory = true }
                                 .disabled(travelVersions.isEmpty)
-                            Button(savedTravelNote ? "已存入旅行笔记" : "存为旅行笔记", systemImage: savedTravelNote ? "checkmark.circle.fill" : "book.closed") {
-                                showingTravelNoteSave = true
+                            Button(savedTravelNote ? "翻开旅行手记" : "生成旅行笔记", systemImage: savedTravelNote ? "book.fill" : "book.closed") {
+                                if savedTravelNote { showingSavedTravelNote = true } else { showingTravelNoteSave = true }
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(savedTravelNote || !pendingTravelChanges.isEmpty || savingProgress)
+                            .disabled(!pendingTravelChanges.isEmpty || savingProgress)
                         }
                         if let downloadURL {
                             ShareLink(item: downloadURL) {
@@ -4251,15 +4271,27 @@ private struct WorkflowArtifactPreview: View {
                     .toolbar { Button("完成") { showingTravelHistory = false } }
                 }
             }
-            .sheet(isPresented: $showingTravelNoteSave) {
+            .sheet(isPresented: $showingSavedTravelNote) {
+                if let savedTravelNoteID {
+                    NavigationStack { KnowledgeNoteEditor(noteID: savedTravelNoteID) }
+                }
+            }
+            .sheet(isPresented: $showingTravelNoteSave, onDismiss: {
+                if savedTravelNoteID != nil { showingSavedTravelNote = true }
+            }) {
                 TravelNoteSaveSheet(title: artifact.title, content: linkedTravelContent) { title, body in
                     if let note = KnowledgeNoteStore.shared.createNote(
                         title: title,
                         body: body,
                         tags: ["旅行", "workflow"]
                     ) {
-                        KnowledgeNoteStore.shared.startIllustrations(id: note.id)
+                        if TravelNotePresentation.includes("include_photos", in: body) {
+                            KnowledgeNoteStore.shared.startIllustrations(id: note.id)
+                        }
                         savedTravelNote = true
+                        savedTravelNoteID = note.id
+                    } else {
+                        throw APIError.network(KnowledgeNoteStore.shared.lastError ?? "笔记未保存，请重试")
                     }
                 }
             }

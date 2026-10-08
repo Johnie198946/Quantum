@@ -671,6 +671,15 @@ def requirement_confirmation_payload(
     evidence = (workflow.requirements_snapshot or {}).get("source_document_evidence")
     if evidence:
         details.append(f"文档依据：{evidence}")
+    if (workflow.requirements_snapshot or {}).get("scenario_id") == "travel-planning":
+        details.extend(f"补充确认：{answer}" for answer in answers if answer != "需要修改")
+        return {
+            "question": "请确认这趟旅行：\n" + "\n".join(details),
+            "choices": ["确认，开始制作攻略", "需要修改"],
+            "multi_select": False,
+            "dimension": "旅行需求确认",
+            "submit_label": "确认需求，生成攻略",
+        }
     core_answers = answers[:3] if len(answers) >= 3 else []
     for index, step in enumerate(steps):
         answer = core_answers[index] if index < len(core_answers) else "按当前描述与平台默认建议"
@@ -1217,12 +1226,15 @@ async def respond_to_clarification(
                     ],
                     "revision_notes": revision_answers,
                 }
+                if (workflow.requirements_snapshot or {}).get("scenario_id") == "travel-planning":
+                    spec["dimensions"] = [{"name": "补充确认", "answer": answer} for answer in answers if answer != "需要修改"]
+                    spec["revision_notes"] = []
                 session.confirmed_spec = spec
                 session.phase = "planning"
                 prior_snapshot = workflow.requirements_snapshot or {}
                 source_context = {
                     key: prior_snapshot[key]
-                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence", "source_image", "image_edit")
+                    for key in ("showroom_context", "customer_demand", "output_kind", "scenario_id", "source_document", "source_document_evidence", "source_image", "image_edit", "travel_details", "source_client_session_id", "clarification_mode")
                     if prior_snapshot.get(key)
                 }
                 workflow.requirements_snapshot = {**spec, **source_context}

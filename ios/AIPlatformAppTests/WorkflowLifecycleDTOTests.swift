@@ -7431,3 +7431,24 @@ extension WorkflowLifecycleDTOTests {
         XCTAssertEqual(workflows.count, 1)
     }
 }
+
+final class TravelNotePresentationTests: XCTestCase {
+    func testContentChoicesPreserveOriginalActionsJournalAndWorkflowLink() throws {
+        let original = """
+        {"destination":"青森","stops":[],"actions":[{"id":"booked"}],"journal":"自己的记录","workflow_execution_id":"exec-1","sources":[{"id":"official"}]}
+        """
+        let saved = try TravelNotePresentation.saving(original, cover: TravelNotePresentation.covers[2], route: false, photos: false, places: false)
+        let before = try XCTUnwrap(NoteIllustrationPlacement.travelObject(original))
+        let after = try XCTUnwrap(NoteIllustrationPlacement.travelObject(saved))
+        XCTAssertEqual(after["journal"] as? String, "自己的记录")
+        XCTAssertEqual(after["workflow_execution_id"] as? String, "exec-1")
+        XCTAssertEqual((after["actions"] as? [[String: String]])?.first?["id"], "booked")
+        XCTAssertEqual((after["sources"] as? [[String: String]])?.first?["id"], "official")
+        XCTAssertFalse(TravelNotePresentation.includes("include_route", in: saved))
+        XCTAssertFalse(TravelNotePresentation.includes("include_photos", in: saved))
+        XCTAssertFalse(TravelNotePresentation.includes("include_places", in: saved))
+        XCTAssertTrue(TravelNotePresentation.includes("include_route", in: original))
+        XCTAssertEqual(before["destination"] as? String, after["destination"] as? String)
+        XCTAssertThrowsError(try TravelNotePresentation.saving("broken", cover: "unknown", route: true, photos: true, places: true))
+    }
+}

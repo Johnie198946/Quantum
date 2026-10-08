@@ -174,23 +174,23 @@ final class TravelFlowUITests: XCTestCase {
         app.launch()
         tapVisible(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workflow-card-Client full journey")).firstMatch)
         tapVisible(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workflow-artifact-preview-")).firstMatch)
-        tapVisible(app.buttons["存为旅行笔记"])
+        tapVisible(app.buttons["生成旅行笔记"])
         let noteTitle = "Client accepted trip " + UUID().uuidString.prefix(8)
-        let titleField = app.textFields["旅行笔记标题"]
+        let titleField = app.textFields["travel-note-title"]
         tapVisible(titleField)
         if !app.keyboards.firstMatch.waitForExistence(timeout: 2) {
             titleField.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
         }
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         titleField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (titleField.value as? String ?? "").count) + noteTitle)
-        tapVisible(app.buttons["保存旅行笔记"])
-        XCTAssertTrue(app.buttons["已存入旅行笔记"].waitForExistence(timeout: 15), app.debugDescription)
+        tapVisible(app.buttons["生成我的旅行手记"])
+        XCTAssertTrue(app.buttons["travel-note-open-diary"].waitForExistence(timeout: 15), app.debugDescription)
         app.terminate(); app.launch()
         tapVisible(app.buttons["main-tab-2"])
         let search = app.textFields["note-search"]
         tapVisible(search); search.typeText(noteTitle)
         tapVisible(app.staticTexts[noteTitle].firstMatch)
-        XCTAssertTrue(app.buttons["查看完整行程  →"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.buttons["travel-note-open-diary"].waitForExistence(timeout: 15), app.debugDescription)
         let saved = XCTAttachment(screenshot: app.screenshot())
         saved.name = "travel-saved-note-after-relaunch"; saved.lifetime = .keepAlways; add(saved)
     }

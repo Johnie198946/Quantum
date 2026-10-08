@@ -314,6 +314,7 @@ async def _workflow_create(data: dict[str, Any], payload: dict[str, Any], key: s
         )
     }
     if workflow_data.get("output_kind") == "travel":
+        workflow_data["clarification_mode"] = "dynamic"
         confirmed = "；".join(f"{label}：{value}" for label, value in travel_fields.items() if value)
         if confirmed:
             workflow_data["description"] = (

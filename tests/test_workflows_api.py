@@ -1224,6 +1224,36 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(clarification.json()["session"]["phase"], "awaiting_requirement_confirmation")
         self.assertTrue(clarification.json()["messages"][-1]["content"])
 
+    def test_travel_confirmed_context_survives_requirement_confirmation(self):
+        from backend.db import SessionLocal
+        from backend.models.workflow import WorkflowDefinition
+        ready = AsyncMock(return_value={"status": "READY", "source": "hermes", "truth": "LIVE", "simulation": False})
+        with patch("backend.api.workflows.request_bridge_clarification", new=ready):
+            created = self.request("POST", "/api/v1/workflows", json={
+                "title": "青森冬季", "description": "上海出发，青森冬季10天，2人，公共交通，预算12000元，喜欢温泉。",
+                "output_kind": "travel", "clarification_mode": "dynamic",
+            })
+        self.assertEqual(created.status_code, 201, created.text)
+        workflow_id = created.json()["workflow"]["id"]
+        self.assertIn("上海出发", ready.await_args.args[0])
+        snapshot = self.request("GET", f"/api/v1/workflows/{workflow_id}/clarification").json()
+        self.assertEqual(snapshot["session"]["phase"], "awaiting_requirement_confirmation")
+        self.assertNotIn("按当前描述与平台默认建议", snapshot["messages"][-1]["content"])
+
+        async def seed_context():
+            async with SessionLocal() as db:
+                row = await db.get(WorkflowDefinition, workflow_id)
+                row.requirements_snapshot = {**row.requirements_snapshot, "travel_details": {"目的地": "青森", "同行人": "2人"}, "source_client_session_id": "same-chat"}
+                await db.commit()
+        asyncio.run(seed_context())
+        confirmed = self.request("POST", f"/api/v1/workflows/{workflow_id}/clarification/respond", json={"intent": "confirm"})
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        row = self.request("GET", f"/api/v1/workflows/{workflow_id}").json()
+        self.assertEqual(row["requirements_snapshot"]["travel_details"]["目的地"], "青森")
+        self.assertEqual(row["requirements_snapshot"]["source_client_session_id"], "same-chat")
+        self.assertEqual(row["requirements_snapshot"]["clarification_mode"], "dynamic")
+        self.assertNotIn("按默认建议", row["description"])
+
     def test_dynamic_create_question_clears_pending_status(self):
         with patch(
             "backend.api.workflows.request_bridge_clarification",

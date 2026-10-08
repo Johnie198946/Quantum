@@ -291,6 +291,7 @@ async def test_travel_confirmed_fields_reach_existing_workflow_description():
     assert result["status"] == "completed"
     body = create.await_args.args[0]
     assert body.output_kind == "travel"
+    assert body.clarification_mode == "dynamic"
     assert "目的地：九州" in body.description
     assert "出行时间：2026 年国庆，具体日期待定" in body.description
     assert "原始需求：今年十一去九州，七天" in body.description

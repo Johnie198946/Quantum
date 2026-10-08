@@ -57,8 +57,38 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["想去哪里"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["出行时间"].exists)
-        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertTrue(app.staticTexts["同行人数"].exists)
+        XCTAssertTrue(app.staticTexts["人均预算"].exists)
         attachScreenshot(named: "travel-workflow-create")
+    }
+
+    func testTravelNoteCreationUsesSelectedCoverAndDiary() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v5/02-travel-note-layout-v5-p01"]
+        app.launch()
+        XCTAssertTrue(app.textFields["travel-note-title"].waitForExistence(timeout: 10))
+        app.buttons["选择封面 3"].tap()
+        XCTAssertTrue(app.switches["包含每日行程"].exists)
+        XCTAssertTrue(app.switches["包含照片与摄影参考"].exists)
+        attachScreenshot(named: "travel-original-note-settings")
+        app.buttons["生成我的旅行手记"].tap()
+        let diary = app.buttons["travel-note-open-diary"]
+        XCTAssertTrue(diary.waitForExistence(timeout: 10))
+        for _ in 0..<8 where !diary.isHittable { app.swipeUp() }
+        attachScreenshot(named: "travel-original-note-cover")
+        diary.tap()
+        XCTAssertTrue(app.staticTexts["泡汤与休息"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "在雪中慢慢走", "在雪中慢慢走")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["原稿装饰照片"].firstMatch.waitForExistence(timeout: 10))
+        let titleFrame = app.staticTexts["泡汤与休息"].firstMatch.frame
+        XCTAssertGreaterThanOrEqual(titleFrame.minX, app.frame.minX)
+        XCTAssertLessThanOrEqual(titleFrame.maxX, app.frame.maxX)
+        attachScreenshot(named: "travel-original-note-diary")
+        let appendix = app.buttons["travel-note-appendix"]
+        for _ in 0..<8 where !appendix.isHittable { app.swipeUp() }
+        appendix.tap()
+        XCTAssertTrue(app.staticTexts["安心出门的小事。"].waitForExistence(timeout: 10))
+        attachScreenshot(named: "travel-original-note-appendix")
     }
 
     func testTravelClarificationInputOpensKeyboard() {
