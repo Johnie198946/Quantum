@@ -1,4 +1,54 @@
-# 2026-10-07 自动出版完整验收续修（最新）
+# 2026-10-08 唐史审核回执格式故障续修（最新）
+
+task_id: publication-content-audit-20260928
+status: TESTED（发布前快照；尚未部署本轮修复）
+branch: codex/publication-content-audit-20260928
+worktree: /Users/dengzhaoyu/.codex/worktrees/publication-content-audit/AI Lab
+head/local_commit: 基线 6bab547e8cb0c49a4a72208144c9777a1f96a3c6；本轮待提交
+remote_sha: Quantum main 6bab547e8cb0c49a4a72208144c9777a1f96a3c6，git ls-remote核验
+server_before: 83b826208df5ad5b451e186fe314b0570c20e1e5；/opt/releases/ai-lab-platform-388b94863073-overlay-83b82620
+server_after: 本轮尚未部署
+health_check: 待部署后回读；生产发行状态只读请求正常
+functional_check: 291 passed（证明、定稿、控制器），ruff/git diff --check通过；真实失败会话完整只读验证PASS，使用临时内存签名key，不落盘proof，不修改会话或审核
+rollback_point: 本机自身改动备份 /private/tmp/publication-fenced-receipt/before-ff.patch；生产83b82620旧release及实际API镜像sha256:1c7bcc264031c8fd234d2a0d9c244a9e03892c64403ec5bc34d0733cc204f1c1；部署前另备份标签和元数据
+remaining_risks: 08:00原finalize claim仍failed/attempts6；修复尚未用于生产Mac；真机镜像要求本人登录验证，待继续
+
+根因：真实supervision审核会话 `hermes:cron_0dd3884f173c_20261008_005256` 已完成，末条assistant/stop输出为整个响应唯一的json代码围栏。review JSON approved及精确材料齐全，严格裸json.loads仅因外围Markdown拒绝；manifest保存错误 `native final must contain exact publication_review_result JSON`，定稿六次全部失败并于01:06:59耗尽。审核者内容并非缺失，重启或增加重试不能修复此格式问题。
+
+最小修复：共享 `backend/services/publication_review_provenance.py` 只兼容.strip后完整的单个字面json围栏；内部仍json.loads，前后附言、多围栏、错误语言标签、不闭合拒绝。保留原生终态、身份/作者独立性、请求/最终目标、审核字节和图片材料所有校验，native_final_hash仍绑定原始完整输出字节 `3513c1f7f330fbd5aae67f2f07c31b834a216edf23821398154b5b37c4b3e828`。不改控制器状态判定、不放宽证明门禁、不覆盖原稿或审核；使用已有exact CAS重臂后等自然执行。
+
+变更文件：共享parser、既有proof测试、统一出版规范、此manifest。新增10个参数用例；全部291相关回归通过（4个既有Pydantic弃用警告）。反方三轮收敛。
+
+本轮Git盘点：初始HEAD388b9486，分支同上，仅本任务部署后manifest修改；origin仍为ai-lab-platform.git，不用于push。显式Quantum URL fetch发现main新推进6bab547e；备份自身4个文件和diff后恢复自身改动、仅ff同步，再叠加本轮修复，保留书架83b82620及其他已提交任务改动；merge-base确认83b82620属于6bab祖先。共享Quantum-2.0 dirty main未触碰。worktree inventory同历史盘点，本任务独立worktree未变。用户一任务一分支规则优先于旧main-only文件规则。9月9日旧稿不管理。
+
+# 2026-10-08 自动出版修复交付与完整验收（最新）
+
+task_id: publication-content-audit-20260928
+status: DEPLOYED（程序修复与生产正文/媒体回读通过；真实用户 UI 与 10 月 8 日自然完整发行日仍待验收，不声称完整无误）
+branch: codex/publication-content-audit-20260928
+worktree: /Users/dengzhaoyu/.codex/worktrees/publication-content-audit/AI Lab
+head/local_commit: 388b948630731a63a7a5ba45584c204805f1b7b4；本节为部署后的本地记录，尚未另行提交
+remote_sha: Quantum main = 388b948630731a63a7a5ba45584c204805f1b7b4，经 git ls-remote 核验
+server_before: fc1b2f88c4a4e0c1d0a393e2e58eb62b92626114，/opt/releases/ai-lab-platform-fc1b2f88c4a4.y8AxOV
+server_after: 388b948630731a63a7a5ba45584c204805f1b7b4，/opt/releases/ai-lab-platform-388b94863073.xbRauI；部署脚本回执与独立 .deployed-sha 回读一致
+health_check: 8/8 Compose healthy，API ready，Bridge ok，runtime contract audit passed；重启后内核日志未见 OOM；2 GiB swap 持久启用，约 1 GiB MemAvailable
+functional_check: 新版本生产只读核对 2026-10-07 七期正文哈希、全部 32 个媒体字节/hash/尺寸通过；共享回执 global_attention=false，daily completion=complete；十项原生 cron 配置回读通过。真实 UI 与 10 月 8 日全部到期自然发行仍待验收
+rollback_point: /opt/releases/ai-lab-platform-fc1b2f88c4a4.y8AxOV；/opt/ai-lab-shared/deploy-backups/publication-auto-388b9486 保留旧离线镜像验签元数据，四个 backend 服务的 publication-rollback-fc1b2f88 镜像标签保留旧 ID；本机 /Users/dengzhaoyu/.hermes/backups/publication-auto-388b9486 保存十项任务、wrapper及原配置；另有故障前快照 s-wz99gy04j7r9wxruzc9d
+remaining_risks: 实际读者 UI 尚未验收，Mac 锁定导致工具中断；10 月 8 日各发行时刻尚未到达。不能据单次恢复保证长期准点；本机必须登录、插电、联网并运行。OOM 的峰值来源和最早发生时间仍未完全查清。
+
+## 本轮交付证据
+
+- 59 项发行/状态/日终回执回归通过；ruff、git diff --check、plutil -lint 通过。只改共享 `_attention` 的期数比较，复用现有 expected/slots，不改变任何质量门禁、作者正文、审核规则或历史稿。用户明确不管理 9 月 9 日旧稿，已排除本次验收范围，没有修改它。
+- commit 与 GitHub main 均为 388b9486。后端/配置/依赖树相对 fc1b2f88 仅 `scripts/publication_release_remote.py` 一处变化；基于已核验旧 amd64 镜像离线构建修复层，新镜像 ID `sha256:dd325db0bf5eedd88db66c5fa7323b120ead4d8c09e134078301b8394e2c7e6e`，旧 ID `sha256:f1fb26a043c7576ff824ff8e16c729a97a1987022137d0f635fefcb0b83197ba` 保留。新镜像内脚本 SHA256 为 `45707ced798d0a74f0a971cdc4119c4b315814db37299f7efea287afa2853836`，隔离多期成功/缺期失败检查通过。
+- 以部署锁和旧版本 CAS 保护切换，调用原 `scripts/update.sh` 的精确已推送 SHA；原子发布、schema migration（0 项回填/0 项写入）、运行合同审计和最终健康检查均成功。保留旧 release、镜像及验签元数据，可恢复旧版本。
+- 新 Mac 快照 `/Users/dengzhaoyu/.hermes/publication-releases/388b948630731a63a7a5ba45584c204805f1b7b4` 已准备；沿旧快照方式跳过仓库中的过时绝对 `tools` symlink。通过原生 Hermes cron pause/edit/resume 同步 default/story/supervision 共十项正式任务，原 prompt、model、schedule、role、skills、deliver 与启用状态不变，TEN_JOB_CONFIG_READBACK_PASS 10；没有修改 jobs.json 存储或杀停正在创作的作者。
+- macOS 原生 `ai.hermes.publication-awake` LaunchAgent 已安装，launchctl state=running、PID=83902；pmset 证实该 PID 的 PreventSystemSleep 持续断言有效。使用 caffeinate -s，限插电及运行中的用户会话；不新增出版定时器，不覆盖关机/合盖/主动休眠/断网。
+- 2026-10-08 00:01:04 Story 作者 execution `7057129f76ad4fada4420ab47a9fc89f` 由控制器自然派发，00:11:49 完成该日 08:00 稿，原生最终结果指定真实 content.json；00:12:38 controller 自然触发 native_fetch。属于真实跨日自动准备，尚不是到期发行成功。
+- 新 wrapper 的修改时间为 2026-10-08 00:09:27；随后原生发行 cron 于 00:16:16 成功，资产 cron 于 00:17:19 成功，controller 于 00:18:42 成功，三者 enabled=true，last_error=null。日终任务仍保存 10 月 7 日旧错误，下一次自然运行是 10 月 8 日 23:40；未人为运行或清除错误。00:14:36 controller 已自然触发当日唐史 assets。
+- 真机镜像登录页需要协议与 Apple 登录，用户已亲自完成并回复“已登录”；进入生产应用阅读→书架后看到“正在整理书架”，随后 Mac 锁定、镜像连接中断。已请求解锁继续；没有将加载页冒充读者验收通过。
+- 高频持续自动跟进因包含未来修复/提交/推送/部署权限被自动审批拒绝；改为一次纯只读验收后成功创建 automation-2，heartbeat ACTIVE，目标为本对话，2026-10-08 23:45（Asia/Shanghai）仅执行一次。核对自然七期、日终回执、服务与素材/审核证据并报告，不触发创作/发行或外部写入。此前针对 9 月 27 日旧稿的暂停自动化保持原状态。
+
+# 2026-10-07 自动出版完整验收续修（发布前快照）
 
 用户授权继续核实并修复完整自动上线链路，明确不管理 2026-09-09 旧稿。沿用本任务独立分支/worktree，不触碰 Quantum-2.0 共享 main 的用户与其他任务改动。用户本会话“一任务一分支/worktree”规则优先于仓库文件中的 main-only 旧规则。
 
