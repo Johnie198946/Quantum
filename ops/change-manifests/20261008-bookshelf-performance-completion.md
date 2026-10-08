@@ -78,7 +78,7 @@ The iOS client now has a dedicated publication-media `URLSession` using `.usePro
 - GitHub code commit: `83b826208df5ad5b451e186fe314b0570c20e1e5`; remote `main` was read back equal before deployment.
 - Production preserved the existing full release `388b948630731a63a7a5ba45584c204805f1b7b4` and applied only the three reviewed backend files as an immutable overlay; active path: `/opt/releases/ai-lab-platform-388b94863073-overlay-83b82620`.
 - Runtime backend image: `sha256:1c7bcc264031c8fd234d2a0d9c244a9e03892c64403ec5bc34d0733cc204f1c1`, labelled with base and overlay revisions.
-- Pre-migration SQLite backup SHA-256: `a869261d5727d6e03fddf9b3560b91c5c89dbd648dd1a476b2caa96ae98aa064`.
+- Durable post-migration SQLite rollback backup: `/app/data/backups/bookshelf-83b82620-postmigration-20261008200506/publication.sqlite3`, SHA-256 `5ece91a1cfdf75de87100890a5cd6c81ab700e539d6a88a5a8fd1a503bb1e81e`; migration was first exercised on an isolated hard-linked data copy.
 - Copy preflight: one-time migration took `6136.522 ms`; produced `63` admission rows = `62` released receipts + `1` staged receipt; all `62` published rows remained visible.
 - Live read-back after deployment: `63` admissions, `62` released receipts, `1` staged receipt.
 - All `8/8` production containers are healthy; the four backend containers run the overlay image. Public `/health` returned `200`; unauthenticated `/api/v1/knowledge-bookshelves` returned the expected `401`.
