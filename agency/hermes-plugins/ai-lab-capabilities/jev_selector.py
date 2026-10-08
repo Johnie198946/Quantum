@@ -76,6 +76,10 @@ class RouteDecision:
     cache_hit: bool = False
     capability_id: str | None = None
     capability_confidence: float = 0.0
+    shortlisted_skill_ids: tuple[str, ...] = ()
+    shortlisted_agent_ids: tuple[str, ...] = ()
+    shortlisted_capability_ids: tuple[str, ...] = ()
+    architecture_reserved_agent_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -194,12 +198,29 @@ def _default_timeout_seconds() -> float:
     return _env_float("JEV_SELECTOR_TIMEOUT_SECONDS", 2.5)
 
 
+class _TrustedProviderOutput(dict[str, Any]):
+    """Internal-only envelope for resident trace metadata.
+
+    External/custom providers remain plain mappings and cannot assert shortlist
+    provenance. The trace is observational only and never expands selection.
+    """
+
+    def __init__(self, output: dict[str, Any], routing_trace: dict[str, Any] | None = None):
+        super().__init__(output)
+        self.routing_trace = routing_trace if isinstance(routing_trace, dict) else {}
+
+
 def _provider(payload: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     endpoint = os.environ.get("JEV_SELECTOR_URL", "").strip()
     if not endpoint:
         module = _resident_module()
         if module.enabled():
-            return module.select(payload, timeout_seconds)
+            output = module.select(payload, timeout_seconds)
+            if not isinstance(output, dict):
+                raise ValueError("jev_output_not_object")
+            validated_output = dict(output)
+            routing_trace = validated_output.pop("_routing_trace", None)
+            return _TrustedProviderOutput(validated_output, routing_trace)
         raise RuntimeError("JEV selector is not configured")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     api_key = os.environ.get("JEV_SELECTOR_API_KEY", "").strip()
@@ -226,6 +247,7 @@ def _validate_output(
     latency_ms: float, decision_id: str,
     forbid_agent_with_skills: set[str] | None = None,
     capability_ids: set[str] | None = None,
+    routing_trace: dict[str, Any] | None = None,
 ) -> RouteDecision:
     allowed = {"skill_id", "agent_id", "skill_confidence", "agent_confidence", "reason_code"}
     if capability_ids:
@@ -310,6 +332,25 @@ def _validate_output(
                               latency_ms=latency_ms, decision_id=decision_id)
     if not skill_id and not agent_id and not capability_id and reason == "MATCHED":
         reason = "LOW_CONFIDENCE"
+
+    trace = routing_trace if isinstance(routing_trace, dict) else {}
+
+    def traced_ids(field: str, allowed_ids: set[str]) -> tuple[str, ...]:
+        values = trace.get(field) or []
+        if not isinstance(values, (list, tuple)):
+            return ()
+        return tuple(dict.fromkeys(
+            value for value in values
+            if isinstance(value, str) and value in allowed_ids
+        ))[:5]
+
+    shortlisted_skills = traced_ids("skill_ids", skill_ids)
+    shortlisted_agents = traced_ids("agent_ids", agent_ids)
+    shortlisted_capabilities = traced_ids("capability_ids", capability_ids or set())
+    architecture_reserved = tuple(
+        identifier for identifier in traced_ids("architecture_reserved_agent_ids", agent_ids)
+        if identifier in shortlisted_agents
+    )
     return RouteDecision(
         decision_id=decision_id,
         skill_id=skill_id,
@@ -323,6 +364,10 @@ def _validate_output(
         catalog_version=catalog_version_value,
         latency_ms=round(latency_ms, 3),
         validated=True,
+        shortlisted_skill_ids=shortlisted_skills,
+        shortlisted_agent_ids=shortlisted_agents,
+        shortlisted_capability_ids=shortlisted_capabilities,
+        architecture_reserved_agent_ids=architecture_reserved,
     )
 
 
@@ -408,8 +453,14 @@ def select_route(
     try:
         output = (provider or _provider)(payload, timeout_value)
         elapsed = (time.perf_counter() - started) * 1000
+        if not isinstance(output, dict):
+            raise ValueError("jev_output_not_object")
+        routing_trace = (
+            output.routing_trace if isinstance(output, _TrustedProviderOutput) else None
+        )
+        validated_output = dict(output)
         decision = _validate_output(
-            output,
+            validated_output,
             skill_ids={card["id"] for card in skills},
             agent_ids={card["id"] for card in agents},
             capability_ids={card["id"] for card in capabilities},
@@ -424,6 +475,7 @@ def select_route(
                 if str((card.get("requires") or {}).get("agent") or "")
                 == "forbidden"
             },
+            routing_trace=routing_trace,
         )
     except TimeoutError:
         decision = _null_decision(reason="TIMEOUT", policy_version=policy_version,

@@ -80,7 +80,8 @@ def test_formal_skill_cards_preserve_governed_boundaries_and_candidate_budget(mo
         ROOT / "agency/hermes-plugins/ai-lab-capabilities/jev_resident.py"
     ).read_text(encoding="utf-8")
     assert '"shortlist_total"' in resident_source
-    assert "selected = scored[:top_k]" in resident_source
+    assert "architecture_candidate" in resident_source
+    assert "for kind in (\"skill\", \"agent\", \"capability\")" in resident_source
 
 
 def test_resident_jev_shortlist_is_five_unique_cards_across_three_kinds(monkeypatch):
@@ -124,6 +125,256 @@ def test_resident_jev_shortlist_is_five_unique_cards_across_three_kinds(monkeypa
 
     assert len(shortlisted_skills) + len(shortlisted_agents) + len(shortlisted_capabilities) == 5
     assert shortlisted_capabilities == capabilities
+
+
+def test_agency_architect_cards_gain_governed_semantic_boundaries(monkeypatch, tmp_path):
+    router = _load_router()
+    catalog = tmp_path / "agents.json"
+    catalog.write_text(json.dumps([{
+        "slug": "security-architect",
+        "name": "Security Architect",
+        "description": "Security specialist.",
+        "status": "active",
+    }]), encoding="utf-8")
+    monkeypatch.setattr(router, "_agency_data_path", lambda: catalog)
+
+    card = router._agency_capabilities()[0]
+
+    assert card["id"] == "agency:security-architect"
+    assert any("multi-tenant isolation" in item for item in card["use_when"])
+    assert any("localized code-security scan" in item for item in card["do_not_use_when"])
+
+
+def test_architecture_capsule_accumulates_labels_without_copying_history():
+    router = _load_router()
+    secret = "SYNTHETIC_DO_NOT_COPY_4471"
+    capsule = router._architecture_task_capsule(
+        "这个方案的冷调用是否能优化？",
+        conversation_history=[
+            {"role": "user", "content": f"多租户隔离和权限边界 {secret}"},
+            {"role": "assistant", "content": "answer"},
+            {"role": "user", "content": "Hermes是唯一Runtime，不要新建执行器"},
+            {"role": "user", "content": "旁路POC要支持失败降级和验收"},
+        ],
+    )
+
+    assert capsule["architecture_candidate"] is True
+    assert capsule["routing_intent"] == "cross_component_architecture_design"
+    assert capsule["dimension_count"] >= 3
+    assert capsule["cross_turn"] is True
+    assert {"access_control", "runtime_boundaries", "performance_budget"} <= set(
+        capsule["labels"]
+    )
+    assert secret not in json.dumps(capsule, ensure_ascii=False)
+
+
+def test_architecture_capsule_does_not_stick_to_unrelated_new_turn():
+    router = _load_router()
+    capsule = router._architecture_task_capsule(
+        "今天晚饭吃什么？",
+        conversation_history=[
+            {"role": "user", "content": "设计多租户运行时、缓存和失败恢复架构"},
+        ],
+        prior_capsule={
+            "version": "architecture-task-capsule-v1",
+            "labels": ["access_control", "runtime_boundaries", "state_consistency"],
+        },
+    )
+
+    assert capsule["architecture_candidate"] is False
+    assert capsule["use_recent_context"] is False
+    assert capsule["labels"] == []
+
+
+def test_false_referent_and_single_dimension_do_not_reactivate_architecture_history():
+    router = _load_router()
+    prior = {
+        "version": "architecture-task-capsule-v1",
+        "labels": [
+            "access_control", "deployment_migration", "resilience",
+            "runtime_boundaries", "state_consistency",
+        ],
+    }
+    false_referent = router._architecture_task_capsule(
+        "这个天气怎么样？",
+        conversation_history=[
+            {"role": "user", "content": "SECRET-RAW-991 多租户架构和缓存恢复"},
+        ],
+        prior_capsule=prior,
+    )
+    narrow_task = router._architecture_task_capsule(
+        "缓存怎么清？",
+        conversation_history=[
+            {"role": "user", "content": "旧的多租户运行时和失败恢复架构"},
+        ],
+        prior_capsule=prior,
+    )
+
+    assert false_referent["use_recent_context"] is False
+    assert false_referent["architecture_candidate"] is False
+    assert false_referent["labels"] == []
+    assert narrow_task["architecture_candidate"] is False
+    assert narrow_task["labels"] == ["state_consistency"]
+
+    for request in (
+        "这个问题先不谈，天气怎么样？",
+        "这个任务取消。天气怎么样？",
+    ):
+        capsule = router._architecture_task_capsule(
+            request,
+            conversation_history=[
+                {"role": "user", "content": "SECRET-RAW-991 旧的多租户运行时架构"},
+            ],
+            prior_capsule=prior,
+        )
+        assert capsule["architecture_candidate"] is False
+        assert capsule["labels"] == []
+        assert capsule["context_reset"] is True
+
+    for request in (
+        "这个问题先不谈，如何优化缓存？",
+        "请忽略这个问题，缓存如何优化？",
+        "这个任务取消。缓存如何优化？",
+    ):
+        capsule = router._architecture_task_capsule(
+            request,
+            conversation_history=[
+                {"role": "user", "content": "SECRET-RAW-992 旧的多租户运行时架构"},
+            ],
+            prior_capsule=prior,
+        )
+        assert capsule["architecture_candidate"] is False
+        assert capsule["labels"] == ["state_consistency"]
+        assert capsule["context_reset"] is True
+
+    expected_current = {
+        "如何优化缓存？": ["state_consistency"],
+        "缓存如何优化？": ["state_consistency"],
+        "冷调用是什么？": ["performance_budget"],
+        "冷调用如何优化？": ["performance_budget"],
+        "Runtime调用如何优化？": ["runtime_boundaries"],
+    }
+    for request, labels in expected_current.items():
+        capsule = router._architecture_task_capsule(
+            request,
+            conversation_history=[
+                {"role": "user", "content": "旧的多租户运行时和失败恢复架构"},
+            ],
+            prior_capsule=prior,
+        )
+        assert capsule["architecture_candidate"] is False
+        assert capsule["labels"] == labels
+
+
+def test_architecture_capsule_carries_only_labels_across_long_referential_followup():
+    router = _load_router()
+    capsule = router._architecture_task_capsule(
+        "这个问题继续修复",
+        conversation_history=[
+            {"role": "user", "content": f"ordinary turn {index}"}
+            for index in range(12)
+        ],
+        prior_capsule={
+            "version": "architecture-task-capsule-v1",
+            "labels": ["access_control", "runtime_boundaries", "performance_budget"],
+        },
+    )
+
+    assert capsule["architecture_candidate"] is True
+    assert capsule["cross_turn"] is True
+    assert capsule["labels"] == [
+        "access_control", "performance_budget", "runtime_boundaries"
+    ]
+
+
+def test_resident_shortlist_reserves_authorized_architects_for_complex_task(monkeypatch):
+    import numpy as np
+
+    router = _load_router()
+    resident = __import__(
+        f"{router.__package__}.jev_resident", fromlist=["jev_resident"]
+    )
+    skills = [
+        {"id": f"skill:s{i}", "kind": "skill", "use_when": [f"skill {i}"]}
+        for i in range(6)
+    ]
+    agents = [
+        {"id": "agency:generic-high-score", "kind": "agent", "use_when": ["generic"]},
+        {"id": "agency:security-architect", "kind": "agent", "use_when": ["security architecture"]},
+        {"id": "agency:software-architect", "kind": "agent", "use_when": ["software architecture"]},
+    ]
+    cards = skills + agents
+    # Architects deliberately have the lowest embedding scores. The capsule may
+    # reserve only already-authorized cards; it never selects them itself.
+    scores = [0.99, 0.98, 0.97, 0.96, 0.95, 0.94, 0.90, 0.10, 0.09]
+    monkeypatch.setattr(resident, "_READY", True)
+    monkeypatch.setattr(resident, "_CARD_IDS", [card["id"] for card in cards])
+    monkeypatch.setattr(
+        resident,
+        "_CARD_TEXTS",
+        {card["id"]: resident._card_text(card) for card in cards},
+    )
+    monkeypatch.setattr(
+        resident,
+        "_CARD_EMBEDDINGS",
+        np.asarray([[score, 1.0 - score] for score in scores]),
+    )
+    monkeypatch.setattr(resident, "_encode", lambda _texts: np.asarray([[1.0, 0.0]]))
+
+    for budget in range(1, 6):
+        monkeypatch.setattr(
+            resident, "_integer",
+            lambda name, default, budget=budget: budget if name == "shortlist_total" else default,
+        )
+        shortlisted_skills, shortlisted_agents, _, _, shortlisted_capabilities, _ = resident._shortlist({
+            "request": "优化这套方案",
+            "task_state": {"task_capsule": {
+                "architecture_candidate": True,
+                "labels": ["access_control", "runtime_boundaries", "performance_budget"],
+            }},
+            "skill_candidates": skills,
+            "agent_candidates": agents,
+            "capability_candidates": [],
+        })
+
+        ids = {card["id"] for card in shortlisted_agents}
+        assert "agency:security-architect" in ids
+        if budget >= 2:
+            assert "agency:software-architect" in ids
+        assert not shortlisted_capabilities
+        assert len(shortlisted_skills) + len(shortlisted_agents) <= budget
+
+
+def test_resident_architecture_reserve_never_invents_unauthorized_agent(monkeypatch):
+    import numpy as np
+
+    router = _load_router()
+    resident = __import__(
+        f"{router.__package__}.jev_resident", fromlist=["jev_resident"]
+    )
+    agents = [{"id": "agency:allowed-reviewer", "kind": "agent", "use_when": ["review"]}]
+    monkeypatch.setattr(resident, "_READY", True)
+    monkeypatch.setattr(resident, "_CARD_IDS", [agents[0]["id"]])
+    monkeypatch.setattr(
+        resident, "_CARD_TEXTS",
+        {agents[0]["id"]: resident._card_text(agents[0])},
+    )
+    monkeypatch.setattr(resident, "_CARD_EMBEDDINGS", np.asarray([[1.0, 0.0]]))
+    monkeypatch.setattr(resident, "_encode", lambda _texts: np.asarray([[1.0, 0.0]]))
+    monkeypatch.setattr(resident, "_integer", lambda _name, default: default)
+
+    _, shortlisted_agents, _, _, _, _ = resident._shortlist({
+        "request": "设计租户隔离架构",
+        "task_state": {"task_capsule": {
+            "architecture_candidate": True,
+            "labels": ["access_control"],
+        }},
+        "skill_candidates": [],
+        "agent_candidates": agents,
+        "capability_candidates": [],
+    })
+
+    assert [card["id"] for card in shortlisted_agents] == ["agency:allowed-reviewer"]
 
 
 def test_prefixed_qcp_skill_scope_reaches_the_single_jev_decision(monkeypatch):

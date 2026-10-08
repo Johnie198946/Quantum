@@ -220,6 +220,125 @@ _NEGATIVE_SPLIT_RE = re.compile(
     re.I,
 )
 
+_ARCHITECTURE_DIMENSIONS: dict[str, re.Pattern[str]] = {
+    "access_control": re.compile(
+        r"多租户|租户|隔离|权限|授权|acl|entitlement|noexport|红黄绿|ryg|disclos|"
+        r"security|privacy|least.?privilege",
+        re.I,
+    ),
+    "runtime_boundaries": re.compile(
+        r"runtime|运行时|jev|qcp|hermes|agent|路由|编排|orchestrat|executor|执行器|"
+        r"control.?plane|data.?plane",
+        re.I,
+    ),
+    "state_consistency": re.compile(
+        r"缓存|cache|一致性|consisten|幂等|idempoten|singleflight|失效|invalidation|"
+        r"状态|state|持久化|persist",
+        re.I,
+    ),
+    "performance_budget": re.compile(
+        r"时延|延迟|latency|性能|performance|吞吐|throughput|p50|p95|p99|"
+        r"cold.?call|冷调用|队列|queue",
+        re.I,
+    ),
+    "resilience": re.compile(
+        r"fail.?soft|fail.?closed|失败|降级|fallback|超时|timeout|重试|retry|熔断|"
+        r"circuit.?breaker|恢复|recovery|可靠性|reliab",
+        re.I,
+    ),
+    "contracts": re.compile(
+        r"合同|契约|contract|schema|api|claim|provenance|reducer|接口|边界|boundary",
+        re.I,
+    ),
+    "deployment_migration": re.compile(
+        r"旁路|shadow|poc|部署|deploy|迁移|migrat|兼容|compatib|切换|cutover|"
+        r"回滚|rollback|生产|production",
+        re.I,
+    ),
+    "verification_observability": re.compile(
+        r"验收|acceptance|测试|test|基准|benchmark|trace|回执|receipt|观测|"
+        r"observab|monitor|e2e|端到端",
+        re.I,
+    ),
+}
+_ARCHITECTURE_EXPLICIT_RE = re.compile(
+    r"架构|系统设计|顶层设计|architecture|architect|system.?design", re.I
+)
+_ARCHITECTURE_BREAK_RE = re.compile(
+    r"先不谈|暂不谈|不再讨论|忽略(?:这个|该|上述|前面)?(?:问题|任务|方案|设计|架构)?|"
+    r"取消(?:这个|该|上述|前面)?(?:问题|任务|方案|设计|架构)?|"
+    r"(?:这个|该|上述|前面)?(?:问题|任务|方案|设计|架构)取消|"
+    r"换个话题|另一个问题|跳过(?:这个|该|上述|前面)?|"
+    r"forget\s+(?:this|that)|ignore\s+(?:this|that)|cancel\s+(?:this|that)|different\s+topic",
+    re.I,
+)
+_ARCHITECTURE_FOLLOWUP_RE = re.compile(
+    r"(?:这个|这套|上述|前面|该)"
+    r"(?:方案|机制|逻辑|条件|调用|能力|问题|需求|设计|架构|系统).{0,18}"
+    r"(?:优化|修改|修复|调整|完善|实现|落地|为什么|如何|详细|继续)|"
+    r"(?:继续|详细说明|what about|go on).{0,12}"
+    r"(?:架构|方案|设计|系统|运行时|runtime|缓存|权限|隔离)",
+    re.I,
+)
+_ROUTING_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:请)?(?:"
+    r"(?:把|将|按|根据|基于|针对)(?:以上|上述|上面|前面|刚才|这个|这套|该)|"
+    r"继续(?:以上|上述|上面|前面|刚才|这个|这套|该)|"
+    r"(?:这个|这套|上述|前面|刚才)(?:方案|设计|计划|任务|问题|需求|流程|内容|结果)|"
+    r"第[一二三四五六七八九十0-9]+(?:步|项|点|条)"
+    r")",
+    re.I,
+)
+
+_AGENCY_ROUTING_BOUNDARIES: dict[str, dict[str, list[str]]] = {
+    "software-architect": {
+        "use_when": [
+            "Design or review system architecture, runtime boundaries, domain boundaries, and cross-component trade-offs.",
+            "Choose an evolution, migration, compatibility, or rollback strategy across multiple subsystems.",
+            "Reconcile security, consistency, reliability, latency, and maintainability in one technical design.",
+        ],
+        "do_not_use_when": [
+            "A narrow implementation task has no cross-component design decision or non-functional trade-off."
+        ],
+    },
+    "security-architect": {
+        "use_when": [
+            "Design multi-tenant isolation, authorization boundaries, secure disclosure, or least-privilege data flow.",
+            "Threat-model a system where fail-closed fragments and fail-soft overall behavior must coexist.",
+            "Review security controls spanning runtime, storage, cache, model prompts, logs, and output channels.",
+        ],
+        "do_not_use_when": [
+            "The request is only a localized code-security scan with no security architecture decision."
+        ],
+    },
+    "backend-architect": {
+        "use_when": [
+            "Design backend APIs, state, caching, consistency, queues, idempotency, retries, and performance budgets.",
+            "Resolve trade-offs across services, persistence, concurrency, failure recovery, and observability.",
+        ],
+        "do_not_use_when": [
+            "The task is an isolated endpoint edit with an already-fixed contract and no system trade-off."
+        ],
+    },
+    "multi-agent-systems-architect": {
+        "use_when": [
+            "Design agent routing, orchestration, memory, tool boundaries, delegation, and multi-agent failure handling.",
+            "Define one-runtime control planes for multiple specialist agents without adding a parallel runtime.",
+        ],
+        "do_not_use_when": [
+            "Only one specialist must execute a bounded task and no agent-system topology is being designed."
+        ],
+    },
+    "workflow-architect": {
+        "use_when": [
+            "Design durable workflows, state machines, task queues, retries, resumability, and lifecycle transitions."
+        ],
+        "do_not_use_when": [
+            "The task is a one-shot action with no durable state or workflow lifecycle."
+        ],
+    },
+}
+
 
 def _hermes_home() -> Path:
     try:
@@ -296,14 +415,23 @@ def _agency_capabilities() -> list[dict[str, Any]]:
         if not slug or str(agent.get("status") or "active") != "active":
             continue
         description = str(agent.get("description") or "")[:600]
+        boundaries = _AGENCY_ROUTING_BOUNDARIES.get(slug) or {}
+        use_when = _string_list([
+            *(_string_list(agent.get("use_when")) or ([description] if description else [])),
+            *(boundaries.get("use_when") or []),
+        ])
+        do_not_use_when = _string_list([
+            *_string_list(agent.get("do_not_use_when")),
+            *(boundaries.get("do_not_use_when") or []),
+        ])
         capabilities.append({
             "id": f"agency:{slug}",
             "kind": "agency_agent",
             "name": str(agent.get("name") or slug),
             "description": description,
             "version": str(agent.get("version") or "1.0.0"),
-            "use_when": agent.get("use_when") or ([description] if description else []),
-            "do_not_use_when": agent.get("do_not_use_when") or [],
+            "use_when": use_when,
+            "do_not_use_when": do_not_use_when,
             "requires": agent.get("requires") or {},
             "risk": str(agent.get("risk") or "read"),
             "status": str(agent.get("status") or "active"),
@@ -325,6 +453,90 @@ def _string_list(value: Any) -> list[str]:
     else:
         values = []
     return list(dict.fromkeys(str(item).strip()[:140] for item in values if str(item).strip()))[:20]
+
+
+def _architecture_task_capsule(
+    user_message: str,
+    *,
+    conversation_history: Any = None,
+    prior_capsule: Any = None,
+) -> dict[str, Any]:
+    """Compile bounded architecture signals without copying conversation text.
+
+    The capsule grants no capability and contains labels only. It lets resident
+    recall resolve fragmented requirements without creating a second runtime or
+    synthetic conversation store.
+    """
+    current = str(user_message or "")[:2000]
+    history = [
+        str(item.get("content") or "")[:1000]
+        for item in (conversation_history or [])
+        if isinstance(item, dict) and item.get("role") == "user"
+        and isinstance(item.get("content"), str) and item.get("content")
+    ]
+    if history and history[-1] == user_message:
+        history = history[:-1]
+    history = history[-8:]
+
+    def dimensions(text: str) -> set[str]:
+        return {
+            name for name, pattern in _ARCHITECTURE_DIMENSIONS.items()
+            if pattern.search(text)
+        }
+
+    current_dimensions = dimensions(current)
+    break_context = bool(_ARCHITECTURE_BREAK_RE.search(current))
+    explicit = bool(_ARCHITECTURE_EXPLICIT_RE.search(current))
+    follow_up = bool(_ARCHITECTURE_FOLLOWUP_RE.search(current)) and not break_context
+    use_recent_context = bool(_ROUTING_FOLLOWUP_RE.search(current)) and not break_context
+    accumulated_dimensions = set(current_dimensions)
+    if not break_context:
+        for message in history:
+            accumulated_dimensions.update(dimensions(message))
+    prior_labels = {
+        str(item) for item in (
+            prior_capsule.get("labels") if isinstance(prior_capsule, dict) else []
+        ) or []
+        if isinstance(item, str) and item in _ARCHITECTURE_DIMENSIONS
+    }
+    if prior_labels and not break_context and (
+        explicit or follow_up or len(current_dimensions) >= 2
+    ):
+        accumulated_dimensions.update(prior_labels)
+    cross_turn = bool(
+        (history or prior_labels) and accumulated_dimensions - current_dimensions
+    )
+    architecture_candidate = bool(
+        explicit
+        or len(current_dimensions) >= 3
+        or (
+            cross_turn
+            and len(accumulated_dimensions) >= 3
+            and (follow_up or len(current_dimensions) >= 2)
+        )
+    )
+    reported_dimensions = (
+        accumulated_dimensions if architecture_candidate else current_dimensions
+    )
+    action = (
+        "repair" if re.search(r"修复|修改|调整|完善|fix|repair", current, re.I)
+        else "design" if re.search(r"设计|架构|方案|design|architect", current, re.I)
+        else "review"
+    )
+    return {
+        "version": "architecture-task-capsule-v1",
+        "labels": sorted(reported_dimensions),
+        "current_labels": sorted(current_dimensions),
+        "cross_turn": cross_turn,
+        "context_reset": break_context,
+        "use_recent_context": use_recent_context,
+        "architecture_candidate": architecture_candidate,
+        "routing_intent": (
+            f"cross_component_architecture_{action}"
+            if architecture_candidate else "current_turn_only"
+        ),
+        "dimension_count": len(reported_dimensions),
+    }
 
 
 def _local_code_debug_intent(query: str) -> bool:
@@ -1475,12 +1687,12 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             research_stage=stage,
             research_turn_id=str(kwargs.get("turn_id") or ""),
         )
-    user_history = [
-        {"role": "user", "content": item["content"][:300]}
-        for item in (kwargs.get("conversation_history") or [])
-        if isinstance(item, dict) and item.get("role") == "user"
-        and isinstance(item.get("content"), str) and item["content"]
-    ]
+    task_capsule = _architecture_task_capsule(
+        query,
+        conversation_history=kwargs.get("conversation_history"),
+        prior_capsule=(existing_state or {}).get("task_capsule"),
+    )
+    state["task_capsule"] = task_capsule
     context = _jev_routing_context(
         query,
         state,
@@ -1488,10 +1700,8 @@ def _pre_llm_call(user_message: str = "", **kwargs: Any) -> dict[str, Any] | Non
             "session_id": session_id,
             "turn_id": str(kwargs.get("turn_id") or kwargs.get("task_id") or ""),
             "platform": platform,
-            "recent_messages": (
-                user_history[-6:] if len(user_history) <= 6
-                else [user_history[0], *user_history[-5:]]
-            ),
+            "recent_messages": [],
+            "task_capsule": task_capsule,
         },
         policy_version=str(
             kwargs.get("policy_version")

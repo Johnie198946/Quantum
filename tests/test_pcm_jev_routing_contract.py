@@ -87,9 +87,18 @@ def test_pcm_routing_contract_is_parseable_and_declares_single_runtime():
     assert contract["selector"]["config_key"] == "plugins.entries.ai-lab-capabilities.settings.jev"
     assert contract["selector"]["candidate_projection"] == {
         "source": "pcm_authorized_cards",
-        "shortlist": "resident_multilingual_embedding_top_k",
+        "shortlist": "resident_multilingual_embedding_top_k_with_kind_and_architecture_reservations",
         "semantic_decision": "resident_hermes_auxiliary_client",
         "low_affinity_behavior": "hermes_direct",
+    }
+    assert contract["selector"]["task_context"] == {
+        "source": "bounded_native_conversation_history",
+        "capsule": "deterministic_labels_only",
+        "recent_messages": "never_forwarded_to_selector",
+        "architecture_history": "deterministic_labels_only",
+        "session_carry": "labels_only_reset_on_unrelated_or_explicit_break",
+        "architecture_reservation": "candidate_recall_only",
+        "grants_permission": False,
     }
     assert contract["resident_model"]["runtime_owner"] == "hermes_gateway_process"
     assert contract["resident_model"]["deployment_activation"] == (
@@ -416,7 +425,7 @@ def test_bridge_request_scope_removes_agents_before_jev(monkeypatch):
     })
     try:
         router._pre_llm_call(
-            "ordinary request",
+            "把以上做成攻略",
             session_id="bridge-scoped",
             platform="cli",
             sender_id="tenant-user",
@@ -430,6 +439,53 @@ def test_bridge_request_scope_removes_agents_before_jev(monkeypatch):
     assert observed["agent_candidates"] == []
     assert observed["policy_version"] == "tenant-policy-3"
     assert observed["tenant_scope"] == "tenant:ta:user:ua"
-    assert [item["content"] for item in observed["task_state"]["recent_messages"]] == [
-        "今年十一去九州", *(f"follow-up {n}" for n in range(3, 8))
-    ]
+    assert observed["task_state"]["recent_messages"] == []
+
+
+def test_pre_llm_passes_bounded_cross_turn_architecture_capsule(monkeypatch):
+    router = _load_router()
+    observed: dict[str, Any] = {}
+    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
+    monkeypatch.setattr(router, "_agency_capabilities", lambda: [])
+
+    def select(_request_text, **kwargs):
+        observed.update(kwargs)
+        return _decision(None, None)
+
+    monkeypatch.setattr(router, "select_route", select)
+    secret = "SYNTHETIC_PRIVATE_DETAIL_883"
+    router._pre_llm_call(
+        "这个方案的冷调用如何优化？",
+        session_id="architecture-capsule",
+        platform="feishu",
+        sender_id="local-owner",
+        conversation_history=[
+            {"role": "user", "content": f"多租户隔离和红黄绿披露 {secret}"},
+            {"role": "user", "content": "JEV和Hermes Runtime只能有一条主链"},
+            {"role": "user", "content": "旁路POC必须支持失败降级和端到端验收"},
+        ],
+    )
+
+    capsule = observed["task_state"]["task_capsule"]
+    assert capsule["architecture_candidate"] is True
+    assert capsule["routing_intent"] == "cross_component_architecture_design"
+    assert {"access_control", "runtime_boundaries", "performance_budget"} <= set(
+        capsule["labels"]
+    )
+    assert secret not in json.dumps(capsule, ensure_ascii=False)
+    assert observed["task_state"]["recent_messages"] == []
+    assert secret not in json.dumps(observed["task_state"], ensure_ascii=False)
+
+    observed.clear()
+    router._pre_llm_call(
+        "这个天气怎么样？",
+        session_id="architecture-capsule",
+        platform="feishu",
+        sender_id="local-owner",
+        conversation_history=[
+            {"role": "user", "content": f"旧架构历史 {secret}"},
+        ],
+    )
+    assert observed["task_state"]["recent_messages"] == []
+    assert observed["task_state"]["task_capsule"]["labels"] == []
+    assert secret not in json.dumps(observed["task_state"], ensure_ascii=False)

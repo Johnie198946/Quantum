@@ -1,4 +1,4 @@
-version: 1.4.0
+version: 1.5.0
 status: active
 owner: platform-runtime
 runtime: hermes
@@ -10,9 +10,17 @@ selector:
   config_key: plugins.entries.ai-lab-capabilities.settings.jev
   candidate_projection:
     source: pcm_authorized_cards
-    shortlist: resident_multilingual_embedding_top_k
+    shortlist: resident_multilingual_embedding_top_k_with_kind_and_architecture_reservations
     semantic_decision: resident_hermes_auxiliary_client
     low_affinity_behavior: hermes_direct
+  task_context:
+    source: bounded_native_conversation_history
+    capsule: deterministic_labels_only
+    recent_messages: never_forwarded_to_selector
+    architecture_history: deterministic_labels_only
+    session_carry: labels_only_reset_on_unrelated_or_explicit_break
+    architecture_reservation: candidate_recall_only
+    grants_permission: false
   output_schema:
     skill_id: string|null
     agent_id: string|null
@@ -76,6 +84,10 @@ observability:
     - latency_ms
     - validated
     - cache_hit
+    - shortlisted_skill_ids
+    - shortlisted_agent_ids
+    - shortlisted_capability_ids
+    - architecture_reserved_agent_ids
   receipt: existing_canonical_delegation_receipt
   result_hash: sha256
   adoption: existing_main_adoption_verifier

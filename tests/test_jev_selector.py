@@ -73,6 +73,57 @@ def test_jev_input_is_bounded_pcm_projection_and_selects_zero_or_one_each():
     assert set(captured["skill_candidates"][0]) == module._REQUIRED_CARD_FIELDS
 
 
+def test_route_trace_is_bounded_to_authorized_shortlist_and_cannot_grant_access():
+    decision = module.select_route(
+        "route trace test unique",
+        task_state={"turn_id": "trace-1"},
+        policy_version="policy-7",
+        skill_candidates=[capability("skill:allowed", "skill")],
+        agent_candidates=[capability("agency:security-architect", "agency_agent")],
+        provider=lambda _payload, _timeout: module._TrustedProviderOutput({
+            "skill_id": None,
+            "agent_id": "agency:security-architect",
+            "skill_confidence": 0.0,
+            "agent_confidence": 0.91,
+            "reason_code": "MATCHED",
+        }, routing_trace={
+            "skill_ids": ["skill:allowed", "skill:not-authorized"],
+            "agent_ids": ["agency:security-architect", "agency:not-authorized"],
+            "capability_ids": ["capability:not-authorized"],
+            "architecture_reserved_agent_ids": [
+                "agency:security-architect", "agency:not-authorized"
+            ],
+        }),
+    )
+
+    assert decision.shortlisted_skill_ids == ("skill:allowed",)
+    assert decision.shortlisted_agent_ids == ("agency:security-architect",)
+    assert decision.shortlisted_capability_ids == ()
+    assert decision.architecture_reserved_agent_ids == ("agency:security-architect",)
+
+
+def test_external_provider_cannot_forge_internal_shortlist_trace():
+    decision = module.select_route(
+        "untrusted route trace unique",
+        task_state={"turn_id": "trace-external-1"},
+        policy_version="policy-7",
+        skill_candidates=[capability("skill:allowed", "skill")],
+        agent_candidates=[],
+        provider=lambda _payload, _timeout: {
+            "skill_id": "skill:allowed",
+            "agent_id": None,
+            "skill_confidence": 0.9,
+            "agent_confidence": 0.0,
+            "reason_code": "MATCHED",
+            "_routing_trace": {"skill_ids": ["skill:allowed"]},
+        },
+    )
+
+    assert decision.validated is False
+    assert decision.reason_code == "INVALID_OUTPUT"
+    assert decision.shortlisted_skill_ids == ()
+
+
 def test_hallucinated_or_unauthorized_id_fails_closed_to_direct_hermes():
     decision = module.select_route(
         "unique hallucination test",
@@ -157,6 +208,39 @@ def test_cache_key_isolated_by_tenant_principal_policy_catalog_and_request():
     assert len(calls) == 4
     assert cached.cache_hit is True
     assert cached.decision_id != first.decision_id
+
+
+def test_cache_key_includes_task_capsule_but_ignores_turn_id():
+    calls = []
+
+    def provider(_payload, _timeout):
+        calls.append(1)
+        return {"skill_id": None, "agent_id": None, "skill_confidence": 0,
+                "agent_confidence": 0, "reason_code": "NO_MATCH"}
+
+    common = dict(
+        request_text="capsule cache request unique",
+        policy_version="policy-capsule-cache",
+        skill_candidates=[], agent_candidates=[], provider=provider,
+        tenant_scope="tenant-a", principal_scope="user-a",
+    )
+    first = module.select_route(
+        **common,
+        task_state={"turn_id": "one", "task_capsule": {"labels": ["access_control"]}},
+    )
+    changed = module.select_route(
+        **common,
+        task_state={"turn_id": "two", "task_capsule": {"labels": ["performance_budget"]}},
+    )
+    cached = module.select_route(
+        **common,
+        task_state={"turn_id": "three", "task_capsule": {"labels": ["access_control"]}},
+    )
+
+    assert first.cache_hit is False
+    assert changed.cache_hit is False
+    assert cached.cache_hit is True
+    assert len(calls) == 2
 
 
 def test_cache_reuses_decision_across_opaque_session_ids_but_not_platforms():
@@ -424,13 +508,23 @@ def test_resident_provider_uses_structured_selection_tool(monkeypatch):
     monkeypatch.setitem(sys.modules, "agent.auxiliary_client", auxiliary_client)
     output = resident._provider_select({
         "request": "research",
-        "task_state": {},
+        "task_state": {
+            "recent_messages": [{"role": "user", "content": "SYNTHETIC_PRIVATE_HISTORY"}],
+            "task_capsule": {
+                "version": "architecture-task-capsule-v1",
+                "labels": [],
+                "use_recent_context": False,
+                "architecture_candidate": False,
+            },
+        },
         "skill_candidates": [module.compact_card(capability("skill:research", "skill"))],
         "agent_candidates": [],
     })
 
     assert output["skill_id"] == "skill:research"
     provider_payload = json.loads(captured["messages"][1]["content"])
+    assert "recent_messages" not in provider_payload["task_state"]
+    assert "SYNTHETIC_PRIVATE_HISTORY" not in captured["messages"][1]["content"]
     assert provider_payload["skill_candidates"][0][:3] == [
         "skill:research", "skill", "1.0.0",
     ]
@@ -558,6 +652,44 @@ def test_resident_rejects_immediately_when_provider_workers_are_saturated(monkey
     else:
         raise AssertionError("saturated provider must fail fast")
     assert time.perf_counter() - started < 0.05
+
+
+def test_resident_architecture_reserve_does_not_force_provider_selection(monkeypatch):
+    resident = module._resident_module()
+    agents = [
+        {"id": "agency:security-architect"},
+        {"id": "agency:software-architect"},
+    ]
+    monkeypatch.setattr(resident, "_PROVIDER_READY", True)
+    monkeypatch.setattr(resident, "_number", lambda _name, default: default)
+    monkeypatch.setattr(
+        resident, "_shortlist",
+        lambda _payload: ([], agents, -1.0, 0.9, [], -1.0),
+    )
+    monkeypatch.setattr(
+        resident, "_provider_select",
+        lambda _payload: {
+            "skill_id": None,
+            "agent_id": None,
+            "skill_confidence": 0.0,
+            "agent_confidence": 0.0,
+            "reason_code": "NO_MATCH",
+        },
+    )
+
+    output = resident.select({
+        "request": "修复这个架构问题",
+        "task_state": {"task_capsule": {
+            "architecture_candidate": True,
+            "labels": ["access_control", "runtime_boundaries"],
+        }},
+    }, 0.2)
+
+    assert output["agent_id"] is None
+    assert output["reason_code"] == "NO_MATCH"
+    assert output["_routing_trace"]["architecture_reserved_agent_ids"] == [
+        "agency:security-architect", "agency:software-architect"
+    ]
 
 
 def test_resident_omits_each_low_affinity_kind_before_remote_selection(monkeypatch):

@@ -1,0 +1,115 @@
+{
+  "schema": "jev-architect-routing-acceptance-v1",
+  "scope": "LOCAL_ONLY_SYNTHETIC_SHADOW",
+  "base_sha": "388b948630731a63a7a5ba45584c204805f1b7b4",
+  "catalog_counts": {
+    "skills": 309,
+    "agents": 273
+  },
+  "resident_status": {
+    "enabled": true,
+    "ready": true,
+    "provider_ready": true,
+    "warming": false,
+    "error": "",
+    "catalog_size": 582,
+    "catalog_fingerprint": "50325ebe03be949a809fa8873166a32f0da6d91c12afb83ad68a95cfb487f5c1",
+    "model_revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+    "model_artifact": "onnx/model_qint8_arm64.onnx",
+    "decision_provider": {
+      "provider": "openai-codex",
+      "model": "gpt-6-luna",
+      "api_mode": "codex_responses"
+    }
+  },
+  "results": [
+    {
+      "request": "这个问题更严重，我需要修复",
+      "capsule": {
+        "version": "architecture-task-capsule-v1",
+        "labels": ["access_control", "contracts", "deployment_migration", "performance_budget", "resilience", "runtime_boundaries", "state_consistency"],
+        "current_labels": [],
+        "cross_turn": true,
+        "context_reset": false,
+        "use_recent_context": true,
+        "architecture_candidate": true,
+        "routing_intent": "cross_component_architecture_repair",
+        "dimension_count": 7
+      },
+      "wall_latency_ms": 1601.828,
+      "decision": {
+        "decision_id": "route_58de455c89534262b7e4b20d5f5a4c2b",
+        "skill_id": null,
+        "agent_id": "agency:software-architect",
+        "skill_confidence": 0.0,
+        "agent_confidence": 0.87,
+        "reason_code": "MATCHED",
+        "policy_version": "acceptance-v1",
+        "catalog_version": "sha256:fc2c98036f47590550ce7820644fcda99cd1df68a7db28c5ef7a8e9445860ad2",
+        "latency_ms": 1594.594,
+        "validated": true,
+        "cache_hit": false,
+        "capability_id": null,
+        "capability_confidence": 0.0,
+        "shortlisted_skill_ids": ["skill:integration-feasibility-review"],
+        "shortlisted_agent_ids": ["agency:security-architect", "agency:software-architect", "agency:backend-architect", "agency:infrastructure-maintainer"],
+        "shortlisted_capability_ids": [],
+        "architecture_reserved_agent_ids": ["agency:security-architect", "agency:software-architect"]
+      }
+    },
+    {
+      "request": "这个问题更严重，我需要修复",
+      "capsule": {
+        "version": "architecture-task-capsule-v1",
+        "labels": ["access_control", "contracts", "deployment_migration", "performance_budget", "resilience", "runtime_boundaries", "state_consistency"],
+        "current_labels": [],
+        "cross_turn": true,
+        "context_reset": false,
+        "use_recent_context": true,
+        "architecture_candidate": true,
+        "routing_intent": "cross_component_architecture_repair",
+        "dimension_count": 7
+      },
+      "wall_latency_ms": 10.813,
+      "decision": {
+        "decision_id": "route_5bb094ce77ab4d51ab8931917ca95cf7",
+        "skill_id": null,
+        "agent_id": "agency:software-architect",
+        "skill_confidence": 0.0,
+        "agent_confidence": 0.87,
+        "reason_code": "MATCHED",
+        "policy_version": "acceptance-v1",
+        "catalog_version": "sha256:fc2c98036f47590550ce7820644fcda99cd1df68a7db28c5ef7a8e9445860ad2",
+        "latency_ms": 0.0,
+        "validated": true,
+        "cache_hit": true,
+        "capability_id": null,
+        "capability_confidence": 0.0,
+        "shortlisted_skill_ids": ["skill:integration-feasibility-review"],
+        "shortlisted_agent_ids": ["agency:security-architect", "agency:software-architect", "agency:backend-architect", "agency:infrastructure-maintainer"],
+        "shortlisted_capability_ids": [],
+        "architecture_reserved_agent_ids": ["agency:security-architect", "agency:software-architect"]
+      }
+    }
+  ],
+  "counterexamples": [
+    {"request": "这个天气怎么样？", "capsule": {"version": "architecture-task-capsule-v1", "labels": [], "current_labels": [], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 0}},
+    {"request": "这个问题先不谈，天气怎么样？", "capsule": {"version": "architecture-task-capsule-v1", "labels": [], "current_labels": [], "cross_turn": false, "context_reset": true, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 0}},
+    {"request": "这个任务取消。天气怎么样？", "capsule": {"version": "architecture-task-capsule-v1", "labels": [], "current_labels": [], "cross_turn": false, "context_reset": true, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 0}},
+    {"request": "缓存怎么清？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "如何优化缓存？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "缓存如何优化？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "冷调用是什么？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["performance_budget"], "current_labels": ["performance_budget"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "冷调用如何优化？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["performance_budget"], "current_labels": ["performance_budget"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "Runtime调用如何优化？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["runtime_boundaries"], "current_labels": ["runtime_boundaries"], "cross_turn": true, "context_reset": false, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "这个问题先不谈，如何优化缓存？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": false, "context_reset": true, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "请忽略这个问题，缓存如何优化？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": false, "context_reset": true, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}},
+    {"request": "这个任务取消。缓存如何优化？", "capsule": {"version": "architecture-task-capsule-v1", "labels": ["state_consistency"], "current_labels": ["state_consistency"], "cross_turn": false, "context_reset": true, "use_recent_context": false, "architecture_candidate": false, "routing_intent": "current_turn_only", "dimension_count": 1}}
+  ],
+  "assertions": {
+    "production_changed": false,
+    "runtime_restarted": false,
+    "real_tenant_sensitive_content_used": false,
+    "raw_history_forwarded_to_selector": false
+  }
+}
