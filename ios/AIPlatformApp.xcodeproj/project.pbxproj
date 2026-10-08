@@ -525,6 +525,7 @@
 				48AAA9836727B98528F3962F /* Sources */,
 				00987747F71BE5DF9E6BA0B2 /* Resources */,
 				A66234566AEE8A4CFD6F96B2 /* Frameworks */,
+				72B00004047AE29D8B9B6392 /* Package static OpenCV privacy resources */,
 			);
 			buildRules = (
 			);
@@ -627,6 +628,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		72B00004047AE29D8B9B6392 /* Package static OpenCV privacy resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Package static OpenCV privacy resources";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/sh\nset -eu\n\napp=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nframework=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/opencv2.framework\"\nbundle=\"$app/OpenCVResources.bundle\"\n[ -d \"$framework\" ] || exit 0\n\n# Xcode injects a codeless dylib for this static library's privacy resources.\n# Refuse to remove OpenCV if a future package actually needs dynamic loading.\nloads=\"$(xcrun otool -L \"$app/${EXECUTABLE_NAME}\")\"\nif printf '%s\\n' \"$loads\" | /usr/bin/grep -q 'opencv2.framework/'; then\n    echo 'error: OpenCV is dynamically linked; keep its framework and provide real dSYMs.' >&2\n    exit 1\nfi\nsymbols=\"$(xcrun nm -g \"$framework/opencv2\" 2>/dev/null)\"\nsections=\"$(xcrun otool -l \"$framework/opencv2\")\"\nif [ -n \"$symbols\" ] || ! printf '%s\\n' \"$sections\" | /usr/bin/awk '\n    $1 == \"sectname\" { text = ($2 == \"__text\") }\n    text && $1 == \"size\" && $2 !~ /^0x0+$/ { exit 1 }\n'; then\n    echo 'error: OpenCV framework contains code; do not repackage it as resources.' >&2\n    exit 1\nfi\n\n/usr/bin/plutil -lint \"$framework/PrivacyInfo.xcprivacy\"\n/usr/bin/ditto \"$framework\" \"$bundle\"\n/bin/rm -f \"$bundle/opencv2\"\n/bin/rm -rf \"$bundle/_CodeSignature\"\n/usr/libexec/PlistBuddy -c 'Delete :CFBundleExecutable' \"$bundle/Info.plist\"\n/usr/libexec/PlistBuddy -c 'Set :CFBundlePackageType BNDL' \"$bundle/Info.plist\"\n/usr/bin/cmp \"$framework/PrivacyInfo.xcprivacy\" \"$bundle/PrivacyInfo.xcprivacy\"\n/bin/rm -rf \"$framework\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		21870063AE033ECBA4968AC7 /* Sources */ = {
@@ -763,7 +787,7 @@
 				CODE_SIGN_ENTITLEMENTS = AIPlatformApp/AIPlatformApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 82;
+				CURRENT_PROJECT_VERSION = 83;
 				DEVELOPMENT_TEAM = AALA948YY5;
 				INFOPLIST_FILE = AIPlatformApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -892,7 +916,7 @@
 				CODE_SIGN_ENTITLEMENTS = AIPlatformApp/AIPlatformApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 82;
+				CURRENT_PROJECT_VERSION = 83;
 				DEVELOPMENT_TEAM = AALA948YY5;
 				INFOPLIST_FILE = AIPlatformApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
