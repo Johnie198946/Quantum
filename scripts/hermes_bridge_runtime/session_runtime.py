@@ -1323,14 +1323,9 @@ from . import (  # noqa: E402
     workflow_runtime as _workflow_runtime,
 )
 
-from . import persistence as _persistence
-
-from . import contracts as _contracts
-
 
 class OwnerSessionRequest(BaseModel):
     session_key: str
-
 
 
 def _require_owner_session(
@@ -1353,7 +1348,6 @@ def _require_owner_session(
     return session_key, ensure_tenant_sandbox(tenant_key=tenant, user_id=user)
 
 
-
 def _owner_session_snapshot(session_key: str, sandbox: TenantHermesSandbox) -> dict[str, Any]:
     with _contracts._mapping_lock:
         hermes_id = _persistence._user_session_map.get(session_key)
@@ -1373,9 +1367,6 @@ def _owner_session_snapshot(session_key: str, sandbox: TenantHermesSandbox) -> d
     }
 
 
-from . import agent_config as _agent_config
-
-
 async def owner_session_resolve(
     body: OwnerSessionRequest,
     x_hermes_internal_token: str | None = Header(None),
@@ -1386,7 +1377,6 @@ async def owner_session_resolve(
         body, x_hermes_internal_token, x_tenant_id, x_user_id
     )
     return _owner_session_snapshot(key, sandbox)
-
 
 
 async def owner_session_resume(
@@ -1405,7 +1395,6 @@ async def owner_session_resume(
     return snapshot
 
 
-
 async def owner_session_delete(
     body: OwnerSessionRequest,
     x_hermes_internal_token: str | None = Header(None),
@@ -1422,7 +1411,5 @@ async def owner_session_delete(
     _persistence._sync_session_mappings(user_id=key, delete=True)
     return {**snapshot, "deleted": True}
 
-
-from . import receipts as _receipts
 
 from . import agent_execution as _agent_execution

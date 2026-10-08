@@ -406,7 +406,21 @@ def test_global_review_scan_skips_locally_reviewed_stale_attempt_before_remote_r
         raise AssertionError("reviewed historical attempt must not block the global scan")
 
     monkeypatch.setattr(relay, "attempt", unexpected_attempt)
-    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review", "wakeAgent": False}
+
+
+@pytest.mark.parametrize("profile", ["default", "supervision"])
+def test_empty_review_queue_skips_agent_without_remote_request(tmp_path, monkeypatch, profile):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("HERMES_PROFILE", profile)
+
+    def unexpected_attempt(*_args, **_kwargs):
+        raise AssertionError("empty review queue must not contact the remote")
+
+    monkeypatch.setattr(relay, "attempt", unexpected_attempt)
+    assert json.loads(relay.review_input(tmp_path, object())) == {
+        "status": "no_await_review", "wakeAgent": False,
+    }
 
 
 def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
@@ -417,7 +431,7 @@ def test_global_review_scan_ignores_invalid_noncandidate_history(tmp_path):
         encoding="utf-8",
     )
 
-    assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review"}
+    assert json.loads(relay.review_input(tmp_path, object())) == {"status": "no_await_review", "wakeAgent": False}
 
 
 def test_global_review_scan_isolates_invalid_pending_manifest(flow):
@@ -1302,7 +1316,7 @@ def test_review_input_does_not_offer_story_request_to_default_profile(flow, monk
     local, manifest, remote, *_ = flow
     relay.prepare(manifest, remote, review_policy="story-supervision-v2")
     monkeypatch.setenv("HERMES_PROFILE", "default")
-    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review", "wakeAgent": False}
     monkeypatch.setenv("HERMES_PROFILE", "supervision")
     assert "PUBLICATION_REVIEW_REQUEST" in relay.review_input(local, remote)
 
@@ -1311,7 +1325,7 @@ def test_review_input_does_not_offer_default_request_to_supervision(flow, monkey
     local, manifest, remote, *_ = flow
     relay.prepare(manifest, remote)
     monkeypatch.setenv("HERMES_PROFILE", "supervision")
-    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review"}
+    assert json.loads(relay.review_input(local, remote)) == {"status": "no_await_review", "wakeAgent": False}
 
 
 @pytest.mark.parametrize("historical_slot", [None, "00:01"])

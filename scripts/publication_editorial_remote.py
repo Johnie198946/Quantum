@@ -1158,7 +1158,7 @@ def review_input(root, remote):
         return encoded({"manifest": str(path), "read_only_inputs": files, "instruction": instruction}).decode() + "\nPUBLICATION_REVIEW_REQUEST\n" + encoded(request).decode() + "\nEND_PUBLICATION_REVIEW_REQUEST"
     if invalid_pending:
         raise ValueError(f"{len(invalid_pending)} invalid pending editorial manifest(s)")
-    return json.dumps({"status": "no_await_review"})
+    return json.dumps({"status": "no_await_review", "wakeAgent": False})
 
 
 def native_attest(db, review, key):
