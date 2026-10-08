@@ -73,3 +73,16 @@ Xcode Organizer 实测上一归档 version=1.0.3(78)，但 Submission Status Bui
 Build 78 的 Models、Services、Networking、Info.plist、entitlements 与本次逐文件 diff 为空。昨天旅行入口、完整地图与路线播放、本次按钮排版全部保留；已有存储、权限和网络合同不变。
 
 发布回滚点：远端 main 发布前 91f0d275；上一归档 /Users/dengzhaoyu/Library/Developer/Xcode/Archives/2026-10-08/AIPlatformApp-1.0.3-78 2.xcarchive 保留，Apple 已上传的 79 不删除。无服务端部署。后续状态以最后的发布回执为准。
+
+### Build 80 发布源已推送，等待签名授权
+
+- status: PUSHED
+- release_source: dcf97e34f40d422d56b321cb5a34a5948dccc286
+- remote/ref/SHA: origin / refs/heads/main / dcf97e34f40d422d56b321cb5a34a5948dccc286；git ls-remote 独立核对一致。
+- archive: /tmp/Quantumn-1.0.3-80-travel.xcarchive；ARCHIVE SUCCEEDED；系统信任服务下 codesign --verify --deep --strict 通过（沙箱首次证书信任校验不可用，提升后通过）。
+- artifact: build80-artifact.json 记录二进制 SHA-256、version=1.0.3、build=80、bundle ID 与源码一致的地图资源哈希。
+- health_check: 归档签名和资源验证通过；服务器不适用。
+- functional_check: Build 78 兼容回归 246 单元 + 2 UI 测试通过；结果 /tmp/QuantumTravel79Compatibility.xcresult；测试后仅将构建号 79 改成 80。
+- upload: 未执行到上传完成。Xcode 自定义 App Store Connect 上传明确显示 1.0.3(80)。自动审批拦截自动管理签名（可能更新 profiles/证书/App IDs），改查手动签名发现 No Eligible Profiles；已向用户请求明确自动签名授权。
+- server_before/server_after: 无后端部署；Apple 本次上传未完成。
+- rollback_point: 91f0d275 main 和上一份 Build 78 归档（Apple submission Build 79）保留。

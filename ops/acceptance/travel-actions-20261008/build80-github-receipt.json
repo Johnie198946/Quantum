@@ -1,0 +1,10 @@
+{
+  "remote": "https://github.com/Johnie198946/Quantum.git",
+  "ref": "refs/heads/main",
+  "before": "91f0d2756fc0eda5bd31bd893de0f46045d389e5",
+  "release_source": "dcf97e34f40d422d56b321cb5a34a5948dccc286",
+  "verified_ls_remote": "dcf97e34f40d422d56b321cb5a34a5948dccc286\trefs/heads/main",
+  "build": 80,
+  "contains_build78": true,
+  "contains_complete_yesterday_branch": true
+}

@@ -1,0 +1,12 @@
+{
+  "archive": "/tmp/Quantumn-1.0.3-80-travel.xcarchive",
+  "version": "1.0.3",
+  "build": "80",
+  "bundle": "com.ailab.AIPlatformApp",
+  "source": "dcf97e34f40d422d56b321cb5a34a5948dccc286",
+  "binary_sha256": "87f48c492b90c25b828530e0b16f98974b672a3a9b8b234e40f22776140725be",
+  "resources": {
+    "journey.html": "91467e41e67678b6e333c5a8eb61ba31057cebb12e8586579230eb8b12a3c19d",
+    "journey.js": "aa4b91bb171f940130aa9e14796961b75bce49e85ee3d1c86a8f44725487bf35"
+  }
+}
