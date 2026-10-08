@@ -1,16 +1,17 @@
 # 旅行确认按钮与旅行攻略制作流程对齐
 
 - task_id: travel-actions-20261008
-- status: PUSHED（最新 Build 81 修正已推送；上传受锁屏与账号访问阻塞）
+- status: DEPLOYED（Build 81 已上传 Apple；PROCESSING，未核验 TestFlight 可安装状态）
 - branch: codex/travel-actions-20261008
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-actions-20261008
 - head/local_commit: fb4653a9342b63e8385f2008d5f06fa7ea946711（release source；后续仅发布证据）
-- remote_sha: origin/main=fb4653a9342b63e8385f2008d5f06fa7ea946711；git ls-remote refs/heads/main 已核对
-- server_before/server_after: 不适用；未部署后端，Apple 上一上传为 1.0.3(80)
+- remote_sha: release source fb4653a9342b63e8385f2008d5f06fa7ea946711 已核对；最终证据 commit SHA 见最终推送输出
+- server_before: 不适用，无后端部署；客户端上一上传 1.0.3(80)
+- server_after: 不适用，无后端部署；Apple 已上传 1.0.3(81)，build ID c8ee7dda-e2b1-4437-ab4f-589d8be211e9，PROCESSING
 - health_check: 247 单元 + 2 UI 回归通过；最终布局与状态文案针对性重跑通过
 - functional_check: 原生创建与澄清截图检查通过；真实后端生成/真机安装未检查
 - rollback_point: 86bb7126e3de36651bc5b503f2c38e82886b3498 及 Build 80 归档
-- remaining_risks: Build 81 尚未上传；CLI Failed to Use Accounts，Mac 锁定；已请求用户解锁继续同一上传。未检查真实后端生成、真实设备或 TestFlight 可安装状态。
+- remaining_risks: 登录与上传阻塞已解决；未检查真实后端生成、真实设备或 TestFlight 可安装状态。OpenCV 缺少 dSYM，不阻止上传。
 
 ## 盘点与规则
 
@@ -128,3 +129,19 @@ ContentDelivery.log 返回 UPLOAD SUCCEEDED with no errors，Apple processingSta
 - rollback_point: 原 main 86bb7126 + /tmp/Quantumn-1.0.3-80-travel.xcarchive；未覆盖旧包，修正可通过 revert fb4653a9 回退（需后续授权，不自动执行）。
 - health_check: 归档/签名通过；后端不适用
 - functional_check: 247 单元/2 UI 回归、最终状态与布局针对性重跑及截图通过；后端真实生成与 TestFlight 安装未执行
+
+## 最终：Build 81 上传成功（22:04，中国时间）
+
+用户手动解锁并恢复 Apple 账号后，Xcode 进入分发配置。关闭 Manage version and build number，保持 1.0.3(81)；复用原团队 Cloud Managed Apple Distribution / iOS Team Store Provisioning Profile: com.ailab.AIPlatformApp（到期 2027/8/30）。上传前核验 application-identifier=AALA948YY5.com.ailab.AIPlatformApp / get-task-allow=false。
+
+- status: DEPLOYED（客户端上传 Apple；非后端部署，非 TestFlight 可安装确认）
+- release_source: fb4653a9342b63e8385f2008d5f06fa7ea946711；后续仅证据提交，无功能变化
+- upload: ContentDelivery.log UPLOAD SUCCEEDED with no errors；version=81；processingErrors=[]；Apple build ID c8ee7dda-e2b1-4437-ab4f-589d8be211e9；PROCESSING
+- UI verification: Xcode Upload completed with warnings；Done 后 Organizer version 1.0.3(81)、Uploaded to Apple、Submission Build Number=81、Today at 10:04 PM
+- warning: opencv2.framework dSYM UUID 8C54483B-FACC-38B0-9BD4-E7F8AF4D10F9 缺失；上传接受，框架崩溃符号化受限
+- server_before/server_after: 后端不适用；Apple 客户端 80 → 81（PROCESSING）
+- health_check: Release archive / codesign 验证通过；服务器不适用
+- functional_check: 247 单元 + 2 UI 回归通过；最后状态文案/布局针对性重跑通过；旅行创建与澄清截图人工检查通过；无真实远端攻略生成或真机安装验收
+- rollback_point: 原 main 86bb7126 与 /tmp/Quantumn-1.0.3-80-travel.xcarchive，旧包未覆盖
+- receipt: ops/acceptance/travel-actions-20261008/build81-upload-receipt.json；更新描述 build81-testflight-notes.txt 已写，未写入 App Store Connect 测试说明栏
+- remaining: 等待 Apple 处理；测试组可见性/安装未独立检查，不宣称已上线或已可安装

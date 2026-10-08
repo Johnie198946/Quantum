@@ -1,0 +1,15 @@
+{
+  "version": "1.0.3",
+  "build": 81,
+  "release_source": "fb4653a9342b63e8385f2008d5f06fa7ea946711",
+  "upload_succeeded": true,
+  "processing_state": "PROCESSING",
+  "apple_build_id": "c8ee7dda-e2b1-4437-ab4f-589d8be211e9",
+  "organizer_status": "Uploaded to Apple",
+  "organizer_build_number": 81,
+  "upload_date_china": "2026-10-08 22:04:54",
+  "warning": "opencv2.framework missing dSYM 8C54483B-FACC-38B0-9BD4-E7F8AF4D10F9; upload accepted",
+  "log_path": "/private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/AIPlatformApp_2026-10-08_21-59-06.924.xcdistributionlogs/ContentDelivery.log",
+  "testflight_installability": "Not independently verified; Apple processing pending",
+  "account_blocker": "Resolved after user restored Apple login; automatic distribution signing reused same existing team/app profile"
+}
