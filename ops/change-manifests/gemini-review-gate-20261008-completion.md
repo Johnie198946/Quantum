@@ -195,3 +195,13 @@ worktree /Users/dengzhaoyu/Projects/publication-quality-20260928
 HEAD 457abcd4284f5ab0910df1d138475894b963a782
 branch refs/heads/feat/serial-narrative-quality-20260928
 ```
+
+## 自然定时触发验收（北京时间）
+2026-10-08 23:20:52，default/fbd1cd1217d7真实定时触发：
+- agent.log：wakeAgent=false, skipping agent run。
+- agent.log：agent returned [SILENT] — skipping delivery。
+- jobs.json：last_run_at=2026-10-08T23:20:52.297457+08:00，last_status=ok，next_run_at=2026-10-08T23:30:00+08:00。
+- 原生输出：/Users/dengzhaoyu/.hermes/cron/output/fbd1cd1217d7/2026-10-08_23-20-52.md，内容明确agent skipped。
+- state.db只读查询该时隙cron session数=0；不创建模型会话。
+- supervision仍未出现自然新tick；不冒充已验证其自然调度恢复。
+功能版本f098218bd7d37a6c5fb986523cab0c50ccb411f9已在部署前核对GitHub main；后续验收文档提交cdd896ef93a331135445c98e17b7a4e28fa2395b也通过git ls-remote核验。后续本节仅为文档变化，不改变运行功能版本。
