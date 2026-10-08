@@ -5,7 +5,7 @@ status: DEPLOYED
 branch: codex/travel-input-cleanup-20261008
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-input-cleanup-20261008
 head/local_commit: 发布源 3b22df1965378725bd9084bfd0b9615054618795；功能提交 15d8ca71
-remote_sha: 发布源 3b22df1965378725bd9084bfd0b9615054618795 和证据提交 99639193a0812f3b05f0d71f8a5f2c73e17e1d32 均经 origin 任务分支 git ls-remote 核验；main 等待明确授权
+remote_sha: 发布源 3b22df1965378725bd9084bfd0b9615054618795 和证据提交 99639193a0812f3b05f0d71f8a5f2c73e17e1d32 均经 origin 任务分支 git ls-remote 核验；origin/main 已快进到 77f5c6faca254a91096c2c7bd9475a8a59676825 并核验
 server_before: 不适用，未授权部署
 server_after: 后端不适用；Apple 已接收 1.0.3(82)，PROCESSING
 health_check: 后端不适用；Release 归档和签名通过，Apple 上传成功
@@ -377,3 +377,16 @@ pytest 命令使用 CLANG_MODULE_CACHE_PATH=/tmp/quantum-travel-clang-cache、SW
 - remaining_risks: Apple 处理、测试组可见性和安装未独立验证；main 未获具体更新授权，仍未更新。用户的原始手机键盘故障未在模拟器直接复现，保留真机验收限制。
 
 本节覆盖前文“锁屏/等待签名授权/上传失败”等历史阶段描述。无后端部署，不宣称已上线。
+
+## main 交付完成
+
+用户在明确说明共享 main 待确认后回复“继续啊”，本任务据此继续此前具体的 origin/main 快进推送。开工复核 status clean；branch codex/travel-input-cleanup-20261008；HEAD 77f5c6faca254a91096c2c7bd9475a8a59676825；remote origin=现有 Quantum；任务 Worktree 与已有工作区清单一致。git fetch origin main 后 main 仍为 3be75d49119912f6be2f456ce3ecb642167d4c84，git merge-base --is-ancestor origin/main HEAD 成功，且 git diff 3b22df19 HEAD -- ios 为空，代码与已上传二进制来源一致。
+
+- git push origin HEAD:refs/heads/main：3be75d49..77f5c6fa，普通快进成功，无 force。
+- git ls-remote origin refs/heads/main refs/heads/codex/travel-input-cleanup-20261008：两个引用均为 77f5c6faca254a91096c2c7bd9475a8a59676825。
+- 本节与回执 main_branch 字段仅更新交付事实；未修改 iOS 代码，不重复打包或上传构建 82。后续证据提交推送后以当前对话最终 SHA 为准。
+- status 保持 DEPLOYED：Apple 已接收 1.0.3(82)，最后已观察状态 PROCESSING；未将上传或 main 推送等同于可安装、真机验收或后端上线。
+- server_before/server_after：后端不适用，Apple 客户端 81 → 82；health_check：签名及 Apple 上传成功；functional_check：323 单元通过/2 skip、4 UI、15合同检查通过；rollback_point：main 更新前 3be75d49 和原 Build 81 保留。
+- remaining_risks：TestFlight 处理、测试组可见性和安装仍未独立验证，OpenCV dSYM 缺失仍影响框架崩溃符号化；main 授权阻塞已解决。
+
+本节覆盖前文“main 待授权/未更新”的历史状态。

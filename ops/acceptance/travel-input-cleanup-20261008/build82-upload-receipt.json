@@ -18,5 +18,7 @@
   "log_path": "/private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/AIPlatformApp_2026-10-08_23-44-11.817.xcdistributionlogs/ContentDelivery.log",
   "testflight_installability": "Not independently verified; Apple processing pending",
   "authorization": "User explicitly authorized automatic signing and TestFlight upload for existing AALA948YY5 / com.ailab.AIPlatformApp",
-  "main_branch": "Not updated; explicit main push authorization remains pending"
+  "main_branch": "origin/main fast-forwarded to 77f5c6faca254a91096c2c7bd9475a8a59676825; verified via git ls-remote; subsequent commits update evidence only",
+  "main_authorization": "User requested continuation after explicit pending origin/main action",
+  "main_verified_at_china": "2026-10-08T23:59:31.549729+08:00"
 }
