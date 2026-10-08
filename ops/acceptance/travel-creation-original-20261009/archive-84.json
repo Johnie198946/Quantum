@@ -1,0 +1,16 @@
+{
+  "source_commit": "071ac7fc5b2f5df2c0b25e2c8b7f564aa6893483",
+  "version": "1.0.3",
+  "build": "84",
+  "bundle_id": "com.ailab.AIPlatformApp",
+  "app_dsym_uuid": "4CC68ADE-0E79-3D55-9480-6EA4EE6AD9ED",
+  "opencv_framework_absent": true,
+  "opencv_inpaint_symbols_present": true,
+  "privacy_resources_present": true,
+  "deep_codesign": "passed",
+  "archive": "/tmp/Quantumn-1.0.3-84-travel-original.xcarchive",
+  "opencv_privacy_sha256": "95d0d3491c823e4faf2b3a8cf44dd2eff734787e5a19c468b0ea75b45302855b",
+  "opencv_privacy_matches_upstream": true,
+  "upload_attempt": "CLI failed: Failed to Use Accounts; Xcode UI blocked by locked Mac",
+  "apple_build_id": null
+}

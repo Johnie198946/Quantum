@@ -1,7 +1,7 @@
 # Travel creation original design — completion manifest
 
 task_id: travel-creation-original-20261009
-status: TESTED
+status: PUSHED
 branch: codex/travel-creation-original-20261009
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-creation-original-20261009
 start_head: 6808f3230aa3859b0e50cb88f166543a1a84b906
@@ -114,13 +114,14 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 - Ruff touched Python files and git diff --check: passed (will repeat before commit).
 
 ## Delivery evidence
-commit_sha: not yet committed
-remote_ref_sha: not yet pushed; explicitly authorized
+commit_sha: 071ac7fc5b2f5df2c0b25e2c8b7f564aa6893483
+remote_ref_sha: origin refs/heads/main and refs/heads/codex/travel-creation-original-20261009 both 071ac7fc5b2f5df2c0b25e2c8b7f564aa6893483; git ls-remote verified 2026-10-09
 server_before: unknown; historical root@120.24.248.58 read-only SSH returned Permission denied (publickey)
 server_after: not deployed
-health_check: production not executed due SSH authentication
+health_check: production BEFORE deployment GET https://120.24.248.58/health => {"status":"ok","version":"0.8.0"}; after-deployment health not executed due SSH authentication
 functional_check: local tests as above; production and real-device acceptance pending
 rollback_point: source base 6808f3230aa3859b0e50cb88f166543a1a84b906; current server release unknown, must read before deployment
-TestFlight: build 84 not yet uploaded; Mac locked, manual unlock requested. User had installed build 82.
-remaining_risks: production access and Mac unlock pending; historical workflows retain compatibility clarification mode; no full chat transcript inheritance; final real-device installation/keyboard/real generated plan not yet verified.
+TestFlight: Release 1.0.3(84) archived successfully at `/tmp/Quantumn-1.0.3-84-travel-original.xcarchive` from functional commit 071ac7fc. App/dSYM UUID 4CC68ADE-0E79-3D55-9480-6EA4EE6AD9ED match, deep strict codesign passes; OpenCV dynamic framework absent, inpaint symbols in app dSYM, privacy resource SHA matches upstream. Receipt: `ops/acceptance/travel-creation-original-20261009/archive-84.json`.
+CLI upload with existing ExportOptions.plist and authorized auto-signing failed with `exportArchive Failed to Use Accounts` (exit 70). Xcode UI still reports Mac locked; manual unlock requested. Apple build ID unknown, no upload claimed. User had installed build 82.
+remaining_risks: production SSH access and Xcode account/upload access via Mac unlock pending; historical workflows retain compatibility clarification mode; no full chat transcript inheritance; final real-device installation/keyboard/real generated plan not yet verified.
 rollback: restore previous immutable server release only after recording its path/SHA; client prior build 82 remains available, no destructive note migration performed.
