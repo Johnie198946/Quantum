@@ -1,7 +1,7 @@
 # 旅行确认按钮与任务流入口诊断
 
 - task_id: travel-actions-20261008
-- status: COMMITTED（本地完整合并；提交 SHA 见本分支最新 merge commit）
+- status: DEPLOYED（Build 80 已上传 Apple；处理与测试组可安装状态待核验）
 - branch: codex/travel-actions-20261008
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-actions-20261008
 - head/local_commit: 本分支最新 merge commit；父提交 f66bffebff666cd37de5d398446c05dc458bf3ea + 0ab83f67bc89501f91d989444414d21796ca95a3
@@ -86,3 +86,22 @@ Build 78 的 Models、Services、Networking、Info.plist、entitlements 与本�
 - upload: 未执行到上传完成。Xcode 自定义 App Store Connect 上传明确显示 1.0.3(80)。自动审批拦截自动管理签名（可能更新 profiles/证书/App IDs），改查手动签名发现 No Eligible Profiles；已向用户请求明确自动签名授权。
 - server_before/server_after: 无后端部署；Apple 本次上传未完成。
 - rollback_point: 91f0d275 main 和上一份 Build 78 归档（Apple submission Build 79）保留。
+
+## 最终：Build 80 上传成功（2026-10-08 20:51，中国时间）
+
+用户明确回复“授权”，允许本次现有团队/应用的自动分发签名。Xcode 复用 Cloud Managed Apple Distribution 和 iOS Team Store Provisioning Profile: com.ailab.AIPlatformApp（摘要到期 2027/8/30），上传前核验 version 1.0.3(80)、application-identifier=AALA948YY5.com.ailab.AIPlatformApp、get-task-allow=false。
+
+ContentDelivery.log 返回 UPLOAD SUCCEEDED with no errors，Apple processingState=PROCESSING；关闭完成窗口后 Organizer 双重核对 version 1.0.3(80)、Uploaded to Apple、Submission Build Number=80。此前自动审批阻塞已在用户授权后解决。
+
+- status: DEPLOYED（客户端上传 Apple，不代表服务器部署或 TestFlight 已可安装）
+- release_source: dcf97e34f40d422d56b321cb5a34a5948dccc286；后续提交仅含发布证据
+- remote: origin / refs/heads/main；发布源已通过 git ls-remote 核验；后置回执 SHA 由最终推送输出核验
+- server_before: 不适用，无后端部署；客户端基线归档 78，之前 Apple 提交为 79
+- server_after: 不适用，无后端部署；本次 Apple 上传 build=80、PROCESSING
+- health_check: 签名/资源哈希/Bundle ID 核验通过，Apple 接收成功
+- functional_check: 246 单元 + 2 UI 测试通过；手机安装和 TestFlight 测试组状态尚未验证
+- rollback_point: 发布前 main 91f0d275及原 Build 78 归档、已上传 Apple 的 79 全部保留；未删除旧构建
+- remaining_risks: Apple 仍需处理；OpenCV dSYM 缺失仅影响第三方框架崩溃符号化；未重新运行真实云端端到端任务或安装本版真机
+- receipt: ops/acceptance/travel-actions-20261008/build80-upload-receipt.json
+
+本节覆盖前文“等待授权/未上传”等历史阶段描述。未声称 App Store 正式发布或生产服务器上线。
