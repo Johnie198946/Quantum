@@ -1,16 +1,16 @@
 # 旅行确认按钮与旅行攻略制作流程对齐
 
 - task_id: travel-actions-20261008
-- status: TESTED（最新 Build 81 修正；Build 80 的上传是历史状态）
+- status: PUSHED（最新 Build 81 修正已推送；上传受锁屏与账号访问阻塞）
 - branch: codex/travel-actions-20261008
 - worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-actions-20261008
-- head/local_commit: 86bb7126e3de36651bc5b503f2c38e82886b3498，最新修正待提交
-- remote_sha: origin/main=86bb7126e3de36651bc5b503f2c38e82886b3498
+- head/local_commit: fb4653a9342b63e8385f2008d5f06fa7ea946711（release source；后续仅发布证据）
+- remote_sha: origin/main=fb4653a9342b63e8385f2008d5f06fa7ea946711；git ls-remote refs/heads/main 已核对
 - server_before/server_after: 不适用；未部署后端，Apple 上一上传为 1.0.3(80)
 - health_check: 247 单元 + 2 UI 回归通过；最终布局与状态文案针对性重跑通过
 - functional_check: 原生创建与澄清截图检查通过；真实后端生成/真机安装未检查
 - rollback_point: 86bb7126e3de36651bc5b503f2c38e82886b3498 及 Build 80 归档
-- remaining_risks: Build 81 尚未上传；Mac 锁定，Xcode UI 暂不可用
+- remaining_risks: Build 81 尚未上传；CLI Failed to Use Accounts，Mac 锁定；已请求用户解锁继续同一上传。未检查真实后端生成、真实设备或 TestFlight 可安装状态。
 
 ## 盘点与规则
 
@@ -114,3 +114,17 @@ ContentDelivery.log 返回 UPLOAD SUCCEEDED with no errors，Apple processingSta
 续做前 status clean，branch codex/travel-actions-20261008，HEAD 86bb7126，remote origin=现有 Quantum GitHub，原 task worktree 不变。2026-10-08 21:53 fetch origin main 无新提交，继续保留 Build 78 基线及昨天旅行分支的全部合并。
 
 测试证据：ops/acceptance/travel-actions-20261008/build81-tests.json；原生画面 travel-workflow-create.png / travel-workflow-clarification.png。归档与上传结果追加在下一节。更新描述已保存 build81-testflight-notes.txt。
+
+## Build 81 发布检查点（21:57）
+
+- status: PUSHED
+- release_source: fb4653a9342b63e8385f2008d5f06fa7ea946711
+- origin refs/heads/main: 同上，git push 成功后 git ls-remote 核验一致
+- archive: /tmp/Quantumn-1.0.3-81-travel.xcarchive；ARCHIVE SUCCEEDED；codesign --verify --deep --strict 通过
+- artifact: build81-artifact.json 记录版本、构建号、应用 ID、二进制 SHA-256
+- server_before/server_after: 无后端部署；Apple 上一上传 80，本次 81 未上传
+- upload attempt: xcodebuild -exportArchive + ios/ExportOptions.plist + -allowProvisioningUpdates 返回 Failed to Use Accounts（exit 70）；/tmp/quantum-travel81-upload.log
+- UI blocker: CUA 获取 Xcode 窗口返回 Mac locked and automatic unlock could not unlock it。已请求用户手动解锁，无新权限请求或自动审批拒绝。
+- rollback_point: 原 main 86bb7126 + /tmp/Quantumn-1.0.3-80-travel.xcarchive；未覆盖旧包，修正可通过 revert fb4653a9 回退（需后续授权，不自动执行）。
+- health_check: 归档/签名通过；后端不适用
+- functional_check: 247 单元/2 UI 回归、最终状态与布局针对性重跑及截图通过；后端真实生成与 TestFlight 安装未执行

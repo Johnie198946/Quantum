@@ -1,0 +1,9 @@
+{
+  "archive": "/tmp/Quantumn-1.0.3-81-travel.xcarchive",
+  "version": "1.0.3",
+  "build": "81",
+  "bundle": "com.ailab.AIPlatformApp",
+  "release_source": "fb4653a9342b63e8385f2008d5f06fa7ea946711",
+  "binary_sha256": "df33eb59efc05ea1a90de6bc90d92937510127a97156b1b429c99c0b2a9dc0c3",
+  "codesign_verify": "passed"
+}
