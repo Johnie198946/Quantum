@@ -3092,6 +3092,12 @@ struct TravelPlanDocument: Decodable, Equatable {
         if !days.isEmpty { return days.filter(\.selected).map(\.id) }
         return actions.map(\.dayId).filter { !$0.contains("-alt") }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
     }
+    var currentDayId: String? {
+        let selected = actions.filter { dayIds.contains($0.dayId) }
+        return selected.first(where: { $0.status == "in_progress" })?.dayId
+            ?? selected.first(where: { ["planned", "delayed"].contains($0.status) })?.dayId
+            ?? dayIds.last
+    }
     var alternativeDayIds: [String] {
         days.isEmpty ? actions.map(\.dayId).filter { $0.contains("-alt") }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } } : days.filter { !$0.selected }.map(\.id)
     }
@@ -3617,7 +3623,7 @@ struct TravelPlanResultView: View {
 
     private var itinerary: some View {
         let days = plan.dayIds
-        let day = selectedDay ?? days.first
+        let day = selectedDay ?? plan.currentDayId ?? days.first
         let actions = plan.actions.filter { $0.dayId == day }
         let dayStops = plan.routeStops(for: actions)
         return VStack(alignment: .leading, spacing: 20) {
@@ -3644,6 +3650,14 @@ struct TravelPlanResultView: View {
                         }
                     }
                 }
+            }
+            if let next = actions.first(where: { $0.status == "in_progress" }) ?? actions.first(where: { ["planned", "delayed"].contains($0.status) }) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(next.status == "in_progress" ? "正在这里" : "下一站", systemImage: next.symbol)
+                        .font(.caption).foregroundStyle(AppTheme.Colors.primary)
+                    Text(next.title).font(.title2.weight(.semibold))
+                    Text(next.timeLabel).font(.subheadline).foregroundStyle(.secondary)
+                }.padding(20).frame(maxWidth: .infinity, alignment: .leading).quantumCard()
             }
             TravelRouteMap(stops: dayStops, height: 200)
             TravelDayRouteStrip(actions: actions)

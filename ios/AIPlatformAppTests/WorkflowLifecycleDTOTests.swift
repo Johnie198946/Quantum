@@ -7457,6 +7457,11 @@ extension WorkflowLifecycleDTOTests {
 }
 
 final class TravelNotePresentationTests: XCTestCase {
+    func testGuideResumesCurrentDayAndSkipsCompletedOrAlternativeActions() throws {
+        let content = #"{"stops":[],"actions":[{"id":"done","day_id":"day-1","kind":"rest","title":"已完成","status":"completed"},{"id":"alt","day_id":"day-alt","kind":"experience","title":"备选","status":"planned"},{"id":"next","day_id":"day-2","kind":"experience","title":"进行中","status":"in_progress"}]}"#
+        XCTAssertEqual(try XCTUnwrap(TravelPlanDocument.decode(content)).currentDayId, "day-2")
+    }
+
     func testTravelQualityGateSurvivesCanvasRoundTrip() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
