@@ -15,6 +15,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -38,14 +40,20 @@ class DurableChatRunStore:
         self._lock = threading.RLock()
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=FULL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=30000")
+            # SQLite's transaction context does not close the connection.
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _initialize(self) -> None:
         lock_path = self.path.with_name(f"{self.path.name}.init.lock")
@@ -155,6 +163,9 @@ class DurableChatRunStore:
                     "ADD COLUMN multi_select INTEGER NOT NULL DEFAULT 0"
                 )
             conn.execute("COMMIT")
+            conn.execute("""CREATE INDEX IF NOT EXISTS ix_chat_runs_claimable
+                ON chat_runs(status,created_at)
+                WHERE status IN ('queued','stalled') AND attempt < 2""")
 
     @staticmethod
     def _complete_markdown_blocks(text: str, *, terminal: bool) -> tuple[list[tuple[str, str]], str]:
