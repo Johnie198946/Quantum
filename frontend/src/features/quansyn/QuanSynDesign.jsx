@@ -99,6 +99,9 @@ function LoginPage({ error, report }) {
   const { loginWithPhone } = useAuth();
   const [busy, setBusy] = useState(false);
   const [count, setCount] = useState(0);
+  const [connectPhase, setConnectPhase] = useState("idle");
+  const connectRun = useRef(0);
+  useEffect(() => () => { connectRun.current += 1; }, []);
   useEffect(() => {
     if (!count) return;
     const timer = setTimeout(() => setCount(count - 1), 1e3);
@@ -109,17 +112,36 @@ function LoginPage({ error, report }) {
     report("");
     try {
       await fn();
+      return true;
     } catch (e) {
       report(e.message);
+      return false;
     } finally {
       setBusy(false);
     }
   }
   function sendCode() {
-    action(async () => {
+    return action(async () => {
       await platformApi.sendPhoneCode({ phone: account });
       setCount(60);
     });
+  }
+  async function connectQuantum() {
+    if (connectPhase !== "idle" || busy || count) return;
+    const run = ++connectRun.current;
+    const started = Date.now();
+    setConnectPhase("loading");
+    const success = await sendCode();
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1200 - (Date.now() - started))));
+    if (run !== connectRun.current) return;
+    setConnectPhase(success ? "success" : "error");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (run !== connectRun.current) return;
+    setConnectPhase("restoring");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (run !== connectRun.current) return;
+    setConnectPhase("idle");
+    if (success) document.getElementById("password")?.focus();
   }
   const [account, setAccount] = useState("18576600894");
   const [password, setPassword] = useState("");
@@ -228,15 +250,20 @@ function LoginPage({ error, report }) {
   />
 
           {error && <p className="qs-error" role="alert">{error}</p>}
-          <button disabled={busy} className="primary-button" type="submit">
+          <button disabled={busy || connectPhase !== "idle"} className="primary-button" type="submit">
             进入 QuanSyn <Icon name="arrow" size={19} />
           </button>
 
           <div className="divider"><span>或</span></div>
 
-          <button className="secondary-button" disabled={busy || count > 0} onClick={sendCode} type="button">
-            <Icon name="phone" size={18} /> {count ? `${count}s 后重新获取` : "使用 Quantum 手机验证码登录"}
-          </button>
+          <div className="qs-login-connect-slot">
+            <button className={`qs-login-connect is-${connectPhase}`} disabled={busy || count > 0 || connectPhase !== "idle"} onClick={connectQuantum} type="button" aria-label={connectPhase === "loading" ? "正在连接 Quantum" : connectPhase === "success" ? "验证码已发送" : connectPhase === "error" ? "连接失败" : count ? `${count}秒后可重新获取验证码` : "使用 Quantum 登录"} aria-busy={connectPhase === "loading"}>
+              <span className="qs-connect-idle"><Icon name="phone" size={28} /><span>Quantum 登录</span></span>
+              <svg className="qs-connect-ring" aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" /></svg>
+              <svg className="qs-connect-check" aria-hidden="true" viewBox="0 0 32 32"><path pathLength="1" d="m9 16 5 5 9-10" /></svg>
+              <span className="qs-connect-error" aria-hidden="true">×</span>
+            </button>
+          </div>
           <p className="signup-copy">
             首次使用？ <span>沿用 Quantum 手机账号</span>
           </p>
