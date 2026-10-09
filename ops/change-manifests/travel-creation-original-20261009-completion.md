@@ -198,3 +198,9 @@ Latest verified receipt commit: 3f98a5e19ef600b8782dbe1113613d5cc028c886, `git l
 - USB `/tmp/KagoshimaUSBRefreshedGrant.xcresult` did not complete real business. Server-only verification confirmed capability_valid; the original two 20-second search attempts still timed out. Single exact authenticated read returned real HTTP200 in 40.706 seconds. Isolated existing Gateway handler returned 10 authorized documents with retrieval_status=insufficient (not a claim of verified Kagoshima travel facts); no documents or grant exposed in diagnostics.
 - Minimal follow-up: only `travel_research` uses the existing gateway timeout_seconds argument with 90-second budget; other nodes remain at 20 seconds. Two-attempt limit and all tenant/model-disclosure checks preserved; no empty success/fake itinerary.
 - 114 relevant travel/Bridge/workflow API tests passed, including unchanged selected scopes, network authority, and one-time timeout retry with 90-second travel budget. git diff --check passed. Follow-up budget adjustment TESTED, deployment pending.
+
+
+## Retry projection catch-up — 2026-10-09 21:57 CST
+- Real evidence: Bridge contained retry_queued seq15, run_started seq16, node_started seq17, run_failed seq18 (gateway timeout), while API execution remained failed at bridge_event_seq14 with older 403 error. sync_execution stopped at historical run_failed and never consumed subsequent retry events in the same batch.
+- Minimal shared executor fix: ordinary run_failed does not truncate a contiguous batch; retry_queued/run_started clear old terminal error/time. Projection-created artifact validation failures still stop the batch and all dispatch authorization gates remain unchanged.
+- 101 workflow API / event projection / scheduler / travel tests passed, including contiguous historical failure -> retry -> running, old error cleared, cursor reaches latest seq, and tampered plan fails closed. No new service/model/client code.

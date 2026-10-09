@@ -1032,11 +1032,20 @@ class TestWorkflowsAPI(unittest.TestCase):
             return {"status": "running", "hermes_session_id": "hard-session"}
 
         async def fake_snapshot(execution):
-            return {"status": "running", "events": []}
+            return {"status": "running", "events": [
+                {"seq": 1, "event_id": "old-failure", "type": "run_failed", "error": "old timeout"},
+                {"seq": 2, "event_id": "retry", "type": "retry_queued"},
+                {"seq": 3, "event_id": "resumed", "type": "run_started"},
+            ]}
 
         async def sync():
             async with SessionLocal() as db:
                 await executor.sync_execution(execution_id, db)
+                current = await db.get(WorkflowExecution, execution_id)
+                self.assertEqual(current.status, "running")
+                self.assertEqual(current.bridge_event_seq, 3)
+                self.assertIsNone(current.error_message)
+                self.assertIsNone(current.finished_at)
 
         with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"AI_LAB_HOME": home}):
             with patch.object(executor, "dispatch", fake_dispatch), patch.object(
