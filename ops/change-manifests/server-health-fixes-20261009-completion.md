@@ -49,3 +49,7 @@ remaining_risks: 没有长时间峰值压测；cloud-init脚本原始来源仍�
 ## 最终并行发布保护
 
 补充部署前检测到QuanSyn发布持有同一全局锁，安全退出且未修改生产。发布完成后保留并合并de220f2bdf52d326a003ddcdf740a6ba07eba8ec。原系统Python的httpx/TestClient版本不兼容造成该任务10项fixture初始化错误；使用已建立的quansyn-venv与其兼容依赖后，聊天、账务、QuanSyn合并回归62项PASS，代码未为环境错误改动。最终部署以de220f2b为CAS与完整运行文件哈希基线，仅增量替换inference_policy.py，保留新前端与其它服务镜像。
+
+## 发布期间发现并修复ACL竞态
+
+96901197尝试在运行数据ACL阶段因SQLite WAL/SHM消失而退出，生产仍为de220f2b且全部服务healthy，镜像标签/attestation恢复。configure_shared_data_acl先设置目录访问/继承ACL，再以不跟随链接的单文件扫描设置已有文件ACL；只有失败后该文件确已不存在才继续，其它失败保持阻断。没有停止数据库或忽略权限错误。部署契约/CAS/继承锁回归125项PASS、1项Mac缺Linux /proc跳过；Ruff、bash -n、diff检查PASS。
