@@ -4382,7 +4382,13 @@ private struct WorkflowArtifactPreview: View {
                     errorMessage = "对话会话已切换，无法读取此成果。"
                     return
                 }
-                if isTravelArtifact { restoreCachedTravel() }
+                if isTravelArtifact {
+                    restoreCachedTravel()
+                    savedTravelNoteID = KnowledgeNoteStore.shared.notes.first {
+                        NoteIllustrationPlacement.travelObject($0.body)?["workflow_execution_id"] as? String == executionId
+                    }?.id
+                    savedTravelNote = savedTravelNoteID != nil
+                }
                 do {
                     if isTravelArtifact && allowsDownload {
                         try restorePendingTravel()
