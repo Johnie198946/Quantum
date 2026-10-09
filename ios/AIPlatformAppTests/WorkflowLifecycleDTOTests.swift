@@ -7488,6 +7488,8 @@ final class TravelNotePresentationTests: XCTestCase {
         let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
         XCTAssertEqual(plan.dayIds, ["day-1"])
         XCTAssertEqual(plan.alternativeDayIds, ["day-alt"])
+        XCTAssertTrue(plan.shareSummary.contains("DAY 1 · 市区"))
+        XCTAssertFalse(plan.shareSummary.contains("离岛备选"))
         XCTAssertTrue(plan.readinessTitle.contains("草稿"))
         XCTAssertEqual(plan.days.first?.journal, "市区规划")
         XCTAssertEqual(TravelNotePresentation.title("摄影与旅行笔记", content: content), "鹿儿岛 · 旅行手记")

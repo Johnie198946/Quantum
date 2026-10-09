@@ -2730,6 +2730,7 @@ struct TravelNoteReadingView: View {
     @State private var showingGlobe = false
     @State private var latestContent: String?
     @State private var syncError: String?
+    @State private var copiedSummary = false
     private var object: [String: Any] { NoteIllustrationPlacement.travelObject(content) ?? [:] }
     private var plan: TravelPlanDocument? { TravelPlanDocument.decode(content) }
     private var days: [String] { plan?.dayIds ?? [] }
@@ -2778,6 +2779,19 @@ struct TravelNoteReadingView: View {
                                 Text("金额为分项参考，往返机票与备用金请另行核对；不是已预订总价。").font(.caption).foregroundStyle(.secondary)
                                 TravelPracticalGuideView(plan: plan, content: content)
                             }
+                            Button("旅行小世界", systemImage: "globe") { showingGlobe = true }.frame(minHeight: 44)
+                            HStack {
+                                Button("打印 / PDF", systemImage: "printer") {
+                                    let controller = UIPrintInteractionController.shared
+                                    controller.printFormatter = UISimpleTextPrintFormatter(text: plan?.shareSummary ?? title)
+                                    controller.present(animated: true, completionHandler: nil)
+                                }.frame(minHeight: 44)
+                                Spacer()
+                                Button(copiedSummary ? "已复制摘要" : "复制分享摘要", systemImage: "doc.on.doc") {
+                                    UIPasteboard.general.string = plan?.shareSummary ?? title
+                                    copiedSummary = true
+                                }.frame(minHeight: 44)
+                            }.font(.subheadline)
                             Button("继续写旅行日记") { page = .day }.buttonStyle(QuantumPrimaryButtonStyle())
                         }.padding(20)
                     } else {
@@ -3091,6 +3105,18 @@ struct TravelPlanDocument: Decodable, Equatable {
     var dayIds: [String] {
         if !days.isEmpty { return days.filter(\.selected).map(\.id) }
         return actions.map(\.dayId).filter { !$0.contains("-alt") }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+    }
+    var shareSummary: String {
+        var lines = [title ?? destination ?? "旅行手记", dateRange ?? "日期待决定", readinessTitle]
+        for (index, id) in dayIds.enumerated() {
+            lines.append("\nDAY \(index + 1) · " + (days.first { $0.id == id }?.title ?? "每日安排"))
+            for action in actions where action.dayId == id {
+                lines.append(action.timeLabel + " " + action.title)
+                if let details = action.details, !details.isEmpty { lines.append(details) }
+            }
+        }
+        for item in practicalGuidance { lines += ["\n" + item.title, item.details, "下一步：" + item.nextStep] }
+        return lines.joined(separator: "\n")
     }
     var currentDayId: String? {
         let selected = actions.filter { dayIds.contains($0.dayId) }
