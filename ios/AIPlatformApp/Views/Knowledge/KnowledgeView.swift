@@ -2915,7 +2915,7 @@ struct TravelNoteReadingView: View {
             if TravelNotePresentation.includes("include_photos", in: content) {
                 let dayIds = Set(actions.map(\.id))
                 let stopAnchors = Set(actions.compactMap(\.placeId).compactMap { id in
-                    plan?.stops.firstIndex { $0.sourceID == id }.map { "stop:\($0 + 1)" }
+                    plan?.stops.firstIndex { $0.sourceID == id }.map { "stop:\($0)" }
                 })
                 let photos = (object["illustrations"] as? [[String: String]] ?? []).filter {
                     $0["day_id"] == (day ?? days.first) || $0["anchor"] == "day:" + (day ?? days.first ?? "") ||
@@ -2940,7 +2940,7 @@ struct TravelNoteReadingView: View {
                 }
                 ForEach(actions.compactMap(\.placeId).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }, id: \.self) { id in
                     if let index = plan?.stops.firstIndex(where: { $0.sourceID == id }) {
-                        TravelPlanResultView(title: title, content: content, baseURL: baseURL).travelImages("stop:\(index + 1)", includeLocal: false)
+                        TravelPlanResultView(title: title, content: content, baseURL: baseURL).travelImages("stop:\(index)", includeLocal: false)
                     }
                 }
                 if photos.isEmpty, let onIllustrate { Button("为这段旅行配图", systemImage: "photo") { onIllustrate("overview") }.buttonStyle(.bordered) }
@@ -3618,7 +3618,14 @@ struct TravelPlanResultView: View {
     func travelImages(_ anchor: String?, includeLocal: Bool = true) -> some View {
         let document = NoteIllustrationPlacement.travelObject(content) ?? [:]
         let hasLocalImage = (document["illustrations"] as? [[String: String]] ?? []).contains { anchor == nil || $0["anchor"] == anchor }
-        let references = (document["photo_references"] as? [[String: Any]] ?? []).filter { anchor == nil || ($0["anchor"] as? String ?? "overview") == anchor }
+        let references = (document["photo_references"] as? [[String: Any]] ?? []).filter { reference in
+            guard let anchor else { return true }
+            if anchor.hasPrefix("stop:"), let place = reference["place_id"] as? String,
+               let index = plan.stops.firstIndex(where: { $0.sourceID == place }) {
+                return anchor == "stop:\(index)"
+            }
+            return (reference["anchor"] as? String ?? "overview") == anchor
+        }
         let sources = document["sources"] as? [[String: Any]] ?? []
         ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
             VStack(alignment: .leading, spacing: 8) {
@@ -4274,7 +4281,7 @@ private struct TravelSavePreviewHost: View {
                         let path = "photo-\(index).png"
                         if let data = UIImage(named: name)?.pngData() {
                             try data.write(to: photoDirectory.appendingPathComponent(path))
-                            photos.append(["path": path, "anchor": "day:day-1", "alt": "原稿装饰照片"])
+                            photos.append(["path": path, "anchor": index == 0 ? "stop:0" : "day:day-1", "alt": index == 0 ? "原稿首个地点照片" : "原稿装饰照片"])
                         }
                     }
                     document["illustrations"] = photos

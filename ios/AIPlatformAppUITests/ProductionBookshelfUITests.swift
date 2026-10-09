@@ -83,8 +83,9 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.buttons["DAY 2"].tap()
         XCTAssertTrue(app.staticTexts["第二天围绕车站探索，减少换乘。"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].exists)
+        XCTAssertFalse(app.staticTexts["原稿首个地点照片"].firstMatch.exists)
         app.buttons["DAY 1"].tap()
-        XCTAssertTrue(app.staticTexts["原稿装饰照片"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["原稿首个地点照片"].firstMatch.waitForExistence(timeout: 10), "首个地点 stop:0 的配图必须归入当天拼贴")
         let titleFrame = app.staticTexts["泡汤与休息"].firstMatch.frame
         XCTAssertGreaterThanOrEqual(titleFrame.minX, app.frame.minX)
         XCTAssertLessThanOrEqual(titleFrame.maxX, app.frame.maxX)

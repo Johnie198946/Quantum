@@ -112,6 +112,7 @@ def test_travel_uses_existing_dag_and_explicit_review_gate():
     instruction = plan["nodes"][0]["parameters"]["instruction"]
     assert "云服务器的 Hermes 浏览器" in instruction
     assert "travelmode=transit" in instruction
+    assert "stop:从0开始的stops数组下标" in plan["nodes"][1]["parameters"]["instruction"]
     assert len(plan["edges"]) == 2
     assert plan["nodes"][0]["parameters"]["max_tokens"] == 24000
     assert all(node["parameters"]["max_tokens"] == 14000 for node in plan["nodes"][1:])
