@@ -12,6 +12,40 @@ spec.loader.exec_module(module)
 DurableChatRunStore = module.DurableChatRunStore
 
 
+@pytest.mark.parametrize("fail", [False, True])
+def test_connection_closes_and_preserves_transaction_semantics(tmp_path, fail):
+    import sqlite3
+
+    store = DurableChatRunStore(tmp_path / "runs.sqlite3")
+    with store._connect() as conn:
+        conn.execute("CREATE TABLE connection_check (value INTEGER)")
+    try:
+        with store._connect() as conn:
+            conn.execute("BEGIN")
+            conn.execute("INSERT INTO connection_check VALUES (1)")
+            if fail:
+                raise ValueError("rollback")
+    except ValueError:
+        assert fail
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
+    with store._connect() as check:
+        assert check.execute("SELECT COUNT(*) FROM connection_check").fetchone()[0] == int(not fail)
+
+
+def test_empty_queue_uses_claimable_index(tmp_path):
+    store = DurableChatRunStore(tmp_path / "runs.sqlite3")
+    with store._connect() as conn:
+        plan = conn.execute("""EXPLAIN QUERY PLAN
+            SELECT * FROM chat_runs WHERE status IN ('queued','stalled')
+            AND attempt < 2 AND (? IS NULL OR created_at >= ?)
+            ORDER BY CASE status WHEN 'stalled' THEN 0 ELSE 1 END, created_at""",
+            (None, None),
+        ).fetchall()
+    assert any("ix_chat_runs_claimable" in row[3] for row in plan)
+    assert not any("SCAN chat_runs" in row[3] for row in plan)
+
+
 def test_worker_heartbeat_expires_fail_closed(tmp_path, monkeypatch):
     now = 100.0
     monkeypatch.setattr(module.time, "time", lambda: now)
