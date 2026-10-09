@@ -121,6 +121,8 @@ server {\n\
     add_header X-Frame-Options "DENY" always;\n\
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;\n\
     add_header Permissions-Policy "camera=(), microphone=(self), geolocation=()" always;\n\
+    location = /quansyn { root /usr/share/nginx/html; try_files /index.html =404; }\n\
+    location = /quansyn/ { root /usr/share/nginx/html; try_files /index.html =404; }\n\
     location / {\n\
         root   /usr/share/nginx/html;\n\
         index  index.html index.htm;\n\
