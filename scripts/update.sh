@@ -893,6 +893,16 @@ verify_hermes_bridge_unit() {
   fi
 }
 
+install_resource_budget() {
+  install -m 0644 "$RELEASE_DIR/ops/systemd/quantum-runtime.slice" /etc/systemd/system/quantum-runtime.slice
+  install -d -m 0755 /etc/systemd/system/system-authen.slice.d
+  install -m 0644 "$RELEASE_DIR/ops/systemd/system-authen.slice.d/60-memory-budget.conf" \
+    /etc/systemd/system/system-authen.slice.d/60-memory-budget.conf
+  systemctl daemon-reload
+  systemctl start quantum-runtime.slice
+  systemctl set-property system-authen.slice MemoryHigh=512M MemoryMax=640M MemorySwapMax=256M
+}
+
 install_hermes_units() {
   ensure_hermes_account
   configure_hermes_bridge_network
@@ -1327,6 +1337,11 @@ restore_managed_images() {
 
 managed_unit_paths() {
   printf '%s\n' \
+    quantum-runtime.slice:/etc/systemd/system/quantum-runtime.slice \
+    authen.memory:/etc/systemd/system/system-authen.slice.d/60-memory-budget.conf \
+    authen.memory-high:/etc/systemd/system.control/system-authen.slice.d/50-MemoryHigh.conf \
+    authen.memory-max:/etc/systemd/system.control/system-authen.slice.d/50-MemoryMax.conf \
+    authen.swap-max:/etc/systemd/system.control/system-authen.slice.d/50-MemorySwapMax.conf \
     hermes-bridge.service:/etc/systemd/system/hermes-bridge.service \
     hermes-chat-worker.service:/etc/systemd/system/hermes-chat-worker.service \
     quantum-tenant-coder.service:/etc/systemd/system/quantum-tenant-coder.service \
@@ -1351,6 +1366,7 @@ snapshot_managed_units() {
       : > "$UNIT_BACKUP_DIR/$key.absent"
     fi
   done < <(managed_unit_paths)
+  systemctl show system-authen.slice -p MemoryHigh -p MemoryMax -p MemorySwapMax > "$UNIT_BACKUP_DIR/authen-memory-before.txt"
   systemctl is-enabled --quiet ai-lab-certbot-renew.timer && CERT_TIMER_WAS_ENABLED=1 || true
   systemctl is-enabled --quiet hermes-bridge.service && BRIDGE_WAS_ENABLED=1 || true
   systemctl is-enabled --quiet hermes-chat-worker.service && CHAT_WORKER_WAS_ENABLED=1 || true
@@ -1376,6 +1392,10 @@ restore_managed_units() {
     fi
   done < <(managed_unit_paths)
   systemctl daemon-reload || return 1
+  # Restore the live aggregate even when the previous slice had no limits.
+  while IFS='=' read -r property value; do
+    systemctl set-property system-authen.slice "$property=$value" || return 1
+  done < "$UNIT_BACKUP_DIR/authen-memory-before.txt"
   if [ "$CERT_TIMER_WAS_ENABLED" -eq 1 ]; then
     systemctl enable ai-lab-certbot-renew.timer || return 1
   fi
@@ -1594,6 +1614,10 @@ if [ -n "${AI_LAB_EXPECTED_CURRENT_SHA:-}" ]; then
 fi
 # End active-release CAS: no Docker/data/release mutation precedes this check.
 cd "$CURRENT_DIR"
+[ "$(df -Pk "$RELEASE_ROOT" | awk 'NR==2 {print $4}')" -ge 5242880 ] || {
+  echo "ERROR: less than 5 GiB available; retire reviewed release artifacts before deploying" >&2
+  exit 1
+}
 docker compose -p "$COMPOSE_PROJECT" config >/dev/null
 preflight_hermes_bridge_network
 if [ ! -d "$RELEASE_ROOT" ] || [ -L "$RELEASE_ROOT" ]; then
@@ -1687,6 +1711,7 @@ configure_shared_data_acl "$DATA_TARGET" "$API_RUNTIME_UID" "$AI_LAB_RUNTIME_UID
 snapshot_managed_units
 snapshot_managed_images
 RUNTIME_CHANGED=1
+install_resource_budget
 activate_bridge_worker_venv
 activate_certbot_venv
 AI_LAB_DEPLOY_LOCK_HELD=1 bash scripts/renew_tls_certificate.sh --preflight-only
@@ -1797,3 +1822,8 @@ fi
 echo "deployed_sha=$EXPECTED_SHA"
 echo "release=$RELEASE_DIR"
 echo "rollback_point=$CURRENT_DIR"
+
+# Retention failure must not undo an otherwise verified application release.
+python3 scripts/release_retention.py 9>&9 --root "$RELEASE_ROOT_REAL" \
+  --archive-dir "$SHARED_ROOT/release-archives" --protect "$CURRENT_DIR" \
+  --protect "$RELEASE_DIR" --apply || echo "WARN: release retirement deferred" >&2

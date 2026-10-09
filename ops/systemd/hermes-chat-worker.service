@@ -4,6 +4,7 @@ After=network-online.target hermes-bridge.service
 Wants=network-online.target
 
 [Service]
+Slice=quantum-runtime.slice
 Type=simple
 User=quantumn-hermes
 Group=quantumn-hermes

@@ -28,6 +28,9 @@ def initialize_usage_recovery(path: Path) -> None:
             run_id TEXT NOT NULL, sequence INTEGER NOT NULL,
             acknowledged INTEGER NOT NULL DEFAULT 0, retry_after REAL NOT NULL DEFAULT 0,
             PRIMARY KEY (run_id, sequence))""")
+        db.execute("""CREATE INDEX IF NOT EXISTS ix_chat_events_terminal_receipts
+            ON chat_run_events(created_at,run_id,sequence)
+            WHERE event_type IN ('done','error','cancelled')""")
 
 
 async def recover_usage_receipts(path: Path, *, limit: int = 100) -> int:
