@@ -791,6 +791,21 @@ async def test_queue_rejection_releases_unstarted_inference(app, transport, monk
         })
         assert row.state == "failed_released"
 
+    async def successful_retry(*args, **kwargs):
+        yield 'data: {"type":"done","answer":"ok","usage":{"usage_scope":"turn","input_tokens":2,"output_tokens":3}}\n\n'
+
+    monkeypatch.setattr(chat_mod, "_call_bridge_stream", successful_retry)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/chat/stream", json={
+            "question": "合成入队容量校验", "request_id": "synthetic-queue-rejection-0001",
+        }, headers=auth_headers("queue-rejection-test"))
+    assert '"type":"done"' in response.text and "request_conflict" not in response.text
+    async with SessionLocal() as db:
+        row = await db.get(InferenceReservation, {
+            "user_id": "queue-rejection-test", "request_id": "synthetic-queue-rejection-0001",
+        })
+        assert row.state == "settled" and row.actual_tokens == 5
+
 
 @pytest.mark.asyncio
 async def test_bridge_queue_rejection_is_retryable_http(monkeypatch, tmp_path):
