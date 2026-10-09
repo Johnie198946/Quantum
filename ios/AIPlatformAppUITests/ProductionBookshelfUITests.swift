@@ -2493,3 +2493,53 @@ final class ImageWorkflowLiveAcceptanceTests: XCTestCase {
         add(item)
     }
 }
+
+final class QuanSynProductionUITests: XCTestCase {
+    func testLoggedInSimulatorPublishesRealAnswer() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launch()
+        func screenshot(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        screenshot("quansyn-simulator-existing-login")
+        let home = app.buttons["main-tab-0"]
+        XCTAssertTrue(home.waitForExistence(timeout: 30), "模拟器当前登录未恢复；本用例不注入认证信息")
+        home.tap()
+        let plus = app.buttons["添加附件或引用知识"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 20))
+        plus.tap()
+        let quansyn = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "QuanSyn")).firstMatch
+        XCTAssertTrue(quansyn.waitForExistence(timeout: 10))
+        quansyn.tap()
+        XCTAssertTrue(app.buttons["刷新"].waitForExistence(timeout: 20))
+        screenshot("quansyn-simulator-real-queue")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "需先接受")).firstMatch.exists)
+        app.buttons["完成"].tap()
+        if app.buttons["更多会话操作"].exists {
+            app.buttons["更多会话操作"].tap()
+            let create = app.buttons.matching(NSPredicate(format: "label IN %@", ["新建会话", "新对话"])).firstMatch
+            XCTAssertTrue(create.waitForExistence(timeout: 5))
+            create.tap()
+        }
+        let input = app.textFields["selected-book-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        let marker = "QUANSYN_SIMULATOR_20261009_" + String(UUID().uuidString.prefix(8))
+        input.tap()
+        input.typeText("QuanSyn 模拟器生产验收。请回复标记 " + marker + "，计算 12、18、30 的总和与均值，并给出一个 Markdown 表格和 Python 代码块。无需使用外部工具。")
+        app.buttons["selected-book-chat-send"].tap()
+        let answer = app.otherElements["selected-book-chat-response"].descendants(matching: .staticText).matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        let push = app.buttons["推送到 QuanSyn"]
+        XCTAssertTrue(push.waitForExistence(timeout: 240), "真实模型回答未完成或缺少 QuanSyn 回传入口")
+        screenshot("quansyn-simulator-real-answer")
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "必须收到本次请求的真实回答，不能回传旧会话")
+        XCTAssertTrue(push.isHittable)
+        push.tap()
+        XCTAssertTrue(app.staticTexts["已推送到 QuanSyn Web"].waitForExistence(timeout: 45), "真实回传未取得成功回执")
+        screenshot("quansyn-simulator-published")
+        print("QUANSYN_SIMULATOR_ACCEPTANCE_MARKER=" + marker)
+    }
+}
