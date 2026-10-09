@@ -123,4 +123,3 @@ branch refs/heads/codex/image-direct-processing-20260927
 worktree /Users/dengzhaoyu/Projects/publication-quality-20260928
 HEAD 457abcd4284f5ab0910df1d138475894b963a782
 branch refs/heads/feat/serial-narrative-quality-20260928
-

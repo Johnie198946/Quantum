@@ -6,21 +6,21 @@
 .                                                                        [100%]
 =============================== warnings summary ===============================
 scripts/hermes_bridge.py:139
-  /Users/dengzhaoyu/Desktop/TepVis/.worktrees/server-health-fixes-20261009/scripts/hermes_bridge.py:139: DeprecationWarning: 
+  /Users/dengzhaoyu/Desktop/TepVis/.worktrees/server-health-fixes-20261009/scripts/hermes_bridge.py:139: DeprecationWarning:
           on_event is deprecated, use lifespan event handlers instead.
-  
+
           Read more about it in the
           [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-          
+
     app.on_event("startup")(session_runtime._startup)
 
 ../../../../../../Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/fastapi/applications.py:4547
-  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/fastapi/applications.py:4547: DeprecationWarning: 
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/fastapi/applications.py:4547: DeprecationWarning:
           on_event is deprecated, use lifespan event handlers instead.
-  
+
           Read more about it in the
           [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-          
+
     return self.router.on_event(event_type)
 
 tests/test_chat_stream_api.py::test_stream_request_model
