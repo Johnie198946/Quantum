@@ -145,15 +145,18 @@ struct TravelJourneyView: View {
             AppTheme.Colors.mistSky.ignoresSafeArea()
             if nativeMap || payload.stops.isEmpty {
                 VStack(spacing: 0) {
-                    Map(position: $position) {
-                        ForEach(resolvedStops.filter { $0.coordinate != nil }) { stop in
-                            if let coordinate = stop.coordinate { Marker(stop.name, coordinate: coordinate).tint(AppTheme.Colors.primary) }
-                        }
-                    }.mapControls { MapCompass(); MapScaleView() }.frame(minHeight: 240)
-                        .accessibilityIdentifier("travel-native-map")
+                    if resolvedStops.contains(where: { $0.coordinate != nil }) {
+                        Map(position: $position) {
+                            ForEach(resolvedStops.filter { $0.coordinate != nil }) { stop in
+                                if let coordinate = stop.coordinate { Marker(stop.name, coordinate: coordinate).tint(AppTheme.Colors.primary) }
+                            }
+                        }.mapControls { MapCompass(); MapScaleView() }.frame(minHeight: 240)
+                            .accessibilityIdentifier("travel-native-map")
+                    }
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(plan.destination ?? title).font(.system(.title2, design: .serif))
+                                .padding(.trailing, 48)
                             if locating { ProgressView("正在查找行程地点…") }
                             Text("按行程顺序查看地点，点选可在地图中核对位置与交通路线。")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -183,7 +186,8 @@ struct TravelJourneyView: View {
                             }
                             if !payload.stops.isEmpty { Button("打开旅行小世界") { nativeMap = false }.frame(minHeight: 44) }
                         }.padding(20)
-                    }.frame(maxHeight: 300).background(AppTheme.Colors.background)
+                    }.frame(maxHeight: resolvedStops.contains(where: { $0.coordinate != nil }) ? 300 : .infinity)
+                        .background(AppTheme.Colors.background)
                 }
             } else if offline {
                 ScrollView {

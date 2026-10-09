@@ -9,7 +9,10 @@ final class TravelJourneyUITests: XCTestCase {
         for _ in 0..<6 where !entry.isHittable { app.swipeUp() }
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
         entry.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["travel-native-map"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["仙巌園"].firstMatch.waitForExistence(timeout: 15))
+        if app.buttons["重新查找地点"].exists {
+            XCTAssertFalse(app.descendants(matching: .any)["travel-native-map"].exists, "定位失败不能展示与行程无关的默认地图")
+        }
         XCTAssertTrue(app.staticTexts["仙巌園"].firstMatch.exists)
         XCTAssertTrue(app.links["查看"].exists || app.buttons["查看"].exists, app.debugDescription)
         XCTAssertFalse(app.staticTexts["地点还没有坐标"].exists)
