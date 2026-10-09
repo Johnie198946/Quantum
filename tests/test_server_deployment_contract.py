@@ -1471,6 +1471,7 @@ def test_shared_data_acl_is_exact_bounded_recursive_and_defaulted(tmp_path: Path
     shared = tmp_path / "shared"
     data = shared / "data"
     (data / "nested").mkdir(parents=True)
+    (data / "nested" / "receipt").write_text("ok")
     outside = tmp_path / "outside"
     outside.mkdir()
     events = tmp_path / "events"
@@ -1498,9 +1499,35 @@ configure_shared_data_acl "$TARGET" 10001 995
     assert accepted.returncode == 0, accepted.stderr
     calls = events.read_text(encoding="utf-8")
     assert "<-P>" in calls and "<u:10001:rwX,u:995:rwX,m::rwX>" in calls
-    assert calls.count("<d:u:10001:rwx,d:u:995:rwx,d:m::rwx>") == 2
+    assert calls.count("d:u:10001:rwx,d:u:995:rwx,d:m::rwx>") == 2
     assert f"<{data}>" in calls and f"<{data / 'nested'}>" in calls
     assert "o::" not in calls and str(outside) not in calls
+
+
+@pytest.mark.parametrize("vanished", (True, False))
+def test_shared_data_acl_tolerates_only_vanished_files(tmp_path: Path, vanished: bool) -> None:
+    data = tmp_path / "shared" / "data"
+    data.mkdir(parents=True)
+    sidecar = data / "hermes_chat_runs.sqlite3-wal"
+    sidecar.write_text("temporary")
+    command = f'''source "{UPDATE_SCRIPT}"
+command() {{ [ "$1" = -v ]; }}
+setfacl() {{
+  if [ "${{@: -1}}" = '{sidecar}' ]; then
+    [ "$VANISHED" != 1 ] || rm -- '{sidecar}'
+    return 1
+  fi
+}}
+getfacl() {{ printf '%s\n' user:10001:rwx user:995:rwx default:user:10001:rwx default:user:995:rwx; }}
+SHARED_ROOT='{data.parent}'
+configure_shared_data_acl '{data}' 10001 995
+'''
+    result = subprocess.run(
+        ["bash", "-c", command],
+        env={**os.environ, "AI_LAB_UPDATE_LIBRARY_ONLY": "1", "VANISHED": str(int(vanished))},
+        capture_output=True, text=True,
+    )
+    assert (result.returncode == 0) is vanished, result.stderr
 
 
 def test_shared_data_runtime_probes_use_only_exact_data_mount_and_both_identities(

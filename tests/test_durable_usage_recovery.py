@@ -65,6 +65,19 @@ async def test_actual_recovery_query_uses_terminal_index(tmp_path, monkeypatch):
     assert not any("TEMP B-TREE" in item for item in plan)
 
 
+@pytest.mark.asyncio
+async def test_released_request_retry_rechecks_quota(ledger, monkeypatch):
+    monkeypatch.setenv("QUANTUM_MONTHLY_TOKEN_LIMIT", "10000")
+    await reserve("retry")
+    assert await policy.release_inference(AUTH, "retry") == "failed_released"
+    await reserve("other")
+    with pytest.raises(policy.InferenceQuotaExceeded):
+        await reserve("retry")
+    await policy.release_inference(AUTH, "other")
+    assert (await reserve("retry")).state == "reserved"
+    assert (await policy.monthly_quota_snapshot(AUTH))["used_tokens"] == 8000
+
+
 async def rows(factory, request="req"):
     async with factory() as db:
         reservation = await db.get(InferenceReservation, {"user_id": AUTH["sub"], "request_id": request})

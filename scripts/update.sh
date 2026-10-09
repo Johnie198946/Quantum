@@ -1015,7 +1015,7 @@ validate_shared_data_root() {
 }
 
 configure_shared_data_acl() {
-  local data_root="$1" api_uid="$2" hermes_uid="$3" directory acl
+  local data_root="$1" api_uid="$2" hermes_uid="$3" directory path acl
   for tool in setfacl getfacl; do
     if ! command -v "$tool" >/dev/null 2>&1; then
       echo "ERROR: $tool is required for shared data interoperability" >&2
@@ -1023,10 +1023,15 @@ configure_shared_data_acl() {
     fi
   done
   validate_shared_data_root "$data_root" || return 1
-  setfacl -P -R -m "u:$api_uid:rwX,u:$hermes_uid:rwX,m::rwX" -- "$data_root" || return 1
   while IFS= read -r -d '' directory; do
-    setfacl -m "d:u:$api_uid:rwx,d:u:$hermes_uid:rwx,d:m::rwx" -- "$directory" || return 1
+    setfacl -m "u:$api_uid:rwx,u:$hermes_uid:rwx,m::rwx,d:u:$api_uid:rwx,d:u:$hermes_uid:rwx,d:m::rwx" -- "$directory" || return 1
   done < <(find -P "$data_root" -type d -print0)
+  while IFS= read -r -d '' path; do
+    # SQLite sidecars can disappear after enumeration; real ACL failures stay fatal.
+    if ! setfacl -P -R -m "u:$api_uid:rwX,u:$hermes_uid:rwX,m::rwX" -- "$path"; then
+      [ ! -e "$path" ] && [ ! -L "$path" ] || return 1
+    fi
+  done < <(find -P "$data_root" -type f -print0)
   acl="$(getfacl -cpn -- "$data_root")" || return 1
   for entry in "user:$api_uid:rwx" "user:$hermes_uid:rwx" \
     "default:user:$api_uid:rwx" "default:user:$hermes_uid:rwx"; do

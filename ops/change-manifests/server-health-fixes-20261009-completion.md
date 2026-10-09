@@ -39,3 +39,17 @@ remaining_risks: 没有长时间峰值压测；cloud-init脚本原始来源仍�
 ## 并行发布保护
 
 第一次部署在CAS前发现实际版本已为7b3a2b，未建立回滚点、未改镜像标签或服务。已合并对方工作流事件重试修复，重新核验286份代码与8个容器；本轮部署基线更新为7b3a2b17c3b1e6fc196808116cf0f27174a7024f，server-before.json记录实际release和镜像。先前360测试有效，另对合并工作流进行相关回归，86项PASS。
+
+## 首次部署与重试账务补充
+
+05779291首次部署全部通过，8/8容器healthy，9个旧release可恢复归档、当前/直接回滚保留；应用/认证内核限制生效、OOM/超限计数0。两个并发真实诊断聊天8.78/7.80秒完成；同request_id重放attempt仍1、不同owner返回404；120秒7次资源采样可用内存1271–1387 MiB，SQLite句柄0–3，guard三个周期status=ok。认证五个直接服务health healthy；gateway唯一degraded组件为RabbitMQ disabled且required=false，其数据库、Redis和四下游全部healthy；没有盲目启用可选基础设施。
+
+验收补充捕获繁忙退还后的同ID重试账务边界：reserve_inference此前直接返回failed_released行，后续settle拒绝。复用原用户锁和月度预算检查，只有failed_released行可重新预留，重新检查额度与身份/策略，更新时间到本次月份；reserved/settled/pending_reconcile的幂等规则不变。测试覆盖退还后同ID重试成功结算和其它请求占用额度时仍拒绝重新预留，72项PASS。第二次部署基线05779291，运行文件哈希重新建立，保留首次验收文件作为历史证据。
+
+## 最终并行发布保护
+
+补充部署前检测到QuanSyn发布持有同一全局锁，安全退出且未修改生产。发布完成后保留并合并de220f2bdf52d326a003ddcdf740a6ba07eba8ec。原系统Python的httpx/TestClient版本不兼容造成该任务10项fixture初始化错误；使用已建立的quansyn-venv与其兼容依赖后，聊天、账务、QuanSyn合并回归62项PASS，代码未为环境错误改动。最终部署以de220f2b为CAS与完整运行文件哈希基线，仅增量替换inference_policy.py，保留新前端与其它服务镜像。
+
+## 发布期间发现并修复ACL竞态
+
+96901197尝试在运行数据ACL阶段因SQLite WAL/SHM消失而退出，生产仍为de220f2b且全部服务healthy，镜像标签/attestation恢复。configure_shared_data_acl先设置目录访问/继承ACL，再以不跟随链接的单文件扫描设置已有文件ACL；只有失败后该文件确已不存在才继续，其它失败保持阻断。没有停止数据库或忽略权限错误。部署契约/CAS/继承锁回归125项PASS、1项Mac缺Linux /proc跳过；Ruff、bash -n、diff检查PASS。
