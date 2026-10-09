@@ -1553,7 +1553,7 @@ struct TravelWorkflowHeader: View {
         case "queued": return "制作任务已排队，旅行需求已保存。"
         case "running": return "正在整理路线与每日安排。"
         case "awaiting_review": return "请检查攻略内容。"
-        case "completed": return "攻略已就绪，可以查看并保存。"
+        case "completed": return "旅行草稿已生成，可以查看并继续完善。"
         case "failed", "needs_attention": return "制作需要处理，已保留需求和过程。"
         case "cancelled": return "制作已取消。"
         default: return phase.workflowStatusLabel
@@ -3328,6 +3328,16 @@ private struct WorkflowExecutionView: View {
     @State private var slideNumber = 1
     @State private var showsStructuredReview = false
     @State private var showsAdvancedExecutionDetails = false
+    @State private var travelReviewContent: String?
+    @State private var travelPreviousContent: String?
+    @State private var syncTravelNotes = true
+
+    private var linkedTravelNotes: [KnowledgeNote] {
+        KnowledgeNoteStore.shared.notes.filter {
+            NoteIllustrationPlacement.travelObject($0.body)?["workflow_execution_id"] as? String == execution.id &&
+            TravelNotePresentation.includes("include_route", in: $0.body)
+        }
+    }
 
     private var isPresentation: Bool { workflow.desiredOutput.lowercased().contains("pptx") }
     private var isDocument: Bool {
@@ -3355,9 +3365,9 @@ private struct WorkflowExecutionView: View {
                 if isPresentation { PresentationWorkflowStageHeader(currentIndex: presentationStageIndex) }
                 if isTravel {
                     TravelWorkflowHeader(phase: execution.status)
-                    Text(execution.status == "completed" ? "这趟旅行，已整理好" : "让好想法，变成好行程")
+                    Text(execution.status == "completed" ? "旅行草稿，等你一起完善" : "让好想法，变成好行程")
                         .font(AppTheme.Typography.sectionTitle)
-                    Text(execution.status == "completed" ? "查看攻略，保存笔记；旅途中也可以继续调整。" : "正在整理路线、每日安排和需要提前确认的事项。")
+                    Text(execution.status == "completed" ? "先核对交通、住宿与预约条件，再保存属于你的旅行手记。" : "正在整理路线、每日安排和需要提前确认的事项。")
                         .font(AppTheme.Typography.supporting)
                         .foregroundStyle(AppTheme.Colors.textSecondary)
                 } else { executionHeader }
@@ -3552,6 +3562,16 @@ private struct WorkflowExecutionView: View {
 
     private var artifactReview: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            if isTravel, let travelReviewContent, let current = TravelPlanDocument.decode(travelReviewContent) {
+                if let travelPreviousContent, let previous = TravelPlanDocument.decode(travelPreviousContent), execution.status != "completed" {
+                    TravelPlanChangeSummary(before: previous, proposed: current)
+                    if !linkedTravelNotes.isEmpty {
+                        Toggle("同时更新旅行笔记中的计划", isOn: $syncTravelNotes).tint(AppTheme.Colors.primary)
+                        Text("只同步计划，你写下的文字、照片和封面保持原样。").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                TravelPlanResultView(title: current.title ?? workflow.title, content: travelReviewContent, initialPage: .day)
+            }
             Text(isStagedOutput ? stagedReviewTitle : "成果与入库素材").font(AppTheme.Typography.sectionTitle)
             Text(isStagedOutput ? stagedReviewHelp : "所有内容已保存到工作流档案。勾选后批准，才会进入正式知识库。")
                 .font(AppTheme.Typography.supporting)
@@ -3770,6 +3790,16 @@ private struct WorkflowExecutionView: View {
                     let loaded = try await APIClient.shared.fetchWorkflowArtifacts(executionId: execution.id)
                     guard workflowActivities.isCurrent(scope) else { return }
                     artifacts = loaded
+                    if isTravel, let current = visibleArtifacts.last {
+                        let content = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: execution.id, artifactId: current.id).content
+                        guard workflowActivities.isCurrent(scope) else { return }
+                        travelReviewContent = content
+                        if let parent = current.metadata.parentArtifactId {
+                            let previous = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: execution.id, artifactId: parent).content
+                            guard workflowActivities.isCurrent(scope) else { return }
+                            travelPreviousContent = previous
+                        } else { travelPreviousContent = nil }
+                    }
                     if isImage && execution.status == "awaiting_approval" && imageAction == nil {
                         let action = try await APIClient.shared.prepareImageAction(executionId: execution.id)
                         guard workflowActivities.isCurrent(scope) else { return }
@@ -3873,8 +3903,29 @@ private struct WorkflowExecutionView: View {
             guard workflowActivities.isCurrent(scope) else { return }
             execution = updated
             feedback = ""
-            if decision == "approve" && execution.status == "completed" { selectedArtifact = artifact }
+            if decision == "approve" && execution.status == "completed" {
+                if isTravel && syncTravelNotes { try await syncLinkedTravelNotes(artifact: artifact) }
+                selectedArtifact = artifact
+            }
             else { await monitor() }
+        }
+    }
+    private func syncLinkedTravelNotes(artifact: WorkflowArtifactDTO) async throws {
+        guard !linkedTravelNotes.isEmpty else { return }
+        let account = KnowledgeNoteStore.shared.accountFingerprint
+        let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: execution.id, artifactId: artifact.id).content
+        guard workflowActivities.isCurrent(scope), KnowledgeNoteStore.shared.accountFingerprint == account,
+              var latest = NoteIllustrationPlacement.travelObject(loaded) else { return }
+        latest["workflow_execution_id"] = execution.id; latest["workflow_artifact_id"] = artifact.id; latest["workflow_artifact_hash"] = artifact.contentHash
+        guard let content = NoteIllustrationPlacement.json(latest) else { throw APIError.decoding("最新计划无法读取，原笔记保持不变") }
+        for note in linkedTravelNotes {
+            guard KnowledgeNoteStore.shared.activeNoteDrafts[note.id].map({ $0 == note.body }) ?? true else {
+                throw APIError.decoding("行程已确认；笔记仍在编辑，请保存后在封面同步最新计划。")
+            }
+            let updated = try TravelNotePresentation.syncing(note.body, with: content)
+            guard KnowledgeNoteStore.shared.save(id: note.id, title: note.title, body: updated, tags: note.tags, isPinned: note.isPinned) != nil else {
+                throw APIError.decoding("行程已确认；笔记保存失败，原记录已保留，可在封面重新同步。")
+            }
         }
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
@@ -3934,6 +3985,7 @@ private struct WorkflowArtifactPreview: View {
     @State private var showingTravelHistory = false
     @State private var showingTravelReplan = false
     @State private var travelFeedback = ""
+    @State private var travelAdjustmentScope = "今天剩余行程"
     @State private var savingProgress = false
     @State private var showingCachedTravel = false
     @State private var cloudTravelContent: String?
@@ -4160,14 +4212,14 @@ private struct WorkflowArtifactPreview: View {
                     ProgressView("正在读取落盘内容…").padding()
                 }
             }
-            .navigationTitle(artifact.title)
+            .navigationTitle(isTravelArtifact ? "我的旅行" : artifact.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("完成") { dismiss() } }
             .safeAreaInset(edge: .bottom) {
                 if allowsDownload {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         if isTravelArtifact, content != nil {
-                            Button("旧版本", systemImage: "clock.arrow.circlepath") { showingTravelHistory = true }
+                            Button("调整记录", systemImage: "clock.arrow.circlepath") { showingTravelHistory = true }
                                 .disabled(travelVersions.isEmpty)
                             Button(savedTravelNote ? "翻开旅行手记" : "生成旅行笔记", systemImage: savedTravelNote ? "book.fill" : "book.closed") {
                                 if savedTravelNote { showingSavedTravelNote = true } else { showingTravelNoteSave = true }
@@ -4175,7 +4227,7 @@ private struct WorkflowArtifactPreview: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(!pendingTravelChanges.isEmpty || savingProgress)
                         }
-                        if let downloadURL {
+                        if let downloadURL, !isTravelArtifact {
                             ShareLink(item: downloadURL) {
                                 Label("导出 \(artifact.extension.uppercased())", systemImage: "square.and.arrow.up")
                             }
@@ -4223,6 +4275,15 @@ private struct WorkflowArtifactPreview: View {
                         Text("例如：今天下雨，下午别去山里，换成旅馆附近的咖啡馆，晚餐预约保留。")
                             .font(.subheadline).foregroundStyle(.secondary)
                         TextEditor(text: $travelFeedback).frame(minHeight: 160)
+                        HStack {
+                            ForEach(["少走一点", "下雨了", "换个地方"], id: \.self) { value in
+                                Button(value) { travelFeedback = value }.buttonStyle(.bordered)
+                            }
+                        }
+                        Picker("调整范围", selection: $travelAdjustmentScope) {
+                            Text("今天剩余行程").tag("今天剩余行程")
+                            Text("后续所有行程").tag("后续所有行程")
+                        }
                         Text("系统会保留已发生记录，重排剩余行程后请你确认；原版仍可查阅。")
                         if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                         Button(savingProgress ? "正在提交…" : "生成调整方案") {
@@ -4231,7 +4292,7 @@ private struct WorkflowArtifactPreview: View {
                                 defer { savingProgress = false }
                                 do {
                                     let updated = try await APIClient.shared.requestWorkflowRevision(executionId: executionId,
-                                        nodeId: "travel_research", comment: travelFeedback,
+                                        nodeId: "travel_research", comment: "调整范围：\(travelAdjustmentScope)。保留已发生的行程、预订和个人记录。\n" + travelFeedback,
                                         artifactId: currentTravelArtifactId ?? artifact.id,
                                         expectedHash: currentTravelHash ?? artifact.contentHash)
                                     guard workflowActivities.isCurrent(scope) else { return }
@@ -4253,9 +4314,18 @@ private struct WorkflowArtifactPreview: View {
             }
             .sheet(isPresented: $showingTravelHistory) {
                 NavigationStack {
-                    List {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            if let current = travelVersions.first {
+                                Label("当前版本 · \(current.metadata.travelRevision ?? 0)", systemImage: "checkmark.circle.fill")
+                                    .font(.headline).foregroundStyle(AppTheme.Colors.primary)
+                                Text(current.metadata.changeReason ?? "初始行程")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Text("每次调整都保留，随时查看当时的安排。")
+                                .font(.subheadline).foregroundStyle(.secondary)
                         ForEach(travelVersions) { version in
-                            Button("版本 \(version.metadata.travelRevision ?? 0) · \(version.metadata.changeReason ?? "初始行程")") {
+                            Button {
                                 Task {
                                     do {
                                         let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: executionId, artifactId: version.id).content
@@ -4263,11 +4333,23 @@ private struct WorkflowArtifactPreview: View {
                                         historyContent = loaded
                                     } catch { errorMessage = error.localizedDescription }
                                 }
-                            }
+                            } label: {
+                                HStack(alignment: .top, spacing: 14) {
+                                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(AppTheme.Colors.primary)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("版本 \(version.metadata.travelRevision ?? 0)").font(.headline)
+                                        Text(version.metadata.changeReason ?? "初始行程").font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                }.padding(20).quantumCard()
+                            }.buttonStyle(.plain)
                         }
                         if let historyContent { TravelPlanResultView(title: "历史版本 · 只读", content: historyContent) }
+                        }.padding(20)
                     }
-                    .navigationTitle("行程版本记录")
+                    .background(AppTheme.Colors.background)
+                    .navigationTitle("调整记录")
                     .toolbar { Button("完成") { showingTravelHistory = false } }
                 }
             }

@@ -78,7 +78,12 @@ final class ProductionBookshelfUITests: XCTestCase {
         attachScreenshot(named: "travel-original-note-cover")
         diary.tap()
         XCTAssertTrue(app.staticTexts["泡汤与休息"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "在雪中慢慢走", "在雪中慢慢走")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["DAY 3"].exists)
+        app.buttons["DAY 2"].tap()
+        XCTAssertTrue(app.staticTexts["第二天围绕车站探索，减少换乘。"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].exists)
+        app.buttons["DAY 1"].tap()
         XCTAssertTrue(app.staticTexts["原稿装饰照片"].firstMatch.waitForExistence(timeout: 10))
         let titleFrame = app.staticTexts["泡汤与休息"].firstMatch.frame
         XCTAssertGreaterThanOrEqual(titleFrame.minX, app.frame.minX)

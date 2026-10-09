@@ -872,7 +872,9 @@ def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:
     if (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
         from backend.services.travel_plan import validate_travel_document
         try:
-            validate_travel_document(_extract_json_object(reply))
+            validate_travel_document(_extract_json_object(reply), require_guidance=bool(
+                (node.get("parameters") or {}).get("require_travel_guidance")
+            ))
         except ValueError:
             return True
         return False

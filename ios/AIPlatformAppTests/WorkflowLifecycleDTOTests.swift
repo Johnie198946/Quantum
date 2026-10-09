@@ -7433,6 +7433,38 @@ extension WorkflowLifecycleDTOTests {
 }
 
 final class TravelNotePresentationTests: XCTestCase {
+    func testTravelQualityGateSurvivesCanvasRoundTrip() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let parameters = try decoder.decode(WorkflowNodeParametersDTO.self, from: Data(#"{"require_travel_guidance":true,"max_tokens":14000}"#.utf8))
+        XCTAssertEqual(parameters.requireTravelGuidance, true)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(parameters)) as? [String: Any]
+        XCTAssertEqual(encoded?["require_travel_guidance"] as? Bool, true)
+        XCTAssertEqual(encoded?["max_tokens"] as? Int, 14000)
+    }
+
+    func testSyncKeepsPersonalWritingPhotosCoverAndAssociation() throws {
+        let original = #"{"stops":[],"destination":"鹿儿岛","workflow_execution_id":"exec-1","journal":"我的真实记录","illustrations":[{"path":"private.jpg"}],"note_presentation":{"cover":"destination"},"actions":[]}"#
+        let latest = #"{"stops":[],"destination":"鹿儿岛","workflow_execution_id":"exec-1","workflow_artifact_hash":"new","actions":[{"id":"new"}],"journal":"AI不应覆盖"}"#
+        let result = try XCTUnwrap(NoteIllustrationPlacement.travelObject(TravelNotePresentation.syncing(original, with: latest)))
+        XCTAssertEqual(result["journal"] as? String, "我的真实记录")
+        XCTAssertEqual((result["illustrations"] as? [[String: String]])?.first?["path"], "private.jpg")
+        XCTAssertEqual((result["note_presentation"] as? [String: String])?["cover"], "destination")
+        XCTAssertEqual((result["actions"] as? [[String: String]])?.first?["id"], "new")
+        XCTAssertThrowsError(try TravelNotePresentation.syncing(original, with: latest.replacingOccurrences(of: "exec-1", with: "other")))
+    }
+
+    func testSelectedDaysExcludeAlternativesAndDraftDoesNotClaimReady() throws {
+        let content = #"{"destination":"鹿儿岛","days":[{"id":"day-1","title":"市区","selected":true,"journal":"市区规划"},{"id":"day-alt","title":"离岛备选","selected":false,"journal":"离岛规划"}],"actions":[],"stops":[]}"#
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+        XCTAssertEqual(plan.dayIds, ["day-1"])
+        XCTAssertEqual(plan.alternativeDayIds, ["day-alt"])
+        XCTAssertTrue(plan.readinessTitle.contains("草稿"))
+        XCTAssertEqual(plan.days.first?.journal, "市区规划")
+        XCTAssertEqual(TravelNotePresentation.title("摄影与旅行笔记", content: content), "鹿儿岛 · 旅行手记")
+        XCTAssertNoThrow(try TravelNotePresentation.saving(content, cover: "destination", route: true, photos: true, places: true))
+    }
+
     func testContentChoicesPreserveOriginalActionsJournalAndWorkflowLink() throws {
         let original = """
         {"destination":"青森","stops":[],"actions":[{"id":"booked"}],"journal":"自己的记录","workflow_execution_id":"exec-1","sources":[{"id":"official"}]}
