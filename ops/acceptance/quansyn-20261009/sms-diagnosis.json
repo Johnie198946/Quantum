@@ -1,0 +1,21 @@
+{
+  "actual_code": "/opt/authen/services/auth/main.py send_sms_code uses real SMSService; failed delivery does not persist a code",
+  "configured_dns": [
+    "100.100.2.136",
+    "100.100.2.138"
+  ],
+  "observed_failure": "100.100.2.136 UDP and TCP port53 timeouts; system resolver times out for dysmsapi.aliyuncs.com",
+  "public_dns_test": {
+    "223.5.5.5": "resolved",
+    "223.6.6.6": "resolved"
+  },
+  "aliyun_tls_diagnostic": {
+    "http_status": 200,
+    "certificate_verification": "enabled",
+    "method": "HEAD to normal domain with known resolved IP; no provider credentials supplied"
+  },
+  "route_test": "both internal DNS addresses route through eth0, so suspected Tailscale route conflict was rejected",
+  "sms_delivery": "not verified, public endpoint returned503 after20.28s",
+  "code_login": "not verified, no code read or fabricated",
+  "server_changes": "none; awaiting user approval before global DNS repair"
+}

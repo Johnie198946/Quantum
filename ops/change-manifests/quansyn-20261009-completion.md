@@ -504,3 +504,17 @@ functional_check: 前端154测试通过及构建通过；模拟器真实登录�
 rollback_point: 本轮未部署，无新增回滚点；既有回滚点见首节
 manifest: ops/change-manifests/quansyn-20261009-completion.md
 remaining_risks: 按钮当前仍接入手机验证码，App授权自动登录尚待用户架构确认；动效未做实际浏览器验收；模拟器需要正常登录才能验证真实回传
+
+
+## 获取验证码实际验证（用户要求追加验收）
+
+工作区开工干净；branch codex/quansyn-20261009，HEAD 80b35190cdfb78bc54bcd3562e02f1318e636f82；origin https://github.com/Johnie198946/Quantum.git；仍在本任务独立 worktree。仅新增本段及 sms-* 诊断证据，没有产品代码变更，也没有服务器配置写入。
+
+- 对用户指定账号向正式 /api/v1/auth/phone/send-code 只发起一次真实请求，20.28 秒后返回503“认证服务暂不可用”。未称成功、未读取Redis或日志中的验证码、未创建替代登录令牌。
+- 本地 Authen 源码较旧，不能作为生产短信实现结论。生产 /opt/authen/services/auth/main.py 已调用真实 SMSService，并且只在发送成功后保存验证码。日志出现“阿里云短信发送异常: UnretryableException”；capabilities enabled 仅证明配置存在。
+- 生产 DNS：100.100.2.136 UDP/TCP查询均超时；正常域名解析与 curl DNS阶段超时；systemd-resolved 日志反复切换UDP/TCP。内网DNS的路由均是eth0，排除了Tailscale路由冲突假设。
+- 223.5.5.5、223.6.6.6 均解析同一短信域名成功；使用解析到的真实IP进行HTTPS HEAD，保留域名与TLS证书校验，HTTP200。这只能证明DNS和TLS连通，不能证明短信凭据、签名、模板、余额或实际送达通过。
+- 正式非法手机号、非6位验证码均422；请求在平台验证阶段结束，不触发短信和验证码核对。现有 tests/test_external_auth.py 11 passed、4 warnings。
+- 待确认方案：备份DNS运行/持久配置与回滚命令，将eth0 DNS调整为223.5.5.5、223.6.6.6，重新验证解析、短信发送和健康，再由用户实际收到短信并正常登录验证完整流程。涉及全机域名解析，已解释影响并请求授权；未获答复前不执行。
+
+本轮 server_before/server_after：现有产品版本01161f76，本轮未部署或更改服务器配置；health_check：此前服务健康不能替代本次短信验证；functional_check：短信发送失败，非法输入拒绝通过，真实收到短信与登录未验证；rollback_point：本轮无配置写入，不适用（原产品回滚点仍为IboCGX）；remaining_risks：DNS明确故障，修复后仍须排查可能的短信供应商拒绝；最终诊断证据sms-request.json、sms-validation.json、sms-diagnosis.json、sms-auth-tests.txt。
