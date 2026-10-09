@@ -115,7 +115,8 @@ public struct AttachmentCard: View {
         guard let sourceId = block.sourceId, let hash = block.contentHash, let revision = block.sourceRevision else { return }
         isLoading = true; errorMessage = nil; defer { isLoading = false }
         do {
-            let data = try await APIClient.shared.downloadAuthenticated(path: "documents/\(sourceId)/download", expectedHash: hash)
+            let path = sourceId.hasPrefix("ga_") ? "quansyn/files/\(sourceId)" : "documents/\(sourceId)/download"
+            let data = try await APIClient.shared.downloadAuthenticated(path: path, expectedHash: hash)
             localURL = try InboxFileManager.shared.storePrivateFile(data, sourceId: sourceId, revision: revision, filename: block.fileName)
             showPreview = true
         } catch { errorMessage = error.localizedDescription }
