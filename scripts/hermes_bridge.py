@@ -45,6 +45,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from scripts.chat_run_store import ChatAdmissionError
 
 from scripts.hermes_bridge_runtime import (
     agent_config,
@@ -123,6 +125,14 @@ class _BridgeFacade(types.ModuleType):
 
 
 app = FastAPI(title="Hermes Bridge v6.0")
+
+
+@app.exception_handler(ChatAdmissionError)
+async def admission_error(_request, exc):
+    return JSONResponse(status_code=429 if str(exc) == "chat_queue_full" else 503,
+                        content={"detail": {"code": "server_busy", "reason": str(exc),
+                                            "message": "服务繁忙，请稍后重试", "recoverable": True}},
+                        headers={"Retry-After": "5"})
 
 
 def _register_routes() -> None:

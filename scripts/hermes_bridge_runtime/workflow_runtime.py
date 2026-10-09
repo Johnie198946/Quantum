@@ -142,6 +142,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                                 str(run.get("knowledge_capability") or ""),
                                 query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                                 category_scope=requested_scope,
+                                timeout_seconds=90.0 if node_id == "travel_research" else 20.0,
                             )
                             break
                         except httpx.TimeoutException as exc:
@@ -882,6 +883,8 @@ async def retry_workflow_run(
             from backend.services.travel_plan import validate_travel_document
             validate_travel_document(body.travel_baseline["document"])
             run["travel_baseline"] = body.travel_baseline
+        if body.knowledge_capability is not None:
+            run["knowledge_capability"] = body.knowledge_capability
         start = order.index(target)
         for node_id in order[start:]:
             run["nodes"][node_id] = {"status": "pending", "attempt": run["nodes"].get(node_id, {}).get("attempt", 0)}

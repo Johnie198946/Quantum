@@ -29,7 +29,10 @@ from scripts import hermes_bridge as bridge
 RUN_DB = Path(os.environ.get("HERMES_CHAT_RUN_DB", "/opt/ai-lab-platform/data/hermes_chat_runs.sqlite3"))
 POLL_SECONDS = float(os.environ.get("HERMES_CHAT_WORKER_POLL", "0.1"))
 MAX_PARALLEL = max(1, int(os.environ.get("HERMES_CHAT_MAX_PARALLEL_PER_USER", "3")))
-MAX_WORKERS = max(2, int(os.environ.get("HERMES_CHAT_WORKER_THREADS", "8")))
+MAX_WORKERS = min(
+    bridge.contracts.MAX_CONCURRENT_REQUESTS,
+    max(1, int(os.environ.get("HERMES_CHAT_WORKER_THREADS", str(bridge.contracts.MAX_CONCURRENT_REQUESTS)))),
+)
 WORKER_HEARTBEAT_MAX_AGE = max(
     1.0, float(os.environ.get("HERMES_CHAT_WORKER_HEARTBEAT_MAX_AGE", "5"))
 )

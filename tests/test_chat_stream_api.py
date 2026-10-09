@@ -771,6 +771,46 @@ async def test_stream_cancel_keeps_reservation_pending(app, transport, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_queue_rejection_releases_unstarted_inference(app, transport, monkeypatch):
+    import backend.api.chat as chat_mod
+    from backend.db import SessionLocal
+    from backend.models.tenant import InferenceReservation
+
+    async def busy_bridge(*args, **kwargs):
+        yield 'data: {"type":"error","code":"server_busy","recoverable":true}\n\n'
+
+    monkeypatch.setattr(chat_mod, "_call_bridge_stream", busy_bridge)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/chat/stream", json={
+            "question": "合成入队容量校验", "request_id": "synthetic-queue-rejection-0001",
+        }, headers=auth_headers("queue-rejection-test"))
+    assert "server_busy" in response.text
+    async with SessionLocal() as db:
+        row = await db.get(InferenceReservation, {
+            "user_id": "queue-rejection-test", "request_id": "synthetic-queue-rejection-0001",
+        })
+        assert row.state == "failed_released"
+
+
+@pytest.mark.asyncio
+async def test_bridge_queue_rejection_is_retryable_http(monkeypatch, tmp_path):
+    from scripts import hermes_bridge as bridge
+    from scripts.chat_run_store import DurableChatRunStore
+
+    monkeypatch.setenv("HERMES_MAX_QUEUE", "0")
+    monkeypatch.setattr(bridge.contracts, "DURABLE_CHAT_WORKER_ENABLED", True)
+    monkeypatch.setattr(bridge.contracts, "IN_PROCESS_STREAM_ENABLED", True)
+    monkeypatch.setattr(bridge.contracts, "_require_durable_worker", lambda: None)
+    monkeypatch.setattr(bridge.session_runtime, "_chat_run_store", DurableChatRunStore(tmp_path / "runs.db"))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=bridge.app), base_url="http://bridge") as client:
+        response = await client.post("/v1/chat/stream", json={"goal": "synthetic", "session_id": "probe"},
+                                     headers={"X-Hermes-Internal-Token": "test-internal-token"})
+    assert response.status_code == 429
+    assert response.json()["detail"]["code"] == "server_busy"
+    assert response.headers["retry-after"] == "5"
+
+
+@pytest.mark.asyncio
 async def test_bridge_knowledge_denial_is_preserved_in_sse(monkeypatch):
     """Bridge 的知识门禁拒绝必须原样到达客户端，不能退化成普通 HTTP 错误。"""
     import backend.api.chat as chat_mod

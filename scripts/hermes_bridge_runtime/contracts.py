@@ -665,6 +665,7 @@ class ClarificationDecision(BaseModel):
 
 
 class WorkflowRetryRequest(BaseModel):
+    knowledge_capability: str | None = Field(None, min_length=1, max_length=16000)
     travel_baseline: dict | None = None
     from_node_id: str | None = Field(None, max_length=80)
     revision_comment: str | None = Field(None, max_length=2000)
