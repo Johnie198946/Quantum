@@ -244,8 +244,11 @@ class QuanSyn:
         blocks = inputs.get("blocks", [])
         if not isinstance(paths, list) or len(paths) > 10:
             raise ValueError("最多登记 10 个文件")
-        # Share server validators; Mac plugin is shipped with this same Quantum source.
-        from backend.contracts.quansyn import Block
+        # Installed packages include an exact copy of the canonical server contract.
+        try:
+            from ._quansyn_contract import Block
+        except ImportError:
+            from backend.contracts.quansyn import Block
         if not isinstance(blocks, list) or len(blocks) > 100 or len(json.dumps(blocks).encode()) > 512_000:
             raise ValueError("输出块超过 100 项或 512 KB")
         validated = [Block.model_validate(b).model_dump() for b in blocks]

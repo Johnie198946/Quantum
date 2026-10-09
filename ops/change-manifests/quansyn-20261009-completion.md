@@ -424,3 +424,7 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 产品提交 f0c121e5；合并当前服务器基线提交 8d44a9d76bc3c8b221ab85f5003e0d8b8dc9f69a，无冲突。111 项后端/Mac/工作流/聊天流/容器边界测试全部通过（显式启用 pytest_asyncio.plugin）；前端 152 项通过，构建通过。日志存本地 release-tests.log、release-web-tests.log、release-build.log。共享发布链、资源预算和已部署工作流修复均保留。预检记录 release-preflight.json。
 
 发布时必须使用推送后核验的精确源码 SHA、服务器部署锁及 expected-current=05779291aff28fc465280a09b8e898fa61c2ff01；源码和静态构建哈希对应，API/前端候选镜像验证通过后才切换。此提交时仍未部署；最终运行收据在操作完成后回填本地 manifest。
+
+## 独立 Mac 安装校验
+
+安装包按字节复制 canonical backend/contracts/quansyn.py 为 _quansyn_contract.py；独立包测试禁止 backend 导入，真实块校验及非法图表拒绝通过。相关后端/聊天/工作流/容器检查最终 112 passed；前端 152 passed，构建通过。

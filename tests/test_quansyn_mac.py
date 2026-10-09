@@ -164,3 +164,29 @@ def test_native_handler_requires_pre_tool_admission(runtime):
     assert plugin.command(**handler_kw)["success"] is False
     with pytest.raises(ValueError, match="可信"):
         plugin.command(**handler_kw)
+
+
+def test_standalone_mac_package_uses_canonical_contract(tmp_path, monkeypatch):
+    import builtins
+    import importlib
+    import shutil
+    package = tmp_path / "quansyn_standalone"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    root = Path(__file__).resolve().parents[1]
+    shutil.copyfile(root / "agency/hermes-plugins/ai-lab-capabilities/quansyn.py", package / "quansyn.py")
+    shutil.copyfile(root / "backend/contracts/quansyn.py", package / "_quansyn_contract.py")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    module = importlib.import_module("quansyn_standalone.quansyn")
+    original_import = builtins.__import__
+    def standalone_import(name, *args, **kwargs):
+        if name == "backend" or name.startswith("backend."):
+            raise ImportError("source repository unavailable")
+        return original_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", standalone_import)
+    plugin = module.QuanSyn(SimpleNamespace(state=State(tmp_path / "state"), get_config=lambda key, default: "https://www.t-react.com"))
+    kw, _ = turn(plugin, "执行 QuanSyn qs_" + "a" * 32)
+    plugin.turns[kw["session_id"]]["executing"] = True
+    assert plugin.outputs({"paths": [], "blocks": [{"kind": "chart", "labels": ["x"], "values": [12]}]}, **kw)["success"]
+    with pytest.raises(ValueError):
+        plugin.outputs({"paths": [], "blocks": [{"kind": "chart", "labels": ["x"], "values": []}]}, **kw)
