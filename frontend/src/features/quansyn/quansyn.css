@@ -42,3 +42,23 @@
 .quansyn .insight-panel footer > .answer-copy { position:static; }
 
 .quansyn .open-file { white-space:nowrap; }
+
+.quansyn .qs-login-connect-slot { display:flex; justify-content:center; align-items:center; height:64px; }
+.quansyn .qs-login-connect { position:relative; display:grid; place-items:center; width:200px; height:56px; padding:0; border:1px solid #dce2ef; border-radius:18px; background:#fff; color:#2454bc; cursor:pointer; transition:width 300ms ease-in-out,height 300ms ease-in-out,border-radius 300ms ease-in-out,background-color 300ms ease-in-out,border-color 300ms ease-in-out; }
+.quansyn .qs-login-connect:focus-visible { outline:3px solid #9eb9ff; outline-offset:4px; }
+.quansyn .qs-connect-idle { display:flex; align-items:center; gap:12px; opacity:1; transition:opacity 300ms ease-in-out; }
+.quansyn .qs-connect-idle span { font-size:13px; font-weight:600; white-space:nowrap; }
+.quansyn .qs-login-connect:is(.is-loading,.is-success,.is-error) { width:48px; height:48px; border-radius:50%; }
+.quansyn .qs-login-connect:is(.is-loading,.is-success,.is-error) .qs-connect-idle { opacity:0; pointer-events:none; }
+.quansyn .qs-connect-ring,.quansyn .qs-connect-check,.quansyn .qs-connect-error { position:absolute; width:32px; height:32px; opacity:0; pointer-events:none; transition:opacity 150ms ease-in-out; }
+.quansyn .qs-connect-ring circle { fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-dasharray:48 22; }
+.quansyn .is-loading .qs-connect-ring { opacity:1; animation:qs-connect-spin 900ms linear infinite; }
+.quansyn .qs-login-connect.is-success { color:#fff; background:#20bc83; border-color:#20bc83; }
+.quansyn .is-success .qs-connect-check { opacity:1; }
+.quansyn .qs-connect-check path { fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:1; stroke-dashoffset:1; }
+.quansyn .is-success .qs-connect-check path { animation:qs-connect-draw 300ms ease-in-out forwards; }
+.quansyn .qs-login-connect.is-error { color:#a22f40; border-color:#e6b6bf; background:#fff3f5; }
+.quansyn .is-error .qs-connect-error { opacity:1; font-size:30px; line-height:30px; }
+@keyframes qs-connect-spin { to { transform:rotate(360deg); } }
+@keyframes qs-connect-draw { to { stroke-dashoffset:0; } }
+@media(prefers-reduced-motion:reduce) { .quansyn .qs-connect-check path { stroke-dashoffset:0; } }

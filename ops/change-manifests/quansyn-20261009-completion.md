@@ -448,3 +448,37 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 Mac 仅替换 __init__.py、capability_router.py、quansyn.py 和由 canonical 后端生成的 _quansyn_contract.py；其他模块不动，YAML 更新前后比较其余数据完全一致。Hermes 原生重启通过；launchd PID 从 1520 变为 14559；独立 PluginManager 加载、正式 API 地址、canonical contract 均通过。设备尚需用户在正式网页手动配对，未代替用户接受生产协议。Mac 回滚需先核对当前文件与 mac-install.json 哈希，恢复备份中的既有模块/配置并通过原生网关重启；未存在的新增模块仅在确认属于本任务后移除。
 
 使用入口：https://www.t-react.com/quansyn。真实账号登录后，Web 选择 Mac 并生成配对码，在现有机器人发“绑定 QuanSyn <配对码>”；发送需求后发“拉取并执行 QuanSyn qs_实际编号”，完成后发“推送 QuanSyn qs_实际编号 附件 1,2”（附件按真实清单选择）。首版仍为人工触发。
+
+
+## 2026-10-09 23:25 继续验收与登录按钮调整（尚未发布）
+
+本段与上方已部署产品记录分开：新增按钮改动及模拟器验收暂为 LOCAL_ONLY，未提交/未推送/未部署。
+
+- 开工盘点：分支 codex/quansyn-20261009，HEAD 7bdc23b791097b6395fad3ae84672fa3d6f03167，origin https://github.com/Johnie198946/Quantum.git；工作区只包含本任务 QuanSynDesign.jsx、quansyn.css、ProductionBookshelfUITests.swift 改动。独立 worktree 路径沿用本任务。其他 worktree/main 未改动。
+- 修改范围：上述三文件、frontend/tests/quansyn.test.mjs、本 manifest。继续复用手机验证码认证，不新增跨端认证边界；跨端一次性 App 授权方案等待用户按 AGENTS.md 确认。
+- 按钮：图标主导、文字辅助；300ms ease-in-out 缩成圆形，旋转加载至少 1.2 秒；真实短信发送成功才绿色描画对勾；失败显示错误；1 秒后恢复，避免与提交动作重叠。
+- 验证：前端 154 项测试全部通过，包含实际动效处理函数时序、慢请求、错误、卸载取消与忙碌保护；前端构建通过（最终提交按钮禁用条件调整也已重新构建通过）。浏览器/原生界面检查被 Mac 锁屏阻止，未获得动效实测截图。
+- 最新已完成的模拟器产品：/private/tmp/quansyn-derived-data/Build/Products/Debug-iphonesimulator/AIPlatformApp.app，1.0.3（84），此前完成时间 21:13。今晚旅行任务之后完成的是 iphoneos 构建，不能直接装到模拟器。新建独立 QuanSyn-20261009，UDID 24B48A56-1C35-4F01-9E95-DD91E1C60333，安装启动成功（PID 21005）。正常认证用例运行中，不注入令牌、不复制真机 Keychain。
+- USB XCTest 首次构建失败：XCUIElement.lastMatch 不存在，已改正；没有真机通过证据。用户随后要求模拟器，未继续 USB。
+- 生产只读核验：服务器 .deployed-sha=a9c1bfe97ebb17a7c21ecfe47e43812b4e9cb07b（服务器修复任务已包含996fb84产品发布）；直接 API /api/v1/auth/capabilities 返回 phone enabled=true；Authen 六个 authen@*.service active，8001 /health 200。未发生产验证码、未变更生产认证配置。
+- 当前续作 remote_sha/server_after/rollback_point：未执行新发布；先前发布证据仍在上方，新发布前必须保留 a9c1bfe 的服务器修复并建立回滚点。
+- 未完成：Mac 解锁后的动效界面检查；模拟器正常账号登录后真实 Web→App→Web 流程；经确认后实施一次性 App 授权登录；新改动提交、推送及部署。
+
+
+续作最终证据：模拟器 XCTest 已结束，exit 65；1 项用例在真实登录前置条件失败，主页 main-tab-0 不存在。导出的 UI hierarchy 明确显示“通过 Apple 登录”“手机号登录”，截图保存 ops/acceptance/quansyn-20261009/simulator-login-20261009.png。未执行模型请求及回传，不将该失败当作流程通过。此次构建与 UI 测试源码编译成功。
+
+当前续作交付字段：
+
+task_id: quansyn-20261009（登录按钮/模拟器续作）
+status: LOCAL_ONLY（前端154项测试与最终构建通过；模拟器完整流程未通过）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 7bdc23b791097b6395fad3ae84672fa3d6f03167；新增改动未提交
+remote_sha: 本轮未推送；既有发布证据见首节
+server_before: a9c1bfe97ebb17a7c21ecfe47e43812b4e9cb07b
+server_after: 本轮未部署，未修改生产运行版本
+health_check: 只读 Authen /health 200；六个 authen@*.service active；手机认证 capabilities enabled=true
+functional_check: 前端154测试通过及构建通过；模拟器真实登录前置失败，完整流程未验证；浏览器界面验收受 Mac 锁屏阻挡
+rollback_point: 本轮未部署，无新增回滚点；既有回滚点见首节
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 按钮当前仍接入手机验证码，App授权自动登录尚待用户架构确认；动效未做实际浏览器验收；模拟器需要正常登录才能验证真实回传
