@@ -119,9 +119,20 @@ remote_ref_sha: origin refs/heads/main and refs/heads/codex/travel-creation-orig
 server_before: unknown; historical root@120.24.248.58 read-only SSH returned Permission denied (publickey)
 server_after: not deployed
 health_check: production BEFORE deployment GET https://120.24.248.58/health => {"status":"ok","version":"0.8.0"}; after-deployment health not executed due SSH authentication
-functional_check: local tests as above; production and real-device acceptance pending
+functional_check: local tests as above plus physical iPhone acceptance below; production model flow pending
 rollback_point: source base 6808f3230aa3859b0e50cb88f166543a1a84b906; current server release unknown, must read before deployment
 TestFlight: Release 1.0.3(84) archived successfully at `/tmp/Quantumn-1.0.3-84-travel-original.xcarchive` from functional commit 071ac7fc. App/dSYM UUID 4CC68ADE-0E79-3D55-9480-6EA4EE6AD9ED match, deep strict codesign passes; OpenCV dynamic framework absent, inpaint symbols in app dSYM, privacy resource SHA matches upstream. Receipt: `ops/acceptance/travel-creation-original-20261009/archive-84.json`.
 CLI upload with existing ExportOptions.plist and authorized auto-signing failed with `exportArchive Failed to Use Accounts` (exit 70). Xcode UI still reports Mac locked; manual unlock requested. Apple build ID unknown, no upload claimed. User had installed build 82.
-remaining_risks: production SSH access and Xcode account/upload access via Mac unlock pending; historical workflows retain compatibility clarification mode; no full chat transcript inheritance; final real-device installation/keyboard/real generated plan not yet verified.
+remaining_risks: production SSH access pending; historical workflows retain compatibility clarification mode; no full chat transcript inheritance; physical development installation/UI verified, TestFlight installation and production model generation not yet verified.
 rollback: restore previous immutable server release only after recording its path/SHA; client prior build 82 remains available, no destructive note migration performed.
+
+## 2026-10-09 physical device acceptance and upload continuation
+User connected and unlocked the phone/Mac and explicitly requested physical validation followed by TestFlight upload.
+- Connected iPhone 17 Pro: original app 1.0.3(82); same bundle ID development test installation updated to 1.0.3(84), read back with devicectl after tests. No uninstall or user data deletion.
+- `xcodebuild test` physical destination 00008150-000C50980244401C: one TravelNotePresentation unit + three ProductionBookshelf UI tests passed, zero failures. `/tmp/QuantumTravelOriginalDevice84.xcresult`.
+- Keyboard opens and accepts free text; manual creation fields/removed attachment controls; save/selected cover/open diary/three-photo width bounds/practical appendix verified. Screenshots inspected/exported in `ops/acceptance/travel-creation-original-20261009/device-84/`.
+- This is native physical UI acceptance using structured preview fixtures, not a claim that the currently undeployed backend model flow was exercised. TestFlight package installation remains separate.
+- Optional diagnostic collection logged partial devicectl diagnose failure after successful tests; xcodebuild exited success.
+- Xcode reopened archive 1.0.3(84); user-authorized App Store Connect upload completed. Xcode shows `App upload complete: AIPlatformApp 1.0.3 (84) uploaded`; ContentDelivery.log reports `UPLOAD SUCCEEDED with no errors`. No `Upload Symbols Failed` or missing dSYM warning in distribution logs.
+- App Store Connect iOS upload list shows build 84 `正在处理`, created Oct 9, 2026 7:46 PM; Apple processing/internal availability still pending.
+- Normal app launch after testing via devicectl succeeded; returned phone to normal app entry.

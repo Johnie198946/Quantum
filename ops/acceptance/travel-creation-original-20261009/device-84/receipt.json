@@ -1,0 +1,25 @@
+{
+  "source_commit": "071ac7fc5b2f5df2c0b25e2c8b7f564aa6893483",
+  "device": "iPhone 17 Pro",
+  "os": "iOS 26.6",
+  "bundle_id": "com.ailab.AIPlatformApp",
+  "before_build": "82",
+  "after_build": "84",
+  "version": "1.0.3",
+  "installation": "development-signed test app, in-place update; no user data deletion",
+  "unit_tests_passed": 1,
+  "ui_tests_passed": 3,
+  "ui_checks": [
+    "keyboard opens and accepts text",
+    "manual travel brief and removed attachment controls",
+    "save cover and non-destructive content options",
+    "cover opens diary with three photos within screen width",
+    "practical appendix opens"
+  ],
+  "result_bundle": "/tmp/QuantumTravelOriginalDevice84.xcresult",
+  "limitations": [
+    "Structured preview fixtures on physical device; production model generation not exercised",
+    "TestFlight-distributed installation pending Apple upload/processing",
+    "Partial optional devicectl diagnostic collection warning; all selected tests passed"
+  ]
+}

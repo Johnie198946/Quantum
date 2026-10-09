@@ -11,6 +11,10 @@
   "archive": "/tmp/Quantumn-1.0.3-84-travel-original.xcarchive",
   "opencv_privacy_sha256": "95d0d3491c823e4faf2b3a8cf44dd2eff734787e5a19c468b0ea75b45302855b",
   "opencv_privacy_matches_upstream": true,
-  "upload_attempt": "CLI failed: Failed to Use Accounts; Xcode UI blocked by locked Mac",
-  "apple_build_id": null
+  "upload_attempt": "Xcode App Store Connect upload completed",
+  "apple_build_id": null,
+  "upload_status": "UPLOAD SUCCEEDED with no errors",
+  "apple_processing_status": "PROCESSING observed in App Store Connect at 2026-10-09 19:46 Asia/Shanghai",
+  "opencv_dsym_warning": false,
+  "distribution_log": "/private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/AIPlatformApp_2026-10-09_19-44-01.883.xcdistributionlogs"
 }
