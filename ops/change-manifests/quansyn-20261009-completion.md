@@ -1,3 +1,25 @@
+# QuanSyn 当前发布状态 — 登录按钮续作
+
+task_id: quansyn-20261009
+status: DEPLOYED（完整真实账号流程尚未验收，不标 VERIFIED）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 产品 01161f7603d7b3bea0a0c082cbf67862e35bf066；文档验收记录后续提交，见 Git HEAD
+remote_sha: 产品 01161f7603d7b3bea0a0c082cbf67862e35bf066 已经 git ls-remote 核对本任务分支；使用 quansyn-20261009-button-release tag 固定产品
+server_before: a9c1bfe97ebb17a7c21ecfe47e43812b4e9cb07b
+server_after: 01161f7603d7b3bea0a0c082cbf67862e35bf066；/opt/releases/ai-lab-platform-01161f7603d7.EQMipk
+health_check: 更新脚本 exit 0；8 容器 healthy；API ready；runtime contract audit passed；Hermes bridge/chat-worker active 且 bridge 健康检查通过
+functional_check: HTTPS /quansyn、/quansyn/、/health 200，SPA 入口与本次 index.html 哈希一致，82 前端文件哈希全部一致，未认证私有队列 401；本地浏览器检查新按钮及真实请求失败后恢复；154 前端测试、171 部署与聊天相关测试、前端构建通过
+rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-20261009.IboCGX（数据库、聊天库、镜像、版本）；原 release /opt/releases/ai-lab-platform-a9c1bfe97ebb.fUREKK 保留
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 正式浏览器自动化仍超时，未取得正式截图；模拟器尚未正常登录，未通过真实回传全流程；按钮仍使用短信验证码，App 一次性授权自动登录的认证边界等待用户确认
+
+本轮仅调整登录按钮，其他视觉设计维持原样。先提交按钮 ce3273d2，再合并服务器修复 a9c1bfe9 得到产品 01161f76，保留部署 ACL 和推理计费修复。推送本任务分支并核对远端后，通过部署锁与 expected-current-SHA 条件保护生产，建立回滚点、构建候选、校验镜像文件、调用现有 update.sh 完成部署。没有覆盖共享 main 或修改其他任务未提交内容。
+
+证据：ops/acceptance/quansyn-20261009/button-release.json、button-production-http.json、button-deployment-wrapper.sh、button-deployment.txt、button-tests.txt、button-merge-tests.txt、button-build.txt、button-local.png。生产 HTML 核验曾错误要求所有懒加载 index 分块出现在 HTML 中，已改为核对 SPA 入口完整字节哈希；该问题是检查脚本假设错误，82 资源哈希一直匹配。
+
+以下记录为前次发布及本轮实施前的历史状态，当前交付以上述字段为准。
+
 # QuanSyn 20261009 — 交付记录
 
 task_id: quansyn-20261009
