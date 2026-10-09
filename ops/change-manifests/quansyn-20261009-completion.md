@@ -1,4 +1,24 @@
-# QuanSyn 当前发布状态 — 登录按钮续作
+# QuanSyn 当前续作 — DNS 回包修复
+
+task_id: quansyn-20261009（DNS修复续作）
+status: TESTED（运维修复尚未提交/推送/部署）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: b08dc111d391f2244590060824fd4de0fce4dc7e；本次修改未提交
+remote_sha: 开工git ls-remote origin refs/heads/codex/quansyn-20261009=b08dc111d391f2244590060824fd4de0fce4dc7e；本轮尚未push
+server_before: 1c7c5062cd0248edeb10080cb9b80ec6320e2882；INPUT ts-input在前，云DNS回包被DROP
+server_after: 尚未部署，当前与server_before相同
+health_check: 修复前tailscaled/systemd-resolved/authen@auth.service均active
+functional_check: bash语法、DNS规则顺序/幂等/重配置/回滚测试通过；远端短信未修复验证
+rollback_point: 尚未写入服务器，部署前建立备份；只回滚本任务规则与文件
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 短暂防火墙重配置后最多约6秒规则恢复；实际短信收件和登录待验证
+
+用户最新“那你抓啊直到发现问题，然后修复”授权本次有界修复，覆盖此前不得修改配置的限制，仅用于已证明的DNS拦截问题；不视为App内验证码架构确认。修改前盘点：branch/HEAD/remote/worktree如上；status只包含本任务docs/plans/quansyn-20261009.md及本manifest待确认方案/诊断记录，没有其他任务改动。新增scripts/ensure_cloud_dns.sh、两个ops/systemd文件、tests/test_cloud_dns_guard.py、docs/runbooks/cloud-dns-tailscale.md；复用iptables与systemd，不改认证代码、DNS地址、应用版本或Tailscale设置。
+
+以下为之前发布与诊断的历史记录。
+
+# QuanSyn 前次发布状态 — 登录按钮续作
 
 task_id: quansyn-20261009
 status: DEPLOYED（完整真实账号流程尚未验收，不标 VERIFIED）
@@ -512,9 +532,20 @@ remaining_risks: 按钮当前仍接入手机验证码，App授权自动登录尚
 
 - 对用户指定账号向正式 /api/v1/auth/phone/send-code 只发起一次真实请求，20.28 秒后返回503“认证服务暂不可用”。未称成功、未读取Redis或日志中的验证码、未创建替代登录令牌。
 - 本地 Authen 源码较旧，不能作为生产短信实现结论。生产 /opt/authen/services/auth/main.py 已调用真实 SMSService，并且只在发送成功后保存验证码。日志出现“阿里云短信发送异常: UnretryableException”；capabilities enabled 仅证明配置存在。
-- 生产 DNS：100.100.2.136 UDP/TCP查询均超时；正常域名解析与 curl DNS阶段超时；systemd-resolved 日志反复切换UDP/TCP。内网DNS的路由均是eth0，排除了Tailscale路由冲突假设。
+- 生产 DNS：100.100.2.136 UDP/TCP查询均超时；正常域名解析与 curl DNS阶段超时；systemd-resolved 日志反复切换UDP/TCP。当时仅核对内网DNS路由为eth0，未核对回包防火墙；不能据此排除Tailscale影响，纠正及抓包证据见下节。
 - 223.5.5.5、223.6.6.6 均解析同一短信域名成功；使用解析到的真实IP进行HTTPS HEAD，保留域名与TLS证书校验，HTTP200。这只能证明DNS和TLS连通，不能证明短信凭据、签名、模板、余额或实际送达通过。
 - 正式非法手机号、非6位验证码均422；请求在平台验证阶段结束，不触发短信和验证码核对。现有 tests/test_external_auth.py 11 passed、4 warnings。
-- 待确认方案：备份DNS运行/持久配置与回滚命令，将eth0 DNS调整为223.5.5.5、223.6.6.6，重新验证解析、短信发送和健康，再由用户实际收到短信并正常登录验证完整流程。涉及全机域名解析，已解释影响并请求授权；未获答复前不执行。
+- 当时拟议方案：备份DNS运行/持久配置与回滚命令，将eth0 DNS调整为223.5.5.5、223.6.6.6。用户随后明确要求不能修改，此方案未获授权且已取消；不修改DNS、路由或防火墙。
 
 本轮 server_before/server_after：现有产品版本01161f76，本轮未部署或更改服务器配置；health_check：此前服务健康不能替代本次短信验证；functional_check：短信发送失败，非法输入拒绝通过，真实收到短信与登录未验证；rollback_point：本轮无配置写入，不适用（原产品回滚点仍为IboCGX）；remaining_risks：DNS明确故障，修复后仍须排查可能的短信供应商拒绝；最终诊断证据sms-request.json、sms-validation.json、sms-diagnosis.json、sms-auth-tests.txt。
+
+## DNS 回包丢弃根因核对（2026-10-10 06:44 CST，只读）
+
+- 开工：codex/quansyn-20261009，HEAD b08dc111d391f2244590060824fd4de0fce4dc7e，origin https://github.com/Johnie198946/Quantum.git；独立 worktree 未变。已有本任务 docs/plans/quansyn-20261009.md 待确认方案改动，未覆盖其他任务。
+- 当前服务器版本由其他任务更新为 1c7c5062cd0248edeb10080cb9b80ec6320e2882；本轮只读，没有部署。DNS 默认仍为100.100.2.136和100.100.2.138。
+- 历史解析器日志：10月9日16:07:57出现tailscale0默认DNS路由设置记录，16:07:58及16:11:37清缓存；16:11:57起对100.100.2.138反复降级UDP/TCP。异常早于20:09的服务器重启，不能归因为该次重启。现有日志未证明谁或哪条操作新增了防火墙规则。
+- 当前INPUT第一跳是ts-input。该链无条件丢弃来自100.64.0.0/10且入口不是tailscale0的数据包；阿里云DNS地址100.100.2.136/138均命中此范围。已有lo、tailscale0、UDP目的端口41641及100.115.92.0/23例外均不匹配DNS回包。
+- 06:44:08只发出一次公开短信域名DNS查询，抓取限定eth0、100.100.2.136、UDP53的两包：云DNS在约0.3ms内正确返回CNAME与A记录106.11.211.236/106.11.45.35，但dig仍超时exit9；ts-input DROP计数由54212增至54216。证据证明云DNS有回包、当前主机规则会丢弃该回包，并非域名不存在或上游完全未回应。计数还包含同期其他包，不将增加4解释为该一次查询发出4包。
+- 此前只凭路由排除Tailscale影响的判断不完整；已用防火墙规则和实际回包证据纠正。没有flush缓存、修改规则、更改DNS、重启服务或发送短信。
+
+续作状态：LOCAL_ONLY（诊断文档未提交；无产品代码变更）。head/local_commit=b08dc111d391f2244590060824fd4de0fce4dc7e；remote_sha=本轮未push，既有push证据见前文；server_before=server_after=1c7c5062cd0248edeb10080cb9b80ec6320e2882；health_check=本轮未重复服务健康检查；functional_check=DNS回包与丢弃规则核对通过，短信送达/登录未通过；rollback_point=无外部写入，不适用；remaining_risks=用户禁止配置修改，故障尚未修复，不能声明短信凭据及送达正常；App内验证码边界仍待确认。

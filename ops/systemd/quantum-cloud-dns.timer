@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Alibaba DNS reply exceptions after firewall reconfiguration
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Unit=quantum-cloud-dns.service
+
+[Install]
+WantedBy=timers.target
