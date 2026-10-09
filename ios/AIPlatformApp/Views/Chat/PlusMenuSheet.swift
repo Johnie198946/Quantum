@@ -18,6 +18,7 @@ public struct PlusMenuSheet: View {
     public var onPhotoPicked: (Data) -> Void
     public var onDocumentPicked: (URL) -> Void
     public var onWeChatImported: (String) -> Void
+    public var onQuanSynImported: (QuanSynTransferDTO) async throws -> Void
     public var onKnowledgeReferenced: (KnowledgeItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -25,6 +26,9 @@ public struct PlusMenuSheet: View {
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var isFileImporterPresented: Bool = false
     @State private var showWeChatImport: Bool = false
+    @State private var quanSynItems: [QuanSynTransferDTO] = []
+    @State private var quanSynError: String?
+    @State private var quanSynBusy = false
     @State private var wechatLink: String = ""
     @State private var showKnowledgePicker: Bool = false
     @State private var toast: ToastState? = nil
@@ -33,11 +37,13 @@ public struct PlusMenuSheet: View {
         onPhotoPicked: @escaping (Data) -> Void,
         onDocumentPicked: @escaping (URL) -> Void,
         onWeChatImported: @escaping (String) -> Void,
+        onQuanSynImported: @escaping (QuanSynTransferDTO) async throws -> Void,
         onKnowledgeReferenced: @escaping (KnowledgeItem) -> Void
     ) {
         self.onPhotoPicked = onPhotoPicked
         self.onDocumentPicked = onDocumentPicked
         self.onWeChatImported = onWeChatImported
+        self.onQuanSynImported = onQuanSynImported
         self.onKnowledgeReferenced = onKnowledgeReferenced
     }
 
@@ -64,7 +70,7 @@ public struct PlusMenuSheet: View {
                         documentEntry
                         wechatEntry
                         if showWeChatImport {
-                            wechatImportSection
+                            quanSynImportSection
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         knowledgeEntry
@@ -130,13 +136,14 @@ public struct PlusMenuSheet: View {
 
     private var wechatEntry: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { showWeChatImport.toggle() }
+            showWeChatImport.toggle()
+            if showWeChatImport { refreshQuanSyn() }
         } label: {
             entryRow(
-                icon: "message.fill",
-                title: "微信导入",
-                subtitle: "mp.weixin.qq.com 白名单校验",
-                tint: AppTheme.Colors.thirdPartyWeChat
+                icon: "arrow.triangle.2.circlepath",
+                title: "QuanSyn",
+                subtitle: "拉取 Web 资料到当前输入框",
+                tint: AppTheme.Colors.quantumCyan
             )
         }
         .buttonStyle(SoftButtonStyle())
@@ -154,6 +161,39 @@ public struct PlusMenuSheet: View {
             )
         }
         .buttonStyle(SoftButtonStyle())
+    }
+
+    private func refreshQuanSyn() {
+        quanSynBusy = true; quanSynError = nil
+        Task {
+            defer { quanSynBusy = false }
+            do { quanSynItems = try await APIClient.shared.fetchQuanSyn() }
+            catch { quanSynError = error.localizedDescription }
+        }
+    }
+
+    private var quanSynImportSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if quanSynBusy { ProgressView("正在处理 QuanSyn 资料…") }
+            if let quanSynError { Text(quanSynError).foregroundStyle(.red) }
+            if !quanSynBusy && quanSynItems.isEmpty { Text("暂无待拉取资料，请先在 QuanSyn Web 发送需求。") }
+            ForEach(quanSynItems) { item in
+                Button {
+                    quanSynBusy = true; quanSynError = nil
+                    Task {
+                        defer { quanSynBusy = false }
+                        do { try await onQuanSynImported(item); dismiss() }
+                        catch { quanSynError = error.localizedDescription }
+                    }
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(item.text.isEmpty ? "附件资料" : item.text).lineLimit(3)
+                        Text("\(item.files.count) 个附件 · \(item.id)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.disabled(quanSynBusy)
+            }
+            Button("刷新", action: refreshQuanSyn).disabled(quanSynBusy)
+        }.padding().background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - 微信导入子面板
@@ -368,6 +408,7 @@ public struct PlusMenuSheet: View {
         onPhotoPicked: { _ in },
         onDocumentPicked: { _ in },
         onWeChatImported: { _ in },
+        onQuanSynImported: { _ in throw APIError.network("预览不执行导入") },
         onKnowledgeReferenced: { _ in }
     )
 }
@@ -377,6 +418,7 @@ public struct PlusMenuSheet: View {
         onPhotoPicked: { _ in },
         onDocumentPicked: { _ in },
         onWeChatImported: { _ in },
+        onQuanSynImported: { _ in throw APIError.network("预览不执行导入") },
         onKnowledgeReferenced: { _ in }
     )
 }

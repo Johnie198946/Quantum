@@ -1,0 +1,44 @@
+/* API integration only; the supplied design.css owns the visual layout. */
+.quansyn { min-height:100vh; }
+.quansyn * { box-sizing:border-box; }
+.quansyn button:disabled { opacity:.5; cursor:wait; }
+.quansyn button:focus-visible,.quansyn input:focus-visible,.quansyn textarea:focus-visible,.quansyn a:focus-visible { outline:2px solid #6e60d7; outline-offset:3px; }
+.quansyn .brand-mark { background:transparent; box-shadow:none; }
+.quansyn .brand-mark img { width:100%; height:100%; object-fit:contain; }
+.quansyn .assistant-label img { width:100%; height:100%; object-fit:contain; }
+.quansyn .image-preview img { width:100%; height:100%; object-fit:cover; }
+.quansyn .file-meta-inline { display:contents; }
+.quansyn .image-bubble,.quansyn .file-bubble { text-align:left; }
+.quansyn .rich-answer { overflow-wrap:anywhere; }
+.quansyn .rich-answer pre,.quansyn .code-block>code { white-space:pre; overflow:auto; display:block; max-width:100%; }
+.quansyn .rich-answer h1,.quansyn .rich-answer h2 { font-size:16px; margin:12px 0; }
+.quansyn .qs-table { position:relative; margin-top:16px; overflow:auto; }
+.quansyn .qs-table table { border-collapse:collapse; font-size:10px; }
+.quansyn .qs-table td,.quansyn .qs-table th { padding:8px 12px; border:1px solid #e0e3ee; }
+.quansyn .qs-table>.answer-copy { position:static; display:block; margin-left:auto; }
+.quansyn .qs-selected { display:flex; flex-wrap:wrap; gap:8px; }
+.quansyn .qs-selected span { display:flex; gap:8px; align-items:center; padding:5px 8px; background:#f1effa; border-radius:6px; font-size:10px; }
+.quansyn .qs-selected button { border:0; background:none; }
+.quansyn .qs-error { color:#a22f40; font-size:12px; }
+.quansyn .qs-modal { border:0; padding:0; background:transparent; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); }
+.quansyn .qs-modal::backdrop { background:#151b3266; }
+.quansyn .qs-modal section { position:relative; max-width:600px; padding:32px; background:#fff; border-radius:20px; overflow:auto; }
+.quansyn .qs-modal section>button { float:right; border:0; background:none; }
+.quansyn .qs-modal pre { white-space:pre-wrap; overflow-wrap:anywhere; user-select:all; }
+.quansyn .qs-copy { border:0; background:none; color:#6b5ec1; cursor:pointer; }
+.quansyn .qs-device { display:flex; justify-content:space-between; gap:8px; padding-top:8px; overflow-wrap:anywhere; }
+.quansyn .qs-device button { border:0; background:none; color:#6b5ec1; font-size:10px; }
+.quansyn .qs-agreement { padding:16px; line-height:1.8; }
+.quansyn .qs-detail-image { max-width:100%; max-height:240px; object-fit:contain; }
+.quansyn .qs-loading { display:grid; place-items:center; }
+@media(prefers-reduced-motion:reduce) { .quansyn *, .quansyn *::before,.quansyn *::after { animation:none!important; transition:none!important; } }
+
+/* Restore browser defaults that Quantum global classes otherwise override. */
+.quansyn .chat-header { flex-direction:row; }
+.quansyn .sidebar.drawer { display:block; }
+.quansyn .topbar-exit { white-space:nowrap; }
+.quansyn .qs-selected { grid-column:1 / -1; grid-row:2; }
+.quansyn .topbar .brand-mark { background:transparent; box-shadow:none; }
+.quansyn .insight-panel footer > .answer-copy { position:static; }
+
+.quansyn .open-file { white-space:nowrap; }

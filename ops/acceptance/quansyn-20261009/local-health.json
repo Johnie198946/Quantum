@@ -1,0 +1,9 @@
+{
+  "health_status": 200,
+  "health": {
+    "status": "ok",
+    "version": "0.8.0"
+  },
+  "test_devices_revoked": 1,
+  "test_keychain_cleanup_exit": 0
+}

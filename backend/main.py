@@ -45,6 +45,7 @@ from backend.api.knowledge_contribution import router as knowledge_contribution_
 from backend.api.hot_memory import router as hot_memory_router
 from backend.api.external_auth import router as external_auth_router
 from backend.api.quantum_workspace import router as quantum_workspace_router
+from backend.api.quansyn import router as quansyn_router
 from backend.db import SessionLocal, init_db
 from backend.models.workspace import WorkspaceProject
 
@@ -244,6 +245,8 @@ app.include_router(capabilities_router, dependencies=[Depends(require_current_ag
 app.include_router(quantum_workspace_router, dependencies=[Depends(require_current_agreement)])
 # Authen HMAC webhook + signed-capability Knowledge Gateway use their own auth.
 app.include_router(knowledge_policy_router)
+
+app.include_router(quansyn_router)
 
 # ---------- 健康检查 ----------
 @app.get("/health")

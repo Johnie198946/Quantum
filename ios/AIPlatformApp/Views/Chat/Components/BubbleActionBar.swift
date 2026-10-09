@@ -113,6 +113,7 @@ public struct BubbleActionBar: View {
     public let messageId: String
     public let content: String
     public var onRegenerate: (() -> Void)? = nil
+    public var onQuanSyn: (() -> Void)? = nil
 
     @State private var isCopied: Bool = false
     @State private var feedbackState: FeedbackState = .none
@@ -124,10 +125,11 @@ public struct BubbleActionBar: View {
         case down
     }
 
-    public init(messageId: String, content: String, onRegenerate: (() -> Void)? = nil) {
+    public init(messageId: String, content: String, onRegenerate: (() -> Void)? = nil, onQuanSyn: (() -> Void)? = nil) {
         self.messageId = messageId
         self.content = content
         self.onRegenerate = onRegenerate
+        self.onQuanSyn = onQuanSyn
     }
 
     public var body: some View {
@@ -160,6 +162,12 @@ public struct BubbleActionBar: View {
                     .padding(.vertical, 3)
                 }
                 .buttonStyle(SoftButtonStyle())
+            }
+
+            if let onQuanSyn {
+                Button(action: onQuanSyn) {
+                    Label("QuanSyn", systemImage: "arrow.up.right.square").font(.system(size: 11))
+                }.buttonStyle(SoftButtonStyle()).accessibilityLabel("推送到 QuanSyn")
             }
 
             // 语音朗读 (TTS)

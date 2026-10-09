@@ -19,6 +19,8 @@ const QuantumWorkspaceLayout = lazy(() => import("../features/quantum-workspace/
 const WorkspaceHomePage = lazy(() => import("../features/quantum-workspace/WorkspaceHomePage").then((module) => ({ default: module.WorkspaceHomePage })));
 const ProjectWorkspacePage = lazy(() => import("../features/quantum-workspace/ProjectWorkspacePage").then((module) => ({ default: module.ProjectWorkspacePage })));
 
+const QuanSynPage = lazy(() => import("../features/quansyn/QuanSynPage"));
+
 function ShowroomRedirect() {
   const { isAuthenticated, authSession } = useAuth();
   return <Navigate to={isAuthenticated ? "/agency" : "/login?next=/agency"} replace />;
@@ -36,8 +38,9 @@ export default function App() {
     <Suspense fallback={<div className="qw-page-state">正在加载工作区…</div>}><Routes>
       <Route
         path="/"
-        element={<Navigate to={isAuthenticated ? (isShowroomAccount(authSession?.user) ? "/agency" : "/home") : "/login"} replace />}
+        element={<Navigate to={window.location.hostname === "www.t-react.com" ? "/quansyn" : isAuthenticated ? (isShowroomAccount(authSession?.user) ? "/agency" : "/home") : "/login"} replace />}
       />
+      <Route path="/quansyn" element={<QuanSynPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/showroom/*" element={<ShowroomRedirect />} />
       <Route element={<ProtectedRoute />}>
@@ -63,7 +66,7 @@ export default function App() {
       </Route>
       <Route
         path="*"
-        element={<Navigate to={isAuthenticated ? (isShowroomAccount(authSession?.user) ? "/agency" : "/home") : "/login"} replace />}
+        element={<Navigate to={window.location.hostname === "www.t-react.com" ? "/quansyn" : isAuthenticated ? (isShowroomAccount(authSession?.user) ? "/agency" : "/home") : "/login"} replace />}
       />
     </Routes></Suspense>
   );

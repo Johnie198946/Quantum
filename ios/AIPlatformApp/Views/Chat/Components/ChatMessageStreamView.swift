@@ -244,6 +244,7 @@ public struct ChatMessageStreamView: View {
                 context: coordinator.makeRenderContext(for: message),
                 onQuoteFollowUp: { quoted in coordinator.quotedContext = quoted },
                 onRegenerate: { msgId in coordinator.retryMessage(msgId) },
+                onQuanSyn: { msgId in coordinator.pushQuanSyn(messageId: msgId) },
                 onStartTopic: { message in
                     if let onStartTopic { onStartTopic(message) }
                     else { coordinator.startTargetedTopic(from: message) }

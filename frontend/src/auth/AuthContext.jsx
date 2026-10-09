@@ -46,8 +46,10 @@ export function AuthProvider({ children }) {
             }),
           );
         }
-      } catch {
-        clearAuthSession();
+      } catch (error) {
+        if (active && error.status === 428 && storedSession.mode === "phone-pending-agreement") {
+          setAuthSession(storedSession);
+        } else { clearAuthSession(); }
       } finally {
         if (active) {
           setIsReady(true);
@@ -78,13 +80,15 @@ export function AuthProvider({ children }) {
     return session;
   };
 
-  const loginWithPhone = async ({ phone, code }) => {
+  const loginWithPhone = async ({ phone, code, allowPendingAgreement = false }) => {
     const accessToken = await platformApi.authenticatePhone({ phone, code });
-    const user = await platformApi.getSessionMe({ accessToken, skipSessionAuth: true });
+    let user;
+    try { user = await platformApi.getSessionMe({ accessToken, skipSessionAuth: true }); }
+    catch (error) { if (!allowPendingAgreement || error.status !== 428) throw error; }
     const session = buildAuthSession({
       accessToken,
       identifier: phone,
-      mode: "phone",
+      mode: user ? "phone" : "phone-pending-agreement",
       user,
     });
     saveAuthSession(session);
