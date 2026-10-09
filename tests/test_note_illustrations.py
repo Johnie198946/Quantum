@@ -181,12 +181,13 @@ def test_existing_worker_dispatches_note_job_without_chat_agent(tmp_path, monkey
     assert len(json.loads(completed['final_answer'])['assets']) == 1
 
 
-def test_travel_prefers_existing_web_reference_before_generated_fallback():
+def test_travel_always_searches_photos_and_never_generates_fallback():
     content = json.dumps({'stops': [{'name': '温泉'}], 'photo_references': [
         {'anchor': 'overview', 'image_url': 'https://example.com/onsen.jpg', 'source_id': 'official'}]})
     plan = illustration_plan(request(content, travel=True))
     assert [item['anchor'] for item in plan] == ['overview', 'stop:0']
-    assert 'web_reference' in plan[0] and 'prompt' not in plan[0]
+    assert all('web_reference' in item and 'prompt' not in item for item in plan)
+    assert '温泉' in plan[1]['web_reference']['query']
 
 
 def test_web_reference_archives_through_existing_owner_scoped_assets(tmp_path):
@@ -198,7 +199,7 @@ def test_web_reference_archives_through_existing_owner_scoped_assets(tmp_path):
     captures = []
     def capture(reference, task_id):
         captures.append((reference, task_id))
-        return b'archived-fixture', 'web-reference', 'page-screenshot'
+        return b'archived-fixture', 'web-reference', 'verified-landscape'
     def must_not_generate(prompt):
         raise AssertionError('real photos must not be replaced by synthetic images')
     execute_illustrations(store, row, must_not_generate, capture)
@@ -206,29 +207,129 @@ def test_web_reference_archives_through_existing_owner_scoped_assets(tmp_path):
     assert len(captures) == 1 and captures[0][1] == row['run_id']
     assert captures[0][0]['source_url'] == 'https://example.com'
     asset = result['assets'][0]
-    assert asset['provider'] == 'web-reference' and '来源页面截图' in asset['alt']
+    assert asset['provider'] == 'web-reference' and '网络风景参考' in asset['alt']
     assert (media_directory(store, row['run_id']) / '0.jpg').read_bytes() == b'archived-fixture'
     assert result['failed_indices'] == []
 
 
-@pytest.mark.parametrize("native", [False, True])
-def test_reference_screenshot_accepts_both_hermes_vision_formats(tmp_path, monkeypatch, native):
+@pytest.mark.parametrize("accepted", [False, True])
+def test_reference_search_requires_real_unwatermarked_landscape(tmp_path, monkeypatch, accepted):
     import sys
     from types import SimpleNamespace
     from PIL import Image
     from backend.services.note_illustrations import archive_web_reference
-    image = tmp_path / "capture.png"
-    Image.new("RGB", (20, 10), "green").save(image)
-    cleanup = []
-    async def denied_download(*args, **kwargs):
-        raise RuntimeError("source requires page screenshot")
-    monkeypatch.setitem(sys.modules, "tools.url_safety", SimpleNamespace(is_safe_url=lambda url: True))
-    monkeypatch.setitem(sys.modules, "tools.vision_tools", SimpleNamespace(_download_image=denied_download))
-    result = {"meta": {"screenshot_path": str(image)}} if native else {"screenshot_path": str(image)}
-    monkeypatch.setitem(sys.modules, "tools.browser_tool", SimpleNamespace(
-        browser_navigate=lambda *args, **kwargs: '{"success": true}',
-        browser_vision=lambda *args, **kwargs: result if native else json.dumps(result),
-        cleanup_browser=lambda **kwargs: cleanup.append(kwargs["task_id"])))
-    data, provider, kind = archive_web_reference({"source_url": "https://example.com", "image_url": "https://example.com/image"}, "test-capture")
-    assert data.startswith(b"\xff\xd8") and provider == "web-reference" and kind == "page-screenshot"
-    assert cleanup == ["test-capture"]
+    image = tmp_path / "landmark.jpg"
+    Image.new("RGB", (900, 600), "green").save(image)
+    seen = []
+    async def download(url, *args, **kwargs):
+        seen.append(url)
+        return image
+    async def inspect(path, prompt, **kwargs):
+        assert '没有水印' in prompt and '鹿儿岛' in prompt
+        return json.dumps({'success': True, 'analysis': json.dumps({'accepted': accepted})})
+    async def extract(urls, **kwargs):
+        return json.dumps({'results': [{'url': urls[0], 'content': '![地标](https://example.com/landmark.jpg)'}]})
+    monkeypatch.setitem(sys.modules, "tools.url_safety", SimpleNamespace(is_safe_url=lambda url: not url.startswith('http://127.')))
+    monkeypatch.setitem(sys.modules, "tools.vision_tools", SimpleNamespace(_download_image=download, vision_analyze_tool=inspect))
+    monkeypatch.setitem(sys.modules, "tools.web_tools", SimpleNamespace(web_search_tool=lambda *args, **kwargs: json.dumps({'data': {'web': [{'url': 'https://example.com/source'}]}}), web_extract_tool=extract))
+    reference = {'query': '鹿儿岛 地标照片', 'subject': '鹿儿岛'}
+    if accepted:
+        data, provider, kind = archive_web_reference(reference, 'owned-task')
+        assert data.startswith(b'\xff\xd8') and provider == 'web-reference' and kind == 'verified-landscape'
+        assert reference['source_url'] == 'https://example.com/source'
+    else:
+        with pytest.raises(RuntimeError, match='destination_photo_unavailable'):
+            archive_web_reference(reference, 'owned-task')
+    assert seen == ['https://example.com/landmark.jpg']
+    with pytest.raises(ValueError, match='reference_url_denied'):
+        archive_web_reference({'image_url': 'http://127.0.0.1/private'}, 'owned-task')
+
+
+def test_missing_travel_photo_does_not_substitute_generated_image(tmp_path):
+    store = DurableChatRunStore(tmp_path / 'runs.db')
+    row = run(store, request(json.dumps({'destination': '鹿儿岛', 'stops': []}), travel=True))
+    generated = []
+    def fail_capture(*args):
+        raise RuntimeError('no matching landmark')
+    execute_illustrations(store, row, lambda prompt: generated.append(prompt), fail_capture)
+    value = json.loads(store.get_unchecked(row['run_id'])['final_answer'])
+    assert value['assets'] == [] and value['failed_indices'] == [0]
+    assert generated == []
+
+
+def test_photo_html_fallback_ignores_site_branding_and_keeps_landmark():
+    from backend.services.note_illustrations import _PhotoPageImages
+    parser = _PhotoPageImages()
+    parser.feed('<meta property="og:image" content="https://example.com/images/front/ogp.png">'
+                '<img src="/images/front/common-hamburger-bg.jpg"><img src="/photo/image/2332" alt="仙巌園">'
+                '<img data-src="/photo/second.jpg" alt="庭園">')
+    assert parser.urls == ['/photo/image/2332', '/photo/second.jpg']
+
+
+@pytest.mark.parametrize('owned', [False, True])
+def test_travel_photo_vision_reuses_trusted_owner_runner(tmp_path, monkeypatch, owned):
+    from backend.services import note_illustrations as service, tenant_hermes_sandbox
+    from scripts.hermes_bridge_runtime import workflow_artifacts
+    from PIL import Image
+    store = DurableChatRunStore(tmp_path / 'runs.db')
+    body = request(json.dumps({'destination': '鹿儿岛', 'stops': []}), travel=True)
+    row = run(store, body)
+    if owned:
+        row.update(tenant_id='tenant-a', user_id='user-a')
+    sandbox = object()
+    seen = []
+    def owner_context(**kwargs):
+        assert kwargs == {'tenant_key': 'tenant-a', 'user_id': 'user-a'}
+        return sandbox
+    def runner(prompt, node, **kwargs):
+        assert kwargs['sandbox'] is sandbox
+        assert kwargs['agent_config'].allowed_tools == []
+        assert kwargs['agent_config'].allow_network is False
+        assert kwargs['image_data_urls'][0].startswith('data:image/jpeg;base64,')
+        seen.append(node['id'])
+        return '{"accepted":true}', '', {}
+    monkeypatch.setattr(tenant_hermes_sandbox, 'ensure_tenant_sandbox', owner_context)
+    monkeypatch.setattr(workflow_artifacts, '_run_workflow_node_in_process', runner)
+    image = tmp_path / 'landmark.jpg'
+    Image.new('RGB', (600, 400), 'green').save(image)
+    def capture(reference, task_id, verify):
+        assert verify(image, '核验公开鹿儿岛照片') is True
+        return image.read_bytes(), 'web-reference', 'verified-landscape'
+    monkeypatch.setattr(service, 'archive_web_reference', capture)
+    execute_illustrations(store, row, capture=capture)
+    result = json.loads(store.get_unchecked(row['run_id'])['final_answer'])
+    assert seen == (['note_photo'] if owned else [])
+    assert len(result['assets']) == (1 if owned else 0)
+    assert result['failed_indices'] == ([] if owned else [0])
+
+
+def test_travel_photos_cover_selected_landmarks_across_days():
+    stops = [{'id': f'stop-{i}', 'name': f'地点{i}'} for i in range(8)]
+    content = json.dumps({'stops': stops, 'days': [{'id': 'd1'}, {'id': 'd2'}, {'id': 'alt', 'selected': False}],
+        'actions': [{'day_id': 'd1' if i < 4 else 'd2', 'kind': 'experience', 'place_id': f'stop-{i}'} for i in range(1, 7)]
+                   + [{'day_id': 'alt', 'kind': 'experience', 'place_id': 'stop-7'}]})
+    plan = illustration_plan(request(content, travel=True))
+    assert [item['anchor'] for item in plan] == ['overview', *[f'stop:{i}' for i in range(1, 7)]]
+    assert all('web_reference' in item and 'prompt' not in item for item in plan)
+
+
+def test_extended_travel_asset_indices_keep_owner_and_range_boundary(tmp_path, monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from scripts.hermes_bridge_runtime import note_illustrations as api
+    from backend.services.note_illustrations import TRAVEL_IMAGE_LIMIT
+    store = DurableChatRunStore(tmp_path / 'runs.db')
+    monkeypatch.setattr(api.session_runtime, '_chat_run_store', store)
+    monkeypatch.setattr(api.persistence, '_require_internal_strict', lambda token: None)
+    row = run(store, request(), owner=store.tenant_user_hash('tenant-a', 'user-a'))
+    directory = media_directory(store, row['run_id'])
+    directory.mkdir(parents=True)
+    (directory / '11.jpg').write_bytes(b'owned-image')
+    (directory / '12.jpg').write_bytes(b'outside-bound')
+    response = asyncio.run(api.asset(row['run_id'], 11, 'internal', 'tenant-a', 'user-a'))
+    assert str(response.path) == str(directory / '11.jpg')
+    assert TRAVEL_IMAGE_LIMIT == 12
+    for index, tenant in [(12, 'tenant-a'), (11, 'tenant-b'), (-1, 'tenant-a')]:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(api.asset(row['run_id'], index, 'internal', tenant, 'user-a'))
+        assert error.value.status_code == 404

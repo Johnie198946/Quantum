@@ -7496,6 +7496,21 @@ final class TravelNotePresentationTests: XCTestCase {
         XCTAssertNoThrow(try TravelNotePresentation.saving(content, cover: "destination", route: true, photos: true, places: true))
     }
 
+    func testPhotoCoverSelectionIsBoundToDestinationReferences() throws {
+        let content = #"{"stops":[],"photo_references":[{"id":"sakurajima","image_url":"https://example.com/photo.jpg","caption":"樱岛"},{"id":"unsafe","image_url":"file:///private/image.jpg"}]}"#
+        XCTAssertEqual(TravelNotePresentation.photoCovers(content).map { $0["id"] }, ["sakurajima"])
+        XCTAssertNoThrow(try TravelNotePresentation.saving(content, cover: "photo:sakurajima", route: true, photos: true, places: true))
+        XCTAssertThrowsError(try TravelNotePresentation.saving(content, cover: "photo:other-city", route: true, photos: true, places: true))
+    }
+
+    func testTravelPhotoBatchAttachmentsRestoreTwoDigitIndicesWithinBound() {
+        let prefix = "ai-" + String(repeating: "a", count: 32) + "-"
+        let suffix = "-" + String(repeating: "b", count: 64) + ".jpg"
+        XCTAssertEqual(NoteIllustrationPlacement.asset(from: prefix + "10" + suffix)?.index, 10)
+        XCTAssertEqual(NoteIllustrationPlacement.asset(from: prefix + "2" + suffix)?.index, 2)
+        XCTAssertNil(NoteIllustrationPlacement.asset(from: prefix + "12" + suffix))
+    }
+
     func testContentChoicesPreserveOriginalActionsJournalAndWorkflowLink() throws {
         let original = """
         {"destination":"青森","stops":[],"actions":[{"id":"booked"}],"journal":"自己的记录","workflow_execution_id":"exec-1","sources":[{"id":"official"}]}

@@ -97,10 +97,10 @@ struct TravelJourneyPayload: Encodable {
     let legs: [Leg]
     let unlocatedCount: Int
 
-    init(title: String, plan: TravelPlanDocument) {
+    init(title: String, plan: TravelPlanDocument, resolvedStops: [TravelRouteStop]? = nil) {
         self.title = title
         destination = plan.destination ?? "我的旅行"
-        let ordered = plan.orderedStops
+        let ordered = resolvedStops ?? plan.orderedStops
         var locations: [Stop] = []
         var indices: [String: Int] = [:]
         for stop in ordered where indices[stop.id] == nil {
@@ -134,14 +134,57 @@ struct TravelJourneyView: View {
     @State private var ready = false
     @State private var reloadID = UUID()
     @State private var offline = false
-    private var payload: TravelJourneyPayload { .init(title: title, plan: plan) }
+    @State private var resolvedStops: [TravelRouteStop] = []
+    @State private var locating = false
+    @State private var nativeMap = false
+    @State private var position: MapCameraPosition = .automatic
+    private var payload: TravelJourneyPayload { .init(title: title, plan: plan, resolvedStops: resolvedStops.isEmpty ? nil : resolvedStops) }
 
     var body: some View {
         ZStack {
             AppTheme.Colors.mistSky.ignoresSafeArea()
-            if payload.stops.isEmpty {
-                ContentUnavailableView("地点还没有坐标", systemImage: "mappin.slash",
-                                       description: Text("先在行程中核实地点。原笔记与记录都已保留。"))
+            if nativeMap || payload.stops.isEmpty {
+                VStack(spacing: 0) {
+                    Map(position: $position) {
+                        ForEach(resolvedStops.filter { $0.coordinate != nil }) { stop in
+                            if let coordinate = stop.coordinate { Marker(stop.name, coordinate: coordinate).tint(AppTheme.Colors.primary) }
+                        }
+                    }.mapControls { MapCompass(); MapScaleView() }.frame(minHeight: 240)
+                        .accessibilityIdentifier("travel-native-map")
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(plan.destination ?? title).font(.system(.title2, design: .serif))
+                            if locating { ProgressView("正在查找行程地点…") }
+                            Text("按行程顺序查看地点，点选可在地图中核对位置与交通路线。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            ForEach(Array(plan.orderedStops.enumerated()), id: \.offset) { index, stop in
+                                HStack {
+                                    Text(String(index + 1)).font(.caption).foregroundStyle(AppTheme.Colors.primary)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(stop.name).font(.headline)
+                                        if let address = stop.address { Text(address).font(.caption).foregroundStyle(.secondary) }
+                                    }
+                                    Spacer()
+                                    Link("查看", destination: searchURL(stop)).frame(minWidth: 44, minHeight: 44)
+                                }
+                                HStack(spacing: 16) {
+                                    Link("Apple 地图", destination: searchURL(stop)).frame(minHeight: 44)
+                                    Link("Google 地图", destination: stop.googleMapsURL).frame(minHeight: 44)
+                                }.font(.caption)
+                                if let found = resolvedStops.first(where: { $0.id == stop.id }), let coordinate = found.coordinate {
+                                    Button("定位 · " + stop.name) { position = .region(.init(center: coordinate, span: .init(latitudeDelta: 0.025, longitudeDelta: 0.025))) }.font(.caption).frame(minHeight: 44)
+                                }
+                                Divider()
+                            }
+                            if !locating && payload.unlocatedCount > 0 {
+                                Text("部分地点未能自动定位；可用 Apple 或 Google 地图按名称与地址查找、规划交通。定位结果只用于地图，不改写笔记。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Button("重新查找地点") { Task { await resolveLocations() } }.frame(minHeight: 44)
+                            }
+                            if !payload.stops.isEmpty { Button("打开旅行小世界") { nativeMap = false }.frame(minHeight: 44) }
+                        }.padding(20)
+                    }.frame(maxHeight: 300).background(AppTheme.Colors.background)
+                }
             } else if offline {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -172,7 +215,7 @@ struct TravelJourneyView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if !ready || offline || payload.stops.isEmpty || error != nil {
+            if nativeMap || !ready || offline || payload.stops.isEmpty || error != nil {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44)
                         .background(.regularMaterial, in: Circle())
@@ -181,8 +224,61 @@ struct TravelJourneyView: View {
                 .padding(16)
             }
         }
-        .statusBarHidden(ready && !offline && error == nil)
+        .task { await resolveLocations() }
+        .statusBarHidden(ready && !nativeMap && !offline && error == nil)
         .tint(AppTheme.Colors.primary)
+    }
+
+    private func searchURL(_ stop: TravelRouteStop) -> URL {
+        var components = URLComponents(url: stop.mapsURL, resolvingAgainstBaseURL: false)!
+        components.queryItems?.removeAll { $0.name == "q" }
+        components.queryItems?.append(.init(name: "q", value: [stop.name, stop.address, plan.destination].compactMap { $0 }.joined(separator: " ")))
+        return components.url!
+    }
+
+    @MainActor
+    private func resolveLocations() async {
+        guard !locating else { return }
+        locating = true
+        defer { locating = false }
+        var stops = plan.orderedStops
+        let missing = stops.filter { $0.coordinate == nil }.prefix(16)
+        nativeMap = !missing.isEmpty
+        resolvedStops = stops
+        for stop in missing {
+            guard !Task.isCancelled else { return }
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = [stop.name, stop.address, plan.destination].compactMap { $0 }.joined(separator: " ")
+            do {
+                let response = try? await MKLocalSearch(request: request).start()
+                guard !Task.isCancelled else { return }
+                // An ambiguous city/address result must not masquerade as the named landmark.
+                let key = stop.name.replacingOccurrences(of: " ", with: "").lowercased()
+                let matches = (response?.mapItems ?? []).filter {
+                    let name = ($0.name ?? "").replacingOccurrences(of: " ", with: "").lowercased()
+                    return !key.isEmpty && (name == key || name.contains(key))
+                }
+                let coordinate: CLLocationCoordinate2D
+                if matches.count == 1, let item = matches.first {
+                    coordinate = item.placemark.coordinate
+                } else if let address = stop.address, !address.isEmpty {
+                    let places = try await CLGeocoder().geocodeAddressString(address)
+                    guard !Task.isCancelled, places.count == 1, let place = places.first,
+                          let location = place.location else { continue }
+                    let named = place.name?.replacingOccurrences(of: " ", with: "").lowercased() == key
+                    let addressed = (place.thoroughfare.map { !$0.isEmpty && address.contains($0) } ?? false)
+                        && (place.subThoroughfare.map { !$0.isEmpty && address.contains($0) } ?? false)
+                    guard named || addressed else { continue }
+                    coordinate = location.coordinate
+                } else { continue }
+                stops = stops.map { value in
+                    guard value.id == stop.id else { return value }
+                    return TravelRouteStop(name: value.name, latitude: coordinate.latitude, longitude: coordinate.longitude, sourceID: value.sourceID ?? value.id, address: value.address)
+                }
+                resolvedStops = stops
+            } catch { continue }
+        }
+        position = .automatic
     }
 
     private func retry() { error = nil; ready = false; offline = false; reloadID = UUID() }

@@ -2592,6 +2592,15 @@ enum TravelNotePresentation {
     static let covers = ["travel_kyoto_camera", "travel_kyoto_bamboo", "travel_kyoto_bridge", "travel_kyoto_street"]
     static let destinationCover = "destination"
 
+    static func photoCovers(_ content: String) -> [[String: String]] {
+        let references = NoteIllustrationPlacement.travelObject(content)?["photo_references"] as? [[String: Any]] ?? []
+        return references.compactMap { item in
+            guard let id = item["id"] as? String, let raw = item["image_url"] as? String,
+                  let url = URL(string: raw), url.scheme == "https", url.host != nil else { return nil }
+            return ["id": id, "image_url": raw, "caption": item["caption"] as? String ?? "目的地风景"]
+        }
+    }
+
     static func title(_ supplied: String, content: String) -> String {
         let plan = TravelPlanDocument.decode(content)
         if let title = plan?.title, !title.isEmpty { return title }
@@ -2600,7 +2609,7 @@ enum TravelNotePresentation {
     }
 
     static func saving(_ content: String, cover: String, route: Bool, photos: Bool, places: Bool) throws -> String {
-        guard var object = NoteIllustrationPlacement.travelObject(content), covers.contains(cover) || cover == destinationCover else {
+        guard var object = NoteIllustrationPlacement.travelObject(content), covers.contains(cover) || cover == destinationCover || photoCovers(content).contains(where: { "photo:" + ($0["id"] ?? "") == cover }) else {
             throw APIError.decoding("旅行内容尚未准备好，请重新读取攻略")
         }
         object["note_presentation"] = ["cover": cover, "include_route": route, "include_photos": photos, "include_places": places]
@@ -2660,18 +2669,20 @@ struct TravelNoteSaveSheet: View {
                     Button { cover = TravelNotePresentation.destinationCover } label: {
                         Label("使用目的地封面", systemImage: cover == TravelNotePresentation.destinationCover ? "checkmark.circle.fill" : "circle")
                     }.frame(minHeight: 44)
-                    HStack(spacing: 8) {
-                        ForEach(Array(TravelNotePresentation.covers.enumerated()), id: \.element) { index, image in
-                            Button { cover = image } label: {
-                                Image(image).resizable().scaledToFill().frame(width: 68, height: 96).clipped()
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay { RoundedRectangle(cornerRadius: 12).stroke(cover == image ? AppTheme.Colors.primary : .clear, lineWidth: 3) }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(Array(TravelNotePresentation.photoCovers(content).prefix(4).enumerated()), id: \.offset) { index, photo in
+                                let choice = "photo:" + (photo["id"] ?? "")
+                                Button { cover = choice } label: {
+                                    AsyncImage(url: URL(string: photo["image_url"] ?? "")) { image in image.resizable().scaledToFill() } placeholder: { AppTheme.Colors.mistMint }
+                                        .frame(width: 76, height: 100).clipped().clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .overlay { RoundedRectangle(cornerRadius: 12).stroke(cover == choice ? AppTheme.Colors.primary : .clear, lineWidth: 3) }
+                                }.accessibilityLabel("选择目的地封面 \(index + 1)")
+                                    .accessibilityAddTraits(cover == choice ? .isSelected : [])
                             }
-                            .accessibilityLabel("选择封面 \(index + 1)")
-                            .accessibilityAddTraits(cover == image ? .isSelected : [])
                         }
                     }
-                    Text("目的地封面优先使用有来源的参考图；以下图片为可选装饰，旅途照片可以继续补充。")
+                    Text("使用本次目的地地标的网络实拍参考，保留照片来源；缺图时继续检索，不用其他城市的图片替代。")
                         .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
                     Label("仅自己可见", systemImage: "lock.fill").font(.headline)
                     Text("保留私人心情，分享时再选择内容。")
@@ -2825,14 +2836,16 @@ struct TravelNoteReadingView: View {
 
     private var coverPage: some View {
         let stored = (object["note_presentation"] as? [String: Any])?["cover"] as? String
-        let cover = TravelNotePresentation.covers.contains(stored ?? "") ? stored : nil
+        let archived = (object["illustrations"] as? [[String: String]])?.first { $0["anchor"] == "overview" && ($0["alt"] ?? "").hasPrefix("网络风景参考") }
+        let localCover = stored == nil || stored == TravelNotePresentation.destinationCover ? archived : nil
         let references = object["photo_references"] as? [[String: Any]] ?? []
-        let reference = references.first { ($0["image_url"] as? String)?.hasPrefix("https://") == true }
+        let reference = references.first { "photo:" + ($0["id"] as? String ?? "") == stored } ?? references.first { ($0["image_url"] as? String)?.hasPrefix("https://") == true }
         return VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 GeometryReader { size in
-                    if let cover {
-                        Image(cover).resizable().scaledToFill().frame(width: size.size.width, height: size.size.height).clipped()
+                    if let path = localCover?["path"] {
+                        NoteReadingImage(url: baseURL.appendingPathComponent(path), caption: "目的地风景封面", compact: true)
+                            .frame(width: size.size.width, height: size.size.height).clipped()
                     } else if let raw = reference?["image_url"] as? String, let url = URL(string: raw) {
                         AsyncImage(url: url) { phase in
                             if let image = phase.image { image.resizable().scaledToFill() }
@@ -2849,7 +2862,7 @@ struct TravelNoteReadingView: View {
                         Spacer()
                         Text(plan?.destination ?? "MY JOURNEY").font(.caption.weight(.semibold))
                     }.foregroundStyle(AppTheme.Colors.textPrimary)
-                    Text(title).font(.system(size: 38, weight: .semibold, design: .serif)).foregroundStyle(AppTheme.Colors.textPrimary)
+                    Text(title).font(.system(size: title.count > 18 ? 30 : 38, weight: .semibold, design: .serif)).foregroundStyle(AppTheme.Colors.textPrimary)
                     Text(plan?.dateRange ?? "日期待决定").font(.subheadline).foregroundStyle(AppTheme.Colors.textPrimary)
                     Spacer(minLength: 140)
                     Text("在步履中，记录自己的风景。\n收藏一段属于我们的时光。")
@@ -2863,7 +2876,7 @@ struct TravelNoteReadingView: View {
                         Spacer()
                         Label("仅自己可见", systemImage: "lock")
                     }.font(.caption)
-                    Text(cover != nil ? "装饰封面 · 不是本次旅行实拍" : reference != nil ? "目的地参考图 · 不是个人旅行实拍" : "目的地封面 · 待补充旅行照片")
+                    Text(reference != nil || localCover != nil ? "目的地参考图 · 不是个人旅行实拍" : "目的地封面 · 待补充旅行照片")
                         .font(.caption2)
                 }.padding(28).foregroundStyle(.white)
             }.frame(minHeight: 650)
@@ -2879,6 +2892,10 @@ struct TravelNoteReadingView: View {
                 if let syncError { Text(syncError).font(.caption).foregroundStyle(.secondary) }
                 Button("翻开旅行手记 →") { page = .day }.buttonStyle(QuantumPrimaryButtonStyle())
                     .accessibilityIdentifier("travel-note-open-diary")
+                if let alt = localCover?["alt"], let raw = alt.components(separatedBy: " · ").last,
+                   let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
+                    Link("封面照片来源", destination: url).font(.caption).frame(minHeight: 44)
+                }
                 if let reference, let sourceId = reference["source_id"] as? String,
                    let sources = object["sources"] as? [[String: Any]],
                    let source = sources.first(where: { $0["id"] as? String == sourceId }),
@@ -2905,10 +2922,8 @@ struct TravelNoteReadingView: View {
                 if let date = chapter?.date, !date.isEmpty { Text(date).font(.caption) }
             }
             if let journal = chapter?.journal, !journal.isEmpty {
-                Text(journal).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(8)
-            } else {
-                Text(actions.compactMap(\.details).filter { !$0.isEmpty }.joined(separator: "\n\n"))
-                    .font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(8)
+                Text(journal).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(7).lineLimit(journal.count > 120 ? 3 : nil)
+                if journal.count > 120 { DisclosureGroup("展开今日安排说明") { TravelDetailText(content: journal) } }
             }
             if let journal = object["journal"] as? String, !journal.isEmpty {
                 DisclosureGroup("自己的旅行记录") { NoteReadingView(content: journal, baseURL: baseURL, onSelection: onSelection) }
@@ -2918,10 +2933,22 @@ struct TravelNoteReadingView: View {
                 let stopAnchors = Set(actions.compactMap(\.placeId).compactMap { id in
                     plan?.stops.firstIndex { $0.sourceID == id }.map { "stop:\($0)" }
                 })
-                let photos = (object["illustrations"] as? [[String: String]] ?? []).filter {
+                let localPhotos = (object["illustrations"] as? [[String: String]] ?? []).filter {
+                    !($0["alt"] ?? "").hasPrefix("AI 插图") && !($0["alt"] ?? "").hasPrefix("来源页面截图")
+                }.filter {
                     $0["day_id"] == (day ?? days.first) || $0["anchor"] == "day:" + (day ?? days.first ?? "") ||
                     dayIds.contains($0["anchor"] ?? "") || stopAnchors.contains($0["anchor"] ?? "")
                 }
+                let references = (object["photo_references"] as? [[String: Any]] ?? []).filter { item in
+                    if let id = item["place_id"] as? String { return actions.contains { $0.placeId == id } }
+                    return stopAnchors.contains(item["anchor"] as? String ?? "")
+                }
+                let remotePhotos: [[String: String]] = references.compactMap { item in
+                    guard let raw = item["image_url"] as? String, URL(string: raw)?.scheme == "https",
+                          !localPhotos.contains(where: { $0["anchor"] == item["anchor"] as? String }) else { return nil }
+                    return ["url": raw, "alt": item["caption"] as? String ?? "目的地风景"]
+                }
+                let photos = localPhotos + remotePhotos
                 if photos.count >= 3 {
                     GeometryReader { geometry in
                         let width = max(0, (geometry.size.width - 6) / 2)
@@ -2939,25 +2966,31 @@ struct TravelNoteReadingView: View {
                         if photos.count < 3 || index >= 3 { diaryPhoto(photo) }
                     }
                 }
-                ForEach(actions.compactMap(\.placeId).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }, id: \.self) { id in
-                    if let index = plan?.stops.firstIndex(where: { $0.sourceID == id }) {
-                        TravelPlanResultView(title: title, content: content, baseURL: baseURL).travelImages("stop:\(index)", includeLocal: false)
-                    }
+                if !references.isEmpty || localPhotos.contains(where: { ($0["alt"] ?? "").hasPrefix("网络风景参考") }) {
+                    DisclosureGroup("照片来源与拍摄建议") {
+                        ForEach(Array(localPhotos.enumerated()), id: \.offset) { _, photo in
+                            if let alt = photo["alt"], alt.hasPrefix("网络风景参考"),
+                               let raw = alt.components(separatedBy: " · ").last, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
+                                Link(alt.components(separatedBy: " · ").first ?? "风景照片来源", destination: url).font(.caption).frame(minHeight: 44)
+                            }
+                        }
+                        ForEach(Array(references.enumerated()), id: \.offset) { _, item in
+                            if let tip = item["shooting_tip"] as? String, !tip.isEmpty { TravelDetailText(content: tip) }
+                            if let sourceId = item["source_id"] as? String,
+                               let source = (object["sources"] as? [[String: Any]])?.first(where: { $0["id"] as? String == sourceId }),
+                               let raw = source["url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
+                                Link(source["title"] as? String ?? "照片来源", destination: url).font(.caption).frame(minHeight: 44)
+                            }
+                        }
+                    }.font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
                 }
-                if photos.isEmpty, let onIllustrate { Button("为这段旅行配图", systemImage: "photo") { onIllustrate("overview") }.buttonStyle(.bordered) }
+                if photos.isEmpty, let onIllustrate { Button("查找目的地风景照片", systemImage: "photo") { onIllustrate("overview") }.buttonStyle(.bordered) }
             }
             if TravelNotePresentation.includes("include_route", in: content) {
                 HStack { Text("今日路线").font(.headline); Spacer(); Button("旅行小世界", systemImage: "globe") { showingGlobe = true } }
                 TravelDayRouteStrip(actions: actions)
-                ForEach(actions.filter { ["experience", "meal", "hotel"].contains($0.kind) }) { action in
-                    HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: action.symbol).foregroundStyle(AppTheme.Colors.primary).frame(width: 24)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(action.title).font(.headline)
-                            Text(action.timeLabel + " · " + action.statusTitle).font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
-                            if let details = action.details { Text(details).font(.subheadline) }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(16).quantumCard()
+                ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                    TravelActionReadingCard(action: action, stop: plan?.stops.first { $0.sourceID == action.placeId }, number: index + 1)
                 }
             }
             if let onRecord { Button("＋ 记下这一刻", action: onRecord).buttonStyle(QuantumPrimaryButtonStyle()).accessibilityIdentifier("travel-note-record") }
@@ -2967,10 +3000,49 @@ struct TravelNoteReadingView: View {
     @ViewBuilder
     private func diaryPhoto(_ photo: [String: String]) -> some View {
         if let path = photo["path"] {
-            NoteReadingImage(url: baseURL.appendingPathComponent(path), caption: photo["alt"] ?? "旅行照片")
+            NoteReadingImage(url: baseURL.appendingPathComponent(path), caption: photo["alt"] ?? "旅行照片", compact: true)
+        } else if let raw = photo["url"], let url = URL(string: raw) {
+            AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
+                AppTheme.Colors.mistMint.overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
+            }.frame(maxWidth: .infinity, minHeight: 120).clipped().accessibilityLabel(photo["alt"] ?? "目的地风景")
         }
     }
 
+}
+
+struct TravelDetailText: View {
+    let content: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.enumerated()), id: \.offset) { _, paragraph in
+                Text(.init(paragraph)).font(.system(size: 14)).lineSpacing(6).foregroundStyle(AppTheme.Colors.textSecondary).textSelection(.enabled)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct TravelActionReadingCard: View {
+    let action: TravelDayAction
+    let stop: TravelRouteStop?
+    let number: Int
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(String(number)).font(.caption.weight(.semibold)).foregroundStyle(AppTheme.Colors.primary)
+                .frame(width: 28, height: 28).background(AppTheme.Colors.mistMint, in: Circle())
+            VStack(alignment: .leading, spacing: 8) {
+                Label(action.timeLabel, systemImage: action.symbol).font(.caption).foregroundStyle(AppTheme.Colors.primary)
+                Text(action.title).font(.system(size: 17, weight: .semibold))
+                if let details = action.details, !details.isEmpty {
+                    Text(details).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(4).lineLimit(2)
+                    DisclosureGroup("查看安排与操作步骤") { TravelDetailText(content: details) }.font(.caption)
+                }
+                if let stop {
+                    Link(destination: stop.mapsURL) { Label("地图 · " + stop.name, systemImage: "map") }.font(.caption).frame(minHeight: 44)
+                }
+                if let booking = action.bookingReference, !booking.isEmpty { Text("预订编号：" + booking).font(.caption).textSelection(.enabled) }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).quantumCard()
+    }
 }
 
 struct TravelRouteStop: Decodable, Hashable, Identifiable {
@@ -2985,6 +3057,18 @@ struct TravelRouteStop: Decodable, Hashable, Identifiable {
         guard let latitude, let longitude, latitude.isFinite, longitude.isFinite,
               (-90...90).contains(latitude), (-180...180).contains(longitude) else { return nil }
         return .init(latitude: latitude, longitude: longitude)
+    }
+    var mapsURL: URL {
+        var components = URLComponents(string: "https://maps.apple.com/")!
+        components.queryItems = [URLQueryItem(name: "q", value: name + " " + (address ?? ""))]
+        if let coordinate { components.queryItems?.append(.init(name: "ll", value: "\(coordinate.latitude),\(coordinate.longitude)")) }
+        return components.url!
+    }
+    var googleMapsURL: URL {
+        var components = URLComponents(string: "https://www.google.com/maps/search/")!
+        let query = coordinate.map { "\($0.latitude),\($0.longitude)" } ?? [name, address].compactMap { $0 }.joined(separator: " ")
+        components.queryItems = [.init(name: "api", value: "1"), .init(name: "query", value: query)]
+        return components.url!
     }
     enum CodingKeys: String, CodingKey { case name, latitude, longitude, sourceID = "id", address }
 }
@@ -3242,7 +3326,13 @@ struct TravelRouteMap: View {
                         }
                     }
                     if located.isEmpty {
-                        ContentUnavailableView("地点待定位", systemImage: "mappin.slash", description: Text("已保留地点信息，核实坐标后展示路线。"))
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
+                                    Link(destination: stop.mapsURL) { Label("\(index + 1) · " + stop.name, systemImage: "map") }.font(.subheadline).frame(minHeight: 44)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
             }
@@ -3306,7 +3396,7 @@ private struct TravelDayRouteStrip: View {
 struct TravelPracticalGuideView: View {
     let plan: TravelPlanDocument
     let content: String
-    @State private var expanded: Set<String> = ["arrival", "stay"]
+    @State private var expanded: Set<String> = []
     private var sources: [[String: Any]] { NoteIllustrationPlacement.travelObject(content)?["sources"] as? [[String: Any]] ?? [] }
 
     var body: some View {
@@ -3320,8 +3410,7 @@ struct TravelPracticalGuideView: View {
                     if value { expanded.insert(item.category) } else { expanded.remove(item.category) }
                 })) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(item.details).font(.system(size: 14)).lineSpacing(6).textSelection(.enabled)
-                        Label(item.nextStep, systemImage: "arrow.right.circle").font(.subheadline)
+                        TravelDetailText(content: item.details)
                         ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
                             if let id = source["id"] as? String, item.sourceIds.contains(id),
                                let raw = source["url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
@@ -3335,7 +3424,8 @@ struct TravelPracticalGuideView: View {
                         Image(systemName: item.icon).frame(width: 24).foregroundStyle(AppTheme.Colors.primary)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.title).font(.headline)
-                            Text(item.statusTitle).font(.caption).foregroundStyle(.secondary)
+                            Text(item.nextStep).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(3)
+                            Text(item.statusTitle).font(.caption2).foregroundStyle(AppTheme.Colors.primary)
                         }
                     }.frame(minHeight: 44)
                 }.tint(AppTheme.Colors.primary).padding(16).quantumCard()
@@ -3631,23 +3721,27 @@ struct TravelPlanResultView: View {
         ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
             VStack(alignment: .leading, spacing: 8) {
                 if !hasLocalImage, let raw = reference["image_url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image { image.resizable().scaledToFit() }
-                        else if phase.error != nil { Label("图片暂不可用，可打开来源页", systemImage: "photo") }
-                        else { ProgressView().frame(height: 160) }
-                    }.frame(maxHeight: 320).clipShape(RoundedRectangle(cornerRadius: 16))
+                    GeometryReader { size in
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image { image.resizable().scaledToFill().frame(width: size.size.width, height: size.size.height).clipped() }
+                            else if phase.error != nil { Label("图片暂不可用，可打开来源页", systemImage: "photo").font(.caption) }
+                            else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+                        }
+                    }.frame(height: 210).clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                if let caption = reference["caption"] as? String { Text(caption).font(.subheadline) }
-                if let tip = reference["shooting_tip"] as? String { Text(tip).font(.subheadline).foregroundStyle(.secondary) }
-                if let source = sources.first(where: { $0["id"] as? String == reference["source_id"] as? String }),
-                   let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
-                    Link("照片来源 · " + (source["title"] as? String ?? "查看原文"), destination: url).frame(minHeight: 44)
-                }
+                if let caption = reference["caption"] as? String { Text(caption).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(2) }
+                DisclosureGroup("照片来源与拍摄建议") {
+                    if let tip = reference["shooting_tip"] as? String { TravelDetailText(content: tip) }
+                    if let source = sources.first(where: { $0["id"] as? String == reference["source_id"] as? String }),
+                       let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
+                        Link(source["title"] as? String ?? "查看照片来源", destination: url).frame(minHeight: 44)
+                    }
+                }.font(.caption)
             }
         }
         let images = includeLocal ? (NoteIllustrationPlacement.travelObject(content)?["illustrations"] as? [[String: String]] ?? []).filter { anchor == nil || $0["anchor"] == anchor } : []
         ForEach(Array(images.enumerated()), id: \.offset) { _, item in
-            if let path = item["path"] { NoteReadingImage(url: baseURL?.appendingPathComponent(path), caption: item["alt"] ?? "AI 插图") }
+            if let path = item["path"] { NoteReadingImage(url: baseURL?.appendingPathComponent(path), caption: item["alt"] ?? "旅行照片", compact: true).frame(height: 210).clipped() }
         }
         if let onIllustrate, let anchor {
             Button("为这里配图", systemImage: "sparkles") { onIllustrate(anchor) }
@@ -3729,7 +3823,10 @@ struct TravelPlanResultView: View {
                     if let place = plan.stops.first(where: { $0.sourceID == action.placeId }), let address = place.address, !address.isEmpty {
                         Text(address).font(.subheadline).textSelection(.enabled)
                     }
-                    if let detail = action.details, !detail.isEmpty { Text(detail).font(.body).textSelection(.enabled) }
+                    if let detail = action.details, !detail.isEmpty {
+                        Text(detail).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(5).lineLimit(2)
+                        DisclosureGroup("交通、票务与安排详情") { TravelDetailText(content: detail) }.font(.subheadline)
+                    }
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
@@ -4694,6 +4791,7 @@ private enum NoteReadingBlock: Identifiable, Sendable {
 struct NoteReadingImage: View {
     let url: URL?
     let caption: String
+    var compact = false
     @State private var image: UIImage?
     @State private var loadError = false
     @State private var retryCount = 0
@@ -4714,10 +4812,10 @@ struct NoteReadingImage: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 420)
+            .frame(maxWidth: .infinity, minHeight: compact ? 0 : 220, maxHeight: compact ? .infinity : 420)
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .clipped()
-            if !caption.isEmpty {
+            if !compact && !caption.isEmpty {
                 Text(caption)
                     .font(AppTheme.Typography.micro)
                     .foregroundStyle(AppTheme.Colors.textTertiary)

@@ -67,7 +67,8 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.launchArguments = ["-prototypePreview", "v5/02-travel-note-layout-v5-p01"]
         app.launch()
         XCTAssertTrue(app.textFields["travel-note-title"].waitForExistence(timeout: 10))
-        app.buttons["选择封面 3"].tap()
+        app.buttons["使用目的地封面"].tap()
+        XCTAssertFalse(app.buttons["选择封面 3"].exists, "不能把京都装饰图作为其他目的地的封面选项")
         XCTAssertTrue(app.switches["包含每日行程"].exists)
         XCTAssertTrue(app.switches["包含照片与摄影参考"].exists)
         attachScreenshot(named: "travel-original-note-settings")
@@ -83,9 +84,9 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.buttons["DAY 2"].tap()
         XCTAssertTrue(app.staticTexts["第二天围绕车站探索，减少换乘。"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].exists)
-        XCTAssertFalse(app.staticTexts["原稿首个地点照片"].firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["原稿首个地点照片"].firstMatch.exists)
         app.buttons["DAY 1"].tap()
-        XCTAssertTrue(app.staticTexts["原稿首个地点照片"].firstMatch.waitForExistence(timeout: 10), "首个地点 stop:0 的配图必须归入当天拼贴")
+        XCTAssertTrue(app.descendants(matching: .any)["原稿首个地点照片"].firstMatch.waitForExistence(timeout: 10), "首个地点 stop:0 的配图必须归入当天拼贴")
         let titleFrame = app.staticTexts["泡汤与休息"].firstMatch.frame
         XCTAssertGreaterThanOrEqual(titleFrame.minX, app.frame.minX)
         XCTAssertLessThanOrEqual(titleFrame.maxX, app.frame.maxX)

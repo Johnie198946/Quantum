@@ -1,6 +1,25 @@
 import XCTest
 
 final class TravelJourneyUITests: XCTestCase {
+    @MainActor func testMapWithoutCoordinatesKeepsSearchAndCloseUsable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-travelJourneyPreview", "-travelMapMissingCoordinatesPreview"]
+        app.launch()
+        let entry = app.buttons["travel-journey-open"]
+        for _ in 0..<6 where !entry.isHittable { app.swipeUp() }
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["travel-native-map"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["仙巌園"].firstMatch.exists)
+        XCTAssertTrue(app.links["查看"].exists || app.buttons["查看"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["地点还没有坐标"].exists)
+        XCTAssertTrue(app.links["Google 地图"].exists || app.buttons["Google 地图"].exists)
+        let picture = XCTAttachment(screenshot: app.screenshot())
+        picture.name = "travel-map-without-model-coordinates"; picture.lifetime = .keepAlways; add(picture)
+        app.buttons["travel-journey-close"].tap()
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testNativeFullScreenMapAndSheetControls() async throws {
         let app = XCUIApplication()
         app.launchArguments = ["-travelJourneyPreview"]
