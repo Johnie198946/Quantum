@@ -645,8 +645,14 @@ async def project_event(
     node_id = str(event.get("node_id") or "")
     message = str(event.get("message") or event_type)
     node = node_rows.get(node_id)
-    if event_type == "run_started":
+    if event_type == "retry_queued":
+        execution.status = "queued"
+        execution.error_message = None
+        execution.finished_at = None
+    elif event_type == "run_started":
         execution.status = "running"
+        execution.error_message = None
+        execution.finished_at = None
         execution.started_at = execution.started_at or utcnow()
     elif event_type == "node_started" and node is not None:
         node.status = "running"
@@ -842,7 +848,8 @@ async def sync_execution(execution_id: str, db: AsyncSession) -> None:
             list(snapshot.get("events") or []), execution.bridge_event_seq
         ):
             await project_event(db, execution, node_rows, event)
-            if execution.status == "failed":
+            # A historical run failure can precede an authorized retry in this batch.
+            if execution.status == "failed" and event.get("type") != "run_failed":
                 break
         if not snapshot.get("events") and snapshot.get("status") == "running":
             execution.status = "running"
