@@ -2800,6 +2800,7 @@ struct TravelNoteReadingView: View {
                 }
             }
         }
+        .tint(AppTheme.Colors.primary)
         .onChange(of: page) { _, _ in onNavigate?() }
         .onChange(of: day) { _, _ in onNavigate?() }
         .fullScreenCover(isPresented: $showingGlobe) { if let plan { TravelJourneyView(title: title, plan: plan) } }
@@ -2904,10 +2905,10 @@ struct TravelNoteReadingView: View {
                 if let date = chapter?.date, !date.isEmpty { Text(date).font(.caption) }
             }
             if let journal = chapter?.journal, !journal.isEmpty {
-                Text(journal).font(.system(size: 14)).lineSpacing(8)
+                Text(journal).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(8)
             } else {
                 Text(actions.compactMap(\.details).filter { !$0.isEmpty }.joined(separator: "\n\n"))
-                    .font(.system(size: 14)).lineSpacing(8)
+                    .font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(8)
             }
             if let journal = object["journal"] as? String, !journal.isEmpty {
                 DisclosureGroup("自己的旅行记录") { NoteReadingView(content: journal, baseURL: baseURL, onSelection: onSelection) }
