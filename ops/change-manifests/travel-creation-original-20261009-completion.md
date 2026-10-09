@@ -111,7 +111,7 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 - Added non-destructive presentation choices unit test, confirmed-context API integration test.
 - Final three-photo/cover/save/appendix UI and presentation unit acceptance passed: `/tmp/QuantumTravelOriginalWidthVerified.xcresult`. Inspected four screenshots in `ops/acceptance/travel-creation-original-20261009/`; fixed SwiftUI stale preview capture and constrained photo layout to screen width, tested title frame bounds.
 - Existing real-model save/relaunch UI test selectors updated for the new reader/save labels; this token-requiring real-model suite was not executed.
-- Ruff touched Python files and git diff --check: passed (will repeat before commit).
+- Ruff touched Python files and git diff --check: passed before code commit; receipt-only changes also pass git diff --check.
 
 ## Delivery evidence
 commit_sha: 071ac7fc5b2f5df2c0b25e2c8b7f564aa6893483
@@ -122,7 +122,7 @@ health_check: production BEFORE deployment GET https://120.24.248.58/health => {
 functional_check: local tests as above plus physical iPhone acceptance below; production model flow pending
 rollback_point: source base 6808f3230aa3859b0e50cb88f166543a1a84b906; current server release unknown, must read before deployment
 TestFlight: Release 1.0.3(84) archived successfully at `/tmp/Quantumn-1.0.3-84-travel-original.xcarchive` from functional commit 071ac7fc. App/dSYM UUID 4CC68ADE-0E79-3D55-9480-6EA4EE6AD9ED match, deep strict codesign passes; OpenCV dynamic framework absent, inpaint symbols in app dSYM, privacy resource SHA matches upstream. Receipt: `ops/acceptance/travel-creation-original-20261009/archive-84.json`.
-CLI upload with existing ExportOptions.plist and authorized auto-signing failed with `exportArchive Failed to Use Accounts` (exit 70). Xcode UI still reports Mac locked; manual unlock requested. Apple build ID unknown, no upload claimed. User had installed build 82.
+Initial CLI upload failed with `exportArchive Failed to Use Accounts` (exit 70). After user unlocked the Mac, Xcode App Store Connect upload completed successfully, `UPLOAD SUCCEEDED with no errors`; latest Apple UI status was PROCESSING. Physical development-signed build 84 installed and three native UI tests plus presentation unit test passed. Apple build ID and TestFlight-distributed installation not yet verified; no tester/group expansion performed.
 remaining_risks: production SSH access pending; historical workflows retain compatibility clarification mode; no full chat transcript inheritance; physical development installation/UI verified, TestFlight installation and production model generation not yet verified.
 rollback: restore previous immutable server release only after recording its path/SHA; client prior build 82 remains available, no destructive note migration performed.
 
@@ -136,3 +136,5 @@ User connected and unlocked the phone/Mac and explicitly requested physical vali
 - Xcode reopened archive 1.0.3(84); user-authorized App Store Connect upload completed. Xcode shows `App upload complete: AIPlatformApp 1.0.3 (84) uploaded`; ContentDelivery.log reports `UPLOAD SUCCEEDED with no errors`. No `Upload Symbols Failed` or missing dSYM warning in distribution logs.
 - App Store Connect iOS upload list shows build 84 `正在处理`, created Oct 9, 2026 7:46 PM; Apple processing/internal availability still pending.
 - Normal app launch after testing via devicectl succeeded; returned phone to normal app entry.
+
+Latest verified receipt commit: 3f98a5e19ef600b8782dbe1113613d5cc028c886, `git ls-remote` matched origin/main and task branch; subsequent documentation correction does not change build 84 source.
