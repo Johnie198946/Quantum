@@ -1009,6 +1009,24 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(captured["plan"]["edges"], [
             {"source": expected_ids[0], "target": expected_ids[1]}
         ])
+        from backend.services import knowledge_policy
+        original_capability = captured["knowledge_capability"]
+        renewed_at = knowledge_policy.time.time() + 1800
+        with patch.object(executor.httpx, "AsyncClient", lambda **kwargs: Client()), patch.object(
+            knowledge_policy.time, "time", return_value=renewed_at
+        ):
+            asyncio.run(executor.retry_remote(execution.id, expected_ids[0]))
+            with self.assertRaises(knowledge_policy.KnowledgeScopeDenied):
+                knowledge_policy.verify_capability(original_capability)
+            renewed = knowledge_policy.verify_capability(captured["knowledge_capability"])
+        self.assertEqual(renewed["subject_id"], execution.id)
+        self.assertEqual(captured["from_node_id"], expected_ids[0])
+        with patch.object(executor, "_dispatch_payload", AsyncMock(side_effect=executor.ExecutionAuthorityError("revoked"))), patch.object(
+            executor.httpx, "AsyncClient"
+        ) as transport:
+            with self.assertRaises(executor.ExecutionAuthorityError):
+                asyncio.run(executor.retry_remote(execution.id, expected_ids[0]))
+            transport.assert_not_called()
 
         async def fake_dispatch(execution, plan):
             return {"status": "running", "hermes_session_id": "hard-session"}

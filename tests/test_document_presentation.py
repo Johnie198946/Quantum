@@ -975,10 +975,12 @@ def test_hermes_gate_rejects_stale_version_and_records_current_approval(monkeypa
                 bridge.WorkflowRetryRequest(
                     from_node_id="outline",
                     revision_comment="第二页标题需要更具体",
+                    knowledge_capability="refreshed-server-grant",
                 ),
                 "secret",
             )
         )
+        assert run["knowledge_capability"] == "refreshed-server-grant"
         assert (
             retried["status"] == "queued"
             and run["approved_gates"] == []

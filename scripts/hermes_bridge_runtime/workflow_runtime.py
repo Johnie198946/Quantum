@@ -882,6 +882,8 @@ async def retry_workflow_run(
             from backend.services.travel_plan import validate_travel_document
             validate_travel_document(body.travel_baseline["document"])
             run["travel_baseline"] = body.travel_baseline
+        if body.knowledge_capability is not None:
+            run["knowledge_capability"] = body.knowledge_capability
         start = order.index(target)
         for node_id in order[start:]:
             run["nodes"][node_id] = {"status": "pending", "attempt": run["nodes"].get(node_id, {}).get("attempt", 0)}
