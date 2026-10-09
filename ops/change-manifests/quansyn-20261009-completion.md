@@ -428,3 +428,7 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 ## 独立 Mac 安装校验
 
 安装包按字节复制 canonical backend/contracts/quansyn.py 为 _quansyn_contract.py；独立包测试禁止 backend 导入，真实块校验及非法图表拒绝通过。相关后端/聊天/工作流/容器检查最终 112 passed；前端 152 passed，构建通过。
+
+## 正式入口修复
+
+首次正式 HTTPS 检查发现静态品牌目录与 /quansyn SPA 路由冲突。frontend/Dockerfile 为 /quansyn 和 /quansyn/ 添加精确 index.html 路由，保持 logo 路径及页面组件不变。生产页面需重新检查。首次部署 de220f2b，回滚备份 /opt/ai-lab-shared/rollbacks/quansyn-20261009.w0QBvf；8 容器及 API/Bridge 健康。
