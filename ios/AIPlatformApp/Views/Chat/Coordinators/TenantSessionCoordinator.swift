@@ -901,6 +901,10 @@ public final class TenantSessionCoordinator: ObservableObject {
 
     private func applyHistoryPage(_ page: StoredMessagePage, isLatest: Bool, startsAtBottom: Bool) {
         messages = page.messages
+        if isLatest, inputText.isEmpty,
+           let last = messages.last, let draft = last.quansynDraft {
+            inputText = draft
+        }
         Self.repairClarifyContinuationRunLinks(in: &messages)
         hasOlderMessages = page.hasOlder
         hasNewerMessages = page.hasNewer
@@ -1253,9 +1257,10 @@ public final class TenantSessionCoordinator: ObservableObject {
             localNotes: localNoteSnapshot,
             learningExerciseId: learningExerciseId, activeImageArtifactId: activeImageArtifactId
         ) : nil
-        let userMessage = ChatMessage(
+        var userMessage = ChatMessage(
             sessionId: sid, role: .user, content: text, quotedContext: quote
         )
+        userMessage.quansynTransferId = messages.last?.quansynDraft != nil ? messages.last?.quansynTransferId : nil
         messages.append(userMessage)
         inputText = ""
         quotedContext = nil
@@ -4106,6 +4111,145 @@ public final class TenantSessionCoordinator: ObservableObject {
               case .attachment(var item) = messages[messageIndex].blocks[blockIndex] else { return }
         item.state = state; item.statusMessage = message
         messages[messageIndex].blocks[blockIndex] = .attachment(item); commitSession(); showToast(message)
+    }
+
+    @Published public var isQuanSynBusy = false
+
+    public func importQuanSyn(_ item: QuanSynTransferDTO) async throws {
+        guard !isQuanSynBusy, !isGenerating, isLatestPage else { throw APIError.network("请先结束当前运行并返回最新消息") }
+        let existing = messages.first(where: { $0.id == "quansyn-\(item.id)" })
+        guard existing != nil || inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw APIError.network("当前输入框已有内容，请先处理草稿再导入")
+        }
+        isQuanSynBusy = true
+        defer { isQuanSynBusy = false }
+        let epoch = tenantEpoch
+        let account = sessionManager.activeAccountFingerprint
+        let sid = sessionManager.activeSessionID()
+        let claim = existing?.quansynClaim ?? (UUID().uuidString + UUID().uuidString)
+        let leased = try await APIClient.shared.claimQuanSyn(item, claim: claim)
+        if existing != nil {
+            try await sessionManager.verifyPendingPersistence()
+            guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint, sid == sessionManager.activeSessionID() else { throw CancellationError() }
+            _ = try await APIClient.shared.claimQuanSyn(leased, claim: claim, imported: true)
+            showToast("QuanSyn 导入确认已完成")
+            return
+        }
+        var importedBlocks: [MessageBlock] = []
+        for file in item.files {
+            let bytes = try await APIClient.shared.downloadAuthenticated(path: "quansyn/files/\(file.artifactId)", expectedHash: file.contentHash)
+            guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint, sid == sessionManager.activeSessionID() else { throw CancellationError() }
+            _ = try InboxFileManager.shared.storePrivateFile(bytes, sourceId: file.artifactId, revision: 1, filename: file.originalName, durable: true)
+            let ext = URL(fileURLWithPath: file.originalName).pathExtension.lowercased()
+            let supported = ["pdf", "docx", "pptx", "doc", "ppt", "txt", "md", "csv", "json", "jpg", "jpeg", "png", "heic", "webp"].contains(ext)
+            if supported {
+                let mime = UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
+                let receipt = try await APIClient.shared.uploadDocument(data: bytes, filename: file.originalName, contentType: mime, fileOptOut: true)
+                let preview = mime.hasPrefix("image/") ? InboxFileManager.shared.downsampleImage(data: bytes) : nil
+                importedBlocks.append(.attachment(AttachmentBlock(fileName: file.originalName, fileType: .generic,
+                    fileSize: ByteCountFormatter.string(fromByteCount: Int64(file.byteSize), countStyle: .file),
+                    state: receipt.status == "ready" ? .ready : .parseFailed, sourceId: receipt.sourceId,
+                    contentHash: receipt.contentHash, sourceRevision: receipt.sourceRevision,
+                    statusMessage: receipt.status == "ready" ? "QuanSyn 资料已就绪" : "原件已保存，文本提取失败", previewImageData: preview)))
+                if let preview { importedBlocks.append(.image(ImageBlock(assetName: receipt.sourceId, imageData: preview, caption: file.originalName))) }
+            } else {
+                importedBlocks.append(.attachment(AttachmentBlock(fileName: file.originalName, fileType: .generic,
+                    fileSize: ByteCountFormatter.string(fromByteCount: Int64(file.byteSize), countStyle: .file),
+                    state: .parseFailed, sourceId: file.artifactId, contentHash: file.contentHash, sourceRevision: 1,
+                    statusMessage: "原件已保存，可预览或分享；当前执行器不解析此格式")))
+            }
+        }
+        guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint, sid == sessionManager.activeSessionID() else { throw CancellationError() }
+        let body = ([item.text] + item.blocks.map { block in
+            block.kind == "chart" ? zip(block.labels, block.values).map { "\($0.0): \($0.1)" }.joined(separator: "\n") : block.content
+        }).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var marker = ChatMessage(id: "quansyn-\(item.id)", sessionId: sid, role: .user,
+                                 content: "QuanSyn 资料已导入，等待你点击运行。", blocks: importedBlocks)
+        marker.quansynTransferId = item.id
+        marker.quansynClaim = claim
+        marker.quansynDraft = body.isEmpty ? "请处理我刚导入的 QuanSyn 附件" : body
+        messages.append(marker)
+        inputText = marker.quansynDraft ?? ""
+        commitSession()
+        try await sessionManager.verifyPendingPersistence()
+        guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint, sid == sessionManager.activeSessionID() else { throw CancellationError() }
+        _ = try await APIClient.shared.claimQuanSyn(leased, claim: claim, imported: true)
+        showToast("QuanSyn 资料已导入，请确认后点击运行")
+    }
+
+    public func pushQuanSyn(messageId: String) {
+        guard !isQuanSynBusy, let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        let message = messages[index]
+        guard message.role == .assistant, !message.isStreaming, !message.pending, !message.degraded, !message.isDemoSample else {
+            showToast("只能推送真实、已完成的回答"); return
+        }
+        let parent = messages[..<index].last(where: { $0.role == .user })?.quansynTransferId
+        let epoch = tenantEpoch
+        let account = sessionManager.activeAccountFingerprint
+        isQuanSynBusy = true
+        Task {
+            defer { isQuanSynBusy = false }
+            do {
+                var fullText = message.content
+                if let runId = message.runId {
+                    var cursor: String? = nil
+                    var pages: [String] = []
+                    var revision: Int? = nil
+                    repeat {
+                        let page = try await APIClient.shared.fetchAnswerBlocks(runId: runId, cursor: cursor)
+                        guard page.status == "completed", revision == nil || revision == page.revision else {
+                            throw APIError.network("完整回答尚未就绪或版本已改变")
+                        }
+                        revision = page.revision
+                        pages.append(contentsOf: page.blocks.map(\.content))
+                        guard !page.hasMore || (page.nextCursor != nil && page.nextCursor != cursor) else { throw APIError.network("全文分页回执无效") }
+                        cursor = page.hasMore ? page.nextCursor : nil
+                    } while cursor != nil
+                    fullText = pages.joined()
+                } else if message.answerHasMore {
+                    throw APIError.network("缺少完整运行标识，不能推送截断回答")
+                }
+                var blocks: [QuanSynBlockDTO] = []
+                var files: [QuanSynFileRef] = []
+                var seen: Set<String> = []
+                for block in message.blocks {
+                    guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint else { throw CancellationError() }
+                    switch block {
+                    case .chart(let chart):
+                        for series in chart.series {
+                            blocks.append(QuanSynBlockDTO(kind: "chart", content: chart.title + " · " + series.name,
+                                labels: series.points.map(\.label), values: series.points.map(\.value)))
+                        }
+                    case .table(let table):
+                        blocks.append(QuanSynBlockDTO(kind: "table", content: ([table.headers] + table.rows).map { $0.joined(separator: "\t") }.joined(separator: "\n")))
+                    case .code(let code): blocks.append(QuanSynBlockDTO(kind: "code", content: code.code))
+                    case .image(let image):
+                        guard seen.insert(image.assetName).inserted else { continue }
+                        let bytes: Data
+                        let name: String
+                        if image.assetName.hasPrefix("ga_") || image.assetName.hasPrefix("doc_") {
+                            let receipt = try await APIClient.shared.fetchImageReceipt(id: image.assetName)
+                            bytes = try await APIClient.shared.downloadAuthenticated(path: receipt.downloadPath, expectedHash: receipt.contentHash)
+                            name = receipt.filename
+                        } else if let data = image.imageData { bytes = data; name = "image.png" }
+                        else { throw APIError.network("图片原件不可用，未推送") }
+                        let receipt = try await APIClient.shared.uploadQuanSyn(data: bytes, filename: name)
+                        files.append(QuanSynFileRef(artifact_id: receipt.artifactId))
+                    case .attachment(let attachment):
+                        guard let source = attachment.sourceId, let hash = attachment.contentHash, seen.insert(source).inserted else { continue }
+                        let path = source.hasPrefix("ga_") ? "documents/generated/\(source)/download" : "documents/\(source)/download"
+                        let bytes = try await APIClient.shared.downloadAuthenticated(path: path, expectedHash: hash)
+                        let receipt = try await APIClient.shared.uploadQuanSyn(data: bytes, filename: attachment.fileName)
+                        files.append(QuanSynFileRef(artifact_id: receipt.artifactId))
+                    default: break
+                    }
+                }
+                guard epoch == tenantEpoch, account == sessionManager.activeAccountFingerprint else { throw CancellationError() }
+                _ = try await APIClient.shared.publishQuanSyn(QuanSynResultBody(request_id: "result-\(message.id)-\(message.answerRevision ?? 1)",
+                    reply_to: parent, text: fullText, blocks: blocks, files: files))
+                showToast("已推送到 QuanSyn Web")
+            } catch { showToast("QuanSyn 推送失败：\(error.localizedDescription)") }
+        }
     }
 
     public func importWeChatLink(_ link: String) {

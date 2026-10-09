@@ -55,6 +55,7 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """启动时建表(幂等)。"""
+    import backend.models.quansyn  # noqa: F401
     import backend.models.tenant  # noqa: F401  (注册模型到 metadata)
     import backend.models.protocol  # noqa: F401  (注册协议模型)
     import backend.models.agent  # noqa: F401  (注册子 Agent 模型)

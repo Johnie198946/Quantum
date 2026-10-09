@@ -1,0 +1,21 @@
+{
+  "source": "Cross-device content sharing app.zip/src/index.css",
+  "matchedDeclarations": 2023,
+  "changes": "Only route scope selectors; all supplied declarations retained",
+  "retainedInteractions": [
+    "drawer and page scaling",
+    "search dock and idle collapse",
+    "file detail zoom",
+    "code detail zoom",
+    "chart detail zoom",
+    "3-second logout confirmation",
+    "scroll progress and velocity effects"
+  ],
+  "apiChanges": [
+    "real phone verification",
+    "private records and real attachments",
+    "real server receipts",
+    "actual device pairing instead of fake online state",
+    "25 MiB limit instead of unsupported 2 GB claim"
+  ]
+}

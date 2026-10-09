@@ -221,6 +221,7 @@ public struct ChatView: View {
                     onPhotoPicked: { data in coordinator.attachPhoto(data) },
                     onDocumentPicked: { url in coordinator.attachDocument(url) },
                     onWeChatImported: { link in coordinator.importWeChatLink(link) },
+                    onQuanSynImported: { item in try await coordinator.importQuanSyn(item) },
                     onKnowledgeReferenced: { item in coordinator.referenceKnowledge(item) }
                 )
             }

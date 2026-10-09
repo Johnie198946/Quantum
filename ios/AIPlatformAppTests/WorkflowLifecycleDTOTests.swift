@@ -244,6 +244,30 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class WorkflowLifecycleDTOTests: XCTestCase {
+    @MainActor
+    func testQuanSynWireAndDurableDraftRecovery() throws {
+        let raw = Data(#"{"items":[{"id":"qs_0123456789abcdef0123456789abcdef","text":"需求","blocks":[{"kind":"chart","content":"实测","labels":["A"],"values":[3]}],"files":[{"artifact_id":"ga_0123456789abcdef0123456789abcdef","filename":"input.txt","content_hash":"hash","byte_size":5,"metadata":{"original_name":"资料.txt"}}],"revision":2,"status":"claimed"}]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = try decoder.decode(QuanSynListDTO.self, from: raw).items[0]
+        XCTAssertEqual(item.files[0].originalName, "资料.txt")
+        XCTAssertEqual(item.blocks[0].values, [3])
+        var message = ChatMessage(role: .user, content: "待运行")
+        message.quansynTransferId = item.id
+        message.quansynDraft = item.text
+        message.quansynClaim = "durable-claim"
+        let data = try JSONEncoder().encode(PersistedMessage(message))
+        let recovered = try JSONDecoder().decode(PersistedMessage.self, from: data).toChatMessage(sessionId: "test")
+        XCTAssertEqual(recovered.quansynDraft, "需求")
+        XCTAssertEqual(recovered.quansynClaim, "durable-claim")
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "quansynTransferId")
+        legacy.removeValue(forKey: "quansynDraft")
+        legacy.removeValue(forKey: "quansynClaim")
+        let old = try JSONDecoder().decode(PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.quansynDraft)
+    }
+
     func testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
