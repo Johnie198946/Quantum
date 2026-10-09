@@ -142,6 +142,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                                 str(run.get("knowledge_capability") or ""),
                                 query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                                 category_scope=requested_scope,
+                                timeout_seconds=90.0 if node_id == "travel_research" else 20.0,
                             )
                             break
                         except httpx.TimeoutException as exc:

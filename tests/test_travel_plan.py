@@ -489,6 +489,7 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     monkeypatch.setattr(persistence, "_save_workflow_runs", lambda: None)
     searches, models = [], []
     def search(*args, **kwargs):
+        assert kwargs["timeout_seconds"] == 90.0
         searches.append(kwargs["category_scope"])
         if timeout_once and len(searches) == 1:
             raise httpx.ReadTimeout("temporary gateway timeout")
