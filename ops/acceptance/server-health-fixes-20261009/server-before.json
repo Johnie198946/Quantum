@@ -1,0 +1,48 @@
+{
+  "sha": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f",
+  "release": "/opt/releases/ai-lab-platform-7b3a2b17c3b1.nN4yon",
+  "files_checked": 286,
+  "mismatches": [],
+  "images": {
+    "/ai-lab-platform-planning-worker-1": {
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
+      "ref": "ai-lab-platform-planning-worker:offline",
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
+    },
+    "/ai-lab-platform-frontend-1": {
+      "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+      "ref": "ai-lab-platform-frontend:offline",
+      "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
+    },
+    "/ai-lab-platform-agent-evaluation-worker-1": {
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
+      "ref": "ai-lab-platform-agent-evaluation-worker:offline",
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
+    },
+    "/ai-lab-platform-workflow-worker-1": {
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
+      "ref": "ai-lab-platform-workflow-worker:offline",
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
+    },
+    "/ai-lab-platform-api-1": {
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
+      "ref": "ai-lab-platform-api:offline",
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
+    },
+    "/ai-lab-platform-taskboard-1": {
+      "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+      "ref": "ai-lab-platform-taskboard:offline",
+      "revision": null
+    },
+    "/ai-lab-platform-postgres-1": {
+      "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+      "ref": "ai-lab-platform-postgres:offline",
+      "revision": null
+    },
+    "/ai-lab-platform-redis-1": {
+      "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+      "ref": "ai-lab-platform-redis:offline",
+      "revision": null
+    }
+  }
+}

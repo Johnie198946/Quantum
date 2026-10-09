@@ -889,6 +889,9 @@ public extension ChatMessage {
 }
 
 public struct ChatMessage: Identifiable, Sendable, Hashable {
+    public var quansynTransferId: String? = nil
+    public var quansynDraft: String? = nil
+    public var quansynClaim: String? = nil
     public let id: String
     public var sessionId: String
     public var role: MessageRole
@@ -987,6 +990,9 @@ public struct PersistedMessage: Codable, Sendable {
     public let answerHasMore: Bool?
     public let answerAvailableBlockCount: Int?
     public let answerBlocks: [AnswerBlockDTO]?
+    public let quansynTransferId: String?
+    public let quansynDraft: String?
+    public let quansynClaim: String?
     public let reasoning: [ReasoningStep]?
     public let clarify: PersistedClarify?
     public let noteDraft: NoteDraftBlock?
@@ -1023,6 +1029,9 @@ public struct PersistedMessage: Codable, Sendable {
         self.answerNextCursor = m.answerNextCursor
         self.answerHasMore = m.answerHasMore
         self.answerAvailableBlockCount = m.answerAvailableBlockCount
+        self.quansynTransferId = m.quansynTransferId
+        self.quansynDraft = m.quansynDraft
+        self.quansynClaim = m.quansynClaim
         self.answerBlocks = m.answerBlocks
         self.reasoning = m.blocks.compactMap {
             if case .reasoning(let steps) = $0 { return steps }
@@ -1079,6 +1088,9 @@ public struct PersistedMessage: Codable, Sendable {
             answerAvailableBlockCount: answerAvailableBlockCount ?? 0,
             answerBlocks: answerBlocks ?? []
         )
+        message.quansynTransferId = quansynTransferId
+        message.quansynDraft = quansynDraft
+        message.quansynClaim = quansynClaim
         if let clarify {
             message.blocks = [.clarify(clarify.toClarifyBlock(defaultSessionId: sessionId))]
         }
@@ -2247,6 +2259,13 @@ public final class SessionManager: ObservableObject {
     }
 
     /// Test/lifecycle barrier for callers that need durable completion explicitly.
+    public func verifyPendingPersistence() async throws {
+        await flushPendingPersistence()
+        guard failedPersistenceMutations.isEmpty, exhaustedPersistenceWrites.isEmpty else {
+            throw ShutdownError.persistenceMutationFailed
+        }
+    }
+
     public func flushPendingPersistence() async {
         while true {
             let generation = persistenceTaskGeneration
