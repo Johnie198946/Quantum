@@ -1,20 +1,24 @@
 # QuanSyn 当前续作 — DNS 回包修复
 
 task_id: quansyn-20261009（DNS修复续作）
-status: TESTED（运维修复尚未提交/推送/部署）
+status: VERIFIED（仅本次DNS拦截与短信发送修复；QuanSyn完整流程尚未验收）
 branch: codex/quansyn-20261009
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
-head/local_commit: b08dc111d391f2244590060824fd4de0fce4dc7e；本次修改未提交
-remote_sha: 开工git ls-remote origin refs/heads/codex/quansyn-20261009=b08dc111d391f2244590060824fd4de0fce4dc7e；本轮尚未push
+head/local_commit: 运维修复1d3a51c6de43ad717dbeb7d7be5568c99603e6f7；后续验收记录提交以Git HEAD为准
+remote_sha: git ls-remote origin refs/heads/codex/quansyn-20261009=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7（运维部署前核验）；git ls-remote origin refs/tags/quansyn-20261010-dns-fix=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7（固定修复版本已核验）
 server_before: 1c7c5062cd0248edeb10080cb9b80ec6320e2882；INPUT ts-input在前，云DNS回包被DROP
-server_after: 尚未部署，当前与server_before相同
-health_check: 修复前tailscaled/systemd-resolved/authen@auth.service均active
-functional_check: bash语法、DNS规则顺序/幂等/重配置/回滚测试通过；远端短信未修复验证
-rollback_point: 尚未写入服务器，部署前建立备份；只回滚本任务规则与文件
+server_after: 应用仍为1c7c5062cd0248edeb10080cb9b80ec6320e2882；/opt/ai-lab-shared/quantum-cloud-dns.sha=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7，三个部署文件逐个哈希核对；INPUT最前四条只放行原云DNS已建立连接的UDP/TCP53回包
+health_check: HTTPS /health 200 status=ok；8容器healthy；tailscaled/systemd-resolved/authen@auth.service/hermes-bridge/hermes-chat-worker均active；guard Result=success、ExecMainStatus=0，timer active/enabled
+functional_check: bash语法与规则顺序/幂等/重配置/回滚测试1 passed（4既有Pydantic警告）；两个原DNS的UDP/TCP四项解析全部exit0，耗时0.026–0.031秒；getent成功；默认解析且正常校验证书的阿里云HTTPS 200（0.143秒）；正式手机号短信API于2026-10-10 06:58:15 CST返回200“验证码已发送”（0.772秒）；Authen发送日志200；用户明确回复“已收到”；实机收件确认、填码登录未验收
+rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-dns-20261010.btqxka84（iptables完整快照、应用版本、修复来源与原文件不存在记录）；只移除本任务四条规则并停止timer/删除本次新增文件，禁止整份快照覆盖其他后续改动
 manifest: ops/change-manifests/quansyn-20261009-completion.md
-remaining_risks: 短暂防火墙重配置后最多约6秒规则恢复；实际短信收件和登录待验证
+remaining_risks: 防火墙重配置后最多约6秒规则恢复窗口；未重启整机或Tailscale做破坏性验收；网页填码登录与QuanSyn App/飞书完整流程未验收；App内验证码方案仍待架构确认
 
-用户最新“那你抓啊直到发现问题，然后修复”授权本次有界修复，覆盖此前不得修改配置的限制，仅用于已证明的DNS拦截问题；不视为App内验证码架构确认。修改前盘点：branch/HEAD/remote/worktree如上；status只包含本任务docs/plans/quansyn-20261009.md及本manifest待确认方案/诊断记录，没有其他任务改动。新增scripts/ensure_cloud_dns.sh、两个ops/systemd文件、tests/test_cloud_dns_guard.py、docs/runbooks/cloud-dns-tailscale.md；复用iptables与systemd，不改认证代码、DNS地址、应用版本或Tailscale设置。
+用户最新“那你抓啊直到发现问题，然后修复”授权本次有界修复，覆盖此前不得修改配置的限制，仅用于已证明的DNS拦截问题；不视为App内验证码架构确认。修改前盘点：branch/remote/worktree如上，HEAD=b08dc111d391f2244590060824fd4de0fce4dc7e；status只包含本任务docs/plans/quansyn-20261009.md及本manifest待确认方案/诊断记录，没有其他任务改动。新增scripts/ensure_cloud_dns.sh、两个ops/systemd文件、tests/test_cloud_dns_guard.py、docs/runbooks/cloud-dns-tailscale.md；复用iptables与systemd，不改认证代码、DNS地址、应用版本或Tailscale设置。
+
+部署顺序：测试通过→提交修复1d3a51c6→push本任务分支→git ls-remote确认1d3a51c6→建立rollback_point→从同一Git SHA导出三个文件并核对传输及安装哈希→systemd-analyze verify通过→安装/启用guard→远端功能及手机收件确认。systemd服务没有重启原业务进程。再次直接运行guard后iptables -S INPUT逐字相同；timer后续运行Result=success。原DNS仍为100.100.2.136/138。
+
+证据：ops/acceptance/quansyn-20261009/dns-guard-deployment.json、dns-guard-checks.json、dns-guard-final-check.json、sms-after-dns-fix.json。没有读取短信验证码、生产Redis内容、用户token或接受生产协议。HTTP200及用户收件确认只支持本次发送修复，不将其当作网页登录/跨端执行完整流程通过。
 
 以下为之前发布与诊断的历史记录。
 
