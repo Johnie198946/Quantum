@@ -6,7 +6,7 @@ branch: codex/server-health-fixes-20261009
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/server-health-fixes-20261009
 head/local_commit: 基线6b143ded4efcc7f9913c9a71e35658efa172d44b；修复尚未提交
 remote_sha: 本任务分支尚未推送
-server_before: 6b143ded4efcc7f9913c9a71e35658efa172d44b；/opt/releases/ai-lab-platform-6b143ded4efc.Vds5D1；286份运行文件一致，8/8容器healthy，当前无活动任务
+server_before: 7b3a2b17c3b1e6fc196808116cf0f27174a7024f；/opt/releases/ai-lab-platform-7b3a2b17c3b1.nN4yon；286份运行文件一致，8/8容器healthy，当前无活动任务
 server_after: 未部署
 health_check: 部署前健康，部署后待验证
 functional_check: 本地360项PASS、1项Mac缺/proc跳过；静态检查/脚本语法/diff检查PASS；真实功能待部署后验证
@@ -35,3 +35,7 @@ remaining_risks: 没有长时间峰值压测；cloud-init脚本原始来源仍�
 360项相关测试PASS，1项Linux锁/proc验证在Mac跳过；ruff backend/scripts/tests PASS，bash -n update.sh PASS，git diff --check PASS。无新增依赖或基础镜像变更；准备从已核验6b143ded生产镜像增量复制改动文件，并核验整个运行时代码哈希。
 
 回滚恢复原release/镜像标签/attestation与managed unit文件、认证原live属性；保留新增SQLite列和索引及当前持久数据，禁止用旧数据库覆盖后来任务。归档可恢复，当前与本轮回滚版本不归档。服务超预算可能在应用cgroup内终止而不会承诺任意负载永不重启。
+
+## 并行发布保护
+
+第一次部署在CAS前发现实际版本已为7b3a2b，未建立回滚点、未改镜像标签或服务。已合并对方工作流事件重试修复，重新核验286份代码与8个容器；本轮部署基线更新为7b3a2b17c3b1e6fc196808116cf0f27174a7024f，server-before.json记录实际release和镜像。先前360测试有效，另对合并工作流进行相关回归，86项PASS。

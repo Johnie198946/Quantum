@@ -1,27 +1,13 @@
 {
-  "sha": "6b143ded4efcc7f9913c9a71e35658efa172d44b",
-  "release": "/opt/releases/ai-lab-platform-6b143ded4efc.Vds5D1",
+  "sha": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f",
+  "release": "/opt/releases/ai-lab-platform-7b3a2b17c3b1.nN4yon",
   "files_checked": 286,
   "mismatches": [],
-  "run_states": [
-    [
-      "cancelled",
-      2
-    ],
-    [
-      "completed",
-      2011
-    ],
-    [
-      "failed",
-      410
-    ]
-  ],
   "images": {
     "/ai-lab-platform-planning-worker-1": {
-      "image": "sha256:61b41091dc5013ae42aceb1282a745284123eff8937f627d46c84088f302c2ec",
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
       "ref": "ai-lab-platform-planning-worker:offline",
-      "revision": "6b143ded4efcc7f9913c9a71e35658efa172d44b"
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
     },
     "/ai-lab-platform-frontend-1": {
       "image": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
@@ -29,19 +15,19 @@
       "revision": "0b04edc3bf771371aca1547ee57f1cfcbf400515"
     },
     "/ai-lab-platform-agent-evaluation-worker-1": {
-      "image": "sha256:61b41091dc5013ae42aceb1282a745284123eff8937f627d46c84088f302c2ec",
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
       "ref": "ai-lab-platform-agent-evaluation-worker:offline",
-      "revision": "6b143ded4efcc7f9913c9a71e35658efa172d44b"
-    },
-    "/ai-lab-platform-api-1": {
-      "image": "sha256:61b41091dc5013ae42aceb1282a745284123eff8937f627d46c84088f302c2ec",
-      "ref": "ai-lab-platform-api:offline",
-      "revision": "6b143ded4efcc7f9913c9a71e35658efa172d44b"
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
     },
     "/ai-lab-platform-workflow-worker-1": {
-      "image": "sha256:61b41091dc5013ae42aceb1282a745284123eff8937f627d46c84088f302c2ec",
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
       "ref": "ai-lab-platform-workflow-worker:offline",
-      "revision": "6b143ded4efcc7f9913c9a71e35658efa172d44b"
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
+    },
+    "/ai-lab-platform-api-1": {
+      "image": "sha256:c0b6379168d2b82104abe0d0de6ef2b8f9968ba935335cbfd88f31133762be16",
+      "ref": "ai-lab-platform-api:offline",
+      "revision": "7b3a2b17c3b1e6fc196808116cf0f27174a7024f"
     },
     "/ai-lab-platform-taskboard-1": {
       "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
