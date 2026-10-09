@@ -1,0 +1,13 @@
+{
+  "server_before": "05779291aff28fc465280a09b8e898fa61c2ff01",
+  "release_before": "/opt/releases/ai-lab-platform-05779291aff2.uoUHch",
+  "api_image_before": "sha256:231ef1ab04d82e8362d1040049a31f1275bc658066198639abd9b2762d9bb437",
+  "frontend_image_before": "sha256:b9688d49942450369dbca301de848c31635c1b80fe6ea4a0980a7f8ce966de70",
+  "domain": "www.t-react.com",
+  "domain_ipv4": "120.24.248.58",
+  "https_before": 200,
+  "containers_before": "8 healthy",
+  "backend_regressions": "111 passed",
+  "frontend_regressions": "152 passed",
+  "frontend_build": "passed"
+}

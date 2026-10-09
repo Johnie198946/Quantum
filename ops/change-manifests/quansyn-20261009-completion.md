@@ -1,11 +1,11 @@
 # QuanSyn 20261009 — 本地开发与验收记录
 
 task_id: quansyn-20261009
-status: TESTED
+status: COMMITTED
 branch: codex/quansyn-20261009
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
-head/local_commit: de3c2ad00a4fb33029d7138f52622689be3267e7 / 本任务未提交
-remote_sha: 本任务未授权、未 push；只读上游基线见下方
+head/local_commit: f0c121e5（产品提交）及 8d44a9d76bc3c8b221ab85f5003e0d8b8dc9f69a（合入已部署基线）；即将推送发布记录提交
+remote_sha: 已授权本任务分支 push；待发布前 git ls-remote 精确核验
 server_before: 未读取生产版本；无部署授权
 server_after: 未部署生产；本地隔离服务 127.0.0.1:8139
 health_check: 本地 /health HTTP 200，status=ok，version=0.8.0；生产未检查
@@ -418,3 +418,9 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 用户明确授权“提交 推送 部署。我的域名是www.t-react.com”。DNS www.t-react.com=120.24.248.58，现有严格 TLS HTTPS 入口响应 200。SSH 通过已配置部署身份及严格 known-host 校验，未打印或复制密钥。实际服务器基线 05779291aff28fc465280a09b8e898fa61c2ff01，release /opt/releases/ai-lab-platform-05779291aff2.uoUHch；8 容器 healthy，Bridge 和 chat worker active。
 
 先提交本任务，再合入 GitHub 已核验且当前已部署的 server-health-fixes 分支，保留共享服务和工作流修复；不修改其他任务的 worktree/main。复用 exact-SHA update.sh 的部署锁、预期版本 CAS、镜像哈希证明及回滚。仅 www.t-react.com 的 SPA 首页跳转 QuanSyn，其他入口逻辑保留。尚未 push/deploy，此处只记录授权和预检。
+
+## 合并后发布前验证
+
+产品提交 f0c121e5；合并当前服务器基线提交 8d44a9d76bc3c8b221ab85f5003e0d8b8dc9f69a，无冲突。111 项后端/Mac/工作流/聊天流/容器边界测试全部通过（显式启用 pytest_asyncio.plugin）；前端 152 项通过，构建通过。日志存本地 release-tests.log、release-web-tests.log、release-build.log。共享发布链、资源预算和已部署工作流修复均保留。预检记录 release-preflight.json。
+
+发布时必须使用推送后核验的精确源码 SHA、服务器部署锁及 expected-current=05779291aff28fc465280a09b8e898fa61c2ff01；源码和静态构建哈希对应，API/前端候选镜像验证通过后才切换。此提交时仍未部署；最终运行收据在操作完成后回填本地 manifest。
