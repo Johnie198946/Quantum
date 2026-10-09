@@ -1,0 +1,23 @@
+{
+  "backup": "/Users/dengzhaoyu/.hermes/backups/quansyn-20261009-224242",
+  "source_sha": "de220f2bdf52d326a003ddcdf740a6ba07eba8ec",
+  "before": {
+    "__init__.py": "e7ff424f4fd8fe5756eae496893100734f47e994b82f349aa4aa485df44b33bd",
+    "capability_router.py": "c395ca53ee0929e5db950641825d71e9636b6493b8368b763b1153d83e811c51",
+    "quansyn.py": null,
+    "_quansyn_contract.py": null
+  },
+  "after": {
+    "__init__.py": "c29088c81eebb2c9bee3667b6734a447780bc0d037e0718beb1439beb9950820",
+    "capability_router.py": "1480aa73132727685f3d1efaf3d2f8d3c5c2f1c95a2bf0c3c75340d8bde510b8",
+    "quansyn.py": "9db4a8abcd90ada6c39b617d0444e3611c70f4799f15ac23f3bb124d499507c2",
+    "_quansyn_contract.py": "c4e04a6572e4f2a21cf8a776e707f6b5eeb9637d9747296a3401d1ebf092e211"
+  },
+  "api_base": "https://www.t-react.com",
+  "native_gateway_before_pid": 1520,
+  "native_gateway_after_pid": 14559,
+  "native_restart": "passed; launchd supervised",
+  "standalone_loaded": true,
+  "canonical_contract_loaded": true,
+  "production_api_base_checked": true
+}

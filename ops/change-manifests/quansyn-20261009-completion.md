@@ -1,18 +1,22 @@
-# QuanSyn 20261009 — 本地开发与验收记录
+# QuanSyn 20261009 — 交付记录
 
 task_id: quansyn-20261009
-status: COMMITTED
+status: DEPLOYED
 branch: codex/quansyn-20261009
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
-head/local_commit: f0c121e5（产品提交）及 8d44a9d76bc3c8b221ab85f5003e0d8b8dc9f69a（合入已部署基线）；即将推送发布记录提交
-remote_sha: 已授权本任务分支 push；待发布前 git ls-remote 精确核验
-server_before: 未读取生产版本；无部署授权
-server_after: 未部署生产；本地隔离服务 127.0.0.1:8139
-health_check: 本地 /health HTTP 200，status=ok，version=0.8.0；生产未检查
-functional_check: 本地真实 Web → Mac Hermes 模型执行 → CSV/PNG/表格/图表回传 → Web 展示及剪贴板复制通过；真实飞书传输及 iPhone 真机未验证
-rollback_point: Git 基线 de3c2ad00a4fb33029d7138f52622689be3267e7；生产未改动，无生产回滚点
+head/local_commit: 产品部署 996fb84ac3714301ca142437a7fd727e27cc8204；发布后的验收记录另提交，具体提交见 Git HEAD
+remote_sha: 部署 SHA 996fb84ac3714301ca142437a7fd727e27cc8204；refs/heads/codex/quansyn-20261009 已通过 git ls-remote 核验；发布后使用 refs/tags/quansyn-20261009-release 固定产品 SHA
+server_before: 05779291aff28fc465280a09b8e898fa61c2ff01
+server_after: 996fb84ac3714301ca142437a7fd727e27cc8204；/opt/releases/ai-lab-platform-996fb84ac371.ks38RB
+health_check: HTTPS /health 200 ok；API /ready ready；8 Compose 容器 healthy；hermes-bridge 与 hermes-chat-worker active
+functional_check: 正式 /、/quansyn、/quansyn/ 200；82 前端文件 SHA256 完全一致；未登录私有队列和设备 401；实际 PostgreSQL 两张 QuanSyn 表存在；本地真实模型完整往返通过。正式账号/飞书/iPhone 正向全流程未验收，故不标 VERIFIED
+rollback_point: 初次发布前 /opt/ai-lab-shared/rollbacks/quansyn-20261009.w0QBvf（05779291）；入口修复前 /opt/ai-lab-shared/rollbacks/quansyn-20261009.zyHafF（de220f2b）；Mac /Users/dengzhaoyu/.hermes/backups/quansyn-20261009-224242
 manifest: ops/change-manifests/quansyn-20261009-completion.md
-remaining_risks: 正式账号短信、飞书实际消息、iPhone 真机闭环及公司浏览器下载兼容性未验证；插件现有 6 项回归失败在原基线上复现
+remaining_risks: 正式账号短信登录、真实飞书消息、iPhone 真机闭环、公司浏览器下载未验证；正式页浏览器自动化超时，未取得正式截图；既有插件 6 项基线回归失败未改变
+
+2026-10-09 用户明确授权“提交 推送 部署。我的域名是www.t-react.com”。产品已提交、推送本任务分支并按精确 SHA 部署；未改共享 main、未推送其他任务改动。验收记录后续提交仅含文档/证据，生产运行版本以固定 release tag 为准。
+
+以下本地实施章节保留历史验证边界；其中“未提交/未部署/未安装”的历史描述已被本节的实际发布记录更新。
 
 ## 目标、授权与实现
 
@@ -432,3 +436,15 @@ branch refs/heads/feat/serial-narrative-quality-20260928
 ## 正式入口修复
 
 首次正式 HTTPS 检查发现静态品牌目录与 /quansyn SPA 路由冲突。frontend/Dockerfile 为 /quansyn 和 /quansyn/ 添加精确 index.html 路由，保持 logo 路径及页面组件不变。生产页面需重新检查。首次部署 de220f2b，回滚备份 /opt/ai-lab-shared/rollbacks/quansyn-20261009.w0QBvf；8 容器及 API/Bridge 健康。
+
+## 正式发布与回滚
+
+证据：`ops/acceptance/quansyn-20261009/production-release.json`、`production-http.json`、`mac-install.json`、`deployment-wrapper.sh`。未下载数据库或输出密钥；源码离线档由 git archive 精确 SHA 生成，源包 SHA256 `04723d2ba56ad5bb2f6fcf1b7c3e9cfc1b5bfe2a3e5c93ee190c7c8038ec7edf`；前端 82 个字节哈希经候选镜像和正式 HTTPS 两次核对。发布前继承部署锁及 expected-current-SHA 检查，无覆盖并行发布。
+
+首次前端候选包权限检查在生产切换前阻断，修正 nginx 可读权限后通过；首次正式入口检查识别静态目录与 SPA 冲突，已通过 996fb84a 修复并重新验证两个入口均为 200。当前镜像 revision 与实际源码 SHA 一致。最后修改的容器合同检查 16 passed；此前完整相关检查 112 passed，前端 152 passed。
+
+回滚使用现有 scripts/update.sh 精确版本流程：取得部署锁并核验当前 SHA，按初次备份 images-before.txt 恢复 05779291 对应标签及 offline-images.attested.before，再以对应 root-owned 离线源包执行 update.sh，核对 API、Bridge、容器及域名。新增 QuanSyn 表为 additive，不应为了应用回滚删除表或恢复数据库覆盖后来数据；数据库 dump 与 SQLite 原件仅供必要的数据恢复。回滚操作尚未执行。
+
+Mac 仅替换 __init__.py、capability_router.py、quansyn.py 和由 canonical 后端生成的 _quansyn_contract.py；其他模块不动，YAML 更新前后比较其余数据完全一致。Hermes 原生重启通过；launchd PID 从 1520 变为 14559；独立 PluginManager 加载、正式 API 地址、canonical contract 均通过。设备尚需用户在正式网页手动配对，未代替用户接受生产协议。Mac 回滚需先核对当前文件与 mac-install.json 哈希，恢复备份中的既有模块/配置并通过原生网关重启；未存在的新增模块仅在确认属于本任务后移除。
+
+使用入口：https://www.t-react.com/quansyn。真实账号登录后，Web 选择 Mac 并生成配对码，在现有机器人发“绑定 QuanSyn <配对码>”；发送需求后发“拉取并执行 QuanSyn qs_实际编号”，完成后发“推送 QuanSyn qs_实际编号 附件 1,2”（附件按真实清单选择）。首版仍为人工触发。
