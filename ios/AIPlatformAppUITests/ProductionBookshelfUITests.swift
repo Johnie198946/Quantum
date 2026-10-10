@@ -203,6 +203,24 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertFalse(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch.exists, "取消的偏好不能继续提交")
     }
 
+    func testExistingTravelTaskOpensInNormalAccount() {
+        app.terminate()
+        app.launchArguments = []
+        app.launchEnvironment = [:]
+        app.launch()
+        let workflows = app.buttons["main-tab-1"]
+        XCTAssertTrue(workflows.waitForExistence(timeout: 30), "正常登录会话未恢复，不注入认证")
+        workflows.tap()
+        let task = app.buttons.matching(identifier: "workflow-card-鹿儿岛旅行规划").firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 20), "已有鹿儿岛任务未加载")
+        for _ in 0..<5 where !task.isHittable { app.swipeUp() }
+        XCTAssertTrue(task.isHittable)
+        task.tap()
+        let title = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS %@", "鹿儿岛")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "已有工作流详情未打开")
+        attachScreenshot(named: "travel-normal-account-existing-workflow")
+    }
+
     func testCompletedTravelCardOpensWorkflowWithoutDuplicate() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview", "-travelCompletedProposalPreview"]
