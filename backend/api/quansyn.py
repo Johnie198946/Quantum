@@ -19,7 +19,7 @@ from backend.api.auth import require_auth, security
 from backend.db import SessionLocal
 from backend.models.quansyn import QuanSynDevice, QuanSynTransfer
 from backend.models.tenant import TenantMapping
-from backend.services.generated_artifacts import GeneratedArtifactError, _save, generated_artifact_path
+from backend.services.generated_artifacts import GeneratedArtifactError, _owner_root, _save, generated_artifact_path
 
 router = APIRouter(prefix="/api/v1/quansyn", tags=["quansyn"])
 
@@ -208,7 +208,7 @@ async def upload_file(request: Request, filename: str = Header(..., alias="X-Fil
         raise HTTPException(422, "文件名无效")
     storage_name = name if Path(name).suffix else name + ".bin"
     try:
-        with tempfile.TemporaryFile() as data:
+        with tempfile.TemporaryFile(dir=_owner_root(*owner(p))) as data:
             content_hash = hashlib.sha256()
             async for chunk in request.stream():
                 await run_in_threadpool(data.write, chunk)

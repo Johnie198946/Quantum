@@ -142,9 +142,16 @@ def test_device_cannot_bypass_withdrawal_or_attach_other_queue_file(client):
         app.dependency_overrides[quansyn.principal] = override
 
 
-def test_large_attachment_stream_roundtrip(client):
+def test_large_attachment_stream_roundtrip(client, monkeypatch):
     import hashlib
     c, _ = client
+    import tempfile
+    original_temporary_file = tempfile.TemporaryFile
+    def persistent_upload_file(*args, **kwargs):
+        assert kwargs.get("dir") is not None
+        assert "files" in str(kwargs["dir"])
+        return original_temporary_file(*args, **kwargs)
+    monkeypatch.setattr(quansyn.tempfile, "TemporaryFile", persistent_upload_file)
     chunk = b"QuanSyn-large-file\n" * 65536
     expected = hashlib.sha256()
     def chunks():
