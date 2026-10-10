@@ -769,3 +769,34 @@ def test_block_budget_and_cancellation_stop_before_model_call(monkeypatch, cance
     monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", forbidden)
     with pytest.raises(InterruptedError if cancelled else RuntimeError):
         runtime._run_travel_blocks(run, node, "context", {}, None, "test", None, None, lambda *_a, **_k: None)
+
+
+@pytest.mark.parametrize("legacy_budget,run_budget,recovers", [(14000, 64000, True), (14000, 14000, False), (15000, 64000, False)])
+def test_legacy_itinerary_recovers_checkpoint_within_approved_run_budget(monkeypatch, legacy_budget, run_budget, recovers):
+    from scripts import hermes_bridge as bridge
+    import json
+    runtime, artifacts = bridge.workflow_runtime, bridge.workflow_artifacts
+    node = {"id": "travel_itinerary", "node_type": "LLM_INFERENCE", "parameters": {"max_tokens": legacy_budget, "output_format": "travel_plan_v2"}}
+    document = validate_travel_document(practical_document())
+    document["actions"] = []
+    state = {"travel_document": document, "travel_completed_days": [], "usage": {"budget_tokens": 16437}}
+    run = {"max_tokens": run_budget, "usage": {"budget_tokens": 23998}, "cancel_requested": False}
+    calls = []
+    def model(prompt, block_node, *_args, **_kwargs):
+        calls.append(block_node["parameters"]["max_tokens"])
+        current = json.loads(prompt.split("当前日：", 1)[1].split("前面各块", 1)[0].strip())
+        return json.dumps(daily_block(current["id"])), None, {"output_tokens": 8000}
+    monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", model)
+    monkeypatch.setattr(bridge.persistence, "_save_workflow_runs", lambda: None)
+    monkeypatch.setattr(bridge.persistence, "_workflow_event", lambda *_a, **_k: None)
+    if recovers:
+        output, _, usage = runtime._run_travel_blocks(run, node, "context", state, None, "test", None, None, lambda *_a, **_k: None)
+        assert len(json.loads(output)["days"]) == 2
+        assert state["travel_completed_days"] == ["day-1", "day-2"]
+        assert usage["budget_tokens"] == 32437 and run["usage"]["budget_tokens"] == 39998
+        assert calls and max(calls) <= 8192
+    else:
+        with pytest.raises(RuntimeError, match="预算已耗尽"):
+            runtime._run_travel_blocks(run, node, "context", state, None, "test", None, None, lambda *_a, **_k: None)
+        assert calls == []
+    assert node["parameters"]["max_tokens"] == legacy_budget
