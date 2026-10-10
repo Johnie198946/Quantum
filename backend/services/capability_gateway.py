@@ -156,6 +156,22 @@ async def create_capability_proposal(
                 note_illustration_v1=renderer_version == "qcp-ios-notes@1",
             )
         review_summary = capability["description"]
+        # Machine routing descriptions are not product confirmation copy.
+        if capability_id == "workflow.clarification.respond":
+            verb = "确认" if canonical_input["intent"] == "confirm" else "补充修改"
+            review_summary = f"{verb}第 {canonical_input['expected_round']} 轮旅行需求。\n" + canonical_input["response"]
+        elif capability_id == "workflow.review":
+            verb = "采用" if canonical_input["decision"] == "approve" else "修改"
+            review_summary = f"{verb}第 {canonical_input['artifact_version']} 版成果。采用行程后继续制作，最终成果采用后可单独保存笔记。"
+            if canonical_input.get("comment"):
+                review_summary += "\n" + canonical_input["comment"]
+        elif capability_id == "workflow.retry":
+            review_summary = "继续这个失败或取消的任务，复用已完成行程，仍按已批准的总预算执行。"
+        elif capability_id == "travel.revise":
+            verb = "记录实际进度" if canonical_input.get("progress") else "修改已采用行程"
+            review_summary = verb + "：" + canonical_input["reason"] + "。保留已有日记、照片和预订，不代为订票或付款。"
+        elif capability_id == "travel.notebook.save":
+            review_summary = "将这版已采用成果保存为私人旅行笔记；复用同一行程的已有笔记，不覆盖个人日记。"
         if capability_id == "media.process":
             from backend.services.image_processing import ImageEdit
             edit = ImageEdit.model_validate({key: value for key, value in canonical_input.items()

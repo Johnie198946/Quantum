@@ -70,6 +70,8 @@ async def test_chat_native_review_only_proposes_then_gateway_confirms_exact_vers
             assert proposed["status"] == "awaiting_confirmation"
             review.assert_not_awaited()
             proposal = proposed["events"][0]["payload"]
+            assert "采用第 2 版成果" in proposal["summary"]
+            assert data["comment"] in proposal["summary"]
             result = await confirm_capability_proposal(proposal["proposal_id"], payload=PAYLOAD,
                                                       confirmation_token=proposal["confirmation_token"], session_id="travel-session")
             assert result["status"] == "completed"
