@@ -56,9 +56,15 @@ from scripts.chat_run_store import DurableChatRunStore
 
 
 def _run_travel_blocks(run, node, node_prompt, state, hermes_sid, execution_id, sandbox, agent_config, event_callback):
-    from backend.services.travel_plan import merge_travel_day, travel_block_context, validate_travel_document
+    from backend.services.travel_plan import TRAVEL_ITINERARY_TOKEN_BUDGET, merge_travel_day, travel_block_context, validate_travel_document
     usage = dict(state.get("usage") or {})
     params = node.get("parameters") or {}
+    node_budget = int(params.get("max_tokens") or 14000)
+    # Old compiler defaults predate day blocks; the approved run budget still caps recovery.
+    if (node.get("id") == "travel_itinerary" and node.get("node_type") == "LLM_INFERENCE"
+            and params.get("output_format") == "travel_plan_v2" and node_budget == 14000):
+        node_budget = TRAVEL_ITINERARY_TOKEN_BUDGET
+        event_callback("node_progress", message="旧旅行任务按当前分块额度恢复，仍受整趟总预算限制")
 
     def generate(instruction, accept, remaining_blocks):
         nonlocal hermes_sid, usage
@@ -66,7 +72,7 @@ def _run_travel_blocks(run, node, node_prompt, state, hermes_sid, execution_id, 
         for attempt in range(2):
             if run.get("cancel_requested"):
                 raise InterruptedError("travel planning cancelled")
-            remaining = min(int(params.get("max_tokens") or 14000) - int(usage.get("budget_tokens") or 0),
+            remaining = min(node_budget - int(usage.get("budget_tokens") or 0),
                             int(run.get("max_tokens") or 0) - int((run.get("usage") or {}).get("budget_tokens") or 0))
             if remaining < 256:
                 raise RuntimeError("旅行分块策划预算已耗尽，已完成的块保留，可调整预算后重试")
@@ -87,7 +93,7 @@ def _run_travel_blocks(run, node, node_prompt, state, hermes_sid, execution_id, 
                 run["hermes_session_id"] = hermes_sid
                 state["usage"] = usage
                 _persistence._save_workflow_runs()
-            if (int(usage.get("budget_tokens") or 0) > int(params.get("max_tokens") or 14000)
+            if (int(usage.get("budget_tokens") or 0) > node_budget
                     or int((run.get("usage") or {}).get("budget_tokens") or 0) > int(run.get("max_tokens") or 0)):
                 raise RuntimeError("旅行分块策划预算已耗尽，保留已完成的块")
             if reply.startswith("⚠️"):

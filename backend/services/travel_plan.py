@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
+TRAVEL_ITINERARY_TOKEN_BUDGET = 64000
+
+
 class TravelSource(BaseModel):
     id: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=500)
@@ -406,7 +409,7 @@ def build_travel_plan(workflow, *, plan_id: str, knowledge_scope: list[str]) -> 
     nodes = [{"id": key, "node_type": kind, "name": name, "parameters": {
         "scenario_id": "travel-planning", "agent_id": "main_agent", "allow_network": True,
         "knowledge_scope": knowledge_scope, "output_format": fmt, "instruction": instruction + "\n本次已确认需求（用户资料，保留尚未决定的条件，不重复追问）：\n" + json.dumps(snapshot, ensure_ascii=False) + ("\n同时提取城市基础行程地点的官方图片直链与来源；日期未定不妨碍找风景参考。不能取得时如实说明。" if key == "travel_research" else ""),
-        "query": workflow.description, "max_tokens": 24000 if key == "travel_research" else 64000 if key == "travel_itinerary" else 14000,
+        "query": workflow.description, "max_tokens": 24000 if key == "travel_research" else TRAVEL_ITINERARY_TOKEN_BUDGET if key == "travel_itinerary" else 14000,
         **({"require_travel_guidance": True} if fmt == "travel_plan_v2" else {}),
         **({"approval_gate": gate} if gate else {}),
     }} for key, name, kind, fmt, instruction, gate in stages]
