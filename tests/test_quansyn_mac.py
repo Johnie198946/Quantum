@@ -190,3 +190,27 @@ def test_standalone_mac_package_uses_canonical_contract(tmp_path, monkeypatch):
     assert plugin.outputs({"paths": [], "blocks": [{"kind": "chart", "labels": ["x"], "values": [12]}]}, **kw)["success"]
     with pytest.raises(ValueError):
         plugin.outputs({"paths": [], "blocks": [{"kind": "chart", "labels": ["x"], "values": []}]}, **kw)
+
+
+def test_mac_recovers_lost_import_confirmation_without_losing_local_content(runtime):
+    plugin, c, _, _ = runtime
+    receipt = c.post('/api/v1/quansyn/files', content=b'local copy survives', headers={'X-File-Name': 'retry.txt'}).json()
+    row = c.post('/api/v1/quansyn/transfers', json={'request_id': uuid.uuid4().hex, 'target': 'mac', 'text': 'saved local goal', 'files': [{'artifact_id': receipt['artifact_id']}]}).json()
+    pair = c.post('/api/v1/quansyn/devices/pair').json()
+    kw, _ = turn(plugin, '绑定 QuanSyn ' + pair['code'])
+    assert plugin.command(**kw)['success']
+    original = plugin.http
+    def lost_response(sender, method, path, **kwargs):
+        response = original(sender, method, path, **kwargs)
+        if path.endswith('/imported'):
+            raise ValueError('confirmation response lost')
+        return response
+    plugin.http = lost_response
+    with pytest.raises(ValueError, match='response lost'):
+        plugin.pull('ou_owner', row['id'])
+    assert c.get('/api/v1/quansyn/transfers/' + row['id']).json()['files'] == []
+    assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).status_code == 404
+    plugin.http = original
+    recovered = plugin.pull('ou_owner', row['id'])
+    assert recovered['imported'] and recovered['text'] == 'saved local goal'
+    assert Path(recovered['files'][0]['path']).read_bytes() == b'local copy survives'

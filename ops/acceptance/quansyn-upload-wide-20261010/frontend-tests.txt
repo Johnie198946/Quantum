@@ -10,936 +10,936 @@ TAP version 13
 # Subtest: 001 business surface publishes twelve unique runbooks
 ok 1 - 001 business surface publishes twelve unique runbooks
   ---
-  duration_ms: 0.838416
+  duration_ms: 1.2935
   type: 'test'
   ...
 # Subtest: business prompt makes remote JEV the sole Agent selector
 ok 2 - business prompt makes remote JEV the sole Agent selector
   ---
-  duration_ms: 0.43225
+  duration_ms: 0.162291
   type: 'test'
   ...
 # Subtest: plan-to-canvas projection uses only server nodes and edges
 ok 3 - plan-to-canvas projection uses only server nodes and edges
   ---
-  duration_ms: 2.338583
+  duration_ms: 1.94175
   type: 'test'
   ...
 # Subtest: React Flow projection does not create server nodes
 ok 4 - React Flow projection does not create server nodes
   ---
-  duration_ms: 0.537875
+  duration_ms: 0.498
   type: 'test'
   ...
 # Subtest: plan diff reports added, removed, and changed nodes
 ok 5 - plan diff reports added, removed, and changed nodes
   ---
-  duration_ms: 0.943333
+  duration_ms: 0.455083
   type: 'test'
   ...
 # Subtest: result area exposes exactly four server-backed view types and honest empties
 ok 6 - result area exposes exactly four server-backed view types and honest empties
   ---
-  duration_ms: 0.22875
+  duration_ms: 0.179875
   type: 'test'
   ...
 # Subtest: ArchitectPage uses real React Flow with server-only nodes and edges
 ok 7 - ArchitectPage uses real React Flow with server-only nodes and edges
   ---
-  duration_ms: 2.40675
+  duration_ms: 1.62475
   type: 'test'
   ...
 # Subtest: requirement confirmation actions send structured confirm and revise intents
 ok 8 - requirement confirmation actions send structured confirm and revise intents
   ---
-  duration_ms: 0.722167
+  duration_ms: 0.538541
   type: 'test'
   ...
 # Subtest: UNCONNECTED server nodes remain honestly labelled and never become LIVE locally
 ok 9 - UNCONNECTED server nodes remain honestly labelled and never become LIVE locally
   ---
-  duration_ms: 0.101958
+  duration_ms: 0.265208
   type: 'test'
   ...
 # Subtest: showroom journey hands a confirmed CustomerDemand to Architect
 ok 10 - showroom journey hands a confirmed CustomerDemand to Architect
   ---
-  duration_ms: 0.757166
+  duration_ms: 0.806166
   type: 'test'
   ...
 # Subtest: App root route uses the destructured authSession
 ok 11 - App root route uses the destructured authSession
   ---
-  duration_ms: 1.005417
+  duration_ms: 0.36725
   type: 'test'
   ...
 # Subtest: an empty workbench can submit the first requirement
 ok 12 - an empty workbench can submit the first requirement
   ---
-  duration_ms: 0.820792
+  duration_ms: 0.467791
   type: 'test'
   ...
 # Subtest: revision polling waits for a strictly newer server plan
 ok 13 - revision polling waits for a strictly newer server plan
   ---
-  duration_ms: 0.25125
+  duration_ms: 0.222667
   type: 'test'
   ...
 # Subtest: initial plan polling waits for plan_ready before reading the first server plan
 ok 14 - initial plan polling waits for plan_ready before reading the first server plan
   ---
-  duration_ms: 0.110583
+  duration_ms: 0.106625
   type: 'test'
   ...
 # Subtest: revision plan polling does not disguise server failures as an empty plan
 ok 15 - revision plan polling does not disguise server failures as an empty plan
   ---
-  duration_ms: 0.233708
+  duration_ms: 0.22475
   type: 'test'
   ...
 # Subtest: planning failure events stop polling instead of becoming a generic timeout
 ok 16 - planning failure events stop polling instead of becoming a generic timeout
   ---
-  duration_ms: 0.055917
+  duration_ms: 0.055667
   type: 'test'
   ...
 # Subtest: execution polling returns only server terminal snapshot
 ok 17 - execution polling returns only server terminal snapshot
   ---
-  duration_ms: 0.612
+  duration_ms: 0.154625
   type: 'test'
   ...
 # Subtest: the real post-approval agent_ready state can start a workflow
 ok 18 - the real post-approval agent_ready state can start a workflow
   ---
-  duration_ms: 0.076625
+  duration_ms: 0.048541
   type: 'test'
   ...
 # Subtest: plan is not requested while a workflow is still clarifying
 ok 19 - plan is not requested while a workflow is still clarifying
   ---
-  duration_ms: 0.2715
+  duration_ms: 0.063958
   type: 'test'
   ...
 # Subtest: empty evidence arrays render as an honest empty state
 ok 20 - empty evidence arrays render as an honest empty state
   ---
-  duration_ms: 0.192958
+  duration_ms: 0.03675
   type: 'test'
   ...
 # Subtest: architect only accepts an explicit showroom business session from the URL
 ok 21 - architect only accepts an explicit showroom business session from the URL
   ---
-  duration_ms: 0.362125
+  duration_ms: 0.136084
   type: 'test'
   ...
 # Subtest: architect accepts an explicit customer demand id from the URL
 ok 22 - architect accepts an explicit customer demand id from the URL
   ---
-  duration_ms: 0.078458
+  duration_ms: 0.060333
   type: 'test'
   ...
 # Subtest: Sim-like adapter preserves execution semantics and excludes view position
 ok 23 - Sim-like adapter preserves execution semantics and excludes view position
   ---
-  duration_ms: 0.927709
+  duration_ms: 0.329375
   type: 'test'
   ...
 # Subtest: Sim-like adapter fails closed for unknown node types, fields, dangling edges, and handles
 ok 24 - Sim-like adapter fails closed for unknown node types, fields, dangling edges, and handles
   ---
-  duration_ms: 0.41175
+  duration_ms: 0.244458
   type: 'test'
   ...
 # Subtest: Sim-like adapter rejects undefined execution semantics and never returns LIVE
 ok 25 - Sim-like adapter rejects undefined execution semantics and never returns LIVE
   ---
-  duration_ms: 0.385125
+  duration_ms: 0.618166
   type: 'test'
   ...
 # Subtest: Sim-like adapter round-trips canonical execution semantics
 ok 26 - Sim-like adapter round-trips canonical execution semantics
   ---
-  duration_ms: 0.9675
+  duration_ms: 0.171625
   type: 'test'
   ...
 # Subtest: Sim-like adapter normalizes the server DSL node_type contract
 ok 27 - Sim-like adapter normalizes the server DSL node_type contract
   ---
-  duration_ms: 0.306083
+  duration_ms: 0.194625
   type: 'test'
   ...
 # Subtest: Sim-like adapter round-trips the real server node_type and edge condition DSL
 ok 28 - Sim-like adapter round-trips the real server node_type and edge condition DSL
   ---
-  duration_ms: 0.162959
+  duration_ms: 0.395792
   type: 'test'
   ...
 # Subtest: Sim-like adapter omits absent conditions and rejects invalid condition types
 ok 29 - Sim-like adapter omits absent conditions and rejects invalid condition types
   ---
-  duration_ms: 0.313792
+  duration_ms: 0.4615
   type: 'test'
   ...
 # Subtest: PlanCanvas saves edited nodes and edges over the original DSL root contract
 ok 30 - PlanCanvas saves edited nodes and edges over the original DSL root contract
   ---
-  duration_ms: 0.82
+  duration_ms: 0.527125
   type: 'test'
   ...
 # Subtest: Gate-2 platform API exposes CAS-safe plan save and rollback helpers
 ok 31 - Gate-2 platform API exposes CAS-safe plan save and rollback helpers
   ---
-  duration_ms: 0.185792
+  duration_ms: 0.284167
   type: 'test'
   ...
 # Subtest: Gate-2 PlanCanvas exposes explicit save and keeps execution actions out of the canvas
 ok 32 - Gate-2 PlanCanvas exposes explicit save and keeps execution actions out of the canvas
   ---
-  duration_ms: 0.461292
+  duration_ms: 0.386834
   type: 'test'
   ...
 # Subtest: Gate-3 exposes a read-only workflow plan versions API
 ok 33 - Gate-3 exposes a read-only workflow plan versions API
   ---
-  duration_ms: 0.15575
+  duration_ms: 0.242875
   type: 'test'
   ...
 # Subtest: Gate-3 PlanCanvas uses an explicit server-selected rollback target
 ok 34 - Gate-3 PlanCanvas uses an explicit server-selected rollback target
   ---
-  duration_ms: 0.162792
+  duration_ms: 0.159334
   type: 'test'
   ...
 # Subtest: DeepSeek 402 errors are explained as an actionable quota problem
 ok 35 - DeepSeek 402 errors are explained as an actionable quota problem
   ---
-  duration_ms: 0.660084
+  duration_ms: 0.545625
   type: 'test'
   ...
 # Subtest: unrelated Hermes errors remain visible without being mislabeled as quota failures
 ok 36 - unrelated Hermes errors remain visible without being mislabeled as quota failures
   ---
-  duration_ms: 0.134833
+  duration_ms: 0.787417
   type: 'test'
   ...
 # Subtest: host preparation is persisted only after a successful completion
 ok 37 - host preparation is persisted only after a successful completion
   ---
-  duration_ms: 0.168667
+  duration_ms: 0.18675
   type: 'test'
   ...
 # Subtest: controller failures release a running insight and expose retry controls
 ok 38 - controller failures release a running insight and expose retry controls
   ---
-  duration_ms: 0.206583
+  duration_ms: 0.164708
   type: 'test'
   ...
 # Subtest: Dashi host is light-only and forwards the light theme
 ok 39 - Dashi host is light-only and forwards the light theme
   ---
-  duration_ms: 0.418084
+  duration_ms: 0.370625
   type: 'test'
   ...
 # Subtest: Dashi host placeholder has no dark-mode override
 ok 40 - Dashi host placeholder has no dark-mode override
   ---
-  duration_ms: 0.254666
+  duration_ms: 0.119792
   type: 'test'
   ...
 # Subtest: an empty demand does not display the confirmation sheet
 ok 41 - an empty demand does not display the confirmation sheet
   ---
-  duration_ms: 1.164708
+  duration_ms: 0.42575
   type: 'test'
   ...
 # Subtest: real demand content displays the confirmation sheet
 ok 42 - real demand content displays the confirmation sheet
   ---
-  duration_ms: 0.125875
+  duration_ms: 0.060416
   type: 'test'
   ...
 # Subtest: the confirmation sheet is conditionally mounted instead of hidden with CSS
 ok 43 - the confirmation sheet is conditionally mounted instead of hidden with CSS
   ---
-  duration_ms: 0.163458
+  duration_ms: 0.137042
   type: 'test'
   ...
 # Subtest: recognized documents use the controlled renderer registry
 ok 44 - recognized documents use the controlled renderer registry
   ---
-  duration_ms: 0.909208
+  duration_ms: 1.352542
   type: 'test'
   ...
 # Subtest: learning events retain the real exercise and hint; unsupported versions fall back
 ok 45 - learning events retain the real exercise and hint; unsupported versions fall back
   ---
-  duration_ms: 0.52925
+  duration_ms: 0.405791
   type: 'test'
   ...
 # Subtest: exposes a streaming project_blueprint protocol instead of hiding it
 ok 46 - exposes a streaming project_blueprint protocol instead of hiding it
   ---
-  duration_ms: 1.742459
+  duration_ms: 0.750458
   type: 'test'
   ...
 # Subtest: formats and exposes the complete dispatchable protocol
 ok 47 - formats and exposes the complete dispatchable protocol
   ---
-  duration_ms: 0.142958
+  duration_ms: 0.120667
   type: 'test'
   ...
 # Subtest: does not mistake ordinary assistant text for a protocol
 ok 48 - does not mistake ordinary assistant text for a protocol
   ---
-  duration_ms: 0.161667
+  duration_ms: 0.130708
   type: 'test'
   ...
 # Subtest: Office projection creates seats only from server plan nodes and keeps roles separate from runtime agents
 ok 49 - Office projection creates seats only from server plan nodes and keeps roles separate from runtime agents
   ---
-  duration_ms: 2.225209
+  duration_ms: 1.220416
   type: 'test'
   ...
 # Subtest: plan-only seats show the real workflow goal when a node has no explicit input
 ok 50 - plan-only seats show the real workflow goal when a node has no explicit input
   ---
-  duration_ms: 0.141875
+  duration_ms: 0.095375
   type: 'test'
   ...
 # Subtest: real artifacts create an output card and a transfer only along a server edge
 ok 51 - real artifacts create an output card and a transfer only along a server edge
   ---
-  duration_ms: 0.404042
+  duration_ms: 0.177875
   type: 'test'
   ...
 # Subtest: artifact presentation recognizes markdown, Word, charts, topology, and flowcharts from real metadata
 ok 52 - artifact presentation recognizes markdown, Word, charts, topology, and flowcharts from real metadata
   ---
-  duration_ms: 0.782166
+  duration_ms: 0.27125
   type: 'test'
   ...
 # Subtest: structured artifact parsing accepts real JSON objects and rejects prose
 ok 53 - structured artifact parsing accepts real JSON objects and rejects prose
   ---
-  duration_ms: 0.995959
+  duration_ms: 0.252292
   type: 'test'
   ...
 # Subtest: truth badges remain conservative for plan-only, replay, simulation, and malformed execution data
 ok 54 - truth badges remain conservative for plan-only, replay, simulation, and malformed execution data
   ---
-  duration_ms: 2.222833
+  duration_ms: 1.597292
   type: 'test'
   ...
 # Subtest: Office status vocabulary preserves every honest server state and root execution disablement
 ok 55 - Office status vocabulary preserves every honest server state and root execution disablement
   ---
-  duration_ms: 0.245833
+  duration_ms: 0.186958
   type: 'test'
   ...
 # Subtest: events map by explicit node id and retain their real ids without fabricated activity
 ok 56 - events map by explicit node id and retain their real ids without fabricated activity
   ---
-  duration_ms: 0.530917
+  duration_ms: 0.262166
   type: 'test'
   ...
 # Subtest: projection exposes only server-backed phase-zero identity and cursor fields
 ok 57 - projection exposes only server-backed phase-zero identity and cursor fields
   ---
-  duration_ms: 1.297167
+  duration_ms: 0.332167
   type: 'test'
   ...
 # Subtest: artifacts map only by an explicit node reference or unique explicit runtime agent binding
 ok 58 - artifacts map only by an explicit node reference or unique explicit runtime agent binding
   ---
-  duration_ms: 0.557375
+  duration_ms: 0.392542
   type: 'test'
   ...
 # Subtest: architect view helpers validate view names and preserve every other query parameter
 ok 59 - architect view helpers validate view names and preserve every other query parameter
   ---
-  duration_ms: 0.265542
+  duration_ms: 0.392792
   type: 'test'
   ...
 # Subtest: Showroom context selects only its bound workflow and never falls back to an unrelated first row
 ok 60 - Showroom context selects only its bound workflow and never falls back to an unrelated first row
   ---
-  duration_ms: 0.093375
+  duration_ms: 0.089542
   type: 'test'
   ...
 # Subtest: Office UI is server-dynamic, read-only, accessible, and free of a fixed-height clipped scene
 ok 61 - Office UI is server-dynamic, read-only, accessible, and free of a fixed-height clipped scene
   ---
-  duration_ms: 0.910333
+  duration_ms: 0.889417
   type: 'test'
   ...
 # Subtest: Office detail sheet starts closed and remains closed after the close action
 ok 62 - Office detail sheet starts closed and remains closed after the close action
   ---
-  duration_ms: 0.51075
+  duration_ms: 0.470459
   type: 'test'
   ...
 # Subtest: Office artifact gallery opens real content with dedicated accessible previews
 ok 63 - Office artifact gallery opens real content with dedicated accessible previews
   ---
-  duration_ms: 0.59
+  duration_ms: 0.774042
   type: 'test'
   ...
 # Subtest: Architect integrates the view toggle without replacing Workbench actions
 ok 64 - Architect integrates the view toggle without replacing Workbench actions
   ---
-  duration_ms: 0.564458
+  duration_ms: 0.459666
   type: 'test'
   ...
 # Subtest: project navigation removes the duplicate top-level Gantt entry
 ok 65 - project navigation removes the duplicate top-level Gantt entry
   ---
-  duration_ms: 1.532125
+  duration_ms: 0.416208
   type: 'test'
   ...
 # Subtest: AI Resource opens a configurable planning and operations workbench
 ok 66 - AI Resource opens a configurable planning and operations workbench
   ---
-  duration_ms: 0.701583
+  duration_ms: 0.302875
   type: 'test'
   ...
 # Subtest: AI Resource labels disconnected truth instead of fabricating live infrastructure
 ok 67 - AI Resource labels disconnected truth instead of fabricating live infrastructure
   ---
-  duration_ms: 0.23375
+  duration_ms: 0.10475
   type: 'test'
   ...
 # Subtest: AI Resource aligns datasets, models, topology configuration, and monitoring
 ok 68 - AI Resource aligns datasets, models, topology configuration, and monitoring
   ---
-  duration_ms: 0.388208
+  duration_ms: 0.194583
   type: 'test'
   ...
 # Subtest: project process explorer is sticky and rendered on the Dashi taskboard view
 ok 69 - project process explorer is sticky and rendered on the Dashi taskboard view
   ---
-  duration_ms: 0.40425
+  duration_ms: 0.106583
   type: 'test'
   ...
 # Subtest: each stage projection includes its real tasks and responsibility fields
 ok 70 - each stage projection includes its real tasks and responsibility fields
   ---
-  duration_ms: 0.492334
+  duration_ms: 0.115708
   type: 'test'
   ...
 # Subtest: stage nodes expose keyboard-friendly expanded state and explicit close control
 ok 71 - stage nodes expose keyboard-friendly expanded state and explicit close control
   ---
-  duration_ms: 0.373791
+  duration_ms: 0.112458
   type: 'test'
   ...
 # Subtest: Workflow is an editable stage-aware node studio with persisted responsibility inputs
 ok 72 - Workflow is an editable stage-aware node studio with persisted responsibility inputs
   ---
-  duration_ms: 0.920708
+  duration_ms: 0.526083
   type: 'test'
   ...
 # Subtest: QuanSyn preserves TSV cells and Markdown table headers
 ok 73 - QuanSyn preserves TSV cells and Markdown table headers
   ---
-  duration_ms: 2.668416
+  duration_ms: 1.900833
   type: 'test'
   ...
 # Subtest: QuanSyn copies actual chart numbers alongside text and code
 ok 74 - QuanSyn copies actual chart numbers alongside text and code
   ---
-  duration_ms: 0.322
+  duration_ms: 0.215875
   type: 'test'
   ...
 # Subtest: Quantum login shows success only after the request and the minimum loading duration
 ok 75 - Quantum login shows success only after the request and the minimum loading duration
   ---
-  duration_ms: 1.374792
+  duration_ms: 1.713459
   type: 'test'
   ...
 # Subtest: Quantum login never shows a success check for errors or after unmount
 ok 76 - Quantum login never shows a success check for errors or after unmount
   ---
-  duration_ms: 2.638125
+  duration_ms: 0.674334
   type: 'test'
   ...
 # Subtest: Clipboard images enter the real attachment path; ordinary text keeps native paste
 ok 77 - Clipboard images enter the real attachment path; ordinary text keeps native paste
   ---
-  duration_ms: 0.643
+  duration_ms: 0.410125
   type: 'test'
   ...
 # Subtest: board keeps four visible columns and maps PAUSED without inventing state
 ok 78 - board keeps four visible columns and maps PAUSED without inventing state
   ---
-  duration_ms: 1.398125
+  duration_ms: 0.805791
   type: 'test'
   ...
 # Subtest: stage rail preserves TR and DCP semantics
 ok 79 - stage rail preserves TR and DCP semantics
   ---
-  duration_ms: 0.129042
+  duration_ms: 0.108417
   type: 'test'
   ...
 # Subtest: schedule marks missing dates unscheduled instead of using today
 ok 80 - schedule marks missing dates unscheduled instead of using today
   ---
-  duration_ms: 0.117041
+  duration_ms: 0.108458
   type: 'test'
   ...
 # Subtest: graph layout is deterministic and preserves canonical edge ids
 ok 81 - graph layout is deterministic and preserves canonical edge ids
   ---
-  duration_ms: 0.177166
+  duration_ms: 0.101916
   type: 'test'
   ...
 # Subtest: SSE parser preserves chunk boundaries and flushes a terminal tail frame
 ok 82 - SSE parser preserves chunk boundaries and flushes a terminal tail frame
   ---
-  duration_ms: 0.154584
+  duration_ms: 0.129125
   type: 'test'
   ...
 # Subtest: task chat history restores terminal errors as failed messages
 ok 83 - task chat history restores terminal errors as failed messages
   ---
-  duration_ms: 0.06725
+  duration_ms: 0.059125
   type: 'test'
   ...
 # Subtest: Dashi lifecycle parity projects canonical workflow and execution truth into six lanes
 ok 84 - Dashi lifecycle parity projects canonical workflow and execution truth into six lanes
   ---
-  duration_ms: 0.309667
+  duration_ms: 0.256708
   type: 'test'
   ...
 # Subtest: queued LIVE claims stay PLAN until a provider run receipt exists
 ok 85 - queued LIVE claims stay PLAN until a provider run receipt exists
   ---
-  duration_ms: 0.105958
+  duration_ms: 0.05975
   type: 'test'
   ...
 # Subtest: QuantumWorkspace opens a specifically requested canonical workflow
 ok 86 - QuantumWorkspace opens a specifically requested canonical workflow
   ---
-  duration_ms: 0.509625
+  duration_ms: 0.350833
   type: 'test'
   ...
 # Subtest: QWS relation snapshot is canonical and Taskboard drift never replaces it
 ok 87 - QWS relation snapshot is canonical and Taskboard drift never replaces it
   ---
-  duration_ms: 1.389
+  duration_ms: 0.518959
   type: 'test'
   ...
 # Subtest: task drawer exposes server-backed Challenge decisions and relation drift
 ok 88 - task drawer exposes server-backed Challenge decisions and relation drift
   ---
-  duration_ms: 1.632875
+  duration_ms: 0.6685
   type: 'test'
   ...
 # Subtest: Workflow exposes a preserved graph and read-only business result workspace
 ok 89 - Workflow exposes a preserved graph and read-only business result workspace
   ---
-  duration_ms: 1.05775
+  duration_ms: 0.560667
   type: 'test'
   ...
 # Subtest: business result workspace covers eight honest states and has no write controls or mock outcomes
 ok 90 - business result workspace covers eight honest states and has no write controls or mock outcomes
   ---
-  duration_ms: 0.71375
+  duration_ms: 0.738209
   type: 'test'
   ...
 # Subtest: opening a card session never creates a canonical task in the web host
 ok 91 - opening a card session never creates a canonical task in the web host
   ---
-  duration_ms: 1.861708
+  duration_ms: 1.003166
   type: 'test'
   ...
 # Subtest: single-card execution opens the live progress drawer instead of starting invisibly
 ok 92 - single-card execution opens the live progress drawer instead of starting invisibly
   ---
-  duration_ms: 0.694417
+  duration_ms: 0.184125
   type: 'test'
   ...
 # Subtest: batch auto-execution retries one stable Hermes request id per task
 ok 93 - batch auto-execution retries one stable Hermes request id per task
   ---
-  duration_ms: 0.159792
+  duration_ms: 0.117917
   type: 'test'
   ...
 # Subtest: card session sends versionable full card context to the backend
 ok 94 - card session sends versionable full card context to the backend
   ---
-  duration_ms: 0.148667
+  duration_ms: 0.17425
   type: 'test'
   ...
 # Subtest: card backfill requires confirmation and routes overflow through session inbox
 ok 95 - card backfill requires confirmation and routes overflow through session inbox
   ---
-  duration_ms: 0.553208
+  duration_ms: 0.547958
   type: 'test'
   ...
 # Subtest: card session presents and routes through the project AI employee
 ok 96 - card session presents and routes through the project AI employee
   ---
-  duration_ms: 0.137625
+  duration_ms: 0.137666
   type: 'test'
   ...
 # Subtest: card session renders and submits Hermes clarification instead of waiting silently
 ok 97 - card session renders and submits Hermes clarification instead of waiting silently
   ---
-  duration_ms: 0.291834
+  duration_ms: 0.252084
   type: 'test'
   ...
 # Subtest: same-origin Taskboard iframe is not blocked by the production proxy
 ok 98 - same-origin Taskboard iframe is not blocked by the production proxy
   ---
-  duration_ms: 0.090208
+  duration_ms: 0.0875
   type: 'test'
   ...
 # Subtest: planning stream follows new output but completed review keeps user scroll position
 ok 99 - planning stream follows new output but completed review keeps user scroll position
   ---
-  duration_ms: 0.706542
+  duration_ms: 0.235833
   type: 'test'
   ...
 # Subtest: new projects automatically enter the shared Hermes clarification protocol
 ok 100 - new projects automatically enter the shared Hermes clarification protocol
   ---
-  duration_ms: 1.2895
+  duration_ms: 0.65375
   type: 'test'
   ...
 # Subtest: unfinished project planning can be resumed and deletion has explicit progress
 ok 101 - unfinished project planning can be resumed and deletion has explicit progress
   ---
-  duration_ms: 0.447458
+  duration_ms: 0.101125
   type: 'test'
   ...
 # Subtest: dispatch persists a structured task contract for every card session
 ok 102 - dispatch persists a structured task contract for every card session
   ---
-  duration_ms: 0.596167
+  duration_ms: 0.441542
   type: 'test'
   ...
 # Subtest: card session exposes safe skill execution progress without chain-of-thought
 ok 103 - card session exposes safe skill execution progress without chain-of-thought
   ---
-  duration_ms: 0.283375
+  duration_ms: 0.154083
   type: 'test'
   ...
 # Subtest: project planning reuses the safe Hermes execution trace
 ok 104 - project planning reuses the safe Hermes execution trace
   ---
-  duration_ms: 0.065
+  duration_ms: 0.043166
   type: 'test'
   ...
 # Subtest: project planning exposes blueprint protocol beside the natural summary
 ok 105 - project planning exposes blueprint protocol beside the natural summary
   ---
-  duration_ms: 1.242042
+  duration_ms: 1.098375
   type: 'test'
   ...
 # Subtest: project planning rejects false done terminals and exposes one controlled repair
 ok 106 - project planning rejects false done terminals and exposes one controlled repair
   ---
-  duration_ms: 0.603
+  duration_ms: 0.581417
   type: 'test'
   ...
 # Subtest: project planning treats new user input as a merged convergence revision
 ok 107 - project planning treats new user input as a merged convergence revision
   ---
-  duration_ms: 0.41
+  duration_ms: 0.290167
   type: 'test'
   ...
 # Subtest: confirmed blueprint is fully human-editable and dispatches the saved revision
 ok 108 - confirmed blueprint is fully human-editable and dispatches the saved revision
   ---
-  duration_ms: 0.076541
+  duration_ms: 0.056708
   type: 'test'
   ...
 # Subtest: Hermes serve token is cached until an explicit refresh
 ok 109 - Hermes serve token is cached until an explicit refresh
   ---
-  duration_ms: 23.434625
+  duration_ms: 22.068542
   type: 'test'
   ...
 # Subtest: forced callers reuse the active Hermes connection promise
 ok 110 - forced callers reuse the active Hermes connection promise
   ---
-  duration_ms: 0.552125
+  duration_ms: 0.652917
   type: 'test'
   ...
 # Subtest: automatic reconnect uses five delays and then stops
 ok 111 - automatic reconnect uses five delays and then stops
   ---
-  duration_ms: 0.597709
+  duration_ms: 0.684083
   type: 'test'
   ...
 # Subtest: a short-lived connection does not reset reconnect backoff
 ok 112 - a short-lived connection does not reset reconnect backoff
   ---
-  duration_ms: 0.356791
+  duration_ms: 0.396625
   type: 'test'
   ...
 # Subtest: transient resume failure does not create and persist a replacement session
 ok 113 - transient resume failure does not create and persist a replacement session
   ---
-  duration_ms: 0.66875
+  duration_ms: 0.698709
   type: 'test'
   ...
 # Subtest: suspending a page closes both sockets and clears reconnect timers
 ok 114 - suspending a page closes both sockets and clears reconnect timers
   ---
-  duration_ms: 0.296041
+  duration_ms: 0.322375
   type: 'test'
   ...
 # Subtest: assistant machine envelopes are hidden and extraction persists the returned session
 ok 115 - assistant machine envelopes are hidden and extraction persists the returned session
   ---
-  duration_ms: 1.478625
+  duration_ms: 1.414166
   type: 'test'
   ...
 # Subtest: V1.7 fenced YAML demand envelopes stay hidden from the customer
 ok 116 - V1.7 fenced YAML demand envelopes stay hidden from the customer
   ---
-  duration_ms: 0.988542
+  duration_ms: 0.95025
   type: 'test'
   ...
 # Subtest: demand interview state envelopes stay invisible
 ok 117 - demand interview state envelopes stay invisible
   ---
-  duration_ms: 0.592167
+  duration_ms: 0.558709
   type: 'test'
   ...
 # Subtest: demand extraction sends the isolated frontstage Hermes session id
 ok 118 - demand extraction sends the isolated frontstage Hermes session id
   ---
-  duration_ms: 0.590125
+  duration_ms: 0.528959
   type: 'test'
   ...
 # Subtest: visitor insight envelopes and invisible control messages never reach the frontstage UI
 ok 119 - visitor insight envelopes and invisible control messages never reach the frontstage UI
   ---
-  duration_ms: 0.292334
+  duration_ms: 0.288833
   type: 'test'
   ...
 # Subtest: staffing and incremental insight envelopes never reach the customer UI
 ok 120 - staffing and incremental insight envelopes never reach the customer UI
   ---
-  duration_ms: 0.400041
+  duration_ms: 0.369208
   type: 'test'
   ...
 # Subtest: employee status machine envelopes never reach the insight copilot UI
 ok 121 - employee status machine envelopes never reach the insight copilot UI
   ---
-  duration_ms: 0.306291
+  duration_ms: 0.215541
   type: 'test'
   ...
 # Subtest: insight job API methods persist every returned session
 ok 122 - insight job API methods persist every returned session
   ---
-  duration_ms: 0.522459
+  duration_ms: 0.357084
   type: 'test'
   ...
 # Subtest: insight revisions and confirmation use concurrency metadata
 ok 123 - insight revisions and confirmation use concurrency metadata
   ---
-  duration_ms: 0.572875
+  duration_ms: 0.476917
   type: 'test'
   ...
 # Subtest: visitor insight extraction persists the active main session
 ok 124 - visitor insight extraction persists the active main session
   ---
-  duration_ms: 0.33275
+  duration_ms: 0.2635
   type: 'test'
   ...
 # Subtest: visitor insight extraction propagates a terminal failed session
 ok 125 - visitor insight extraction propagates a terminal failed session
   ---
-  duration_ms: 0.255416
+  duration_ms: 0.241125
   type: 'test'
   ...
 # Subtest: bootstrap follows the server-owned active main visit session
 ok 126 - bootstrap follows the server-owned active main visit session
   ---
-  duration_ms: 0.411375
+  duration_ms: 0.327333
   type: 'test'
   ...
 # Subtest: rollover adopts the new main visit session
 ok 127 - rollover adopts the new main visit session
   ---
-  duration_ms: 0.310125
+  duration_ms: 0.329333
   type: 'test'
   ...
 # Subtest: bootstrap adopts the server successor for an archived workstation session
 ok 128 - bootstrap adopts the server successor for an archived workstation session
   ---
-  duration_ms: 0.292417
+  duration_ms: 0.280709
   type: 'test'
   ...
 # Subtest: expired showroom authentication returns to login with the current screen
 ok 129 - expired showroom authentication returns to login with the current screen
   ---
-  duration_ms: 0.281333
+  duration_ms: 0.712416
   type: 'test'
   ...
 # Subtest: background Hermes connection states update indicators without rebuilding the canvas
 ok 130 - background Hermes connection states update indicators without rebuilding the canvas
   ---
-  duration_ms: 0.472875
+  duration_ms: 0.454958
   type: 'test'
   ...
 # Subtest: showroom entry point cache-busts both changed Hermes scripts
 ok 131 - showroom entry point cache-busts both changed Hermes scripts
   ---
-  duration_ms: 0.066084
+  duration_ms: 0.06425
   type: 'test'
   ...
-# ERROR: Vault 源必须是规范的非符号链接目录: /private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/ailab-vault-links-fail-xjYuqk/vault/tools
-# ERROR: 路径必须是非符号链接目录: /private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/ailab-vault-boundary-nfoTM9/releases/ai-lab-platform-abcdef123456.D4e5F6
+# ERROR: Vault 源必须是规范的非符号链接目录: /private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/ailab-vault-links-fail-HxMVHL/vault/tools
+# ERROR: 路径必须是非符号链接目录: /private/var/folders/33/32l9c_4n4c92hwt_tp2x77s80000gn/T/ailab-vault-boundary-8bYzp6/releases/ai-lab-platform-abcdef123456.D4e5F6
 # ERROR: 路径必须使用规范物理路径
 # ERROR: release 必须是授权根目录下的直接不可变实例
 # ERROR: release 与 Vault 路径不得重叠
 # Subtest: new default entry is isolated from the legacy nine-screen app
 ok 132 - new default entry is isolated from the legacy nine-screen app
   ---
-  duration_ms: 0.605625
+  duration_ms: 0.572083
   type: 'test'
   ...
 # Subtest: journey defines S0 through S10 and the five evidence contract fields
 ok 133 - journey defines S0 through S10 and the five evidence contract fields
   ---
-  duration_ms: 0.668625
+  duration_ms: 0.270083
   type: 'test'
   ...
 # Subtest: CustomerDemand API is server-backed and the approved panorama is present
 ok 134 - CustomerDemand API is server-backed and the approved panorama is present
   ---
-  duration_ms: 0.477125
+  duration_ms: 0.181667
   type: 'test'
   ...
 # Subtest: S3 and S4 use structured demand fields and the shared showroom API
 ok 135 - S3 and S4 use structured demand fields and the shared showroom API
   ---
-  duration_ms: 0.195041
+  duration_ms: 0.077583
   type: 'test'
   ...
 # Subtest: immutable deployment audits the release before switching the live symlink
 ok 136 - immutable deployment audits the release before switching the live symlink
   ---
-  duration_ms: 0.908875
+  duration_ms: 0.375875
   type: 'test'
   ...
 # Subtest: exact-SHA bootstrap exports, verifies, and executes the target commit update script
 ok 137 - exact-SHA bootstrap exports, verifies, and executes the target commit update script
   ---
-  duration_ms: 0.238959
+  duration_ms: 0.088417
   type: 'test'
   ...
 # Subtest: exact-SHA bootstrap executes the update script stored in the target commit
 ok 138 - exact-SHA bootstrap executes the update script stored in the target commit
   ---
-  duration_ms: 1123.269834
+  duration_ms: 987.379
   type: 'test'
   ...
 # Subtest: the same SHA allocates a fresh immutable release instance on every attempt
 ok 139 - the same SHA allocates a fresh immutable release instance on every attempt
   ---
-  duration_ms: 13.813667
+  duration_ms: 10.228333
   type: 'test'
   ...
 # Subtest: deployment cleanup is armed and removes only validated allocations
 ok 140 - deployment cleanup is armed and removes only validated allocations
   ---
-  duration_ms: 0.439292
+  duration_ms: 0.441875
   type: 'test'
   ...
 # Subtest: a fresh release gets all Hermes Vault links before activation
 ok 141 - a fresh release gets all Hermes Vault links before activation
   ---
-  duration_ms: 36.903667
+  duration_ms: 29.868709
   type: 'test'
   ...
 # Subtest: missing Vault sources fail before changing any release path
 ok 142 - missing Vault sources fail before changing any release path
   ---
-  duration_ms: 13.363375
+  duration_ms: 11.559375
   type: 'test'
   ...
 # Subtest: Vault linking rejects symlinks, non-canonical paths, roots, and overlap without deletion
 ok 143 - Vault linking rejects symlinks, non-canonical paths, roots, and overlap without deletion
   ---
-  duration_ms: 31.190958
+  duration_ms: 25.302375
   type: 'test'
   ...
 # Subtest: ending a reception opens a confirmation before the atomic rollover
 ok 144 - ending a reception opens a confirmation before the atomic rollover
   ---
-  duration_ms: 0.719708
+  duration_ms: 0.58125
   type: 'test'
   ...
 # Subtest: session rollover clears reception-only UI state and preserves static displays
 ok 145 - session rollover clears reception-only UI state and preserves static displays
   ---
-  duration_ms: 0.202791
+  duration_ms: 0.118583
   type: 'test'
   ...
 # Subtest: showroom demo account always resolves as a showroom identity
 ok 146 - showroom demo account always resolves as a showroom identity
   ---
-  duration_ms: 0.618708
+  duration_ms: 0.366833
   type: 'test'
   ...
 # Subtest: showroom roles are accepted without coupling routing to one username
 ok 147 - showroom roles are accepted without coupling routing to one username
   ---
-  duration_ms: 0.217
+  duration_ms: 0.069792
   type: 'test'
   ...
 # Subtest: ordinary accounts remain on the normal protected workspace
 ok 148 - ordinary accounts remain on the normal protected workspace
   ---
-  duration_ms: 0.132167
+  duration_ms: 0.048708
   type: 'test'
   ...
 # Subtest: confirmed demand enters the dedicated 003.5 staffing route
 ok 149 - confirmed demand enters the dedicated 003.5 staffing route
   ---
-  duration_ms: 1.229833
+  duration_ms: 0.561625
   type: 'test'
   ...
 # Subtest: customer UI presents controlled AI employees and technical badges
 ok 150 - customer UI presents controlled AI employees and technical badges
   ---
-  duration_ms: 0.291292
+  duration_ms: 0.202666
   type: 'test'
   ...
 # Subtest: summary completion drives incremental 004 reveal without fake progress
 ok 151 - summary completion drives incremental 004 reveal without fake progress
   ---
-  duration_ms: 0.551167
+  duration_ms: 0.585875
   type: 'test'
   ...
 # Subtest: model-authored progress envelopes are normalized before the progress API call
 ok 152 - model-authored progress envelopes are normalized before the progress API call
   ---
-  duration_ms: 0.175125
+  duration_ms: 0.186291
   type: 'test'
   ...
 # Subtest: 003.5 observes one server execution and 004 uses an isolated review lane
 ok 153 - 003.5 observes one server execution and 004 uses an isolated review lane
   ---
-  duration_ms: 0.245083
+  duration_ms: 0.43875
   type: 'test'
   ...
 # Subtest: 004 is a conversational IPD review workbench with controlled revisions
 ok 154 - 004 is a conversational IPD review workbench with controlled revisions
   ---
-  duration_ms: 1.342292
+  duration_ms: 1.305875
   type: 'test'
   ...
 # Subtest: a failed final callback cannot overwrite an already completed report
 ok 155 - a failed final callback cannot overwrite an already completed report
   ---
-  duration_ms: 0.257334
+  duration_ms: 0.162083
   type: 'test'
   ...
 1..155
@@ -950,4 +950,4 @@ ok 155 - a failed final callback cannot overwrite an already completed report
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 1372.594917
+# duration_ms 1170.249041

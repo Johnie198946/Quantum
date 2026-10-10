@@ -95,6 +95,11 @@ class QuanSyn:
             raise ValueError("请选择发给 Mac 的需求")
         if saved.get("imported"):
             return saved
+        if row["status"] in {"imported", "returned"} and saved.get("claim") and "files" in saved and "text" in saved:
+            self.http(sender, "POST", f"/transfers/{transfer}/imported", payload={"revision": row["revision"], "claim": saved["claim"]})
+            saved["imported"] = True
+            self.ctx.state.set(key, saved)
+            return saved
         claim = saved.get("claim") or secrets.token_urlsafe(32)
         saved.update(claim=claim, id=transfer, sender=sender)
         self.ctx.state.set(key, saved)
