@@ -215,3 +215,14 @@ def test_import_clears_only_confirmed_temporary_content(client, monkeypatch):
     result = c.post('/api/v1/quansyn/transfers', json=body(direction='result', reply_to=first['id'], text='实际结果'))
     assert result.status_code == 201
     assert result.json()['text'] == '实际结果'
+
+
+def test_import_does_not_delete_existing_generated_artifact(client):
+    c, who = client
+    receipt = quansyn._save(tenant_key=who['tenant_key'], user_id=who['user_id'], filename='report.txt', media_type='text/plain', data=b'original generated report', kind='report')
+    row = c.post('/api/v1/quansyn/transfers', json=body(files=[{'artifact_id': receipt['artifact_id']}])).json()
+    claim = {'revision': row['revision'], 'claim': uuid.uuid4().hex}
+    leased = c.post(f"/api/v1/quansyn/transfers/{row['id']}/claim", json=claim).json()
+    claim['revision'] = leased['revision']
+    assert c.post(f"/api/v1/quansyn/transfers/{row['id']}/imported", json=claim).status_code == 200
+    assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).content == b'original generated report'
