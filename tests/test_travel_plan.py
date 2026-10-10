@@ -546,8 +546,8 @@ def test_first_workflow_registers_session_without_cross_owner_claim(tmp_path, mo
 
 @pytest.mark.parametrize("scope", [[], ["travel-guides"]])
 @pytest.mark.parametrize("network", [False, True])
-@pytest.mark.parametrize("timeout_once", [False, True])
-def test_research_queries_only_selected_knowledge_without_changing_network_authority(monkeypatch, scope, network, timeout_once):
+@pytest.mark.parametrize("gateway_error", ["none", "once", "twice", "denied"])
+def test_research_queries_only_selected_knowledge_without_changing_network_authority(monkeypatch, scope, network, gateway_error):
     from scripts import hermes_bridge as bridge
     runtime = bridge.workflow_runtime
     persistence = bridge.persistence
@@ -568,7 +568,9 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     def search(*args, **kwargs):
         assert kwargs["timeout_seconds"] == 90.0
         searches.append(kwargs["category_scope"])
-        if timeout_once and len(searches) == 1:
+        if gateway_error == "denied":
+            raise PermissionError("knowledge_scope_denied")
+        if gateway_error == "twice" or gateway_error == "once" and len(searches) == 1:
             raise httpx.ReadTimeout("temporary gateway timeout")
         return []
     def model(*args, **kwargs):
@@ -577,9 +579,10 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
     monkeypatch.setattr(persistence, "_knowledge_gateway_search", search)
     monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", model)
     runtime._workflow_run_sync("test")
-    assert run["status"] == "awaiting_review", run.get("error")
-    assert searches == ([scope] * (2 if timeout_once else 1) if scope else [])
-    assert bool(models) == network
+    blocked = bool(scope) and (gateway_error == "denied" or gateway_error == "twice" and not network)
+    assert run["status"] == ("failed" if blocked else "awaiting_review"), run.get("error")
+    assert searches == ([scope] * (2 if gateway_error in {"once", "twice"} else 1) if scope else [])
+    assert bool(models) == (network and not blocked)
 
 
 @pytest.mark.parametrize("scenario,kind,expected", [
@@ -695,7 +698,8 @@ def test_day_blocks_reject_overlap_and_missing_buffer_without_rejecting_undated_
 @pytest.mark.parametrize("revise", [False, True])
 def test_real_itinerary_node_runs_day_blocks_and_resumes_only_unfinished_days(monkeypatch, revise):
     from scripts import hermes_bridge as bridge
-    import asyncio, json
+    import asyncio
+    import json
     runtime, persistence, artifacts = bridge.workflow_runtime, bridge.persistence, bridge.workflow_artifacts
     plan = build_travel_plan(SimpleNamespace(requirements_snapshot={"scenario_id": "travel-planning"}, title="Trip", description="two days"), plan_id="test", knowledge_scope=[])
     plan["nodes"] = plan["nodes"][1:2]
