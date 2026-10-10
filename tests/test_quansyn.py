@@ -226,3 +226,24 @@ def test_import_does_not_delete_existing_generated_artifact(client):
     claim['revision'] = leased['revision']
     assert c.post(f"/api/v1/quansyn/transfers/{row['id']}/imported", json=claim).status_code == 200
     assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).content == b'original generated report'
+
+
+def test_short_pair_code_case_insensitive_and_single_use(client):
+    import re
+    c, _ = client
+    pair = c.post("/api/v1/quansyn/devices/pair").json()
+    assert re.fullmatch(r"[A-Z0-9]{6}", pair["code"])
+    body = {"code": pair["code"].lower(), "sender_id": "short-code-owner"}
+    response = c.post("/api/v1/quansyn/devices/exchange", json=body)
+    assert response.status_code == 200 and len(response.json()["token"]) > 32
+    assert c.post("/api/v1/quansyn/devices/exchange", json=body).status_code == 401
+    assert c.post("/api/v1/quansyn/devices/exchange", json={"code": "12345!", "sender_id": "owner"}).status_code == 422
+
+
+def test_short_pair_code_collision_retries(client, monkeypatch):
+    c, _ = client
+    first = c.post("/api/v1/quansyn/devices/pair").json()["code"]
+    values = iter(first + "123ABC")
+    monkeypatch.setattr(quansyn.secrets, "choice", lambda chars: next(values))
+    second = c.post("/api/v1/quansyn/devices/pair")
+    assert second.status_code == 201 and second.json()["code"] == "123ABC"

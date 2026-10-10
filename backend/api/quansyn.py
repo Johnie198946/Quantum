@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import secrets
+import string
 import shutil
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -10,7 +11,7 @@ from urllib.parse import unquote
 from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from backend.contracts.quansyn import Block, FileRef, TransferBody
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -263,17 +264,34 @@ async def download_file(artifact_id: str, p=Depends(principal)):
 @router.post("/devices/pair", status_code=201)
 async def start_pair(p=Depends(principal)):
     interactive(p)
-    code = secrets.token_urlsafe(24)
-    row = QuanSynDevice(id="qd_" + secrets.token_hex(16), tenant_key=owner(p)[0], user_id=owner(p)[1],
-        code_hash=digest(code), expires_at=now() + timedelta(minutes=10), revoked=False)
     async with SessionLocal() as db:
-        db.add(row)
-        await db.commit()
-    return {"id": row.id, "code": code, "expires_at": row.expires_at}
+        for _ in range(3):
+            code = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+            row = QuanSynDevice(id="qd_" + secrets.token_hex(16), tenant_key=owner(p)[0], user_id=owner(p)[1],
+                code_hash=digest(code), expires_at=now() + timedelta(minutes=10), revoked=False)
+            db.add(row)
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                continue
+            return {"id": row.id, "code": code, "expires_at": row.expires_at}
+    raise HTTPException(503, "配对码生成繁忙，请重试")
 
 
 class PairBody(BaseModel):
-    code: str = Field(min_length=20, max_length=100)
+    code: str = Field(min_length=6, max_length=100)
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value):
+        if len(value) == 6:
+            if not all(c in string.ascii_letters + string.digits for c in value):
+                raise ValueError("配对码为6位字母和数字")
+            return value.upper()
+        if len(value) < 20:
+            raise ValueError("配对码长度无效")
+        return value
     sender_id: str = Field(min_length=1, max_length=128)
 
 

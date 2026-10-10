@@ -12,7 +12,8 @@ USER root
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 # Quantum fork 官方 Web 引擎（web-dashboard dist → 9080 server 块；官方仓库零改动）
 COPY web-dashboard/dist /usr/share/nginx/html/web-dashboard
-RUN echo $'server {\n\
+RUN echo $'limit_req_zone $binary_remote_addr zone=quansyn_pair:10m rate=5r/m;\n\
+server {\n\
     listen 80;\n\
     return 308 https://$host$request_uri;\n\
     location / {\n\
@@ -36,6 +37,15 @@ RUN echo $'server {\n\
         add_header Content-Security-Policy "frame-ancestors $scheme://$host" always;\n\
         add_header X-Content-Type-Options "nosniff" always;\n\
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;\n\
+    }\n\
+    location = /api/v1/quansyn/devices/exchange {\n\
+        limit_req zone=quansyn_pair burst=4 nodelay;\n\
+        limit_req_status 429;\n\
+        client_max_body_size 4k;\n\
+        proxy_pass http://api:8000;\n\
+        proxy_set_header Host $host;\n\
+        proxy_set_header X-Real-IP $remote_addr;\n\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
     }\n\
     location = /api/v1/quansyn/files {\n\
         proxy_pass http://api:8000;\n\
@@ -155,6 +165,15 @@ server {\n\
         add_header Content-Security-Policy "frame-ancestors $scheme://$host" always;\n\
         add_header X-Content-Type-Options "nosniff" always;\n\
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;\n\
+    }\n\
+    location = /api/v1/quansyn/devices/exchange {\n\
+        limit_req zone=quansyn_pair burst=4 nodelay;\n\
+        limit_req_status 429;\n\
+        client_max_body_size 4k;\n\
+        proxy_pass http://api:8000;\n\
+        proxy_set_header Host $host;\n\
+        proxy_set_header X-Real-IP $remote_addr;\n\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
     }\n\
     location = /api/v1/quansyn/files {\n\
         proxy_pass http://api:8000;\n\

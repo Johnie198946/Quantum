@@ -45,16 +45,19 @@ def runtime(tmp_path, monkeypatch):
     asyncio.run(mapping())
     client = TestClient(app)
     assert client.put("/api/v1/me/agreement-acceptance", json={"agreement_version": CURRENT_AGREEMENT_VERSION, "idempotency_key": str(uuid.uuid4()), "source": "web"}).status_code == 200
-    plugin = MODULE.QuanSyn(SimpleNamespace(state=State(tmp_path / "plugin"), get_config=lambda key, default: "https://quansyn.test"))
+    plugin = MODULE.QuanSyn(SimpleNamespace(state=State(tmp_path / "plugin"), get_config=lambda key, default: "https://quansyn.test"), owner_check=lambda platform, sender: sender == "ou_owner")
     credentials = {}
     plugin.credentials = SimpleNamespace(get=lambda key: credentials[key], set=lambda key, value: credentials.update({key: value}))
     original_http = plugin.http
-    def http(sender, method, path, *, payload=None, data=None, filename=None, public=False):
+    def http(sender, method, path, *, payload=None, data=None, filename=None, public=False, sink=None):
         # Actual API/device principal, not an HTTP response stub.
         from urllib.parse import quote
         headers = {} if public else {"Authorization": "Bearer " + credentials[plugin.account(sender)], "X-QuanSyn-Sender": sender}
         if filename:
             headers["X-File-Name"] = quote(filename)
+        if hasattr(data, "read"):
+            stream = data
+            data = iter(lambda: stream.read(1024 * 1024), b"")
         override = app.dependency_overrides.pop(api.principal, None)
         try:
             response = client.request(method, "/api/v1/quansyn" + path, json=payload, content=data, headers=headers)
@@ -63,7 +66,14 @@ def runtime(tmp_path, monkeypatch):
                 app.dependency_overrides[api.principal] = override
         if response.status_code >= 300:
             raise ValueError(f"HTTP {response.status_code}")
-        return response.content if method == "GET" and path.startswith("/files/") else response.json()
+        if method == "GET" and path.startswith("/files/"):
+            if sink is not None:
+                import hashlib
+                for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                    sink.write(chunk)
+                return hashlib.sha256(response.content).hexdigest()
+            return response.content
+        return response.json()
     plugin.http = http
     yield plugin, client, owner, original_http
     app.dependency_overrides.pop(api.principal, None)
@@ -184,7 +194,7 @@ def test_standalone_mac_package_uses_canonical_contract(tmp_path, monkeypatch):
             raise ImportError("source repository unavailable")
         return original_import(name, *args, **kwargs)
     monkeypatch.setattr(builtins, "__import__", standalone_import)
-    plugin = module.QuanSyn(SimpleNamespace(state=State(tmp_path / "state"), get_config=lambda key, default: "https://www.t-react.com"))
+    plugin = module.QuanSyn(SimpleNamespace(state=State(tmp_path / "state"), get_config=lambda key, default: "https://www.t-react.com"), owner_check=lambda platform, sender: sender == "ou_owner")
     kw, _ = turn(plugin, "执行 QuanSyn qs_" + "a" * 32)
     plugin.turns[kw["session_id"]]["executing"] = True
     assert plugin.outputs({"paths": [], "blocks": [{"kind": "chart", "labels": ["x"], "values": [12]}]}, **kw)["success"]
@@ -218,3 +228,126 @@ def test_mac_recovers_lost_import_confirmation_without_losing_local_content(runt
     assert recovered['imported'] and recovered['text'] == 'saved local goal'
     assert Path(recovered['files'][0]['path']).read_bytes() == b'local copy survives'
     assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).status_code == 404
+
+
+def test_feishu_cards_use_native_private_callback_and_sender(runtime):
+    plugin, _, _, _ = runtime
+    source = SimpleNamespace(platform="feishu", chat_type="dm", user_id="ou_owner", user_id_alt=None, chat_id="oc_private")
+    adapter = object()
+    gateway = SimpleNamespace(adapters={"feishu": adapter})
+    event = SimpleNamespace(source=source, text="QuanSyn", raw_message=None)
+    assert plugin.gateway(event, gateway) == {"action": "rewrite", "text": "查看 QuanSyn"}
+    assert plugin.delivery["ou_owner"] == (adapter, "oc_private")
+    command = "拉取并执行 QuanSyn qs_" + "a" * 32
+    value = {"quansyn_command": command, "sender_id": "ou_owner"}
+    event.text = "/card button " + json.dumps(value)
+    assert plugin.gateway(event, gateway) is None  # Typed JSON is not a native callback.
+    native = SimpleNamespace(action=SimpleNamespace(value=value), operator=SimpleNamespace(open_id="ou_owner"))
+    event.raw_message = SimpleNamespace(event=native)
+    assert plugin.gateway(event, gateway)["text"] == command
+    native.operator.open_id = "ou_other"
+    assert plugin.gateway(event, gateway)["action"] == "skip"
+    native.operator.open_id = "ou_owner"
+    source.chat_type = "group"
+    assert plugin.gateway(event, gateway)["action"] == "skip"
+    source.chat_type = "dm"
+    value["quansyn_command"] = "绑定 QuanSyn secret"
+    assert plugin.gateway(event, gateway)["action"] == "skip"
+
+
+def test_pending_card_and_default_full_result_do_not_execute_twice(runtime):
+    plugin, c, _, _ = runtime
+    pair = c.post("/api/v1/quansyn/devices/pair").json()
+    kw, _ = turn(plugin, "绑定 QuanSyn " + pair["code"])
+    assert plugin.command(**kw)["success"]
+    request = c.post("/api/v1/quansyn/transfers", json={"request_id": uuid.uuid4().hex,
+        "direction": "request", "target": "mac", "text": "分析实际数据并生成文件", "files": []}).json()
+    transfer = request["id"]
+    kw, _ = turn(plugin, "查看 QuanSyn")
+    assert plugin.command(**kw)["success"]
+    pending = plugin.card(plugin.turns[kw["session_id"]])
+    buttons = [b for e in pending["elements"] if e["tag"] == "action" for b in e["actions"]]
+    assert any(b.get("value", {}).get("quansyn_command") == "拉取并执行 QuanSyn " + transfer for b in buttons)
+    kw, _ = turn(plugin, "拉取并执行 QuanSyn " + transfer)
+    assert plugin.command(**kw)["goal"]["request"] == request["text"]
+    path = plugin.root("ou_owner", transfer) / "analysis.csv"
+    path.write_text("月份,数量\n一月,12\n")
+    plugin.outputs({"paths": [str(path)], "blocks": [{"kind": "code", "content": "print(12)"}]}, **kw)
+    plugin.finalize("真实执行结果", **kw)
+    kw, _ = turn(plugin, "执行 QuanSyn " + transfer)
+    result = plugin.command(**kw)
+    assert result["success"] and "goal" not in result
+    kw, _ = turn(plugin, "推送 QuanSyn " + transfer)
+    assert plugin.command(**kw)["success"]
+    rows = c.get("/api/v1/quansyn/transfers").json()["items"]
+    published = next(x for x in rows if x["reply_to"] == transfer)
+    assert len(published["files"]) == 1 and published["blocks"][0]["kind"] == "code"
+    assert c.get("/api/v1/quansyn/files/" + published["files"][0]["artifact_id"]).content == path.read_bytes()
+
+
+def test_card_delivery_uses_existing_adapter_loop_and_falls_back(runtime):
+    import threading
+    plugin, _, _, _ = runtime
+    loop = asyncio.new_event_loop()
+    ready = threading.Event()
+    def run():
+        asyncio.set_event_loop(loop)
+        loop.call_soon(ready.set)
+        loop.run_forever()
+    worker = threading.Thread(target=run)
+    worker.start(); assert ready.wait(3)
+    sent = []
+    async def send(**kw):
+        sent.append(kw)
+        return SimpleNamespace(success=True)
+    adapter = SimpleNamespace(_loop=loop, _feishu_send_with_retry=send,
+        _finalize_send_result=lambda response, error: response)
+    plugin.delivery["ou_owner"] = (adapter, "oc_private")
+    turn = {"sender": "ou_owner", "action": "查看", "rows": [], "reply": "暂无需求"}
+    try:
+        assert plugin.deliver_card(turn)
+        assert sent[0]["chat_id"] == "oc_private" and sent[0]["msg_type"] == "interactive"
+        card = json.loads(sent[0]["payload"])
+        assert card["header"]["title"]["content"] == "Quantum · QuanSyn"
+        adapter._finalize_send_result = lambda response, error: SimpleNamespace(success=False)
+        assert plugin.deliver_card(turn) is False
+    finally:
+        loop.call_soon_threadsafe(loop.stop);worker.join(3);loop.close()
+
+
+def test_mac_requires_existing_host_owner_policy(runtime):
+    plugin, _, _, _ = runtime
+    assert plugin.before_turn("查看 QuanSyn", platform="feishu", session_id="foreign", sender_id="ou_other") is None
+    unconfigured = MODULE.QuanSyn(plugin.ctx)
+    assert unconfigured.before_turn("查看 QuanSyn", platform="feishu", session_id="s", sender_id="ou_owner") is None
+
+
+def test_mac_large_attachment_roundtrip_and_server_cleanup(runtime):
+    import hashlib
+    import shutil
+    plugin, c, _, _ = runtime
+    raw = b"actual-transfer-integrity\n" * (27 * 1024 * 1024 // 26 + 1)
+    assert len(raw) > 25 * 1024 * 1024
+    source = c.post("/api/v1/quansyn/files", content=raw, headers={"X-File-Name": "large.txt"}).json()
+    request = c.post("/api/v1/quansyn/transfers", json={"request_id": uuid.uuid4().hex,
+        "target": "mac", "text": "完整传输和处理附件", "files": [{"artifact_id": source["artifact_id"]}]}).json()
+    pair = c.post("/api/v1/quansyn/devices/pair").json()
+    kw, _ = turn(plugin, "绑定 QuanSyn " + pair["code"])
+    assert plugin.command(**kw)["success"]
+    kw, _ = turn(plugin, "拉取并执行 QuanSyn " + request["id"])
+    execution = plugin.command(**kw)
+    assert execution["success"], execution
+    path = Path(execution["goal"]["files"][0]["path"])
+    with path.open("rb") as stream:
+        assert hashlib.file_digest(stream, "sha256").hexdigest() == hashlib.sha256(raw).hexdigest()
+    row = c.get("/api/v1/quansyn/transfers/" + request["id"]).json()
+    assert row["text"] == "" and row["files"] == []
+    assert c.get("/api/v1/quansyn/files/" + source["artifact_id"]).status_code == 404
+    output = path.parent / "processed.txt"
+    shutil.copyfile(path, output)
+    plugin.outputs({"paths": [str(output)]}, **kw)
+    plugin.finalize("附件处理完成", **kw)
+    kw, _ = turn(plugin, "推送 QuanSyn " + request["id"])
+    assert plugin.command(**kw)["success"]
+    result = next(r for r in c.get("/api/v1/quansyn/transfers").json()["items"] if r["reply_to"] == request["id"])
+    assert hashlib.sha256(c.get("/api/v1/quansyn/files/" + result["files"][0]["artifact_id"]).content).hexdigest() == hashlib.sha256(raw).hexdigest()
