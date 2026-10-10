@@ -4,13 +4,13 @@ task_id: quansyn-upload-wide-20261010
 status: DEPLOYED
 branch: codex/quansyn-upload-wide-20261010
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-upload-wide-20261010
-head/local_commit: 产品2290e35e331de927d57449043fff9ba444f980a3；后续验收记录提交单列
-remote_sha: origin refs/heads/codex/quansyn-upload-wide-20261010 = 2290e35e331de927d57449043fff9ba444f980a3（git ls-remote 核对通过）
-server_before: 048c66363f08189674453473958e8d921ad7ac25（生产.deployed-sha只读）
-server_after: 2290e35e331de927d57449043fff9ba444f980a3；/opt/releases/ai-lab-platform-2290e35e331d.svh2EG
-health_check: 五项服务 running/healthy；生产公共 /health HTTP200 status=ok version=0.8.0；Nginx配置检查通过
-functional_check: 本地24项后端/Mac/artifact及155项前端测试通过，含61MiB级上传回读SHA256与导入清理；实际生产浏览器业务未完成，刷新后登录会话失效，已请求用户重新登录
-rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-upload-wide-20261010.VbWNVP（release pointer、旧SHA、5服务镜像、attestation、SQLite/Postgres备份）
+head/local_commit: 产品7ad107327e4bfbef8ac95e1ec1b558be8c973500；后续仅验收记录提交单列
+remote_sha: origin refs/heads/codex/quansyn-upload-wide-20261010 = 7ad107327e4bfbef8ac95e1ec1b558be8c973500（产品发布前 git ls-remote 核对通过；后续记录提交不改产品源码）
+server_before: 2290e35e331de927d57449043fff9ba444f980a3（本轮外层限宽修正）
+server_after: 7ad107327e4bfbef8ac95e1ec1b558be8c973500；/opt/releases/ai-lab-platform-7ad107327e4b.o1FLGE
+health_check: 五项服务running/healthy；生产 /health HTTP200 status=ok version=0.8.0；nginx -t通过
+functional_check: 前端155项通过、构建通过；生产HTML/主脚本/CSS与构建SHA256一致且入口引用新CSS；登录后的27寸工作区/抽屉视觉未核验，原验收窗口已不在Chrome窗口列表中。此前业务测试边界详见下文
+rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-workspace-width-20261010.7PbxeL（旧release、5服务镜像、attestation、SQLite/Postgres备份，文件存在核对通过）
 manifest: ops/change-manifests/quansyn-upload-wide-20261010-completion.md
 remaining_risks: 文件大小不设固定限制，但受磁盘空间及网络约束；文档解析/模型处理能力与原件传输是不同能力，既有执行限制本轮未更改；iOS构建86由用户切换网络后手动上传，Apple页面已显示正在处理；尚未核对TestFlight可安装
 
@@ -69,3 +69,17 @@ GitHub发布前和发布后ls-remote两次核对：origin refs/heads/codex/quans
 用户照片与共享 index.css 的 .workspace width:min(1440px,calc(100% - 48px)) / margin:0 auto / padding:24px 0 命中。上一轮内部宽屏覆盖未取消此外层规则，导致宽屏左右空白且 absolute 抽屉从居中容器起点出现。复用原 QuanSyn 工作区、抽屉及动态缩放，仅新增 .quansyn .workspace 的 width:100%、max-width:none、margin:0、padding:0、gap:0 覆盖；不改 Quantum 的共享布局，不新增架构或依赖。
 
 本轮开工 HEAD=2df0c87ba37d72a3222dcda154d1e3a01f7d2305，原任务工作区除既有 frontend/node_modules 依赖链接外干净；完整盘点见 workspace-width-inventory.json。前端155项测试通过，重新构建成功，dist/QuanSynPage-CTkmdQIF.css 确认含外层重置；git diff --check通过。修正当前状态 TESTED，生产仍为2290e35e331de927d57449043fff9ba444f980a3，API/frontend healthy。待提交、远端核对和部署；生产登录后的布局待用户正常登录验收窗口，未读取凭证。
+
+## 外层限宽修正部署结果
+
+产品 commit 7ad107327e4bfbef8ac95e1ec1b558be8c973500 已推送并经 ls-remote 核对。第一轮复用旧后端标记，被原部署门禁 backend image revision mismatch 拒绝，生产指针仍停留2290；未绕过门禁。第二轮基于原镜像仅更新版本标签，RootFS.Layers核验完全相同；没有更改后端代码、依赖或运行参数。五项服务按既有脚本完成部署，脚本退出0、deployment_finished=true。
+
+server_before=2290e35e331de927d57449043fff9ba444f980a3；server_after=7ad107327e4bfbef8ac95e1ec1b558be8c973500；release=/opt/releases/ai-lab-platform-7ad107327e4b.o1FLGE。回滚点=/opt/ai-lab-shared/rollbacks/quansyn-workspace-width-20261010.7PbxeL；旧release=/opt/releases/ai-lab-platform-2290e35e331d.svh2EG。沿用原发布门禁恢复旧镜像/attestation/release；禁止将旧数据库备份覆盖后续业务写入。
+
+health_check：五项running/healthy，nginx -t成功，最终公网/health HTTP200。发布过程中曾有旧API不健康及新API启动期间访问超时，最终恢复并核对通过。
+
+functional_check：公开HTML SHA256 ad25480ff3dc1d1400ed73dde41f0fd18e9f8f955a1a9f5d39a17c41695cce24，入口脚本 index-A9BZzv9V.js SHA256 ea233f01820bd96aff29275165b33ed92ce27ad43426db9c72ba179a3c158085，新QuanSynPage-CTkmdQIF.css SHA256 db24098864ffce9889e54045af9465eca9f5c17020f724b1f05c1130e9ae0a4b，均与构建字节一致，入口确实引用新CSS，含 .quansyn .workspace 外层重置。155前端测试通过，生产构建和diff检查通过。未新增镜像实现复刻测试、依赖或测试假数据。
+
+真实27寸屏幕登录后视觉未核验：原QuanSyn验收窗口已不在Chrome窗口菜单中，现有App Store Connect用户窗口未导航或修改。没有提取凭证或绕过登录。因此最高状态严格为DEPLOYED。生产访问链接 https://www.t-react.com/quansyn/?v=7ad10732 用于刷新页面入口；其query仅作为版本刷新提示，缓存的实际JS/CSS采用新的构建内容哈希。
+
+修复复用现有原稿的absolute抽屉与动态缩放；只在QuanSyn范围取消共享workspace的1440px限宽、居中、外层padding/gap。代码边界检查确认部署前后 backend/agency 产品代码不变，frontend 产品差异只有这一条CSS。发布和检查证据位于同目录 workspace-width-* 文件。

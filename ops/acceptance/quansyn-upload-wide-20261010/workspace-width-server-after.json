@@ -1,0 +1,41 @@
+{
+  "server_before": "2290e35e331de927d57449043fff9ba444f980a3",
+  "server_after": "7ad107327e4bfbef8ac95e1ec1b558be8c973500",
+  "release": "/opt/releases/ai-lab-platform-7ad107327e4b.o1FLGE",
+  "rollback_point": "/opt/ai-lab-shared/rollbacks/quansyn-workspace-width-20261010.7PbxeL",
+  "rollback_files_present": true,
+  "services": [
+    {
+      "service": "api",
+      "image": "sha256:fa9d60d79541f4b1dd1355cdd855f490457e9459e812c9e9e2bb05d9bc88abb1",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "workflow-worker",
+      "image": "sha256:fa9d60d79541f4b1dd1355cdd855f490457e9459e812c9e9e2bb05d9bc88abb1",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "planning-worker",
+      "image": "sha256:fa9d60d79541f4b1dd1355cdd855f490457e9459e812c9e9e2bb05d9bc88abb1",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "agent-evaluation-worker",
+      "image": "sha256:fa9d60d79541f4b1dd1355cdd855f490457e9459e812c9e9e2bb05d9bc88abb1",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "frontend",
+      "image": "sha256:b0872402aa3395342c3ee0e25c0f73db21aef4aad22160c13f008ca95cf48241",
+      "status": "running",
+      "health": "healthy"
+    }
+  ],
+  "nginx_config_valid": true,
+  "backend_filesystem_layers_unchanged": true
+}

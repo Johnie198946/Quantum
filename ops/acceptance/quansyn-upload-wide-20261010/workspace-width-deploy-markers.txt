@@ -1,0 +1,5 @@
+rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-workspace-width-20261010.xRv98S
+==> [1/6] 下载并解包 SHA 7ad107327e4bfbef8ac95e1ec1b558be8c973500
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+ERROR: backend image revision mismatch: api=2290e35e331de927d57449043fff9ba444f980a3 expected=7ad107327e4bfbef8ac95e1ec1b558be8c973500
