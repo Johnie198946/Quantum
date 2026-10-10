@@ -1,0 +1,6 @@
+Correctly signed Debug simulator build 1.0.3 (87): BUILD SUCCEEDED
+SignedKeychainAcceptanceTests.testSecureCredentialRoundTripInSignedHost: 1 test passed, 0 failures
+Result: /private/tmp/QuanSynSignedKeychain87.xcresult
+Probe uses unique test service and noncredential data; no real tokens read.
+Production simulator reinstall and launch exit 0; visible existing chat screen confirms login session restored.
+Earlier unsigned simulator package caused credential save failure and generic agreement error; corrected build uses normal Xcode simulator signing.

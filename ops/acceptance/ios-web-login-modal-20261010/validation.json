@@ -3,12 +3,30 @@
   "quantum_tests": "198 passed: authentication, QuanSyn, Mac pairing, transfer failure/conflict, architecture, capability, Hermes bridge and knowledge actions",
   "frontend_tests": "156 passed",
   "frontend_build": "passed",
-  "ios_build": "Debug simulator arm64+x86_64 BUILD SUCCEEDED; release87 pending",
+  "ios_build": "Normal signed Debug simulator BUILD SUCCEEDED; signed secure credential roundtrip 1 passed; production simulator reinstalled and session restored",
   "visible_e2e": {
     "environment": "isolated account19900000000, real Authen8851 + Quantum8852 + Redis8850 + web5157 + iOS simulatorE42CCEAA-4F9E-4283-9FD0-C08DDF0DB825",
     "success": "App six-digit confirmation -> web QuanSyn automatic login -> App green check and close; no simulated success",
     "cancel": "App Cancel -> modal dismisses; web shows 已在 Quantum 取消登录，请重新发起。; no login"
   },
-  "production_before": "08ff1774f84df9d049c621cc4d272e65e2d1a929",
-  "deploy": "not executed"
+  "production_before": "fb886d00ba99620da6527f922a97115afda5b63e",
+  "deploy": "DEPLOYED: b904a999, remote codeSHA verified, final independently checked container labels/8healthy/API+Authen+Bridge200",
+  "merged_regression": "115 passed after preserving final production fb886d00 (plus 156 previous merged regressions)",
+  "ios_archive": {
+    "result": "ARCHIVE SUCCEEDED",
+    "path": "/private/tmp/QuanSyn-1.0.3-87.xcarchive",
+    "version": "1.0.3 (87)",
+    "code_sha": "54e2caca0f7fcefc1ec6a672158af1636ff6c180",
+    "upload": "User confirmed manual upload build87; Apple processing not independently checked",
+    "final_code_sha": "b904a9995016d7bb6932172fee7e28f20cafc7d6",
+    "source_equivalence": "ios Git tree identical to archived54e2"
+  },
+  "authen_deploy": {
+    "sha": "dd981f8ab5efab53b182f4a1c7858cab6eb2d4f8",
+    "health": "200",
+    "functional": "routes present and nonexistent state410",
+    "rollback_point": "/opt/ai-lab-shared/rollbacks/authen-app-login-20261010.n0uOAS"
+  },
+  "production_checks": "public-functional.json and server-final.json",
+  "remaining": "Formal account visible approval pending; Feishu real pairing not verified in this task; 18:10 full production sync not executed;18:00 governance-disabled unchanged"
 }

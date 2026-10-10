@@ -1,0 +1,64 @@
+{
+  "server_after": "b904a9995016d7bb6932172fee7e28f20cafc7d6",
+  "release": "/opt/releases/ai-lab-platform-b904a9995016.K1iMD8",
+  "rollback_point": "/opt/ai-lab-shared/rollbacks/quansyn-login-20261010.pmHknK",
+  "containers": [
+    {
+      "service": "api",
+      "image": "sha256:4446f8953541430a63c4c428ea84954462822b2a0a037d8a6dfd8a6ea274e462",
+      "health": "healthy",
+      "revision": "b904a9995016d7bb6932172fee7e28f20cafc7d6"
+    },
+    {
+      "service": "workflow-worker",
+      "image": "sha256:4446f8953541430a63c4c428ea84954462822b2a0a037d8a6dfd8a6ea274e462",
+      "health": "healthy",
+      "revision": "b904a9995016d7bb6932172fee7e28f20cafc7d6"
+    },
+    {
+      "service": "planning-worker",
+      "image": "sha256:4446f8953541430a63c4c428ea84954462822b2a0a037d8a6dfd8a6ea274e462",
+      "health": "healthy",
+      "revision": "b904a9995016d7bb6932172fee7e28f20cafc7d6"
+    },
+    {
+      "service": "agent-evaluation-worker",
+      "image": "sha256:4446f8953541430a63c4c428ea84954462822b2a0a037d8a6dfd8a6ea274e462",
+      "health": "healthy",
+      "revision": "b904a9995016d7bb6932172fee7e28f20cafc7d6"
+    },
+    {
+      "service": "frontend",
+      "image": "sha256:720790fd35ab3f529b6c3790ccd581e34201baa67f26b289e37baa532b76d9b6",
+      "health": "healthy",
+      "revision": "b904a9995016d7bb6932172fee7e28f20cafc7d6"
+    },
+    {
+      "service": "postgres",
+      "image": "sha256:214ce3e0c70b1d7a1d7893a811c415d7c41fa909846872281f0226f2ac6ba87d",
+      "health": "healthy"
+    },
+    {
+      "service": "redis",
+      "image": "sha256:95d0fc96b409dc67d3cc87aaa35d3b782fa50d507c6963bcbaf86d3552465677",
+      "health": "healthy"
+    },
+    {
+      "service": "taskboard",
+      "image": "sha256:eb5b97dcf8d49f5d6632e7bc600374839d06f59f5c101f1ec42656df7910fc11",
+      "health": "healthy"
+    }
+  ],
+  "api_ready": {
+    "http": 200,
+    "status": "ready"
+  },
+  "authen_health": {
+    "http": 200,
+    "status": "healthy"
+  },
+  "bridge_health": {
+    "http": 200,
+    "status": "ok"
+  }
+}

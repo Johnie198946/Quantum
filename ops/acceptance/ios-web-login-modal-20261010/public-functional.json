@@ -1,0 +1,19 @@
+{
+  "time": "2026-10-10T07:39:02.646179+00:00",
+  "web_http": 200,
+  "assets": [
+    {
+      "path": "/assets/index-DBICeVcD.js",
+      "http": 200
+    },
+    {
+      "path": "/assets/index-C--fqO1P.css",
+      "http": 200
+    }
+  ],
+  "start_http": 200,
+  "status_http": 200,
+  "state_status": "pending",
+  "unauthenticated_pending_http": 401,
+  "expired_state_http": 410
+}

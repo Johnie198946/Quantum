@@ -1,0 +1,3 @@
+1.0.3 (87) signing archive: ARCHIVE SUCCEEDED
+User confirmed in this conversation: 我已手动上传构建 87
+No duplicate upload attempted. Apple processing/TestFlight availability not independently checked.

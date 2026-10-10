@@ -1,0 +1,10 @@
+Code SHA: b904a9995016d7bb6932172fee7e28f20cafc7d6
+Candidate Python import and nginx asset read checks passed.
+Source archive SHA256: 6884098826362ec4789503ac31303e91d15e4eda2625ff9d345e657554f1a016
+Payload SHA256: 5463fefe040c73a9d50e586b1582532bd4509ec342130c8055a9e64f8defd7b6
+Earlier attempt rejected incomplete directory read permissions and rolled back; corrected packaging retains root ownership and adds other-read/execute for code and static files.
+Disk gate retained; removed only this task's never-deployed old54e2 source package/tags and failed untagged candidates.
+Final resume reused complete fresh rollback pmHknK without another duplicate database backup.
+Runtime contract audit passed. Release link and .deployed-sha match final code SHA.
+SSH output stops after step5; no deployment lock/process remains; final container revisions, 8 health checks and API/Authen/Bridge HTTP200 independently verified in server-final.json.
+Formal-account visible App approval remains pending user operation; isolated real E2E passed.

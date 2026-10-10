@@ -1,0 +1,10 @@
+{
+  "task_id": "ios-web-login-modal-20261010",
+  "sha": "54e2caca0f7fcefc1ec6a672158af1636ff6c180",
+  "runtime": "/Users/dengzhaoyu/.hermes/runtime/quansyn-sync/54e2caca0f7fcefc1ec6a672158af1636ff6c180",
+  "entry": "/Users/dengzhaoyu/.hermes/scripts/scripts/sync_cloud_back_to_local.sh",
+  "script_sha256": "3c97c6dea349feff84759b71ee287209817143759791509bda12bcf8501faa62",
+  "rollback_point": "/Users/dengzhaoyu/.hermes/backups/quansyn-sync-20261010",
+  "schedule": "existing 18:10 unchanged",
+  "check": "isolated transport/rsync regression passed; production full sync not run; 18:00 governance still disabled"
+}
