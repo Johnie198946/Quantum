@@ -76,6 +76,7 @@ async def test_chat_native_review_only_proposes_then_gateway_confirms_exact_vers
             body = review.await_args.args[1]
             assert body.artifact_version == 2 and body.expected_hash == HASH and body.decision == "approve"
             assert result["events"][0]["payload"]["workflow"] == workflow
+            assert result["events"][0]["payload"]["id"] == workflow["id"]
             replay = await confirm_capability_proposal(proposal["proposal_id"], payload=PAYLOAD,
                                                        confirmation_token=proposal["confirmation_token"], session_id="travel-session")
             assert replay["error"]["code"] == "confirmation_invalid"

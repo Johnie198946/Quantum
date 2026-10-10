@@ -610,8 +610,15 @@ async def _workflow_cancel(
     )
 
 
+def _workflow_chat_result(workflow, **details):
+    # Older clients decode workflow.summary as a flat WorkflowDTO; newer clients
+    # also consume the nested lifecycle details. Both use the same owned facts.
+    return {**workflow, "workflow": workflow, **details}
+
+
 async def _workflow_clarification_read(data, payload, _key):
-    return await get_clarification(data["workflow_id"], payload)
+    result = await get_clarification(data["workflow_id"], payload)
+    return _workflow_chat_result(result["workflow"], **{k: v for k, v in result.items() if k != "workflow"})
 
 
 async def _workflow_clarification_respond(data, payload, key):
@@ -619,19 +626,19 @@ async def _workflow_clarification_respond(data, payload, key):
         result = await respond_to_clarification(data["workflow_id"], ClarificationResponse(
             **{k: v for k, v in data.items() if k != "workflow_id"}
         ), payload)
-        return {"workflow": await get_workflow(data["workflow_id"], payload), "clarification": result}
+        return _workflow_chat_result(await get_workflow(data["workflow_id"], payload), clarification=result)
     return await _knowledge_mutation("workflow.clarification.respond", data, payload, key, apply)
 
 
 async def _workflow_plan_read(data, payload, _key):
     plan = await get_plan(data["workflow_id"], payload)
-    return {"workflow": await get_workflow(data["workflow_id"], payload), "plan": plan}
+    return _workflow_chat_result(await get_workflow(data["workflow_id"], payload), plan=plan)
 
 
 async def _execution_workflow_result(execution_id, payload, **details):
     execution = await get_execution(execution_id, payload)
-    return {"workflow": await get_workflow(execution["workflow_id"], payload),
-            "execution": execution, **details}
+    return _workflow_chat_result(await get_workflow(execution["workflow_id"], payload),
+                                 execution=execution, **details)
 
 
 async def _workflow_artifacts_list(data, payload, _key):
