@@ -71,7 +71,9 @@ public struct AIPlatformApp: App {
                 } else if ProcessInfo.processInfo.arguments.contains("-travelJourneyPreview") {
                     NavigationStack {
                         ScrollView {
-                            TravelPlanResultView(title: "京都五日 · 春日行记", content: #"{"destination":"日本 · 京都","date_range":"4月3日 — 4月7日","companions":2,"style":"轻松慢游","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"岚山","latitude":35.0094,"longitude":135.6668}]}"#)
+                            TravelPlanResultView(title: "旅行手记", content: ProcessInfo.processInfo.arguments.contains("-travelMapMissingCoordinatesPreview")
+                                ? #"{"destination":"鹿儿岛","stops":[{"id":"senganen","name":"仙巌園","address":"鹿児島市吉野町9700-1"}]}"#
+                                : #"{"destination":"日本 · 京都","date_range":"4月3日 — 4月7日","companions":2,"style":"轻松慢游","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"岚山","latitude":35.0094,"longitude":135.6668}]}"#)
                                 .padding(20)
                         }.navigationTitle("旅行手记").navigationBarTitleDisplayMode(.inline)
                     }

@@ -1457,6 +1457,10 @@ async def _call_bridge_stream(
                     detail = json.loads(raw).get("detail")
                 except (json.JSONDecodeError, AttributeError):
                     detail = None
+                busy = resp.status_code in {429, 503} and isinstance(detail, dict) and detail.get("code") == "server_busy"
+                if busy:
+                    yield f"data: {json.dumps({'type': 'error', **detail}, ensure_ascii=False)}\n\n"
+                    return
                 maintenance = (
                     resp.status_code == 503
                     and isinstance(detail, dict)
@@ -1968,6 +1972,11 @@ async def stream_chat(
                     )
                     frame = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 if event and event.get("type") in {"done", "error"}:
+                    if event.get("code") == "server_busy":
+                        await release_inference(payload, effective_request_id)
+                        ledger_terminal = True
+                        yield frame
+                        continue
                     await settle_inference(
                         payload,
                         effective_request_id,

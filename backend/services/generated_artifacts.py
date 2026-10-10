@@ -12,7 +12,7 @@ import textwrap
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from openpyxl import Workbook
 from PIL import Image, ImageDraw, ImageFont
@@ -49,7 +49,7 @@ def _owner_root(tenant_key: str, user_id: str) -> Path:
 
 def _save(
     *, tenant_key: str, user_id: str, filename: str, media_type: str,
-    data: bytes, kind: str, metadata: dict[str, Any] | None = None, idempotency_key: str | None = None,
+    data: bytes | BinaryIO, kind: str, metadata: dict[str, Any] | None = None, idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     if not data:
         raise GeneratedArtifactError("empty_artifact", "generated artifact is empty")
@@ -57,36 +57,46 @@ def _save(
     artifact_id = "ga_" + (uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant_key}:{user_id}:{idempotency_key}").hex if idempotency_key else uuid.uuid4().hex)
     target = owner / artifact_id
     directory = Path(tempfile.mkdtemp(prefix=".pending-", dir=owner))
-    suffix = Path(filename).suffix.lower()
-    content_path = directory / f"content{suffix}"
-    content_path.write_bytes(data)
-    digest = hashlib.sha256(data).hexdigest()
-    receipt = {
-        "artifact_id": artifact_id,
-        "kind": kind,
-        "filename": Path(filename).name,
-        "media_type": media_type,
-        "content_hash": digest,
-        "byte_size": len(data),
-        "revision": 1,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "metadata": metadata or {},
-        "download_path": f"documents/generated/{artifact_id}/download",
-    }
-    (directory / "receipt.json").write_text(
-        json.dumps(receipt, ensure_ascii=False, sort_keys=True), encoding="utf-8"
-    )
     try:
-        directory.rename(target)
-    except OSError:
-        if not target.is_dir():
-            raise
-        previous = read_generated_artifact(tenant_key, user_id, artifact_id)
-        keys = ("filename", "kind", "media_type", "content_hash", "metadata")
-        if any(previous[key] != receipt[key] for key in keys):
-            raise GeneratedArtifactError("idempotency_conflict", "同一个保存请求的内容发生变化")
-        generated_artifact_path(tenant_key, user_id, artifact_id)
-        return previous
+        suffix = Path(filename).suffix.lower()
+        content_path = directory / f"content{suffix}"
+        content_hash = hashlib.sha256()
+        byte_size = 0
+        source = io.BytesIO(data) if isinstance(data, bytes) else data
+        with content_path.open("wb") as output:
+            while chunk := source.read(1024 * 1024):
+                output.write(chunk)
+                content_hash.update(chunk)
+                byte_size += len(chunk)
+        if not byte_size:
+            raise GeneratedArtifactError("empty_artifact", "generated artifact is empty")
+        digest = content_hash.hexdigest()
+        receipt = {
+            "artifact_id": artifact_id,
+            "kind": kind,
+            "filename": Path(filename).name,
+            "media_type": media_type,
+            "content_hash": digest,
+            "byte_size": byte_size,
+            "revision": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": metadata or {},
+            "download_path": f"documents/generated/{artifact_id}/download",
+        }
+        (directory / "receipt.json").write_text(
+            json.dumps(receipt, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+        )
+        try:
+            directory.rename(target)
+        except OSError:
+            if not target.is_dir():
+                raise
+            previous = read_generated_artifact(tenant_key, user_id, artifact_id)
+            keys = ("filename", "kind", "media_type", "content_hash", "metadata")
+            if any(previous[key] != receipt[key] for key in keys):
+                raise GeneratedArtifactError("idempotency_conflict", "同一个保存请求的内容发生变化")
+            generated_artifact_path(tenant_key, user_id, artifact_id)
+            return previous
     finally:
         if directory.exists():
             shutil.rmtree(directory)
@@ -108,8 +118,9 @@ def generated_artifact_path(tenant_key: str, user_id: str, artifact_id: str) -> 
     matches = [item for item in directory.glob("content.*") if item.is_file()]
     if len(matches) != 1:
         raise GeneratedArtifactError("artifact_not_found", "artifact content not found")
-    data = matches[0].read_bytes()
-    if hashlib.sha256(data).hexdigest() != receipt["content_hash"]:
+    with matches[0].open("rb") as data:
+        content_hash = hashlib.file_digest(data, "sha256").hexdigest()
+    if content_hash != receipt["content_hash"]:
         raise GeneratedArtifactError("artifact_integrity_failed", "artifact hash mismatch")
     return matches[0], receipt
 

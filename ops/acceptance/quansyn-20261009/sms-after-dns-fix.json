@@ -1,0 +1,12 @@
+{
+  "time_utc": "2026-10-09T22:58:15.104065+00:00",
+  "url": "https://www.t-react.com/api/v1/auth/phone/send-code",
+  "account": "185****0894",
+  "http_status": 200,
+  "elapsed_seconds": 0.772,
+  "response": {
+    "success": true,
+    "message": "验证码已发送"
+  },
+  "scope": "One genuine SMS request after the DNS fix; receipt and OTP login require user verification"
+}

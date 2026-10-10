@@ -41,6 +41,43 @@ async def reserve(request="req", calls=1):
         AUTH, route_class="professional_task", model_calls=calls))
 
 
+@pytest.mark.asyncio
+async def test_actual_recovery_query_uses_terminal_index(tmp_path, monkeypatch):
+    store = DurableChatRunStore(tmp_path / "runs.db")
+    run, _ = store.create_or_get(tenant_user_hash="owner", session_id="session", request_id="request")
+    for _ in range(200):
+        store.append_event(run["run_id"], {"type": "delta", "content": "x"})
+    store.append_event(run["run_id"], {"type": "done", "answer": "done"})
+    real_connect = sqlite3.connect
+    statements = []
+
+    def traced_connect(*args, **kwargs):
+        db = real_connect(*args, **kwargs)
+        db.set_trace_callback(statements.append)
+        return db
+
+    monkeypatch.setattr(recovery.sqlite3, "connect", traced_connect)
+    assert await recovery.recover_usage_receipts(store.path) == 1
+    query = next(q for q in statements if "SELECT e.run_id" in q)
+    with real_connect(store.path) as db:
+        plan = [row[3] for row in db.execute("EXPLAIN QUERY PLAN " + query)]
+    assert any("ix_chat_events_terminal_receipts" in item for item in plan)
+    assert not any("TEMP B-TREE" in item for item in plan)
+
+
+@pytest.mark.asyncio
+async def test_released_request_retry_rechecks_quota(ledger, monkeypatch):
+    monkeypatch.setenv("QUANTUM_MONTHLY_TOKEN_LIMIT", "10000")
+    await reserve("retry")
+    assert await policy.release_inference(AUTH, "retry") == "failed_released"
+    await reserve("other")
+    with pytest.raises(policy.InferenceQuotaExceeded):
+        await reserve("retry")
+    await policy.release_inference(AUTH, "other")
+    assert (await reserve("retry")).state == "reserved"
+    assert (await policy.monthly_quota_snapshot(AUTH))["used_tokens"] == 8000
+
+
 async def rows(factory, request="req"):
     async with factory() as db:
         reservation = await db.get(InferenceReservation, {"user_id": AUTH["sub"], "request_id": request})

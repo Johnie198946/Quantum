@@ -12,6 +12,120 @@ spec.loader.exec_module(module)
 DurableChatRunStore = module.DurableChatRunStore
 
 
+def test_queue_cap_is_atomic_across_stores_and_duplicate_replay(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setenv("HERMES_MAX_QUEUE", "4")
+    path = tmp_path / "runs.db"
+    stores = [DurableChatRunStore(path), DurableChatRunStore(path)]
+
+    def enqueue(index):
+        try:
+            return stores[index % 2].create_or_get(
+                tenant_user_hash="owner", session_id="session", request_id=f"request-{index}"
+            )[0]
+        except module.ChatAdmissionError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        accepted = [row for row in pool.map(enqueue, range(16)) if row]
+    assert len(accepted) == 4
+    duplicate, created = stores[0].create_or_get(
+        tenant_user_hash="owner", session_id="session", request_id=accepted[0]["request_id"]
+    )
+    assert not created and duplicate["run_id"] == accepted[0]["run_id"]
+    stores[0].claim_next("worker")
+    assert enqueue(17) is not None
+
+
+def test_background_queue_reserves_chat_slot(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_MAX_QUEUE", "2")
+    store = DurableChatRunStore(tmp_path / "runs.db")
+    kwargs = dict(tenant_user_hash="owner", session_id="session",
+                  execution_payload={"run_type": "note_illustration"})
+    store.create_or_get(**kwargs, request_id="background-one")
+    with pytest.raises(module.ChatAdmissionError, match="chat_queue_full"):
+        store.create_or_get(**kwargs, request_id="background-two")
+    store.create_or_get(tenant_user_hash="owner", session_id="chat", request_id="chat")
+
+
+def test_memory_pressure_rejects_only_new_requests(tmp_path, monkeypatch):
+    store = DurableChatRunStore(tmp_path / "runs.db")
+    kwargs = dict(tenant_user_hash="owner", session_id="session", request_id="request")
+    existing, _ = store.create_or_get(**kwargs)
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemAvailable: 10000 kB\n")
+    monkeypatch.setenv("HERMES_DURABLE_CHAT_WORKER", "true")
+    monkeypatch.setattr(module, "Path", lambda path: meminfo if str(path) == "/proc/meminfo" else Path(path))
+    assert store.create_or_get(**kwargs)[0]["run_id"] == existing["run_id"]
+    with pytest.raises(module.ChatAdmissionError, match="memory_pressure"):
+        store.create_or_get(**{**kwargs, "request_id": "new-request"})
+
+
+def test_retry_exhausted_commits_exactly_one_terminal_event(tmp_path):
+    store = DurableChatRunStore(tmp_path / "runs.db")
+    run, _ = store.create_or_get(tenant_user_hash="owner", session_id="session", request_id="request",
+                                 execution_payload={"answer_blocks_v1": True})
+    store.claim_next("worker")
+    store.append_event(run["run_id"], {"type": "delta", "content": "partial"})
+    with store._connect() as conn:
+        conn.execute("UPDATE chat_runs SET attempt=2,lease_expires_at=0 WHERE run_id=?", (run["run_id"],))
+    assert store.recover_after_restart() == 1
+    assert store.recover_after_restart() == 0
+    snapshot = store.get(run["run_id"], tenant_user_hash="owner")
+    events = store.events_after(run["run_id"], 0, tenant_user_hash="owner")
+    assert snapshot["status"] == "failed" and snapshot["error_code"] == "retry_exhausted"
+    assert [event["type"] for event in events] == ["delta", "error"]
+    assert snapshot["event_sequence"] == events[-1]["event_sequence"] == 2
+    assert store.block_page(run["run_id"], tenant_user_hash="owner")["blocks"][0]["content"] == "partial"
+
+
+def test_legacy_background_runs_are_backfilled_before_claim(tmp_path):
+    store = DurableChatRunStore(tmp_path / "runs.db")
+    background, _ = store.create_or_get(tenant_user_hash="owner", session_id="background", request_id="background",
+                                        execution_payload={"run_type": "knowledge_compile"})
+    chat, _ = store.create_or_get(tenant_user_hash="owner", session_id="chat", request_id="chat")
+    with store._connect() as conn:
+        conn.execute("ALTER TABLE chat_runs DROP COLUMN is_background")
+    reopened = DurableChatRunStore(store.path)
+    assert reopened.claim_next("worker")["run_id"] == chat["run_id"]
+    assert reopened.claim_next("worker")["run_id"] == background["run_id"]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_connection_closes_and_preserves_transaction_semantics(tmp_path, fail):
+    import sqlite3
+
+    store = DurableChatRunStore(tmp_path / "runs.sqlite3")
+    with store._connect() as conn:
+        conn.execute("CREATE TABLE connection_check (value INTEGER)")
+    try:
+        with store._connect() as conn:
+            conn.execute("BEGIN")
+            conn.execute("INSERT INTO connection_check VALUES (1)")
+            if fail:
+                raise ValueError("rollback")
+    except ValueError:
+        assert fail
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
+    with store._connect() as check:
+        assert check.execute("SELECT COUNT(*) FROM connection_check").fetchone()[0] == int(not fail)
+
+
+def test_empty_queue_uses_claimable_index(tmp_path):
+    store = DurableChatRunStore(tmp_path / "runs.sqlite3")
+    with store._connect() as conn:
+        plan = conn.execute("""EXPLAIN QUERY PLAN
+            SELECT * FROM chat_runs WHERE status IN ('queued','stalled')
+            AND attempt < 2 AND (? IS NULL OR created_at >= ?)
+            ORDER BY CASE status WHEN 'stalled' THEN 0 ELSE 1 END, created_at""",
+            (None, None),
+        ).fetchall()
+    assert any("ix_chat_runs_claimable" in row[3] for row in plan)
+    assert not any("SCAN chat_runs" in row[3] for row in plan)
+
+
 def test_worker_heartbeat_expires_fail_closed(tmp_path, monkeypatch):
     now = 100.0
     monkeypatch.setattr(module.time, "time", lambda: now)

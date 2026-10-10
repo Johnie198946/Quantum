@@ -72,7 +72,8 @@ async def asset(run_id: str, index: int, x_hermes_internal_token: str | None = H
                 x_tenant_id: str | None = Header(None), x_user_id: str | None = Header(None)):
     store, owner_hash = owner(x_hermes_internal_token, x_tenant_id, x_user_id)
     owned_run(store, owner_hash, run_id)
-    if index not in range(3) or not re.fullmatch(r"[a-f0-9]{32}", run_id):
+    from backend.services.note_illustrations import TRAVEL_IMAGE_LIMIT
+    if index not in range(TRAVEL_IMAGE_LIMIT) or not re.fullmatch(r"[a-f0-9]{32}", run_id):
         raise HTTPException(404, "illustration_asset_not_found")
     path = media_directory(store, run_id) / f"{index}.jpg"
     if not path.is_file():

@@ -1686,6 +1686,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     public var knowledgeScope: [String]?
     public var allowNetwork: Bool?
     public var requiresReview: Bool?
+    public var requireTravelGuidance: Bool?
     public var maxTokens: Int?
     public var revisionNote: String?
 
@@ -1699,6 +1700,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         case knowledgeScope = "knowledge_scope"
         case allowNetwork = "allow_network"
         case requiresReview = "requires_review"
+        case requireTravelGuidance = "require_travel_guidance"
         case maxTokens = "max_tokens"
         case revisionNote = "revision_note"
     }
@@ -1706,7 +1708,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     private enum DecodingKeys: String, CodingKey {
         case agentId, scenarioId, scenarioVersion, approvalGate
         case query, instruction, outputFormat, knowledgeScope
-        case allowNetwork, requiresReview, maxTokens, revisionNote
+        case allowNetwork, requiresReview, requireTravelGuidance, maxTokens, revisionNote
     }
 
     public init(
@@ -1720,6 +1722,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope: [String]? = nil,
         allowNetwork: Bool? = nil,
         requiresReview: Bool? = nil,
+        requireTravelGuidance: Bool? = nil,
         maxTokens: Int? = nil,
         revisionNote: String? = nil
     ) {
@@ -1733,6 +1736,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         self.knowledgeScope = knowledgeScope
         self.allowNetwork = allowNetwork
         self.requiresReview = requiresReview
+        self.requireTravelGuidance = requireTravelGuidance
         self.maxTokens = maxTokens
         self.revisionNote = revisionNote
     }
@@ -1749,6 +1753,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope = try container.decodeIfPresent([String].self, forKey: .knowledgeScope)
         allowNetwork = try container.decodeIfPresent(Bool.self, forKey: .allowNetwork)
         requiresReview = try container.decodeIfPresent(Bool.self, forKey: .requiresReview)
+        requireTravelGuidance = try container.decodeIfPresent(Bool.self, forKey: .requireTravelGuidance)
         maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens)
         revisionNote = try container.decodeIfPresent(String.self, forKey: .revisionNote)
     }
@@ -5245,5 +5250,69 @@ extension APIClient {
         applyClientContract(to: &request)
         // The server persists request_id + payload digest: retry the exact bytes once after transport loss.
         return try decoder.decode(TravelRevisionReceipt.self, from: await perform(request, session: session, canRetry: true))
+    }
+}
+
+// MARK: - QuanSyn (real data only)
+public struct QuanSynFileDTO: Codable, Identifiable, Sendable {
+    public let artifactId: String
+    public let filename: String
+    public let contentHash: String
+    public let byteSize: Int
+    public let metadata: QuanSynFileMetadata?
+    public var id: String { artifactId }
+    public var originalName: String { metadata?.originalName ?? filename }
+}
+public struct QuanSynFileMetadata: Codable, Sendable { public let originalName: String? }
+public struct QuanSynBlockDTO: Codable, Sendable {
+    public let kind: String
+    public let content: String
+    public var labels: [String] = []
+    public var values: [Double] = []
+}
+public struct QuanSynTransferDTO: Codable, Identifiable, Sendable {
+    public let id: String
+    public let text: String
+    public let blocks: [QuanSynBlockDTO]
+    public let files: [QuanSynFileDTO]
+    public let revision: Int
+    public let status: String
+}
+public struct QuanSynListDTO: Decodable { public let items: [QuanSynTransferDTO] }
+public struct QuanSynClaimBody: Encodable { let revision: Int; let claim: String }
+public struct QuanSynFileRef: Encodable { let artifact_id: String }
+public struct QuanSynResultBody: Encodable {
+    let request_id: String
+    let direction = "result"
+    let target = "ios"
+    let reply_to: String?
+    let text: String
+    let blocks: [QuanSynBlockDTO]
+    let files: [QuanSynFileRef]
+}
+extension APIClient {
+    public func fetchQuanSyn() async throws -> [QuanSynTransferDTO] {
+        try await request(QuanSynListDTO.self, path: "quansyn/transfers", queryItems: [
+            URLQueryItem(name: "target", value: "ios"), URLQueryItem(name: "pending", value: "true")
+        ]).items
+    }
+    public func claimQuanSyn(_ item: QuanSynTransferDTO, claim: String, imported: Bool = false) async throws -> QuanSynTransferDTO {
+        try await request(QuanSynTransferDTO.self, path: "quansyn/transfers/\(item.id)/\(imported ? "imported" : "claim")",
+                          method: "POST", body: QuanSynClaimBody(revision: item.revision, claim: claim))
+    }
+    public func uploadQuanSyn(data: Data, filename: String) async throws -> QuanSynFileDTO {
+        guard !data.isEmpty, data.count <= 25 * 1024 * 1024 else { throw APIError.network("附件不能为空或超过 25 MB") }
+        let generation = credentialGeneration
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/v1/quansyn/files"))
+        request.httpMethod = "POST"; request.httpBody = data; request.timeoutInterval = 200
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        var allowed = CharacterSet.urlQueryAllowed; allowed.remove(charactersIn: "%&+?#/\\")
+        request.setValue(filename.addingPercentEncoding(withAllowedCharacters: allowed), forHTTPHeaderField: "X-File-Name")
+        applyClientContract(to: &request)
+        let raw = try await perform(request, session: chatSession, canRetry: false, credentialGeneration: generation)
+        return try decoder.decode(QuanSynFileDTO.self, from: raw)
+    }
+    public func publishQuanSyn(_ body: QuanSynResultBody) async throws -> QuanSynTransferDTO {
+        try await request(QuanSynTransferDTO.self, path: "quansyn/transfers", method: "POST", body: body)
     }
 }

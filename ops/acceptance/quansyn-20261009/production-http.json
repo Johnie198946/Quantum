@@ -1,0 +1,40 @@
+{
+  "https_certificate_verified": true,
+  "static_files_checked": 82,
+  "static_files_match": true,
+  "checks": [
+    {
+      "path": "/",
+      "status": 200,
+      "body": null
+    },
+    {
+      "path": "/quansyn",
+      "status": 200,
+      "body": null
+    },
+    {
+      "path": "/quansyn/",
+      "status": 200,
+      "body": null
+    },
+    {
+      "path": "/health",
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "version": "0.8.0"
+      }
+    },
+    {
+      "path": "/api/v1/quansyn/transfers",
+      "status": 401,
+      "body": null
+    },
+    {
+      "path": "/api/v1/quansyn/devices",
+      "status": 401,
+      "body": null
+    }
+  ]
+}

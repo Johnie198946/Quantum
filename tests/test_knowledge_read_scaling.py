@@ -422,3 +422,17 @@ async def test_gateway_perf_observability_is_internal_optional_and_fail_open(vau
         "fixture",
     )
     assert len(writes) == 1
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_live_metadata_parser_rejects_yaml_objects_with_native_or_fallback(tmp_path, monkeypatch, native):
+    if native and not hasattr(catalog.yaml, "CSafeLoader"):
+        pytest.skip("native PyYAML loader unavailable")
+    if not native:
+        monkeypatch.delattr(catalog.yaml, "CSafeLoader", raising=False)
+    (tmp_path / "wiki").mkdir()
+    path = tmp_path / "wiki/unsafe.md"
+    path.write_text("---\nstatus: active\nvalue: !!python/object/apply:builtins.eval ['1 + 1']\n---\nBody")
+    assert catalog._live_frontmatter(tmp_path, "wiki/unsafe.md") is catalog._UNREADABLE_FRONTMATTER
+    path.write_text("---\nstatus: withdrawn\n---\nBody")
+    assert catalog._live_frontmatter(tmp_path, "wiki/unsafe.md")["status"] == "withdrawn"

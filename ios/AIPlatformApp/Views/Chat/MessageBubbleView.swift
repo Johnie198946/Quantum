@@ -105,6 +105,7 @@ public struct MessageBubbleView: View {
     public var context: PluginRenderContext? = nil
     public var onQuoteFollowUp: ((QuotedContext) -> Void)? = nil
     public var onRegenerate: ((String) -> Void)? = nil
+    public var onQuanSyn: ((String) -> Void)? = nil
     public var onStartTopic: ((ChatMessage) -> Void)? = nil
     public var reasoningInitiallyExpanded: Bool = false
     public var reasoningSummary: String? = nil
@@ -120,6 +121,7 @@ public struct MessageBubbleView: View {
         context: PluginRenderContext? = nil,
         onQuoteFollowUp: ((QuotedContext) -> Void)? = nil,
         onRegenerate: ((String) -> Void)? = nil,
+        onQuanSyn: ((String) -> Void)? = nil,
         onStartTopic: ((ChatMessage) -> Void)? = nil,
         reasoningInitiallyExpanded: Bool = false,
         reasoningSummary: String? = nil
@@ -128,6 +130,7 @@ public struct MessageBubbleView: View {
         self.context = context
         self.onQuoteFollowUp = onQuoteFollowUp
         self.onRegenerate = onRegenerate
+        self.onQuanSyn = onQuanSyn
         self.onStartTopic = onStartTopic
         self.reasoningInitiallyExpanded = reasoningInitiallyExpanded
         self.reasoningSummary = reasoningSummary
@@ -352,7 +355,7 @@ public struct MessageBubbleView: View {
             }
 
             // 3. 其他富媒体块（非 reasoning，如表格、图表、代码、澄清卡等）
-            ForEach(message.blocks.filter { if case .reasoning = $0 { return false }; return true }) { block in
+            ForEach(message.visibleTaskBlocks.filter { if case .reasoning = $0 { return false }; return true }) { block in
                 blockCard(block)
             }
 
@@ -401,7 +404,8 @@ public struct MessageBubbleView: View {
                 BubbleActionBar(
                     messageId: message.id,
                     content: message.content,
-                    onRegenerate: { onRegenerate?(message.id) }
+                    onRegenerate: { onRegenerate?(message.id) },
+                    onQuanSyn: onQuanSyn.map { action in { action(message.id) } }
                 )
                 .padding(.leading, 4)
             }
@@ -487,6 +491,10 @@ public struct MessageBubbleView: View {
             onWorkflowOpen: { workflowId in
                 context?.onWorkflowOpen?(workflowId)
             },
+            linkedTravelWorkflowId: {
+                if case .capabilityProposal(let proposal) = block { return message.travelWorkflowID(for: proposal) }
+                return nil
+            }(),
             onKnowledgeNavigation: { target in
                 context?.onKnowledgeNavigation?(target)
             }

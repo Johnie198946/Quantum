@@ -42,11 +42,25 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testExistingTestAccountOpensCodeStepWhenPhoneChannelEnabled() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v3/01-auth-p02"]
+        app.launch()
+        let phone = app.textFields["请输入手机号"]
+        XCTAssertTrue(phone.waitForExistence(timeout: 10))
+        phone.tap()
+        phone.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 11) + "13800138000")
+        app.buttons["获取验证码"].tap()
+        XCTAssertTrue(app.staticTexts["请输入验证码"].waitForExistence(timeout: 5), "测试账号不能依赖真实短信通道")
+        app.typeText("246810")
+        XCTAssertTrue(app.buttons["登录"].isEnabled)
+    }
+
     func testTravelWorkflowUsesCompactBriefWithoutAttachmentEntry() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["开启一趟旅行"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["完善旅行计划"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["这趟旅行，你更倾向哪种预算安排？"].exists)
         XCTAssertFalse(app.buttons["补充图片或文档"].exists)
         XCTAssertFalse(app.buttons["返回任务"].exists)
@@ -55,10 +69,10 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview", "-travelCreatePreview"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["想去哪里"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["出行时间"].exists)
-        XCTAssertTrue(app.staticTexts["同行人数"].exists)
-        XCTAssertTrue(app.staticTexts["人均预算"].exists)
+        XCTAssertTrue(app.staticTexts["目的地"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["出行日期"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertTrue(app.staticTexts["预算（人均）"].exists)
         attachScreenshot(named: "travel-workflow-create")
     }
 
@@ -67,7 +81,8 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.launchArguments = ["-prototypePreview", "v5/02-travel-note-layout-v5-p01"]
         app.launch()
         XCTAssertTrue(app.textFields["travel-note-title"].waitForExistence(timeout: 10))
-        app.buttons["选择封面 3"].tap()
+        app.buttons["使用目的地封面"].tap()
+        XCTAssertFalse(app.buttons["选择封面 3"].exists, "不能把京都装饰图作为其他目的地的封面选项")
         XCTAssertTrue(app.switches["包含每日行程"].exists)
         XCTAssertTrue(app.switches["包含照片与摄影参考"].exists)
         attachScreenshot(named: "travel-original-note-settings")
@@ -78,8 +93,14 @@ final class ProductionBookshelfUITests: XCTestCase {
         attachScreenshot(named: "travel-original-note-cover")
         diary.tap()
         XCTAssertTrue(app.staticTexts["泡汤与休息"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "在雪中慢慢走", "在雪中慢慢走")).firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["原稿装饰照片"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["DAY 3"].exists)
+        app.buttons["DAY 2"].tap()
+        XCTAssertTrue(app.staticTexts["第二天围绕车站探索，减少换乘。"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["抵达后先寄存行李，留出泡汤与休息时间。"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["原稿首个地点照片"].firstMatch.exists)
+        app.buttons["DAY 1"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["原稿首个地点照片"].firstMatch.waitForExistence(timeout: 10), "首个地点 stop:0 的配图必须归入当天拼贴")
         let titleFrame = app.staticTexts["泡汤与休息"].firstMatch.frame
         XCTAssertGreaterThanOrEqual(titleFrame.minX, app.frame.minX)
         XCTAssertLessThanOrEqual(titleFrame.maxX, app.frame.maxX)
@@ -103,7 +124,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.terminate()
         app.launchArguments = arguments
         app.launch()
-        let input = app.textFields["clarify-custom-input"]
+        let input = app.textFields["travel-form-destination"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         for _ in 0..<8 where !input.isHittable { app.swipeUp() }
         XCTAssertTrue(input.isHittable)
@@ -111,7 +132,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         input.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         input.typeText("From Hong Kong, ten days")
-        let confirm = app.buttons["clarify-keyboard-primary-action"]
+        let confirm = app.buttons["travel-form-submit"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         XCTAssertTrue(confirm.isEnabled && confirm.isHittable)
         attachScreenshot(named: "travel-clarification-keyboard")
@@ -134,9 +155,102 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertEqual(create.frame.width, discard.frame.width, accuracy: 1)
         attachScreenshot(named: "travel-proposal-actions")
         edit.tap()
-        XCTAssertTrue(app.navigationBars["核对旅行需求"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["完善旅行计划"].waitForExistence(timeout: 5))
         app.buttons["取消"].tap()
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
+    }
+
+    func testTravelPlanningStepsMatchApprovedProcess() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelPlanPreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["旅行计划"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["travel-planning-step-7"].isHittable, "默认字号下八项规划应完整可见")
+        for index in 0..<8 {
+            let titles = ["目的地研究", "行程路线规划", "景点推荐", "拍照建议", "住宿推荐", "美食推荐", "交通指南", "安全与应急"]
+            let step = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", titles[index])).firstMatch
+            for _ in 0..<8 where !step.isHittable { app.swipeUp() }
+            XCTAssertTrue(step.isHittable, "规划内容必须可查看：" + app.debugDescription)
+            if index == 0 { step.tap(); XCTAssertTrue(app.staticTexts["按你的目的地和日期研究，标注信息来源与需要出发前复核的事项。"].exists); step.tap() }
+        }
+        app.swipeDown(); app.swipeDown()
+        attachScreenshot(named: "travel-approved-planning-steps")
+        XCTAssertTrue(app.buttons["确认开始"].exists)
+        XCTAssertFalse(app.staticTexts["5 天行程 · 地图路线 · 交通建议"].exists, "不应固定未知旅行天数")
+    }
+
+    func testTravelPreferencesKeepFactsAndAllowMultipleChoices() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v4/06-travel-chat-to-workflow-v4-p03"]
+        app.launch()
+        let destination = app.textFields["travel-form-destination"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 10))
+        XCTAssertEqual(destination.value as? String, "京都 · 日本")
+        XCTAssertEqual(app.textFields["travel-form-dates"].value as? String, "2026年10月1日至5日")
+        app.buttons["朋友"].tap()
+        XCTAssertTrue(app.buttons["朋友"].isSelected)
+        attachScreenshot(named: "travel-approved-preferences-top")
+        let nature = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch
+        for _ in 0..<6 where !nature.isHittable { app.swipeUp() }
+        nature.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "温泉")).firstMatch.tap()
+        attachScreenshot(named: "travel-approved-preferences-choices")
+        XCTAssertTrue(app.buttons["travel-form-submit"].isEnabled)
+        app.buttons["travel-form-submit"].tap()
+        let receipt = app.alerts["旅行需求已准备"]
+        XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+        XCTAssertTrue(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "温泉")).firstMatch.exists)
+        XCTAssertFalse(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch.exists, "取消的偏好不能继续提交")
+    }
+
+    func testExistingTravelTaskOpensInNormalAccount() {
+        app.terminate()
+        app.launchArguments = []
+        app.launchEnvironment = [:]
+        app.launch()
+        let workflows = app.buttons["main-tab-1"]
+        XCTAssertTrue(workflows.waitForExistence(timeout: 30), "正常登录会话未恢复，不注入认证")
+        workflows.tap()
+        let task = app.buttons.matching(identifier: "workflow-card-鹿儿岛旅行规划").firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 20), "已有鹿儿岛任务未加载")
+        for _ in 0..<5 where !task.isHittable { app.swipeUp() }
+        XCTAssertTrue(task.isHittable)
+        task.tap()
+        let title = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS %@", "鹿儿岛")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "已有工作流详情未打开")
+        attachScreenshot(named: "travel-normal-account-existing-workflow")
+    }
+
+    func testCompletedTravelCardOpensWorkflowWithoutDuplicate() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelCompletedProposalPreview"]
+        app.launch()
+        let open = app.buttons["travel-proposal-open-workflow"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["需求澄清中"].exists)
+        attachScreenshot(named: "travel-single-completed-task-card")
+        open.tap()
+        XCTAssertTrue(app.staticTexts["完善旅行计划"].waitForExistence(timeout: 10))
+        attachScreenshot(named: "travel-task-card-opened-workflow")
+    }
+
+    func testTravelConfirmationUsesCompactLayoutAndExplicitDecision() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelRequirementConfirmationPreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["确认旅行需求"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["需求收敛确认单"].exists)
+        XCTAssertTrue(app.staticTexts["目的地"].exists)
+        XCTAssertTrue(app.staticTexts["鹿儿岛，日本"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "原始需求：请安排")).firstMatch.exists, "完整原文应默认折叠")
+        let submit = app.buttons["requirement-confirm-primary-action"]
+        XCTAssertFalse(submit.isEnabled)
+        let confirm = app.buttons["确认，进入方案设计"]
+        for _ in 0..<6 where !confirm.isHittable { app.swipeUp() }
+        confirm.tap()
+        XCTAssertTrue(submit.isEnabled)
+        attachScreenshot(named: "travel-approved-requirement-confirmation")
     }
 
     func testBookshelfEmptyScopesAndRealListEditor() {
@@ -2486,5 +2600,55 @@ final class ImageWorkflowLiveAcceptanceTests: XCTestCase {
         item.name = name
         item.lifetime = .keepAlways
         add(item)
+    }
+}
+
+final class QuanSynProductionUITests: XCTestCase {
+    func testLoggedInSimulatorPublishesRealAnswer() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.ailab.AIPlatformApp")
+        app.launch()
+        func screenshot(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        screenshot("quansyn-simulator-existing-login")
+        let home = app.buttons["main-tab-0"]
+        XCTAssertTrue(home.waitForExistence(timeout: 30), "模拟器当前登录未恢复；本用例不注入认证信息")
+        home.tap()
+        let plus = app.buttons["添加附件或引用知识"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 20))
+        plus.tap()
+        let quansyn = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "QuanSyn")).firstMatch
+        XCTAssertTrue(quansyn.waitForExistence(timeout: 10))
+        quansyn.tap()
+        XCTAssertTrue(app.buttons["刷新"].waitForExistence(timeout: 20))
+        screenshot("quansyn-simulator-real-queue")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "需先接受")).firstMatch.exists)
+        app.buttons["完成"].tap()
+        if app.buttons["更多会话操作"].exists {
+            app.buttons["更多会话操作"].tap()
+            let create = app.buttons.matching(NSPredicate(format: "label IN %@", ["新建会话", "新对话"])).firstMatch
+            XCTAssertTrue(create.waitForExistence(timeout: 5))
+            create.tap()
+        }
+        let input = app.textFields["selected-book-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        let marker = "QUANSYN_SIMULATOR_20261009_" + String(UUID().uuidString.prefix(8))
+        input.tap()
+        input.typeText("QuanSyn 模拟器生产验收。请回复标记 " + marker + "，计算 12、18、30 的总和与均值，并给出一个 Markdown 表格和 Python 代码块。无需使用外部工具。")
+        app.buttons["selected-book-chat-send"].tap()
+        let answer = app.otherElements["selected-book-chat-response"].descendants(matching: .staticText).matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        let push = app.buttons["推送到 QuanSyn"]
+        XCTAssertTrue(push.waitForExistence(timeout: 240), "真实模型回答未完成或缺少 QuanSyn 回传入口")
+        screenshot("quansyn-simulator-real-answer")
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "必须收到本次请求的真实回答，不能回传旧会话")
+        XCTAssertTrue(push.isHittable)
+        push.tap()
+        XCTAssertTrue(app.staticTexts["已推送到 QuanSyn Web"].waitForExistence(timeout: 45), "真实回传未取得成功回执")
+        screenshot("quansyn-simulator-published")
+        print("QUANSYN_SIMULATOR_ACCEPTANCE_MARKER=" + marker)
     }
 }

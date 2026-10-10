@@ -1,0 +1,12 @@
+{
+  "server_after": "01161f7603d7b3bea0a0c082cbf67862e35bf066",
+  "http": {
+    "/quansyn": 200,
+    "/quansyn/": 200,
+    "/health": 200,
+    "/api/v1/quansyn/transfers": 401
+  },
+  "frontend_files_verified": 82,
+  "frontend_hash_mismatches": 0,
+  "browser_visual_proof": "Local button checked; production browser navigation times out"
+}

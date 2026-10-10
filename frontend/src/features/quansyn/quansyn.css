@@ -1,0 +1,80 @@
+/* API integration only; the supplied design.css owns the visual layout. */
+.quansyn { min-height:100vh; }
+.quansyn * { box-sizing:border-box; }
+.quansyn button:disabled { opacity:.5; cursor:wait; }
+.quansyn button:focus-visible,.quansyn input:focus-visible,.quansyn textarea:focus-visible,.quansyn a:focus-visible { outline:2px solid #6e60d7; outline-offset:3px; }
+.quansyn .brand-mark { background:transparent; box-shadow:none; }
+.quansyn .brand-mark img { width:100%; height:100%; object-fit:contain; }
+.quansyn .assistant-label img { width:100%; height:100%; object-fit:contain; }
+.quansyn .image-preview img { width:100%; height:100%; object-fit:cover; }
+.quansyn .file-meta-inline { display:contents; }
+.quansyn .image-bubble,.quansyn .file-bubble { text-align:left; }
+.quansyn .rich-answer { overflow-wrap:anywhere; }
+.quansyn .rich-answer pre,.quansyn .code-block>code { white-space:pre; overflow:auto; display:block; max-width:100%; }
+.quansyn .rich-answer h1,.quansyn .rich-answer h2 { font-size:16px; margin:12px 0; }
+.quansyn .qs-table { position:relative; margin-top:16px; overflow:auto; }
+.quansyn .qs-table table { border-collapse:collapse; font-size:10px; }
+.quansyn .qs-table td,.quansyn .qs-table th { padding:8px 12px; border:1px solid #e0e3ee; }
+.quansyn .qs-table>.answer-copy { position:static; display:block; margin-left:auto; }
+.quansyn .qs-selected { display:flex; flex-wrap:wrap; gap:8px; }
+.quansyn .qs-selected span { display:flex; gap:8px; align-items:center; padding:5px 8px; background:#f1effa; border-radius:6px; font-size:10px; }
+.quansyn .qs-selected button { border:0; background:none; }
+.quansyn .qs-error { color:#a22f40; font-size:12px; }
+.quansyn .qs-modal { border:0; padding:0; background:transparent; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); }
+.quansyn .qs-modal::backdrop { background:#151b3266; }
+.quansyn .qs-modal section { position:relative; max-width:600px; padding:32px; background:#fff; border-radius:20px; overflow:auto; }
+.quansyn .qs-modal section>button { float:right; border:0; background:none; }
+.quansyn .qs-modal pre { white-space:pre-wrap; overflow-wrap:anywhere; user-select:all; }
+.quansyn .qs-copy { border:0; background:none; color:#6b5ec1; cursor:pointer; }
+.quansyn .qs-device { display:flex; justify-content:space-between; gap:8px; padding-top:8px; overflow-wrap:anywhere; }
+.quansyn .qs-device button { border:0; background:none; color:#6b5ec1; font-size:10px; }
+.quansyn .qs-agreement { padding:16px; line-height:1.8; }
+.quansyn .qs-detail-image { max-width:100%; max-height:240px; object-fit:contain; }
+.quansyn .qs-loading { display:grid; place-items:center; }
+@media(prefers-reduced-motion:reduce) { .quansyn *, .quansyn *::before,.quansyn *::after { animation:none!important; transition:none!important; } }
+
+/* Restore browser defaults that Quantum global classes otherwise override. */
+.quansyn .workspace { width:100%; max-width:none; margin:0; padding:0; gap:0; }
+.quansyn .chat-header { flex-direction:row; }
+.quansyn .sidebar.drawer { display:block; }
+.quansyn .topbar-exit { white-space:nowrap; }
+.quansyn .qs-selected { grid-column:1 / -1; grid-row:2; }
+.quansyn .topbar .brand-mark { background:transparent; box-shadow:none; }
+.quansyn .insight-panel footer > .answer-copy { position:static; }
+
+.quansyn .open-file { white-space:nowrap; }
+
+.quansyn .qs-login-connect-slot { display:flex; justify-content:center; align-items:center; height:64px; }
+.quansyn .qs-login-connect { position:relative; display:grid; place-items:center; width:200px; height:56px; padding:0; border:1px solid #dce2ef; border-radius:18px; background:#fff; color:#2454bc; cursor:pointer; transition:width 300ms ease-in-out,height 300ms ease-in-out,border-radius 300ms ease-in-out,background-color 300ms ease-in-out,border-color 300ms ease-in-out; }
+.quansyn .qs-login-connect:focus-visible { outline:3px solid #9eb9ff; outline-offset:4px; }
+.quansyn .qs-connect-idle { display:flex; align-items:center; gap:12px; opacity:1; transition:opacity 300ms ease-in-out; }
+.quansyn .qs-connect-idle span { font-size:13px; font-weight:600; white-space:nowrap; }
+.quansyn .qs-login-connect:is(.is-loading,.is-success,.is-error) { width:48px; height:48px; border-radius:50%; }
+.quansyn .qs-login-connect:is(.is-loading,.is-success,.is-error) .qs-connect-idle { opacity:0; pointer-events:none; }
+.quansyn .qs-connect-ring,.quansyn .qs-connect-check,.quansyn .qs-connect-error { position:absolute; width:32px; height:32px; opacity:0; pointer-events:none; transition:opacity 150ms ease-in-out; }
+.quansyn .qs-connect-ring circle { fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-dasharray:48 22; }
+.quansyn .is-loading .qs-connect-ring { opacity:1; animation:qs-connect-spin 900ms linear infinite; }
+.quansyn .qs-login-connect.is-success { color:#fff; background:#20bc83; border-color:#20bc83; }
+.quansyn .is-success .qs-connect-check { opacity:1; }
+.quansyn .qs-connect-check path { fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:1; stroke-dashoffset:1; }
+.quansyn .is-success .qs-connect-check path { animation:qs-connect-draw 300ms ease-in-out forwards; }
+.quansyn .qs-login-connect.is-error { color:#a22f40; border-color:#e6b6bf; background:#fff3f5; }
+.quansyn .is-error .qs-connect-error { opacity:1; font-size:30px; line-height:30px; }
+@keyframes qs-connect-spin { to { transform:rotate(360deg); } }
+@keyframes qs-connect-draw { to { stroke-dashoffset:0; } }
+@media(prefers-reduced-motion:reduce) { .quansyn .qs-connect-check path { stroke-dashoffset:0; } }
+
+.quansyn .qs-draft-image { width:72px; height:56px; object-fit:contain; border-radius:5px; }
+/* Keep the original composition readable on full-width desktop displays. */
+@media (min-width: 1600px) {
+  .quansyn .message-area { padding-inline:clamp(80px, 9vw, 280px); }
+  .quansyn .message-stack { max-width:min(78%, 1040px); }
+  .quansyn .composer { padding-inline:clamp(80px, 9vw, 280px); }
+  .quansyn .text-bubble,.quansyn .rich-answer { font-size:15px; line-height:1.8; }
+  .quansyn .compose-box textarea { font-size:15px; }
+  .quansyn .rich-answer p,.quansyn .rich-answer li,.quansyn .rich-answer h4 { font-size:14px; line-height:1.8; }
+  .quansyn .code-block>code,.quansyn .qs-table table { font-size:13px; }
+  .quansyn .chat-header { padding-inline:clamp(32px, 3vw, 100px); }
+  .quansyn .target-device strong { font-size:15px; }
+  .quansyn .target-device small,.quansyn .drop-hint { font-size:12px; }
+}

@@ -1034,6 +1034,7 @@ class TestInFlightUsers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             mapping = Path(d) / "mappings.json"
             with patch.object(bridge.contracts, "MAPPING_FILE", mapping), \
+                 patch.object(bridge.contracts, "STATE_DB_MAPPING_FILE", Path(d) / "state-mappings.json"), \
                  patch.object(bridge.persistence, "_session_exists", return_value=False), \
                  patch.object(bridge.persistence, "_run_hermes", side_effect=fake_run):
                 result = asyncio.run(

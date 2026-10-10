@@ -33,12 +33,13 @@ const request = async (path, options = {}) => {
   const controller = new AbortController();
   const cancelFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timeoutId = timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
 
   try {
     const headers = new Headers(options.headers ?? {});
     headers.set("Accept", "application/json");
-    if (options.body !== undefined) {
+    if (options.body !== undefined && !options.rawBody) {
       headers.set("Content-Type", "application/json");
     }
     let accessToken = API_TOKEN;
@@ -55,7 +56,7 @@ const request = async (path, options = {}) => {
     const response = await fetch(options.url ?? buildApiUrl(path), {
       method: options.method ?? "GET",
       headers,
-      body: typeof options.body === "string" ? options.body : (options.body === undefined ? undefined : JSON.stringify(options.body)),
+      body: options.rawBody ? options.body : typeof options.body === "string" ? options.body : (options.body === undefined ? undefined : JSON.stringify(options.body)),
       signal: controller.signal,
     });
 
@@ -68,7 +69,7 @@ const request = async (path, options = {}) => {
     if (response.status === 204) {
       return null;
     }
-    return response.json();
+    return options.blob ? response.blob() : response.json();
   } catch (error) {
     if (error instanceof PlatformApiError) {
       throw error;
@@ -605,4 +606,17 @@ export const platformApi = {
       body: { card_context: cardContext, applied_evidence: appliedEvidence },
     });
   },
+};
+
+export const quansynApi = {
+  list: (query = "") => request(`/api/v1/quansyn/transfers${query}`),
+  send: (body) => request("/api/v1/quansyn/transfers", { method: "POST", body }),
+  remove: (id) => request(`/api/v1/quansyn/transfers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  upload: (file) => request("/api/v1/quansyn/files", { method: "POST", rawBody: true, body: file, timeoutMs: 0, headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" } }),
+  file: (id) => request(`/api/v1/quansyn/files/${encodeURIComponent(id)}`, { blob: true, timeoutMs: 0 }),
+  pair: () => request("/api/v1/quansyn/devices/pair", { method: "POST" }),
+  devices: () => request("/api/v1/quansyn/devices"),
+  revoke: (id) => request(`/api/v1/quansyn/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  agreement: () => request("/api/v1/legal/agreement", { skipAuth: true }),
+  accept: (version) => request("/api/v1/me/agreement-acceptance", { method: "PUT", body: { agreement_version: version, source: "web", idempotency_key: crypto.randomUUID() } }),
 };

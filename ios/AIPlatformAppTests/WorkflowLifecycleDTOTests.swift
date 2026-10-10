@@ -244,6 +244,30 @@ private final class APIContractURLProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class WorkflowLifecycleDTOTests: XCTestCase {
+    @MainActor
+    func testQuanSynWireAndDurableDraftRecovery() throws {
+        let raw = Data(#"{"items":[{"id":"qs_0123456789abcdef0123456789abcdef","text":"需求","blocks":[{"kind":"chart","content":"实测","labels":["A"],"values":[3]}],"files":[{"artifact_id":"ga_0123456789abcdef0123456789abcdef","filename":"input.txt","content_hash":"hash","byte_size":5,"metadata":{"original_name":"资料.txt"}}],"revision":2,"status":"claimed"}]}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = try decoder.decode(QuanSynListDTO.self, from: raw).items[0]
+        XCTAssertEqual(item.files[0].originalName, "资料.txt")
+        XCTAssertEqual(item.blocks[0].values, [3])
+        var message = ChatMessage(role: .user, content: "待运行")
+        message.quansynTransferId = item.id
+        message.quansynDraft = item.text
+        message.quansynClaim = "durable-claim"
+        let data = try JSONEncoder().encode(PersistedMessage(message))
+        let recovered = try JSONDecoder().decode(PersistedMessage.self, from: data).toChatMessage(sessionId: "test")
+        XCTAssertEqual(recovered.quansynDraft, "需求")
+        XCTAssertEqual(recovered.quansynClaim, "durable-claim")
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "quansynTransferId")
+        legacy.removeValue(forKey: "quansynDraft")
+        legacy.removeValue(forKey: "quansynClaim")
+        let old = try JSONDecoder().decode(PersistedMessage.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.quansynDraft)
+    }
+
     func testCleanupLifecycleBatchIsAtomicVersionedAndReplaySafe() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -4566,6 +4590,47 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, "原任务仍在 Hermes 后台处理中，无需重复执行")
     }
 
+    @MainActor
+    func testMismatchedStreamRecoveryDoesNotRetainGenerationOwnership() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let session = manager.createSession()
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager,
+            hasAuthenticatedSession: { false },
+            fetchChatStatus: { _, _, _, _ in
+                var status = ChatStatusDTO(
+                    status: "completed", phase: nil, answer: "另一个请求的回答",
+                    reasoning: nil, latestStep: nil, clarify: nil, consumed: nil,
+                    answerProjection: nil, runId: nil, eventSequence: nil,
+                    eventsNextOffset: nil, events: nil
+                )
+                status.requestId = "another-request"
+                return status
+            }
+        )
+        coordinator.messages = [ChatMessage(
+            id: "output", sessionId: session, role: .assistant,
+            content: "", isStreaming: true, pending: true
+        )]
+
+        let handedOff = await coordinator.recoverAfterStreamEnd(
+            InFlightRequest(id: "current-request", sessionId: session, text: "生成代码"),
+            outputMessageId: "output"
+        )
+
+        XCTAssertFalse(handedOff, "没有恢复监视器时必须让调用者释放运行状态")
+        XCTAssertEqual(coordinator.messages.first?.content, "未找到可恢复的任务")
+        XCTAssertFalse(coordinator.messages.first?.pending ?? true)
+        XCTAssertFalse(coordinator.messages.first?.isStreaming ?? true)
+        XCTAssertEqual(coordinator.messages.first?.role, .interrupted)
+    }
+
     func testCompletedLongAnswerUsesBoundedSemanticPreview() {
         let first = String(repeating: "甲", count: 500)
         let second = String(repeating: "乙", count: 4_000)
@@ -7433,6 +7498,60 @@ extension WorkflowLifecycleDTOTests {
 }
 
 final class TravelNotePresentationTests: XCTestCase {
+    func testGuideResumesCurrentDayAndSkipsCompletedOrAlternativeActions() throws {
+        let content = #"{"stops":[],"actions":[{"id":"done","day_id":"day-1","kind":"rest","title":"已完成","status":"completed"},{"id":"alt","day_id":"day-alt","kind":"experience","title":"备选","status":"planned"},{"id":"next","day_id":"day-2","kind":"experience","title":"进行中","status":"in_progress"}]}"#
+        XCTAssertEqual(try XCTUnwrap(TravelPlanDocument.decode(content)).currentDayId, "day-2")
+    }
+
+    func testTravelQualityGateSurvivesCanvasRoundTrip() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let parameters = try decoder.decode(WorkflowNodeParametersDTO.self, from: Data(#"{"require_travel_guidance":true,"max_tokens":14000}"#.utf8))
+        XCTAssertEqual(parameters.requireTravelGuidance, true)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(parameters)) as? [String: Any]
+        XCTAssertEqual(encoded?["require_travel_guidance"] as? Bool, true)
+        XCTAssertEqual(encoded?["max_tokens"] as? Int, 14000)
+    }
+
+    func testSyncKeepsPersonalWritingPhotosCoverAndAssociation() throws {
+        let original = #"{"stops":[],"destination":"鹿儿岛","workflow_execution_id":"exec-1","journal":"我的真实记录","illustrations":[{"path":"private.jpg"}],"note_presentation":{"cover":"destination"},"actions":[]}"#
+        let latest = #"{"stops":[],"destination":"鹿儿岛","workflow_execution_id":"exec-1","workflow_artifact_hash":"new","actions":[{"id":"new"}],"journal":"AI不应覆盖"}"#
+        let result = try XCTUnwrap(NoteIllustrationPlacement.travelObject(TravelNotePresentation.syncing(original, with: latest)))
+        XCTAssertEqual(result["journal"] as? String, "我的真实记录")
+        XCTAssertEqual((result["illustrations"] as? [[String: String]])?.first?["path"], "private.jpg")
+        XCTAssertEqual((result["note_presentation"] as? [String: String])?["cover"], "destination")
+        XCTAssertEqual((result["actions"] as? [[String: String]])?.first?["id"], "new")
+        XCTAssertThrowsError(try TravelNotePresentation.syncing(original, with: latest.replacingOccurrences(of: "exec-1", with: "other")))
+    }
+
+    func testSelectedDaysExcludeAlternativesAndDraftDoesNotClaimReady() throws {
+        let content = #"{"destination":"鹿儿岛","days":[{"id":"day-1","title":"市区","selected":true,"journal":"市区规划"},{"id":"day-alt","title":"离岛备选","selected":false,"journal":"离岛规划"}],"actions":[],"stops":[]}"#
+        let plan = try XCTUnwrap(TravelPlanDocument.decode(content))
+        XCTAssertEqual(plan.dayIds, ["day-1"])
+        XCTAssertEqual(plan.alternativeDayIds, ["day-alt"])
+        XCTAssertTrue(plan.shareSummary.contains("DAY 1 · 市区"))
+        XCTAssertFalse(plan.shareSummary.contains("离岛备选"))
+        XCTAssertTrue(plan.readinessTitle.contains("草稿"))
+        XCTAssertEqual(plan.days.first?.journal, "市区规划")
+        XCTAssertEqual(TravelNotePresentation.title("摄影与旅行笔记", content: content), "鹿儿岛 · 旅行手记")
+        XCTAssertNoThrow(try TravelNotePresentation.saving(content, cover: "destination", route: true, photos: true, places: true))
+    }
+
+    func testPhotoCoverSelectionIsBoundToDestinationReferences() throws {
+        let content = #"{"stops":[],"photo_references":[{"id":"sakurajima","image_url":"https://example.com/photo.jpg","caption":"樱岛"},{"id":"unsafe","image_url":"file:///private/image.jpg"}]}"#
+        XCTAssertEqual(TravelNotePresentation.photoCovers(content).map { $0["id"] }, ["sakurajima"])
+        XCTAssertNoThrow(try TravelNotePresentation.saving(content, cover: "photo:sakurajima", route: true, photos: true, places: true))
+        XCTAssertThrowsError(try TravelNotePresentation.saving(content, cover: "photo:other-city", route: true, photos: true, places: true))
+    }
+
+    func testTravelPhotoBatchAttachmentsRestoreTwoDigitIndicesWithinBound() {
+        let prefix = "ai-" + String(repeating: "a", count: 32) + "-"
+        let suffix = "-" + String(repeating: "b", count: 64) + ".jpg"
+        XCTAssertEqual(NoteIllustrationPlacement.asset(from: prefix + "10" + suffix)?.index, 10)
+        XCTAssertEqual(NoteIllustrationPlacement.asset(from: prefix + "2" + suffix)?.index, 2)
+        XCTAssertNil(NoteIllustrationPlacement.asset(from: prefix + "12" + suffix))
+    }
+
     func testContentChoicesPreserveOriginalActionsJournalAndWorkflowLink() throws {
         let original = """
         {"destination":"青森","stops":[],"actions":[{"id":"booked"}],"journal":"自己的记录","workflow_execution_id":"exec-1","sources":[{"id":"official"}]}
@@ -7450,5 +7569,92 @@ final class TravelNotePresentationTests: XCTestCase {
         XCTAssertTrue(TravelNotePresentation.includes("include_route", in: original))
         XCTAssertEqual(before["destination"] as? String, after["destination"] as? String)
         XCTAssertThrowsError(try TravelNotePresentation.saving("broken", cover: "unknown", route: true, photos: true, places: true))
+    }
+}
+
+
+@MainActor
+final class TravelPreferencesDraftTests: XCTestCase {
+    func testPrefillsOnlyLabeledFactsAndKeepsOriginal() {
+        let source = "已确认旅行信息：目的地：鹿儿岛，日本；出行时间：尚未决定；同行人：2人；偏好：温泉与自然；香港出发。"
+        let input = TravelPlanPreferencesView.draft(title: "鹿儿岛旅行", context: source)
+        XCTAssertEqual(input.destination, "鹿儿岛，日本")
+        XCTAssertEqual(input.travelDates, "尚未决定")
+        XCTAssertEqual(input.travelers, "2人")
+        XCTAssertEqual(input.travelPreferences, "温泉与自然")
+        XCTAssertEqual(input.description, source)
+        XCTAssertTrue(TravelPlanPreferencesView.answer(input).contains(source))
+    }
+    func testChatAssistantSuggestionsCannotOverrideCurrentConfirmedFields() {
+        let source = "已确认旅行信息（与原始需求冲突时以此为准）：目的地：鹿儿岛；出行时间：尚未决定；同行人：2人\n【聊天原文依据】\n助手建议：先考虑京都\n目的地：京都\n出行时间：10月1日\n【聊天原文结束】\n出行时间：12月10日至15日"
+        let draft = TravelPlanPreferencesView.draft(title: "旅行", context: source)
+        XCTAssertEqual(draft.destination, "鹿儿岛")
+        XCTAssertEqual(draft.travelDates, "12月10日至15日")
+        XCTAssertEqual(draft.travelers, "2人")
+        XCTAssertEqual(draft.description, source)
+    }
+    func testSubmittedPreferencesKeepBudgetPaceAndInterestsWhenReopened() {
+        let preferences = "人均预算：舒适；旅行节奏：轻松；自然风光、温泉"
+        let draft = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛\n偏好与预算：" + preferences)
+        XCTAssertEqual(draft.travelPreferences, preferences)
+    }
+    func testFreeProseHasNoInventedDefaultsAndLatestLabeledEditWins() {
+        let prose = TravelPlanPreferencesView.draft(title: "旅行", context: "我要去鹿儿岛旅行，其他还没决定")
+        XCTAssertNil(prose.travelDates)
+        XCTAssertNil(prose.travelers)
+        XCTAssertNil(prose.travelPreferences)
+        let updated = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：京都\n目的地：鹿儿岛\n出行时间：尚未决定")
+        XCTAssertEqual(updated.destination, "鹿儿岛")
+        XCTAssertEqual(updated.travelDates, "尚未决定")
+    }
+}
+
+
+@MainActor
+final class TravelReadingParagraphTests: XCTestCase {
+    func testLongGuidanceKeepsEveryCharacterAndDoesNotSplitPricesOrLinks() {
+        let source = String(repeating: "早到先寄存行李，晚到先确认酒店入住。", count: 8) + "票价 ¥200；评分 3.67，[官方入口](https://example.com/ticket?id=1.2)核验后购票。"
+        let paragraphs = TravelDetailText.paragraphs(source)
+        XCTAssertGreaterThan(paragraphs.count, 1)
+        XCTAssertEqual(paragraphs.joined(), source)
+        XCTAssertTrue(paragraphs.contains { $0.contains("3.67") && $0.contains("https://example.com/ticket?id=1.2") })
+        XCTAssertEqual(TravelDetailText.paragraphs("时间尚未决定。请先确认机票。"), ["时间尚未决定。请先确认机票。"])
+    }
+}
+
+final class TravelTaskCardLinkTests: XCTestCase {
+    private func workflow(_ id: String) throws -> WorkflowDTO {
+        try JSONDecoder().decode(WorkflowDTO.self, from: Data("""
+        {"id":"\(id)","title":"鹿儿岛","description":"旅行","desiredOutput":"旅行笔记","status":"clarifying"}
+        """.utf8))
+    }
+
+    func testCompletedProposalUsesPersistedTaskAndHidesOnlyItsDuplicate() throws {
+        var input = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛")
+        input.workflowId = "created"
+        let proposal = CapabilityProposalBlock(id: "proposal", capabilityId: "workflow.create", input: input,
+            summary: "旅行", risk: "", state: .completed)
+        let message = ChatMessage(role: .assistant, content: "", blocks: [.capabilityProposal(proposal),
+            .workflow(try workflow("created")), .workflow(try workflow("other"))])
+        XCTAssertEqual(message.travelWorkflowID(for: proposal), "created")
+        XCTAssertEqual(message.visibleTaskBlocks.count, 2)
+        let restored = try JSONDecoder().decode(CapabilityProposalBlock.self, from: JSONEncoder().encode(proposal))
+        XCTAssertEqual(restored.input.workflowId, "created")
+    }
+
+    func testHistoricalSingleTaskLinksButPendingOrAmbiguousCardsStayVisible() throws {
+        let input = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛")
+        var proposal = CapabilityProposalBlock(id: "proposal", capabilityId: "workflow.create", input: input,
+            summary: "旅行", risk: "", state: .completed)
+        var message = ChatMessage(role: .assistant, content: "", blocks: [.capabilityProposal(proposal), .workflow(try workflow("old"))])
+        XCTAssertEqual(message.travelWorkflowID(for: proposal), "old")
+        XCTAssertEqual(message.visibleTaskBlocks.count, 1)
+        message.blocks.append(.workflow(try workflow("other")))
+        XCTAssertNil(message.travelWorkflowID(for: proposal))
+        XCTAssertEqual(message.visibleTaskBlocks.count, 3)
+        proposal.state = .awaitingConfirmation
+        message.blocks = [.capabilityProposal(proposal), .workflow(try workflow("old"))]
+        XCTAssertNil(message.travelWorkflowID(for: proposal))
+        XCTAssertEqual(message.visibleTaskBlocks.count, 2)
     }
 }

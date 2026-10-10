@@ -29,6 +29,24 @@ def test_worker_default_queue_pickup_is_interactive():
     assert worker.POLL_SECONDS <= 0.1
 
 
+@pytest.mark.parametrize("threads, expected", [(None, 2), ("8", 2), ("1", 1)])
+def test_worker_respects_runtime_capacity(threads, expected):
+    import os
+    import subprocess
+    import sys
+
+    environment = dict(os.environ, HERMES_MAX_CONCURRENCY="2")
+    if threads is None:
+        environment.pop("HERMES_CHAT_WORKER_THREADS", None)
+    else:
+        environment["HERMES_CHAT_WORKER_THREADS"] = threads
+    result = subprocess.run(
+        [sys.executable, "-c", "from scripts.chat_run_worker import MAX_WORKERS; print(MAX_WORKERS)"],
+        env=environment, cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    assert int(result.stdout.strip()) == expected
+
+
 def test_worker_revalidates_stored_agent_config_before_execution(tmp_path):
     store = worker.DurableChatRunStore(tmp_path / "runs.sqlite3")
     owner = store.tenant_user_hash("tenant-a", "user-a")

@@ -510,18 +510,65 @@ public struct NoteOrganizationConfirmationView: View {
 /// preserving the exact choice labels expected by the workflow state machine.
 public struct RequirementConfirmationCard: View {
     public let block: ClarifyBlock
+    public var isTravel = false
+    public var travelContext: String? = nil
     public var onSubmit: ((String) -> Void)? = nil
 
     @State private var selectedID: String?
     @State private var customAnswer = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(block: ClarifyBlock, onSubmit: ((String) -> Void)? = nil) {
+    public init(block: ClarifyBlock, isTravel: Bool = false, travelContext: String? = nil, onSubmit: ((String) -> Void)? = nil) {
         self.block = block
+        self.isTravel = isTravel
+        self.travelContext = travelContext
         self.onSubmit = onSubmit
     }
 
     public var body: some View {
+        Group {
+            if isTravel { travelConfirmation } else { standardConfirmation }
+        }
+    }
+
+    private var travelConfirmation: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("确认旅行需求", systemImage: "checkmark.circle")
+                .font(.system(size: 20, weight: .semibold, design: .serif)).foregroundStyle(AppTheme.Colors.primary)
+            Text("核对已收敛的信息，确认后生成制作方案。")
+                .font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary)
+            TravelWorkflowBriefCard(content: [travelContext, block.question].compactMap { $0 }.joined(separator: "\n"), title: "这趟旅行")
+            ForEach(summaryItems.filter { $0.kind == .deliverable }) { item in
+                Label(item.value, systemImage: item.icon)
+                    .font(AppTheme.Typography.supporting.weight(.medium))
+                    .foregroundStyle(AppTheme.Colors.primary)
+                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 12))
+            }
+            ForEach(block.choices) { option in
+                Button { selectedID = option.id } label: {
+                    HStack {
+                        Text(option.label).font(.system(size: 14))
+                        Spacer()
+                        Image(systemName: selectedID == option.id ? "checkmark.circle.fill" : "circle")
+                    }.frame(minHeight: 44).padding(.horizontal, 12).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(selectedID == option.id ? AppTheme.Colors.primary : AppTheme.Colors.textSecondary)
+                    .background(selectedID == option.id ? AppTheme.Colors.selectionTint : AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay { RoundedRectangle(cornerRadius: 10).stroke(AppTheme.Colors.border) }
+            }
+            TextField("需要修改时，在这里补充", text: $customAnswer, axis: .vertical)
+                .lineLimit(1...4).font(.system(size: 14)).padding(12)
+                .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 10))
+                .overlay { RoundedRectangle(cornerRadius: 10).stroke(AppTheme.Colors.border) }
+                .accessibilityIdentifier("requirement-confirm-custom-answer")
+            Button(primaryActionTitle, action: submitSelection).buttonStyle(QuantumPrimaryButtonStyle())
+                .disabled(selectedID == nil && customAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("requirement-confirm-primary-action")
+        }.padding(16).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.Colors.border) }
+    }
+
+    private var standardConfirmation: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             confirmationHeader
             requirementSummary
