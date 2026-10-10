@@ -115,7 +115,8 @@ def test_travel_uses_existing_dag_and_explicit_review_gate():
     assert "stop:从0开始的stops数组下标" in plan["nodes"][1]["parameters"]["instruction"]
     assert len(plan["edges"]) == 2
     assert plan["nodes"][0]["parameters"]["max_tokens"] == 24000
-    assert all(node["parameters"]["max_tokens"] == 14000 for node in plan["nodes"][1:])
+    assert plan["nodes"][1]["parameters"]["max_tokens"] == 64000
+    assert plan["nodes"][2]["parameters"]["max_tokens"] == 14000
 
 
 def practical_document():
@@ -640,3 +641,127 @@ def test_unselected_alternatives_need_no_venue_and_day_trip_needs_no_hotel():
     value["days"][0]["selected"] = False
     with pytest.raises(ValueError, match="selected day"):
         validate_travel_document(value, require_guidance=True)
+
+
+def daily_block(day_id):
+    value = practical_document()
+    value["days"] = [day for day in value["days"] if day["id"] == day_id]
+    value["actions"] = [action for action in value["actions"] if action["day_id"] == day_id]
+    for action in value["actions"]:
+        action.update(status="planned", actual_start=None, actual_end=None)
+    value["actions"].append({"id": "buffer-" + day_id, "day_id": day_id, "title": "换乘与排队缓冲", "kind": "rest", "details": "留出错过一班和找站台的时间；延误时舍弃可选购物。"})
+    return value
+
+
+def test_day_merge_keeps_previous_commitments_and_summarizes_handoff():
+    from backend.services.travel_plan import merge_travel_day, travel_block_context
+    import json
+    outline = validate_travel_document(practical_document())
+    outline["actions"] = []
+    first = merge_travel_day(outline, daily_block("day-1"), "day-1")
+    second = merge_travel_day(first, daily_block("day-2"), "day-2")
+    assert all(action in second["actions"] for action in first["actions"])
+    summary = json.loads(travel_block_context(first, ["day-1"]))
+    assert [item["day"]["id"] for item in summary["已策划行程"]] == ["day-1"]
+    assert [item["id"] for item in summary["尚待策划"]] == ["day-2"]
+    assert "已入住" in json.dumps(summary, ensure_ascii=False)
+    assert validate_travel_document(second, require_guidance=True)
+    changed = daily_block("day-2")
+    changed["stops"][0]["address"] = "另一个地址"
+    with pytest.raises(ValueError, match="cannot rewrite"):
+        merge_travel_day(first, changed, "day-2")
+
+
+def test_day_blocks_reject_overlap_and_missing_buffer_without_rejecting_undated_days():
+    from backend.services.travel_plan import merge_travel_day
+    outline = validate_travel_document(practical_document())
+    outline["actions"] = []
+    value = daily_block("day-2")
+    assert merge_travel_day(outline, value, "day-2")
+    value["actions"] = [action for action in value["actions"] if action["kind"] != "rest"]
+    with pytest.raises(ValueError, match="buffer"):
+        merge_travel_day(outline, value, "day-2")
+    value = daily_block("day-2")
+    value["actions"][0].update(start="2030-01-03T12:00:00+00:00", end="2030-01-03T14:00:00+00:00")
+    value["actions"][1].update(start="2030-01-03T13:00:00+00:00", end="2030-01-03T14:00:00+00:00")
+    with pytest.raises(ValueError, match="overlapping"):
+        merge_travel_day(outline, value, "day-2")
+    value = daily_block("day-2")
+    value["days"][0]["selected"] = False
+    with pytest.raises(ValueError, match="selection"):
+        merge_travel_day(outline, value, "day-2")
+
+
+@pytest.mark.parametrize("revise", [False, True])
+def test_real_itinerary_node_runs_day_blocks_and_resumes_only_unfinished_days(monkeypatch, revise):
+    from scripts import hermes_bridge as bridge
+    import asyncio, json
+    runtime, persistence, artifacts = bridge.workflow_runtime, bridge.persistence, bridge.workflow_artifacts
+    plan = build_travel_plan(SimpleNamespace(requirements_snapshot={"scenario_id": "travel-planning"}, title="Trip", description="two days"), plan_id="test", knowledge_scope=[])
+    plan["nodes"] = plan["nodes"][1:2]
+    plan["edges"] = []
+    run = {"plan": plan, "goal": "two days", "knowledge_scope": [], "allow_network": False,
+           "max_tokens": 64000, "usage": {}, "agent_config": {"id": "main_agent", "knowledge_scope": [], "allow_network": False}}
+    monkeypatch.setattr(persistence, "_workflow_runs", {"test": run})
+    monkeypatch.setattr(persistence, "_workflow_sandbox", lambda *_: None)
+    monkeypatch.setattr(persistence, "_workflow_event", lambda *_a, **_k: None)
+    monkeypatch.setattr(persistence, "_save_workflow_runs", lambda: None)
+    monkeypatch.setattr(persistence, "_require_internal", lambda *_: None)
+    monkeypatch.setattr(runtime, "_start_workflow_thread", lambda *_: None)
+    prompts = []
+    failing = True
+    def model(prompt, *_args, **_kwargs):
+        prompts.append(prompt)
+        if "当前日：" not in prompt:
+            value = practical_document()
+            value["actions"] = []
+        elif '"id": "day-1"' in prompt.split("当前日：", 1)[1].split("前面各块", 1)[0]:
+            value = daily_block("day-1")
+        else:
+            if failing:
+                raise RuntimeError("temporary provider failure")
+            assert "已入住" in prompt and "buffer-day-1" in prompt
+            value = daily_block("day-2")
+        return json.dumps(value), None, {"output_tokens": 10}
+    monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", model)
+    runtime._workflow_run_sync("test")
+    assert run["status"] == "failed", run.get("error")
+    assert run["nodes"]["travel_itinerary"]["travel_completed_days"] == ["day-1"]
+    failing = False
+    first_calls = len(prompts)
+    asyncio.run(runtime.retry_workflow_run("test", bridge.WorkflowRetryRequest(revision_comment="改成更轻松" if revise else None)))
+    runtime._workflow_run_sync("test")
+    assert run["status"] == "awaiting_approval", run.get("error")
+    assert len(prompts) - first_calls == (3 if revise else 1)
+    assert run["nodes"]["travel_itinerary"]["travel_completed_days"] == ["day-1", "day-2"]
+    assert len(json.loads(run["nodes"]["travel_itinerary"]["output"])["days"]) == 2
+
+
+def test_incomplete_day_is_rejected_before_checkpoint_and_photo_anchors_use_merged_places():
+    from backend.services.travel_plan import merge_travel_day
+    outline = validate_travel_document(practical_document())
+    outline["actions"] = []
+    value = daily_block("day-1")
+    value["actions"] = [action for action in value["actions"] if action["kind"] != "meal"]
+    with pytest.raises(ValueError, match="meal venue"):
+        merge_travel_day(outline, value, "day-1")
+    value = daily_block("day-1")
+    value["stops"] = list(reversed(value["stops"]))
+    value["photo_references"] = [{"id": "photo", "place_id": "restaurant", "anchor": "stop:0", "source_id": "official", "caption": "餐厅附近风景"}]
+    merged = merge_travel_day(outline, value, "day-1")
+    index = next(i for i, place in enumerate(merged["stops"]) if place["id"] == "restaurant")
+    assert merged["photo_references"][0]["anchor"] == "stop:" + str(index)
+    assert outline["actions"] == []
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_block_budget_and_cancellation_stop_before_model_call(monkeypatch, cancelled):
+    from scripts import hermes_bridge as bridge
+    runtime, artifacts = bridge.workflow_runtime, bridge.workflow_artifacts
+    node = {"id": "travel_itinerary", "parameters": {"max_tokens": 64000}}
+    run = {"max_tokens": 64000, "usage": {"budget_tokens": 64000}, "cancel_requested": cancelled}
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("No new model call after cancellation or exhausted budget")
+    monkeypatch.setattr(artifacts, "_run_workflow_node_in_process", forbidden)
+    with pytest.raises(InterruptedError if cancelled else RuntimeError):
+        runtime._run_travel_blocks(run, node, "context", {}, None, "test", None, None, lambda *_a, **_k: None)
