@@ -42,6 +42,20 @@ final class ProductionBookshelfUITests: XCTestCase {
         restoreUnsubscribedState(bookID: bookID)
     }
 
+    func testExistingTestAccountOpensCodeStepWhenPhoneChannelEnabled() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v3/01-auth-p02"]
+        app.launch()
+        let phone = app.textFields["请输入手机号"]
+        XCTAssertTrue(phone.waitForExistence(timeout: 10))
+        phone.tap()
+        phone.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 11) + "13800138000")
+        app.buttons["获取验证码"].tap()
+        XCTAssertTrue(app.staticTexts["请输入验证码"].waitForExistence(timeout: 5), "测试账号不能依赖真实短信通道")
+        app.typeText("246810")
+        XCTAssertTrue(app.buttons["登录"].isEnabled)
+    }
+
     func testTravelWorkflowUsesCompactBriefWithoutAttachmentEntry() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview"]
