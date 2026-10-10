@@ -1,0 +1,9 @@
+2290e35e331de927d57449043fff9ba444f980a3
+/opt/releases/ai-lab-platform-2290e35e331d.svh2EG
+/ai-lab-platform-api-1 sha256:173ef6b8790c2d3345b94d7df6e8a9c5a906e5d09da0fe728ff6e56f9537a3d5 running healthy
+/ai-lab-platform-workflow-worker-1 sha256:173ef6b8790c2d3345b94d7df6e8a9c5a906e5d09da0fe728ff6e56f9537a3d5 running healthy
+/ai-lab-platform-planning-worker-1 sha256:173ef6b8790c2d3345b94d7df6e8a9c5a906e5d09da0fe728ff6e56f9537a3d5 running healthy
+/ai-lab-platform-agent-evaluation-worker-1 sha256:173ef6b8790c2d3345b94d7df6e8a9c5a906e5d09da0fe728ff6e56f9537a3d5 running healthy
+/ai-lab-platform-frontend-1 sha256:90c6ccf1379e4304c801d6eeed05232c95f1254f14e3a28c2c574ced26e2ff63 running healthy
+rollback_backup_present=true
+{"status":"ok","version":"0.8.0"}

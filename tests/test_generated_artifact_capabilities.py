@@ -96,3 +96,25 @@ async def test_shared_artifact_event_carries_contract_renderer(
     assert event["type"] == "artifact.generated"
     assert event["renderer"] == renderer
     assert event["renderer_version"] == 1
+
+
+def test_streamed_artifact_cleanup_and_integrity(tmp_path, monkeypatch):
+    import io
+    from backend.services.generated_artifacts import _save
+    monkeypatch.setenv("AI_LAB_GENERATED_ARTIFACT_ROOT", str(tmp_path))
+    class BoundedReader(io.BytesIO):
+        def read(self, size=-1):
+            assert 0 < size <= 1024 * 1024
+            return super().read(size)
+    args = dict(tenant_key="t", user_id="u", filename="large.bin", media_type="application/octet-stream", kind="quansyn_file", idempotency_key="same")
+    raw = b"real-stream-data" * 200000
+    receipt = _save(data=BoundedReader(raw), **args)
+    assert _save(data=BoundedReader(raw), **args) == receipt
+    path, _ = generated_artifact_path("t", "u", receipt["artifact_id"])
+    assert path.read_bytes() == raw
+    path.write_bytes(b"corrupted")
+    with pytest.raises(GeneratedArtifactError, match="hash mismatch"):
+        generated_artifact_path("t", "u", receipt["artifact_id"])
+    with pytest.raises(GeneratedArtifactError, match="empty"):
+        _save(data=BoundedReader(b""), **args)
+    assert not list(tmp_path.rglob(".pending-*"))

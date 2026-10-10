@@ -4590,6 +4590,47 @@ final class WorkflowLifecycleDTOTests: XCTestCase {
         XCTAssertEqual(coordinator.toastMessage, "原任务仍在 Hermes 后台处理中，无需重复执行")
     }
 
+    @MainActor
+    func testMismatchedStreamRecoveryDoesNotRetainGenerationOwnership() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let manager = makeSessionManager(store: try ChatHistoryStore(
+            databaseURL: root.appendingPathComponent("history.sqlite"),
+            legacyDirectory: root.appendingPathComponent("legacy"),
+            performLegacyMigration: false
+        ))
+        let session = manager.createSession()
+        let coordinator = TenantSessionCoordinator(
+            sessionManager: manager,
+            hasAuthenticatedSession: { false },
+            fetchChatStatus: { _, _, _, _ in
+                var status = ChatStatusDTO(
+                    status: "completed", phase: nil, answer: "另一个请求的回答",
+                    reasoning: nil, latestStep: nil, clarify: nil, consumed: nil,
+                    answerProjection: nil, runId: nil, eventSequence: nil,
+                    eventsNextOffset: nil, events: nil
+                )
+                status.requestId = "another-request"
+                return status
+            }
+        )
+        coordinator.messages = [ChatMessage(
+            id: "output", sessionId: session, role: .assistant,
+            content: "", isStreaming: true, pending: true
+        )]
+
+        let handedOff = await coordinator.recoverAfterStreamEnd(
+            InFlightRequest(id: "current-request", sessionId: session, text: "生成代码"),
+            outputMessageId: "output"
+        )
+
+        XCTAssertFalse(handedOff, "没有恢复监视器时必须让调用者释放运行状态")
+        XCTAssertEqual(coordinator.messages.first?.content, "未找到可恢复的任务")
+        XCTAssertFalse(coordinator.messages.first?.pending ?? true)
+        XCTAssertFalse(coordinator.messages.first?.isStreaming ?? true)
+        XCTAssertEqual(coordinator.messages.first?.role, .interrupted)
+    }
+
     func testCompletedLongAnswerUsesBoundedSemanticPreview() {
         let first = String(repeating: "甲", count: 500)
         let second = String(repeating: "乙", count: 4_000)

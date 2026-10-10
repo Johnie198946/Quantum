@@ -1,0 +1,7 @@
+[Unit]
+Description=Preserve Alibaba DNS replies alongside Tailscale firewall rules
+After=network-online.target tailscaled.service ufw.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/quantum-cloud-dns

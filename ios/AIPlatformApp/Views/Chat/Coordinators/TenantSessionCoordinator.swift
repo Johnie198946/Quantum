@@ -2124,7 +2124,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             )
             guard status.belongsTo(requestId: req.id, runId: nil) else {
                 applyTerminalStatus("not_found", outputMessageId: outputMessageId)
-                return true
+                return false
             }
             if status.status == "completed" {
                 guard await checkpointStatusEvents(

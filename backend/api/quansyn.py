@@ -2,6 +2,8 @@
 from __future__ import annotations
 import hashlib
 import secrets
+import shutil
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import unquote
@@ -18,10 +20,9 @@ from backend.api.auth import require_auth, security
 from backend.db import SessionLocal
 from backend.models.quansyn import QuanSynDevice, QuanSynTransfer
 from backend.models.tenant import TenantMapping
-from backend.services.generated_artifacts import GeneratedArtifactError, _save, generated_artifact_path
+from backend.services.generated_artifacts import GeneratedArtifactError, _owner_root, _save, generated_artifact_path
 
 router = APIRouter(prefix="/api/v1/quansyn", tags=["quansyn"])
-MAX_BYTES = 25 * 1024 * 1024
 
 
 def now():
@@ -85,14 +86,9 @@ async def create_transfer(body: TransferBody, p=Depends(principal)):
         raise HTTPException(403, "Mac 凭证只能回传关联结果")
     tenant, user = owner(p)
     fingerprint = digest(body.model_dump_json())
-    files = []
-    for ref in body.files:
-        try:
-            _, receipt = await run_in_threadpool(generated_artifact_path, tenant, user, ref.artifact_id)
-        except GeneratedArtifactError as exc:
-            raise HTTPException(404, "附件不存在或无权访问") from exc
-        files.append(receipt)
     async with SessionLocal() as db:
+        # Serialize attachment references and cleanup for this account.
+        await db.scalar(select(TenantMapping).where(TenantMapping.user_id == user).with_for_update())
         previous = await db.scalar(select(QuanSynTransfer).where(
             QuanSynTransfer.tenant_key == tenant, QuanSynTransfer.user_id == user,
             QuanSynTransfer.request_id == body.request_id))
@@ -100,6 +96,13 @@ async def create_transfer(body: TransferBody, p=Depends(principal)):
             if previous.digest != fingerprint:
                 raise HTTPException(409, "重试标识对应的内容已改变")
             return serialize(previous)
+        files = []
+        for ref in body.files:
+            try:
+                _, receipt = await run_in_threadpool(generated_artifact_path, tenant, user, ref.artifact_id)
+            except GeneratedArtifactError as exc:
+                raise HTTPException(404, "附件不存在或无权访问") from exc
+            files.append(receipt)
         if body.reply_to:
             parent = await owned_row(db, body.reply_to, p)
             if parent.direction != "request" or parent.target != body.target:
@@ -161,7 +164,7 @@ class ClaimBody(BaseModel):
 async def claim_transfer(transfer_id: str, body: ClaimBody, p=Depends(principal)):
     async with SessionLocal() as db:
         row = await owned_row(db, transfer_id, p)
-        if row.status == "claimed" and row.claim_hash == digest(body.claim) and row.claim_until > now():
+        if row.claim_hash == digest(body.claim) and (row.status in {"imported", "returned"} or (row.status == "claimed" and row.claim_until > now())):
             return serialize(row)
         result = await db.execute(update(QuanSynTransfer).where(QuanSynTransfer.id == transfer_id,
             *scope(p), QuanSynTransfer.direction == "request", QuanSynTransfer.revision == body.revision,
@@ -178,6 +181,8 @@ async def claim_transfer(transfer_id: str, body: ClaimBody, p=Depends(principal)
 @router.post("/transfers/{transfer_id}/imported")
 async def confirm_import(transfer_id: str, body: ClaimBody, p=Depends(principal)):
     async with SessionLocal() as db:
+        tenant, user = owner(p)
+        await db.scalar(select(TenantMapping).where(TenantMapping.user_id == user).with_for_update())
         row = await owned_row(db, transfer_id, p)
         if row.status in {"imported", "returned"} and row.claim_hash == digest(body.claim):
             return serialize(row)
@@ -187,6 +192,20 @@ async def confirm_import(transfer_id: str, body: ClaimBody, p=Depends(principal)
         ).values(status="imported", revision=QuanSynTransfer.revision + 1))
         if result.rowcount != 1:
             raise HTTPException(409, "领取凭证已失效，未确认导入")
+        other_files = (await db.scalars(select(QuanSynTransfer.files).where(
+            QuanSynTransfer.tenant_key == tenant, QuanSynTransfer.user_id == user,
+            QuanSynTransfer.id != transfer_id))).all()
+        shared = {f["artifact_id"] for files in other_files for f in files}
+        try:
+            for file in row.files:
+                if file.get("kind") == "quansyn_file" and file["artifact_id"] not in shared:
+                    directory = _owner_root(tenant, user) / file["artifact_id"]
+                    # A previous attempt may have deleted bytes before its DB commit failed.
+                    if directory.exists():
+                        await run_in_threadpool(shutil.rmtree, directory)
+        except OSError as exc:
+            raise HTTPException(507, "临时附件清理失败，本地资料已保存，请重试导入确认") from exc
+        row.text, row.blocks, row.files = "", [], []
         await db.commit()
         await db.refresh(row)
         return serialize(row)
@@ -203,22 +222,27 @@ async def delete_transfer(transfer_id: str, p=Depends(principal)):
 
 @router.post("/files", status_code=201)
 async def upload_file(request: Request, filename: str = Header(..., alias="X-File-Name"), p=Depends(principal)):
-    data = bytearray()
-    async for chunk in request.stream():
-        if len(data) + len(chunk) > MAX_BYTES:
-            raise HTTPException(413, "单附件不得超过 25 MB")
-        data.extend(chunk)
     name = unquote(filename).replace("\\", "/").split("/")[-1].strip()
     if not name or len(name) > 240 or any(ord(c) < 32 for c in name):
         raise HTTPException(422, "文件名无效")
     storage_name = name if Path(name).suffix else name + ".bin"
     try:
-        return await run_in_threadpool(_save, tenant_key=owner(p)[0], user_id=owner(p)[1],
-            filename=storage_name, media_type="application/octet-stream", data=bytes(data),
-            kind="quansyn_file", metadata={"original_name": name, "device_id": p.get("device_id", "")},
-            idempotency_key="quansyn:" + digest(name + hashlib.sha256(data).hexdigest() + p.get("device_id", "")))
+        with tempfile.TemporaryFile(dir=_owner_root(*owner(p))) as data:
+            content_hash = hashlib.sha256()
+            async for chunk in request.stream():
+                await run_in_threadpool(data.write, chunk)
+                content_hash.update(chunk)
+            data.seek(0)
+            async with SessionLocal() as db:
+                await db.scalar(select(TenantMapping).where(TenantMapping.user_id == owner(p)[1]).with_for_update())
+                return await run_in_threadpool(_save, tenant_key=owner(p)[0], user_id=owner(p)[1],
+                    filename=storage_name, media_type="application/octet-stream", data=data,
+                    kind="quansyn_file", metadata={"original_name": name, "device_id": p.get("device_id", "")},
+                    idempotency_key="quansyn:" + digest(name + content_hash.hexdigest() + p.get("device_id", "")))
     except GeneratedArtifactError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(507, "文件保存失败，请稍后重试或联系管理员检查存储空间") from exc
 
 
 @router.get("/files/{artifact_id}")

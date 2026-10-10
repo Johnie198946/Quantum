@@ -33,7 +33,8 @@ const request = async (path, options = {}) => {
   const controller = new AbortController();
   const cancelFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timeoutId = timeoutMs > 0 ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
 
   try {
     const headers = new Headers(options.headers ?? {});
@@ -611,8 +612,8 @@ export const quansynApi = {
   list: (query = "") => request(`/api/v1/quansyn/transfers${query}`),
   send: (body) => request("/api/v1/quansyn/transfers", { method: "POST", body }),
   remove: (id) => request(`/api/v1/quansyn/transfers/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  upload: (file) => request("/api/v1/quansyn/files", { method: "POST", rawBody: true, body: file, headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" } }),
-  file: (id) => request(`/api/v1/quansyn/files/${encodeURIComponent(id)}`, { blob: true }),
+  upload: (file) => request("/api/v1/quansyn/files", { method: "POST", rawBody: true, body: file, timeoutMs: 0, headers: { "X-File-Name": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" } }),
+  file: (id) => request(`/api/v1/quansyn/files/${encodeURIComponent(id)}`, { blob: true, timeoutMs: 0 }),
   pair: () => request("/api/v1/quansyn/devices/pair", { method: "POST" }),
   devices: () => request("/api/v1/quansyn/devices"),
   revoke: (id) => request(`/api/v1/quansyn/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),

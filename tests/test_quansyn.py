@@ -56,6 +56,9 @@ def test_roundtrip_and_idempotency(client):
     assert c.post(f'/api/v1/quansyn/transfers/{row["id"]}/claim', json={**claim, "claim": uuid.uuid4().hex}).status_code == 409
     claim["revision"] = leased.json()["revision"]
     assert c.post(f'/api/v1/quansyn/transfers/{row["id"]}/imported', json=claim).json()["status"] == "imported"
+    assert c.get(f'/api/v1/quansyn/files/{file["artifact_id"]}').status_code == 404
+    assert c.post("/api/v1/quansyn/transfers", json=payload).json()["id"] == row["id"]
+    file = c.post("/api/v1/quansyn/files", content=raw, headers={"X-File-Name": "test.txt"}).json()
     result = c.post("/api/v1/quansyn/transfers", json=body(direction="result", reply_to=row["id"],
         blocks=[{"kind": "chart", "labels": ["A", "B"], "values": [2, 4]}], files=payload["files"]))
     assert result.status_code == 201, result.text
@@ -72,7 +75,6 @@ def test_validation(client):
     assert c.post("/api/v1/quansyn/transfers", json=body(text="")).status_code == 422
     assert c.post("/api/v1/quansyn/transfers", json=body(blocks=[{"kind": "chart", "labels": ["x"], "values": []}])).status_code == 422
     assert c.post("/api/v1/quansyn/files", content=b"", headers={"X-File-Name": "a.txt"}).status_code == 422
-    assert c.post("/api/v1/quansyn/files", content=b"x" * (quansyn.MAX_BYTES + 1), headers={"X-File-Name": "a.txt"}).status_code == 413
     extensionless = c.post("/api/v1/quansyn/files", content=b"hello", headers={"X-File-Name": "LICENSE"})
     assert extensionless.status_code == 201
     assert c.get('/api/v1/quansyn/files/' + extensionless.json()["artifact_id"]).content == b"hello"
@@ -141,3 +143,86 @@ def test_device_cannot_bypass_withdrawal_or_attach_other_queue_file(client):
         assert c.get("/api/v1/quansyn/transfers", headers=headers).status_code == 428
     finally:
         app.dependency_overrides[quansyn.principal] = override
+
+
+def test_large_attachment_stream_roundtrip(client, monkeypatch):
+    import hashlib
+    c, _ = client
+    import tempfile
+    original_temporary_file = tempfile.TemporaryFile
+    def persistent_upload_file(*args, **kwargs):
+        assert kwargs.get("dir") is not None
+        assert "files" in str(kwargs["dir"])
+        return original_temporary_file(*args, **kwargs)
+    monkeypatch.setattr(quansyn.tempfile, "TemporaryFile", persistent_upload_file)
+    chunk = b"QuanSyn-large-file\n" * 65536
+    expected = hashlib.sha256()
+    def chunks():
+        for _ in range(48):
+            expected.update(chunk)
+            yield chunk
+    response = c.post("/api/v1/quansyn/files", content=chunks(), headers={"X-File-Name": "large.bin"})
+    assert response.status_code == 201, response.text
+    file = response.json()
+    assert file["byte_size"] > 50 * 1024 * 1024
+    assert file["content_hash"] == expected.hexdigest()
+    row = c.post("/api/v1/quansyn/transfers", json=body(files=[{"artifact_id": file["artifact_id"]}]))
+    assert row.status_code == 201, row.text
+    downloaded = c.get('/api/v1/quansyn/files/' + file["artifact_id"])
+    assert hashlib.sha256(downloaded.content).hexdigest() == expected.hexdigest()
+
+
+def test_import_clears_only_confirmed_temporary_content(client, monkeypatch):
+    c, who = client
+    raw = b"temporary private content"
+    receipt = c.post('/api/v1/quansyn/files', content=raw, headers={'X-File-Name': 'temporary.txt'}).json()
+    payload = body(files=[{'artifact_id': receipt['artifact_id']}], blocks=[{'kind': 'code', 'content': 'print(1)'}])
+    first = c.post('/api/v1/quansyn/transfers', json=payload).json()
+    second = c.post('/api/v1/quansyn/transfers', json=body(files=payload['files'])).json()
+    directory = quansyn._owner_root(*quansyn.owner(who)) / receipt['artifact_id']
+
+    def lease(row):
+        claim = {'revision': row['revision'], 'claim': uuid.uuid4().hex}
+        leased = c.post(f"/api/v1/quansyn/transfers/{row['id']}/claim", json=claim)
+        assert leased.status_code == 200
+        claim['revision'] = leased.json()['revision']
+        return claim
+
+    claim = lease(first)
+    assert directory.exists()
+    assert c.get(f"/api/v1/quansyn/transfers/{first['id']}").json()['text'] == payload['text']
+    assert c.post(f"/api/v1/quansyn/transfers/{first['id']}/imported", json={**claim, 'claim': uuid.uuid4().hex}).status_code == 409
+    imported = c.post(f"/api/v1/quansyn/transfers/{first['id']}/imported", json=claim)
+    assert imported.status_code == 200
+    assert imported.json()['text'] == '' and imported.json()['blocks'] == [] and imported.json()['files'] == []
+    assert directory.exists()  # Second pending request still owns the shared bytes.
+    assert c.post('/api/v1/quansyn/transfers', json=payload).json()['id'] == first['id']
+    assert c.post(f"/api/v1/quansyn/transfers/{first['id']}/imported", json=claim).status_code == 200
+    assert c.post(f"/api/v1/quansyn/transfers/{first['id']}/claim", json=claim).status_code == 200
+
+    second_claim = lease(second)
+    with monkeypatch.context() as patch:
+        def unavailable(path):
+            raise OSError('disk unavailable')
+        patch.setattr(quansyn.shutil, 'rmtree', unavailable)
+        assert c.post(f"/api/v1/quansyn/transfers/{second['id']}/imported", json=second_claim).status_code == 507
+    assert directory.exists()
+    assert c.get(f"/api/v1/quansyn/transfers/{second['id']}").json()['status'] == 'claimed'
+    assert c.post(f"/api/v1/quansyn/transfers/{second['id']}/imported", json=second_claim).status_code == 200
+    assert not directory.exists()
+    assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).status_code == 404
+    assert c.post('/api/v1/quansyn/transfers', json=payload).status_code == 201
+    result = c.post('/api/v1/quansyn/transfers', json=body(direction='result', reply_to=first['id'], text='实际结果'))
+    assert result.status_code == 201
+    assert result.json()['text'] == '实际结果'
+
+
+def test_import_does_not_delete_existing_generated_artifact(client):
+    c, who = client
+    receipt = quansyn._save(tenant_key=who['tenant_key'], user_id=who['user_id'], filename='report.txt', media_type='text/plain', data=b'original generated report', kind='report')
+    row = c.post('/api/v1/quansyn/transfers', json=body(files=[{'artifact_id': receipt['artifact_id']}])).json()
+    claim = {'revision': row['revision'], 'claim': uuid.uuid4().hex}
+    leased = c.post(f"/api/v1/quansyn/transfers/{row['id']}/claim", json=claim).json()
+    claim['revision'] = leased['revision']
+    assert c.post(f"/api/v1/quansyn/transfers/{row['id']}/imported", json=claim).status_code == 200
+    assert c.get('/api/v1/quansyn/files/' + receipt['artifact_id']).content == b'original generated report'

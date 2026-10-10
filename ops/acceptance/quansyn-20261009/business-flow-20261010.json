@@ -1,0 +1,61 @@
+{
+  "build": "1.0.3 (85)",
+  "ios_source_sha": "f802c7c8efbed596db234e66d5b6e9ef1489e440",
+  "simulator": "24B48A56-1C35-4F01-9E95-DD91E1C60333",
+  "website": "https://www.t-react.com/quansyn/",
+  "auth": "human normal SMS login; no injected session",
+  "cases": {
+    "text": {
+      "id": "qs_3ba0f168a1e8873f0434522dc9e4a511",
+      "queued_at": "2026-10-10 08:41:43 +08:00",
+      "result_at": "2026-10-10 08:48:01 +08:00",
+      "state": "PASS web->App draft->real model->publish->Web full answer->copy and paste verified"
+    },
+    "attachment": {
+      "id": "qs_330de4c8b9a43162d6ac4c49bf132244",
+      "result_at": "2026-10-10 08:50:47 +08:00",
+      "state": "PARTIAL original CSV parsed correctly; quantity 60 and amount 448.70 correct; result returned; model could not generate downloadable CSV"
+    },
+    "image": {
+      "id": "qs_d052025723b4d9684502f196b941d25a",
+      "document_id": "doc_6ad92c7a4fb84550800ab4b77189ae96",
+      "result_at": "2026-10-10 08:52:48 +08:00",
+      "state": "FAIL App displayed source image but real model could not see pixels; failure response returned to Web"
+    },
+    "code": {
+      "id": "qs_6b7413cfe13354772aa91baf7d0d7bd3",
+      "state": "FAIL original model execution produced no recoverable task; retry blocked by local generation ownership before fix; no real code returned or executed"
+    },
+    "chart": {
+      "id": "qs_6ce1d9eae392925223b7bdfbe7ea06c7",
+      "state": "FAIL original execution produced no recoverable task; after local fix failed state released; explicit retry remains pending, no PNG produced"
+    }
+  },
+  "expected": {
+    "quantity": 60,
+    "total": "448.70",
+    "amounts": [
+      "222.00",
+      "80.00",
+      "79.20",
+      "67.50"
+    ]
+  },
+  "diagnostics": "Production image extraction and broad recent API logs read rejected by auto-review; request narrowed to this test and awaiting user authorization.",
+  "recovery_fix": {
+    "status": "TESTED",
+    "change": "recoverAfterStreamEnd returns false after mismatched request terminal status so caller releases generation",
+    "tests": 2,
+    "failures": 0,
+    "test_result_bundle": "/private/tmp/quansyn-recovery-test.xcresult",
+    "test_log": "/private/tmp/quansyn-recovery-test.log",
+    "production_deployed": false
+  },
+  "health": {
+    "url": "https://www.t-react.com/health",
+    "response": {
+      "status": "ok",
+      "version": "0.8.0"
+    }
+  }
+}
