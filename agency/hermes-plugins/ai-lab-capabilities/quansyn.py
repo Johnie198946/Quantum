@@ -95,7 +95,11 @@ class QuanSyn:
             raise ValueError("请选择发给 Mac 的需求")
         if saved.get("imported"):
             return saved
-        if row["status"] in {"imported", "returned"} and saved.get("claim") and "files" in saved and "text" in saved:
+        if row["status"] in {"claimed", "imported", "returned"} and saved.get("claim") and "files" in saved and "text" in saved:
+            for file in saved["files"]:
+                with Path(file["path"]).open("rb") as stream:
+                    if hashlib.file_digest(stream, "sha256").hexdigest() != file["hash"]:
+                        raise ValueError("本地附件哈希不符，未确认导入")
             self.http(sender, "POST", f"/transfers/{transfer}/imported", payload={"revision": row["revision"], "claim": saved["claim"]})
             saved["imported"] = True
             self.ctx.state.set(key, saved)
