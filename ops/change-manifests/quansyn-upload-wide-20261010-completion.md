@@ -62,3 +62,10 @@ rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-upload-wide-20261010.VbWNVP�
 GitHub发布前和发布后ls-remote两次核对：origin refs/heads/codex/quansyn-upload-wide-20261010=2290e35e331de927d57449043fff9ba444f980a3。随后只提交验收资料、方案文档和1项补充回归测试，产品源码与部署SHA相同。
 
 用户已解锁Mac。Chrome刷新时服务切换期间显示Bad Gateway，恢复后回到登录页，当前无法执行认证后的业务UI操作；异步请求用户在原验收窗口自行填写短信并登录，尚未收到完成回复。没有读取验证码/浏览器令牌。虽然本地真实DB/插件/文件测试和部署文件健康都通过，生产浏览器真实大文件、图片粘贴、宽屏传递页及真实App导入清理仍待验收，因此状态严格为DEPLOYED，未声明VERIFIED或全流程验收完成。
+
+
+## 27寸照片反馈：外层限宽修正
+
+用户照片与共享 index.css 的 .workspace width:min(1440px,calc(100% - 48px)) / margin:0 auto / padding:24px 0 命中。上一轮内部宽屏覆盖未取消此外层规则，导致宽屏左右空白且 absolute 抽屉从居中容器起点出现。复用原 QuanSyn 工作区、抽屉及动态缩放，仅新增 .quansyn .workspace 的 width:100%、max-width:none、margin:0、padding:0、gap:0 覆盖；不改 Quantum 的共享布局，不新增架构或依赖。
+
+本轮开工 HEAD=2df0c87ba37d72a3222dcda154d1e3a01f7d2305，原任务工作区除既有 frontend/node_modules 依赖链接外干净；完整盘点见 workspace-width-inventory.json。前端155项测试通过，重新构建成功，dist/QuanSynPage-CTkmdQIF.css 确认含外层重置；git diff --check通过。修正当前状态 TESTED，生产仍为2290e35e331de927d57449043fff9ba444f980a3，API/frontend healthy。待提交、远端核对和部署；生产登录后的布局待用户正常登录验收窗口，未读取凭证。
