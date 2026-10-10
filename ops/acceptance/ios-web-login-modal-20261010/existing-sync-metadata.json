@@ -1,0 +1,30 @@
+[
+  {
+    "id": "200c66ecbfb3",
+    "name": "线上每日同步 · 18:00（治理后Wiki-only）",
+    "enabled": false,
+    "schedule": {
+      "kind": "cron",
+      "expr": "0 18 * * *",
+      "display": "0 18 * * *"
+    },
+    "last_status": "error",
+    "last_run_at": "2026-09-24T18:00:26.520430+08:00",
+    "next_run_at": "2026-09-25T18:00:00+08:00",
+    "no_agent": true
+  },
+  {
+    "id": "2cbf9f8cbb8c",
+    "name": "云端回流 · 每日18:10（服务器→本地增量+冲突隔离）",
+    "enabled": true,
+    "schedule": {
+      "kind": "cron",
+      "expr": "10 18 * * *",
+      "display": "10 18 * * *"
+    },
+    "last_status": "error",
+    "last_run_at": "2026-10-09T18:10:32.885001+08:00",
+    "next_run_at": "2026-10-10T18:10:00+08:00",
+    "no_agent": true
+  }
+]

@@ -351,3 +351,29 @@ def test_mac_large_attachment_roundtrip_and_server_cleanup(runtime):
     assert plugin.command(**kw)["success"]
     result = next(r for r in c.get("/api/v1/quansyn/transfers").json()["items"] if r["reply_to"] == request["id"])
     assert hashlib.sha256(c.get("/api/v1/quansyn/files/" + result["files"][0]["artifact_id"]).content).hexdigest() == hashlib.sha256(raw).hexdigest()
+
+
+def test_mac_plugin_registers_without_server_backend(monkeypatch):
+    import builtins
+    spec = importlib.util.spec_from_file_location("mac_capability_router", Path(__file__).resolve().parents[1] / "agency/hermes-plugins/ai-lab-capabilities/capability_router.py")
+    router = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(router)
+    monkeypatch.setenv("_HERMES_GATEWAY", "1")
+    monkeypatch.setattr(router, "_compact_skill_manifest", lambda: None)
+    monkeypatch.setattr(router, "_skill_capabilities", lambda: [])
+    monkeypatch.setattr(router, "_agency_capabilities", lambda: [])
+    warmups = []
+    monkeypatch.setattr(router, "start_resident_warmup", lambda *args: warmups.append(args))
+    original_import = builtins.__import__
+    def standalone_import(name, *args, **kwargs):
+        if name.startswith("backend"):
+            raise ModuleNotFoundError("No module named 'backend'", name="backend")
+        return original_import(name, *args, **kwargs)
+    hooks = {}
+    ctx = SimpleNamespace(profile_name="default", register_hook=lambda name, hook: hooks.update({name: hook}))
+    with monkeypatch.context() as isolated:
+        isolated.setattr(builtins, "__import__", standalone_import)
+        router.install(ctx)
+    assert router._INSTALLED
+    assert warmups == [([], [], [])]
+    assert {"pre_llm_call", "pre_tool_call", "pre_gateway_dispatch", "transform_llm_output"} <= hooks.keys()

@@ -1,0 +1,12 @@
+{
+  "gateway_state": "running",
+  "active_agents": 0,
+  "updated_at": "2026-10-10T03:59:39.332562+00:00",
+  "restart_requested": false,
+  "last_plugin_load_failure_time": "2026-10-10 11:48:21",
+  "installed_sha256": {
+    "__init__.py": "b178a185aab02d6f33d8fdddecd133434d0d9637c52099aef8d77186a9777423",
+    "quansyn.py": "b7a51a02a654bc209c30ea71b600ce246f9d1cf1d3644709e900f04944821cdb",
+    "capability_router.py": "cdbf890cbc6327ed6b5f90ac7732487fb9accdb815d8ec8a676110c66e941b14"
+  }
+}

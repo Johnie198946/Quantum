@@ -22,10 +22,12 @@ async function runConnect({ success = true, elapsed = 0, cancel = false, busy = 
   let focused = false;
   const run = { current: 0 };
   const context = vm.createContext({
-    connectPhase: "idle", busy, count: 0, connectRun: run,
+    connectPhase: "idle", busy, count: 0, account: "19900000000", connectRun: run,
     Date: { now: () => now },
     setConnectPhase: value => phases.push(value),
-    sendCode: async () => { now += elapsed; if (cancel) run.current += 1; return success; },
+    platformApi: { startQuantumLogin: async () => { now += elapsed; if (cancel) run.current += 1; if (!success) throw new Error("failed"); return {state: "test-browser-secret"}; } },
+    setWebLogin: () => {},
+    action: async fn => { try { await fn(); return true; } catch { return false; } },
     setTimeout: (callback, delay) => { waits.push(delay); now += delay; callback(); },
     document: { getElementById: () => ({ focus: () => { focused = true; } }) },
   });
@@ -33,7 +35,7 @@ async function runConnect({ success = true, elapsed = 0, cancel = false, busy = 
   return { phases, waits, focused };
 }
 test("Quantum login shows success only after the request and the minimum loading duration", async () => {
-  assert.deepEqual(await runConnect(), { phases: ["loading", "success", "restoring", "idle"], waits: [1200, 1000, 300], focused: true });
+  assert.deepEqual(await runConnect(), { phases: ["loading", "success", "restoring", "idle"], waits: [1200, 1000, 300], focused: false });
   assert.deepEqual((await runConnect({ elapsed: 2000 })).waits, [0, 1000, 300]);
 });
 test("Quantum login never shows a success check for errors or after unmount", async () => {
@@ -66,4 +68,33 @@ test("Clipboard images enter the real attachment path; ordinary text keeps nativ
   event.clipboardData.items=[{kind:"file",type:"image/png",getAsFile:()=>image}];
   context.pasteImages(event);
   assert.equal(uploads.length,1);
+});
+
+const pollingEffect = design.slice(design.indexOf('  useEffect(() => {\n    if (!webLogin)'), design.indexOf('  useEffect(() => () => { connectRun.current', design.indexOf('  useEffect(() => {\n    if (!webLogin)')));
+async function runLoginPolling(statuses) {
+  const sessions = [], errors = [], scheduled = [];
+  let cleanup, cleared = false;
+  const context = vm.createContext({
+    webLogin: {state: 'browser-secret'}, AbortController,
+    useEffect: callback => { cleanup = callback(); },
+    platformApi: { quantumLoginStatus: async state => {
+      assert.equal(state, 'browser-secret'); return statuses.shift();
+    } },
+    loginWithOAuthTicket: async value => { assert.equal(value.appApproval, true); sessions.push(value.ticket); },
+    report: value => errors.push(value), setWebLogin: () => {cleared = true;},
+    setTimeout: callback => {scheduled.push(callback); return scheduled.length;}, clearTimeout: () => {},
+  });
+  vm.runInContext(pollingEffect, context);
+  await new Promise(resolve => setImmediate(resolve));
+  while (scheduled.length) {scheduled.shift()(); await new Promise(resolve => setImmediate(resolve));}
+  cleanup();
+  return {sessions, errors, cleared};
+}
+test('Quantum web waits for real approval before ticket exchange; cancellation never logs in', async () => {
+  assert.deepEqual(await runLoginPolling([{status:'pending'}, {status:'approved', ticket:'one-time-ticket'}]),
+    {sessions:['one-time-ticket'], errors:[], cleared:false});
+  const cancelled = await runLoginPolling([{status:'cancelled'}]);
+  assert.deepEqual(cancelled.sessions, []);
+  assert.equal(cancelled.errors.length, 1);
+  assert.equal(cancelled.cleared, true);
 });

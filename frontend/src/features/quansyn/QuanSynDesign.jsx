@@ -96,11 +96,33 @@ function Brand({ dark = false }) {
     </div>;
 }
 function LoginPage({ error, report }) {
-  const { loginWithPhone } = useAuth();
+  const { loginWithPhone, loginWithOAuthTicket } = useAuth();
   const [busy, setBusy] = useState(false);
   const [count, setCount] = useState(0);
   const [connectPhase, setConnectPhase] = useState("idle");
   const connectRun = useRef(0);
+  const [webLogin, setWebLogin] = useState(null);
+  useEffect(() => {
+    if (!webLogin) return;
+    const controller = new AbortController();
+    let timer;
+    async function poll() {
+      try {
+        const result = await platformApi.quantumLoginStatus(webLogin.state, controller.signal);
+        if (controller.signal.aborted) return;
+        if (result.status === "approved") {
+          await loginWithOAuthTicket({ticket: result.ticket, allowPendingAgreement: true, appApproval: true});
+          return;
+        }
+        if (result.status === "cancelled") throw new Error("已在 Quantum 取消登录，请重新发起。");
+        timer = setTimeout(poll, 1500);
+      } catch (error) {
+        if (!controller.signal.aborted) { report(error.message); setWebLogin(null); }
+      }
+    }
+    poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [webLogin]);
   useEffect(() => () => { connectRun.current += 1; }, []);
   useEffect(() => {
     if (!count) return;
@@ -131,7 +153,7 @@ function LoginPage({ error, report }) {
     const run = ++connectRun.current;
     const started = Date.now();
     setConnectPhase("loading");
-    const success = await sendCode();
+    const success = await action(async () => setWebLogin(await platformApi.startQuantumLogin({phone: account})));
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1200 - (Date.now() - started))));
     if (run !== connectRun.current) return;
     setConnectPhase(success ? "success" : "error");
@@ -141,7 +163,7 @@ function LoginPage({ error, report }) {
     await new Promise((resolve) => setTimeout(resolve, 300));
     if (run !== connectRun.current) return;
     setConnectPhase("idle");
-    if (success) document.getElementById("password")?.focus();
+
   }
   const [account, setAccount] = useState("18576600894");
   const [password, setPassword] = useState("");
@@ -257,13 +279,14 @@ function LoginPage({ error, report }) {
           <div className="divider"><span>或</span></div>
 
           <div className="qs-login-connect-slot">
-            <button className={`qs-login-connect is-${connectPhase}`} disabled={busy || count > 0 || connectPhase !== "idle"} onClick={connectQuantum} type="button" aria-label={connectPhase === "loading" ? "正在连接 Quantum" : connectPhase === "success" ? "验证码已发送" : connectPhase === "error" ? "连接失败" : count ? `${count}秒后可重新获取验证码` : "使用 Quantum 登录"} aria-busy={connectPhase === "loading"}>
+            <button className={`qs-login-connect is-${connectPhase}`} disabled={busy || webLogin !== null || connectPhase !== "idle"} onClick={connectQuantum} type="button" aria-label={connectPhase === "loading" ? "正在连接 Quantum" : connectPhase === "success" ? "登录请求已发送" : connectPhase === "error" ? "连接失败" : count ? `${count}秒后可重新获取验证码` : "使用 Quantum 登录"} aria-busy={connectPhase === "loading"}>
               <span className="qs-connect-idle"><Icon name="phone" size={28} /><span>Quantum 登录</span></span>
               <svg className="qs-connect-ring" aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" /></svg>
               <svg className="qs-connect-check" aria-hidden="true" viewBox="0 0 32 32"><path pathLength="1" d="m9 16 5 5 9-10" /></svg>
               <span className="qs-connect-error" aria-hidden="true">×</span>
             </button>
           </div>
+          {webLogin && <p className="signup-copy" role="status">请打开已登录的 Quantum App，确认六位验证码后此页会自动进入。</p>}
           <p className="signup-copy">
             首次使用？ <span>沿用 Quantum 手机账号</span>
           </p>

@@ -34,6 +34,21 @@ if [ -z "${SERVER_HOST}" ]; then
   exit 1
 fi
 
+# Reuse one authenticated connection instead of a new SSH handshake for every hash.
+SSH_CONTROL_DIR=$(mktemp -d)
+SSH_OPTIONS=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15
+  -o ConnectionAttempts=3 -o ControlMaster=auto -o ControlPersist=60
+  -o "ControlPath=${SSH_CONTROL_DIR}/connection")
+if [ -n "${SYNC_SSH_KEY:-}" ]; then
+  SSH_OPTIONS+=(-i "${SYNC_SSH_KEY}" -o IdentitiesOnly=yes)
+fi
+printf -v SSH_TRANSPORT '%q ' ssh "${SSH_OPTIONS[@]}"
+cleanup_ssh() {
+  ssh "${SSH_OPTIONS[@]}" -O exit "${SERVER_USER}@${SERVER_HOST}" >/dev/null 2>&1 || true
+  rm -rf "${SSH_CONTROL_DIR}"
+}
+trap cleanup_ssh EXIT
+
 TODAY=$(date '+%Y-%m-%d')
 RUN_ID="$(date '+%Y%m%dT%H%M%S')-$$"
 RECEIPT_DIR="${LOCAL_VAULT_PATH}/raw/sync_receipts"
@@ -62,7 +77,7 @@ with open(tmp,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,in
 os.replace(tmp,p)
 PY
 }
-trap 'rc=$?; POST_WIKI_HASH="$(sha256_tree "${LOCAL_VAULT_PATH}/wiki" 2>/dev/null || printf missing)"; POST_MATRIX_HASH="$(shasum -a 256 "${PROJECT_ROOT}/data/knowledge_matrix.json" 2>/dev/null | cut -c1-64 || printf missing)"; if [ "$rc" -ne 0 ]; then receipt_status="failed"; elif [ "${CONFLICT_COUNT:-0}" -gt 0 ]; then receipt_status="quarantined_conflict"; else receipt_status="accepted"; fi; write_receipt "$receipt_status" "script_exit"; exit "$rc"' EXIT
+trap 'rc=$?; cleanup_ssh; POST_WIKI_HASH="$(sha256_tree "${LOCAL_VAULT_PATH}/wiki" 2>/dev/null || printf missing)"; POST_MATRIX_HASH="$(shasum -a 256 "${PROJECT_ROOT}/data/knowledge_matrix.json" 2>/dev/null | cut -c1-64 || printf missing)"; if [ "$rc" -eq 2 ] && [ "${SYNC_COMPLETED:-false}" = true ]; then receipt_status="quarantined_conflict"; elif [ "$rc" -ne 0 ]; then receipt_status="failed"; elif [ "${CONFLICT_COUNT:-0}" -gt 0 ]; then receipt_status="quarantined_conflict"; else receipt_status="accepted"; fi; write_receipt "$receipt_status" "script_exit"; exit "$rc"' EXIT
 
 # 同步目录列表（不含访客画像·访客画像单独处理）
 SYNC_DIRS=("raw" "wiki")
@@ -91,7 +106,7 @@ CONFLICT_FILES=()
 TMP_LOCAL=$(mktemp)
 TMP_SERVER=$(mktemp)
 TMP_CONFLICTS=$(mktemp)
-trap 'rc=$?; rm -f "${TMP_LOCAL}" "${TMP_SERVER}" "${TMP_CONFLICTS}"; POST_WIKI_HASH="$(sha256_tree "${LOCAL_VAULT_PATH}/wiki" 2>/dev/null || printf missing)"; POST_MATRIX_HASH="$(shasum -a 256 "${PROJECT_ROOT}/data/knowledge_matrix.json" 2>/dev/null | cut -c1-64 || printf missing)"; if [ "$rc" -ne 0 ]; then receipt_status="failed"; elif [ "${CONFLICT_COUNT:-0}" -gt 0 ]; then receipt_status="quarantined_conflict"; else receipt_status="accepted"; fi; write_receipt "$receipt_status" "script_exit"; exit "$rc"' EXIT
+trap 'rc=$?; cleanup_ssh; rm -f "${TMP_LOCAL}" "${TMP_SERVER}" "${TMP_CONFLICTS}"; POST_WIKI_HASH="$(sha256_tree "${LOCAL_VAULT_PATH}/wiki" 2>/dev/null || printf missing)"; POST_MATRIX_HASH="$(shasum -a 256 "${PROJECT_ROOT}/data/knowledge_matrix.json" 2>/dev/null | cut -c1-64 || printf missing)"; if [ "$rc" -eq 2 ] && [ "${SYNC_COMPLETED:-false}" = true ]; then receipt_status="quarantined_conflict"; elif [ "$rc" -ne 0 ]; then receipt_status="failed"; elif [ "${CONFLICT_COUNT:-0}" -gt 0 ]; then receipt_status="quarantined_conflict"; else receipt_status="accepted"; fi; write_receipt "$receipt_status" "script_exit"; exit "$rc"' EXIT
 
 for DIR in "${SYNC_DIRS[@]}"; do
   LOCAL_DIR="${LOCAL_VAULT_PATH}/${DIR}"
@@ -104,9 +119,9 @@ for DIR in "${SYNC_DIRS[@]}"; do
   (cd "${LOCAL_DIR}" && find . -type f -name "*.md" -o -name "*.json" | sed 's|^\./||' | sort) > "${TMP_LOCAL}"
 
   # 获取服务器文件列表
-  ssh -o ConnectTimeout=10 "${SERVER_USER}@${SERVER_HOST}" \
+  ssh "${SSH_OPTIONS[@]}" "${SERVER_USER}@${SERVER_HOST}" \
     "cd '${SERVER_DIR}' 2>/dev/null && find . -type f -name '*.md' -o -name '*.json' | sed 's|^\./||' | sort" \
-    > "${TMP_SERVER}" 2>/dev/null || true
+    > "${TMP_SERVER}"
 
   # 找出两端共有的文件（冲突写入统一临时文件·避免子shell变量丢失）
   comm -12 "${TMP_LOCAL}" "${TMP_SERVER}" | while IFS= read -r rel_path; do
@@ -117,7 +132,7 @@ for DIR in "${SYNC_DIRS[@]}"; do
     LOCAL_MD5=$(md5 -q "${LOCAL_FILE}" 2>/dev/null || md5sum "${LOCAL_FILE}" | awk '{print $1}')
 
     # 计算服务器 MD5
-    SERVER_MD5=$(ssh -o ConnectTimeout=10 "${SERVER_USER}@${SERVER_HOST}" \
+    SERVER_MD5=$(ssh "${SSH_OPTIONS[@]}" "${SERVER_USER}@${SERVER_HOST}" \
       "md5sum '${SERVER_FILE}' 2>/dev/null | awk '{print \$1}' || md5 -q '${SERVER_FILE}'" 2>/dev/null)
 
     # 比对 MD5
@@ -142,9 +157,9 @@ for DIR in "${SYNC_DIRS[@]}"; do
       mkdir -p "${MERGE_SUBDIR}"
       MERGE_FILE="${MERGE_SUBDIR}/${SERVER_BASENAME}"
 
-      scp -q -o ConnectTimeout=10 \
+      scp -q "${SSH_OPTIONS[@]}" \
         "${SERVER_USER}@${SERVER_HOST}:${SERVER_FILE}" \
-        "${MERGE_FILE}" 2>/dev/null || true
+        "${MERGE_FILE}"
 
       # 记录到冲突清单
       cat >> "${CONFLICT_LIST}" <<EOF
@@ -189,13 +204,13 @@ echo "==> [2/4] 增量回流：rsync --update（跳过冲突文件）..."
 EXCLUDE_ARGS=()
 if [[ ${#CONFLICT_FILES[@]} -gt 0 ]]; then
   for cf in "${CONFLICT_FILES[@]}"; do
-    EXCLUDE_ARGS+=(--exclude="${cf}")
+    EXCLUDE_ARGS+=(--exclude="${cf#*/}")
   done
 fi
 
 # raw/ 增量
 rsync -avz --update --timeout=30 \
-  -e "ssh -o ConnectTimeout=10" \
+  -e "${SSH_TRANSPORT}" \
   --exclude='.obsidian/' --exclude='_archive/' --exclude='00_Inbox/' \
   --exclude='模板/' --exclude='.git/' \
   --exclude='待合并/' \
@@ -204,14 +219,14 @@ rsync -avz --update --timeout=30 \
 
 # wiki/ 增量
 rsync -avz --update --timeout=30 \
-  -e "ssh -o ConnectTimeout=10" \
+  -e "${SSH_TRANSPORT}" \
   ${EXCLUDE_ARGS[@]+"${EXCLUDE_ARGS[@]}"} \
   "${SERVER_USER}@${SERVER_HOST}:${SERVER_VAULT_PATH}/wiki/" "${LOCAL_VAULT_PATH}/wiki/"
 
 # knowledge_matrix.json：先做 hash 门禁，再原子替换，禁止 mtime 误覆盖
 MATRIX_LOCAL="${PROJECT_ROOT}/data/knowledge_matrix.json"
 MATRIX_REMOTE="${SERVER_VAULT_PATH}/knowledge_matrix.json"
-MATRIX_REMOTE_HASH=$(ssh -o ConnectTimeout=10 "${SERVER_USER}@${SERVER_HOST}" \
+MATRIX_REMOTE_HASH=$(ssh "${SSH_OPTIONS[@]}" "${SERVER_USER}@${SERVER_HOST}" \
   "sha256sum '${MATRIX_REMOTE}' 2>/dev/null | cut -d ' ' -f1 || shasum -a 256 '${MATRIX_REMOTE}' 2>/dev/null | cut -c1-64" 2>/dev/null || true)
 MATRIX_LOCAL_HASH=$(shasum -a 256 "${MATRIX_LOCAL}" 2>/dev/null | cut -c1-64 || true)
 if [ -z "${MATRIX_REMOTE_HASH}" ]; then
@@ -222,7 +237,7 @@ elif [ -n "${MATRIX_LOCAL_HASH}" ] && [ "${MATRIX_LOCAL_HASH}" != "${MATRIX_REMO
   mkdir -p "${MERGE_DIR}"
   MATRIX_MERGE="${MERGE_DIR}/knowledge_matrix.server.json"
   MATRIX_TMP="${MATRIX_MERGE}.tmp-${RUN_ID}"
-  scp -q -o ConnectTimeout=10 "${SERVER_USER}@${SERVER_HOST}:${MATRIX_REMOTE}" "${MATRIX_TMP}"
+  scp -q "${SSH_OPTIONS[@]}" "${SERVER_USER}@${SERVER_HOST}:${MATRIX_REMOTE}" "${MATRIX_TMP}"
   MATRIX_DOWNLOADED_HASH=$(shasum -a 256 "${MATRIX_TMP}" | cut -c1-64)
   if [ "${MATRIX_DOWNLOADED_HASH}" != "${MATRIX_REMOTE_HASH}" ]; then
     rm -f "${MATRIX_TMP}"
@@ -244,7 +259,7 @@ elif [ -n "${MATRIX_LOCAL_HASH}" ] && [ "${MATRIX_LOCAL_HASH}" != "${MATRIX_REMO
 EOF
 else
   MATRIX_TMP="${MATRIX_LOCAL}.tmp-${RUN_ID}"
-  scp -q -o ConnectTimeout=10 "${SERVER_USER}@${SERVER_HOST}:${MATRIX_REMOTE}" "${MATRIX_TMP}"
+  scp -q "${SSH_OPTIONS[@]}" "${SERVER_USER}@${SERVER_HOST}:${MATRIX_REMOTE}" "${MATRIX_TMP}"
   MATRIX_DOWNLOADED_HASH=$(shasum -a 256 "${MATRIX_TMP}" | cut -c1-64)
   if [ "${MATRIX_DOWNLOADED_HASH}" != "${MATRIX_REMOTE_HASH}" ]; then
     rm -f "${MATRIX_TMP}"
@@ -258,13 +273,14 @@ echo ""
 echo "==> [3/4] 访客画像回流（服务器→本地·单向）..."
 # 访客画像/ 目录：服务器→本地（上行 exclude·本地只收不发）
 rsync -avz --update --timeout=30 \
-  -e "ssh -o ConnectTimeout=10" \
+  -e "${SSH_TRANSPORT}" \
   "${SERVER_USER}@${SERVER_HOST}:${SERVER_VAULT_PATH}/访客画像/" \
   "${LOCAL_VAULT_PATH}/访客画像/" 2>/dev/null || {
     echo "  ⚠️  服务器无 访客画像/ 目录或同步失败（跳过）"
   }
 
 echo ""
+SYNC_COMPLETED=true
 echo "==> [4/4] 汇总..."
 echo "✅ 回流完成: $(date '+%Y-%m-%d %H:%M:%S')"
 
