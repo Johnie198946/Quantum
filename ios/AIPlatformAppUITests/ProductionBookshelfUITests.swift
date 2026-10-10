@@ -203,12 +203,47 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertFalse(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch.exists, "取消的偏好不能继续提交")
     }
 
+    func testExistingTravelTaskOpensInNormalAccount() {
+        app.terminate()
+        app.launchArguments = []
+        app.launchEnvironment = [:]
+        app.launch()
+        let workflows = app.buttons["main-tab-1"]
+        XCTAssertTrue(workflows.waitForExistence(timeout: 30), "正常登录会话未恢复，不注入认证")
+        workflows.tap()
+        let task = app.buttons.matching(identifier: "workflow-card-鹿儿岛旅行规划").firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 20), "已有鹿儿岛任务未加载")
+        for _ in 0..<5 where !task.isHittable { app.swipeUp() }
+        XCTAssertTrue(task.isHittable)
+        task.tap()
+        let title = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS %@", "鹿儿岛")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "已有工作流详情未打开")
+        attachScreenshot(named: "travel-normal-account-existing-workflow")
+    }
+
+    func testCompletedTravelCardOpensWorkflowWithoutDuplicate() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelCompletedProposalPreview"]
+        app.launch()
+        let open = app.buttons["travel-proposal-open-workflow"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["需求澄清中"].exists)
+        attachScreenshot(named: "travel-single-completed-task-card")
+        open.tap()
+        XCTAssertTrue(app.staticTexts["完善旅行计划"].waitForExistence(timeout: 10))
+        attachScreenshot(named: "travel-task-card-opened-workflow")
+    }
+
     func testTravelConfirmationUsesCompactLayoutAndExplicitDecision() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview", "-travelRequirementConfirmationPreview"]
         app.launch()
         XCTAssertTrue(app.staticTexts["确认旅行需求"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["需求收敛确认单"].exists)
+        XCTAssertTrue(app.staticTexts["目的地"].exists)
+        XCTAssertTrue(app.staticTexts["鹿儿岛，日本"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "原始需求：请安排")).firstMatch.exists, "完整原文应默认折叠")
         let submit = app.buttons["requirement-confirm-primary-action"]
         XCTAssertFalse(submit.isEnabled)
         let confirm = app.buttons["确认，进入方案设计"]

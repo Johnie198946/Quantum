@@ -511,15 +511,17 @@ public struct NoteOrganizationConfirmationView: View {
 public struct RequirementConfirmationCard: View {
     public let block: ClarifyBlock
     public var isTravel = false
+    public var travelContext: String? = nil
     public var onSubmit: ((String) -> Void)? = nil
 
     @State private var selectedID: String?
     @State private var customAnswer = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(block: ClarifyBlock, isTravel: Bool = false, onSubmit: ((String) -> Void)? = nil) {
+    public init(block: ClarifyBlock, isTravel: Bool = false, travelContext: String? = nil, onSubmit: ((String) -> Void)? = nil) {
         self.block = block
         self.isTravel = isTravel
+        self.travelContext = travelContext
         self.onSubmit = onSubmit
     }
 
@@ -535,12 +537,13 @@ public struct RequirementConfirmationCard: View {
                 .font(.system(size: 20, weight: .semibold, design: .serif)).foregroundStyle(AppTheme.Colors.primary)
             Text("核对已收敛的信息，确认后生成制作方案。")
                 .font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary)
-            ForEach(summaryItems) { item in
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(item.title).font(.system(size: 12, weight: .medium)).foregroundStyle(AppTheme.Colors.primary)
-                    Text(item.value).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textPrimary).lineSpacing(4)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                Divider()
+            TravelWorkflowBriefCard(content: [travelContext, block.question].compactMap { $0 }.joined(separator: "\n"), title: "这趟旅行")
+            ForEach(summaryItems.filter { $0.kind == .deliverable }) { item in
+                Label(item.value, systemImage: item.icon)
+                    .font(AppTheme.Typography.supporting.weight(.medium))
+                    .foregroundStyle(AppTheme.Colors.primary)
+                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 12))
             }
             ForEach(block.choices) { option in
                 Button { selectedID = option.id } label: {

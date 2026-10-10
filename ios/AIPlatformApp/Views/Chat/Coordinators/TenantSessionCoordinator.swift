@@ -3884,6 +3884,13 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
                 }
                 if let pendingWorkflowId {
+                    if let index = self.messages.firstIndex(where: { $0.id == messageId }),
+                       let blockIndex = self.messages[index].blocks.firstIndex(where: { $0.id == "capability_proposal_\(proposalId)" }) {
+                        if case .capabilityProposal(var linked) = self.messages[index].blocks[blockIndex] {
+                            linked.input.workflowId = pendingWorkflowId
+                            self.messages[index].blocks[blockIndex] = .capabilityProposal(linked)
+                        }
+                    }
                     self.appState?.openWorkflow(pendingWorkflowId)
                 }
                 self.updateCapabilityProposal(

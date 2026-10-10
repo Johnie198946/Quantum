@@ -223,6 +223,12 @@ def _workflow_run_sync(execution_id: str) -> None:
                 )
                 if not set(requested_scope).issubset(run_scope & agent_scope):
                     raise RuntimeError("workflow_node_knowledge_scope_denied")
+                node_network_allowed = bool(
+                    effective_allow_network
+                    and params.get("allow_network")
+                    and set(agent_config.allowed_tools)
+                    & {"web_search", "web_extract"}
+                )
                 docs = []
                 if requested_scope:
                     for gateway_attempt in range(2):
@@ -236,13 +242,17 @@ def _workflow_run_sync(execution_id: str) -> None:
                             break
                         except httpx.TimeoutException as exc:
                             if gateway_attempt:
-                                raise RuntimeError("knowledge_gateway_timeout: 检索服务连续两次超时，可从失败节点重试") from exc
-                node_network_allowed = bool(
-                    effective_allow_network
-                    and params.get("allow_network")
-                    and set(agent_config.allowed_tools)
-                    & {"web_search", "web_extract"}
-                )
+                                if node_id != "travel_research" or not node_network_allowed:
+                                    raise RuntimeError("knowledge_gateway_timeout: 检索服务连续两次超时，可从失败节点重试") from exc
+                                node_prompt += (
+                                    "\n知识检索暂时不可用：两次请求超时。继续使用已授权的公开网页工具，"
+                                    "记录来源与知识检索缺口；不得推断或重建未读到的租户知识。"
+                                )
+                                _persistence._workflow_event(
+                                    run, "node_progress", node_id=node_id,
+                                    message="知识检索超时，继续核对已授权的公开来源",
+                                    retrieval_status="unavailable", source="public_web",
+                                )
                 if docs and node_network_allowed and node_id == "travel_research":
                     node_prompt += "\n已有知识仅供参考，仍需核实当前信息：\n" + json.dumps(docs, ensure_ascii=False)[:12000]
                 if (docs and node_id != "travel_research") or not node_network_allowed:

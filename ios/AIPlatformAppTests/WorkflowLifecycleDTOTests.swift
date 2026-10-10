@@ -7621,3 +7621,40 @@ final class TravelReadingParagraphTests: XCTestCase {
         XCTAssertEqual(TravelDetailText.paragraphs("时间尚未决定。请先确认机票。"), ["时间尚未决定。请先确认机票。"])
     }
 }
+
+final class TravelTaskCardLinkTests: XCTestCase {
+    private func workflow(_ id: String) throws -> WorkflowDTO {
+        try JSONDecoder().decode(WorkflowDTO.self, from: Data("""
+        {"id":"\(id)","title":"鹿儿岛","description":"旅行","desiredOutput":"旅行笔记","status":"clarifying"}
+        """.utf8))
+    }
+
+    func testCompletedProposalUsesPersistedTaskAndHidesOnlyItsDuplicate() throws {
+        var input = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛")
+        input.workflowId = "created"
+        let proposal = CapabilityProposalBlock(id: "proposal", capabilityId: "workflow.create", input: input,
+            summary: "旅行", risk: "", state: .completed)
+        let message = ChatMessage(role: .assistant, content: "", blocks: [.capabilityProposal(proposal),
+            .workflow(try workflow("created")), .workflow(try workflow("other"))])
+        XCTAssertEqual(message.travelWorkflowID(for: proposal), "created")
+        XCTAssertEqual(message.visibleTaskBlocks.count, 2)
+        let restored = try JSONDecoder().decode(CapabilityProposalBlock.self, from: JSONEncoder().encode(proposal))
+        XCTAssertEqual(restored.input.workflowId, "created")
+    }
+
+    func testHistoricalSingleTaskLinksButPendingOrAmbiguousCardsStayVisible() throws {
+        let input = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛")
+        var proposal = CapabilityProposalBlock(id: "proposal", capabilityId: "workflow.create", input: input,
+            summary: "旅行", risk: "", state: .completed)
+        var message = ChatMessage(role: .assistant, content: "", blocks: [.capabilityProposal(proposal), .workflow(try workflow("old"))])
+        XCTAssertEqual(message.travelWorkflowID(for: proposal), "old")
+        XCTAssertEqual(message.visibleTaskBlocks.count, 1)
+        message.blocks.append(.workflow(try workflow("other")))
+        XCTAssertNil(message.travelWorkflowID(for: proposal))
+        XCTAssertEqual(message.visibleTaskBlocks.count, 3)
+        proposal.state = .awaitingConfirmation
+        message.blocks = [.capabilityProposal(proposal), .workflow(try workflow("old"))]
+        XCTAssertNil(message.travelWorkflowID(for: proposal))
+        XCTAssertEqual(message.visibleTaskBlocks.count, 2)
+    }
+}
