@@ -425,7 +425,7 @@ def _run_workflow_node_in_process(
             provider=runtime.get("provider"),
             api_mode=runtime.get("api_mode"),
             model=cfg_model,
-            max_iterations=(12 if node.get("node_type") == "KNOWLEDGE_RETRIEVAL"
+            max_iterations=(16 if node.get("node_type") == "KNOWLEDGE_RETRIEVAL"
                             and (node.get("parameters") or {}).get("scenario_id") == "travel-planning"
                             else _contracts.WORKFLOW_NODE_MAX_ITERATIONS),
             max_tokens=max_tokens,
@@ -872,7 +872,9 @@ def _workflow_output_incomplete(node: dict[str, Any], reply: str) -> bool:
     if (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
         from backend.services.travel_plan import validate_travel_document
         try:
-            validate_travel_document(_extract_json_object(reply))
+            validate_travel_document(_extract_json_object(reply), require_guidance=bool(
+                (node.get("parameters") or {}).get("require_travel_guidance")
+            ))
         except ValueError:
             return True
         return False

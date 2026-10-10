@@ -112,7 +112,83 @@ def test_travel_uses_existing_dag_and_explicit_review_gate():
     instruction = plan["nodes"][0]["parameters"]["instruction"]
     assert "云服务器的 Hermes 浏览器" in instruction
     assert "travelmode=transit" in instruction
+    assert "stop:从0开始的stops数组下标" in plan["nodes"][1]["parameters"]["instruction"]
     assert len(plan["edges"]) == 2
+    assert plan["nodes"][0]["parameters"]["max_tokens"] == 24000
+    assert all(node["parameters"]["max_tokens"] == 14000 for node in plan["nodes"][1:])
+
+
+def practical_document():
+    value = document()
+    value["title"] = "鹿儿岛 · 火山与城市慢行"
+    value["sources"][0]["checked_at"] = "2026-10-09"
+    value["actions"][0].update(details="官方预约入口见来源；晚到提前联系前台。", source_ids=["official"])
+    value["stops"].append({"id": "restaurant", "name": "测试餐厅", "address": "具体街道地址", "source_ids": ["official"]})
+    value["actions"].extend({"id": f"meal-{day}", "day_id": day, "title": "测试餐厅午餐", "kind": "meal",
+                              "place_id": "restaurant", "details": "官方电话预约；沿途午餐，营业时间出发前确认。", "source_ids": ["official"]}
+                             for day in ["day-1", "day-2"])
+    value["days"] = [
+        {"id": "day-1", "title": "抵达与入住", "journal": "按落地时刻选择寄存行李或直接入住。"},
+        {"id": "day-2", "title": "城市与渡轮", "journal": "先核对渡轮运行，再决定是否前往樱岛。"},
+    ]
+    value["practical_guidance"] = [{
+        "category": category, "title": category,
+        "details": "条件尚未确定时，先比较路线衔接和官方操作说明，再核对日期对应的可用性。",
+        "status": "conditional", "next_step": "按选择的日期核对官方资料", "source_ids": ["official"],
+    } for category in ["flights", "arrival", "stay", "transport", "passes", "money", "food", "shopping"]]
+    value["budget_breakdown"] = [{"category": category, "value": "标准待选择", "note": "按实际旅行天数和已核对的报价计算"} for category in ["stay", "transport", "food", "activities"]]
+    return value
+
+
+def test_new_generation_requires_practical_coverage_but_old_notes_remain_readable():
+    assert validate_travel_document(document())
+    with pytest.raises(ValueError, match="guidance incomplete"):
+        validate_travel_document(document(), require_guidance=True)
+    assert validate_travel_document(practical_document(), require_guidance=True)
+    for category in ["arrival", "passes", "money", "food"]:
+        value = practical_document()
+        value["practical_guidance"] = [item for item in value["practical_guidance"] if item["category"] != category]
+        with pytest.raises(ValueError, match="guidance incomplete"):
+            validate_travel_document(value, require_guidance=True)
+
+
+def test_verified_guidance_requires_real_link_and_verification_date():
+    value = practical_document()
+    value["sources"][0]["checked_at"] = ""
+    value["practical_guidance"][0]["status"] = "verified"
+    with pytest.raises(ValueError, match="dated sources"):
+        validate_travel_document(value)
+    value["sources"][0]["checked_at"] = "已核实"
+    with pytest.raises(ValueError, match="valid source dates"):
+        validate_travel_document(value)
+    value["sources"][0]["checked_at"] = "2026-10-09"
+    assert validate_travel_document(value)
+    value["practical_guidance"][0]["source_ids"] = ["invented"]
+    with pytest.raises(ValueError, match="unknown practical"):
+        validate_travel_document(value)
+
+
+def test_day_references_and_mutually_exclusive_alternatives_are_validated():
+    value = practical_document()
+    value["actions"][0]["day_id"] = "not-a-day"
+    with pytest.raises(ValueError, match="unknown travel day"):
+        validate_travel_document(value)
+    value = practical_document()
+    for day in value["days"]:
+        day["choice_group"] = "island"
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        validate_travel_document(value)
+    value["days"][1]["selected"] = False
+    assert validate_travel_document(value)
+
+
+def test_generation_contract_uses_quality_gate_on_both_structured_nodes():
+    plan = build_travel_plan(SimpleNamespace(title="鹿儿岛", description="未决定日期", requirements_snapshot={"scenario_id": "travel-planning"}), plan_id="p", knowledge_scope=[])
+    assert all(node["parameters"]["require_travel_guidance"] for node in plan["nodes"][1:])
+    from scripts.hermes_bridge_runtime.workflow_artifacts import _workflow_output_incomplete
+    import json
+    assert _workflow_output_incomplete(plan["nodes"][1], json.dumps(document()))
+    assert not _workflow_output_incomplete(plan["nodes"][1], json.dumps(practical_document()))
 
 
 def test_cloud_browser_uses_service_proxy_and_writable_cache_without_affecting_desktop():
@@ -506,7 +582,7 @@ def test_research_queries_only_selected_knowledge_without_changing_network_autho
 
 
 @pytest.mark.parametrize("scenario,kind,expected", [
-    ("travel-planning", "KNOWLEDGE_RETRIEVAL", 12),
+    ("travel-planning", "KNOWLEDGE_RETRIEVAL", 16),
     ("other", "KNOWLEDGE_RETRIEVAL", 6),
     ("travel-planning", "LLM_INFERENCE", 6),
 ])
@@ -536,3 +612,31 @@ def test_browser_iteration_budget_is_only_expanded_for_travel_research(monkeypat
             "parameters": {"scenario_id": scenario, "max_tokens": 1000}},
             sandbox=SimpleNamespace(root=tmp_path, hermes_home=tmp_path),
             agent_config=bridge.contracts.TrustedAgentConfig(id="main_agent"))
+
+
+@pytest.mark.parametrize("missing", ["meal", "hotel", "address", "source", "date", "details"])
+def test_generic_or_unsourced_venues_cannot_pass_new_generation(missing):
+    value = practical_document()
+    if missing in {"meal", "hotel"}:
+        value["actions"] = [action for action in value["actions"] if action["kind"] != missing]
+    elif missing == "address":
+        value["stops"][1]["address"] = ""
+    elif missing == "source":
+        value["stops"][1]["source_ids"] = []
+    elif missing == "date":
+        value["sources"][0]["checked_at"] = "invalid"
+    else:
+        value["actions"][-1]["details"] = ""
+    assert validate_travel_document(value)
+    with pytest.raises(ValueError, match="named (meal venue|hotel candidate)"):
+        validate_travel_document(value, require_guidance=True)
+
+
+def test_unselected_alternatives_need_no_venue_and_day_trip_needs_no_hotel():
+    value = practical_document()
+    value["days"][1]["selected"] = False
+    value["actions"] = [action for action in value["actions"] if action["kind"] != "hotel"]
+    assert validate_travel_document(value, require_guidance=True)
+    value["days"][0]["selected"] = False
+    with pytest.raises(ValueError, match="selected day"):
+        validate_travel_document(value, require_guidance=True)

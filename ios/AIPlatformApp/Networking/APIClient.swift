@@ -1686,6 +1686,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     public var knowledgeScope: [String]?
     public var allowNetwork: Bool?
     public var requiresReview: Bool?
+    public var requireTravelGuidance: Bool?
     public var maxTokens: Int?
     public var revisionNote: String?
 
@@ -1699,6 +1700,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         case knowledgeScope = "knowledge_scope"
         case allowNetwork = "allow_network"
         case requiresReview = "requires_review"
+        case requireTravelGuidance = "require_travel_guidance"
         case maxTokens = "max_tokens"
         case revisionNote = "revision_note"
     }
@@ -1706,7 +1708,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     private enum DecodingKeys: String, CodingKey {
         case agentId, scenarioId, scenarioVersion, approvalGate
         case query, instruction, outputFormat, knowledgeScope
-        case allowNetwork, requiresReview, maxTokens, revisionNote
+        case allowNetwork, requiresReview, requireTravelGuidance, maxTokens, revisionNote
     }
 
     public init(
@@ -1720,6 +1722,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope: [String]? = nil,
         allowNetwork: Bool? = nil,
         requiresReview: Bool? = nil,
+        requireTravelGuidance: Bool? = nil,
         maxTokens: Int? = nil,
         revisionNote: String? = nil
     ) {
@@ -1733,6 +1736,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         self.knowledgeScope = knowledgeScope
         self.allowNetwork = allowNetwork
         self.requiresReview = requiresReview
+        self.requireTravelGuidance = requireTravelGuidance
         self.maxTokens = maxTokens
         self.revisionNote = revisionNote
     }
@@ -1749,6 +1753,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope = try container.decodeIfPresent([String].self, forKey: .knowledgeScope)
         allowNetwork = try container.decodeIfPresent(Bool.self, forKey: .allowNetwork)
         requiresReview = try container.decodeIfPresent(Bool.self, forKey: .requiresReview)
+        requireTravelGuidance = try container.decodeIfPresent(Bool.self, forKey: .requireTravelGuidance)
         maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens)
         revisionNote = try container.decodeIfPresent(String.self, forKey: .revisionNote)
     }
