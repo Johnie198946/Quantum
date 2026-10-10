@@ -773,7 +773,9 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
             {!loading && !messages.length && <div className="empty-result">从一条需求开始，完成的结果会回到这里。</div>}
             {messages.map((message) => <div className={`message-row ${message.direction === "request" ? "out" : "in"}`} key={message.id}>
                 <div className="message-stack">
-                  {renderContent(message, setDetailFile)}
+                  {message.direction === "request" && ["imported", "returned"].includes(message.status) && !message.text && !message.blocks.length && !message.files.length
+                    ? <p>已导入 Quantum，服务器临时内容已清理</p>
+                    : renderContent(message, setDetailFile)}
                   <small className="message-time">
                     {(/* @__PURE__ */ new Date(message.created_at + (/[Zz]|[+-]\d\d:\d\d$/.test(message.created_at) ? "" : "Z"))).toLocaleString("zh-CN", { hour12: false })}
                     <span className={`receipt ${message.status === "pending" ? "delivered" : "seen"}`}>
