@@ -1378,10 +1378,8 @@ private struct WorkflowClarificationView: View {
                                 initiallyExpanded: false
                             )
                         }
-                        ForEach(model.snapshot?.messages ?? []) { message in
-                            if !WorkflowDetailTransitionPolicy.isTravel(workflow) || message.role == "user" || message.id == model.snapshot?.messages.last?.id {
-                                workflowMessage(message)
-                            }
+                        ForEach(visibleMessages) { message in
+                            workflowMessage(message)
                         }
                         if let error = model.errorMessage {
                             WorkflowErrorBanner(message: error)
@@ -1437,6 +1435,13 @@ private struct WorkflowClarificationView: View {
         .navigationTitle(workflow.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { if tracksActivity { WorkflowActivityCoordinator.shared.track(workflow) } }
+    }
+
+    private var visibleMessages: [WorkflowSessionMessageDTO] {
+        let messages = model.snapshot?.messages ?? []
+        guard WorkflowDetailTransitionPolicy.isTravel(workflow) else { return messages }
+        let lastID = messages.last?.id
+        return messages.filter { $0.role == "user" || $0.id == lastID }
     }
 
     @ViewBuilder
