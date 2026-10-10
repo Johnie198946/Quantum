@@ -43,3 +43,27 @@ test("Quantum login never shows a success check for errors or after unmount", as
   assert.deepEqual((await runConnect({ cancel: true })).phases, ["loading"]);
   assert.deepEqual((await runConnect({ busy: true })).phases, []);
 });
+
+
+const pasteHandler = design.slice(design.indexOf("  function pasteImages(event)"), design.indexOf("  const docs = items.flatMap", design.indexOf("  function pasteImages(event)")));
+test("Clipboard images enter the real attachment path; ordinary text keeps native paste", () => {
+  const image = { name: "image.png", type: "image/png" };
+  const uploads = [], drafts = [];
+  let prevented = false;
+  const context = vm.createContext({busy:false, agreementContent:null, draft:"前后", setDraft:value=>drafts.push(value), attachFile:files=>uploads.push(files)});
+  vm.runInContext(pasteHandler, context);
+  const event = {preventDefault:()=>{prevented=true;},currentTarget:{selectionStart:1,selectionEnd:1},clipboardData:{items:[{kind:"file",type:"image/png",getAsFile:()=>image}],getData:()=>"说明"}};
+  context.pasteImages(event);
+  assert.equal(prevented,true);
+  assert.equal(uploads[0][0],image);
+  assert.deepEqual(drafts,["前说明后"]);
+  prevented=false;
+  event.clipboardData.items=[{kind:"string",type:"text/plain"}];
+  context.pasteImages(event);
+  assert.equal(prevented,false);
+  assert.equal(uploads.length,1);
+  context.busy=true;
+  event.clipboardData.items=[{kind:"file",type:"image/png",getAsFile:()=>image}];
+  context.pasteImages(event);
+  assert.equal(uploads.length,1);
+});

@@ -90,6 +90,14 @@ export default function QuanSynPage() {
   const [next, setNext] = useState(null);
   const requestKey = useRef(crypto.randomUUID()), generation = useRef(0), paged = useRef(false);
   useEffect(() => { const old = document.title; document.title = "QuanSyn · Quantum"; return () => { document.title = old; }; }, []);
+  const previousFiles = useRef([]);
+  useEffect(() => {
+    for (const file of previousFiles.current) {
+      if (file.localPreview && !files.some((current) => current.localPreview === file.localPreview)) URL.revokeObjectURL(file.localPreview);
+    }
+    previousFiles.current = files;
+  }, [files]);
+  useEffect(() => () => { for (const file of previousFiles.current) if (file.localPreview) URL.revokeObjectURL(file.localPreview); }, []);
   const report = useCallback((message) => setError(message), []);
   const refresh = useCallback(async () => {
     const epoch = generation.current;
@@ -112,7 +120,7 @@ export default function QuanSynPage() {
   async function action(fn) { if (busy) return; const epoch = generation.current; setBusy(true); setError(""); try { await fn(epoch); } catch (e) { if (epoch === generation.current) setError(e.message); } finally { if (epoch === generation.current) setBusy(false); } }
   async function upload(selected) {
     const chosen = [...selected]; if (chosen.length + files.length > 10) { setError("最多添加 10 个附件"); return; }
-    await action(async (epoch) => { for (const file of chosen) { if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} 超过 25 MB`); const receipt = await quansynApi.upload(file); if (epoch !== generation.current) return; requestKey.current = crypto.randomUUID(); setFiles((current) => [...current, receipt]); } });
+    await action(async (epoch) => { for (const file of chosen) { const receipt = await quansynApi.upload(file); if (epoch !== generation.current) return; requestKey.current = crypto.randomUUID(); setFiles((current) => [...current, { ...receipt, localPreview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "" }]); } });
   }
   async function send() {
     if (!draft.trim() && !files.length) return;
