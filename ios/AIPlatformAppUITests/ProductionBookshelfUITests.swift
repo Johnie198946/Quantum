@@ -60,7 +60,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["开启一趟旅行"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["完善旅行计划"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["这趟旅行，你更倾向哪种预算安排？"].exists)
         XCTAssertFalse(app.buttons["补充图片或文档"].exists)
         XCTAssertFalse(app.buttons["返回任务"].exists)
@@ -69,10 +69,10 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview", "-travelCreatePreview"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["想去哪里"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["出行时间"].exists)
-        XCTAssertTrue(app.staticTexts["同行人数"].exists)
-        XCTAssertTrue(app.staticTexts["人均预算"].exists)
+        XCTAssertTrue(app.staticTexts["目的地"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["出行日期"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertTrue(app.staticTexts["预算（人均）"].exists)
         attachScreenshot(named: "travel-workflow-create")
     }
 
@@ -124,7 +124,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         app.terminate()
         app.launchArguments = arguments
         app.launch()
-        let input = app.textFields["clarify-custom-input"]
+        let input = app.textFields["travel-form-destination"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         for _ in 0..<8 where !input.isHittable { app.swipeUp() }
         XCTAssertTrue(input.isHittable)
@@ -132,7 +132,7 @@ final class ProductionBookshelfUITests: XCTestCase {
         input.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         input.typeText("From Hong Kong, ten days")
-        let confirm = app.buttons["clarify-keyboard-primary-action"]
+        let confirm = app.buttons["travel-form-submit"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         XCTAssertTrue(confirm.isEnabled && confirm.isHittable)
         attachScreenshot(named: "travel-clarification-keyboard")
@@ -155,9 +155,67 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertEqual(create.frame.width, discard.frame.width, accuracy: 1)
         attachScreenshot(named: "travel-proposal-actions")
         edit.tap()
-        XCTAssertTrue(app.navigationBars["核对旅行需求"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["完善旅行计划"].waitForExistence(timeout: 5))
         app.buttons["取消"].tap()
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
+    }
+
+    func testTravelPlanningStepsMatchApprovedProcess() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelPlanPreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["旅行计划"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["travel-planning-step-7"].isHittable, "默认字号下八项规划应完整可见")
+        for index in 0..<8 {
+            let titles = ["目的地研究", "行程路线规划", "景点推荐", "拍照建议", "住宿推荐", "美食推荐", "交通指南", "安全与应急"]
+            let step = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", titles[index])).firstMatch
+            for _ in 0..<8 where !step.isHittable { app.swipeUp() }
+            XCTAssertTrue(step.isHittable, "规划内容必须可查看：" + app.debugDescription)
+            if index == 0 { step.tap(); XCTAssertTrue(app.staticTexts["按你的目的地和日期研究，标注信息来源与需要出发前复核的事项。"].exists); step.tap() }
+        }
+        app.swipeDown(); app.swipeDown()
+        attachScreenshot(named: "travel-approved-planning-steps")
+        XCTAssertTrue(app.buttons["确认开始"].exists)
+        XCTAssertFalse(app.staticTexts["5 天行程 · 地图路线 · 交通建议"].exists, "不应固定未知旅行天数")
+    }
+
+    func testTravelPreferencesKeepFactsAndAllowMultipleChoices() {
+        app.terminate()
+        app.launchArguments = ["-prototypePreview", "v4/06-travel-chat-to-workflow-v4-p03"]
+        app.launch()
+        let destination = app.textFields["travel-form-destination"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 10))
+        XCTAssertEqual(destination.value as? String, "京都 · 日本")
+        XCTAssertEqual(app.textFields["travel-form-dates"].value as? String, "2026年10月1日至5日")
+        app.buttons["朋友"].tap()
+        XCTAssertTrue(app.buttons["朋友"].isSelected)
+        attachScreenshot(named: "travel-approved-preferences-top")
+        let nature = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch
+        for _ in 0..<6 where !nature.isHittable { app.swipeUp() }
+        nature.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "温泉")).firstMatch.tap()
+        attachScreenshot(named: "travel-approved-preferences-choices")
+        XCTAssertTrue(app.buttons["travel-form-submit"].isEnabled)
+        app.buttons["travel-form-submit"].tap()
+        let receipt = app.alerts["旅行需求已准备"]
+        XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+        XCTAssertTrue(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "温泉")).firstMatch.exists)
+        XCTAssertFalse(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch.exists, "取消的偏好不能继续提交")
+    }
+
+    func testTravelConfirmationUsesCompactLayoutAndExplicitDecision() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelRequirementConfirmationPreview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["确认旅行需求"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["需求收敛确认单"].exists)
+        let submit = app.buttons["requirement-confirm-primary-action"]
+        XCTAssertFalse(submit.isEnabled)
+        let confirm = app.buttons["确认，进入方案设计"]
+        for _ in 0..<6 where !confirm.isHittable { app.swipeUp() }
+        confirm.tap()
+        XCTAssertTrue(submit.isEnabled)
+        attachScreenshot(named: "travel-approved-requirement-confirmation")
     }
 
     func testBookshelfEmptyScopesAndRealListEditor() {

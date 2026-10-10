@@ -3014,11 +3014,26 @@ struct TravelDetailText: View {
     let content: String
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.enumerated()), id: \.offset) { _, paragraph in
+            ForEach(Array(Self.paragraphs(content).enumerated()), id: \.offset) { _, paragraph in
                 Text(.init(paragraph)).font(.system(size: 14)).lineSpacing(6).foregroundStyle(AppTheme.Colors.textSecondary).textSelection(.enabled)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
+    static func paragraphs(_ content: String) -> [String] {
+        content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.flatMap { paragraph -> [String] in
+            guard paragraph.count > 120 else { return [paragraph] }
+            var result: [String] = []
+            var start = paragraph.startIndex
+            for index in paragraph.indices where "。；".contains(paragraph[index]) {
+                let end = paragraph.index(after: index)
+                result.append(String(paragraph[start..<end]))
+                start = end
+            }
+            if start != paragraph.endIndex { result.append(String(paragraph[start...])) }
+            return result
+        }
+    }
+
 }
 
 private struct TravelActionReadingCard: View {

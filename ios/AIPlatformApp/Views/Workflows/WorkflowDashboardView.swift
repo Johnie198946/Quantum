@@ -440,6 +440,22 @@ struct WorkflowCreateSheet: View {
     }
 
     var body: some View {
+        Group {
+            if outputKind == "travel" {
+                TravelPlanPreferencesView(input: TravelPlanPreferencesView.draft(title: title, context: WorkflowDetailTransitionPolicy.travelBrief(destination: travelDestination, dates: travelDates, travelers: travelTravelers, preferences: description)),
+                    submitTitle: isSubmitting ? "正在整理需求…" : "生成我的旅行计划", errorMessage: errorMessage) { updated in
+                    title = updated.title ?? "旅行计划"
+                    travelDestination = updated.destination ?? ""
+                    travelDates = updated.travelDates ?? ""
+                    travelTravelers = updated.travelers ?? ""
+                    description = updated.travelPreferences ?? ""
+                    submit()
+                }.disabled(isSubmitting)
+            } else { standardCreation }
+        }
+    }
+
+    private var standardCreation: some View {
         NavigationStack {
             ZStack {
                 QuantumMistBackground()
@@ -1349,6 +1365,28 @@ private struct WorkflowClarificationView: View {
     }
 
     var body: some View {
+        Group {
+            if WorkflowDetailTransitionPolicy.isTravel(workflow),
+               let message = model.snapshot?.messages.last,
+               message.role == "assistant", message.messageType == "clarify", let question = message.payload.question {
+                TravelPlanPreferencesView(
+                    input: TravelPlanPreferencesView.draft(title: workflow.title, context: travelContext),
+                    embedded: true, question: question, submitTitle: "确认需求，生成旅行计划", errorMessage: model.errorMessage
+                ) { input in Task { await model.respond(TravelPlanPreferencesView.answer(input)) } }
+                .disabled(model.isSubmitting)
+                .overlay { if model.isSubmitting { ProgressView("正在保存旅行需求…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+            } else { conversation }
+        }
+        .navigationTitle(WorkflowDetailTransitionPolicy.isTravel(workflow) ? "旅行计划" : workflow.title).navigationBarTitleDisplayMode(.inline)
+        .task { if tracksActivity { WorkflowActivityCoordinator.shared.track(workflow) } }
+    }
+
+    private var travelContext: String {
+        let messages = model.snapshot?.messages.filter { $0.role == "user" }.map(\.content) ?? []
+        return ([workflow.description] + messages).filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
             if WorkflowDetailTransitionPolicy.isTravel(workflow) {
                 TravelWorkflowHeader(phase: model.phase)
@@ -1377,6 +1415,9 @@ private struct WorkflowClarificationView: View {
                                 isStreaming: ["planning", "building_agent"].contains(model.phase),
                                 initiallyExpanded: false
                             )
+                        }
+                        if WorkflowDetailTransitionPolicy.isTravel(workflow), !travelContext.isEmpty {
+                            TravelWorkflowBriefCard(content: travelContext)
                         }
                         ForEach(visibleMessages) { message in
                             workflowMessage(message)
@@ -1434,14 +1475,13 @@ private struct WorkflowClarificationView: View {
         .background(AppTheme.Colors.background)
         .navigationTitle(workflow.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { if tracksActivity { WorkflowActivityCoordinator.shared.track(workflow) } }
     }
 
     private var visibleMessages: [WorkflowSessionMessageDTO] {
         let messages = model.snapshot?.messages ?? []
         guard WorkflowDetailTransitionPolicy.isTravel(workflow) else { return messages }
         let lastID = messages.last?.id
-        return messages.filter { $0.role == "user" || $0.id == lastID }
+        return messages.filter { $0.id == lastID }
     }
 
     @ViewBuilder
@@ -1461,7 +1501,7 @@ private struct WorkflowClarificationView: View {
             )
             if message.messageType == "requirement_confirmation" {
                 RequirementConfirmationCard(
-                    block: block,
+                    block: block, isTravel: WorkflowDetailTransitionPolicy.isTravel(workflow),
                     onSubmit: { selection in Task { await model.respond(selection) } }
                 )
                 .disabled(model.isSubmitting)
@@ -1565,33 +1605,16 @@ struct TravelWorkflowHeader: View {
         }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "leaf.fill").foregroundStyle(AppTheme.Colors.primary)
-                Text("下一站，去见喜欢的风景")
-                    .font(AppTheme.Typography.micro)
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
+        HStack(spacing: 12) {
+            Image(systemName: "suitcase.rolling").font(.title3).foregroundStyle(AppTheme.Colors.primary)
+                .frame(width: 40, height: 40).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(stage == 0 ? "完善旅行计划" : "制作旅行攻略").font(.system(size: 20, weight: .semibold, design: .serif))
+                Text(stage == 0 ? "已有信息已带入，补充或修改后继续。" : statusText)
+                    .font(.system(size: 12)).foregroundStyle(AppTheme.Colors.textSecondary)
             }
-            Text(stage == 0 ? "开启一趟旅行" : "制作你的旅行攻略")
-                .font(AppTheme.Typography.screenTitle)
-                .foregroundStyle(AppTheme.Colors.textPrimary)
-            Text(phase == "new" ? "告诉我们想去哪里，其他细节可以一起完善。" : (stage == 0 ? "想法已带入，我们一起把细节完善。" : statusText))
-                .font(AppTheme.Typography.supporting)
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-            HStack(spacing: AppTheme.Spacing.sm) {
-                ForEach(Array(["旅行想法", "制作攻略", "攻略就绪"].enumerated()), id: \.offset) { index, title in
-                    VStack(spacing: AppTheme.Spacing.sm) {
-                        Capsule().fill(index <= stage ? AppTheme.Colors.primary : AppTheme.Colors.border).frame(height: 3)
-                        Text(title).font(AppTheme.Typography.micro)
-                            .foregroundStyle(index == stage ? AppTheme.Colors.primary : AppTheme.Colors.textSecondary)
-                    }.frame(maxWidth: .infinity)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("travel-workflow-stages")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("travel-workflow-header")
+            Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("travel-workflow-header")
     }
 }
 
@@ -1794,16 +1817,14 @@ private struct WorkflowPlanReviewView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                         if WorkflowDetailTransitionPolicy.isTravel(workflow) {
-                            TravelWorkflowHeader(phase: "awaiting_approval")
-                            Text("确认制作方案")
-                                .font(AppTheme.Typography.sectionTitle)
-                            Text("确认需求与制作方案后，开始整理你的旅行攻略。")
-                                .font(AppTheme.Typography.supporting)
-                                .foregroundStyle(AppTheme.Colors.textSecondary)
+                            TravelWorkflowPlanView()
                         } else {
                             WorkflowTaskStageHeader(phase: "awaiting_approval")
                         }
-                        planHeader(draft)
+                        if WorkflowDetailTransitionPolicy.isTravel(workflow) {
+                            DisclosureGroup("已确认需求与制作方案") { planHeader(draft) }
+                                .font(.system(size: 13)).tint(AppTheme.Colors.primary)
+                        } else { planHeader(draft) }
                         if !draft.validationErrors.isEmpty {
                             WorkflowErrorBanner(message: draft.validationErrors.joined(separator: "\n"))
                         }
@@ -1842,9 +1863,8 @@ private struct WorkflowPlanReviewView: View {
                                 .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
                                 .frame(maxWidth: .infinity)
                         }
-                        Button(isSaving ? "正在处理…" : (WorkflowDetailTransitionPolicy.isTravel(workflow) ? "确认方案，开始制作攻略" : "确认并构建 Agent")) { approve() }
-                            .buttonStyle(.borderedProminent)
-                            .pressBorderGlow(cornerRadius: AppTheme.Radius.sm)
+                        Button(isSaving ? "正在处理…" : (WorkflowDetailTransitionPolicy.isTravel(workflow) ? "确认开始" : "确认并构建 Agent")) { approve() }
+                            .buttonStyle(QuantumPrimaryButtonStyle())
                             .frame(maxWidth: .infinity)
                             .disabled(!draft.validationErrors.isEmpty)
                             .accessibilityIdentifier("workflow-primary-action")
@@ -5218,7 +5238,13 @@ private struct TravelActionEditSheet: View {
 #if DEBUG
 struct TravelWorkflowPreviewHost: View {
     var body: some View {
-        if ProcessInfo.processInfo.arguments.contains("-travelCreatePreview") {
+        if ProcessInfo.processInfo.arguments.contains("-travelPlanPreview") {
+            NavigationStack {
+                ScrollView { TravelWorkflowPlanView().padding(20) }
+                    .safeAreaInset(edge: .bottom) { Button("确认开始") {}.buttonStyle(QuantumPrimaryButtonStyle()).padding(20).background(AppTheme.Colors.background) }
+                    .background(AppTheme.Colors.background)
+            }
+        } else if ProcessInfo.processInfo.arguments.contains("-travelCreatePreview") {
             WorkflowCreateSheet(initialKind: "travel") { _ in }
         } else {
             NavigationStack {
@@ -5230,6 +5256,14 @@ struct TravelWorkflowPreviewHost: View {
         let choices = ProcessInfo.processInfo.arguments.contains("-travelFreeTextPreview")
             ? "[]" : #"["舒适适中","优先温泉旅馆体验","暂时不确定"]"#
         let data = Data(#"{"workflow":{"id":"travel-preview","title":"鹿儿岛温泉与自然之旅","description":"旅行需求","desiredOutput":"图文旅行攻略","status":"clarifying"},"session":{"id":"preview-session","workflowId":"travel-preview","phase":"clarifying","roundNumber":1,"lastEventSeq":0},"messages":[{"id":"brief","seq":1,"role":"user","messageType":"text","content":"已确认旅行信息：目的地：鹿儿岛，日本；出行时间：2026年12月1日至12月20日；同行人：2人；偏好：温泉与自然；香港出发；预算和交通偏好未定。原始需求：请安排往返交通、鹿儿岛及周边温泉旅馆、住宿区域建议、每日行程和当地交通方式。请保留待核验事项，不要替我决定预算。","payload":{}},{"id":"question","seq":2,"role":"assistant","messageType":"clarify","content":"预算偏好","payload":{"question":"这趟旅行，你更倾向哪种预算安排？","choices":\#(choices),"multiSelect":false,"submitLabel":"确认并继续"}}],"events":[]}"#.utf8)
+        if ProcessInfo.processInfo.arguments.contains("-travelRequirementConfirmationPreview") {
+            var object = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+            var messages = object["messages"] as! [[String: Any]]
+            messages[1]["messageType"] = "requirement_confirmation"
+            messages[1]["payload"] = ["question": "目标：鹿儿岛温泉与自然之旅\n目标用户与场景：2人，香港出发\nMVP 范围：每日路线、交通、住宿与用餐\n约束与验收：预算尚未决定，保留待核验事项", "choices": ["确认，进入方案设计", "需要调整"], "multiSelect": false, "submitLabel": "确认并继续"]
+            object["messages"] = messages
+            return try! JSONDecoder().decode(WorkflowClarificationSnapshotDTO.self, from: JSONSerialization.data(withJSONObject: object))
+        }
         return try! JSONDecoder().decode(WorkflowClarificationSnapshotDTO.self, from: data)
     }
 }

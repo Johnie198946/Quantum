@@ -7530,3 +7530,45 @@ final class TravelNotePresentationTests: XCTestCase {
         XCTAssertThrowsError(try TravelNotePresentation.saving("broken", cover: "unknown", route: true, photos: true, places: true))
     }
 }
+
+
+@MainActor
+final class TravelPreferencesDraftTests: XCTestCase {
+    func testPrefillsOnlyLabeledFactsAndKeepsOriginal() {
+        let source = "已确认旅行信息：目的地：鹿儿岛，日本；出行时间：尚未决定；同行人：2人；偏好：温泉与自然；香港出发。"
+        let input = TravelPlanPreferencesView.draft(title: "鹿儿岛旅行", context: source)
+        XCTAssertEqual(input.destination, "鹿儿岛，日本")
+        XCTAssertEqual(input.travelDates, "尚未决定")
+        XCTAssertEqual(input.travelers, "2人")
+        XCTAssertEqual(input.travelPreferences, "温泉与自然")
+        XCTAssertEqual(input.description, source)
+        XCTAssertTrue(TravelPlanPreferencesView.answer(input).contains(source))
+    }
+    func testSubmittedPreferencesKeepBudgetPaceAndInterestsWhenReopened() {
+        let preferences = "人均预算：舒适；旅行节奏：轻松；自然风光、温泉"
+        let draft = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛\n偏好与预算：" + preferences)
+        XCTAssertEqual(draft.travelPreferences, preferences)
+    }
+    func testFreeProseHasNoInventedDefaultsAndLatestLabeledEditWins() {
+        let prose = TravelPlanPreferencesView.draft(title: "旅行", context: "我要去鹿儿岛旅行，其他还没决定")
+        XCTAssertNil(prose.travelDates)
+        XCTAssertNil(prose.travelers)
+        XCTAssertNil(prose.travelPreferences)
+        let updated = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：京都\n目的地：鹿儿岛\n出行时间：尚未决定")
+        XCTAssertEqual(updated.destination, "鹿儿岛")
+        XCTAssertEqual(updated.travelDates, "尚未决定")
+    }
+}
+
+
+@MainActor
+final class TravelReadingParagraphTests: XCTestCase {
+    func testLongGuidanceKeepsEveryCharacterAndDoesNotSplitPricesOrLinks() {
+        let source = String(repeating: "早到先寄存行李，晚到先确认酒店入住。", count: 8) + "票价 ¥200；评分 3.67，[官方入口](https://example.com/ticket?id=1.2)核验后购票。"
+        let paragraphs = TravelDetailText.paragraphs(source)
+        XCTAssertGreaterThan(paragraphs.count, 1)
+        XCTAssertEqual(paragraphs.joined(), source)
+        XCTAssertTrue(paragraphs.contains { $0.contains("3.67") && $0.contains("https://example.com/ticket?id=1.2") })
+        XCTAssertEqual(TravelDetailText.paragraphs("时间尚未决定。请先确认机票。"), ["时间尚未决定。请先确认机票。"])
+    }
+}
