@@ -584,3 +584,31 @@ functional_check: 文本完整通过；附件部分通过；图片、代码、�
 rollback_point: 本轮未改服务器，无新增服务器回滚点；App 临时补丁可重新安装原始构建85恢复；Git 修改未提交，可按本任务补丁逐项逆向恢复，不涉及其他任务
 manifest: ops/change-manifests/quansyn-20261009-completion.md
 remaining_risks: 生产执行/视觉/文件生成问题未修复，日志诊断授权等待用户；不宣称全流程验收或本轮发布完成；Mac实际飞书链未追加验证
+
+
+## 2026-10-10 用户授权“推送发布”：构建86
+
+发布范围仅为 App 的不匹配任务恢复状态释放；图片/结果附件生成/生产执行根因仍未解决，不将此发布视为五项业务验收通过。用户本轮未授权读取被自动审批拒绝的诊断数据，未读取。
+
+- 开工盘点：codex/quansyn-20261009，HEAD b613190b07ed479466fc9ca2886526dfd8ea07b9，status 仅包含上一轮本任务协调器、测试、manifest、三份业务验收证据；origin https://github.com/Johnie198946/Quantum.git；source https://github.com/Johnie198946/ai-lab-platform.git；worktree list 已核对，不修改其他 worktree/main。
+- 提交95d44b76包含最小状态修复、回归和业务证据。先合并已验收构建85的f802，再保留远端97d86e02已推送的正常登录与工作流渲染修正，不覆盖其他任务。构建号85升86，project.yml/pbxproj同步。
+- 发布源 d7b96b3998ddf6a3d4f1d9142f6e2659529094be；git push origin HEAD:refs/heads/codex/quansyn-20261009 成功，git ls-remote 独立核验完整SHA一致。未合并 main；不把本分支合并的其他任务后端变化部署服务器。
+- 合并后精确源码重跑2项恢复回归，0失败；/private/tmp/quansyn-release86-tests.xcresult，TEST SUCCEEDED。git diff --check PASS。
+- Release归档 /private/tmp/Quantumn-1.0.3-86-quansyn-recovery.xcarchive，ARCHIVE SUCCEEDED，签名deep/strict PASS；1.0.3(86)，com.ailab.AIPlatformApp，App+dSYM UUID 94184841-4275-32A4-BE9B-DE6490CD8C39一致。二进制SHA与回滚包SHA见 build86-release.json。
+- 命令行真实上传退出70，Apple错误 No Accounts with App Store Connect Access；没有上传成功回执。Xcode图形入口已选择同一86归档，但Open操作被Mac锁屏阻止。已请求用户解锁并确认Xcode账号权限；没有删除账号、改密码、扩展测试组或接受新协议。
+
+本次发布当前字段：
+
+task_id: quansyn-20261009-build86
+status: PUSHED（签名归档完成，Apple上传失败，未发布到TestFlight）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 发布源d7b96b3998ddf6a3d4f1d9142f6e2659529094be；后置回执提交不改变归档源码
+remote_sha: 发布源d7b96b3998ddf6a3d4f1d9142f6e2659529094be，refs/heads/codex/quansyn-20261009，ls-remote一致
+server_before: 不适用（客户端发布）；前轮生产只读版本1c7c5062，当前未重复查询
+server_after: 不适用（无服务器部署）；Apple尚未接收构建86
+health_check: Release归档、签名、版本、App/dSYM一致核验通过；Apple发布鉴权未通过
+functional_check: 状态恢复2项回归通过；五项真实业务未完整通过，详情见前节
+rollback_point: /private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive 保留且签名有效，1.0.3(85)；构建86未安装真机，原用户设备未修改
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: Mac锁屏与Apple账号权限阻止发布；尚未获TestFlight处理/可安装回执；未宣称上线；图片/附件生成与生产执行问题仍存在
