@@ -12,7 +12,7 @@ health_check: 本地后端14测试、前端155测试及构建通过
 functional_check: 真实61MiB级附件上传、落库引用、下载SHA256一致；图片粘贴handler测试通过，生产浏览器粘贴及宽屏待验证
 rollback_point: 尚未部署，无新增外部变更
 manifest: ops/change-manifests/quansyn-upload-wide-20261010-completion.md
-remaining_risks: 文件大小不设固定限制，但受磁盘空间及网络约束；文档解析/模型处理能力与原件传输是不同能力，既有执行限制本轮未更改；iOS构建86Apple上传仍受TLS阻断
+remaining_risks: 文件大小不设固定限制，但受磁盘空间及网络约束；文档解析/模型处理能力与原件传输是不同能力，既有执行限制本轮未更改；iOS构建86由用户切换网络后手动上传，Apple页面已显示正在处理；尚未核对TestFlight可安装
 
 ## 架构与盘点
 
@@ -28,3 +28,5 @@ backend/api/quansyn.py、backend/services/generated_artifacts.py、frontend/Dock
 ## 本地验收
 
 后端14 passed；前端155 passed，0 failed；生产构建成功；py_compile与git diff --check通过。真实大附件测试超过50MiB，Web API上传→传递记录→鉴权下载的SHA256一致。共享存储验证有界读、幂等返回、内容篡改拒绝、空流拒绝及临时目录清理。
+
+部署环境检查：API /tmp为256MiB tmpfs，上传TemporaryFile改为现有owner私有持久附件目录，并补充测试强制验证临时目录选择；14项后端测试重新通过。第一轮正式脚本执行被本任务中止并触发既有回滚，等待旧release恢复后继续；不绕过部署锁、活动任务、镜像及存储权限检查。

@@ -71,6 +71,8 @@
   .quansyn .composer { padding-inline:clamp(80px, 9vw, 280px); }
   .quansyn .text-bubble,.quansyn .rich-answer { font-size:15px; line-height:1.8; }
   .quansyn .compose-box textarea { font-size:15px; }
+  .quansyn .rich-answer p,.quansyn .rich-answer li,.quansyn .rich-answer h4 { font-size:14px; line-height:1.8; }
+  .quansyn .code-block>code,.quansyn .qs-table table { font-size:13px; }
   .quansyn .chat-header { padding-inline:clamp(32px, 3vw, 100px); }
   .quansyn .target-device strong { font-size:15px; }
   .quansyn .target-device small,.quansyn .drop-hint { font-size:12px; }

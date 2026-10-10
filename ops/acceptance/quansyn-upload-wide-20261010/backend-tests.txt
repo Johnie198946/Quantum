@@ -21,4 +21,4 @@ backend/api/protocols.py:382
     class VersionOut(BaseModel):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-14 passed, 5 warnings in 7.47s
+14 passed, 5 warnings in 5.05s
