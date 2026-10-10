@@ -34,7 +34,20 @@
       "Unable to authenticate with App Store Connect",
       "No App Store Connect access for the team"
     ],
-    "remaining_blocker": "Apple account authentication/access; Mac unlocked at retry"
+    "remaining_blocker": "App Store Connect configuration TLS failure; team access not independently established",
+    "reauth_retry": {
+      "user_confirmed": "重新登录完成",
+      "gui_result": "Unable to authenticate with App Store Connect; No App Store Connect access for the team",
+      "cli_exit_code": 70,
+      "cli_log": "/private/tmp/quansyn-release86-reauth-upload.log",
+      "underlying_error": "ITunesConnectFoundationErrorDomain -1200: lookupGenericSettingsForSubmission failed; A TLS error caused the secure connection to fail.",
+      "uploaded": false
+    },
+    "public_tls_checks": {
+      "appstoreconnect.apple.com": "302, ssl_verify_result=0; default and direct",
+      "itunesconnect.apple.com": "200, ssl_verify_result=0",
+      "contentdelivery.itunes.apple.com": "curl exit35, connection reset by peer; public root probe does not establish exact failing submission endpoint"
+    }
   },
   "server_deploy": "not applicable: iOS-only fix",
   "business_acceptance": "incomplete, see business-flow-20261010.json",

@@ -615,3 +615,26 @@ remaining_risks: Mac锁屏与Apple账号权限阻止发布；尚未获TestFlight
 
 
 构建86图形上传复验：用户回复“已就绪”后，Mac锁屏阻断已解除。Xcode Organizer实际载入9:13AM归档1.0.3(86)，执行Distribute App→App Store Connect→Distribute，最终明确显示Unable to authenticate with App Store Connect、No App Store Connect access for the team。未上传成功，未部署TestFlight。已请用户在Manage Accounts中重新登录有发布权限的账号，密码/双重验证码由用户本人操作。当前status仍PUSHED；源SHA d7b96b39不变；后置文档/回执已推送bd3354f9，ls-remote核对一致。remaining_risks更新为Apple账号鉴权/权限，Mac锁屏已不再作为本次实际重试阻断。
+
+
+## 2026-10-10 重新登录后的构建86上传复验
+
+- 本轮盘点：干净 codex/quansyn-20261009，HEAD 4f855da5b9ea7733fc3a82fa42ab248fc460f184；origin/source、完整 worktree list 已核对。遵循用户本任务一分支一 worktree 指令，未修改 main 或其他任务。
+- 用户本人确认“重新登录完成”。重新打开原始9:13AM、1.0.3(86)、com.ailab.AIPlatformApp归档，图形分发仍报两项认证/权限错误。
+- 独立 xcodebuild exportArchive 复验退出70，EXPORT FAILED；更底层证据为 ITunesConnectFoundationErrorDomain -1200，lookupGenericSettingsForSubmission 请求 TLS 安全连接失败。因此不能仅凭图形“无权限”认定账号团队权限缺失；具体连接失败原因仍未知。未删除账号或改变权限/证书验证。
+- 公开地址连通性：appstoreconnect.apple.com 默认及直连302、证书核验0；itunesconnect.apple.com 200、证书核验0；contentdelivery.itunes.apple.com 根地址连接重置（curl35）。根地址检查不能替代精确发布端点认证验证。未读取/输出凭据、未改网络配置。
+- 构建源码与签名归档不变，未取得Apple上传回执，未部署TestFlight。仅更新本任务manifest和发布回执，无产品代码变更；JSON解析及git diff --check通过。
+
+task_id: quansyn-20261009-build86
+status: PUSHED（源码此前已推送；Apple重试失败）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 归档源d7b96b3998ddf6a3d4f1d9142f6e2659529094be；本轮前置文档HEAD 4f855da5b9ea7733fc3a82fa42ab248fc460f184
+remote_sha: 发布源d7b96b39既有ls-remote证据见前文；本轮后置回执SHA以最终git ls-remote结果为准
+server_before: 不适用，iOS客户端发布；本轮无服务器操作
+server_after: 不适用，Apple未接收构建86
+health_check: 归档、签名核验既有PASS；Apple配置请求TLS失败
+functional_check: 状态恢复2项回归既有PASS；未新增真机/TestFlight验收，五项业务仍未全部通过
+rollback_point: /private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive；原设备未安装86
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: Apple配置服务TLS失败未解除、账号实际App Store Connect权限未知；未获得上传与可安装回执；生产图片/结果附件/代码/图表问题保留
