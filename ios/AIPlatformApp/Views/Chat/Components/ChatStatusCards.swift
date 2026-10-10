@@ -1555,7 +1555,7 @@ struct TravelPlanPreferencesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if embedded { Text("完善旅行计划").font(.system(size: 24, weight: .semibold, design: .serif)) }
-                Text("补充以下信息，让计划更符合你的需求。")
+                Text(details.contains("【聊天原文依据】") ? "已根据聊天预填，请确认或补充；助手建议仍待你确认。" : "补充以下信息，让计划更符合你的需求。")
                     .font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary)
                 if let question {
                     Text(question).font(.system(size: 15, weight: .medium)).foregroundStyle(AppTheme.Colors.primary)
@@ -1592,7 +1592,7 @@ struct TravelPlanPreferencesView: View {
                     }.padding(.top, 12)
                 }.font(.system(size: 13))
                 if !details.isEmpty {
-                    DisclosureGroup("已带入的原始需求") {
+                    DisclosureGroup(details.contains("【聊天原文依据】") ? "查看聊天依据与待确认建议" : "已带入的原始需求") {
                         Text(details).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).textSelection(.enabled)
                     }.font(.system(size: 13))
                 }
@@ -1656,13 +1656,14 @@ struct TravelPlanPreferencesView: View {
     }
 
     static func draft(title: String, context: String) -> CapabilityProposalInput {
+        let extractionContext = context.replacingOccurrences(of: "【聊天原文依据】[\\s\\S]*?【聊天原文结束】", with: "", options: .regularExpression)
         func value(_ labels: [String], wholeLine: Bool = false) -> String? {
             // Only labeled user facts are prefilled; free prose stays intact in the source.
-            let prefix = wholeLine ? "(?:^|\n)" : "(?:^|[；;\n]|已确认旅行信息：)"
+            let prefix = wholeLine ? "(?:^|\n)" : "(?:^|[；;\n]|已确认旅行信息(?:（[^）]*）)?：)"
             let pattern = prefix + "\\s*(?:" + labels.joined(separator: "|") + ")[：:]\\s*(" + (wholeLine ? "[^\n]+" : "[^；;\n]+") + ")"
             guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-            let text = context as NSString
-            return regex.matches(in: context, range: NSRange(location: 0, length: text.length)).last.map { text.substring(with: $0.range(at: 1)).trimmingCharacters(in: .whitespaces) }
+            let text = extractionContext as NSString
+            return regex.matches(in: extractionContext, range: NSRange(location: 0, length: text.length)).last.map { text.substring(with: $0.range(at: 1)).trimmingCharacters(in: .whitespaces) }
         }
         return CapabilityProposalInput(title: title, description: context, desiredOutput: "图文旅行计划",
             sourceDocumentId: nil, outputKind: "travel", workflowId: nil, textMaterial: nil,

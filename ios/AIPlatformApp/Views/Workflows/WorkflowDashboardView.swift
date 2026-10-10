@@ -1383,7 +1383,8 @@ private struct WorkflowClarificationView: View {
 
     private var travelContext: String {
         let messages = model.snapshot?.messages.filter { $0.role == "user" }.map(\.content) ?? []
-        return ([workflow.description] + messages).filter { !$0.isEmpty }.joined(separator: "\n")
+        var seen: Set<String> = []
+        return ([workflow.description] + messages).filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n")
     }
 
     private var conversation: some View {

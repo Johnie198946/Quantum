@@ -7544,6 +7544,14 @@ final class TravelPreferencesDraftTests: XCTestCase {
         XCTAssertEqual(input.description, source)
         XCTAssertTrue(TravelPlanPreferencesView.answer(input).contains(source))
     }
+    func testChatAssistantSuggestionsCannotOverrideCurrentConfirmedFields() {
+        let source = "已确认旅行信息（与原始需求冲突时以此为准）：目的地：鹿儿岛；出行时间：尚未决定；同行人：2人\n【聊天原文依据】\n助手建议：先考虑京都\n目的地：京都\n出行时间：10月1日\n【聊天原文结束】\n出行时间：12月10日至15日"
+        let draft = TravelPlanPreferencesView.draft(title: "旅行", context: source)
+        XCTAssertEqual(draft.destination, "鹿儿岛")
+        XCTAssertEqual(draft.travelDates, "12月10日至15日")
+        XCTAssertEqual(draft.travelers, "2人")
+        XCTAssertEqual(draft.description, source)
+    }
     func testSubmittedPreferencesKeepBudgetPaceAndInterestsWhenReopened() {
         let preferences = "人均预算：舒适；旅行节奏：轻松；自然风光、温泉"
         let draft = TravelPlanPreferencesView.draft(title: "旅行", context: "目的地：鹿儿岛\n偏好与预算：" + preferences)
