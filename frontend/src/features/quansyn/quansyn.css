@@ -34,6 +34,7 @@
 @media(prefers-reduced-motion:reduce) { .quansyn *, .quansyn *::before,.quansyn *::after { animation:none!important; transition:none!important; } }
 
 /* Restore browser defaults that Quantum global classes otherwise override. */
+.quansyn .workspace { width:100%; max-width:none; margin:0; padding:0; gap:0; }
 .quansyn .chat-header { flex-direction:row; }
 .quansyn .sidebar.drawer { display:block; }
 .quansyn .topbar-exit { white-space:nowrap; }
