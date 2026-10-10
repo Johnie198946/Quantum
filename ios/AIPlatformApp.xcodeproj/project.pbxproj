@@ -20,6 +20,7 @@
 		1DEF132BBABAAE7BE740235E /* KnowledgeNoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62ED7CB52D98E7F4FE22A9D2 /* KnowledgeNoteStore.swift */; };
 		1EF0A40ED0CF79A929CB6F20 /* MarkdownBlockParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1D23EEB21DD2DD62B8D52D /* MarkdownBlockParser.swift */; };
 		254C1CD57C1EACE9BAAF30A1 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 682708AC3F789E460269179F /* ChatHistoryStore.swift */; };
+		32CA4D62282D44DD746E91EF /* QuantumWebLoginModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9480163EBF61FD4892D5BFB9 /* QuantumWebLoginModal.swift */; };
 		347B8891FA73F4A13044017F /* WorkflowDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865230675174544683A40C47 /* WorkflowDashboardView.swift */; };
 		353DDBE9B6F14BAA4DD7F20F /* ChatStatusCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F5BB3EF9C10F911B036B99 /* ChatStatusCards.swift */; };
 		364D6C336F779FC90000B64E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD70BD59CD071FB619837740 /* ChatView.swift */; };
@@ -151,6 +152,7 @@
 		83AE56DBEAAD443368B0DC9F /* ProductionBookshelfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookshelfUITests.swift; sourceTree = "<group>"; };
 		865230675174544683A40C47 /* WorkflowDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowDashboardView.swift; sourceTree = "<group>"; };
 		8CC0682A56D72BAAB4097CFA /* WeChatLinkValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeChatLinkValidator.swift; sourceTree = "<group>"; };
+		9480163EBF61FD4892D5BFB9 /* QuantumWebLoginModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuantumWebLoginModal.swift; sourceTree = "<group>"; };
 		9503A88EC7D490F2425318D0 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		95F6279732AE00F613FCAC2D /* KnowledgeNoteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeNoteStoreTests.swift; sourceTree = "<group>"; };
 		964A9F3CAD461856EAF48590 /* AIPlatformApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlatformApp.swift; sourceTree = "<group>"; };
@@ -442,6 +444,7 @@
 			children = (
 				9D6C7C4532C2DF95CC7DB2EE /* AgreementSheet.swift */,
 				1490C2A9375CE8604477437E /* LoginView.swift */,
+				9480163EBF61FD4892D5BFB9 /* QuantumWebLoginModal.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -707,6 +710,7 @@
 				3FFEAF19DF3D4DE1A028D6F0 /* PlusMenuSheet.swift in Sources */,
 				D5E5539813EF231D57471760 /* ProfileEditSheet.swift in Sources */,
 				44364A0B81BC8C873E2A107F /* QuantumAvatarView.swift in Sources */,
+				32CA4D62282D44DD746E91EF /* QuantumWebLoginModal.swift in Sources */,
 				511FE1B06DE33A584C0A8C69 /* QuickCommandTracker.swift in Sources */,
 				9C25372BFB1CB99B45A8FE38 /* ReadingComponents.swift in Sources */,
 				B11A605E5DA136F4CEC7F3C3 /* ReasoningCard.swift in Sources */,
@@ -787,7 +791,7 @@
 				CODE_SIGN_ENTITLEMENTS = AIPlatformApp/AIPlatformApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 86;
+				CURRENT_PROJECT_VERSION = 87;
 				DEVELOPMENT_TEAM = AALA948YY5;
 				INFOPLIST_FILE = AIPlatformApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -916,7 +920,7 @@
 				CODE_SIGN_ENTITLEMENTS = AIPlatformApp/AIPlatformApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 86;
+				CURRENT_PROJECT_VERSION = 87;
 				DEVELOPMENT_TEAM = AALA948YY5;
 				INFOPLIST_FILE = AIPlatformApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

@@ -149,7 +149,7 @@ async def create_capability_proposal(
         if capability_id.startswith("knowledge.note.illustration.") and capability["effect"] != "read" and local_notes is None:
             raise CapabilityContractError("local_note_snapshot_required")
         if local_notes is not None:
-            from backend.api.knowledge_actions import propose_local_note_capability
+            from backend.capability_handlers import propose_local_note_capability
             return await propose_local_note_capability(
                 capability_id, canonical_input, local_notes=local_notes,
                 payload=payload, session_id=session_id, request_id=request_id,
@@ -168,7 +168,7 @@ async def create_capability_proposal(
             subject = "，保留选中主体并去除背景" if canonical_input.get("extract_subject") else ""
             review_summary = f"在 iPhone 上{framing}{subject}，保存为 {canonical_input.get('format', 'png').upper()}；原图保留。"
         if capability_id == "knowledge.note.trash" and (canonical_input.get("all_active") or canonical_input.get("note_versions")):
-            from backend.api.knowledge_sync import list_synced_notes
+            from backend.capability_handlers import list_synced_notes
             from backend.capability_handlers import _note_title
             snapshot = await list_synced_notes(False, payload, include_trashed=not bool(canonical_input.get("all_active")))
             active = {item["note_id"]: item for item in snapshot["items"]}

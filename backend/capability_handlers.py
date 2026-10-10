@@ -14,6 +14,7 @@ import httpx
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 
+from backend.api.knowledge_actions import propose_local_note_capability
 from backend.api.knowledge_sync import (
     NoteArchiveRequest,
     NoteMergeRequest,

@@ -5316,3 +5316,23 @@ extension APIClient {
         try await request(QuanSynTransferDTO.self, path: "quansyn/transfers", method: "POST", body: body)
     }
 }
+
+// MARK: - Quantum confirmation for a real pending web login
+public struct QuantumWebLoginDTO: Decodable, Identifiable {
+    public let id: String
+    public let code: String
+    public let destination: String
+}
+private struct QuantumWebLoginList: Decodable { let items: [QuantumWebLoginDTO] }
+private struct QuantumWebLoginCode: Encodable { let code: String }
+extension APIClient {
+    public func pendingQuantumWebLogins() async throws -> [QuantumWebLoginDTO] {
+        try await request(QuantumWebLoginList.self, path: "auth/quantum/pending").items
+    }
+    public func confirmQuantumWebLogin(_ item: QuantumWebLoginDTO) async throws {
+        _ = try await request([String: Bool].self, path: "auth/quantum/\(item.id)/confirm", method: "POST", body: QuantumWebLoginCode(code: item.code))
+    }
+    public func cancelQuantumWebLogin(_ item: QuantumWebLoginDTO) async throws {
+        _ = try await request([String: Bool].self, path: "auth/quantum/\(item.id)/cancel", method: "POST")
+    }
+}

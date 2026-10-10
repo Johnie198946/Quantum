@@ -171,14 +171,20 @@ export const platformApi = {
     }
     return accessToken;
   },
+  startQuantumLogin({ phone }) {
+    return request("/api/v1/auth/quantum/start", {method: "POST", body: {phone}, skipAuth: true, skipSessionAuth: true});
+  },
+  quantumLoginStatus(state, signal) {
+    return request("/api/v1/auth/quantum/status", {method: "POST", body: {state}, signal, skipAuth: true, skipSessionAuth: true});
+  },
   startOAuth({ provider, client = "web" }) {
     return request(`/api/v1/auth/oauth/${encodeURIComponent(provider)}/start?client=${encodeURIComponent(client)}`, {
       skipAuth: true,
       skipSessionAuth: true,
     });
   },
-  async completeOAuth({ ticket }) {
-    const payload = await request("/api/v1/auth/oauth/complete", {
+  async completeOAuth({ ticket, appApproval = false }) {
+    const payload = await request(appApproval ? "/api/v1/auth/quantum/complete" : "/api/v1/auth/oauth/complete", {
       method: "POST",
       body: { ticket },
       skipAuth: true,
@@ -186,7 +192,7 @@ export const platformApi = {
     });
     const accessToken = extractAccessToken(payload);
     if (!accessToken) {
-      throw new PlatformApiError("第三方登录成功，但未返回 access token。");
+      throw new PlatformApiError("认证成功，但未返回 access token。");
     }
     return accessToken;
   },
