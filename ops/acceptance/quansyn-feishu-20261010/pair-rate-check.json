@@ -1,0 +1,1 @@
+{"invalid_code_statuses":[422,422,422,422,422,429],"rate_limit_pass":true,"probe":"server localhost HTTPS with www.t-react.com hostname and certificate validation; deliberately invalid characters; no real user code"}
