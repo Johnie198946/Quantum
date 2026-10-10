@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import secrets
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import unquote
@@ -21,7 +22,6 @@ from backend.models.tenant import TenantMapping
 from backend.services.generated_artifacts import GeneratedArtifactError, _save, generated_artifact_path
 
 router = APIRouter(prefix="/api/v1/quansyn", tags=["quansyn"])
-MAX_BYTES = 25 * 1024 * 1024
 
 
 def now():
@@ -203,22 +203,25 @@ async def delete_transfer(transfer_id: str, p=Depends(principal)):
 
 @router.post("/files", status_code=201)
 async def upload_file(request: Request, filename: str = Header(..., alias="X-File-Name"), p=Depends(principal)):
-    data = bytearray()
-    async for chunk in request.stream():
-        if len(data) + len(chunk) > MAX_BYTES:
-            raise HTTPException(413, "单附件不得超过 25 MB")
-        data.extend(chunk)
     name = unquote(filename).replace("\\", "/").split("/")[-1].strip()
     if not name or len(name) > 240 or any(ord(c) < 32 for c in name):
         raise HTTPException(422, "文件名无效")
     storage_name = name if Path(name).suffix else name + ".bin"
     try:
-        return await run_in_threadpool(_save, tenant_key=owner(p)[0], user_id=owner(p)[1],
-            filename=storage_name, media_type="application/octet-stream", data=bytes(data),
-            kind="quansyn_file", metadata={"original_name": name, "device_id": p.get("device_id", "")},
-            idempotency_key="quansyn:" + digest(name + hashlib.sha256(data).hexdigest() + p.get("device_id", "")))
+        with tempfile.TemporaryFile() as data:
+            content_hash = hashlib.sha256()
+            async for chunk in request.stream():
+                await run_in_threadpool(data.write, chunk)
+                content_hash.update(chunk)
+            data.seek(0)
+            return await run_in_threadpool(_save, tenant_key=owner(p)[0], user_id=owner(p)[1],
+                filename=storage_name, media_type="application/octet-stream", data=data,
+                kind="quansyn_file", metadata={"original_name": name, "device_id": p.get("device_id", "")},
+                idempotency_key="quansyn:" + digest(name + content_hash.hexdigest() + p.get("device_id", "")))
     except GeneratedArtifactError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(507, "文件保存失败，请稍后重试或联系管理员检查存储空间") from exc
 
 
 @router.get("/files/{artifact_id}")

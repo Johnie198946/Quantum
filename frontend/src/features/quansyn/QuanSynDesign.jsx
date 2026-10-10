@@ -538,6 +538,20 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
   function setActiveDevice(value) {
     setTarget(value === "phone" ? "ios" : "mac");
   }
+  function pasteImages(event) {
+    if (busy || agreementContent) return;
+    const images = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile()).filter(Boolean);
+    if (!images.length) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    if (text) {
+      const { selectionStart, selectionEnd } = event.currentTarget;
+      setDraft(draft.slice(0, selectionStart) + text + draft.slice(selectionEnd));
+    }
+    attachFile(images);
+  }
   const docs = items.flatMap((item) => item.files.map((file) => ({
     name: file.metadata?.original_name || file.filename,
     meta: `${(file.byte_size / 1024).toFixed(1)} KB · ${(/* @__PURE__ */ new Date(item.created_at + (/[Zz]|[+-]\d\d:\d\d$/.test(item.created_at) ? "" : "Z"))).toLocaleString("zh-CN")}`,
@@ -784,6 +798,7 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
               <textarea
     disabled={busy || !!agreementContent}
     aria-label="输入要传输的内容"
+    onPaste={pasteImages}
     onChange={(event) => {
       setDraft(event.target.value);
       if (event.target.value.trim()) setInputError(false);
@@ -794,7 +809,7 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
         sendMessage();
       }
     }}
-    placeholder={`发送到 ${activeDevice === "phone" ? "Quantum App" : "Mac Quantum"}，也可以直接拖入文件`}
+    placeholder={`发送到 ${activeDevice === "phone" ? "Quantum App" : "Mac Quantum"}，支持粘贴图片或拖入文件`}
     value={draft}
   />
               <input
@@ -807,7 +822,7 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
     multiple
     type="file"
   />
-              {files.length > 0 && <div className="qs-selected">{files.map((file) => <span key={file.artifact_id}>{file.metadata?.original_name || file.filename}<button disabled={busy} aria-label="移除附件" onClick={() => removeFile(file.artifact_id)} type="button">×</button></span>)}</div>}
+              {files.length > 0 && <div className="qs-selected">{files.map((file) => <span key={file.artifact_id}>{file.localPreview && <img className="qs-draft-image" src={file.localPreview} alt={file.metadata?.original_name || file.filename} />}{file.metadata?.original_name || file.filename}<button disabled={busy} aria-label="移除附件" onClick={() => removeFile(file.artifact_id)} type="button">×</button></span>)}</div>}
               <div className="compose-actions">
                 <button disabled={busy} aria-label="添加附件" onClick={() => inputRef.current?.click()} type="button"><Icon name="paperclip" size={19} /></button>
                 <span>{busy ? "正在传递…" : "Enter 发送"}</span>
@@ -817,7 +832,7 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
             <div className={`validation-message ${inputError || error ? "show" : ""}`} role="alert">
               {error || "请先输入需要发送的内容，或添加一个附件"}
             </div>
-            <small className="drop-hint"><Icon name="shield" size={12} /> 资料按账号隔离 · 单个文件最大 25 MB · 最多 10 项</small>
+            <small className="drop-hint"><Icon name="shield" size={12} /> 资料按账号隔离 · 文件大小不限 · 最多 10 项</small>
           </div>
         </section>
       </div>

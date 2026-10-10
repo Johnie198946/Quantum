@@ -62,3 +62,16 @@
 @keyframes qs-connect-spin { to { transform:rotate(360deg); } }
 @keyframes qs-connect-draw { to { stroke-dashoffset:0; } }
 @media(prefers-reduced-motion:reduce) { .quansyn .qs-connect-check path { stroke-dashoffset:0; } }
+
+.quansyn .qs-draft-image { width:72px; height:56px; object-fit:contain; border-radius:5px; }
+/* Keep the original composition readable on full-width desktop displays. */
+@media (min-width: 1600px) {
+  .quansyn .message-area { padding-inline:clamp(80px, 9vw, 280px); }
+  .quansyn .message-stack { max-width:min(78%, 1040px); }
+  .quansyn .composer { padding-inline:clamp(80px, 9vw, 280px); }
+  .quansyn .text-bubble,.quansyn .rich-answer { font-size:15px; line-height:1.8; }
+  .quansyn .compose-box textarea { font-size:15px; }
+  .quansyn .chat-header { padding-inline:clamp(32px, 3vw, 100px); }
+  .quansyn .target-device strong { font-size:15px; }
+  .quansyn .target-device small,.quansyn .drop-hint { font-size:12px; }
+}

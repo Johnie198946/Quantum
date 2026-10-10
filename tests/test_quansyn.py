@@ -72,7 +72,6 @@ def test_validation(client):
     assert c.post("/api/v1/quansyn/transfers", json=body(text="")).status_code == 422
     assert c.post("/api/v1/quansyn/transfers", json=body(blocks=[{"kind": "chart", "labels": ["x"], "values": []}])).status_code == 422
     assert c.post("/api/v1/quansyn/files", content=b"", headers={"X-File-Name": "a.txt"}).status_code == 422
-    assert c.post("/api/v1/quansyn/files", content=b"x" * (quansyn.MAX_BYTES + 1), headers={"X-File-Name": "a.txt"}).status_code == 413
     extensionless = c.post("/api/v1/quansyn/files", content=b"hello", headers={"X-File-Name": "LICENSE"})
     assert extensionless.status_code == 201
     assert c.get('/api/v1/quansyn/files/' + extensionless.json()["artifact_id"]).content == b"hello"
@@ -141,3 +140,23 @@ def test_device_cannot_bypass_withdrawal_or_attach_other_queue_file(client):
         assert c.get("/api/v1/quansyn/transfers", headers=headers).status_code == 428
     finally:
         app.dependency_overrides[quansyn.principal] = override
+
+
+def test_large_attachment_stream_roundtrip(client):
+    import hashlib
+    c, _ = client
+    chunk = b"QuanSyn-large-file\n" * 65536
+    expected = hashlib.sha256()
+    def chunks():
+        for _ in range(48):
+            expected.update(chunk)
+            yield chunk
+    response = c.post("/api/v1/quansyn/files", content=chunks(), headers={"X-File-Name": "large.bin"})
+    assert response.status_code == 201, response.text
+    file = response.json()
+    assert file["byte_size"] > 50 * 1024 * 1024
+    assert file["content_hash"] == expected.hexdigest()
+    row = c.post("/api/v1/quansyn/transfers", json=body(files=[{"artifact_id": file["artifact_id"]}]))
+    assert row.status_code == 201, row.text
+    downloaded = c.get('/api/v1/quansyn/files/' + file["artifact_id"])
+    assert hashlib.sha256(downloaded.content).hexdigest() == expected.hexdigest()
