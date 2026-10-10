@@ -612,3 +612,6 @@ functional_check: 状态恢复2项回归通过；五项真实业务未完整通�
 rollback_point: /private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive 保留且签名有效，1.0.3(85)；构建86未安装真机，原用户设备未修改
 manifest: ops/change-manifests/quansyn-20261009-completion.md
 remaining_risks: Mac锁屏与Apple账号权限阻止发布；尚未获TestFlight处理/可安装回执；未宣称上线；图片/附件生成与生产执行问题仍存在
+
+
+构建86图形上传复验：用户回复“已就绪”后，Mac锁屏阻断已解除。Xcode Organizer实际载入9:13AM归档1.0.3(86)，执行Distribute App→App Store Connect→Distribute，最终明确显示Unable to authenticate with App Store Connect、No App Store Connect access for the team。未上传成功，未部署TestFlight。已请用户在Manage Accounts中重新登录有发布权限的账号，密码/双重验证码由用户本人操作。当前status仍PUSHED；源SHA d7b96b39不变；后置文档/回执已推送bd3354f9，ls-remote核对一致。remaining_risks更新为Apple账号鉴权/权限，Mac锁屏已不再作为本次实际重试阻断。

@@ -28,8 +28,13 @@
     "method": "xcodebuild exportArchive using existing ExportOptions.plist",
     "exit_code": 70,
     "error": "No Accounts with App Store Connect Access",
-    "gui_fallback": "Selected exact build86 archive; native Open interrupted by Mac locked; no upload confirmed",
-    "testflight_available": false
+    "gui_fallback": "After user unlocked and confirmed readiness, opened exact 1.0.3(86) archive, Distribute App > App Store Connect; Apple returned Unable to authenticate with App Store Connect and No App Store Connect access for the team. No successful upload.",
+    "testflight_available": false,
+    "gui_errors": [
+      "Unable to authenticate with App Store Connect",
+      "No App Store Connect access for the team"
+    ],
+    "remaining_blocker": "Apple account authentication/access; Mac unlocked at retry"
   },
   "server_deploy": "not applicable: iOS-only fix",
   "business_acceptance": "incomplete, see business-flow-20261010.json",
