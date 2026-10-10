@@ -553,3 +553,34 @@ remaining_risks: 按钮当前仍接入手机验证码，App授权自动登录尚
 - 此前只凭路由排除Tailscale影响的判断不完整；已用防火墙规则和实际回包证据纠正。没有flush缓存、修改规则、更改DNS、重启服务或发送短信。
 
 续作状态：LOCAL_ONLY（诊断文档未提交；无产品代码变更）。head/local_commit=b08dc111d391f2244590060824fd4de0fce4dc7e；remote_sha=本轮未push，既有push证据见前文；server_before=server_after=1c7c5062cd0248edeb10080cb9b80ec6320e2882；health_check=本轮未重复服务健康检查；functional_check=DNS回包与丢弃规则核对通过，短信送达/登录未通过；rollback_point=无外部写入，不适用；remaining_risks=用户禁止配置修改，故障尚未修复，不能声明短信凭据及送达正常；App内验证码边界仍待确认。
+
+
+## 2026-10-10 五项生产业务验收（未完整通过）
+
+- 盘点：status 为干净 codex/quansyn-20261009...origin/codex/quansyn-20261009；HEAD b613190b07ed479466fc9ca2886526dfd8ea07b9；origin https://github.com/Johnie198946/Quantum.git，source https://github.com/Johnie198946/ai-lab-platform.git。本任务独立 worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009；worktree list 已核对，其他任务/main 未修改。按用户本任务隔离指令继续使用本分支。
+- 构建：从今天最新已完成的构建 85 源码 f802c7c8efbed596db234e66d5b6e9ef1489e440 导出 iOS，构建通过，安装本任务模拟器 24B48A56-1C35-4F01-9E95-DD91E1C60333。用户本人完成网页、模拟器正常短信登录和协议确认；没有复制或注入认证令牌。
+- 五个生产 Web 请求均通过正常页面提交、均在同账号 App QuanSyn 队列显示。业务材料为明确标注的验收采购 CSV 和实际官方标志 PNG；不是实际采购订单，也不是前端 mock 或模型 mock。精确请求 ID、文件哈希、时刻和结果见 business-flow-20261010.json 与 business-inputs-20261010.json。
+- 文本：Web→App 草稿→真实模型→App 手动推送→Web 完整内容→复制粘贴，全部通过。
+- 附件：CSV 实际解析正确，模型总数量60、总金额448.70、笔记本222.00均正确，完整结果回传成功。真实模型明确无 CSV 生成工具，没有可下载结果附件，此子项未通过。提取文本预览无关闭按钮，拖动/ESC 未收起；重启 App 后草稿和附件恢复，此界面问题保留。
+- 图片：App 原图显示成功；真实模型明确无法读取像素，未生成视觉描述或回传图片。该失败回答成功回传，但图片业务失败。
+- 代码：原任务报“服务暂时不可用/未找到可恢复的任务”；首次重试被卡住的 isGenerating 阻止。未获得代码、未执行代码，不视为通过。
+- 图表：原任务同样无可恢复结果；本地修复后输入状态释放；显式重试仍无 PNG 成果。未通过。
+- 根因证据与最小修改：recoverAfterStreamEnd 发现不匹配请求后标记 not_found，却返回 true，导致调用者跳过 finishGeneration。仅改为 false，复用原有状态路径和鉴权，不新增服务或工具权限。修改 TenantSessionCoordinator.swift 与现有 WorkflowLifecycleDTOTests.swift。
+- 验证：新增不匹配请求回归、既有运行中禁止重复重试回归共2项通过，0失败；构建85加此补丁安装后，图表原失败卡不再占用输入状态。git diff --check 通过。回归证据 business-recovery-tests-20261010.txt；完整 xcresult /private/tmp/quansyn-recovery-test.xcresult。
+- 诊断限制：自动审批拒绝读取生产图片解析文本和近期 API 日志，理由为可能包含敏感数据。已向用户请求只针对本次测试、服务器端过滤令牌/验证码/账号的脱敏诊断授权，尚未获得；未绕过拒绝。
+
+当前本地修复交付字段（不代表五项业务全通过）：
+
+task_id: quansyn-20261009-business-acceptance
+status: TESTED（仅状态恢复修复及2项回归；整体业务未通过）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: b613190b07ed479466fc9ca2886526dfd8ea07b9；本轮修复未提交
+remote_sha: 本轮未推送；不能用此前发布 SHA 代表本轮修复
+server_before: 1c7c5062cd0248edeb10080cb9b80ec6320e2882（.deployed-sha 实际只读）
+server_after: 本轮未部署；最后读取仍为 server_before，不推断其他任务之后的版本
+health_check: https://www.t-react.com/health 返回 {"status":"ok","version":"0.8.0"}
+functional_check: 文本完整通过；附件部分通过；图片、代码、图表失败/无成果；本地状态恢复2回归通过
+rollback_point: 本轮未改服务器，无新增服务器回滚点；App 临时补丁可重新安装原始构建85恢复；Git 修改未提交，可按本任务补丁逐项逆向恢复，不涉及其他任务
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 生产执行/视觉/文件生成问题未修复，日志诊断授权等待用户；不宣称全流程验收或本轮发布完成；Mac实际飞书链未追加验证
