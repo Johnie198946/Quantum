@@ -203,12 +203,29 @@ final class ProductionBookshelfUITests: XCTestCase {
         XCTAssertFalse(receipt.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自然风光")).firstMatch.exists, "取消的偏好不能继续提交")
     }
 
+    func testCompletedTravelCardOpensWorkflowWithoutDuplicate() {
+        app.terminate()
+        app.launchArguments = ["-travelWorkflowPreview", "-travelCompletedProposalPreview"]
+        app.launch()
+        let open = app.buttons["travel-proposal-open-workflow"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["需求澄清中"].exists)
+        attachScreenshot(named: "travel-single-completed-task-card")
+        open.tap()
+        XCTAssertTrue(app.staticTexts["完善旅行计划"].waitForExistence(timeout: 10))
+        attachScreenshot(named: "travel-task-card-opened-workflow")
+    }
+
     func testTravelConfirmationUsesCompactLayoutAndExplicitDecision() {
         app.terminate()
         app.launchArguments = ["-travelWorkflowPreview", "-travelRequirementConfirmationPreview"]
         app.launch()
         XCTAssertTrue(app.staticTexts["确认旅行需求"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["需求收敛确认单"].exists)
+        XCTAssertTrue(app.staticTexts["目的地"].exists)
+        XCTAssertTrue(app.staticTexts["鹿儿岛，日本"].exists)
+        XCTAssertTrue(app.staticTexts["同行人"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "原始需求：请安排")).firstMatch.exists, "完整原文应默认折叠")
         let submit = app.buttons["requirement-confirm-primary-action"]
         XCTAssertFalse(submit.isEnabled)
         let confirm = app.buttons["确认，进入方案设计"]

@@ -1417,7 +1417,8 @@ private struct WorkflowClarificationView: View {
                                 initiallyExpanded: false
                             )
                         }
-                        if WorkflowDetailTransitionPolicy.isTravel(workflow), !travelContext.isEmpty {
+                        if WorkflowDetailTransitionPolicy.isTravel(workflow), !travelContext.isEmpty,
+                           model.snapshot?.messages.last?.messageType != "requirement_confirmation" {
                             TravelWorkflowBriefCard(content: travelContext)
                         }
                         ForEach(visibleMessages) { message in
@@ -1502,7 +1503,7 @@ private struct WorkflowClarificationView: View {
             )
             if message.messageType == "requirement_confirmation" {
                 RequirementConfirmationCard(
-                    block: block, isTravel: WorkflowDetailTransitionPolicy.isTravel(workflow),
+                    block: block, isTravel: WorkflowDetailTransitionPolicy.isTravel(workflow), travelContext: travelContext,
                     onSubmit: { selection in Task { await model.respond(selection) } }
                 )
                 .disabled(model.isSubmitting)
@@ -1621,24 +1622,54 @@ struct TravelWorkflowHeader: View {
 
 struct TravelWorkflowBriefCard: View {
     let content: String
+    var title: String = "已带入的旅行需求"
+    private var input: CapabilityProposalInput {
+        TravelPlanPreferencesView.draft(title: "旅行", context: content)
+    }
+
     var body: some View {
-        DisclosureGroup {
-            Text(content).font(AppTheme.Typography.supporting)
-                .textSelection(.enabled)
-                .padding(.top, AppTheme.Spacing.sm)
-        } label: {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Label("已带入的旅行需求", systemImage: "suitcase.rolling")
-                    .font(AppTheme.Typography.supporting.weight(.semibold))
-                Text(content).font(AppTheme.Typography.micro)
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-                    .lineLimit(3)
+        VStack(alignment: .leading, spacing: 16) {
+            Label(title, systemImage: "suitcase.rolling")
+                .font(AppTheme.Typography.cardTitle).foregroundStyle(AppTheme.Colors.primary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), alignment: .leading)], alignment: .leading, spacing: 12) {
+                fact("目的地", icon: "mappin.and.ellipse", value: input.destination)
+                fact("出行时间", icon: "calendar", value: input.travelDates)
+                fact("同行人", icon: "person.2", value: input.travelers)
+                fact("偏好与预算", icon: "heart", value: input.travelPreferences)
             }
+            DisclosureGroup {
+                Text(content).font(AppTheme.Typography.supporting).lineSpacing(5)
+                    .foregroundStyle(AppTheme.Colors.textSecondary).textSelection(.enabled)
+                    .padding(.top, 8)
+            } label: {
+                Label("查看完整需求与聊天依据", systemImage: "text.alignleft")
+                    .font(AppTheme.Typography.micro)
+            }
+            .accessibilityIdentifier("travel-original-requirements")
         }
-        .padding(AppTheme.Spacing.md)
+        .padding(16)
         .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         .tint(AppTheme.Colors.primary)
         .accessibilityIdentifier("travel-workflow-brief")
+    }
+
+    private func fact(_ label: String, icon: String, value: String?) -> some View {
+        let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pending = text.isEmpty || text.contains("待确认") || text.contains("尚未决定")
+        return VStack(alignment: .leading, spacing: 8) {
+            Label(label, systemImage: icon).font(AppTheme.Typography.micro)
+                .foregroundStyle(AppTheme.Colors.primary)
+            Text(pending ? "待补充" : text).font(AppTheme.Typography.supporting.weight(.semibold))
+                .foregroundStyle(pending ? AppTheme.Colors.textSecondary : AppTheme.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(pending ? "尚未确认" : "已带入")
+                .font(.system(size: 10, weight: .medium)).foregroundStyle(AppTheme.Colors.primary)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(AppTheme.Colors.surfaceTint, in: Capsule())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -5238,8 +5269,21 @@ private struct TravelActionEditSheet: View {
 
 #if DEBUG
 struct TravelWorkflowPreviewHost: View {
+    @State private var openedTask = false
     var body: some View {
-        if ProcessInfo.processInfo.arguments.contains("-travelPlanPreview") {
+        if ProcessInfo.processInfo.arguments.contains("-travelCompletedProposalPreview") {
+            NavigationStack {
+                ScrollView {
+                    MessageBubbleView(message: completedMessage,
+                        context: PluginRenderContext(messageId: completedMessage.id, onWorkflowOpen: { id in
+                            openedTask = id == snapshot.workflow.id
+                        }))
+                }
+                .navigationDestination(isPresented: $openedTask) {
+                    WorkflowClarificationView(preview: snapshot)
+                }
+            }
+        } else if ProcessInfo.processInfo.arguments.contains("-travelPlanPreview") {
             NavigationStack {
                 ScrollView { TravelWorkflowPlanView().padding(20) }
                     .safeAreaInset(edge: .bottom) { Button("确认开始") {}.buttonStyle(QuantumPrimaryButtonStyle()).padding(20).background(AppTheme.Colors.background) }
@@ -5252,6 +5296,15 @@ struct TravelWorkflowPreviewHost: View {
                 WorkflowClarificationView(preview: snapshot)
             }
         }
+    }
+    private var completedMessage: ChatMessage {
+        var input = TravelPlanPreferencesView.draft(title: snapshot.workflow.title,
+            context: snapshot.messages[0].content)
+        input.workflowId = snapshot.workflow.id
+        let proposal = CapabilityProposalBlock(id: "completed-travel-preview", capabilityId: "workflow.create",
+            input: input, summary: "旅行计划", risk: "", state: .completed)
+        return ChatMessage(id: "completed-preview", role: .assistant, content: "",
+            blocks: [.capabilityProposal(proposal), .workflow(snapshot.workflow)])
     }
     private var snapshot: WorkflowClarificationSnapshotDTO {
         let choices = ProcessInfo.processInfo.arguments.contains("-travelFreeTextPreview")

@@ -435,7 +435,7 @@ public struct CapabilityProposalInput: Codable, Sendable, Hashable {
     public let desiredOutput: String?
     public let sourceDocumentId: String?
     public let outputKind: String?
-    public let workflowId: String?
+    public var workflowId: String?
     public let textMaterial: String?
     public let audience: String?
     public let intendedUse: String?
@@ -889,6 +889,29 @@ public extension ChatMessage {
 }
 
 public struct ChatMessage: Identifiable, Sendable, Hashable {
+    // Old messages have a single created task beside the completed travel proposal.
+    public func travelWorkflowID(for proposal: CapabilityProposalBlock) -> String? {
+        guard proposal.capabilityId == "workflow.create", proposal.input.outputKind == "travel",
+              proposal.state == .completed else { return nil }
+        if let id = proposal.input.workflowId, !id.isEmpty { return id }
+        let proposals = blocks.compactMap { block -> CapabilityProposalBlock? in
+            if case .capabilityProposal(let item) = block,
+               item.capabilityId == "workflow.create", item.input.outputKind == "travel",
+               item.state == .completed { return item }; return nil
+        }
+        let workflows = blocks.compactMap { if case .workflow(let item) = $0 { return item.id }; return nil }
+        return proposals.count == 1 && workflows.count == 1 ? workflows.first : nil
+    }
+
+    public var visibleTaskBlocks: [MessageBlock] {
+        let linkedIDs = Set(blocks.compactMap { block -> String? in
+            if case .capabilityProposal(let proposal) = block { return travelWorkflowID(for: proposal) }; return nil
+        })
+        return blocks.filter { block in
+            if case .workflow(let workflow) = block { return !linkedIDs.contains(workflow.id) }; return true
+        }
+    }
+
     public var quansynTransferId: String? = nil
     public var quansynDraft: String? = nil
     public var quansynClaim: String? = nil

@@ -605,7 +605,7 @@ public struct V4ClarifyMergePrototypeHost: View {
                     ScrollView {
                         if pageID.hasSuffix("p02") {
                             RequirementConfirmationCard(
-                                block: confirmationBlock
+                                block: confirmationBlock, isTravel: false
                             )
                             .padding(AppTheme.Spacing.lg)
                         } else {
@@ -1284,6 +1284,7 @@ public struct CapabilityProposalCard: View {
     public let onConfirm: () -> Void
     public let onDiscard: () -> Void
     public var onTravelEdit: ((CapabilityProposalInput) -> Void)? = nil
+    public var onOpenWorkflow: (() -> Void)? = nil
     @State private var showsTravelDetails = false
 
     public var body: some View {
@@ -1400,8 +1401,8 @@ public struct CapabilityProposalCard: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "airplane.circle").foregroundStyle(AppTheme.Colors.primary).font(.title2)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("转为旅行计划任务").font(.system(size: 19, weight: .semibold, design: .serif))
-                    Text("已从对话中带入旅行信息，可以修改后继续。")
+                    Text(proposal.state == .completed ? (proposal.input.title ?? "旅行计划") : "转为旅行计划任务").font(.system(size: 19, weight: .semibold, design: .serif))
+                    Text(proposal.state == .completed ? "旅行需求已保存，点击卡片继续规划。" : "已从对话中带入旅行信息，可以修改后继续。")
                         .font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -1410,6 +1411,8 @@ public struct CapabilityProposalCard: View {
                         .accessibilityLabel("修改旅行需求").tint(AppTheme.Colors.primary)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { if proposal.state == .completed { onOpenWorkflow?() } }
             VStack(spacing: 0) {
                 travelRow("mappin.and.ellipse", "目的地", proposal.input.destination)
                 Divider().padding(.leading, 42)
@@ -1429,6 +1432,12 @@ public struct CapabilityProposalCard: View {
                 .buttonStyle(QuantumPrimaryButtonStyle())
                 .accessibilityIdentifier("travel-proposal-edit")
                 HStack(spacing: AppTheme.Spacing.sm) { travelSecondaryActions }
+            } else if proposal.state == .completed, let onOpenWorkflow {
+                Button(action: onOpenWorkflow) {
+                    HStack { Label("进入工作流", systemImage: "checkmark.circle"); Spacer(); Image(systemName: "chevron.right") }
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(AppTheme.Colors.primary)
+                    .accessibilityIdentifier("travel-proposal-open-workflow")
             } else {
                 Label(stateLabel, systemImage: proposal.state == .applying ? "clock" : "checkmark.circle")
                     .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
@@ -1471,17 +1480,17 @@ public struct CapabilityProposalCard: View {
     }
 
     private func travelRow(_ icon: String, _ title: String, _ value: String?) -> some View {
-        Button { showsTravelDetails = true } label: {
+        Button { if proposal.state == .completed { onOpenWorkflow?() } else { showsTravelDetails = true } } label: {
             HStack(spacing: 10) {
                 Image(systemName: icon).foregroundStyle(AppTheme.Colors.primary).frame(width: 22)
                 Text(title).font(.system(size: 13, weight: .medium)).frame(width: 58, alignment: .leading)
-                Text(value?.isEmpty == false ? value! : "尚未决定")
+                Text(value?.isEmpty == false && value?.contains("待确认") != true ? value! : "尚未决定")
                     .font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading).lineLimit(2)
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppTheme.Colors.textTertiary)
-            }.padding(.horizontal, 12).frame(minHeight: 52)
+            }.padding(.horizontal, 12).frame(minHeight: 52).contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .disabled(proposal.state != .awaitingConfirmation && proposal.state != .failed)
+            .disabled(proposal.state != .awaitingConfirmation && proposal.state != .failed && onOpenWorkflow == nil)
     }
 
     private var isTravelProposal: Bool {
