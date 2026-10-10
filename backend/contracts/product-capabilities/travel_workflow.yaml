@@ -1,0 +1,392 @@
+capabilities:
+- id: workflow.clarification.read
+  version: 1.0.0
+  domain: workflow
+  description: Read the current owned workflow requirements, round and chat evidence
+    before answering or confirming. Includes travel requirements; reuse known facts
+    and distinguish assistant suggestions from user choices.
+  positive_examples:
+  - 查看鹿儿岛任务已带入的需求
+  - Read requirements and the current confirmation round
+  negative_examples:
+  - Create a new task or invent unknown dates
+  input_schema:
+    type: object
+    properties:
+      workflow_id: &id001
+        type: string
+        minLength: 1
+        maxLength: 48
+    required:
+    - workflow_id
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: workflow-owner
+  handler_binding: workflow.clarification.read
+  idempotency: none
+  receipt: none
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: workflow.clarification.respond
+  version: 1.0.0
+  domain: workflow
+  description: Submit explicit additions or confirmation to the current requirement
+    round. Read the round first; preserve unknown travel facts and never confirm assistant
+    suggestions without the user choosing them. Confirmation may queue planning, but
+    does not approve or start execution.
+  positive_examples:
+  - 确认这些旅行需求，日期尚未决定
+  - 修改需求，第一天福冈第二天系岛
+  negative_examples:
+  - Confirm a stale round or treat an assistant proposal as booked
+  input_schema:
+    type: object
+    properties:
+      workflow_id: *id001
+      expected_round:
+        type: integer
+        minimum: 1
+      response:
+        type: string
+        maxLength: 4000
+      intent:
+        type: string
+        enum:
+        - confirm
+        - revise
+    required:
+    - workflow_id
+    - expected_round
+    - response
+    - intent
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - current_version_or_state
+  - explicit_user_confirmation
+  policy_ref: workflow-owner
+  handler_binding: workflow.clarification.respond
+  idempotency: required
+  receipt: required
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: workflow.plan.read
+  version: 1.0.0
+  domain: workflow
+  description: Read the owned current execution plan with its content_hash and activation_revision
+    before approval or editing. Travel includes research, day blocks with previous-day
+    context, notebook and review gates.
+  positive_examples:
+  - 查看旅行攻略制作方案和版本
+  - Read the plan before approving
+  negative_examples:
+  - Approve or start a plan without review
+  input_schema:
+    type: object
+    properties:
+      workflow_id: *id001
+    required:
+    - workflow_id
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: workflow-owner
+  handler_binding: workflow.plan.read
+  idempotency: none
+  receipt: none
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: workflow.artifacts.list
+  version: 1.0.0
+  domain: workflow
+  description: List the actual artifacts of an owned run, including travel research,
+    itinerary, notebook, hashes, versions and review gates. Use artifact.open to read
+    the exact result; never infer completion.
+  positive_examples:
+  - 看看鹿儿岛攻略生成了哪些成果
+  - 查看逐日行程和旅行手记的版本
+  negative_examples:
+  - Claim an artifact exists without a server result
+  input_schema:
+    type: object
+    properties:
+      execution_id: *id001
+    required:
+    - execution_id
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: read
+  risk: low
+  confirmation: none
+  preconditions:
+  - authenticated_owner
+  policy_ref: workflow-owner
+  handler_binding: workflow.artifacts.list
+  idempotency: none
+  receipt: none
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: workflow.review
+  version: 1.0.0
+  domain: workflow
+  description: Approve or request revision of an exact owned artifact version. For
+    travel, approve the itinerary gate to continue notebook creation, or adopt the
+    final notebook; adoption does not save a personal note or make bookings. Read
+    artifacts and content first.
+  positive_examples:
+  - 采用这个逐日行程继续生成旅行手记
+  - 采用最终旅行攻略
+  - 第二天太赶了，修改这版行程
+  negative_examples:
+  - Approve a stale hash, unseen output, or another user's result
+  input_schema:
+    type: object
+    properties:
+      execution_id: *id001
+      artifact_id: *id001
+      expected_hash: &id002
+        type: string
+        pattern: ^[a-f0-9]{64}$
+      artifact_version:
+        type: integer
+        minimum: 1
+      decision:
+        type: string
+        enum:
+        - approve
+        - revise
+      comment:
+        type: string
+        maxLength: 2000
+    required:
+    - execution_id
+    - artifact_id
+    - expected_hash
+    - artifact_version
+    - decision
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - current_version_or_state
+  - explicit_user_confirmation
+  policy_ref: workflow-owner
+  handler_binding: workflow.review
+  idempotency: required
+  receipt: required
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: workflow.retry
+  version: 1.0.0
+  domain: workflow
+  description: Resume the same owned failed or cancelled execution through the existing
+    checkpoint retry path. Check status first; retain finished travel blocks and approved
+    overall budget.
+  positive_examples:
+  - 继续刚才检索超时的鹿儿岛任务
+  - 重试失败的旅行攻略生成
+  negative_examples:
+  - Start a new task, duplicate a running execution, or increase the approved overall
+    budget
+  input_schema:
+    type: object
+    properties:
+      execution_id: *id001
+    required:
+    - execution_id
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - current_version_or_state
+  - explicit_user_confirmation
+  policy_ref: workflow-owner
+  handler_binding: workflow.retry
+  idempotency: required
+  receipt: required
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: travel.revise
+  version: 1.0.0
+  domain: workflow
+  description: Append an exact hash-bound revision or actual progress fact to a completed
+    travel plan, preserving existing journal, bookings and photos. Read the latest
+    artifact first. No ticket purchase, restaurant reservation or payment is performed.
+  positive_examples:
+  - 调整已采用行程，今天下雨
+  - 记录已到达车站
+  - 把第二天改到系岛并保留前一天安排
+  negative_examples:
+  - Rewrite a stale plan, invent bookings, or alter another user's trip
+  input_schema:
+    type: object
+    properties:
+      execution_id: *id001
+      artifact_id: *id001
+      expected_hash: *id002
+      reason:
+        type: string
+        minLength: 1
+        maxLength: 2000
+      proposed:
+        type: object
+      confirmed_bookings:
+        type: object
+        additionalProperties:
+          type: string
+      action_id:
+        type: string
+        maxLength: 100
+      progress:
+        type: string
+        enum:
+        - delayed
+        - in_progress
+        - completed
+        - cancelled
+        - skipped
+      happened_at:
+        type: string
+        format: date-time
+    required:
+    - execution_id
+    - artifact_id
+    - expected_hash
+    - reason
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - current_version_or_state
+  - explicit_user_confirmation
+  policy_ref: workflow-owner
+  handler_binding: travel.revise
+  idempotency: required
+  receipt: required
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: travel.notebook.save
+  version: 1.0.0
+  domain: workflow
+  description: Save an adopted, owned, hash-matched final travel artifact as a private
+    linked notebook via the existing note sync API. Reuse an existing linked note
+    when its artifact hash matches; refuse to overwrite personal changes or a different
+    version. Use knowledge.note.read/update with its reviewed base_hash for an explicit
+    merge.
+  positive_examples:
+  - 把已采用的鹿儿岛攻略保存成旅行笔记
+  - 保存这版旅行手记，不重复创建
+  negative_examples:
+  - Save an unapproved or stale artifact, fabricate note content, overwrite an existing
+    journal, or claim the map rendered
+  input_schema:
+    type: object
+    properties:
+      execution_id: *id001
+      artifact_id: *id001
+      expected_hash: *id002
+    required:
+    - execution_id
+    - artifact_id
+    - expected_hash
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - workflow
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions:
+  - authenticated_owner
+  - current_version_or_state
+  - explicit_user_confirmation
+  policy_ref: workflow-owner
+  handler_binding: travel.notebook.save
+  idempotency: required
+  receipt: required
+  result_event: workflow.summary
+  renderer: workflow
+  renderer_version: 1
+  tests:
+  - tests/test_travel_pcm_capabilities.py
+  - tests/test_workflows_api.py
+  implementation_status: implemented

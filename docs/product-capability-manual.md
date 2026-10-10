@@ -3,7 +3,7 @@
 > Generated view. Do not edit manually. Gateway/Bridge semantics are governed by `docs/product-specs/capability-gateway.md`; repository engineering workflow is governed by `AGENTS.md`.
 
 QCP version: `1.0.0`
-Catalog digest: `f88f33fd05f2162c33301612eaeb75e77ab494b392fa0df67c38e08dc4f9a511`
+Catalog digest: `b0a08c84a7350bd26529b9a82840a706a89419965e92248982403f86b3fe5b35`
 
 ## Gateway 核心模块规范
 
@@ -392,12 +392,20 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 | `task.list@1.1.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.status@1.0.0` | task | read | none | none | `task.snapshot` | `answer@1` | implemented |
 | `task.update@1.1.0` | task | write | required | required | `task.change_proposed` | `answer@1` | implemented |
+| `travel.notebook.save@1.0.0` | workflow | write | required | required | `workflow.summary` | `workflow@1` | implemented |
+| `travel.revise@1.0.0` | workflow | write | required | required | `workflow.summary` | `workflow@1` | implemented |
 | `voice.record@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `voice.transcribe@1.0.0` | client_action | client_action | required | required | `client.action.requested` | `client_action@1` | implemented |
 | `workflow.approve@1.0.0` | workflow | write | required | required | `workflow.approved` | `workflow@1` | implemented |
+| `workflow.artifacts.list@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.cancel@1.0.0` | workflow | write | required | required | `workflow.cancelled` | `workflow@1` | implemented |
+| `workflow.clarification.read@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
+| `workflow.clarification.respond@1.0.0` | workflow | write | required | required | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.create@1.0.0` | workflow | write | required | required | `workflow.created` | `workflow@1` | implemented |
 | `workflow.open@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
+| `workflow.plan.read@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
+| `workflow.retry@1.0.0` | workflow | write | required | required | `workflow.summary` | `workflow@1` | implemented |
+| `workflow.review@1.0.0` | workflow | write | required | required | `workflow.summary` | `workflow@1` | implemented |
 | `workflow.revise@1.0.0` | workflow | write | required | required | `workflow.revised` | `workflow@1` | implemented |
 | `workflow.start@1.0.0` | workflow | execute | required | required | `workflow.started` | `workflow@1` | implemented |
 | `workflow.status@1.0.0` | workflow | read | none | none | `workflow.summary` | `workflow@1` | implemented |
@@ -409,6 +417,7 @@ Chat 写入复用签名 knowledge_action、客户端 KnowledgeActionExecutor 和
 | `artifact.structured_consumption` | artifact | `durable_structured_consumption_receipt` | implemented |
 | `knowledge.natural_qa` | knowledge | `durable_answer_and_source_events` | implemented |
 | `publication.illustrated_delivery` | publication | `native_dispatch_and_generation_evidence_signed_review_edition_and_reader_media_readback` | partial |
+| `travel.workflow_chat` | workflow | `gateway_confirmation_receipt_workflow_artifacts_and_private_note_sync` | partial |
 | `workflow.knowledge_need_injection` | workflow | `workflow_event_receipt` | implemented |
 
 ## iOS document-class E2E coverage

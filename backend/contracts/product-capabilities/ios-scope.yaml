@@ -88,6 +88,14 @@ capabilities:
   - learning.exercise.hint
   - learning.exercise.answer
   - learning.exercise.submit
+  - workflow.clarification.read
+  - workflow.clarification.respond
+  - workflow.plan.read
+  - workflow.artifacts.list
+  - workflow.review
+  - workflow.retry
+  - travel.revise
+  - travel.notebook.save
 annotations:
   conversation.lifecycle:
     ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
@@ -354,5 +362,29 @@ annotations:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
     qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
   learning.exercise.submit:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.clarification.read:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.clarification.respond:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.plan.read:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.artifacts.list:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.review:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  workflow.retry:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  travel.revise:
+    ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  travel.notebook.save:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
     qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js

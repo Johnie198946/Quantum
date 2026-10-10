@@ -7658,3 +7658,22 @@ final class TravelTaskCardLinkTests: XCTestCase {
         XCTAssertEqual(message.visibleTaskBlocks.count, 2)
     }
 }
+
+final class TravelPCMResultTests: XCTestCase {
+    func testLifecycleSummaryDecodesWithoutCreationOnlyClarificationSession() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let bytes = Data("""
+        {"workflow":{"id":"wf-travel","title":"鹿儿岛","description":"旅行",
+        "desired_output":"旅行手记","status":"ready","source_client_session_id":"chat-travel"},
+        "execution":{"id":"wfr-travel","status":"completed"},"note":{"note_id":"private-note"}}
+        """.utf8)
+        let result = try decoder.decode(WorkflowCapabilityResultDTO.self, from: bytes)
+        XCTAssertEqual(result.workflow.id, "wf-travel")
+        XCTAssertEqual(result.workflow.sourceClientSessionId, "chat-travel")
+        XCTAssertEqual(result.workflow.status, "ready")
+        XCTAssertEqual(RendererRegistry.route(for: "workflow.summary", version: 1), .workflow)
+        XCTAssertThrowsError(try decoder.decode(WorkflowCapabilityResultDTO.self,
+            from: Data("{\"execution\":{\"id\":\"wfr-travel\"}}".utf8)))
+    }
+}

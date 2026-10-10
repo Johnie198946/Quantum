@@ -561,7 +561,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let workflow: WorkflowDTO?
             if let created = try? decoder.decode(
-                WorkflowCreateResponseDTO.self, from: event.payload
+                WorkflowCapabilityResultDTO.self, from: event.payload
             ) {
                 workflow = created.workflow
             } else {
@@ -3856,6 +3856,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     switch event.type {
                     case "learning.exercise":
                         learningResults.append(try Self.decodeCapabilityPayload(event.payload))
+                    case "workflow.summary":
+                        let result: WorkflowCapabilityResultDTO = try Self.decodeCapabilityPayload(event.payload)
+                        completedWorkflow = result.workflow
+                        pendingWorkflowId = result.workflow.id
                     case "workflow.created", "presentation.created", "document.created":
                         let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
                         completedWorkflow = created.workflow

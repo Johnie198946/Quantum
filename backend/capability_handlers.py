@@ -27,6 +27,9 @@ from backend.api.knowledge_sync import (
 )
 from backend.api.workflows import (
     ApprovalRequest,
+    ClarificationResponse,
+    StageReviewRequest,
+    TravelRevisionRequest,
     PlanEdit,
     WorkflowCancelRequest,
     WorkflowCreate,
@@ -36,6 +39,12 @@ from backend.api.workflows import (
     edit_plan,
     get_artifact_content,
     get_execution,
+    get_clarification,
+    get_plan,
+    respond_to_clarification,
+    review_presentation_stage,
+    retry_execution,
+    save_travel_revision,
     get_workflow,
     list_artifacts,
     start_workflow,
@@ -114,7 +123,7 @@ async def _knowledge_mutation(
     key: str | None,
     operation: Callable[[], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
-    """Serialize and durably replay one private-note capability mutation."""
+    """Serialize and durably replay one owner-scoped capability mutation in the existing receipt store."""
     assert key
     from backend.api import knowledge_sync as sync
 
@@ -598,6 +607,111 @@ async def _workflow_cancel(
         ),
         payload,
     )
+
+
+async def _workflow_clarification_read(data, payload, _key):
+    return await get_clarification(data["workflow_id"], payload)
+
+
+async def _workflow_clarification_respond(data, payload, key):
+    async def apply():
+        result = await respond_to_clarification(data["workflow_id"], ClarificationResponse(
+            **{k: v for k, v in data.items() if k != "workflow_id"}
+        ), payload)
+        return {"workflow": await get_workflow(data["workflow_id"], payload), "clarification": result}
+    return await _knowledge_mutation("workflow.clarification.respond", data, payload, key, apply)
+
+
+async def _workflow_plan_read(data, payload, _key):
+    plan = await get_plan(data["workflow_id"], payload)
+    return {"workflow": await get_workflow(data["workflow_id"], payload), "plan": plan}
+
+
+async def _execution_workflow_result(execution_id, payload, **details):
+    execution = await get_execution(execution_id, payload)
+    return {"workflow": await get_workflow(execution["workflow_id"], payload),
+            "execution": execution, **details}
+
+
+async def _workflow_artifacts_list(data, payload, _key):
+    artifacts = await list_artifacts(data["execution_id"], payload)
+    return await _execution_workflow_result(data["execution_id"], payload, artifacts=artifacts)
+
+
+async def _workflow_review(data, payload, key):
+    async def apply():
+        result = await review_presentation_stage(data["execution_id"], StageReviewRequest(
+            **{k: v for k, v in data.items() if k != "execution_id"}
+        ), payload)
+        return await _execution_workflow_result(data["execution_id"], payload, review=result)
+    return await _knowledge_mutation("workflow.review", data, payload, key, apply)
+
+
+async def _workflow_retry(data, payload, key):
+    async def apply():
+        result = await retry_execution(data["execution_id"], payload)
+        return await _execution_workflow_result(data["execution_id"], payload, retry=result)
+    return await _knowledge_mutation("workflow.retry", data, payload, key, apply)
+
+
+async def _travel_revise(data, payload, key):
+    assert key
+    # Domain request digest and artifact CAS remain the authoritative revision fence.
+    result = await save_travel_revision(data["execution_id"], TravelRevisionRequest(
+        **{k: v for k, v in data.items() if k != "execution_id"}, request_id=key,
+    ), payload)
+    return await _execution_workflow_result(data["execution_id"], payload, revision=result)
+
+
+def _travel_note_document(markdown):
+    # Match existing raw JSON / fenced JSON notebook formats; unrelated notes stay untouched.
+    text = str(markdown or "").strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    try:
+        value = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+async def _travel_notebook_save(data, payload, key):
+    from backend.services.travel_plan import validate_travel_document
+
+    async def apply():
+        execution = await get_execution(data["execution_id"], payload)
+        if execution["status"] != "completed":
+            raise HTTPException(409, detail="请先采用最终旅行成果")
+        artifacts = await list_artifacts(data["execution_id"], payload)
+        candidates = [a for a in artifacts if (a.get("metadata") or {}).get("render_type") == "travel_plan_v2"
+                      and not (a.get("metadata") or {}).get("approval_gate")]
+        if not candidates:
+            raise HTTPException(404, detail="没有已采用的最终旅行手记")
+        current = max(candidates, key=lambda a: (int((a.get("metadata") or {}).get("travel_revision", 0)),
+                                                str(a.get("created_at") or ""), a["id"]))
+        if current["id"] != data["artifact_id"] or current["content_hash"] != data["expected_hash"]:
+            raise HTTPException(409, detail={"code": "stale_travel_artifact", "message": "请查看最新旅行成果后再保存"})
+        artifact = await get_artifact_content(data["execution_id"], current["id"], payload)
+        document = _travel_note_document(artifact["content"])
+        if document is None:
+            raise HTTPException(422, detail="旅行成果不是结构化文档")
+        document = validate_travel_document(document)
+        snapshot = await list_synced_notes(True, payload, include_trashed=True)
+        linked = [n for n in snapshot["items"] if (_travel_note_document(n.get("markdown")) or {}).get("workflow_execution_id") == data["execution_id"]]
+        if linked:
+            if len(linked) != 1 or linked[0].get("archived") or linked[0].get("trashed") or (
+                _travel_note_document(linked[0]["markdown"]).get("workflow_artifact_hash") != data["expected_hash"]
+            ):
+                raise HTTPException(409, detail={"code": "linked_note_requires_review", "message": "已有旅行笔记，请读取原笔记并确认合并；不会覆盖日记或创建重复笔记"})
+            note = {"note_id": linked[0]["note_id"], "content_hash": linked[0]["content_hash"], "reused": True}
+        else:
+            document.update(workflow_execution_id=data["execution_id"], workflow_artifact_id=current["id"],
+                            workflow_artifact_hash=current["content_hash"])
+            # Stable per owned execution across separate confirmation keys; create_only prevents overwrite.
+            note = await _knowledge_create({"markdown": json.dumps(document, ensure_ascii=False, indent=2)},
+                                           payload, "travel-notebook:" + data["execution_id"])
+        return await _execution_workflow_result(data["execution_id"], payload, note=note)
+    return await _knowledge_mutation("travel.notebook.save", data, payload, key, apply)
 
 
 async def _artifact_open(data: dict[str, Any], payload: dict[str, Any], _key: str | None) -> dict[str, Any]:
@@ -1346,6 +1460,15 @@ HANDLERS: dict[str, Handler] = {
     "knowledge.trash": _knowledge_trash,
     "client.knowledge.navigation": _navigation,
     "workflow.create": _workflow_create,
+    "workflow.clarification.read": _workflow_clarification_read,
+    "workflow.clarification.respond": _workflow_clarification_respond,
+    "workflow.plan.read": _workflow_plan_read,
+    "workflow.artifacts.list": _workflow_artifacts_list,
+    "workflow.review": _workflow_review,
+    "workflow.retry": _workflow_retry,
+    "travel.revise": _travel_revise,
+    "travel.notebook.save": _travel_notebook_save,
+
     "workflow.open": _workflow_open,
     "workflow.status": _workflow_status,
     "workflow.start": _workflow_start,

@@ -1485,6 +1485,10 @@ public struct WorkflowDTO: Codable, Identifiable, Hashable, @unchecked Sendable 
     public let agent: WorkflowTaskAgentDTO?
 }
 
+public struct WorkflowCapabilityResultDTO: Codable {
+    public let workflow: WorkflowDTO
+}
+
 public struct WorkflowCreateResponseDTO: Codable {
     public let workflow: WorkflowDTO
     public let clarificationSession: WorkflowClarificationSessionDTO

@@ -27,6 +27,7 @@ IMPLEMENTED_HANDLERS = {
     "client.knowledge.navigation", "workflow.open", "workflow.status",
     "workflow.create", "workflow.start", "workflow.approve", "workflow.revise",
     "workflow.cancel",
+    "workflow.clarification.read", "workflow.clarification.respond", "workflow.plan.read", "workflow.artifacts.list", "workflow.review", "workflow.retry", "travel.revise", "travel.notebook.save",
     "presentation.create_from_document",
     "presentation.create_from_text",
     "document.word.create_from_text", "report.research.create_from_text",
