@@ -292,6 +292,38 @@ class ResearchDepositionTests(unittest.TestCase):
         self.assertTrue(record.get("obligation"))
         self.assertFalse(record.get("control"))
 
+    def test_configured_research_cron_uses_jev_admission(self):
+        self.cfg.update(jev_cron_job_ids=["abcdef123456"], jev_keychain_service="synthetic-jev")
+        self.config_file()
+        scope = dict(self.scope, platform="cron", session_id="cron_abcdef123456_20260912_160002")
+        with patch("cron.jobs.get_job", return_value={"prompt": "研究公开旅行材料并受控入库。"}):
+            self.deposit.pre("wrapped scheduler text", **scope)
+        record = self.ctx.state.get(self.deposit.key(scope), {})
+        self.assertEqual(record["jev_admission"]["admission_contract"], "jev-manifest-v1")
+        pipeline = self.deposit.pipeline()
+        rejected = {"reason": "quality_rejected", "raw_path": None, "sha256": None,
+                    "admission_state": "rejected", "compile_eligible": False,
+                    "manifest_registered": False, "storage_verified": False}
+        with patch.object(self.deposit, "jev_api_key", return_value="synthetic-secret"), \
+             patch.object(pipeline, "deposit_research", return_value=rejected) as call:
+            self.execute(scope=scope)
+        self.assertIsNone(call.call_args.kwargs["confidence"])
+        self.assertEqual(call.call_args.kwargs["admission_contract"], "jev-manifest-v1")
+        self.assertTrue(call.call_args.kwargs["external_review_authorized"])
+        self.assertEqual(call.call_args.kwargs["jev_api_key"], "synthetic-secret")
+        stored = self.ctx.state.get(self.deposit.key(scope))
+        self.assertIsNone(self.item_record(stored)["payload"]["confidence"])
+
+    def test_jev_keychain_read_never_uses_model_input(self):
+        self.cfg["jev_keychain_service"] = "synthetic-jev"
+        self.config_file()
+        with patch.object(plugin.research_deposit.sys, "platform", "darwin"), \
+             patch.object(plugin.research_deposit.subprocess, "run") as run:
+            run.return_value.stdout = b"synthetic-secret\n"
+            self.assertEqual(self.deposit.jev_api_key(), "synthetic-secret")
+        self.assertEqual(run.call_args.args[0][-1], "synthetic-jev")
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
     def tearDown(self):
         self.env.stop()
         self.tmp.cleanup()

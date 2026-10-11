@@ -16,6 +16,7 @@ import math
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import threading
 from urllib.parse import urlsplit, parse_qsl, unquote
@@ -250,6 +251,17 @@ class ResearchDeposit:
                        "stage": "research", "obligation": True, "schema_version": 2, "items": {},
                        "save_policy": "governed_auto",
                        "consent_association": self.consent_association(scope, platform)}
+            jev_jobs = self.config().get("jev_cron_job_ids", [])
+            if (cron_match and isinstance(jev_jobs, list)
+                    and cron_match.group(1) in jev_jobs):
+                # Trusted host configuration binds this exact cron's public
+                # research payload to the external Jev review contract.
+                old["jev_admission"] = {
+                    "admission_contract": "jev-manifest-v1",
+                    "external_review_authorized": True,
+                    "host_job_id": cron_match.group(1),
+                    "authorization_source": "trusted_host_config",
+                }
             self.ctx.state.set(key, old)
         stage_prefix = (
             "[Full research sequencing] First emit the source-only quick read as commentary. "
@@ -458,12 +470,37 @@ class ResearchDeposit:
             record["writer_trigger"] = {"state": "trigger_failed",
                 "error_type": type(exc).__name__, "fallback": "existing_periodic_writer"}
 
+    def jev_api_key(self):
+        service = self.config().get("jev_keychain_service")
+        account = os.environ.get("USER")
+        if sys.platform != "darwin" or not isinstance(service, str) or not service or not account:
+            raise ValueError("jev_keychain_not_configured")
+        try:
+            value = subprocess.run(
+                ["security", "find-generic-password", "-w", "-a", account, "-s", service],
+                capture_output=True, check=True, timeout=30,
+            ).stdout.decode("utf-8").strip()
+        except (OSError, UnicodeError, subprocess.SubprocessError) as exc:
+            raise ValueError("jev_keychain_unavailable") from exc
+        if not value or "\n" in value or "\r" in value:
+            raise ValueError("jev_keychain_invalid")
+        return value
+
     def _write(self, key, record, *, explicit, task=None):
         try:
             if not self.enabled():
                 return {"success": False, "complete": False, "stage": "blocked", "error": "policy_denied"}
             payload = self.materialize(record)
             confidence = payload["confidence"]
+            jev = (task or {}).get("jev_admission") or record.get("jev_admission")
+            jev_kwargs = {}
+            if jev:
+                confidence = None
+                jev_kwargs = {
+                    "admission_contract": jev["admission_contract"],
+                    "external_review_authorized": jev.get("external_review_authorized") is True,
+                    "jev_api_key": self.jev_api_key(),
+                }
             previous = record.get("receipt") or {}
             if confidence is None and previous.get("raw_path"):
                 raw = Path(previous["raw_path"])
@@ -481,10 +518,12 @@ class ResearchDeposit:
                 source_urls=payload["source_urls"], confidence=confidence,
                 policy_version=POLICY_VERSION, profile="default", owner="local_owner",
                 evidence_status="research_analysis", no_save=False,
+                **jev_kwargs,
                 **({"revision_link": record["revision_link"]} if record.get("revision_link") else {}))
             record["receipt"] = dict(receipt, binding={"scope": record["scope"],
                 "policy_version": POLICY_VERSION, "source_revision": record["source_revision"]},
-                storage_scope=STORAGE_SCOPE)
+                storage_scope=STORAGE_SCOPE,
+                **({"admission_contract": jev["admission_contract"]} if jev else {}))
             if receipt.get("reason") == "quality_rejected":
                 reasons = []
                 _, _, failed, gate_reason = self.pipeline().evaluate_judge_gate(
@@ -594,6 +633,8 @@ class ResearchDeposit:
                 if expected is not None and (not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected)):
                     raise ValueError("invalid_expected_revision")
                 payload = self.payload({k: v for k, v in inputs.items() if k not in {"expected_revision", "item_id"}})
+                if record.get("jev_admission"):
+                    payload["confidence"] = None
                 revision = digest(payload)
                 self.migrate(record)
                 identity = self.item_id(payload)
