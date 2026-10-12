@@ -191,16 +191,17 @@ class QuanSyn:
         loop = getattr(adapter, "_loop", None)
         if loop is None or not loop.is_running():
             return False
-        try:
-            if asyncio.get_running_loop() is loop:
-                return False
-        except RuntimeError:
-            pass
         async def send():
             response = await adapter._feishu_send_with_retry(chat_id=chat_id,
                 msg_type="interactive", payload=json.dumps(self.card(turn), ensure_ascii=False),
                 reply_to=None, metadata=None)
             return adapter._finalize_send_result(response, "QuanSyn card failed").success
+        try:
+            if asyncio.get_running_loop() is loop:
+                loop.create_task(send())
+                return True
+        except RuntimeError:
+            pass
         future = asyncio.run_coroutine_threadsafe(send(), loop)
         try:
             return bool(future.result(timeout=15))

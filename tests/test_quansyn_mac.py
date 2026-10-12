@@ -414,6 +414,23 @@ def test_card_delivery_uses_existing_adapter_loop_and_falls_back(runtime):
         loop.call_soon_threadsafe(loop.stop);worker.join(3);loop.close()
 
 
+def test_card_delivery_schedules_on_current_adapter_loop(runtime):
+    plugin, _, _, _ = runtime
+    sent = []
+    async def send(**kw):
+        sent.append(kw)
+        return SimpleNamespace(success=True)
+    async def scenario():
+        adapter = SimpleNamespace(_loop=asyncio.get_running_loop(), _feishu_send_with_retry=send,
+            _finalize_send_result=lambda response, error: response)
+        plugin.delivery["ou_owner"] = (adapter, "oc_private")
+        turn = {"sender": "ou_owner", "action": "查看", "rows": [], "reply": "暂无需求"}
+        assert plugin.deliver_card(turn)
+        await asyncio.sleep(0)
+        assert sent and sent[0]["chat_id"] == "oc_private"
+    asyncio.run(scenario())
+
+
 def test_mac_requires_existing_host_owner_policy(runtime):
     plugin, _, _, _ = runtime
     assert plugin.before_turn("查看 QuanSyn", platform="feishu", session_id="foreign", sender_id="ou_other") is None

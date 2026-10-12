@@ -25,8 +25,8 @@ Date: 2026-10-12
 
 - `python3 -m py_compile` passed for the plugin package.
 - `git diff --check` passed.
-- `pytest tests/test_quansyn.py tests/test_quansyn_mac.py tests/test_travel_pcm_capabilities.py -q`: 34 passed.
-- Tests cover slash normalization, all-pending batch collection, independent success/failure recording, failed-item retry, duplicate-active suppression, and immediate original-card replacement.
+- `pytest tests/test_quansyn.py tests/test_quansyn_mac.py tests/test_travel_pcm_capabilities.py -q`: 35 passed.
+- Tests cover slash normalization, all-pending batch collection, independent success/failure recording, failed-item retry, duplicate-active suppression, immediate original-card replacement, and completion-card delivery from the adapter event loop.
 
 ## Rollout
 
