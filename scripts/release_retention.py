@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import time
@@ -47,6 +48,25 @@ def active_paths() -> set[Path]:
                 target = Path(mount["Source"]).resolve()
                 protected.update([target, *target.parents])
     return protected
+
+
+def retirement_headroom(path: Path) -> int:
+    """Reserve for an incompressible tar plus verification without following links.
+
+    Retirement must be able to recover below the deployment's 5 GiB gate.
+    Keep 2 GiB for the running service and conservatively budget twice apparent
+    file bytes plus 64 KiB per member (headers, gzip/PAX overhead and metadata).
+    """
+    file_bytes = 0
+    members = 1
+    for directory, children, files in os.walk(path, followlinks=False):
+        members += len(children) + len(files)
+        for name in files:
+            info = (Path(directory) / name).lstat()
+            if stat.S_ISREG(info.st_mode):
+                file_bytes += info.st_size
+    archive_budget = max(256 * 1024**2, file_bytes * 2 + members * 64 * 1024)
+    return 2 * 1024**3 + archive_budget
 
 
 def archive_release(path: Path, destination: Path) -> Path:
@@ -102,7 +122,7 @@ def main() -> None:
     print(json.dumps({"retention_candidates": [p.name for p in candidates], "apply": args.apply}))
     if args.apply:
         for path in candidates:
-            if shutil.disk_usage(args.archive_dir.parent).free < 5 * 1024**3:
+            if shutil.disk_usage(args.archive_dir.parent).free < retirement_headroom(path):
                 raise RuntimeError("insufficient headroom for recoverable retirement")
             print(json.dumps({"retired": path.name, "archive": str(archive_release(path, args.archive_dir))}))
 

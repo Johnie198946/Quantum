@@ -1,13 +1,13 @@
 # Travel notes / PCM / Chat completion
 
 task_id: travel-notes-pcm-chat-20261013
-status: TESTED
+status: PUSHED
 branch: codex/travel-notes-pcm-chat-20261013
 worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/travel-notes-pcm-chat-20261013
-head/local_commit: base 00bfe47e4fceb994d0e85b6720b21e3248b3c43d; task commit pending
-remote_sha: push explicitly authorized by user; pending execution
+head/local_commit: e8fa0956adf763c54bcad27839b973b00ac11bb8
+remote_sha: origin refs/heads/main and refs/heads/codex/travel-notes-pcm-chat-20261013 both e8fa0956adf763c54bcad27839b973b00ac11bb8; verified by git ls-remote
 server_before: 3717b262cc4174d8bc9aa511b404d810904dd747; /opt/releases/ai-lab-platform-3717b262cc41.ZQGFx7
-server_after: pending exact-SHA deployment
+server_after: first e8fa0956 deployment stopped before mutation by <5 GiB storage gate; current SHA remains 3717b262cc4174d8bc9aa511b404d810904dd747
 health_check: pre-deploy /ready={status:ready,version:0.8.0}; Bridge and Chat Worker active
 functional_check: local backend/PCM/browser/native checks passed; real Aomori final note save pending deployment
 rollback_point: /opt/releases/ai-lab-platform-3717b262cc41.ZQGFx7; deployment wrapper additionally records serialized runtime rollback state
@@ -43,3 +43,5 @@ No commit, push or deployment is claimed by this pre-release manifest. The next 
 Risks: actual dates/orders and unknown coordinates require user evidence; no purchases, payments or actual visits are fabricated. PDF export is explicitly a full Unicode text archive; in-app reading retains the original graphic template. This task builds and installs the iOS simulator app; TestFlight distribution is not performed by the server deployment wrapper.
 
 Rollback: use the recorded immutable prior release and the deployment wrapper's runtime rollback state. Revert this task's commit to restore code; preserve private notebooks and user records rather than deleting them.
+
+Release recovery: read-only storage review found 4.9 GiB free, 36 eligible immutable source releases older than 14 days, and negligible build cache. The retention script’s fixed 5 GiB precondition created a circular recovery block. It now reserves 2 GiB for live services plus a conservative bounded archive budget based on apparent regular-file bytes and member overhead, without following shared-data symlinks. The deployment’s 5 GiB threshold, newest-seven/active protection, deployment lock, private archives and full archive verification remain in force. Changes: scripts/release_retention.py and tests/test_release_retention.py. Tests are recorded in the task temporary retention-tests.log.
