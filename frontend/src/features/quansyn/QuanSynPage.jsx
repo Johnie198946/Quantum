@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Copy, X } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { quansynApi } from "../../services/platformApi";
-import { tableRows, plainContent } from "./content";
+import { tableRows, plainContent, unseenResultTarget } from "./content";
 import "./design.css";
 import "./quansyn.css";
 
@@ -89,6 +89,7 @@ export default function QuanSynPage() {
   const [pair, setPair] = useState(null), [agreement, setAgreement] = useState(null);
   const [next, setNext] = useState(null);
   const requestKey = useRef(crypto.randomUUID()), generation = useRef(0), paged = useRef(false);
+  const knownResultIds = useRef(new Set());
   useEffect(() => { const old = document.title; document.title = "QuanSyn · Quantum"; return () => { document.title = old; }; }, []);
   const previousFiles = useRef([]);
   useEffect(() => {
@@ -104,7 +105,10 @@ export default function QuanSynPage() {
     try {
       const [list, deviceList] = await Promise.all([quansynApi.list(), quansynApi.devices()]);
       if (epoch !== generation.current) return;
+      const incomingTarget = unseenResultTarget(knownResultIds.current, list.items);
+      knownResultIds.current = new Set(list.items.filter((item) => item.direction === "result").map((item) => item.id));
       setItems((current) => paged.current ? [...list.items, ...current.filter((item) => !list.items.some((fresh) => fresh.id === item.id))] : list.items); if (!paged.current) setNext(list.next); setDevices(deviceList.items); setAgreement(null);
+      if (incomingTarget) setTarget(incomingTarget);
     } catch (e) {
       if (epoch !== generation.current) return;
       if (e.status === 401) logout();
@@ -113,7 +117,7 @@ export default function QuanSynPage() {
     } finally { if (epoch === generation.current) setLoading(false); }
   }, [isAuthenticated, sessionScopeKey]);
   useEffect(() => {
-    generation.current += 1; paged.current = false; setDevices([]); setNext(null); setAgreement(null); setBusy(false); setItems([]); setFiles([]); setPair(null); setDraft(""); setLoading(true);
+    generation.current += 1; paged.current = false; knownResultIds.current = new Set(); setDevices([]); setNext(null); setAgreement(null); setBusy(false); setItems([]); setFiles([]); setPair(null); setDraft(""); setLoading(true);
     if (!isAuthenticated) return;
     refresh(); const timer = setInterval(refresh, 5000); return () => { generation.current += 1; clearInterval(timer); };
   }, [isAuthenticated, sessionScopeKey, refresh]);

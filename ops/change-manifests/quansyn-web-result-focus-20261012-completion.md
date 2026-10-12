@@ -9,10 +9,10 @@ remote_sha: pending
 server_before: pending
 server_after: pending
 health_check: pending
-functional_check: 前端单元测试与生产构建待记录
+functional_check: 生产基线归并后前端 157/157、QuanSyn/Travel 后端 31/31、生产构建通过；当前生产 Travel 提交 a45e269d 已合并，自动聚焦回归通过
 rollback_point: pending
 manifest: ops/change-manifests/quansyn-web-result-focus-20261012-completion.md
-remaining_risks: 部署前须核验远端 main、回滚点、服务健康及真实登录后的 Web 页面行为
+remaining_risks: 部署前须核验远端 main、重建目标 SHA 离线镜像、记录回滚点、检查服务健康及真实登录后的 Web 页面行为
 
 ## 变更
 

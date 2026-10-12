@@ -557,6 +557,7 @@ function ExitDialog({
 }
 function TransferView({ items, files, devices, draft, setDraft, target, setTarget, busy, loading, error, send, upload, removeFile, removeItem, next, loadMore, refresh, connectMac, revokeDevice, onLogout, renderContent, openFile, agreementContent }) {
   const messages = [...items].filter((item) => item.target === target).reverse();
+  const newestMessageId = messages.at(-1)?.id;
   const activeDevice = target === "ios" ? "phone" : "mac";
   function setActiveDevice(value) {
     setTarget(value === "phone" ? "ios" : "mac");
@@ -597,6 +598,15 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
   const scrollSampleRef = useRef({ time: performance.now(), top: 0 });
   const scrollStopTimerRef = useRef(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const area = messageAreaRef.current;
+      if (!area) return;
+      area.scrollTop = area.scrollHeight;
+      updateScrollProgress();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [target, newestMessageId]);
   useEffect(() => {
     function handleShortcut(event) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
