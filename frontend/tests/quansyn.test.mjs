@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tableRows, plainContent } from "../src/features/quansyn/content.js";
+import { tableRows, plainContent, unseenResultTarget } from "../src/features/quansyn/content.js";
 test("QuanSyn preserves TSV cells and Markdown table headers", () => {
   assert.deepEqual(tableRows("名称\t值\nA\t2"), [["名称", "值"], ["A", "2"]]);
   assert.deepEqual(tableRows("| 名称 | 值 |\n| :--- | ---: |\n| A | 2 |"), [["名称", "值"], ["A", "2"]]);
@@ -8,6 +8,11 @@ test("QuanSyn preserves TSV cells and Markdown table headers", () => {
 });
 test("QuanSyn copies actual chart numbers alongside text and code", () => {
   assert.equal(plainContent({text:"结果", blocks:[{kind:"chart",content:"实测",labels:["A"],values:[2]},{kind:"code",content:"print(2)"}]}), "结果\n\n实测\nA\t2\n\nprint(2)");
+});
+test("QuanSyn opens the device conversation when a new result arrives", () => {
+  const items = [{id:"result-mac",direction:"result",target:"mac"},{id:"request",direction:"request",target:"ios"}];
+  assert.equal(unseenResultTarget(new Set(), items), "mac");
+  assert.equal(unseenResultTarget(new Set(["result-mac"]), items), null);
 });
 
 

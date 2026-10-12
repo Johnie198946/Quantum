@@ -574,6 +574,16 @@ function TransferView({ items, files, devices, draft, setDraft, target, setTarge
   const scrollSampleRef = useRef({ time: performance.now(), top: 0 });
   const scrollStopTimerRef = useRef(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const newestMessageId = messages.at(-1)?.id;
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const area = messageAreaRef.current;
+      if (!area) return;
+      area.scrollTop = area.scrollHeight;
+      updateScrollProgress();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [target, newestMessageId]);
   useEffect(() => {
     function handleShortcut(event) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
