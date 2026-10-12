@@ -389,6 +389,8 @@ def test_card_click_immediately_replaces_original_with_progress(runtime):
         assert card["header"]["template"] == "orange"
         assert "执行中" in card["header"]["title"]["content"]
         assert not any(element["tag"] == "action" for element in card["elements"])
+        kw, _ = turn(plugin, "批量执行 QuanSyn", session="card-command")
+        assert plugin.turns[kw["session_id"]]["card_message_id"] == "om_card"
     finally:
         loop.call_soon_threadsafe(loop.stop); worker.join(3); loop.close()
 
@@ -438,6 +440,27 @@ def test_card_delivery_schedules_on_current_adapter_loop(runtime):
         await asyncio.sleep(0)
         assert sent and sent[0]["chat_id"] == "oc_private"
     asyncio.run(scenario())
+
+
+def test_published_callback_replaces_card_without_another_push_button(runtime):
+    plugin, _, _, _ = runtime
+    transfer = "qs_" + "a" * 32
+    plugin.ctx.state.set(plugin.key("ou_owner", transfer), {
+        "completed": True, "result": "done", "outputs": []})
+    turn = {"sender": "ou_owner", "action": "推送", "id": transfer, "reply": "已回传",
+            "published": True, "card_message_id": "om_card", "turn_id": "turn"}
+    plugin.turns["session"] = turn
+    adapter = SimpleNamespace()
+    plugin.delivery["ou_owner"] = (adapter, "oc_private")
+    updated = []
+    plugin.update_progress_card = lambda *args, **kwargs: updated.append((args, kwargs)) or True
+    plugin.deliver_card = lambda value: pytest.fail("callback final state must not append another card")
+    assert plugin.finalize("ignored", session_id="session", turn_id="turn") == "已回传"
+    final_turn = updated[0][1]["turn"]
+    buttons = [button for element in plugin.card(final_turn)["elements"] if element["tag"] == "action"
+               for button in element["actions"]]
+    assert not any(button.get("value", {}).get("quansyn_command", "").startswith("推送 QuanSyn")
+                   for button in buttons)
 
 
 def test_mac_requires_existing_host_owner_policy(runtime):

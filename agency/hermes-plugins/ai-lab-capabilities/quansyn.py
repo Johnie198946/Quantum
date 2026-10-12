@@ -62,6 +62,7 @@ class QuanSyn:
         self.credentials = MacKeychain()
         self.turns = {}
         self.delivery = {}
+        self.card_callbacks = {}
         if callable(getattr(ctx, "register_hook", None)):
             ctx.register_hook("pre_gateway_dispatch", self.gateway)
 
@@ -100,6 +101,8 @@ class QuanSyn:
             if card:
                 context = getattr(native, "context", None)
                 message_id = str(getattr(context, "open_message_id", "") or "")
+                if message_id:
+                    self.card_callbacks[sender] = (message_id, command)
                 self.update_progress_card(adapter, message_id, sender, command)
         return {"action": "rewrite", "text": command}
 
@@ -107,12 +110,12 @@ class QuanSyn:
         return self.card({"sender": sender, "action": "执行中", "progress": True,
                           "reply": f"⏳ **执行中**\n\n已接收：`{command}`\n正在拉取并执行，请勿重复点击。"})
 
-    def update_progress_card(self, adapter, message_id, sender, command):
-        """Immediately replace the clicked card; final state is sent after execution."""
+    def update_progress_card(self, adapter, message_id, sender, command, turn=None):
+        """Replace the clicked card in place, or send it when no message ID is available."""
         loop = getattr(adapter, "_loop", None)
         if loop is None or not loop.is_running():
             return False
-        payload = json.dumps(self.progress_card(sender, command), ensure_ascii=False)
+        payload = json.dumps(self.card(turn) if turn else self.progress_card(sender, command), ensure_ascii=False)
 
         async def update():
             try:
@@ -170,7 +173,8 @@ class QuanSyn:
                 if saved.get("completed"):
                     names = "、".join(Path(f["path"]).name for f in saved.get("outputs", []))
                     elements.append({"tag": "markdown", "content": "生成附件：" + (names[:500] or "无")})
-                    elements.append({"tag": "action", "actions": [button("推送完整结果到 QuanSyn", "推送 QuanSyn " + transfer, True)]})
+                    if not turn.get("published"):
+                        elements.append({"tag": "action", "actions": [button("推送完整结果到 QuanSyn", "推送 QuanSyn " + transfer, True)]})
                 elif saved.get("imported") and turn.get("action") == "拉取":
                     elements.append({"tag": "action", "actions": [button("开始执行", "执行 QuanSyn " + transfer, True)]})
         if not turn.get("progress"):
@@ -358,6 +362,9 @@ class QuanSyn:
             self.turns.clear()
         action, transfer, selection = match.groups()
         turn = {"sender": sender, "action": action, "id": transfer, "turn_id": kw.get("turn_id"), "reply": None}
+        callback = self.card_callbacks.pop(sender, None)
+        if callback and callback[1] == command:
+            turn["card_message_id"] = callback[0]
         self.turns[session] = turn
         turn["selection"] = selection
         return {"context": "用户已明确授权当前 QuanSyn 指令。必须调用 ai_lab_execute capability=quansyn inputs={action:command} 获取真实回执。成功领取并执行时，按照返回 goal 在现有 Hermes 中执行。不要自行构造配对、账号、文件或回传状态。"}
@@ -475,6 +482,7 @@ class QuanSyn:
                     "direction": "result", "target": "mac", "reply_to": transfer,
                     "text": saved["result"], "blocks": saved.get("result_blocks", []), "files": files,
                 })
+                turn["published"] = True
                 turn["reply"] = f'已回传 QuanSyn：{receipt["id"]}，包含 {len(files)} 个附件。'
             else:
                 saved = self.pull(sender, transfer) if action in {"拉取", "拉取并执行"} else self.ctx.state.get(self.key(sender, transfer), {})
@@ -600,7 +608,12 @@ class QuanSyn:
                     "failed": not completed, "completed_count": 1 if completed else 0})
             return turn["reply"]
         if turn.get("reply") is not None:
-            self.deliver_card(turn)
+            message_id = turn.get("card_message_id")
+            route = self.delivery.get(turn["sender"])
+            if message_id and route:
+                self.update_progress_card(route[0], message_id, turn["sender"], "", turn=turn)
+            else:
+                self.deliver_card(turn)
             return turn["reply"]
         if not turn.get("command_result"):
             return "QuanSyn 指令未取得实际执行回执，请重试。"
