@@ -1,0 +1,1 @@
+QuanSyn Mac 飞书真实业务验收：读取附件 business-input.csv，核对三次真实代码提交的文件数和增删行。输出中文分析文字、一段计算汇总的 Python 代码块、按提交比较增删行的图表（真实生成 PNG 图片）、可下载的 Markdown 报告。不要编造数据，不要自动回传；生成文件后按 QuanSyn 的 outputs 能力登记，等我点击回传卡片。

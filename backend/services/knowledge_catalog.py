@@ -180,7 +180,9 @@ def _live_frontmatter(vault: Path, relative_path: str) -> dict[str, Any]:
                     return _UNREADABLE_FRONTMATTER
                 budget -= len(line)
                 if re.fullmatch(rb"---[ \t]*(?:\r?\n)?", line):
-                    value = yaml.safe_load(b"".join(header).decode("utf-8"))
+                    # Keep live revocation checks; use PyYAML's native safe parser when installed.
+                    value = yaml.load(b"".join(header).decode("utf-8"),
+                                      Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
                     return value if isinstance(value, dict) else _UNREADABLE_FRONTMATTER
                 header.append(line)
         return _UNREADABLE_FRONTMATTER

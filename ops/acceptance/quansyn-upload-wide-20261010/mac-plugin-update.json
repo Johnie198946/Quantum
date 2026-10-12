@@ -1,0 +1,9 @@
+{
+  "before": "9db4a8abcd90ada6c39b617d0444e3611c70f4799f15ac23f3bb124d499507c2",
+  "after": "926926296442ea1079e6d10da885e075f47f463f8656a03a020941cebf3d0948",
+  "path": "/Users/dengzhaoyu/.hermes/plugins/ai-lab-capabilities/quansyn.py",
+  "rollback_point": "/Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-upload-wide-20261010/ops/acceptance/quansyn-upload-wide-20261010/mac-quansyn-before.py",
+  "native_restart": "passed",
+  "native_gateway_before_pid": 14559,
+  "native_gateway_after_pid": 3509
+}

@@ -1,0 +1,5 @@
+315df306cea80fbc1596b5f995905eadba66b6c716a90e06b58d885787d29a83  /app/backend/api/quansyn.py
+5413278b9212ea5b064b6273a517c9c9a03d77f24b8c3b1b56ad6291c94246ba  /app/backend/services/generated_artifacts.py
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+048c66363f08189674453473958e8d921ad7ac25

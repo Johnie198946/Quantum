@@ -113,7 +113,8 @@ async def reserve_inference(
                     or existing.reserved_tokens != decision.reserved_tokens
                 ):
                     raise InferencePolicyConflict("request_id_policy_conflict")
-                return existing
+                if existing.state != "failed_released":
+                    return existing
             counted = case(
                 (InferenceReservation.state == "settled", func.coalesce(
                     InferenceReservation.actual_tokens,
@@ -132,6 +133,12 @@ async def reserve_inference(
             ) or 0)
             if used + decision.reserved_tokens > decision.monthly_token_limit:
                 raise InferenceQuotaExceeded("inference_quota_exceeded")
+            if existing is not None:
+                # Admission rejected execution; the same request may reserve again.
+                existing.state = "reserved"
+                existing.created_at = existing.updated_at = datetime.now(timezone.utc)
+                await db.flush()
+                return existing
             row = InferenceReservation(
                 user_id=user_id,
                 request_id=request_id,

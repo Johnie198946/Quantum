@@ -1009,16 +1009,43 @@ class TestWorkflowsAPI(unittest.TestCase):
         self.assertEqual(captured["plan"]["edges"], [
             {"source": expected_ids[0], "target": expected_ids[1]}
         ])
+        from backend.services import knowledge_policy
+        original_capability = captured["knowledge_capability"]
+        renewed_at = knowledge_policy.time.time() + 1800
+        with patch.object(executor.httpx, "AsyncClient", lambda **kwargs: Client()), patch.object(
+            knowledge_policy.time, "time", return_value=renewed_at
+        ):
+            asyncio.run(executor.retry_remote(execution.id, expected_ids[0]))
+            with self.assertRaises(knowledge_policy.KnowledgeScopeDenied):
+                knowledge_policy.verify_capability(original_capability)
+            renewed = knowledge_policy.verify_capability(captured["knowledge_capability"])
+        self.assertEqual(renewed["subject_id"], execution.id)
+        self.assertEqual(captured["from_node_id"], expected_ids[0])
+        with patch.object(executor, "_dispatch_payload", AsyncMock(side_effect=executor.ExecutionAuthorityError("revoked"))), patch.object(
+            executor.httpx, "AsyncClient"
+        ) as transport:
+            with self.assertRaises(executor.ExecutionAuthorityError):
+                asyncio.run(executor.retry_remote(execution.id, expected_ids[0]))
+            transport.assert_not_called()
 
         async def fake_dispatch(execution, plan):
             return {"status": "running", "hermes_session_id": "hard-session"}
 
         async def fake_snapshot(execution):
-            return {"status": "running", "events": []}
+            return {"status": "running", "events": [
+                {"seq": 1, "event_id": "old-failure", "type": "run_failed", "error": "old timeout"},
+                {"seq": 2, "event_id": "retry", "type": "retry_queued"},
+                {"seq": 3, "event_id": "resumed", "type": "run_started"},
+            ]}
 
         async def sync():
             async with SessionLocal() as db:
                 await executor.sync_execution(execution_id, db)
+                current = await db.get(WorkflowExecution, execution_id)
+                self.assertEqual(current.status, "running")
+                self.assertEqual(current.bridge_event_seq, 3)
+                self.assertIsNone(current.error_message)
+                self.assertIsNone(current.finished_at)
 
         with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"AI_LAB_HOME": home}):
             with patch.object(executor, "dispatch", fake_dispatch), patch.object(

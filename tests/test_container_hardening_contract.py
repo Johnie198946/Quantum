@@ -10,6 +10,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_compose_services_share_a_bounded_runtime_and_rotated_logs():
+    config = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    for service in config["services"].values():
+        assert service["cgroup_parent"] == "quantum-runtime.slice"
+        assert service["logging"]["options"] == {"max-size": "10m", "max-file": "3"}
+        assert int(service["mem_limit"][:-1]) > 0 and service["pids_limit"] == 512
+
+
 def _dockerfile(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 

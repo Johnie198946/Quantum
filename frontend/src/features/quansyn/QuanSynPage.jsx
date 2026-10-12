@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { Copy, X } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { quansynApi } from "../../services/platformApi";
-import { tableRows, plainContent, unseenResultTarget } from "./content";
+import { tableRows, plainContent } from "./content";
 import "./design.css";
 import "./quansyn.css";
 
@@ -88,7 +88,7 @@ export default function QuanSynPage() {
   const [error, setError] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [pair, setPair] = useState(null), [agreement, setAgreement] = useState(null);
   const [next, setNext] = useState(null);
-  const requestKey = useRef(crypto.randomUUID()), generation = useRef(0), paged = useRef(false), knownResultIds = useRef(new Set());
+  const requestKey = useRef(crypto.randomUUID()), generation = useRef(0), paged = useRef(false);
   useEffect(() => { const old = document.title; document.title = "QuanSyn · Quantum"; return () => { document.title = old; }; }, []);
   const previousFiles = useRef([]);
   useEffect(() => {
@@ -104,9 +104,6 @@ export default function QuanSynPage() {
     try {
       const [list, deviceList] = await Promise.all([quansynApi.list(), quansynApi.devices()]);
       if (epoch !== generation.current) return;
-      const incomingTarget = unseenResultTarget(knownResultIds.current, list.items);
-      knownResultIds.current = new Set(list.items.filter((item) => item.direction === "result").map((item) => item.id));
-      if (incomingTarget) setTarget(incomingTarget);
       setItems((current) => paged.current ? [...list.items, ...current.filter((item) => !list.items.some((fresh) => fresh.id === item.id))] : list.items); if (!paged.current) setNext(list.next); setDevices(deviceList.items); setAgreement(null);
     } catch (e) {
       if (epoch !== generation.current) return;
@@ -116,7 +113,7 @@ export default function QuanSynPage() {
     } finally { if (epoch === generation.current) setLoading(false); }
   }, [isAuthenticated, sessionScopeKey]);
   useEffect(() => {
-    generation.current += 1; paged.current = false; knownResultIds.current = new Set(); setDevices([]); setNext(null); setAgreement(null); setBusy(false); setItems([]); setFiles([]); setPair(null); setDraft(""); setLoading(true);
+    generation.current += 1; paged.current = false; setDevices([]); setNext(null); setAgreement(null); setBusy(false); setItems([]); setFiles([]); setPair(null); setDraft(""); setLoading(true);
     if (!isAuthenticated) return;
     refresh(); const timer = setInterval(refresh, 5000); return () => { generation.current += 1; clearInterval(timer); };
   }, [isAuthenticated, sessionScopeKey, refresh]);

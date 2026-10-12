@@ -2455,8 +2455,14 @@ def install(ctx: Any, deposition: Any = None, quansyn: Any = None) -> None:
     # tool_search unchanged so no second ranking path can select capabilities.
     _compact_skill_manifest()
     if os.environ.get("_HERMES_GATEWAY") == "1":
-        from backend.services.capability_catalog import routing_capability_cards
-        start_resident_warmup(_skill_capabilities(), _agency_capabilities(), routing_capability_cards())
+        try:
+            from backend.services.capability_catalog import routing_capability_cards
+            cards = routing_capability_cards()
+        except ModuleNotFoundError as exc:
+            if exc.name != "backend":
+                raise
+            cards = []  # Mac installs the plugin without the server package.
+        start_resident_warmup(_skill_capabilities(), _agency_capabilities(), cards)
 
     def pre_llm_with_runtime_skill(user_message: str = "", **kwargs: Any):
         routed = _pre_llm_with_runtime_skill(ctx, user_message, **kwargs)

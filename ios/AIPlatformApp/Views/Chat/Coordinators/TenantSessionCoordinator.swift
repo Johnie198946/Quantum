@@ -561,7 +561,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let workflow: WorkflowDTO?
             if let created = try? decoder.decode(
-                WorkflowCreateResponseDTO.self, from: event.payload
+                WorkflowCapabilityResultDTO.self, from: event.payload
             ) {
                 workflow = created.workflow
             } else {
@@ -2124,7 +2124,7 @@ public final class TenantSessionCoordinator: ObservableObject {
             )
             guard status.belongsTo(requestId: req.id, runId: nil) else {
                 applyTerminalStatus("not_found", outputMessageId: outputMessageId)
-                return true
+                return false
             }
             if status.status == "completed" {
                 guard await checkpointStatusEvents(
@@ -3856,6 +3856,10 @@ public final class TenantSessionCoordinator: ObservableObject {
                     switch event.type {
                     case "learning.exercise":
                         learningResults.append(try Self.decodeCapabilityPayload(event.payload))
+                    case "workflow.summary":
+                        let result: WorkflowCapabilityResultDTO = try Self.decodeCapabilityPayload(event.payload)
+                        completedWorkflow = result.workflow
+                        pendingWorkflowId = result.workflow.id
                     case "workflow.created", "presentation.created", "document.created":
                         let created: WorkflowCreateResponseDTO = try Self.decodeCapabilityPayload(event.payload)
                         completedWorkflow = created.workflow
@@ -3884,6 +3888,13 @@ public final class TenantSessionCoordinator: ObservableObject {
                     }
                 }
                 if let pendingWorkflowId {
+                    if let index = self.messages.firstIndex(where: { $0.id == messageId }),
+                       let blockIndex = self.messages[index].blocks.firstIndex(where: { $0.id == "capability_proposal_\(proposalId)" }) {
+                        if case .capabilityProposal(var linked) = self.messages[index].blocks[blockIndex] {
+                            linked.input.workflowId = pendingWorkflowId
+                            self.messages[index].blocks[blockIndex] = .capabilityProposal(linked)
+                        }
+                    }
                     self.appState?.openWorkflow(pendingWorkflowId)
                 }
                 self.updateCapabilityProposal(

@@ -1,0 +1,62 @@
+{
+  "source_sha": "d7b96b3998ddf6a3d4f1d9142f6e2659529094be",
+  "branch": "codex/quansyn-20261009",
+  "base_ios_sha": "97d86e02d5aa54b88289ccab0b0c7c345c77e805",
+  "version": "1.0.3",
+  "build": "86",
+  "status": "PUSHED",
+  "remote_ref": "refs/heads/codex/quansyn-20261009",
+  "remote_sha": "d7b96b3998ddf6a3d4f1d9142f6e2659529094be",
+  "tests": {
+    "count": 2,
+    "failures": 0,
+    "result": "TEST SUCCEEDED",
+    "xcresult": "/private/tmp/quansyn-release86-tests.xcresult"
+  },
+  "archive": {
+    "path": "/private/tmp/Quantumn-1.0.3-86-quansyn-recovery.xcarchive",
+    "result": "ARCHIVE SUCCEEDED",
+    "signature": "codesign deep/strict PASS",
+    "bundle_id": "com.ailab.AIPlatformApp",
+    "version": "1.0.3",
+    "build": "86",
+    "binary_sha256": "cb35224120f5178994cb0938ebc65adb746dc93249718f4ecc3a5e70cb266aa3",
+    "app_uuid": "UUID: 94184841-4275-32A4-BE9B-DE6490CD8C39 (arm64) /private/tmp/Quantumn-1.0.3-86-quansyn-recovery.xcarchive/Products/Applications/AIPlatformApp.app/AIPlatformApp",
+    "dsym_uuid": "UUID: 94184841-4275-32A4-BE9B-DE6490CD8C39 (arm64) /private/tmp/Quantumn-1.0.3-86-quansyn-recovery.xcarchive/dSYMs/AIPlatformApp.app.dSYM/Contents/Resources/DWARF/AIPlatformApp"
+  },
+  "apple_upload": {
+    "method": "xcodebuild exportArchive using existing ExportOptions.plist",
+    "exit_code": 70,
+    "error": "No Accounts with App Store Connect Access",
+    "gui_fallback": "After user unlocked and confirmed readiness, opened exact 1.0.3(86) archive, Distribute App > App Store Connect; Apple returned Unable to authenticate with App Store Connect and No App Store Connect access for the team. No successful upload.",
+    "testflight_available": false,
+    "gui_errors": [
+      "Unable to authenticate with App Store Connect",
+      "No App Store Connect access for the team"
+    ],
+    "remaining_blocker": "App Store Connect configuration TLS failure; team access not independently established",
+    "reauth_retry": {
+      "user_confirmed": "重新登录完成",
+      "gui_result": "Unable to authenticate with App Store Connect; No App Store Connect access for the team",
+      "cli_exit_code": 70,
+      "cli_log": "/private/tmp/quansyn-release86-reauth-upload.log",
+      "underlying_error": "ITunesConnectFoundationErrorDomain -1200: lookupGenericSettingsForSubmission failed; A TLS error caused the secure connection to fail.",
+      "uploaded": false
+    },
+    "public_tls_checks": {
+      "appstoreconnect.apple.com": "302, ssl_verify_result=0; default and direct",
+      "itunesconnect.apple.com": "200, ssl_verify_result=0",
+      "contentdelivery.itunes.apple.com": "curl exit35, connection reset by peer; public root probe does not establish exact failing submission endpoint"
+    }
+  },
+  "server_deploy": "not applicable: iOS-only fix",
+  "business_acceptance": "incomplete, see business-flow-20261010.json",
+  "rollback_point": {
+    "archive": "/private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive",
+    "signature": "codesign deep/strict PASS",
+    "version": "1.0.3",
+    "build": "85",
+    "binary_sha256": "a5cc99b9a22ae67b5235eb738b7871a0b1c69c5479dc25e8938cb07187e75d63",
+    "limit": "TestFlight cannot downgrade an installed build by replacing an upload; preserve previous tested build for selection or controlled local install"
+  }
+}

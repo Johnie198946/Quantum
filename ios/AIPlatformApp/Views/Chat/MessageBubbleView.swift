@@ -355,7 +355,7 @@ public struct MessageBubbleView: View {
             }
 
             // 3. 其他富媒体块（非 reasoning，如表格、图表、代码、澄清卡等）
-            ForEach(message.blocks.filter { if case .reasoning = $0 { return false }; return true }) { block in
+            ForEach(message.visibleTaskBlocks.filter { if case .reasoning = $0 { return false }; return true }) { block in
                 blockCard(block)
             }
 
@@ -491,6 +491,10 @@ public struct MessageBubbleView: View {
             onWorkflowOpen: { workflowId in
                 context?.onWorkflowOpen?(workflowId)
             },
+            linkedTravelWorkflowId: {
+                if case .capabilityProposal(let proposal) = block { return message.travelWorkflowID(for: proposal) }
+                return nil
+            }(),
             onKnowledgeNavigation: { target in
                 context?.onKnowledgeNavigation?(target)
             }

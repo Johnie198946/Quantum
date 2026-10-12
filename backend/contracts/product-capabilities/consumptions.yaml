@@ -32,3 +32,12 @@ consumptions:
     implementation_refs: [scripts/publication_scheduler_watchdog.py, scripts/publication_workflow_handoff.py, scripts/publication_editorial_remote.py, backend/services/knowledge_publication_store.py, backend/api/subscriptions.py, ios/AIPlatformApp/Networking/APIClient.swift, ios/AIPlatformApp/Views/Settings/SettingsView.swift, docs/runbooks/publication-standard-workflow.md]
     gates: [configured_role_binding, frozen_author_content, bounded_material_claim, all_planned_media_receipts, independent_native_review_proof, due_release, authenticated_reader_media, client_visible_images]
     status: partial
+
+  - id: travel.workflow_chat
+    kind: workflow
+    description: Chat selects PCM capabilities through the existing JEV and Gateway; source session and role-labelled conversation evidence carry into requirement confirmation. Existing travel research, sequential day blocks, previous-block summaries, public landmark photo references and practical guidance run inside the approved travel workflow, not independent bypass tools. Final adoption and private notebook saving are separate confirmed actions. Native travel notebook and map entry consume the same verified structured artifact; graphical map resolution remains unverified.
+    input_contract: {creation: workflow.create_with_travel_output, context: bounded_user_and_assistant_evidence_with_unknowns_preserved, clarification: workflow.clarification.read_and_respond, plan: workflow.plan.read_and_existing_approve_start, research_and_day_blocks: existing_travel_plan_nodes, photos: existing_public_web_photo_references, results: workflow.artifacts.list_and_artifact.open, adoption: hash_and_version_bound_workflow.review, recovery: workflow.retry, notebook: travel.notebook.save, revisions: travel.revise, map: existing_native_travel_artifact_consumer}
+    receipt: gateway_confirmation_receipt_workflow_artifacts_and_private_note_sync
+    implementation_refs: [backend/capability_handlers.py, backend/services/travel_plan.py, scripts/hermes_bridge_runtime/workflow_runtime.py, ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift, ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift, ios/AIPlatformApp/Views/Knowledge/TravelJourneyView.swift]
+    gates: [authenticated_workflow_owner, trusted_source_session, current_requirement_round, approved_plan_budget, artifact_hash_and_version, completed_execution_before_note_save, private_note_create_only_or_exact_link, confirmed_revisions]
+    status: partial

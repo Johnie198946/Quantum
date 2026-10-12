@@ -1,0 +1,10 @@
+{
+  "invalid_phone": {
+    "status": 422,
+    "detail": "请输入有效的中国大陆手机号"
+  },
+  "invalid_code_format": {
+    "status": 422,
+    "detail": "请输入 6 位短信验证码"
+  }
+}

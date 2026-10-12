@@ -1764,7 +1764,7 @@ extension KnowledgeNoteStore {
 extension NoteIllustrationPlacement {
     static func hashData(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     static func asset(from filename: String) -> NoteIllustrationAsset? {
-        guard let match = filename.wholeMatch(of: /ai-([a-f0-9]{32})-([0-2])-([a-f0-9]{64})\.jpg/) else { return nil }
-        return .init(runId: String(match.1), index: Int(match.2)!, anchor: "", alt: "AI 插图", sha256: String(match.3), provider: "unknown", model: "unknown")
+        guard let match = filename.wholeMatch(of: /ai-([a-f0-9]{32})-([0-9]{1,2})-([a-f0-9]{64})\.jpg/), let index = Int(match.2), (0..<12).contains(index) else { return nil }
+        return .init(runId: String(match.1), index: index, anchor: "", alt: "笔记图片", sha256: String(match.3), provider: "unknown", model: "unknown")
     }
 }

@@ -3,6 +3,12 @@
 # 配置: 复制 .env.example 为 .env 后按需修改
 
 x-app-hardening: &app-hardening
+  cgroup_parent: quantum-runtime.slice
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
@@ -11,6 +17,9 @@ services:
   # PostgreSQL — 知识库主库（仅本机可连；Authen 认证服务复用）
   postgres:
     <<: *app-hardening
+    mem_limit: 384m
+    memswap_limit: 768m
+    pids_limit: 512
     image: ${AI_LAB_POSTGRES_IMAGE:-ai-lab-platform-postgres:offline}
     build:
       context: ./infrastructure/postgres
@@ -36,6 +45,9 @@ services:
   # Redis — 会话 / 缓存（仅本机可连；Authen 认证服务复用）
   redis:
     <<: *app-hardening
+    mem_limit: 64m
+    memswap_limit: 128m
+    pids_limit: 512
     image: ${AI_LAB_REDIS_IMAGE:-ai-lab-platform-redis:offline}
     build:
       context: ./infrastructure/redis
@@ -67,6 +79,9 @@ services:
   # API — 后端服务
   api:
     <<: *app-hardening
+    mem_limit: 768m
+    memswap_limit: 1536m
+    pids_limit: 512
     image: ${AI_LAB_API_IMAGE:-ai-lab-platform-api:offline}
     build:
       context: .
@@ -181,6 +196,9 @@ services:
   # 持久工作流执行器：独立消费 PostgreSQL 队列，API/客户端重启不丢任务
   workflow-worker:
     <<: *app-hardening
+    mem_limit: 256m
+    memswap_limit: 512m
+    pids_limit: 512
     image: ${AI_LAB_WORKFLOW_WORKER_IMAGE:-ai-lab-platform-workflow-worker:offline}
     build:
       context: .
@@ -222,6 +240,9 @@ services:
   # 持久方案规划器：独立租约队列，API/客户端/Worker 重启后继续同一规划任务
   planning-worker:
     <<: *app-hardening
+    mem_limit: 256m
+    memswap_limit: 512m
+    pids_limit: 512
     image: ${AI_LAB_PLANNING_WORKER_IMAGE:-ai-lab-platform-planning-worker:offline}
     build:
       context: .
@@ -263,6 +284,9 @@ services:
   # 持久 Agent 正式评估队列：独立租约，客户端或服务重启后可恢复
   agent-evaluation-worker:
     <<: *app-hardening
+    mem_limit: 256m
+    memswap_limit: 512m
+    pids_limit: 512
     image: ${AI_LAB_AGENT_EVALUATION_WORKER_IMAGE:-ai-lab-platform-agent-evaluation-worker:offline}
     build:
       context: .
@@ -304,6 +328,9 @@ services:
   # AI execution remains owned by AI Lab and is entered through the QWS host bridge.
   taskboard:
     <<: *app-hardening
+    mem_limit: 256m
+    memswap_limit: 512m
+    pids_limit: 512
     image: ${AI_LAB_TASKBOARD_IMAGE:-ai-lab-platform-taskboard:offline}
     build:
       context: ./apps/dashi-taskboard
@@ -333,6 +360,9 @@ services:
   # 前端服务
   frontend:
     <<: *app-hardening
+    mem_limit: 64m
+    memswap_limit: 128m
+    pids_limit: 512
     image: ${AI_LAB_FRONTEND_IMAGE:-ai-lab-platform-frontend:offline}
     build:
       context: .

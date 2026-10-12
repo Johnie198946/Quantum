@@ -6,7 +6,3 @@ export function plainContent(item) {
   return [item.text, ...item.blocks.map((block) => block.kind === "chart"
     ? [block.content, ...block.labels.map((label, i) => `${label}\t${block.values[i]}`)].join("\n") : block.content)].filter(Boolean).join("\n\n");
 }
-
-export function unseenResultTarget(knownIds, items) {
-  return items.find((item) => item.direction === "result" && !knownIds.has(item.id))?.target || null;
-}

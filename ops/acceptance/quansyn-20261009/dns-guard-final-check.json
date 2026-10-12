@@ -1,0 +1,17 @@
+{
+  "time_utc": "2026-10-09T22:59:02.730305+00:00",
+  "idempotent": true,
+  "ops_commit": "1d3a51c6de43ad717dbeb7d7be5568c99603e6f7",
+  "app_sha": "1c7c5062cd0248edeb10080cb9b80ec6320e2882",
+  "dns_servers": "Link 2 (eth0): 100.100.2.136 100.100.2.138",
+  "timer": "NextElapseUSecMonotonic=10h 49min 22.462670s\nActiveState=active",
+  "guard": "Result=success\nExecMainStatus=0",
+  "sms_log": "2026-10-10T06:58:15+08:00 iZwz94nhqwtqehs5tnfxi3Z python[2524]: INFO:     172.19.0.7:49356 - \"POST /api/v1/auth/send-sms HTTP/1.1\" 200 OK",
+  "rule_counters": "Chain INPUT (policy DROP 95 packets, 5288 bytes)\nnum   pkts bytes target     prot opt in     out     source               destination         \n1        3   356 ACCEPT     6    --  eth0   *       100.100.2.138        0.0.0.0/0            tcp spt:53 ctstate ESTABLISHED /* quantum-cloud-dns */\n2        1   239 ACCEPT     17   --  eth0   *       100.100.2.138        0.0.0.0/0            udp spt:53 ctstate ESTABLISHED /* quantum-cloud-dns */\n3        4   429 ACCEPT     6    --  eth0   *       100.100.2.136        0.0.0.0/0            tcp spt:53 ctstate ESTABLISHED /* quantum-cloud-dns */\n4       31  4874 ACCEPT     17   --  eth0   *       100.100.2.136        0.0.0.0/0            udp spt:53 ctstate ESTABLISHED /* quantum-cloud-dns */\n5    1759K 2584M ts-input   0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n6    1703K 2580M ufw-before-logging-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n7    1703K 2580M ufw-before-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n8       95  5288 ufw-after-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n9       95  5288 ufw-after-logging-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n10      95  5288 ufw-reject-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0           \n11      95  5288 ufw-track-input  0    --  *      *       0.0.0.0/0            0.0.0.0/0",
+  "sms_received": {
+    "confirmed": true,
+    "evidence": "User replied 已收到 to the 06:58 genuine SMS request",
+    "otp_read": false,
+    "login_verified": false
+  }
+}

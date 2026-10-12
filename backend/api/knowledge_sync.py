@@ -926,6 +926,7 @@ async def cancel_note_illustration(run_id: str, payload: dict = Depends(require_
 
 @router.get("/illustrations/{run_id}/assets/{index}")
 async def note_illustration_asset(run_id: str, index: int, payload: dict = Depends(require_auth)):
-    if not re.fullmatch(r"[a-f0-9]{32}", run_id) or index not in range(3):
+    from backend.services.note_illustrations import TRAVEL_IMAGE_LIMIT
+    if not re.fullmatch(r"[a-f0-9]{32}", run_id) or index not in range(TRAVEL_IMAGE_LIMIT):
         raise HTTPException(404, "illustration_asset_not_found")
     return await _illustration_bridge(payload, f"/{run_id}/assets/{index}")

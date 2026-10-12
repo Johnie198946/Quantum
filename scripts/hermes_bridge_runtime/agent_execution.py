@@ -948,6 +948,12 @@ def _run_agent_sync(
         client_tool_context = getattr(_knowledge._client_context_tool_context, "value", None)
         if isinstance(client_tool_context, dict):
             client_tool_context["hermes_session_id"] = agent_sid or history_sid
+            # Reuse this owner's native history; no client transcript export or second store.
+            client_tool_context["travel_source_messages"] = [
+                item for item in (conversation_history or [])
+                if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
+                and isinstance(item.get("content"), str) and item["content"].strip()
+            ] + [{"role": "user", "content": original_goal}]
             client_tool_context["hermes_message_ids"] = [
                 str(item.get("id"))
                 for item in (conversation_history or [])

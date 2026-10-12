@@ -1,0 +1,119 @@
+rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-20261009.IboCGX
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            BuildKit is currently disabled; enable it by removing the DOCKER_BUILDKIT=0
+            environment-variable.
+
+Sending build context to Docker daemon   4.62MB
+Step 1/8 : FROM sha256:969792a6912e16e8e7bf866d1bb057d899b91f8f87156c60f96c886004aacd46
+ ---> 969792a6912e
+Step 2/8 : USER root
+ ---> Running in f3d3f09bdae2
+ ---> Removed intermediate container f3d3f09bdae2
+ ---> 645e2ca97503
+Step 3/8 : RUN rm -rf /app/backend /app/config /app/scripts
+ ---> Running in 71104785e8b4
+ ---> Removed intermediate container 71104785e8b4
+ ---> bf7b266abe86
+Step 4/8 : COPY backend /app/backend
+ ---> 2b841dffc2db
+Step 5/8 : COPY config /app/config
+ ---> bd537d972bda
+Step 6/8 : COPY scripts /app/scripts
+ ---> c186780c2a58
+Step 7/8 : USER ailab
+ ---> Running in ae51953cc3b0
+ ---> Removed intermediate container ae51953cc3b0
+ ---> b0b120f2795d
+Step 8/8 : LABEL org.opencontainers.image.revision=01161f7603d7b3bea0a0c082cbf67862e35bf066
+ ---> Running in 8420c791c7d4
+ ---> Removed intermediate container 8420c791c7d4
+ ---> 7cd3b137b488
+Successfully built 7cd3b137b488
+Successfully tagged ai-lab-platform-api:quansyn-01161f7603d7
+candidate_runtime_files 289 mismatches []
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            BuildKit is currently disabled; enable it by removing the DOCKER_BUILDKIT=0
+            environment-variable.
+
+Sending build context to Docker daemon  5.849MB
+Step 1/6 : FROM sha256:4acbdfcc0a24306ef110d793a68a60c7e4e1af9db2bbb8a8a8ad927ddc91a7ba
+ ---> 4acbdfcc0a24
+Step 2/6 : USER root
+ ---> Running in 40e1f469af5b
+ ---> Removed intermediate container 40e1f469af5b
+ ---> 94ea2961dbe1
+Step 3/6 : RUN find /usr/share/nginx/html -mindepth 1 -maxdepth 1 ! -name web-dashboard -exec rm -rf {} +
+ ---> Running in 49ba268c2d42
+ ---> Removed intermediate container 49ba268c2d42
+ ---> dd1a1d2448c3
+Step 4/6 : COPY dist /usr/share/nginx/html
+ ---> 5d8d85b319b8
+Step 5/6 : USER nginx
+ ---> Running in c83142e80c6b
+ ---> Removed intermediate container c83142e80c6b
+ ---> b0a05256c30e
+Step 6/6 : LABEL org.opencontainers.image.revision=01161f7603d7b3bea0a0c082cbf67862e35bf066
+ ---> Running in 1103d280de9c
+ ---> Removed intermediate container 1103d280de9c
+ ---> bb3dfd79c10c
+Successfully built bb3dfd79c10c
+Successfully tagged ai-lab-platform-frontend:quansyn-01161f7603d7b3bea0a0c082cbf67862e35bf066
+==> [1/6] 下载并解包 SHA 01161f7603d7b3bea0a0c082cbf67862e35bf066
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+==> [3a/6] 执行 QuantumWorkspace additive schema migration
+{"dry_run": false, "orphan_conversation_ids": [], "orphan_conversation_references": [], "projects_scanned": 22, "projects_to_backfill": 0, "revisions_written": 0}
+ Container ai-lab-platform-taskboard-1  Running
+ Container ai-lab-platform-redis-1  Running
+ Container ai-lab-platform-postgres-1  Running
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreate
+ Container ai-lab-platform-workflow-worker-1  Recreate
+ Container ai-lab-platform-api-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreate
+ Container ai-lab-platform-frontend-1  Recreated
+ Container ai-lab-platform-agent-evaluation-worker-1  Recreated
+ Container ai-lab-platform-workflow-worker-1  Recreated
+ Container ai-lab-platform-planning-worker-1  Recreated
+ Container ai-lab-platform-redis-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Waiting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-workflow-worker-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-redis-1  Healthy
+ Container ai-lab-platform-api-1  Starting
+ Container ai-lab-platform-postgres-1  Healthy
+ Container ai-lab-platform-agent-evaluation-worker-1  Starting
+ Container ai-lab-platform-agent-evaluation-worker-1  Started
+ Container ai-lab-platform-api-1  Started
+ Container ai-lab-platform-frontend-1  Starting
+ Container ai-lab-platform-api-1  Waiting
+ Container ai-lab-platform-workflow-worker-1  Started
+ Container ai-lab-platform-frontend-1  Started
+ Container ai-lab-platform-api-1  Healthy
+ Container ai-lab-platform-planning-worker-1  Starting
+ Container ai-lab-platform-planning-worker-1  Started
+==> [4/6] API 健康检查与运行契约审计
+✅ runtime contract audit passed
+ - data_dir: /app/data
+ - matrix: /app/data/knowledge_matrix.json
+==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限
+user_note_permissions directories=28 files=368 skipped_symlinks=0
+==> [5/6] 原子切换 release 并重启 Hermes runtime
+hermes_restart_status=skipped_absent unit=hermes-serve.service
+hermes_restart_status=skipped_absent unit=hermes-serve-forward.service
+hermes_restart_status=skipped_absent unit=hermes-gateway.service
+user_note_permissions directories=28 files=368 skipped_symlinks=0
+==> [6/6] 最终健康检查
+{"status":"ready","version":"0.8.0"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":232,"workflow_runs":83,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+{"status":"ok","service":"hermes-bridge","version":"v6.0","sessions":232,"workflow_runs":83,"workflow_orchestration":true,"streaming":true,"ws_pty":"ws://127.0.0.1:9119/api/pty"}
+deployed_sha=01161f7603d7b3bea0a0c082cbf67862e35bf066
+release=/opt/releases/ai-lab-platform-01161f7603d7.EQMipk
+rollback_point=/opt/releases/ai-lab-platform-a9c1bfe97ebb.fUREKK
+{"retention_candidates": [], "apply": true}
+deployment_finished=true
+rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-20261009.IboCGX

@@ -407,7 +407,8 @@ def test_presentation_native_tool_uses_pcm_contract_without_keyword_router():
     assert not hasattr(bridge, "_presentation_capability_directive")
 
 
-def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
+@pytest.mark.parametrize("travel", [False, True])
+def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal(travel):
     events = []
     previous_loop = bridge._bridge_async_loop
     bridge._bridge_async_loop = None
@@ -415,6 +416,7 @@ def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
         "emit": events.append,
         "request_id": "request-worker-process",
         "client_session_id": "chat-session-worker",
+        "travel_source_messages": [{"role": "user", "content": "去鹿儿岛"}, {"role": "assistant", "content": "建议住车站旁"}],
         "identity": {
             "tenant_key": "tenant-worker",
             "user_id": "user-worker",
@@ -424,13 +426,19 @@ def test_bridge_worker_without_fastapi_loop_persists_confirmation_proposal():
     try:
         result = json.loads(bridge._app_capability_invoke_tool({
             "capability_id": "workflow.create",
-            "input": {"title": "Worker workflow", "description": "valid workflow description"},
+            "input": {"title": "Worker workflow", "description": "valid workflow description", **({"output_kind": "travel", "destination": "鹿儿岛"} if travel else {})},
         }))
     finally:
         bridge._client_context_tool_context.value = None
         bridge._bridge_async_loop = previous_loop
 
     assert result["status"] == "awaiting_confirmation"
+    proposed_description = events[0]["payload"]["input"]["description"]
+    if travel:
+        assert "用户：去鹿儿岛" in proposed_description
+        assert "助手建议：建议住车站旁" in proposed_description
+    else:
+        assert proposed_description == "valid workflow description"
     assert [event["type"] for event in events] == ["capability.proposed"]
     assert events[0]["renderer"] == "confirmation"
     assert events[0]["renderer_version"] == 1
@@ -797,7 +805,7 @@ def test_bridge_qcp_read_path_installs_only_trusted_invocation_identity(
 
     class FakeSessionDB:
         def get_messages(self, _session_id):
-            return []
+            return [{"role": "user", "content": "香港出发，两个人"}, {"role": "assistant", "content": "建议鹿儿岛中央站旁住宿"}, {"role": "tool", "content": "private-tool-result"}]
 
         def close(self):
             return None
@@ -830,6 +838,7 @@ def test_bridge_qcp_read_path_installs_only_trusted_invocation_identity(
         "user_id": "user-a",
         "knowledge_policy_version": "unknown",
     }
+    assert observed["travel_source_messages"] == [{"role": "user", "content": "香港出发，两个人"}, {"role": "assistant", "content": "建议鹿儿岛中央站旁住宿"}, {"role": "user", "content": "consume an artifact"}]
     assert observed["request_id"] == "trusted-request-123"
     assert observed["build_kwargs"]["qcp_enabled"] is True
     assert bridge._client_context_tool_context.value is None
@@ -964,3 +973,35 @@ def test_learning_native_tools_require_trusted_bridge_identity(capability_id, da
     assert result["error"] == "trusted_invocation_context_required"
     injected = json.loads(bridge._app_capability_invoke_tool({"capability_id": capability_id, "input": {**data, "tenant_key": "victim", "confirmed": True}}))
     assert injected["error"] == "contract_invalid"
+
+
+def test_travel_proposal_preserves_both_roles_without_promoting_assistant_suggestions():
+    from scripts.hermes_bridge_runtime.knowledge import _travel_proposal_with_context
+    original = {"title": "鹿儿岛旅行", "description": "已确定鹿儿岛；日期未定；助手建议住车站旁待确认", "output_kind": "travel", "destination": "鹿儿岛", "travel_dates": "尚未决定"}
+    messages = [{"role": "user", "content": "我们两个人，香港出发"}, {"role": "assistant", "content": "建议住鹿儿岛中央站旁，安排五天"}, {"role": "user", "content": "车站旁可以，五天先不定，预算6000元"}, {"role": "tool", "content": "private tool data must not be carried"}]
+    result = _travel_proposal_with_context(original, messages)
+    assert result["destination"] == "鹿儿岛" and result["travel_dates"] == "尚未决定"
+    assert "用户：我们两个人，香港出发" in result["description"]
+    assert "助手建议：建议住鹿儿岛中央站旁，安排五天" in result["description"]
+    assert "用户：车站旁可以，五天先不定，预算6000元" in result["description"]
+    assert "只有用户明确采纳后才是已确认条件" in result["description"]
+    assert "private tool data" not in result["description"]
+    assert original["description"] == "已确定鹿儿岛；日期未定；助手建议住车站旁待确认"
+
+
+def test_travel_source_respects_description_limit_and_keeps_latest_corrections():
+    from scripts.hermes_bridge_runtime.knowledge import _travel_proposal_with_context
+    data = {"description": "用户当前确认鹿儿岛，旧建议只供参考"}
+    result = _travel_proposal_with_context(data, [{"role": "assistant", "content": "旧建议" * 6000}, {"role": "user", "content": "改为鹿儿岛，日期尚未决定"}])
+    assert len(result["description"]) <= 12000
+    assert "用户：改为鹿儿岛，日期尚未决定" in result["description"]
+    assert "较早对话因长度限制省略" in result["description"]
+
+
+def test_travel_contract_requires_analysis_prefill_and_user_review():
+    description = describe_capability("workflow.create")["description"]
+    assert "including user messages and assistant replies" in description
+    assert "explicit acceptance or rejection" in description
+    assert "Proactively prefill" in description
+    assert "建议（待确认）" in description
+    assert "review and supplement the prefilled travel form" in description

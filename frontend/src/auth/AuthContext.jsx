@@ -96,9 +96,11 @@ export function AuthProvider({ children }) {
     return session;
   };
 
-  const loginWithOAuthTicket = async ({ ticket }) => {
-    const accessToken = await platformApi.completeOAuth({ ticket });
-    const user = await platformApi.getSessionMe({ accessToken, skipSessionAuth: true });
+  const loginWithOAuthTicket = async ({ ticket, allowPendingAgreement = false, appApproval = false }) => {
+    const accessToken = await platformApi.completeOAuth({ ticket, appApproval });
+    let user;
+    try { user = await platformApi.getSessionMe({ accessToken, skipSessionAuth: true }); }
+    catch (error) { if (!allowPendingAgreement || error.status !== 428) throw error; }
     const session = buildAuthSession({
       accessToken,
       identifier: user?.username || "oauth-user",

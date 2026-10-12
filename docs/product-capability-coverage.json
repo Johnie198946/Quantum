@@ -620,6 +620,22 @@
       ]
     },
     {
+      "id": "travel.notebook.save",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "travel.revise",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
       "id": "voice.record",
       "status": "implemented",
       "tests": [
@@ -643,10 +659,34 @@
       ]
     },
     {
+      "id": "workflow.artifacts.list",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
       "id": "workflow.cancel",
       "status": "implemented",
       "tests": [
         "tests/test_workflow_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "workflow.clarification.read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "workflow.clarification.respond",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
         "tests/test_workflows_api.py"
       ]
     },
@@ -662,6 +702,30 @@
       "status": "implemented",
       "tests": [
         "tests/test_product_capabilities.py"
+      ]
+    },
+    {
+      "id": "workflow.plan.read",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "workflow.retry",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ]
+    },
+    {
+      "id": "workflow.review",
+      "status": "implemented",
+      "tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
       ]
     },
     {
@@ -687,7 +751,7 @@
       ]
     }
   ],
-  "catalog_digest": "f88f33fd05f2162c33301612eaeb75e77ab494b392fa0df67c38e08dc4f9a511",
+  "catalog_digest": "b0a08c84a7350bd26529b9a82840a706a89419965e92248982403f86b3fe5b35",
   "consumptions": [
     {
       "gates": [
@@ -744,6 +808,29 @@
     },
     {
       "gates": [
+        "authenticated_workflow_owner",
+        "trusted_source_session",
+        "current_requirement_round",
+        "approved_plan_budget",
+        "artifact_hash_and_version",
+        "completed_execution_before_note_save",
+        "private_note_create_only_or_exact_link",
+        "confirmed_revisions"
+      ],
+      "id": "travel.workflow_chat",
+      "implementation_refs": [
+        "backend/capability_handlers.py",
+        "backend/services/travel_plan.py",
+        "scripts/hermes_bridge_runtime/workflow_runtime.py",
+        "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+        "ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift",
+        "ios/AIPlatformApp/Views/Knowledge/TravelJourneyView.swift"
+      ],
+      "receipt": "gateway_confirmation_receipt_workflow_artifacts_and_private_note_sync",
+      "status": "partial"
+    },
+    {
+      "gates": [
         "backend/services/knowledge_policy.py",
         "backend/services/workflow_contract.py"
       ],
@@ -757,7 +844,7 @@
     }
   ],
   "counts": {
-    "implemented": 93,
+    "implemented": 101,
     "partial": 0,
     "unverified": 0
   },
@@ -3352,6 +3439,6 @@
     ]
   },
   "protocol": "qcp",
-  "total": 93,
+  "total": 101,
   "version": "1.0.0"
 }

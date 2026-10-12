@@ -14,10 +14,10 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
-from sqlalchemy import delete, select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select, update
 
 from backend.api.register import (
     _issue_jwt,
@@ -27,6 +27,7 @@ from backend.api.register import (
     dev_login_phone_matches,
     dev_login_principal,
 )
+from backend.api.auth import require_auth
 from backend.db import SessionLocal
 from backend.models.external_auth import ExternalAuthFlow
 from backend.services.knowledge_contribution import SERVICE_AGREEMENT_VERSION
@@ -106,10 +107,10 @@ def _append_query(url: str, **values: str) -> str:
     )
 
 
-async def _authen_request(method: str, path: str, **kwargs) -> dict:
+async def _authen_request(method: str, path: str, *, base: str = AUTHEN_BASE, **kwargs) -> dict:
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.request(method, f"{AUTHEN_BASE}{path}", **kwargs)
+            response = await client.request(method, f"{base.rstrip('/')}{path}", **kwargs)
     except httpx.RequestError as exc:
         raise HTTPException(status_code=503, detail="认证服务暂不可用") from exc
     if response.status_code >= 400:
@@ -318,8 +319,75 @@ async def oauth_complete(body: TicketRequest):
             or flow.expires_at <= _utcnow()
         ):
             raise HTTPException(status_code=401, detail="登录票据无效或已过期")
-        flow.ticket_consumed_at = _utcnow()
+        consumed = await db.execute(update(ExternalAuthFlow).where(
+            ExternalAuthFlow.id == flow.id, ExternalAuthFlow.ticket_consumed_at.is_(None),
+            ExternalAuthFlow.expires_at > _utcnow()).values(ticket_consumed_at=_utcnow()))
+        if consumed.rowcount != 1:
+            raise HTTPException(status_code=401, detail="登录票据已使用")
         user_id = flow.user_id
         await db.commit()
     tenant_key = await _provision_tenant(user_id)
     return _session_payload(user_id, tenant_key, auth_method="oauth")
+
+
+class AppLoginState(BaseModel):
+    state: str = Field(min_length=32, max_length=100)
+
+
+class AppLoginConfirmation(BaseModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+def _app_login_user(p):
+    user = str(p.get("user_id") or "")
+    if not user or p.get("principal_type") != "human":
+        raise HTTPException(403, "请使用已登录的 Quantum 账号确认")
+    return user
+
+
+@router.post("/quantum/start")
+async def app_login_start(body: PhoneRequest):
+    return await _authen_request("POST", "/api/v1/auth/app-login/start",
+                                 json={"phone": _normalize_phone(body.phone)})
+
+
+@router.get("/quantum/pending")
+async def app_login_pending(request: Request, p=Depends(require_auth)):
+    _app_login_user(p)
+    return await _authen_request("GET", "/api/v1/auth/app-login/pending",
+                                 headers={"Authorization": request.headers.get("authorization", "")})
+
+
+@router.post("/quantum/{flow_id}/confirm")
+async def app_login_confirm(flow_id: str, body: AppLoginConfirmation, request: Request, p=Depends(require_auth)):
+    _app_login_user(p)
+    if not re.fullmatch(r"[a-f0-9]{64}", flow_id):
+        raise HTTPException(404, "登录请求不存在")
+    return await _authen_request("POST", f"/api/v1/auth/app-login/{flow_id}/confirm",
+        json={"code": body.code}, headers={"Authorization": request.headers.get("authorization", "")})
+
+
+@router.post("/quantum/{flow_id}/cancel")
+async def app_login_cancel(flow_id: str, request: Request, p=Depends(require_auth)):
+    _app_login_user(p)
+    if not re.fullmatch(r"[a-f0-9]{64}", flow_id):
+        raise HTTPException(404, "登录请求不存在")
+    return await _authen_request("POST", f"/api/v1/auth/app-login/{flow_id}/cancel",
+                                 headers={"Authorization": request.headers.get("authorization", "")})
+
+
+@router.post("/quantum/status")
+async def app_login_status(body: AppLoginState):
+    return await _authen_request("POST", "/api/v1/auth/app-login/status", json={"state": body.state})
+
+
+@router.post("/quantum/complete")
+async def app_login_complete(body: TicketRequest):
+    payload = await _authen_request("POST", "/api/v1/auth/app-login/complete", json={"ticket": body.ticket})
+    user_id = str(payload.get("user", {}).get("id") or "")
+    token = payload.get("access_token")
+    if not user_id or not token:
+        raise HTTPException(502, "认证服务未返回完整登录身份")
+    tenant_key = await _provision_tenant(user_id)
+    return {"success": True, "token": token, "access_token": token,
+            "user_id": user_id, "tenant_key": tenant_key, "is_new_user": False}

@@ -40,6 +40,21 @@ final class TravelJourneyTests: XCTestCase {
         XCTAssertEqual(payload.legs.map(\.to), [1, 0])
     }
 
+    func testSearchURLRetainsNameAndAddressWithoutInventingCoordinates() throws {
+        let stop = TravelRouteStop(name: "仙巌園 & 庭園", latitude: nil, longitude: nil, address: "鹿児島市吉野町9700-1")
+        let url = try XCTUnwrap(URLComponents(url: stop.mapsURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(url.queryItems?.first(where: { $0.name == "q" })?.value, "仙巌園 & 庭園 鹿児島市吉野町9700-1")
+        XCTAssertFalse(url.queryItems?.contains(where: { $0.name == "ll" }) ?? true)
+        let google = try XCTUnwrap(URLComponents(url: stop.googleMapsURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(google.queryItems?.first(where: { $0.name == "query" })?.value, "仙巌園 & 庭園 鹿児島市吉野町9700-1")
+        XCTAssertEqual(google.queryItems?.first(where: { $0.name == "api" })?.value, "1")
+        let located = TravelRouteStop(name: "仙巌園", latitude: 31.618, longitude: 130.578)
+        let plan = TravelPlanDocument(destination: "鹿儿岛", dateRange: nil, budget: nil, companions: nil, style: nil, stops: [stop])
+        let payload = TravelJourneyPayload(title: "旅行", plan: plan, resolvedStops: [located])
+        XCTAssertEqual(payload.stops.count, 1)
+        XCTAssertEqual(plan.stops.first?.latitude, nil, "Map lookup must never rewrite the saved plan")
+    }
+
     func testBundledMapHasNoDemoCoordinatesAndSupportsNativeLifecycle() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "journey", withExtension: "js"))
         let script = try String(contentsOf: url, encoding: .utf8)

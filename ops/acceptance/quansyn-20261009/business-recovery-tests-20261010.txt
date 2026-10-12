@@ -1,0 +1,9 @@
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project /private/tmp/quansyn-business-f802-source/ios/AIPlatformApp.xcodeproj -scheme AIPlatformApp -destination "platform=iOS Simulator,id=24B48A56-1C35-4F01-9E95-DD91E1C60333" -derivedDataPath /private/tmp/quansyn-business-derived -clonedSourcePackagesDirPath /private/tmp/QuantumTravelQualitySimulatorDerived/SourcePackages -disableAutomaticPackageResolution "-only-testing:AIPlatformAppTests/WorkflowLifecycleDTOTests/testMismatchedStreamRecoveryDoesNotRetainGenerationOwnership" "-only-testing:AIPlatformAppTests/WorkflowLifecycleDTOTests/testRetryWhileGeneratingShowsHintWithoutChangingRunState" -resultBundlePath /private/tmp/quansyn-recovery-test.xcresult CODE_SIGN_IDENTITY=- test
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMismatchedStreamRecoveryDoesNotRetainGenerationOwnership]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testMismatchedStreamRecoveryDoesNotRetainGenerationOwnership]' passed (0.085 seconds).
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' started.
+Test Case '-[AIPlatformAppTests.WorkflowLifecycleDTOTests testRetryWhileGeneratingShowsHintWithoutChangingRunState]' passed (0.001 seconds).
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.087 (0.088) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.087 (0.088) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.087 (0.089) seconds
+** TEST SUCCEEDED **

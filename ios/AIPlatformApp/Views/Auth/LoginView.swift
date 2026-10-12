@@ -707,7 +707,7 @@ public struct LoginView: View {
         let normalizedPhone = LoginInputPolicy.digits(phoneNumber, limit: 11)
         guard normalizedPhone.count == 11, !isLoading,
               channels.phone || normalizedPhone == LoginInputPolicy.developerPhone else { return }
-        if normalizedPhone == LoginInputPolicy.developerPhone, !channels.phone {
+        if normalizedPhone == LoginInputPolicy.developerPhone {
             loginStep = .code
             isCountdownActive = true
             countdownSeconds = 60

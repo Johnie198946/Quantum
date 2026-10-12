@@ -180,3 +180,19 @@ bindings:
 
   - id: media.save_edit
     handler: media.save_edit
+  - id: workflow.clarification.read
+    handler: workflow.clarification.read
+  - id: workflow.clarification.respond
+    handler: workflow.clarification.respond
+  - id: workflow.plan.read
+    handler: workflow.plan.read
+  - id: workflow.artifacts.list
+    handler: workflow.artifacts.list
+  - id: workflow.review
+    handler: workflow.review
+  - id: workflow.retry
+    handler: workflow.retry
+  - id: travel.revise
+    handler: travel.revise
+  - id: travel.notebook.save
+    handler: travel.notebook.save

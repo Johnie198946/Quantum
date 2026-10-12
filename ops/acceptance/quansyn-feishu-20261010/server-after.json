@@ -1,0 +1,40 @@
+{
+  "server_sha": "83b74073ac44be84582ce3e616357cb83f233cb4",
+  "release": "/opt/releases/ai-lab-platform-83b74073ac44.OETm2k",
+  "services": {
+    "api": {
+      "image": "sha256:ab6b8ee444e940696aa2b348fea89bf919d68964a3dc84068fdb0fa09012107f",
+      "revision": "83b74073ac44be84582ce3e616357cb83f233cb4",
+      "state": "running",
+      "health": "healthy"
+    },
+    "frontend": {
+      "image": "sha256:d4a2ad5321e151d0c185e28a80a12aa62caca375a97d4a1d0182bc77fdd62b6c",
+      "revision": "83b74073ac44be84582ce3e616357cb83f233cb4",
+      "state": "running",
+      "health": "healthy"
+    },
+    "workflow-worker": {
+      "image": "sha256:ab6b8ee444e940696aa2b348fea89bf919d68964a3dc84068fdb0fa09012107f",
+      "revision": "83b74073ac44be84582ce3e616357cb83f233cb4",
+      "state": "running",
+      "health": "healthy"
+    },
+    "planning-worker": {
+      "image": "sha256:ab6b8ee444e940696aa2b348fea89bf919d68964a3dc84068fdb0fa09012107f",
+      "revision": "83b74073ac44be84582ce3e616357cb83f233cb4",
+      "state": "running",
+      "health": "healthy"
+    },
+    "agent-evaluation-worker": {
+      "image": "sha256:ab6b8ee444e940696aa2b348fea89bf919d68964a3dc84068fdb0fa09012107f",
+      "revision": "83b74073ac44be84582ce3e616357cb83f233cb4",
+      "state": "running",
+      "health": "healthy"
+    }
+  },
+  "api_sha256": "00009a4332d0268401dffffcc7b2cb6d381a2fbaed63cd97d0a5ba34c7d0e997",
+  "nginx_sha256": "57a178add847a12628974012f3bf366aa8d9149c6da4a4e7acdd88e9623d2a44",
+  "rollback_point": "/opt/ai-lab-shared/rollbacks/quansyn-feishu-20261010.FvUyFS",
+  "rollback_files_present": true
+}

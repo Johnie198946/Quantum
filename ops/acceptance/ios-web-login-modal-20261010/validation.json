@@ -1,0 +1,14 @@
+{
+  "authen_tests": "32 passed; real isolated Redis/SQLite; owner, JWT provenance, atomic ticket, cancellation/expiry/log masking",
+  "quantum_tests": "198 passed: authentication, QuanSyn, Mac pairing, transfer failure/conflict, architecture, capability, Hermes bridge and knowledge actions",
+  "frontend_tests": "156 passed",
+  "frontend_build": "passed",
+  "ios_build": "Debug simulator arm64+x86_64 BUILD SUCCEEDED; release87 pending",
+  "visible_e2e": {
+    "environment": "isolated account19900000000, real Authen8851 + Quantum8852 + Redis8850 + web5157 + iOS simulatorE42CCEAA-4F9E-4283-9FD0-C08DDF0DB825",
+    "success": "App six-digit confirmation -> web QuanSyn automatic login -> App green check and close; no simulated success",
+    "cancel": "App Cancel -> modal dismisses; web shows 已在 Quantum 取消登录，请重新发起。; no login"
+  },
+  "production_before": "08ff1774f84df9d049c621cc4d272e65e2d1a929",
+  "deploy": "not executed"
+}

@@ -1,0 +1,30 @@
+........................................................................ [ 83%]
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/test_workflows_api.py::TestWorkflowsAPI::test_active_workflow_rejects_second_start
+tests/test_workflows_api.py::TestWorkflowsAPI::test_active_workflow_rejects_second_start
+tests/test_workflows_api.py::TestWorkflowsAPI::test_active_workflow_rejects_second_start
+tests/test_workflows_api.py::TestWorkflowsAPI::test_active_workflow_rejects_second_start
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/pydantic/_internal/_config.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_travel_plan.py::test_cloud_browser_uses_service_proxy_and_writable_cache_without_affecting_desktop
+  /Users/dengzhaoyu/Desktop/TepVis/.worktrees/server-health-fixes-20261009/scripts/hermes_bridge.py:139: DeprecationWarning:
+          on_event is deprecated, use lifespan event handlers instead.
+
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+    app.on_event("startup")(session_runtime._startup)
+
+tests/test_travel_plan.py::test_cloud_browser_uses_service_proxy_and_writable_cache_without_affecting_desktop
+  /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/fastapi/applications.py:4547: DeprecationWarning:
+          on_event is deprecated, use lifespan event handlers instead.
+
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+86 passed, 6 warnings in 30.97s

@@ -1,0 +1,8 @@
+[Unit]
+Description=Quantum application memory budget
+
+[Slice]
+MemoryAccounting=true
+MemoryHigh=2304M
+MemoryMax=2560M
+MemorySwapMax=1280M

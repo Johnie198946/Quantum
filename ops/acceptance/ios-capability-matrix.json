@@ -7213,12 +7213,507 @@
         "version": "1.0.0"
       },
       "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.clarification.read",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.clarification.read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.clarification.respond",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_version_or_state",
+          "explicit_user_confirmation"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.clarification.respond",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_round": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "intent": {
+              "enum": [
+                "confirm",
+                "revise"
+              ],
+              "type": "string"
+            },
+            "response": {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id",
+            "expected_round",
+            "response",
+            "intent"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.plan.read",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.plan.read",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "workflow_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.artifacts.list",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner"
+        ],
+        "confirmation": "none",
+        "idempotency": "none"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.artifacts.list",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "execution_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.review",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_version_or_state",
+          "explicit_user_confirmation"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.review",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "artifact_version": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "comment": {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            "decision": {
+              "enum": [
+                "approve",
+                "revise"
+              ],
+              "type": "string"
+            },
+            "execution_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "expected_hash": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id",
+            "artifact_id",
+            "expected_hash",
+            "artifact_version",
+            "decision"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "workflow.retry",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_version_or_state",
+          "explicit_user_confirmation"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.summary",
+      "handler": "workflow.retry",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "execution_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "travel.revise",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_version_or_state",
+          "explicit_user_confirmation"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.summary",
+      "handler": "travel.revise",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action_id": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "artifact_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "confirmed_bookings": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "execution_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "expected_hash": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "happened_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "progress": {
+              "enum": [
+                "delayed",
+                "in_progress",
+                "completed",
+                "cancelled",
+                "skipped"
+              ],
+              "type": "string"
+            },
+            "proposed": {
+              "type": "object"
+            },
+            "reason": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id",
+            "artifact_id",
+            "expected_hash",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
+    },
+    {
+      "automated_tests": [
+        "tests/test_travel_pcm_capabilities.py",
+        "tests/test_workflows_api.py"
+      ],
+      "capability": "travel.notebook.save",
+      "confirmation_cas_idempotency": {
+        "cas": [
+          "authenticated_owner",
+          "current_version_or_state",
+          "explicit_user_confirmation"
+        ],
+        "confirmation": "required",
+        "idempotency": "required"
+      },
+      "event": "workflow.summary",
+      "handler": "travel.notebook.save",
+      "ios_consumer": "ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift",
+      "policy": "workflow-owner",
+      "production_receipt": {
+        "evidence": null,
+        "status": "unverified"
+      },
+      "qws_consumer": "frontend/src/features/quantum-workspace/qcpEventRegistry.js",
+      "renderer": "workflow@1",
+      "schema": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "execution_id": {
+              "maxLength": 48,
+              "minLength": 1,
+              "type": "string"
+            },
+            "expected_hash": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "execution_id",
+            "artifact_id",
+            "expected_hash"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "required": [
+            "workflow"
+          ],
+          "type": "object"
+        },
+        "version": "1.0.0"
+      },
+      "status": "partial"
     }
   ],
   "counts": {
     "absent": 0,
     "implemented": 67,
-    "partial": 19,
+    "partial": 27,
     "unverified": 0
   },
   "pcm_version": "1.0.0",
@@ -7238,5 +7733,5 @@
   ],
   "scope_version": 2,
   "source": "backend/contracts/product-capabilities/manifest.yaml#ios_scope",
-  "total": 86
+  "total": 94
 }

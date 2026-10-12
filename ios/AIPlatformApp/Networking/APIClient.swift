@@ -1485,6 +1485,10 @@ public struct WorkflowDTO: Codable, Identifiable, Hashable, @unchecked Sendable 
     public let agent: WorkflowTaskAgentDTO?
 }
 
+public struct WorkflowCapabilityResultDTO: Codable {
+    public let workflow: WorkflowDTO
+}
+
 public struct WorkflowCreateResponseDTO: Codable {
     public let workflow: WorkflowDTO
     public let clarificationSession: WorkflowClarificationSessionDTO
@@ -1686,6 +1690,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     public var knowledgeScope: [String]?
     public var allowNetwork: Bool?
     public var requiresReview: Bool?
+    public var requireTravelGuidance: Bool?
     public var maxTokens: Int?
     public var revisionNote: String?
 
@@ -1699,6 +1704,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         case knowledgeScope = "knowledge_scope"
         case allowNetwork = "allow_network"
         case requiresReview = "requires_review"
+        case requireTravelGuidance = "require_travel_guidance"
         case maxTokens = "max_tokens"
         case revisionNote = "revision_note"
     }
@@ -1706,7 +1712,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
     private enum DecodingKeys: String, CodingKey {
         case agentId, scenarioId, scenarioVersion, approvalGate
         case query, instruction, outputFormat, knowledgeScope
-        case allowNetwork, requiresReview, maxTokens, revisionNote
+        case allowNetwork, requiresReview, requireTravelGuidance, maxTokens, revisionNote
     }
 
     public init(
@@ -1720,6 +1726,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope: [String]? = nil,
         allowNetwork: Bool? = nil,
         requiresReview: Bool? = nil,
+        requireTravelGuidance: Bool? = nil,
         maxTokens: Int? = nil,
         revisionNote: String? = nil
     ) {
@@ -1733,6 +1740,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         self.knowledgeScope = knowledgeScope
         self.allowNetwork = allowNetwork
         self.requiresReview = requiresReview
+        self.requireTravelGuidance = requireTravelGuidance
         self.maxTokens = maxTokens
         self.revisionNote = revisionNote
     }
@@ -1749,6 +1757,7 @@ public struct WorkflowNodeParametersDTO: Codable, Hashable {
         knowledgeScope = try container.decodeIfPresent([String].self, forKey: .knowledgeScope)
         allowNetwork = try container.decodeIfPresent(Bool.self, forKey: .allowNetwork)
         requiresReview = try container.decodeIfPresent(Bool.self, forKey: .requiresReview)
+        requireTravelGuidance = try container.decodeIfPresent(Bool.self, forKey: .requireTravelGuidance)
         maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens)
         revisionNote = try container.decodeIfPresent(String.self, forKey: .revisionNote)
     }
@@ -5309,5 +5318,25 @@ extension APIClient {
     }
     public func publishQuanSyn(_ body: QuanSynResultBody) async throws -> QuanSynTransferDTO {
         try await request(QuanSynTransferDTO.self, path: "quansyn/transfers", method: "POST", body: body)
+    }
+}
+
+// MARK: - Quantum confirmation for a real pending web login
+public struct QuantumWebLoginDTO: Decodable, Identifiable {
+    public let id: String
+    public let code: String
+    public let destination: String
+}
+private struct QuantumWebLoginList: Decodable { let items: [QuantumWebLoginDTO] }
+private struct QuantumWebLoginCode: Encodable { let code: String }
+extension APIClient {
+    public func pendingQuantumWebLogins() async throws -> [QuantumWebLoginDTO] {
+        try await request(QuantumWebLoginList.self, path: "auth/quantum/pending").items
+    }
+    public func confirmQuantumWebLogin(_ item: QuantumWebLoginDTO) async throws {
+        _ = try await request([String: Bool].self, path: "auth/quantum/\(item.id)/confirm", method: "POST", body: QuantumWebLoginCode(code: item.code))
+    }
+    public func cancelQuantumWebLogin(_ item: QuantumWebLoginDTO) async throws {
+        _ = try await request([String: Bool].self, path: "auth/quantum/\(item.id)/cancel", method: "POST")
     }
 }

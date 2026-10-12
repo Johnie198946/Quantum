@@ -1,0 +1,4 @@
+commit,subject,files,added_lines,removed_lines
+7ad107327e4bfbef8ac95e1ec1b558be8c973500,fix(quansyn): fill viewport and anchor drawer to left edge,5,1049,0
+83b74073ac44be84582ce3e616357cb83f233cb4,docs(ops): record latest release baseline and gated QuanSyn deployment,2,96,3
+7ca643d55fd8d306c15b5fd159e7de7a96c4649f,fix(mac): allow native plugin registration without server backend,2,34,2

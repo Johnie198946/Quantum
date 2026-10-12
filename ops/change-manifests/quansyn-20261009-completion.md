@@ -1,3 +1,49 @@
+# QuanSyn 当前续作 — DNS 回包修复
+
+task_id: quansyn-20261009（DNS修复续作）
+status: VERIFIED（仅本次DNS拦截与短信发送修复；QuanSyn完整流程尚未验收）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 运维修复1d3a51c6de43ad717dbeb7d7be5568c99603e6f7；后续验收记录提交以Git HEAD为准
+remote_sha: git ls-remote origin refs/heads/codex/quansyn-20261009=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7（运维部署前核验）；git ls-remote origin refs/tags/quansyn-20261010-dns-fix=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7（固定修复版本已核验）
+server_before: 1c7c5062cd0248edeb10080cb9b80ec6320e2882；INPUT ts-input在前，云DNS回包被DROP
+server_after: 应用仍为1c7c5062cd0248edeb10080cb9b80ec6320e2882；/opt/ai-lab-shared/quantum-cloud-dns.sha=1d3a51c6de43ad717dbeb7d7be5568c99603e6f7，三个部署文件逐个哈希核对；INPUT最前四条只放行原云DNS已建立连接的UDP/TCP53回包
+health_check: HTTPS /health 200 status=ok；8容器healthy；tailscaled/systemd-resolved/authen@auth.service/hermes-bridge/hermes-chat-worker均active；guard Result=success、ExecMainStatus=0，timer active/enabled
+functional_check: bash语法与规则顺序/幂等/重配置/回滚测试1 passed（4既有Pydantic警告）；两个原DNS的UDP/TCP四项解析全部exit0，耗时0.026–0.031秒；getent成功；默认解析且正常校验证书的阿里云HTTPS 200（0.143秒）；正式手机号短信API于2026-10-10 06:58:15 CST返回200“验证码已发送”（0.772秒）；Authen发送日志200；用户明确回复“已收到”；实机收件确认、填码登录未验收
+rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-dns-20261010.btqxka84（iptables完整快照、应用版本、修复来源与原文件不存在记录）；只移除本任务四条规则并停止timer/删除本次新增文件，禁止整份快照覆盖其他后续改动
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 防火墙重配置后最多约6秒规则恢复窗口；未重启整机或Tailscale做破坏性验收；网页填码登录与QuanSyn App/飞书完整流程未验收；App内验证码方案仍待架构确认
+
+用户最新“那你抓啊直到发现问题，然后修复”授权本次有界修复，覆盖此前不得修改配置的限制，仅用于已证明的DNS拦截问题；不视为App内验证码架构确认。修改前盘点：branch/remote/worktree如上，HEAD=b08dc111d391f2244590060824fd4de0fce4dc7e；status只包含本任务docs/plans/quansyn-20261009.md及本manifest待确认方案/诊断记录，没有其他任务改动。新增scripts/ensure_cloud_dns.sh、两个ops/systemd文件、tests/test_cloud_dns_guard.py、docs/runbooks/cloud-dns-tailscale.md；复用iptables与systemd，不改认证代码、DNS地址、应用版本或Tailscale设置。
+
+部署顺序：测试通过→提交修复1d3a51c6→push本任务分支→git ls-remote确认1d3a51c6→建立rollback_point→从同一Git SHA导出三个文件并核对传输及安装哈希→systemd-analyze verify通过→安装/启用guard→远端功能及手机收件确认。systemd服务没有重启原业务进程。再次直接运行guard后iptables -S INPUT逐字相同；timer后续运行Result=success。原DNS仍为100.100.2.136/138。
+
+证据：ops/acceptance/quansyn-20261009/dns-guard-deployment.json、dns-guard-checks.json、dns-guard-final-check.json、sms-after-dns-fix.json。没有读取短信验证码、生产Redis内容、用户token或接受生产协议。HTTP200及用户收件确认只支持本次发送修复，不将其当作网页登录/跨端执行完整流程通过。
+
+以下为之前发布与诊断的历史记录。
+
+# QuanSyn 前次发布状态 — 登录按钮续作
+
+task_id: quansyn-20261009
+status: DEPLOYED（完整真实账号流程尚未验收，不标 VERIFIED）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 产品 01161f7603d7b3bea0a0c082cbf67862e35bf066；文档验收记录后续提交，见 Git HEAD
+remote_sha: 产品 01161f7603d7b3bea0a0c082cbf67862e35bf066 已经 git ls-remote 核对本任务分支；使用 quansyn-20261009-button-release tag 固定产品
+server_before: a9c1bfe97ebb17a7c21ecfe47e43812b4e9cb07b
+server_after: 01161f7603d7b3bea0a0c082cbf67862e35bf066；/opt/releases/ai-lab-platform-01161f7603d7.EQMipk
+health_check: 更新脚本 exit 0；8 容器 healthy；API ready；runtime contract audit passed；Hermes bridge/chat-worker active 且 bridge 健康检查通过
+functional_check: HTTPS /quansyn、/quansyn/、/health 200，SPA 入口与本次 index.html 哈希一致，82 前端文件哈希全部一致，未认证私有队列 401；本地浏览器检查新按钮及真实请求失败后恢复；154 前端测试、171 部署与聊天相关测试、前端构建通过
+rollback_point: /opt/ai-lab-shared/rollbacks/quansyn-20261009.IboCGX（数据库、聊天库、镜像、版本）；原 release /opt/releases/ai-lab-platform-a9c1bfe97ebb.fUREKK 保留
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 正式浏览器自动化仍超时，未取得正式截图；模拟器尚未正常登录，未通过真实回传全流程；按钮仍使用短信验证码，App 一次性授权自动登录的认证边界等待用户确认
+
+本轮仅调整登录按钮，其他视觉设计维持原样。先提交按钮 ce3273d2，再合并服务器修复 a9c1bfe9 得到产品 01161f76，保留部署 ACL 和推理计费修复。推送本任务分支并核对远端后，通过部署锁与 expected-current-SHA 条件保护生产，建立回滚点、构建候选、校验镜像文件、调用现有 update.sh 完成部署。没有覆盖共享 main 或修改其他任务未提交内容。
+
+证据：ops/acceptance/quansyn-20261009/button-release.json、button-production-http.json、button-deployment-wrapper.sh、button-deployment.txt、button-tests.txt、button-merge-tests.txt、button-build.txt、button-local.png。生产 HTML 核验曾错误要求所有懒加载 index 分块出现在 HTML 中，已改为核对 SPA 入口完整字节哈希；该问题是检查脚本假设错误，82 资源哈希一直匹配。
+
+以下记录为前次发布及本轮实施前的历史状态，当前交付以上述字段为准。
+
 # QuanSyn 20261009 — 交付记录
 
 task_id: quansyn-20261009
@@ -482,3 +528,113 @@ functional_check: 前端154测试通过及构建通过；模拟器真实登录�
 rollback_point: 本轮未部署，无新增回滚点；既有回滚点见首节
 manifest: ops/change-manifests/quansyn-20261009-completion.md
 remaining_risks: 按钮当前仍接入手机验证码，App授权自动登录尚待用户架构确认；动效未做实际浏览器验收；模拟器需要正常登录才能验证真实回传
+
+
+## 获取验证码实际验证（用户要求追加验收）
+
+工作区开工干净；branch codex/quansyn-20261009，HEAD 80b35190cdfb78bc54bcd3562e02f1318e636f82；origin https://github.com/Johnie198946/Quantum.git；仍在本任务独立 worktree。仅新增本段及 sms-* 诊断证据，没有产品代码变更，也没有服务器配置写入。
+
+- 对用户指定账号向正式 /api/v1/auth/phone/send-code 只发起一次真实请求，20.28 秒后返回503“认证服务暂不可用”。未称成功、未读取Redis或日志中的验证码、未创建替代登录令牌。
+- 本地 Authen 源码较旧，不能作为生产短信实现结论。生产 /opt/authen/services/auth/main.py 已调用真实 SMSService，并且只在发送成功后保存验证码。日志出现“阿里云短信发送异常: UnretryableException”；capabilities enabled 仅证明配置存在。
+- 生产 DNS：100.100.2.136 UDP/TCP查询均超时；正常域名解析与 curl DNS阶段超时；systemd-resolved 日志反复切换UDP/TCP。当时仅核对内网DNS路由为eth0，未核对回包防火墙；不能据此排除Tailscale影响，纠正及抓包证据见下节。
+- 223.5.5.5、223.6.6.6 均解析同一短信域名成功；使用解析到的真实IP进行HTTPS HEAD，保留域名与TLS证书校验，HTTP200。这只能证明DNS和TLS连通，不能证明短信凭据、签名、模板、余额或实际送达通过。
+- 正式非法手机号、非6位验证码均422；请求在平台验证阶段结束，不触发短信和验证码核对。现有 tests/test_external_auth.py 11 passed、4 warnings。
+- 当时拟议方案：备份DNS运行/持久配置与回滚命令，将eth0 DNS调整为223.5.5.5、223.6.6.6。用户随后明确要求不能修改，此方案未获授权且已取消；不修改DNS、路由或防火墙。
+
+本轮 server_before/server_after：现有产品版本01161f76，本轮未部署或更改服务器配置；health_check：此前服务健康不能替代本次短信验证；functional_check：短信发送失败，非法输入拒绝通过，真实收到短信与登录未验证；rollback_point：本轮无配置写入，不适用（原产品回滚点仍为IboCGX）；remaining_risks：DNS明确故障，修复后仍须排查可能的短信供应商拒绝；最终诊断证据sms-request.json、sms-validation.json、sms-diagnosis.json、sms-auth-tests.txt。
+
+## DNS 回包丢弃根因核对（2026-10-10 06:44 CST，只读）
+
+- 开工：codex/quansyn-20261009，HEAD b08dc111d391f2244590060824fd4de0fce4dc7e，origin https://github.com/Johnie198946/Quantum.git；独立 worktree 未变。已有本任务 docs/plans/quansyn-20261009.md 待确认方案改动，未覆盖其他任务。
+- 当前服务器版本由其他任务更新为 1c7c5062cd0248edeb10080cb9b80ec6320e2882；本轮只读，没有部署。DNS 默认仍为100.100.2.136和100.100.2.138。
+- 历史解析器日志：10月9日16:07:57出现tailscale0默认DNS路由设置记录，16:07:58及16:11:37清缓存；16:11:57起对100.100.2.138反复降级UDP/TCP。异常早于20:09的服务器重启，不能归因为该次重启。现有日志未证明谁或哪条操作新增了防火墙规则。
+- 当前INPUT第一跳是ts-input。该链无条件丢弃来自100.64.0.0/10且入口不是tailscale0的数据包；阿里云DNS地址100.100.2.136/138均命中此范围。已有lo、tailscale0、UDP目的端口41641及100.115.92.0/23例外均不匹配DNS回包。
+- 06:44:08只发出一次公开短信域名DNS查询，抓取限定eth0、100.100.2.136、UDP53的两包：云DNS在约0.3ms内正确返回CNAME与A记录106.11.211.236/106.11.45.35，但dig仍超时exit9；ts-input DROP计数由54212增至54216。证据证明云DNS有回包、当前主机规则会丢弃该回包，并非域名不存在或上游完全未回应。计数还包含同期其他包，不将增加4解释为该一次查询发出4包。
+- 此前只凭路由排除Tailscale影响的判断不完整；已用防火墙规则和实际回包证据纠正。没有flush缓存、修改规则、更改DNS、重启服务或发送短信。
+
+续作状态：LOCAL_ONLY（诊断文档未提交；无产品代码变更）。head/local_commit=b08dc111d391f2244590060824fd4de0fce4dc7e；remote_sha=本轮未push，既有push证据见前文；server_before=server_after=1c7c5062cd0248edeb10080cb9b80ec6320e2882；health_check=本轮未重复服务健康检查；functional_check=DNS回包与丢弃规则核对通过，短信送达/登录未通过；rollback_point=无外部写入，不适用；remaining_risks=用户禁止配置修改，故障尚未修复，不能声明短信凭据及送达正常；App内验证码边界仍待确认。
+
+
+## 2026-10-10 五项生产业务验收（未完整通过）
+
+- 盘点：status 为干净 codex/quansyn-20261009...origin/codex/quansyn-20261009；HEAD b613190b07ed479466fc9ca2886526dfd8ea07b9；origin https://github.com/Johnie198946/Quantum.git，source https://github.com/Johnie198946/ai-lab-platform.git。本任务独立 worktree /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009；worktree list 已核对，其他任务/main 未修改。按用户本任务隔离指令继续使用本分支。
+- 构建：从今天最新已完成的构建 85 源码 f802c7c8efbed596db234e66d5b6e9ef1489e440 导出 iOS，构建通过，安装本任务模拟器 24B48A56-1C35-4F01-9E95-DD91E1C60333。用户本人完成网页、模拟器正常短信登录和协议确认；没有复制或注入认证令牌。
+- 五个生产 Web 请求均通过正常页面提交、均在同账号 App QuanSyn 队列显示。业务材料为明确标注的验收采购 CSV 和实际官方标志 PNG；不是实际采购订单，也不是前端 mock 或模型 mock。精确请求 ID、文件哈希、时刻和结果见 business-flow-20261010.json 与 business-inputs-20261010.json。
+- 文本：Web→App 草稿→真实模型→App 手动推送→Web 完整内容→复制粘贴，全部通过。
+- 附件：CSV 实际解析正确，模型总数量60、总金额448.70、笔记本222.00均正确，完整结果回传成功。真实模型明确无 CSV 生成工具，没有可下载结果附件，此子项未通过。提取文本预览无关闭按钮，拖动/ESC 未收起；重启 App 后草稿和附件恢复，此界面问题保留。
+- 图片：App 原图显示成功；真实模型明确无法读取像素，未生成视觉描述或回传图片。该失败回答成功回传，但图片业务失败。
+- 代码：原任务报“服务暂时不可用/未找到可恢复的任务”；首次重试被卡住的 isGenerating 阻止。未获得代码、未执行代码，不视为通过。
+- 图表：原任务同样无可恢复结果；本地修复后输入状态释放；显式重试仍无 PNG 成果。未通过。
+- 根因证据与最小修改：recoverAfterStreamEnd 发现不匹配请求后标记 not_found，却返回 true，导致调用者跳过 finishGeneration。仅改为 false，复用原有状态路径和鉴权，不新增服务或工具权限。修改 TenantSessionCoordinator.swift 与现有 WorkflowLifecycleDTOTests.swift。
+- 验证：新增不匹配请求回归、既有运行中禁止重复重试回归共2项通过，0失败；构建85加此补丁安装后，图表原失败卡不再占用输入状态。git diff --check 通过。回归证据 business-recovery-tests-20261010.txt；完整 xcresult /private/tmp/quansyn-recovery-test.xcresult。
+- 诊断限制：自动审批拒绝读取生产图片解析文本和近期 API 日志，理由为可能包含敏感数据。已向用户请求只针对本次测试、服务器端过滤令牌/验证码/账号的脱敏诊断授权，尚未获得；未绕过拒绝。
+
+当前本地修复交付字段（不代表五项业务全通过）：
+
+task_id: quansyn-20261009-business-acceptance
+status: TESTED（仅状态恢复修复及2项回归；整体业务未通过）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: b613190b07ed479466fc9ca2886526dfd8ea07b9；本轮修复未提交
+remote_sha: 本轮未推送；不能用此前发布 SHA 代表本轮修复
+server_before: 1c7c5062cd0248edeb10080cb9b80ec6320e2882（.deployed-sha 实际只读）
+server_after: 本轮未部署；最后读取仍为 server_before，不推断其他任务之后的版本
+health_check: https://www.t-react.com/health 返回 {"status":"ok","version":"0.8.0"}
+functional_check: 文本完整通过；附件部分通过；图片、代码、图表失败/无成果；本地状态恢复2回归通过
+rollback_point: 本轮未改服务器，无新增服务器回滚点；App 临时补丁可重新安装原始构建85恢复；Git 修改未提交，可按本任务补丁逐项逆向恢复，不涉及其他任务
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: 生产执行/视觉/文件生成问题未修复，日志诊断授权等待用户；不宣称全流程验收或本轮发布完成；Mac实际飞书链未追加验证
+
+
+## 2026-10-10 用户授权“推送发布”：构建86
+
+发布范围仅为 App 的不匹配任务恢复状态释放；图片/结果附件生成/生产执行根因仍未解决，不将此发布视为五项业务验收通过。用户本轮未授权读取被自动审批拒绝的诊断数据，未读取。
+
+- 开工盘点：codex/quansyn-20261009，HEAD b613190b07ed479466fc9ca2886526dfd8ea07b9，status 仅包含上一轮本任务协调器、测试、manifest、三份业务验收证据；origin https://github.com/Johnie198946/Quantum.git；source https://github.com/Johnie198946/ai-lab-platform.git；worktree list 已核对，不修改其他 worktree/main。
+- 提交95d44b76包含最小状态修复、回归和业务证据。先合并已验收构建85的f802，再保留远端97d86e02已推送的正常登录与工作流渲染修正，不覆盖其他任务。构建号85升86，project.yml/pbxproj同步。
+- 发布源 d7b96b3998ddf6a3d4f1d9142f6e2659529094be；git push origin HEAD:refs/heads/codex/quansyn-20261009 成功，git ls-remote 独立核验完整SHA一致。未合并 main；不把本分支合并的其他任务后端变化部署服务器。
+- 合并后精确源码重跑2项恢复回归，0失败；/private/tmp/quansyn-release86-tests.xcresult，TEST SUCCEEDED。git diff --check PASS。
+- Release归档 /private/tmp/Quantumn-1.0.3-86-quansyn-recovery.xcarchive，ARCHIVE SUCCEEDED，签名deep/strict PASS；1.0.3(86)，com.ailab.AIPlatformApp，App+dSYM UUID 94184841-4275-32A4-BE9B-DE6490CD8C39一致。二进制SHA与回滚包SHA见 build86-release.json。
+- 命令行真实上传退出70，Apple错误 No Accounts with App Store Connect Access；没有上传成功回执。Xcode图形入口已选择同一86归档，但Open操作被Mac锁屏阻止。已请求用户解锁并确认Xcode账号权限；没有删除账号、改密码、扩展测试组或接受新协议。
+
+本次发布当前字段：
+
+task_id: quansyn-20261009-build86
+status: PUSHED（签名归档完成，Apple上传失败，未发布到TestFlight）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 发布源d7b96b3998ddf6a3d4f1d9142f6e2659529094be；后置回执提交不改变归档源码
+remote_sha: 发布源d7b96b3998ddf6a3d4f1d9142f6e2659529094be，refs/heads/codex/quansyn-20261009，ls-remote一致
+server_before: 不适用（客户端发布）；前轮生产只读版本1c7c5062，当前未重复查询
+server_after: 不适用（无服务器部署）；Apple尚未接收构建86
+health_check: Release归档、签名、版本、App/dSYM一致核验通过；Apple发布鉴权未通过
+functional_check: 状态恢复2项回归通过；五项真实业务未完整通过，详情见前节
+rollback_point: /private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive 保留且签名有效，1.0.3(85)；构建86未安装真机，原用户设备未修改
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: Mac锁屏与Apple账号权限阻止发布；尚未获TestFlight处理/可安装回执；未宣称上线；图片/附件生成与生产执行问题仍存在
+
+
+构建86图形上传复验：用户回复“已就绪”后，Mac锁屏阻断已解除。Xcode Organizer实际载入9:13AM归档1.0.3(86)，执行Distribute App→App Store Connect→Distribute，最终明确显示Unable to authenticate with App Store Connect、No App Store Connect access for the team。未上传成功，未部署TestFlight。已请用户在Manage Accounts中重新登录有发布权限的账号，密码/双重验证码由用户本人操作。当前status仍PUSHED；源SHA d7b96b39不变；后置文档/回执已推送bd3354f9，ls-remote核对一致。remaining_risks更新为Apple账号鉴权/权限，Mac锁屏已不再作为本次实际重试阻断。
+
+
+## 2026-10-10 重新登录后的构建86上传复验
+
+- 本轮盘点：干净 codex/quansyn-20261009，HEAD 4f855da5b9ea7733fc3a82fa42ab248fc460f184；origin/source、完整 worktree list 已核对。遵循用户本任务一分支一 worktree 指令，未修改 main 或其他任务。
+- 用户本人确认“重新登录完成”。重新打开原始9:13AM、1.0.3(86)、com.ailab.AIPlatformApp归档，图形分发仍报两项认证/权限错误。
+- 独立 xcodebuild exportArchive 复验退出70，EXPORT FAILED；更底层证据为 ITunesConnectFoundationErrorDomain -1200，lookupGenericSettingsForSubmission 请求 TLS 安全连接失败。因此不能仅凭图形“无权限”认定账号团队权限缺失；具体连接失败原因仍未知。未删除账号或改变权限/证书验证。
+- 公开地址连通性：appstoreconnect.apple.com 默认及直连302、证书核验0；itunesconnect.apple.com 200、证书核验0；contentdelivery.itunes.apple.com 根地址连接重置（curl35）。根地址检查不能替代精确发布端点认证验证。未读取/输出凭据、未改网络配置。
+- 构建源码与签名归档不变，未取得Apple上传回执，未部署TestFlight。仅更新本任务manifest和发布回执，无产品代码变更；JSON解析及git diff --check通过。
+
+task_id: quansyn-20261009-build86
+status: PUSHED（源码此前已推送；Apple重试失败）
+branch: codex/quansyn-20261009
+worktree: /Users/dengzhaoyu/Desktop/TepVis/.worktrees/quansyn-20261009
+head/local_commit: 归档源d7b96b3998ddf6a3d4f1d9142f6e2659529094be；本轮前置文档HEAD 4f855da5b9ea7733fc3a82fa42ab248fc460f184
+remote_sha: 发布源d7b96b39既有ls-remote证据见前文；本轮后置回执SHA以最终git ls-remote结果为准
+server_before: 不适用，iOS客户端发布；本轮无服务器操作
+server_after: 不适用，Apple未接收构建86
+health_check: 归档、签名核验既有PASS；Apple配置请求TLS失败
+functional_check: 状态恢复2项回归既有PASS；未新增真机/TestFlight验收，五项业务仍未全部通过
+rollback_point: /private/tmp/Quantumn-1.0.3-85-91bee920-final.xcarchive；原设备未安装86
+manifest: ops/change-manifests/quansyn-20261009-completion.md
+remaining_risks: Apple配置服务TLS失败未解除、账号实际App Store Connect权限未知；未获得上传与可安装回执；生产图片/结果附件/代码/图表问题保留

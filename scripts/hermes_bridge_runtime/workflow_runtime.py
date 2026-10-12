@@ -55,6 +55,101 @@ from backend.services.tenant_coder_tools import (
 from scripts.chat_run_store import DurableChatRunStore
 
 
+def _run_travel_blocks(run, node, node_prompt, state, hermes_sid, execution_id, sandbox, agent_config, event_callback):
+    from backend.services.travel_plan import TRAVEL_ITINERARY_TOKEN_BUDGET, merge_travel_day, travel_block_context, validate_travel_document
+    usage = dict(state.get("usage") or {})
+    params = node.get("parameters") or {}
+    node_budget = int(params.get("max_tokens") or 14000)
+    # Old compiler defaults predate day blocks; the approved run budget still caps recovery.
+    if (node.get("id") == "travel_itinerary" and node.get("node_type") == "LLM_INFERENCE"
+            and params.get("output_format") == "travel_plan_v2" and node_budget == 14000):
+        node_budget = TRAVEL_ITINERARY_TOKEN_BUDGET
+        event_callback("node_progress", message="旧旅行任务按当前分块额度恢复，仍受整趟总预算限制")
+
+    def generate(instruction, accept, remaining_blocks):
+        nonlocal hermes_sid, usage
+        error = ""
+        for attempt in range(2):
+            if run.get("cancel_requested"):
+                raise InterruptedError("travel planning cancelled")
+            remaining = min(node_budget - int(usage.get("budget_tokens") or 0),
+                            int(run.get("max_tokens") or 0) - int((run.get("usage") or {}).get("budget_tokens") or 0))
+            if remaining < 256:
+                raise RuntimeError("旅行分块策划预算已耗尽，已完成的块保留，可调整预算后重试")
+            cap = min(8192, max(256, remaining // max(1, remaining_blocks)))
+            block_node = {**node, "parameters": {**params, "max_tokens": cap, "require_travel_guidance": False}}
+            prompt = node_prompt + "\n\n本次分块输出范围（优先于整份攻略的完稿要求）：\n" + instruction
+            if error:
+                prompt += "\n上次本块校验失败，请只修复本块：" + error
+            if len(prompt) > _contracts.MAX_DOCUMENT_WORKFLOW_INPUT:
+                raise RuntimeError("旅行分块上下文超过上限，禁止静默截断已策划行程")
+            reply, new_sid, raw_usage = _workflow_artifacts._run_workflow_node_in_process(
+                prompt, block_node, hermes_sid, execution_id, event_callback=event_callback,
+                sandbox=sandbox, agent_config=agent_config,
+            )
+            hermes_sid = new_sid or hermes_sid
+            usage = _workflow_artifacts._merge_workflow_usage(usage, _workflow_artifacts._accumulate_usage(run, raw_usage))
+            with _contracts._workflow_runs_lock:
+                run["hermes_session_id"] = hermes_sid
+                state["usage"] = usage
+                _persistence._save_workflow_runs()
+            if (int(usage.get("budget_tokens") or 0) > node_budget
+                    or int((run.get("usage") or {}).get("budget_tokens") or 0) > int(run.get("max_tokens") or 0)):
+                raise RuntimeError("旅行分块策划预算已耗尽，保留已完成的块")
+            if reply.startswith("⚠️"):
+                raise RuntimeError(reply)
+            try:
+                return accept(_workflow_artifacts._extract_json_object(reply))
+            except (ValueError, KeyError, IndexError, StopIteration) as exc:
+                error = str(exc)[:400]
+                event_callback("node_repairing", message="正在修复当前旅行块：" + error)
+        raise ValueError("旅行分块校验失败：" + error)
+
+    def outline(value):
+        document = validate_travel_document(value)
+        if not document["days"] or document["actions"]:
+            raise ValueError("route outline requires day chapters and no detailed actions")
+        if (not document["title"] or not any(day["selected"] for day in document["days"])
+                or {"flights", "arrival", "stay", "transport", "passes", "money", "food", "shopping"}
+                - {item["category"] for item in document["practical_guidance"]}
+                or {"stay", "transport", "food", "activities"} - {item["category"] for item in document["budget_breakdown"]}):
+            raise ValueError("route outline requires global guidance and budget coverage")
+        return document
+
+    if not state.get("travel_document"):
+        document = generate(
+            "先输出整趟旅行的每日路线骨架：按已确认天数给 days，天数未定保持基础参考日和未选备选。"
+            "每个 day.journal 简述所在区域、前一晚住宿到本日出发地的衔接、体力和交通时间取舍。"
+            "填好整趟 practical_guidance、budget_breakdown 和已有来源，但 actions 必须为空；详细时段下一轮逐日策划。", outline, 2)
+        with _contracts._workflow_runs_lock:
+            state.update(travel_document=document, travel_completed_days=[])
+            _persistence._save_workflow_runs()
+    document = state["travel_document"]
+    completed = list(state.get("travel_completed_days") or [])
+    for day in document["days"]:
+        if day["id"] in completed:
+            continue
+        instruction = (
+            "只输出本日一个完整 TravelDocument JSON，不重写整份笔记。days 只能含当前日，"
+            "所有 actions.day_id 必须为当前日。保持 destination/date/selected/choice_group；"
+            "全局 guidance 与预算由骨架保留，本块重点为时段、具体参观时长、连续交通、用餐、住宿和意外缓冲。"
+            "以已有研究为证据，不联网臆造补充。用 kind=rest 独立留出缓冲/休息，写明延误删减顺序与备选。"
+            "避免重复前日景点、过多换乘和折返，考虑前日体力与住宿落点。新地点/行动/照片用唯一 id；"
+            "引用已用地点与来源时逐字复用已有对象，不能修改已策划块。\n当前日：" + json.dumps(day, ensure_ascii=False)
+            + "\n前面各块的路线与衔接摘要：\n" + travel_block_context(document, completed)
+            + "\n可复用来源：\n" + json.dumps(document["sources"], ensure_ascii=False)
+        )
+        event_callback("node_progress", message=f"正在策划：{day['title']}")
+        document = generate(instruction, lambda value: merge_travel_day(document, value, day["id"]), len(document["days"]) - len(completed))
+        completed.append(day["id"])
+        with _contracts._workflow_runs_lock:
+            state.update(travel_document=document, travel_completed_days=completed)
+            _persistence._workflow_event(run, "node_progress", node_id=node["id"],
+                                         message=f"已策划：{day['title']}（{len(completed)}/{len(document['days'])}）")
+            _persistence._save_workflow_runs()
+    return json.dumps(document, ensure_ascii=False), hermes_sid, usage
+
+
 def _workflow_run_sync(execution_id: str) -> None:
     """Hermes 层推进整份 DAG；平台只消费事件，不参与节点调度。"""
     with _contracts._workflow_runs_lock:
@@ -134,6 +229,12 @@ def _workflow_run_sync(execution_id: str) -> None:
                 )
                 if not set(requested_scope).issubset(run_scope & agent_scope):
                     raise RuntimeError("workflow_node_knowledge_scope_denied")
+                node_network_allowed = bool(
+                    effective_allow_network
+                    and params.get("allow_network")
+                    and set(agent_config.allowed_tools)
+                    & {"web_search", "web_extract"}
+                )
                 docs = []
                 if requested_scope:
                     for gateway_attempt in range(2):
@@ -142,17 +243,22 @@ def _workflow_run_sync(execution_id: str) -> None:
                                 str(run.get("knowledge_capability") or ""),
                                 query=str(params.get("query") or params.get("instruction") or run.get("goal") or ""),
                                 category_scope=requested_scope,
+                                timeout_seconds=90.0 if node_id == "travel_research" else 20.0,
                             )
                             break
                         except httpx.TimeoutException as exc:
                             if gateway_attempt:
-                                raise RuntimeError("knowledge_gateway_timeout: 检索服务连续两次超时，可从失败节点重试") from exc
-                node_network_allowed = bool(
-                    effective_allow_network
-                    and params.get("allow_network")
-                    and set(agent_config.allowed_tools)
-                    & {"web_search", "web_extract"}
-                )
+                                if node_id != "travel_research" or not node_network_allowed:
+                                    raise RuntimeError("knowledge_gateway_timeout: 检索服务连续两次超时，可从失败节点重试") from exc
+                                node_prompt += (
+                                    "\n知识检索暂时不可用：两次请求超时。继续使用已授权的公开网页工具，"
+                                    "记录来源与知识检索缺口；不得推断或重建未读到的租户知识。"
+                                )
+                                _persistence._workflow_event(
+                                    run, "node_progress", node_id=node_id,
+                                    message="知识检索超时，继续核对已授权的公开来源",
+                                    retrieval_status="unavailable", source="public_web",
+                                )
                 if docs and node_network_allowed and node_id == "travel_research":
                     node_prompt += "\n已有知识仅供参考，仍需核实当前信息：\n" + json.dumps(docs, ensure_ascii=False)[:12000]
                 if (docs and node_id != "travel_research") or not node_network_allowed:
@@ -178,6 +284,11 @@ def _workflow_run_sync(execution_id: str) -> None:
                         **event_payload,
                     )
 
+            if node_id == "travel_itinerary" and not run.get("travel_baseline") and (node.get("parameters") or {}).get("output_format") == "travel_plan_v2":
+                reply, hermes_sid, node_usage = _run_travel_blocks(
+                    run, node, node_prompt, state, hermes_sid, execution_id, sandbox, agent_config, _node_event,
+                )
+                gateway_completed = True
             for completion_attempt in range(0 if gateway_completed else 2):
                 attempt_prompt = node_prompt
                 if completion_attempt:
@@ -225,14 +336,18 @@ def _workflow_run_sync(execution_id: str) -> None:
             if render_type == "travel_plan_v2":
                 from backend.services.travel_plan import validate_travel_document, revise_travel_document
                 baseline = run.get("travel_baseline")
-                travel = validate_travel_document(_workflow_artifacts._extract_json_object(reply))
+                travel = validate_travel_document(_workflow_artifacts._extract_json_object(reply), require_guidance=bool(
+                    (node.get("parameters") or {}).get("require_travel_guidance")
+                ))
                 if not baseline and any(a["status"] != "planned" or a.get("actual_start") or a.get("actual_end") for a in travel["actions"]):
                     raise ValueError("AI cannot claim actual travel progress")
                 # Final writing must not silently modify the approved itinerary.
                 if node_id == "travel_notebook":
                     approved, _binding = _workflow_artifacts._approved_presentation_stage(run, "travel_plan_v2", "itinerary")
-                    for field in ("actions", "stops"):
+                    for field in ("actions", "stops", "days", "practical_guidance", "budget_breakdown"):
                         travel[field] = approved.get(field, [])
+                    for field in ("destination", "date_range", "budget", "companions", "style", "journal", "open_questions"):
+                        travel[field] = approved.get(field)
                     sources = {s["id"]: s for s in travel.get("sources", [])}
                     sources.update({s["id"]: s for s in approved.get("sources", [])})
                     travel["sources"] = list(sources.values())
@@ -385,6 +500,10 @@ def _workflow_run_sync(execution_id: str) -> None:
             )
     except Exception as exc:
         with _contracts._workflow_runs_lock:
+            if run.get("cancel_requested"):
+                run["status"] = "cancelled"
+                _persistence._workflow_event(run, "run_cancelled", message="执行已取消")
+                return
             run["status"] = "failed"
             run["error"] = str(exc)[:2000]
             running_node = next(
@@ -882,9 +1001,16 @@ async def retry_workflow_run(
             from backend.services.travel_plan import validate_travel_document
             validate_travel_document(body.travel_baseline["document"])
             run["travel_baseline"] = body.travel_baseline
+        if body.knowledge_capability is not None:
+            run["knowledge_capability"] = body.knowledge_capability
         start = order.index(target)
         for node_id in order[start:]:
-            run["nodes"][node_id] = {"status": "pending", "attempt": run["nodes"].get(node_id, {}).get("attempt", 0)}
+            previous = run["nodes"].get(node_id, {})
+            checkpoint = {key: previous[key] for key in ("travel_document", "travel_completed_days", "usage") if key in previous} if (
+                node_id == target == "travel_itinerary" and previous.get("status") == "failed"
+                and not body.revision_comment and body.travel_baseline is None
+            ) else {}
+            run["nodes"][node_id] = {"status": "pending", "attempt": previous.get("attempt", 0), **checkpoint}
         if body.revision_comment:
             run.setdefault("revision_feedback", {})[target] = body.revision_comment.strip()
         run["approved_gates"] = [node_id for node_id in (run.get("approved_gates") or []) if node_id not in set(order[start:])]

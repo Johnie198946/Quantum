@@ -20,6 +20,7 @@ public struct BlockCardDispatcher: View {
     public var onKnowledgeAction: ((String, String) -> Void)? = nil
     public var onCapabilityProposal: ((String, String) -> Void)? = nil
     public var onTravelProposalEdit: ((String, CapabilityProposalInput) -> Void)? = nil
+    public var linkedTravelWorkflowId: String? = nil
     public var onWorkflowOpen: ((String) -> Void)? = nil
     public var onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil
 
@@ -35,6 +36,7 @@ public struct BlockCardDispatcher: View {
         onCapabilityProposal: ((String, String) -> Void)? = nil,
         onTravelProposalEdit: ((String, CapabilityProposalInput) -> Void)? = nil,
         onWorkflowOpen: ((String) -> Void)? = nil,
+        linkedTravelWorkflowId: String? = nil,
         onKnowledgeNavigation: ((KnowledgeNavigationTarget) -> Void)? = nil
     ) {
         self.block = block
@@ -48,6 +50,7 @@ public struct BlockCardDispatcher: View {
         self.onCapabilityProposal = onCapabilityProposal
         self.onTravelProposalEdit = onTravelProposalEdit
         self.onWorkflowOpen = onWorkflowOpen
+        self.linkedTravelWorkflowId = linkedTravelWorkflowId
         self.onKnowledgeNavigation = onKnowledgeNavigation
     }
 
@@ -113,7 +116,8 @@ public struct BlockCardDispatcher: View {
                 proposal: proposal,
                 onConfirm: { onCapabilityProposal?(proposal.id, "confirm") },
                 onDiscard: { onCapabilityProposal?(proposal.id, "discard") },
-                onTravelEdit: { onTravelProposalEdit?(proposal.id, $0) }
+                onTravelEdit: { onTravelProposalEdit?(proposal.id, $0) },
+                onOpenWorkflow: linkedTravelWorkflowId.map { id in { onWorkflowOpen?(id) } }
             )
         case .artifactConsumption(let receipt):
             ArtifactConsumptionCard(receipt: receipt)

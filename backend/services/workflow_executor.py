@@ -272,7 +272,7 @@ def trusted_task_agent_config(
     return config
 
 
-async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
+async def _dispatch_payload(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
     try:
         current_hash = canonical_plan_hash(plan.dsl)
     except (TypeError, ValueError) as exc:
@@ -389,6 +389,11 @@ async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> d
         if total > 80000:
             raise RuntimeError("附件全文超过当前执行上下文上限，请缩小引用范围")
         payload["source_documents"] = documents
+    return payload
+
+
+async def dispatch(execution: WorkflowExecution, plan: WorkflowPlanVersion) -> dict[str, Any]:
+    payload = await _dispatch_payload(execution, plan)
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs",
@@ -640,8 +645,14 @@ async def project_event(
     node_id = str(event.get("node_id") or "")
     message = str(event.get("message") or event_type)
     node = node_rows.get(node_id)
-    if event_type == "run_started":
+    if event_type == "retry_queued":
+        execution.status = "queued"
+        execution.error_message = None
+        execution.finished_at = None
+    elif event_type == "run_started":
         execution.status = "running"
+        execution.error_message = None
+        execution.finished_at = None
         execution.started_at = execution.started_at or utcnow()
     elif event_type == "node_started" and node is not None:
         node.status = "running"
@@ -837,7 +848,8 @@ async def sync_execution(execution_id: str, db: AsyncSession) -> None:
             list(snapshot.get("events") or []), execution.bridge_event_seq
         ):
             await project_event(db, execution, node_rows, event)
-            if execution.status == "failed":
+            # A historical run failure can precede an authorized retry in this batch.
+            if execution.status == "failed" and event.get("type") != "run_failed":
                 break
         if not snapshot.get("events") and snapshot.get("status") == "running":
             execution.status = "running"
@@ -895,11 +907,18 @@ async def retry_remote(
     revision_comment: str | None = None,
     travel_baseline: dict | None = None,
 ) -> None:
+    async with SessionLocal() as db:
+        execution = await db.get(WorkflowExecution, execution_id)
+        if execution is None:
+            raise ExecutionAuthorityError("workflow execution no longer exists")
+        plan = await _plan(db, execution)
+    # Retry must re-authorize the frozen plan rather than reuse an expired grant.
+    authority = await _dispatch_payload(execution, plan)
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
             f"{bridge_base_url()}/v1/workflow-runs/{execution_id}/retry",
             headers=bridge_headers(),
-            json={"from_node_id": from_node_id, "revision_comment": revision_comment, "travel_baseline": travel_baseline},
+            json={"from_node_id": from_node_id, "revision_comment": revision_comment, "travel_baseline": travel_baseline, "knowledge_capability": authority["knowledge_capability"]},
         )
     response.raise_for_status()
 

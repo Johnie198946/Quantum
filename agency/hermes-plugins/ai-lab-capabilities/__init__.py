@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .capability_router import install as install_capability_router
+from .capability_router import install as install_capability_router, _configured_owner
 from .research_deposit import ResearchDeposit
 from .quansyn import QuanSyn
 
@@ -47,7 +47,7 @@ def _json(payload: dict[str, Any]) -> str:
 
 def register(ctx):
     global research_deposition
-    quansyn = QuanSyn(ctx)
+    quansyn = QuanSyn(ctx, owner_check=_configured_owner)
     deposition = ResearchDeposit(ctx)
     research_deposition = deposition
     deposition.install()

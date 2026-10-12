@@ -15,6 +15,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,10 @@ _BLOCK_MAX_BYTES = 32_768
 _PAGE_MAX_BLOCKS = 20
 _PAGE_MAX_BYTES = 131_072
 _CURSOR_TTL_SECONDS = 3_600
+
+
+class ChatAdmissionError(RuntimeError):
+    """No new Run was created; callers may retry without duplicating work."""
 
 
 class DurableChatRunStore:
@@ -38,14 +44,20 @@ class DurableChatRunStore:
         self._lock = threading.RLock()
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=FULL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=30000")
+            # SQLite's transaction context does not close the connection.
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _initialize(self) -> None:
         lock_path = self.path.with_name(f"{self.path.name}.init.lock")
@@ -143,9 +155,17 @@ class DurableChatRunStore:
                 "answer_revision": "INTEGER NOT NULL DEFAULT 1",
                 "block_buffer": "TEXT NOT NULL DEFAULT ''",
             }
+            additions["is_background"] = "INTEGER NOT NULL DEFAULT 0"
             for name, declaration in additions.items():
                 if name not in columns:
                     conn.execute(f"ALTER TABLE chat_runs ADD COLUMN {name} {declaration}")
+            if "is_background" not in columns:
+                conn.execute("""UPDATE chat_runs SET is_background=CASE
+                    WHEN json_valid(execution_payload_json) THEN
+                    COALESCE(json_extract(execution_payload_json,'$.run_type') IN
+                    ('chat_prewarm','note_illustration') OR
+                    json_extract(execution_payload_json,'$.run_type') GLOB 'knowledge_*',0)
+                    ELSE 0 END""")
             clarify_columns = {
                 row[1] for row in conn.execute("PRAGMA table_info(chat_run_clarifications)")
             }
@@ -155,6 +175,41 @@ class DurableChatRunStore:
                     "ADD COLUMN multi_select INTEGER NOT NULL DEFAULT 0"
                 )
             conn.execute("COMMIT")
+            conn.execute("""CREATE INDEX IF NOT EXISTS ix_chat_runs_claimable
+                ON chat_runs(status,created_at)
+                WHERE status IN ('queued','stalled') AND attempt < 2""")
+            conn.execute("""CREATE INDEX IF NOT EXISTS ix_chat_runs_expired
+                ON chat_runs(lease_expires_at) WHERE status='running'""")
+            conn.execute("""CREATE INDEX IF NOT EXISTS ix_chat_runs_exhausted
+                ON chat_runs(attempt) WHERE status='stalled' AND attempt>=2""")
+
+    def _check_admission(self, conn: sqlite3.Connection, *, background: bool) -> None:
+        capacity = max(0, int(os.environ.get("HERMES_MAX_QUEUE", "8")))
+        pending = conn.execute("""SELECT COUNT(*) FROM chat_runs
+            WHERE status IN ('queued','stalled') AND attempt<2""").fetchone()[0]
+        # Background work leaves one pending slot for interactive chat.
+        if pending >= (max(0, capacity - 1) if background else capacity):
+            raise ChatAdmissionError("chat_queue_full")
+        if os.environ.get("HERMES_DURABLE_CHAT_WORKER") != "true" and os.environ.get("AI_LAB_ENV") != "production":
+            return
+        meminfo = Path("/proc/meminfo")
+        if meminfo.exists():
+            available = next(int(line.split()[1]) for line in meminfo.read_text().splitlines()
+                             if line.startswith("MemAvailable:"))
+            if available < int(os.environ.get("AI_LAB_MEM_AVAILABLE_WARN_KB", "512000")):
+                raise ChatAdmissionError("memory_pressure")
+        group = Path("/sys/fs/cgroup/quantum.slice/quantum-runtime.slice")
+        if not (group / "memory.current").exists():
+            group = Path("/sys/fs/cgroup")
+        if (group / "memory.current").exists():
+            ceiling = (group / "memory.max").read_text().strip()
+            if ceiling != "max":
+                limit = int(ceiling)
+                if limit - int((group / "memory.current").read_text()) < min(256 * 1024 * 1024, limit // 4):
+                    raise ChatAdmissionError("memory_pressure")
+        disk = os.statvfs(self.path.parent)
+        if disk.f_bavail * disk.f_frsize < 1024 * 1024 * 1024:
+            raise ChatAdmissionError("disk_pressure")
 
     @staticmethod
     def _complete_markdown_blocks(text: str, *, terminal: bool) -> tuple[list[tuple[str, str]], str]:
@@ -271,6 +326,8 @@ class DurableChatRunStore:
             if existing is not None:
                 conn.execute("COMMIT")
                 return dict(existing), False
+            background = self._is_background_run({"execution_payload_json": payload_json})
+            self._check_admission(conn, background=background)
             queue_position = conn.execute(
                 """SELECT COUNT(*) FROM chat_runs
                    WHERE tenant_user_hash=? AND session_id=? AND status IN ('queued','running','stalled')""",
@@ -280,12 +337,12 @@ class DurableChatRunStore:
                 """INSERT INTO chat_runs(
                     run_id,tenant_user_hash,tenant_id,user_id,user_key,session_id,request_id,
                     idempotency_key,status,queue_position,last_progress_at,created_at,updated_at,
-                    execution_payload_json
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    execution_payload_json,is_background
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     candidate, tenant_user_hash, tenant_id, user_id, user_key or session_id,
                     session_id, request_id, key, "queued", queue_position, now, now, now,
-                    payload_json,
+                    payload_json, int(background),
                 ),
             )
             row = conn.execute("SELECT * FROM chat_runs WHERE run_id=?", (candidate,)).fetchone()
@@ -296,79 +353,81 @@ class DurableChatRunStore:
             return dict(row), True
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> dict[str, Any]:
-        event_type = str(event.get("type") or "status")[:64]
-        now = time.time()
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
-            if row is None:
-                conn.execute("ROLLBACK")
-                raise KeyError(run_id)
-            if row["status"] in _TERMINAL:
-                conn.execute("ROLLBACK")
-                raise RuntimeError("terminal run is immutable")
-            sequence = int(row["event_sequence"]) + 1
-            enriched = dict(event)
-            enriched["run_id"] = run_id
-            enriched["event_sequence"] = sequence
-            payload = json.dumps(enriched, ensure_ascii=False, separators=(",", ":"))
-            conn.execute(
-                "INSERT INTO chat_run_events(run_id,sequence,event_type,payload_json,created_at) VALUES(?,?,?,?,?)",
-                (run_id, sequence, event_type, payload, now),
-            )
-            partial = str(row["partial_answer"])
-            final = str(row["final_answer"])
-            status = str(row["status"])
-            error_code = str(row["error_code"])
-            try:
-                blocks_v1 = bool(json.loads(row["execution_payload_json"] or "{}").get("answer_blocks_v1"))
-            except (json.JSONDecodeError, TypeError):
-                blocks_v1 = False
-            if event_type == "delta":
-                delta = str(event.get("content") or "")
-                if not blocks_v1:
-                    partial += delta
-                self._project_blocks(conn, row, delta, terminal=False, now=now)
-                if status in {"queued", "stalled"}:
-                    status = "running"
-            elif event_type == "done":
-                projected = "".join(item[0] for item in conn.execute(
-                    "SELECT content FROM chat_message_blocks WHERE run_id=? AND revision=? ORDER BY block_index",
-                    (run_id, int(row["answer_revision"])),
-                ).fetchall()) + str(row["block_buffer"])
-                final = str(event.get("answer") or projected or partial)
-                # Done reconciles provider-normalized output without becoming
-                # the first persistence point for ordinary streamed blocks.
-                if final != projected:
-                    revision = int(row["answer_revision"]) + 1
-                    conn.execute("DELETE FROM chat_message_blocks WHERE run_id=?", (run_id,))
-                    conn.execute(
-                        "UPDATE chat_runs SET block_buffer='',answer_revision=? WHERE run_id=?",
-                        (revision, run_id),
-                    )
-                    row = conn.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
-                    payload = final
-                else:
-                    payload = ""
-                self._project_blocks(conn, row, payload, terminal=True, now=now)
-                partial = final
-                status = "completed"
-            elif event_type == "error":
-                self._project_blocks(conn, row, "", terminal=True, now=now)
-                status = "failed"
-                error_code = str(event.get("code") or "internal")[:80]
-            elif event_type == "cancelled":
-                self._project_blocks(conn, row, "", terminal=True, now=now)
-                status = "cancelled"
-            elif status in {"queued", "stalled"}:
+            return self._append_event(conn, run_id, event, time.time())
+
+    def _append_event(self, conn: sqlite3.Connection, run_id: str,
+                      event: dict[str, Any], now: float) -> dict[str, Any]:
+        # Recovery shares this event projection inside its existing transaction.
+        event_type = str(event.get("type") or "status")[:64]
+        row = conn.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
+        if row is None:
+            raise KeyError(run_id)
+        if row["status"] in _TERMINAL:
+            raise RuntimeError("terminal run is immutable")
+        sequence = int(row["event_sequence"]) + 1
+        enriched = dict(event)
+        enriched["run_id"] = run_id
+        enriched["event_sequence"] = sequence
+        payload = json.dumps(enriched, ensure_ascii=False, separators=(",", ":"))
+        conn.execute(
+            "INSERT INTO chat_run_events(run_id,sequence,event_type,payload_json,created_at) VALUES(?,?,?,?,?)",
+            (run_id, sequence, event_type, payload, now),
+        )
+        partial = str(row["partial_answer"])
+        final = str(row["final_answer"])
+        status = str(row["status"])
+        error_code = str(row["error_code"])
+        try:
+            blocks_v1 = bool(json.loads(row["execution_payload_json"] or "{}").get("answer_blocks_v1"))
+        except (json.JSONDecodeError, TypeError):
+            blocks_v1 = False
+        if event_type == "delta":
+            delta = str(event.get("content") or "")
+            if not blocks_v1:
+                partial += delta
+            self._project_blocks(conn, row, delta, terminal=False, now=now)
+            if status in {"queued", "stalled"}:
                 status = "running"
-            conn.execute(
-                """UPDATE chat_runs SET status=?,event_sequence=?,partial_answer=?,final_answer=?,
-                   last_progress_at=?,updated_at=?,error_code=? WHERE run_id=?""",
-                (status, sequence, partial, final, now, now, error_code, run_id),
-            )
-            conn.execute("COMMIT")
-            return enriched
+        elif event_type == "done":
+            projected = "".join(item[0] for item in conn.execute(
+                "SELECT content FROM chat_message_blocks WHERE run_id=? AND revision=? ORDER BY block_index",
+                (run_id, int(row["answer_revision"])),
+            ).fetchall()) + str(row["block_buffer"])
+            final = str(event.get("answer") or projected or partial)
+            # Done reconciles provider-normalized output without becoming
+            # the first persistence point for ordinary streamed blocks.
+            if final != projected:
+                revision = int(row["answer_revision"]) + 1
+                conn.execute("DELETE FROM chat_message_blocks WHERE run_id=?", (run_id,))
+                conn.execute(
+                    "UPDATE chat_runs SET block_buffer='',answer_revision=? WHERE run_id=?",
+                    (revision, run_id),
+                )
+                row = conn.execute("SELECT * FROM chat_runs WHERE run_id=?", (run_id,)).fetchone()
+                payload = final
+            else:
+                payload = ""
+            self._project_blocks(conn, row, payload, terminal=True, now=now)
+            partial = final
+            status = "completed"
+        elif event_type == "error":
+            self._project_blocks(conn, row, "", terminal=True, now=now)
+            status = "failed"
+            error_code = str(event.get("code") or "internal")[:80]
+        elif event_type == "cancelled":
+            self._project_blocks(conn, row, "", terminal=True, now=now)
+            status = "cancelled"
+        elif status in {"queued", "stalled"}:
+            status = "running"
+        conn.execute(
+            """UPDATE chat_runs SET status=?,event_sequence=?,partial_answer=?,final_answer=?,
+               last_progress_at=?,updated_at=?,error_code=? WHERE run_id=?""",
+            (status, sequence, partial, final, now, now, error_code, run_id),
+        )
+        return enriched
+
 
     def _sign_cursor(self, payload: dict[str, Any]) -> str:
         payload = {**payload, "exp": int(time.time()) + _CURSOR_TTL_SECONDS}
@@ -502,40 +561,23 @@ class DurableChatRunStore:
         now = time.time()
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            rows = conn.execute(
-                """SELECT * FROM chat_runs WHERE status IN ('queued','stalled')
-                   AND attempt < 2 AND (? IS NULL OR created_at >= ?)
-                   ORDER BY CASE status WHEN 'stalled' THEN 0 ELSE 1 END, created_at""",
-                (created_at_or_after, created_at_or_after),
-            ).fetchall()
-            rows = sorted(rows, key=lambda row: (
-                self._is_background_run(row),
-                row["status"] != "stalled",
-                row["created_at"],
-            ))
-            selected = None
-            for row in rows:
-                same_session = conn.execute(
-                    """SELECT COUNT(*) FROM chat_runs WHERE tenant_user_hash=? AND session_id=?
-                       AND status='running'""",
-                    (row["tenant_user_hash"], row["session_id"]),
-                ).fetchone()[0]
-                owner_runs = conn.execute(
-                    "SELECT execution_payload_json FROM chat_runs WHERE tenant_user_hash=? AND status='running'",
-                    (row["tenant_user_hash"],),
-                ).fetchall()
-                background_limit = max(1, max_parallel_per_owner - 1)
-                background_running = sum(self._is_background_run(item) for item in owner_runs)
-                if (
-                    not same_session
-                    and len(owner_runs) < max_parallel_per_owner
-                    and (
-                        not self._is_background_run(row)
-                        or background_running < background_limit
-                    )
-                ):
-                    selected = row
-                    break
+            selected = conn.execute(
+                """SELECT q.run_id,q.updated_at FROM chat_runs q
+                   WHERE q.status IN ('queued','stalled') AND q.attempt < 2
+                   AND (? IS NULL OR q.created_at >= ?)
+                   AND NOT EXISTS (SELECT 1 FROM chat_runs r
+                       WHERE r.tenant_user_hash=q.tenant_user_hash
+                       AND r.session_id=q.session_id AND r.status='running')
+                   AND (SELECT COUNT(*) FROM chat_runs r
+                       WHERE r.tenant_user_hash=q.tenant_user_hash AND r.status='running') < ?
+                   AND (q.is_background=0 OR (SELECT COUNT(*) FROM chat_runs r
+                       WHERE r.tenant_user_hash=q.tenant_user_hash AND r.status='running'
+                       AND r.is_background=1) < ?)
+                   ORDER BY q.is_background, CASE q.status WHEN 'stalled' THEN 0 ELSE 1 END,
+                       q.created_at LIMIT 1""",
+                (created_at_or_after, created_at_or_after,
+                 max_parallel_per_owner, max(1, max_parallel_per_owner - 1)),
+            ).fetchone()
             if selected is None:
                 conn.execute("COMMIT")
                 return None
@@ -768,14 +810,18 @@ class DurableChatRunStore:
         """Move orphaned/expired leases to stalled; a worker retries each at most once."""
         now = time.time()
         with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 """UPDATE chat_runs SET status='stalled',updated_at=?,error_code='worker_restart',
                    worker_id='',lease_expires_at=0 WHERE status='running' AND lease_expires_at<?""",
                 (now, now),
             )
-            conn.execute(
-                """UPDATE chat_runs SET status='failed',error_code='retry_exhausted',updated_at=?
-                   WHERE status='stalled' AND attempt>=2""",
-                (now,),
+            exhausted = conn.execute(
+                "SELECT run_id FROM chat_runs WHERE status='stalled' AND attempt>=2"
             )
+            for row in exhausted:
+                self._append_event(conn, row["run_id"], {
+                    "type": "error", "code": "retry_exhausted",
+                    "message": "任务重试后仍中断，请重试", "recoverable": True,
+                }, now)
             return int(cursor.rowcount)

@@ -71,7 +71,9 @@ public struct AIPlatformApp: App {
                 } else if ProcessInfo.processInfo.arguments.contains("-travelJourneyPreview") {
                     NavigationStack {
                         ScrollView {
-                            TravelPlanResultView(title: "京都五日 · 春日行记", content: #"{"destination":"日本 · 京都","date_range":"4月3日 — 4月7日","companions":2,"style":"轻松慢游","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"岚山","latitude":35.0094,"longitude":135.6668}]}"#)
+                            TravelPlanResultView(title: "旅行手记", content: ProcessInfo.processInfo.arguments.contains("-travelMapMissingCoordinatesPreview")
+                                ? #"{"destination":"鹿儿岛","stops":[{"id":"senganen","name":"仙巌園","address":"鹿児島市吉野町9700-1"}]}"#
+                                : #"{"destination":"日本 · 京都","date_range":"4月3日 — 4月7日","companions":2,"style":"轻松慢游","stops":[{"name":"京都站","latitude":34.9858,"longitude":135.7588},{"name":"岚山","latitude":35.0094,"longitude":135.6668}]}"#)
                                 .padding(20)
                         }.navigationTitle("旅行手记").navigationBarTitleDisplayMode(.inline)
                     }
@@ -345,6 +347,8 @@ public struct AppRootCoordinatorView: View {
     @EnvironmentObject private var apiClient: APIClient
     @EnvironmentObject private var workflowActivities: WorkflowActivityCoordinator
     @Environment(\.scenePhase) private var scenePhase
+    @State private var webLogin: QuantumWebLoginDTO?
+    @State private var confirmedWebLogin = false
     @State private var agreement: AgreementDTO?
     @State private var agreementError: String?
     @State private var isAgreementLoading = false
@@ -363,6 +367,7 @@ public struct AppRootCoordinatorView: View {
             }
         }
         // 统一覆盖未声明局部样式的 Button / NavigationLink / Toolbar 入口。
+        .accessibilityHidden(webLogin != nil)
         .buttonStyle(SoftButtonStyle())
         .animation(.easeInOut(duration: 0.3), value: appState.isLoggedIn)
         .overlay {
@@ -372,6 +377,30 @@ public struct AppRootCoordinatorView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
+            }
+        }
+        .overlay {
+            if let item = webLogin, !showingAgreement {
+                QuantumWebLoginModal(code: item.code, destination: item.destination, confirm: {
+                    try await apiClient.confirmQuantumWebLogin(item)
+                    confirmedWebLogin = true
+                }, close: {
+                    if !confirmedWebLogin { Task { try? await apiClient.cancelQuantumWebLogin(item) } }
+                    webLogin = nil
+                })
+                .id(item.id)
+            }
+        }
+        .task(id: "\(appState.isLoggedIn):\(appState.isGuestMode):\(appState.currentUserId):\(scenePhase):\(showingAgreement)") {
+            webLogin = nil
+            guard appState.isLoggedIn, !appState.isGuestMode,
+                  !appState.currentUserId.isEmpty, scenePhase == .active, !showingAgreement else { return }
+            while !Task.isCancelled {
+                if webLogin == nil, let items = try? await apiClient.pendingQuantumWebLogins(), !Task.isCancelled {
+                    webLogin = items.first
+                    confirmedWebLogin = false
+                }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
         .onChange(of: apiClient.needsReauth) { _, needs in

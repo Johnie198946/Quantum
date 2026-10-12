@@ -1,0 +1,15 @@
+rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-upload-wide-20261010.VbWNVP
+candidate_runtime_files 2 mismatches []
+==> [1/6] 下载并解包 SHA 2290e35e331de927d57449043fff9ba444f980a3
+==> [2/6] 建立共享运行数据入口
+==> [3/6] 验证预载离线镜像并启动 Compose 服务
+==> [3a/6] 执行 QuantumWorkspace additive schema migration
+==> [4/6] API 健康检查与运行契约审计
+==> [4b/6] 建立 Hermes Vault 可见性链接并修复笔记共享权限
+==> [5/6] 原子切换 release 并重启 Hermes runtime
+==> [6/6] 最终健康检查
+deployed_sha=2290e35e331de927d57449043fff9ba444f980a3
+release=/opt/releases/ai-lab-platform-2290e35e331d.svh2EG
+rollback_point=/opt/releases/ai-lab-platform-048c66363f08.tekuwx
+deployment_finished=true
+rollback_point=/opt/ai-lab-shared/rollbacks/quansyn-upload-wide-20261010.VbWNVP
