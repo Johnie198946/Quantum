@@ -1,0 +1,11 @@
+import {build} from 'esbuild';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+const here=path.dirname(fileURLToPath(import.meta.url));
+const out=process.env.QUANTUM_MODEL_OUT||'/private/tmp/travel-notes-pcm-chat-20261013/model';
+await mkdir(out,{recursive:true});
+await build({entryPoints:[path.join(here,'production-model-source.js')],bundle:true,platform:'node',format:'esm',outfile:out+'/model.mjs',loader:{'.jpg':'dataurl','.png':'dataurl'},external:['node:*']});
+const result=await import(out+'/model.mjs?'+Date.now());
+await writeFile(out+'/report.json',JSON.stringify(result.report,null,2));
+console.log(JSON.stringify(result.report));

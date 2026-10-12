@@ -1,0 +1,131 @@
+/* Cool Japanese editorial: negative space, mixed writing axes, hazy glass. */
+.paper-screen {
+  --paper:#f3f4f2; --ink:#384440; --muted:#65706b; --teal:#56685f;
+  --journal-ink:#384440; --journal-muted:#65706b; --journal-rule:rgba(108,123,112,.14);
+  background:var(--paper);color:var(--ink);
+}
+.paper-screen::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 85% 25%,#d4d8d420,transparent 52%),radial-gradient(ellipse at 15% 80%,#ccc8d129,transparent 54%)}
+.paper-screen>.topbar,.paper-screen>.paper-scroll,.paper-screen>.notebook-cover,.paper-screen>.reader-tabs{position:relative;z-index:1}
+.paper-screen .topbar{background:transparent;color:var(--ink)}
+.paper-screen img{filter:saturate(.42) contrast(.91) brightness(1.05)}
+.paper-screen .glass,.paper-screen .disclosure,.paper-screen>.sheet-overlay .sheet{border:0;background:linear-gradient(125deg,rgba(229,235,230,.52),rgba(228,225,235,.43));backdrop-filter:blur(28px) saturate(.75);-webkit-backdrop-filter:blur(28px) saturate(.75);box-shadow:0 12px 36px -24px #52625b40}
+.paper-screen .primary{border:0;border-radius:14px;box-shadow:none;font-weight:600;letter-spacing:1px}
+.paper-screen .primary.teal-primary,.paper-screen .sheet .primary,.paper-screen .note-save>.primary{background:#647068!important;color:#fff}
+.paper-screen>.paper-fixed .primary,.paper-screen .sheet .primary,.paper-screen .note-save>.primary{background:rgba(204,215,206,.72)!important;color:#384b3f;backdrop-filter:blur(28px) saturate(.75);-webkit-backdrop-filter:blur(28px) saturate(.75);box-shadow:0 8px 28px -18px #52625b38}
+.phone.paper-phone{background:#f3f4f2}
+.paper-screen .paper-fixed,.notebook-screen .paper-fixed{left:24px;right:24px;bottom:26px;background:linear-gradient(transparent,#f3f4f2 65%)}
+.paper-screen .reader-tabs{background:transparent;border:0;padding:0 24px;margin:16px 0 32px}
+.paper-screen .reader-tabs button{font-size:11px;color:var(--muted);min-height:44px}
+.paper-screen .reader-tabs button.active{color:var(--ink);border-color:#738278;font-weight:600}
+.paper-screen .disclosure{border-radius:18px;padding:8px 16px;margin:24px 0}
+.paper-screen .disclosure summary{font-size:13px;font-weight:600;color:var(--ink);min-height:48px}
+.paper-screen .disclosure p{font-size:12px;line-height:2;color:var(--muted)}
+.paper-screen .text-btn.teal,.paper-screen .paper-stop a{color:#52675b}
+.paper-screen .private-line{color:var(--muted);font-size:10px}
+
+/* Cover: a slim photo and a large vertical destination surrounded by air. */
+.notebook-screen.notebook-封面 .notebook-cover{background:transparent;padding-bottom:40px}
+.journal-cover-heading{padding:8px 32px 0}
+.journal-masthead{border:0;padding:8px 0;font-size:8px;letter-spacing:2px;color:var(--journal-muted)}
+.journal-cover-composition{position:relative;height:404px;margin:20px 0 0}
+.journal-cover-photo{position:absolute;left:22%;top:44px;width:40%;height:268px;margin:0;border-radius:16px}
+.journal-cover-photo .notebook-cover-image{width:100%;height:100%;min-height:0;border-radius:16px;mask-image:none;opacity:.87}
+.journal-cover-photo figcaption{position:absolute;right:calc(100% + 20px);top:78px;margin:0;writing-mode:vertical-rl;font-size:9px;line-height:1.7;letter-spacing:1px;white-space:nowrap;color:var(--journal-muted)}
+.journal-cover-title{position:absolute;right:24px;top:72px;width:70px;height:280px;padding:0;display:block}
+.journal-cover-title h1{writing-mode:vertical-rl;font-family:"Songti SC","STSong",serif;font-size:52px;font-weight:800;line-height:1.2;letter-spacing:6px;max-height:280px;max-width:100%;color:var(--journal-ink)}
+.journal-cover-title.journal-title-long{left:32px;right:32px;top:0;width:auto;height:auto}
+.journal-title-long h1{writing-mode:horizontal-tb;font-size:30px;line-height:1.45;letter-spacing:1px;overflow-wrap:anywhere}
+.journal-cover-composition:has(.journal-title-long) .journal-cover-photo{top:116px;height:232px}
+.journal-cover-aside{position:absolute;left:32px;bottom:8px;font-size:11px;letter-spacing:3px;line-height:2;color:var(--journal-muted)}
+.notebook-screen .cover-copy{padding:36px 32px 0;margin:0}
+.notebook-screen .cover-copy h2{font-family:"Songti SC","STSong",serif;font-size:28px;font-weight:800;line-height:1.5;letter-spacing:1px;margin:0 0 28px}
+.notebook-screen .cover-copy>p{font-size:10px;line-height:2.2;color:var(--journal-muted)}
+.notebook-screen .cover-route{margin:44px 0 24px;border:0;padding:0}
+.notebook-screen .cover-route p{font-size:12px;line-height:2.1;color:var(--journal-muted);margin-top:10px}
+.notebook-screen .cover-route small{font-size:9px;letter-spacing:1px}
+.notebook-screen.notebook-封面 .primary{margin:24px 0 32px;background:rgba(205,215,207,.58)!important;color:#425448;border:0;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+
+/* Diary: horizontal chapter title, vertical date, staggered narrow photos. */
+.notebook-screen .diary{padding:0 32px}
+.notebook-screen .day-picker{margin:0 0 44px;gap:8px}
+.journal-day-title{display:block;position:relative;margin:0 0 56px;min-height:202px;padding:90px 52px 0 0}
+.journal-day-number{position:absolute;left:0;top:-20px;font-family:Georgia,serif;font-size:96px;font-weight:400;line-height:1;color:#84918a;letter-spacing:-5px}
+.journal-day-title>div{border:0;padding:0;min-width:0}
+.journal-day-title p{position:absolute;right:0;top:0;writing-mode:vertical-rl;font-size:9px;letter-spacing:2px;color:var(--journal-muted)}
+.notebook-screen .journal-day-title h1{font-family:"Songti SC","STSong",serif;font-size:34px;font-weight:800;line-height:1.55;letter-spacing:1px;margin:16px 0 0;color:var(--journal-ink)}
+.notebook-screen .diary-collage{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:36px;align-items:start;height:auto;margin:0 0 72px}
+.notebook-screen .diary-collage figure{position:relative;min-width:0;border-radius:16px;margin:0}
+.notebook-screen .diary-collage figure:nth-child(2){margin-top:132px}
+.notebook-screen .diary-collage img{width:100%;height:240px;border:0;border-radius:16px;opacity:.88}
+.notebook-screen .diary-collage .diary-offset{height:128px}
+.diary-collage figcaption{font-size:9px;line-height:1.8;letter-spacing:.5px;padding:12px 10px;margin:0;color:var(--journal-muted)}
+.notebook-screen .disclosure{padding:8px 16px;margin:28px 0;border:0;border-radius:18px;background:linear-gradient(125deg,rgba(229,235,230,.52),rgba(228,225,235,.43))}
+.notebook-screen .disclosure p{font-family:inherit;font-size:12px;line-height:2.1;color:var(--journal-muted)}
+.notebook-screen .diary-route{margin:64px 0 24px;padding:0;border:0}
+.notebook-screen .diary-route h2{font-size:22px;font-weight:700;color:var(--journal-ink)}
+.notebook-screen .diary-route p{font-size:11px;line-height:2.2;margin:20px 0;color:var(--journal-muted)}
+.notebook-screen .paper-scroll{padding-bottom:144px}
+
+/* Essentials use the same calm rhythm, with glass only around actual content. */
+.notebook-screen .appendix{position:relative;padding:56px 32px 0}
+.notebook-screen .journal-section-mark{position:absolute;right:24px;top:48px;writing-mode:vertical-rl;font-size:8px!important;letter-spacing:2px;color:var(--journal-muted)!important}
+.notebook-screen .appendix h1{max-width:calc(100% - 44px);font-family:"Songti SC","STSong",serif;font-size:36px;font-weight:800;line-height:1.6;letter-spacing:2px;margin:0 0 32px}
+.notebook-screen .appendix>p:not(.journal-section-mark){font-size:11px;line-height:2;color:var(--journal-muted);margin-bottom:56px}
+.notebook-screen .readiness{margin:0 0 36px;border:0;border-radius:14px;background:rgba(203,215,204,.34);backdrop-filter:blur(20px);font-size:10px;line-height:1.8;color:#52665a;padding:16px}
+.notebook-screen .budget-row{font-size:11px!important;color:var(--journal-muted);border-color:var(--journal-rule)}
+.notebook-screen .appendix-tools{gap:16px;margin:48px 0 0}
+
+/* Save/edit overlays retain all controls, now on cool translucent material. */
+.paper-screen .note-save,.notebook-screen .sheet{background:linear-gradient(130deg,rgba(239,242,238,.84),rgba(226,224,233,.83));backdrop-filter:blur(32px) saturate(.75);-webkit-backdrop-filter:blur(32px) saturate(.75)}
+.note-save .notebook-object{position:relative;width:224px;height:292px;margin:16px auto 48px;border:0;border-radius:18px;transform:none;background:linear-gradient(125deg,rgba(212,222,214,.5),rgba(219,216,226,.5));backdrop-filter:blur(28px);box-shadow:0 12px 36px -24px #52625b40}
+.note-save .notebook-object:after{display:none}
+.note-save .notebook-object img{position:absolute;left:52px;right:28px;top:94px;width:144px;height:172px;opacity:.85;border-radius:12px}
+.note-save .notebook-object strong{position:absolute;top:24px;left:24px;right:24px;font-family:"Songti SC","STSong",serif;font-weight:800;font-size:24px;line-height:1.45;color:var(--ink)}
+.note-save .notebook-object span{position:absolute;top:96px;left:20px;right:auto;writing-mode:vertical-rl;max-height:174px;font-size:8px;line-height:1.8;color:var(--muted)}
+.note-save .notebook-object>svg{display:none}
+.paper-screen .sheet h2{font-family:"Songti SC","STSong",serif;font-size:30px;font-weight:800;line-height:1.5;letter-spacing:1px}
+.paper-screen .sheet label,.paper-screen .sheet>p,.paper-screen .sheet.note-save>p,.note-save .toggle-row{font-size:12px;color:var(--muted)}
+.paper-screen .sheet input:not([type="checkbox"]),.paper-screen .sheet textarea{border:0;background:rgba(245,247,243,.65);border-radius:12px;backdrop-filter:blur(20px);color:var(--ink)}
+.paper-screen .sheet input:focus-visible,.paper-screen .sheet textarea:focus-visible{outline:2px solid #708278;outline-offset:3px}
+.notebook-screen .appendix h1,.notebook-screen .journal-day-title h1,.notebook-screen .cover-copy h2,.guide-overview h2,.guide-stops h1,.guide-todo h1{text-wrap:balance}
+.note-save .toggle-row input:checked{background:#647068}
+.note-save .cover-options button{border-radius:12px}.note-save .cover-options img{border-radius:10px}
+
+/* The guide shares the editorial photo/text axes before becoming a notebook. */
+.guide-hero{height:464px;margin:24px 0 44px;position:relative}
+.guide-photo-frame{position:absolute;left:22%;top:20px;width:40%;height:248px;margin:0;border-radius:16px}
+.guide-photo-frame img{width:100%;height:100%;border-radius:16px;opacity:.88}
+.guide-hero>div{inset:0;color:var(--ink);text-shadow:none}
+.guide-hero p{position:absolute;top:54px;right:24px;writing-mode:vertical-rl;font-size:32px;font-weight:800;line-height:1.2;letter-spacing:4px;margin:0}
+.guide-hero h1{position:absolute;left:32px;bottom:0;font-family:"Songti SC","STSong",serif;font-size:38px;font-weight:800;line-height:1.5;letter-spacing:1px}
+.guide-hero .offset-photo{top:294px;left:auto;right:28px;bottom:auto;width:66px;height:88px;transform:none;border:0;border-radius:12px;opacity:.78;box-shadow:none}
+.guide-overview,.guide-day,.guide-stops,.guide-todo{padding-left:32px;padding-right:32px}
+.guide-meta{font-size:10px;line-height:2.2;margin-bottom:52px}
+.guide-overview h2,.guide-day h1,.guide-stops h1,.guide-todo h1{font-family:"Songti SC","STSong",serif;font-size:32px;font-weight:800;line-height:1.6;color:var(--ink);margin:40px 0}
+.paper-route{gap:36px 28px;margin:48px 0}
+.paper-route button{border-radius:16px;padding:0 0 16px;overflow:hidden}
+.paper-route button:nth-child(even){padding-top:0;transform:translateY(32px)}
+.paper-route span{display:block;font-size:9px;padding:16px 12px 0;color:var(--muted)}
+.paper-route img{height:132px;margin:14px 0;border-radius:0;opacity:.86}
+.paper-route strong{font-size:20px;font-weight:800;color:var(--ink);padding:0 12px}
+.paper-day-photo{width:70%;height:268px;margin:64px auto 72px 0;transform:none;border:0;border-radius:16px;opacity:.87}
+.guide-day .day-picker{margin-top:24px;margin-bottom:44px}
+.paper-stop{margin:72px 0;gap:24px;align-items:center;border-radius:16px;overflow:hidden}
+.paper-stop>img{width:49%;height:224px;border-radius:0;opacity:.87}
+.paper-stop>div{flex:1;min-width:0;padding:12px 12px 12px 0}
+.paper-stop:nth-child(odd)>div{padding-left:16px;padding-right:0}
+.paper-stop h2{font-family:"Songti SC","STSong",serif;font-size:24px;font-weight:800;color:var(--ink);line-height:1.6}
+.paper-stop p{font-size:10px;line-height:2;color:var(--muted)}
+.paper-stop a{font-size:10px}
+.status-actions button{min-height:44px;color:#53675b}
+
+@media(max-width:350px){
+  .journal-cover-heading,.notebook-screen .cover-copy,.notebook-screen .diary,.notebook-screen .appendix,.guide-overview,.guide-day,.guide-stops,.guide-todo{padding-left:24px;padding-right:24px}
+  .journal-cover-title{right:16px;width:60px}.journal-cover-title h1{font-size:46px}
+  .journal-title-long h1{font-size:28px}.journal-cover-photo{left:21%;width:39%}
+  .journal-day-title{padding-right:40px}.notebook-screen .journal-day-title h1{font-size:30px}
+  .notebook-screen .diary-collage{gap:24px}.notebook-screen .diary-collage img{height:220px}.notebook-screen .diary-collage .diary-offset{height:116px}
+  .notebook-screen .appendix h1{font-size:32px}.guide-hero h1{left:24px;font-size:34px}
+  .paper-stop{gap:16px}.paper-stop h2{font-size:21px}
+}
+@media print{.paper-screen::before{display:none}.paper-screen .glass,.paper-screen .disclosure{background:#f3f4f2;backdrop-filter:none;box-shadow:none}}

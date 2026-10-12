@@ -111,11 +111,11 @@ struct AgreementSheet: View {
                 Divider()
                 Button(action: onAccept) {
                     HStack {
-                        if isAccepting { ProgressView().tint(AppTheme.Colors.onPrimary) }
+                        if isAccepting { ProgressView().tint(AppTheme.Colors.onConfirmation) }
                         Text("我已阅读并同意全部协议")
                     }
                     .font(.headline)
-                    .foregroundColor(AppTheme.Colors.onPrimary)
+                    .foregroundColor(AppTheme.Colors.onConfirmation)
                     .frame(maxWidth: AppTheme.Metrics.readableContentWidth)
                     .frame(minHeight: 52)
                     .background(AppTheme.Colors.actionGradient)

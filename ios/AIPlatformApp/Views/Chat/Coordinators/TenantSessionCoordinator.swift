@@ -3842,7 +3842,7 @@ public final class TenantSessionCoordinator: ObservableObject {
                     confirmationToken: confirmationToken,
                     sessionId: sourceClientSessionId
                 )
-                if proposal.capabilityId == "knowledge.note.trash" || proposal.capabilityId == "knowledge.note.restore" {
+                if proposal.capabilityId == "knowledge.note.trash" || proposal.capabilityId == "knowledge.note.restore" || proposal.capabilityId == "travel.notebook.save" || proposal.capabilityId == "travel.notebook.update" {
                     guard self?.tenantEpoch == expectedEpoch else { return }
                     await KnowledgeNoteStore.shared.restoreFromCloud()
                 }

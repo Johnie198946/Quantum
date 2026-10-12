@@ -1,0 +1,18 @@
+.travel-thinking-orb { display:inline-block; position:relative; flex:none; }
+.travel-thinking-orb canvas { display:block; position:relative; z-index:1; }
+.travel-thinking-orb[data-orb-size="64"]::before { content:""; position:absolute; inset:-24px; border-radius:50%; background:radial-gradient(circle,rgba(235,242,231,.85),rgba(224,232,217,.24) 60%,transparent 72%); pointer-events:none; }
+.thinking-generation-button { position:absolute; left:50%; top:calc(50% - 56px); margin-left:-56px; display:grid; place-items:center; width:112px; height:112px; padding:0; border:0; border-radius:50%; background:transparent; box-shadow:none; touch-action:none; user-select:none; -webkit-user-select:none; }
+.thinking-generation-button:focus-visible { outline:1px solid #607264; outline-offset:4px; }
+.thinking-generation-copy { position:absolute; top:calc(50% + 86px); left:24px; right:24px; text-align:center; color:#526858; }
+.thinking-generation-copy strong { font-size:20px; font-weight:500; font-variant-numeric:tabular-nums; }
+.thinking-generation-copy small { font-size:11px; padding-left:3px; }
+.thinking-generation-copy p { margin-top:10px; font-size:12px; line-height:1.7; }
+.adopt-list-screen.is-expanding > header:not(.topbar),.adopt-list-screen.is-expanding > .adopt-bottom { opacity:1; }
+.adopt-list-screen.is-expanding > .topbar { visibility:visible; }
+.adoption-gather.is-unfolding .adoption-orb-core { transition:opacity .2s; }
+.adoption-gather.is-unfolding .adoption-gather-status { top:86px; }
+.orb-page-unfold,.orb-page-content { position:absolute; inset:0; }
+.orb-page-unfold { isolation:isolate; overflow:hidden; background:#e8ebe3; }
+.orb-page-core { position:absolute; left:50%; top:50%; width:64px; height:64px; margin-left:-32px; margin-top:-32px; pointer-events:none; }
+.orb-unfold-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+@media(prefers-reduced-motion:reduce) { .adopt-list-screen.is-expanding > header:not(.topbar),.adopt-list-screen.is-expanding > .adopt-bottom { transition:none; } }

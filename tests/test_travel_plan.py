@@ -800,3 +800,19 @@ def test_legacy_itinerary_recovers_checkpoint_within_approved_run_budget(monkeyp
             runtime._run_travel_blocks(run, node, "context", state, None, "test", None, None, lambda *_a, **_k: None)
         assert calls == []
     assert node["parameters"]["max_tokens"] == legacy_budget
+
+
+def test_approved_travel_upstream_above_48k_uses_bounded_document_context_without_truncation():
+    from scripts.hermes_bridge_runtime.workflow_artifacts import _workflow_node_prompt
+    from scripts.hermes_bridge_runtime.contracts import MAX_DOCUMENT_WORKFLOW_INPUT
+    workflow = SimpleNamespace(title="trip", description="quiet", requirements_snapshot={"scenario_id": "travel-planning"})
+    plan = build_travel_plan(workflow, plan_id="p", knowledge_scope=[])
+    output = "BEGIN-APPROVED-ITINERARY\n" + "安排与来源" * 11000 + "\nEND-APPROVED-ITINERARY"
+    run = {"plan": plan, "nodes": {"travel_itinerary": {"status": "succeeded", "output": output}}, "agent_config": {}, "goal": "五天旅行"}
+    prompt = _workflow_node_prompt(run, plan["nodes"][2])
+    assert len(output) > 48000
+    assert output in prompt
+    assert len(prompt) <= MAX_DOCUMENT_WORKFLOW_INPUT
+    run["nodes"]["travel_itinerary"]["output"] = "x" * MAX_DOCUMENT_WORKFLOW_INPUT
+    with pytest.raises(RuntimeError, match="禁止静默截断"):
+        _workflow_node_prompt(run, plan["nodes"][2])

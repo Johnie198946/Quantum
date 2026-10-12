@@ -47,3 +47,12 @@ ios/*.html
 xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Task-generated renderer outputs; iOS bundles directly from approved sources.
+clients/travel-space/node_modules/
+clients/travel-space/node_modules 2/
+clients/travel-space/.build/
+ios/AIPlatformApp/Resources/TravelSpace/
+# Preserved macOS synchronized copies, never app build inputs.
+ios/AIPlatformApp 3.xcodeproj/
+ios/AIPlatformApp 4.xcodeproj/

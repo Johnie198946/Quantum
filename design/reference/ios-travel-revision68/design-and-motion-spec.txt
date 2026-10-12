@@ -1,0 +1,415 @@
+2026-10-11 · 当前修订：水平手风琴与中性高透明毛玻璃
+五个服务区改为上下排列的水平卡片，标题横排；默认60px等高条目，点击向下展开至560px，其他同步收窄至48px，再次点击收回。高度弹性260/32，详情延迟200ms淡入250ms；方向键/Home/End与减少动态保留。已有城市、日期、预订和保存状态不变。
+移除绿色倾向：外层/内容/控件采用中性灰RGBA；关闭条目不透明度13%，展开底层64%，详情24%，内部浅灰卡片18%，控件22%。背景模糊20–24px且背景饱和度0.12；不新增照片滤镜。保持文字对比度和选中边框。当前报告与两段录屏为horizontal系列；accordion7及更早验证只保留原版本范围。
+
+此前修订（历史范围）：
+
+2026-10-11 · 当前7条批注：共享日历、出发返回地与竖向服务手风琴
+日历使用独立七列布局，解决需求卡片按钮样式覆盖。单一范围日历连续点选去程/返程，保留范围预览与天数/晚数胶囊；删除独立去程/返程编辑块和可见说明。按Escape收回，焦点回到对应入口。
+“出发返回地”下拉多选预置20个城市，点击以可删除的灰黑毛玻璃小字标签显示。首项为出发地，其余为返程候选，返回方向可逐一比较；删除首项后下一项成为出发地。输入城市回车或失焦自动加入，去重，支持中文IME，标签轻微跳动；自定义目录、顺序、候选和日期持久化。根据实际换行测量只显示前三行，显示剩余数量，点击展开/收起；窄屏调整后重新计算。
+服务区五条竖向窄条并排，默认等宽收起。点击展开横向变宽，其他同步缩成窄条；深色毛玻璃背景，浅灰高透明组件叠加。宽度弹性过渡后200ms延迟淡入内容；支持方向键/Home/End和减少动态。展开区独立滚动，窄屏单列表单与内部票价横向滚动，避免页面溢出。通过路线/攻略显式进入指定服务时展开该条。
+本次验证和录屏以accordion7系列报告为准，之前flow36及其他报告/录屏保留历史版本范围。原型未接实时库存、购票或真实模型；未进行iOS真机验收。
+
+此前修订（历史范围）：
+
+2026-10-11 · 36条批注流程修订
+统一需求日历、天数/人数刻度；常用出发城市与预算/节奏/交通说明式选择；缺条件的主按钮给出问题引导。往返使用独立两端的单一范围日历，预览区间和天数胶囊；路线地图先弹照片概览，纸飞机生成。交通可修改地点/坐标，恢复地图，采用撕线票据，费用缩窄并将¥置右；出租/租车/骑行/徒步轨迹与补给/渡轮分方式设计。酒店镜头随中心、半径与选择变化，图片描述行打开下方细节，无待选评估引导地图选择。攻略预订留边一致，四种待办有核验清单、备注与来源。阅读选文高亮、批注、询问本地上下文AI、列表跳回、编辑删除与持久化，参考Apple Books官方选文批注说明。
+当前验证以flow36系列报告、源码/HTML SHA与最新两段录屏为准，旧报告/视频保留对应历史范围。没有真实模型、库存/购票或iOS真机/设备GPS准确率验收。
+
+2026-10-11 当前三条批注：服务导航共用LiquidNav主导航动效；地图交通细化与住宿待选评估。
+服务导航采用主导航同源弹性位移/宽度、速度拉伸与归位，灰色毛玻璃背景，选中图标和文字，其他仅图标；需求导航也使用共享组件。支持方向键和减少动态。
+交通页承接往返页选中的接驳方式、班次时间与落地日期；公交/铁路展示起终点、候车/步行/换乘、逐站时刻、示例票价与备选路线。出租区分车型、上车点、价格范围及附加费；自驾展示道路偏好、油费、停车、取还车信息。原市内分段/单车/步行/渡轮保留；暂无地铁数据明确空态，不虚构本区域地铁。真实GSI底图上为示意连线，未接道路路由或Google Maps API。
+住宿使用往返页同一标签组件。偏好→兴趣点/次日去向/酒店/用户位置与半径地图→价格标记展开带图片描述卡→勾选待选→补充要求→AI规则评估。根据已知兴趣、位置、半径、评分、预算与设施比较；安静/房型/车站步行等未知条件不承诺。条件或待选变化时禁用旧建议，重新评估；采用建议还需用户确认住宿细节，已有真实订单不自动改动。标签、待选、补充与评估随草稿/保存手记/导出保留。AI为本地规则设计演示，商户与价格为示例。
+当前检查见services-map系列JSON；当前主录屏services-map-complete-journey.mp4，专项services-map.mp4。此前规格/报告/视频保留历史范围。
+
+2026-10-11 · 当前：航班与接驳票据，21条批注
+入口仍为 final-experience.html 与 motion-prototype/dist/index.html；当前完整流程视频 videos/flight-complete-journey.mp4，专项视频 videos/flight-ticket.mp4。此前录屏和检查按其历史构建范围保留。
+去/返程日期点击从标签下方展开日历，选中收回并更新文字，日期顺序受约束；起飞时刻下方展开5分钟横向刻度，拖动/键盘实时更新。刻度有视觉反馈，支持设备调用navigator.vibrate；不支持和减少动态有回退，未验证实体设备震动。
+时刻前后各五个示例航班，包含航班号、起降、日期、直达/中转、时长和每人票价，最低价高亮；日期前后各三天共七列比较最低示例票价，可切换查询日期。所有班次和报价明确为演示数据，非实时，不冒充可售航班。
+白色纸票只先呈现路线、日期时刻与票价；点击航班后背景虚化，下缘虚线与撕口，拖下底边露出航班信息。支持点击/键盘展开、Escape关闭、紧凑选择按钮，仅保存规划，不产生订单。选择航班后公共交通在落地后30/40/50/60分钟推荐示例班次，票据内展示站点；出租/自驾不显示时刻表。
+航线下方低饱和毛玻璃偏好面板，预制直达优先/一次中转/票价最便宜/红眼航班/不坐廉航/需要携带宠物。×删除缩成圆点后消失、标签补位、面板实际高度弹性变化。右上+向左展开输入框，以英文逗号形成待加入胶囊，中文IME不提前分割；对勾确认后飞入面板前部，既有标签让位；配置持久化。人数下方横向数字刻度，实时显示1–20人，最多十枚人形矢量，超过十人增加+。
+三步需求导航仅当前项展开文字，其余仅图标，低饱和灰玻璃选中背景滑动，支持左右箭头。移除首页继续旅行、服务底部返回、三张旧政策卡、落地日期、舱位、行李、缓冲说明、首日告警、机票录入勾选、旧渠道链接/说明/加入按钮和预订清单。返回由顶栏完成，酒店/三餐/体验原规划仍保留，手记和导出读取选定航班与接驳。
+本次构建证据以 flight-ticket /flight-complete-journey 报告为准；此前规格与报告按原范围保留如下。
+
+2026-10-11 · 当前完整流程链接更新
+原入口 final-experience.html 保持不变，首要按钮「开始完整体验」从工作流打开。交通预订和旅行手记另有直达链接，不清理用户存储。首页主录屏更新为 videos/complete-journey.mp4，连续产品入口操作，包含需求收敛/收藏/真实地理路线/往返航班/酒店/三餐/玩法/交通/预订清单/阳光与thinking/展开完成排序/攻略/日杂手记整体编辑与AI确认修改/实用附录/JSON导出/保存阅读回看；未用评审导航跳步或注入订单夹具。
+当前完整流程检查 complete-journey-check.json；入口/播放/六宽布局 complete-journey-hub-check.json；视频参数 complete-journey-video-metadata.json。原手记专项、服务复核与17项完整回归仍对应同一应用HTML/源码版本。下方旧完整流程录屏及报告按此前修订范围保留，不代表最新扩展内容。
+本次仅更新本地体验入口、录屏、规格和离线包。真实模型/库存/支付/实际语音准确率/iOS真机仍未接入或验证。
+
+2026-10-11 · 当前追加：旅行手记整体编辑、语音与AI协作的日杂版面
+旅行日记独立展示交通/住宿/早餐午餐晚餐/特色玩法；没有选择时依然保留建议或待安排，不需先建订单。选定安排直接读profile.servicePlan，清单状态、备注、离店日期同步；手记补充说明与预订凭据分开。实用附录按每天收纳同一数据。
+风格：冷灰纸色、低饱和区域大图，280px开篇与300px收尾；重点宋体标题、正文与较小非重点日期来源。去掉同图重复的卡片堆叠，段落留32/48/64/80px空白，生活章节错落而平静。底部两枚紧凑胶囊：记下这一刻、AI协作；右上整体编辑图标。
+整体编辑：整本标题、副题、封面、内容开关，各天标题、记录与行程（时间/可选结束/名称/说明/增删）、四类补充说明。草稿独立，取消不写原稿；保存校验非空/有效时间/结束晚于开始/15分钟衔接。
+语音：显式点麦克风才启动SpeechRecognition/webkitSpeechRecognition(zh-CN)，中间结果只预览，最终文字追加既有草稿，待用户检查后保存。监听期间禁止保存，关闭编辑器abort；拒绝授权/服务不可用/不支持均保留原文字并提示文字输入或系统听写。浏览器服务可能上传音频，不能保证离线，不申请或保存原始音频。接口事件使用测试替身核验；未验证真实麦克风识别准确率。官方说明：https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition
+AI沟通：一起做笔记／商量换行程两个模式。当前是本地对话演示，不连接模型；笔记只整理用户提供的文字，旧记录保留，不能补写旅行经历。未知调整请求先澄清；明确标题/时间或休息偏好给可编辑建议。确认前不更改原行程，确认后旧安排del删除线，新安排低饱和绿色高亮并标新安排，记录来源、理由、时间和修改前后快照。拒绝不改稿；支持带后续修改保护的最近行程撤回、完整历史阅读。真实外部订单不自动改订，修改引起依赖状态需重新核对，凭据保留。
+持久化：沿用既有profile/days/entries本机草稿与保存手记，副题、全部聊天文字、对照历史和四类备注都随刷新、阅读恢复及JSON导出；语音仅保存用户最终确认的文字。新入口?view=journal直接翻开旅行日记，不重置用户数据。以下均为历史版本范围。
+
+2026-10-11 · 当前追加：交通、住宿、三餐与体验规划
+入口：旅行计划右上飞机；攻略「预订」；沿途交通/住宿/三餐/玩法卡片。原流程完整保留。
+往返：出发城市/机场、去返程日期、落地跨日、时区、人数/舱位/行李、直达/中转偏好、转机及机场接驳。实际航班需外部查询。
+交通：城市间与酒店→兴趣点→餐厅→体验→酒店五段；火车、自驾、出租车、公交、单车、步行、渡轮。坐标直线距离，时长明确为演示；检查下一预约时刻、上一项目结束和落地接驳，樱岛保留渡轮、长途单车阻断。
+住：兴趣点半径与次日去向、酒店星级/评分/预算/人数/温泉/早餐/免费取消，入住退房、房间数与房型。跨城次日不取海上或远途中点；支持延住。
+食：早餐前晚酒店、中午之前的体验/兴趣点、晚餐落脚酒店；选中心与半径。顾客评分与指南星级分开，营业窗需容纳全部用餐时长，素食/海鲜禁忌不会随扩大搜索被放宽。
+玩：休闲、购物、观景、徒步、小众、温泉；兴趣、雨天室内、酒店/指定餐次餐厅/当前位置与半径；预约时间、玩法规格、人数与空档建议，15分钟衔接缓冲。
+查找：真实WGS84球面距离、WebMercator半径地图、邻区候选，0.5/1/3/5/10/30km。仅点击定位才读取设备位置，失败明确回到行程中心。
+预约：详情使用页面顶层portal，不受滚动容器与底栏遮挡；加入行程／准备预订／录入外部已预订。真实渠道查询链接只带地区、实际POI、日期人数、服务类别；演示商户名、私密凭据不作为查询。已预订必须用户确认+渠道+凭据；航班还需航班号。行程变动只提示需重新核对，外部订单不会被修改或取消。
+保存：profile.servicePlan共享酒店、交通、三餐、体验、查询条件；每天卡片、手记、清单、刷新恢复与JSON导出同源。无云端同步。
+范围：64个合成商户候选，照片来自目的地区域而非商户实拍，价格、评级、营业窗/时长均为演示；未接实时供应商、真实道路时刻、支付或订单验证。新增报告以travel-services-*为准，以下历史版本说明保留原范围。
+
+Quantum · 最终完整体验 / 2026-10-11
+
+唯一交付入口：final-experience.html；可操作原型：motion-prototype/dist/index.html；扩展前完整流程视频：videos/final-experience.mp4。下方旧版本记录仅供历史追溯，最终行为以本节、当前源码与final-experience检查报告为准。
+
+从右上＋展开“新建任务”后再次点击开始：光球读秒 → 目的地输入 → 三步需求照片卡片（时间同行／预算节奏交通／兴趣） → 思考光球 → 景点收藏 → 真实坐标路线 → 阳光与制作光球 → 每日成稿 → 攻略 → 保存 → 旅行手记。
+路线页返回可以完善条件；预算、节奏、人数、兴趣、日期与需求卡片同步，补充文字及整趟调整意见保留。日期采用连续日历选择。未定不会被静默填成示例条件。
+成稿卡片弹性展开与收起，后续卡片让位；完成文字纵向切换为对勾、按钮宽度变化；拖动卡片置顶、让位、磁吸落下，顺序和日期同步。思考的收缩与展开统一用ThinkingOrb。攻略只保留总览／沿途／待办；沿途按每天展开时间、交通、地图、饮食、住宿和玩法。真实坐标基于公开WGS84信息，虚线表示游览顺序，不等于道路导航；可导出KML到Google Earth。
+底栏低高度，选中项展开文字，滑动背景块，其余只显示图标；阅读页面可以重新打开保存的手记，我的页面显示当前旅行并返回修改。工作流从1000张已筛非人物本地照片随机取6张轮播，背景颜色跟随照片。
+草稿与最近一本保存的手记在当前浏览器本机保存，包括标题、封面、内容开关、日程修改、顺序、完成状态和旅行记录；刷新后从阅读打开，返回回到工作流。新建另一段旅行保留上一本已保存手记。150ms合并写入，隐藏页面时刷新缓存，不保存大体积图片；保存失败显示提示，行程菜单可导出含记录与封面配置的JSON。仅保留最近一本已保存手记，不是多本云端书架；清理浏览器存储会删除本机数据。
+完整体验可离线，原图未改动，未安装新依赖。生产AI生成、任意目的地／任意天数真实规划、实时交通住宿与生产iOS移植不在本地原型范围。预览、ZIP和录屏的精确测试结果见当前final-experience与package-check报告。
+
+---------------- 早期规格与逐次修订记录（历史） ----------------
+Quantum · iOS旅行工作流 V4 原型与动效
+日期：2026-10-10
+最新评审版本：文件名以 -muted.png 结尾的四张设计板、screenshots/ 的实际运行截图、motion-prototype/dist/index.html。
+未带 muted 后缀的V4设计板保留为本任务早期配色记录，不是最新配色。
+
+打开方式
+1. 双击 motion-prototype/dist/index.html：图片、CSS、React、Motion、ThinkingOrb与BorderBeam均已内嵌，可离线打开。
+2. 开发：进入motion-prototype，npm ci，npm run dev。
+3. 构建：npm run build；本地预览：npm run preview（http://127.0.0.1:4173）。
+4. 左侧/手机外的阶段导航仅为评审工具，可直接检查任一状态；完整体验从“新建任务”开始。
+5. 鼠标拖动可体验照片飞走、文件夹收集和液态卡片；真实触屏支持双指捏合。大图/三列/文字行按钮提供桌面与键盘替代入口。
+
+设计基准
+用户已认可V3的08—18用于旅行笔记，阅读和保存继续沿用纸感、深灰绿文字及低饱和青绿色。
+规划过程依照用户新指示重构为：工作流内部启动 → 悬浮对话 → 景点灵感 → 完善条件/直接确认 → 地图确认 → 成稿 → 笔记。
+这是工作流内的新对话场景，不是恢复独立chat tab，也不假定现有iOS有chat入口。
+最新版色彩参考 /Users/dengzhaoyu/Downloads/来翻翻你的收藏.png：灰绿、米杏、雾紫透过半透明玻璃轻微混合，底色偏石白；照片保持自然，饱和度轻降。避免大面积亮粉、亮蓝和彩色强调按钮。
+
+色彩与材质（源值，叠加透明度后视觉会更淡）
+空间：#f2f3ed / #e4e8de / #eae4df / #e4e1e8。
+玻璃：rgba(236,242,235,.62) → rgba(233,230,222,.50) → rgba(224,221,232,.57)。
+文字：深灰绿；按钮：#dad9d2 → #c7c9cc；输入发送：#d6ded0 → #bfc9bd。
+光环：灰粉渐变；液体：灰蓝；白色细描边、背板模糊、柔和悬浮阴影。
+所有实际数值以src/styles.css为准；生成设计板用于方向表达，screenshots/与可操作原型用于精确布局和颜色评审。
+
+页面与状态
+01 工作流入口：右上角48px圆形+入口，点击展开“新建任务”，再点直接启动光球倒计时；5秒不使用收回圆点。剩余竖直空间为毛玻璃旅行杂志，从成品文件夹经人物、人脸、语义检测及缩略图复核的1000张非人物照片中随机抽6张轮播，支持鼠标/触屏滑动与连续拉长指示点。移除“新的开始 / 想从哪里出发 / 旅行计划”中间弹窗。
+02 进入空间：点展开后的新建任务按钮，按钮共享位置升起，缩成光球；旧场景淡出、模糊；3/2/1读秒，隧道式粒子吸入。
+03 悬浮对话：轻量磨砂提问逐字写“你想去哪里？”，17→15px系统字。52px紧凑输入随文字自动换行、长高。目的地提交后弹为右侧气泡，依次以磨砂照片列表卡片收敛时间同行、预算节奏交通与兴趣；明确确认或保留未定后进入ThinkingOrb搜索态，结束后折为左上抽屉，可查看摘要并返回修改。
+04 景点与文件夹：三张照片错落排布。任意方向滑走一组，再出另一组并换排列。点击展开底部玻璃详情；拖到右上文件夹收集，可打开文件夹移除。小“确定” → ThinkingOrb编织态 → 06确认行程。
+05 完善计划：通过原型评审导航查看该页面；旅行想法抽屉中的图片跳转卡已按最新标注移除。第一张目的地大图写“先说说，你想怎样出发。”，小字“未决定的条件可以保留”。所有条件保留：目的地、日期、同行类型与人数、预算档位/金额/币种、节奏、七个兴趣选项、其他要求、原始需求。右上+增加带照片的补充卡片。双指捏合让相同卡片连续移位，切换大图、三列、文字行。
+06 旅行计划：目的地背景、曲线与每日胶囊；点击胶囊展开全屏日程卡。编辑标题、每项时间、名称、描述，确认后回原页。滚动出现“确认并生成方案”，不操作1.5秒隐藏。
+07 制作中：无需额外“确认制作方案”页面。按钮缩成气泡，原地弹跳后到中心，灰蓝液体升高并显示百分比。45°阳光与叶片右上至左下螺旋飘落循环。按住气泡开始排空，排完回旅行计划；提前松手继续填充。
+08 确认行程：AI水彩手绘鹿儿岛县示意图；独立可点日程标记按鹿儿岛市/樱岛/指宿/雾岛相对方位摆放，每点带第几天。按天序用C/S不规则曲线虚线相连，线端与地点胶囊中心对齐；灰紫色虚线带白色底衬。点标记弹底部磨砂日程框，右上编辑、确认返回地图。长按中央地图，边缘与中央圆环逆时针灰粉渐亮、地图渐模糊；1.5秒闭合进入成稿，提前松手重置。
+09 采用成稿：“这份旅程，终于有了模样”。每日主要景点照片填满错落玻璃卡。运动速度驱动拉伸、剪切和圆角变形；拖得快变形明显，按住不动也逐渐恢复，松手弹回布局。可查看日程、继续调整或采用。
+10 攻略与保存：沿用V3笔记视觉，概览/每天/沿途/待办；保留状态更新、修改、导航、旧版本、整趟调整、JSON导出入口。保存面板含标题、四种封面、三个独立内容开关；生成进入手记。
+11 旅行手记：纸感照片封面、每天日记、自己的旅行记录、路线、实用附录、打印/PDF、复制分享摘要。
+
+节奏与参数
+共享卡片/气泡变形：Motion layoutId；页面交叉淡化约380ms。
+读秒：每秒一位，进入聊天约4.15秒。
+打字机：105ms/字，中央卡片约1.8秒后缩小；思考2200ms，折叠650ms。
+换景点：位移向量沿滑动方向650px，400ms后换批次；3套位置循环。
+文件夹吸附：命中区域额外约30px，收集反馈550ms，避免同一景点重复收集。
+语义缩放：scale>0.85大图；0.48<scale<=0.85三列；scale<=0.48文字行，连续弹性布局。
+滚动按钮：输入/滚动/触碰唤出，空闲1500ms隐藏；键盘聚焦也可唤出。
+液体填充：演示约9.5秒从0至100%，满后停留1秒；按住220ms开始排空。
+地图确认：持续长按1500ms，模糊最高9px，逆时针进度；离开/松手清除。
+液态照片：运动速度归一化上限1800px/s，变形强度上限0.18；停止移动90ms后开始恢复，弹性阻尼收敛；恢复逻辑与是否松手无关。
+
+运行与能力边界
+真实使用指定thinking-orbs@0.3.2（https://libraries.dev/orbs），React18；使用其searching、weaving、breathing状态。当前版本主题按data-theme=light适配。iOS后续需要用SwiftUI组件或原生实现移植，这里不把React原型当成SwiftUI产品交付。
+对话文本、推荐景点、四日行程、地图图片和进度均为本地演示数据，没有调用AI、检索服务或生产后端；地图图片由图像生成工具制作，标记在组件中单独覆盖，不是GIS导航底图。
+景点文件夹用于本次视觉原型的收集交互，演示行程固定为四日示例；生产接入时将用户选择和完善字段交给当前工作流能力生成，不能承诺模型未提供的精确地理或实时开放信息。
+手记保存选项写入浏览器本地存储；日程编辑与自己的旅行记录保留在当前会话。真实笔记、历史版本、同步冲突、失败恢复、权限审批与业务回调继续沿用现有后端；本原型不伪造后台成功。
+用户要求移除的是“确认制作方案”UI页面。生产迁移仍需核对真实服务端批准/执行协议，不能通过隐藏页面自行绕过服务端状态。
+这次没有改动生产SwiftUI、服务器、模型提示词，也没有push或部署。
+
+验证
+17项Playwright关键流程测试通过；最终Beam与曲线调整后4项专项复测通过；包含真实CDP双指捏合、液体取消/恢复、长按撤回、持续拖动停止恢复、编辑保存和320/768/1024/1440无横向溢出。
+6个关键状态axe WCAG2/2.1自动检查无违规；18张运行截图、控制台页面异常检查无异常；新增入口/Beam聊天/地图/Beam抽屉四个状态axe扫描同样0违规。
+录屏与离线HTML单独核验见video-recording-check.json及delivery-checks.json。未运行真机SwiftUI、生产AI或云端笔记测试。
+
+文件夹补卡修订（2026-10-10）
+收集卡片180ms吸入消失；原卡保留实例与内容，向下补位并弹性落定。布局弹簧stiffness=210、damping=18、mass=1.4，附加720ms下坠/轻回弹。新空位先显示ThinkingOrb searching / 64，1500ms后换为一张新照片卡片；优先选择未收集、未出现在当前组的示例景点。示例池耗尽时复用其他示例，文件夹仍去重。支持在加载期间继续收集；滑走换整组会使旧补卡计时失效，避免旧卡回流。
+新增三项回归测试覆盖单次补位、并行收集、加载中换组；12项完整交互测试通过。最新补卡视频为videos/folder-gravity-and-thinking.mp4，原74秒travel-motion-demo-muted.mp4保留为修订前完整流程演示。
+
+旅行想法抽屉输入框修订（2026-10-10，最新）
+移除“完善这份旅行计划 / 日期、同行人和你喜欢的节奏”图片转页卡；在同一抽屉底部放置与聊天页一致的磨砂输入框和发送箭头。Enter或点击箭头发送；纯空白禁用；发送后内容弹成右侧气泡，输入清空，抽屉仍停留在景点页。多条消息可滚动，关闭/重新打开或切换原型阶段均保留消息和未发送草稿，重新体验完整流程则清空。补充消息写入当前旅行偏好中的其他要求，保留初始目的地问题与原始需求。
+原型使用本地会话数据，不伪造AI回复；此修改不添加替代的转页卡或自动跳转。“完善计划”仍可由评审导航单独检查。旧图稿及74秒完整演示为此前状态；新抽屉样式以screenshots/13-drawer-input.png、14-drawer-message.png和最新dist/index.html为准。
+
+入口、Beam输入框与地图连接修订（2026-10-10，最新）
+聊天页与旅行想法抽屉共用实际border-beam@1.4.1：md / ocean（蓝紫色）/ light / strength 0.7，4.8秒环绕，固定蓝紫色不发生其他色相轮换。按浅色玻璃调整边缘与内辉亮度，圆角25px，保留输入、Enter与发送按钮；未增加参考图中的Agent/Auto等额外控件。减少动态效果设置及思考期间停止Beam。
+新建任务移到右上，首次点击展开标签、再次点击直接进入光球读秒；标签空闲5秒自动收回。
+杂志参考“来翻翻你的收藏 3.png”，竖向填满标题至底栏之间空间。1000张原照片来自/Users/dengzhaoyu/Desktop/成品，目视筛除可见人物；导出最长边800px的网页副本，原图未改动。每次进入入口随机抽6张，一张作为当前杂志页，支持自动、触屏、鼠标拖动、键盘与指示点翻页。自动翻页间隔5.5秒，交互/悬停/入口文字展开及减弱动态设置下暂停。指示点宽度依据真实scrollLeft连续计算，在相邻点间过渡，不只切换索引。
+确认行程地图：从第1天到第4天用三段C/S贝塞尔不规则虚线串联，不新增导航能力；虚线为装饰性路线示意。全部地点仍可点击编辑，地图长按不受SVG影响。
+最新动效为videos/magazine-beam-map-demo.mp4，最新运行截图为15—18。四张-muted设计板及此前录屏保留为历史方向参考，精确实施以最新源代码与离线HTML为准。
+验证证据：完整17项测试、最终4项复测、四个新增状态axe、file://离线0网络请求/0pageerror及新录屏实际鼠标滑动检查；详见enhancements-*.json、offline-check.json、delivery-checks.json。
+
+删除中间新建任务弹窗（2026-10-10，最新）
+按用户选中的整个dialog删除“新的开始 / 想从哪里出发？ / 旅行计划”面板。右上+点击展开，展开后点击新建任务立即启动光球倒计时；5秒闲置收回保持。按钮与光球直接共享travel-seed位置，省去任务类型卡片这一步；没有新增选择页。
+本次构建、2项入口回归、file://离线入口→对话→景点及采用→保存检查通过；入口无障碍与返回检查见direct-entry-check.json，最新截图19/20。新版magazine-beam-map-demo.mp4已重新录制，删除了旧中间弹窗。此前17项完整测试及4项专项复测属于本次删除前版本，未因本次局部修改重复运行无关页面测试。
+
+轮播照片环境光修订（2026-10-10，最新）
+从主图当前object-fit:cover可见范围缩采样至48×48像素，通过加权RGB直方图提取主色；排除近白/近黑像素，保留65%色度并抬亮到至少190的亮度，避免深色森林变成暗影。图片加载和轮播尺寸变化时提色并缓存。没有新增业务功能、选色控件或网络请求。
+图片外围为大半径柔光，左右比杂志多延伸55px，48px模糊，0.68透明度，径向软边。轮播真实scrollLeft决定相邻照片RGB混合比例，鼠标/触屏、自动轮播、键盘/点选均经过相同进度更新；色值140ms短平滑衔接，减弱动态效果时关闭平滑。光晕pointer-events:none并aria-hidden，不影响原有点击、拖动或屏幕阅读。
+最新实际截图21—23展示前图、滑动中点和后一张，视频videos/photo-ambient-demo.mp4展示真实鼠标滑动。检查见ambient-light-check.json（离线提色、五档连续色值、入口仍可启动、320/390/768/1566无溢出、axe、减弱动态效果）、ambient-recording-check.json和ambient-regression-check.json。旧17项完整测试及其他专项结果保留历史范围，本次只复核受影响轮播及环境光。
+
+旅行笔记日杂修订（2026-10-10，最新）
+按用户新要求，将此前V3笔记08—18方向继续迭代为日杂旅行特辑。先用内置imagegen生成双页方向稿journal-style-concept.png（提示词journal-design-prompt.txt），再落实到同一可交互原型。设计稿照片、日期、正文为视觉示例；原型读取原有目的地、标题、日期、路线与当前会话记录，不新增生成能力。
+暖白纸底#f7f5ef、深灰绿墨色#3e4840、清楚的小字#657266、沉静绿操作#607565；宋体标题和阅读文字，控制标签保持易读。封面为细线刊头、大目的地标题、平面矩形照片与路线；日记为大日序数字、非对称双图和简洁细分隔线，今日安排及自己的记录默认展开，可继续折叠；附录为编辑式标题和文字条目。保存预览去掉夸张书本透视，呈现平面刊物。
+只改Notebook.jsx排版/初始披露状态及限定笔记/保存组件的CSS，不改规划工作流、业务处理函数、数据、AI提示词、网络、同步或存储协议。原有四种封面、三个独立内容开关、标题、私密说明、所有来源/照片建议、每日切换、记录、路线入口、预算/附录、打印与复制分享入口保留。
+最新实际截图24—28：封面、日记、附录、保存面板、记录编辑。1项保存与日记回归通过，最终5个状态axe为0违规，file://无HTTP/pageerror；320/768/1024/1440的三种阅读页无横向溢出；逐日记录保留、非默认封面和全部内容排除开关实际核验通过。证据journal-check.json、journal-regression-check.json。该更新仍为React设计原型，未移植iOS；此前图稿与动效属于各自历史状态。
+
+去白边修订：卡片、按钮、浮层与预览外框去掉静态白色描边/白色内高光；景点和攻略照片移除白色衬边，信息卡照片贴边。以低饱和材质和柔和阴影区分层次；保留蓝紫色动态BorderBeam、光球反射、键盘焦点及绿色选中反馈。业务/手势处理不变。最新实际效果见screenshots/29—34，之前概念图和录屏为各次历史版本。
+
+完善计划修订：移除大图/三列/文字行/双指捏合整排可见切换栏及其CSS，目的地大图直接位于标题下方；双指捏合、Ctrl+滚轮及三个语义档位保持。当前布局见screenshots/35-preferences-without-toolbar.png。
+
+完善计划：不向用户展示“已带入的原始需求”折叠面板；内部profile.original与聊天原始输入采集保留。此次仅调整本地原型展示，不修改生产后端。最新底部布局见screenshots/36-preferences-hidden-original-requirement.png。
+
+完善计划圆柱卷动：根据每行布局中心与滚动视口中心的距离，连续计算rotateX、透视深度、缩放、亮度和边缘渐隐。同排卡片同步；滚动速度增加轻微宽高压缩、方向圆角形变，95ms指数平滑并在停止后恢复。Motion负责外层语义布局，独立内层负责滚动形变，避免双指重排冲突。减弱动态效果关闭此形变；键盘焦点保持完整可读。最新实景screenshots/37—39，动效videos/preferences-cylinder-scroll.mp4。
+
+悬浮Tab Bar：四个既有导航项保留，底部22px/两侧18px留空，66px高磨砂胶囊，无白描边。点击当前图标加深为灰绿，背景跟随实际弹簧速度横向拉伸、压缩、偏斜和软圆角，结束恢复；支持快速连续选择与方向/Home/End键。实时减少动态效果切换下即时移动、不形变。当前旅行原型仅演示选中反馈，未扩展首页/阅读/我的独立页面。最新截图40—42，录屏videos/floating-liquid-tabs.mp4。
+
+日杂最终修订：按journal-cool-style-reference.png改为冷白、莫兰迪灰绿/雾紫、大片留白。主字28—52px加粗800，竖排目的地/日期/刊号与横排标题交错；窄幅照片错落布置，图片CSS饱和度.42、对比度.91，保留原文件。真实卡片28px磨砂，无白描边，操作按钮浅灰绿玻璃；保存/记录面板32px磨砂。封面、日记、附录、保存/记录及攻略总览/每天/沿途/待办共9状态重排，所有封面、内容开关、来源、记录、地图、预算与状态操作保留。当前截图43—51和dist为准，先前暖纸概念板仅为历史方向。
+
+每日行程交互修订（2026-10-11）：
+路线按钮采用 Motion 的 x:-50%、y:-7px，与14px圆点中心统一；四个圆点在同一100×100 SVG路线坐标中，当前测试最大距离误差0.12px以内。
+日程改为灰绿／灰粉／雾紫磨砂照片列表，照片62×78px，标题18px加粗，说明11px，静态白边0；编辑入口仅保留铅笔／完成图标和无障碍名称。
+长按360ms启动排序，浮起放大1.035；拖动依据真实布局中心调整顺序、其他行弹簧让位；松手回到最终行。9px以上的早期移动取消长按，触摸仍可正常滚动；touchcancel／Escape撤回本次拖动，Alt＋上下方向键可排序。项目使用稳定ID，修改及时间段跟随项目移动。
+时间选择为00:00至24:00的半小时时段，拖动连续选择合并单一范围；两端把手独立调整，交叉时夹紧，起止值实时更新。横向时段可滚动、边缘拖动推进及前后图标浏览；选择后可见范围自动移入视区。原始时间值在未修改时保留，确认后保存开始与结束时间。
+日期卡片采用月历连续区间，拖过日期形成单一区间，两端把手可微调；前后月份保留当前范围，Shift＋点击支持跨月延伸。起止日期实时显示。子面板确认后仍为当日编辑草稿，确认行程才写回；关闭或取消不写回。确认日期后四日示例的逐日日期从新出发日平移，选择区间可供后续生成使用，当前原型不依据天数重新生成行程。
+修改后的日程顺序／时间／日期同步进入地图详情和后续攻略、手记数据。嵌套弹窗仅顶层处理Escape和焦点循环；聚焦使用preventScroll，避免面板标题被滚动裁切。
+最新效果以截图52—56、route-controls-check.json、route-touch-check.json及videos/route-cards-and-ranges.mp4为准。以前的设计板／录屏仍属对应历史版本。
+轻点整张非编辑状态卡片（或时间）回弹打开时间面板；长按或滑动结束阻止误触弹窗。快速关闭重开时通过组件present状态建立新草稿，未确认的标题／排序／日期不会带回。已确认的完整时间段同时呈现在攻略与旅行笔记中，证据route-persistence-check.json、range-boundaries-check.json。完整17项回归后增加整卡轻点，最终直接受影响的3项流程及离线鼠标／真实触屏专项再次验证。
+
+旅行计划详情面板修订（2026-10-11，当前路线页）：
+“确认并生成方案”移到右上角70×44px小玻璃按钮，视觉文字“生成”配箭头，完整操作语义及无障碍名称保留。移除该页底部随滚动出现的同名按钮；完善计划页原有按钮逻辑不变。
+Day01—04采用30px粗日序、17px目的地、9px旅行名称和竖排日期，轻微交错旋转只作用于玻璃信息块，圆点仍锚定原曲线。四日首次进入均可见。触摸/点击或聚焦当前地点，只有对应圆点播放1.9秒金色呼吸柔光，选择新地点后柔光随之转移；减少动态效果时静态展示。
+点击地点后，以实际点击坐标为圆心，480ms圆形遮罩扩展为内缩16px的详情卡片；照片800ms缩放到位，先占卡片54%高度，下方磨砂面板从底部升起并遮住照片下缘。旅行简述读取该日既有行程描述，无新增模型生成能力。
+抓住面板顶部把手向上拖动，照片高度随进度54%→16%，面板顶部46%→13%、高度54%→87%，两者始终相叠；拖动超过45%松手吸附展开，否则收回。向下拖动还原。窄照片状态淡出竖排图注，避免裁切。把手支持键盘点击展开/收起，减少动态效果使用即时状态。上下拖动与照片尺寸变化同步，不用固定计时假装拖动。
+原有铅笔图标编辑、照片日程卡、长按排序、时间/日期范围卡、确认及取消保持。排序自动滚动使用新的内部详情滚动容器。地图和成稿的既有共用详情继续采用原有面板。
+最终离线检查见route-place-check.json，真实Chrome触摸见route-place-touch-check.json，受影响3项旅程回归见route-place-regression-check.json。四个状态axe均0违规，320/390/768/1440均无横向溢出，file://无HTTP/pageerror。最新实际截图57—60及videos/route-place-panel-demo.mp4为本轮效果，此前路线录屏与截图保留历史版本范围。仍为本地React原型，未移植生产SwiftUI。
+
+六项合并与阅读重排（2026-10-11，当前交付）：
+制作液体采用WebGL三维球体内射线采样：表面动态波动、深度吸收、曲面反射和高光，蓝灰液面有厚度。触点位置激发弹簧倾斜并阻尼回摆，轻微持续晃动；按住220ms排空、进度与原制作时长保持。无WebGL或上下文丢失退化为曲面液面，减少动态效果禁用持续波动和倾斜。没有安装额外运行库。
+删除重复确认行程页面和评审入口。原手绘地图/图标复用到旅行计划，四日地理位置与不规则虚线路径保留，金色呼吸、右上生成、照片简述面板及编辑保留。景点确定进入旅行计划；制作100%后直接采用成稿；成稿、攻略与手记的地图入口均返回旅行计划。旧长按地图1.5秒继续操作随重复页面移除，不再出现在当前流程。
+成稿参考附件改为纵向毛玻璃照片列表，一行一日：缩略图、日序/日期、目的地、旅行标题与原查看入口；四条等宽对齐，内容可滚动，液态拖动形变保留。无白描边，图片原文件不改。
+攻略总览不再采用窄竖图/大竖字/悬浮小图，改为一张完整目的地照片与同一左边距的标题、日期、同行/节奏/预算、每日照片条目。每天以日期切换、一张照片、日标题、时间/状态卡片的稳定顺序阅读；日期栏滚动时固定。所有状态、修改、资料、沿途导航和保存操作保留。底部保存按钮单独占位，不遮挡可滚动正文。
+待办四个折叠框改为照片入口，点击从该处打开照片抽屉；照片上半，磨砂简述面板下半，上推时照片同步收成窄条，下拉恢复，关闭/取消返回对应入口。保留原待核验内容，不伪造入境/交通/天气数据。待办图片标识改为“出发前 / 待确认”，不混用日程日序。
+当前效果以截图61—68、consolidated-flow-check.json、consolidated-touch-check.json及最新视频consolidated-travel-demo.mp4为准。此前确认行程页面、成稿错落布局与旧攻略截图/视频仅为历史版本。仍是本地React交互原型，未改生产SwiftUI及后台。
+
+字号比例调整（2026-10-11，当前交付）：
+依据卡片实际可用宽度，而非评审浏览器宽度调整字体。页面标题常规26px、窄手机24px；照片面板标题23px；分组标题18px；卡片主信息14—17px；说明12px；日期/标签11px；操作14px。三列窄卡主值12px，标题标签11px；完整宽卡主值16px，文字行14px。日期使用平衡换行，避免单独一个“日”字。成稿行主标题17px、窄手机16px，待办主标题15px/窄14px，均保留原卡片尺寸和交互目标。
+笔记保留横竖文字、照片构图和留白；竖向目的地52→44px，日记标题34→28px，装饰日序96→76px，附录36→28px；次要正文提高至12px，图注11px。输入保持16px；长内容自动换行，不截断实际需求。
+当前静态效果见截图69—82与typography-check.json；既有动效录屏展示上一字体版本，动效和功能没有变更。调整仅在本地React原型，未改生产iOS。
+
+七条批注：紧凑日程、时间刻度与拖动替换（2026-10-11，当前交付）
+日程毛玻璃卡片最小高度120→84px，缩略图46×58px，标题14px/600、说明11px、时间10px。详情标题19px/650，原单图112px。时间/日期选择标题18px，起止值20px/500；时间格44×60px、间距4px，一屏约7个半小时时段。确认行程/时间/日期改为右对齐小按钮，44px高、约126px宽、文字12px；点击面积保留。
+时间格用于连选与端点调整；下方刻度尺支持鼠标/触屏左右拖动、箭头/键盘逐刻度浏览。刻度位移0.62倍，松手或滚轮停顿110ms后吸附48px的半小时刻度，浏览不改变已选时间范围；减少动态效果使用立即吸附。左/右箭头每次3格。未宣称系统触觉震动。
+长按时间文字原被过滤为按钮操作，现允许360ms长按启动排序，抑制松手误开时间面板。活动移入新位置后使用该位置的起止时间，原时间由让位的活动接替；拖动预览同步显示新时间。键盘Alt上下方向调整采用相同规则；Enter仍能打开时间卡。取消恢复顺序与时间，确认后保存并共享至成稿/地图/攻略。当前地图照片面板和成稿详情都使用此组件；不会恢复之前用户要求删除的重复确认行程页面。
+当前效果以截图83—86、compact-details-check.json和新视频compact-details-demo.mp4为准；原字号和旧拖动视频保留其历史版本范围。
+连续拖动修复：Motion的键盘按压/取消使用pointerId 0，现忽略键盘模拟的长按起点，并仅接受本次拖动触点的move/end/cancel，避免切换焦点时误取消新的鼠标长按。专项覆盖排序后键盘打开时间面板、再长按、Escape恢复。
+
+最新版增补：采用成稿 → 中央 ThinkingOrb（2026-10-11）
+点击“采用这份行程”，四张成稿卡保留照片、日期与名称，按当前位置依次浮起、轻微转动、缩小汇入屏幕中央。采用实际 thinking-orbs@0.3.2 组件，64px、light主题、灰绿墨色，编织态收到卡片后变为 composing；最后一张实际动画完成，停留0.52秒，再打开攻略。约两秒完成。收拢时不把卡片留在滚动裁切层中，列表已滚动也能收齐四张；重复点击被锁定。离开成稿评审页会取消待跳转任务，重回页面可再次采用。
+减少动态效果：不飞行、Orb暂停，仅短暂静态确认后进入攻略。实际0.3.2 API使用theme=light，不向canvas传文档提示中的dark布尔属性。沿用已安装依赖，无新增远程资源，离线HTML也包含该效果。
+本次视觉与行为依据：screenshots/87-adoption-cards-to-orb.png、88-adoption-thinking-orb.png、89-adoption-guide-result.png；videos/adoption-orb-demo.mp4；adoption-orb-check.json与adoption-orb-regression-check.json。此前静态设计板、截图和报告保留各自版本范围。
+
+十条批注修订：横向时间刻度、照片玩法展开与可靠拖动（2026-10-11，当前交付）
+攻略“每天”的 DAY1—DAY4 横排选择器移除；在总览照片条目进入对应日期。旅行手记自身的日选择保持，避免删除不在批注范围内的记录入口。
+旧时间格与仅浏览的刻度尺统一替换为连续横向时间刻度。选中半小时刻度居中高亮，中心指针不随内容移动；00:00—24:00，32px一个刻度，左右拨动按0.72位移阻尼，上方起止值在拖动过程中实时变化。松手/滚轮停止120ms后吸附。默认“整段移动”保持时长，点击上方开始或结束时间分别调整端点，约束不交叉且至少30分钟。支持真实触屏、滚轮、方向键/Home/End；pointercancel恢复拖动前值，关闭仍不写入草稿，日期选择保持原规则。
+关闭图标取消大圆底与描边：时间面板10px（小于说明文字），照片面板14px；透明可点击区44px。编辑名称/说明12px，标签10px，并压缩表单内边距与上下间隔；三行稳定高度约169.6px、间隔9px，不重叠。非编辑紧凑日程卡仍为84px。
+非编辑状态点击日程卡片的照片、名称或说明，展开照片玩法抽屉；时间文字区域单独打开时间选择。上部照片、底部磨砂详情面板，上推面板同时压缩照片、下拉恢复；“怎么玩”使用本地行程样例描述，未新增实时服务信息。成稿整行点击或右侧14px展开图标也采用同款照片抽屉，替换旧大“查看”胶囊。
+整行按住280ms即可浮起排序；六点把手无需等待，直接拖动。取消Motion行按压与自定义拖动冲突；仅接收本次触点的move/end/cancel。靠近内部滚动区边缘时逐帧自动滚动并持续重算位置。键盘整行Alt上下、把手上下；活动换位后替换目的位置的起止时间，其他活动让位，拖动预览立即显示新时间；确认保存，取消恢复。鼠标与Chrome原生触摸均验证。
+“采用这份行程”居中148×44px、字号12px。实际ThinkingOrb加载保留：四卡收拢到中央64px球体、weaving转composing，完成后进入攻略；无需请求远程资源。
+当前截图90—96、新视频videos/ruler-and-photo-demo.mp4（H.264，430×900，24.16秒）、专项ruler-and-photo-check.json、17项完整回归ruler-and-photo-regression-check.json为当前依据。完整回归后仅进一步压缩编辑输入间距，最终特定布局检查ruler-photo-edit-layout-check.json确认12px与无重叠。旧截图/视频/报告保留对应历史范围，当前dist为准。
+
+统一 ThinkingOrb 与双向收展（2026-10-11，最新交付）：
+响应回复批注1：“两个效果不一样，统一成thinking，有缩回去就需要有展开”。制作页面的旧液体球移除展示，与采用收拢共用TravelThinkingOrb：thinking-orbs@0.3.2、weaving、64px、light、#607264、speed1.1。收拢完成不再切另一种composing图样。聊天/景点思考同步使用同一视觉调校；行内20px仍使用库独立调校尺寸。读秒入口属于既有进入空间流程，未扩展此次范围。
+制作进度与短按/持续按住退回修改保持；进度文字移到球下，球心精确位于屏幕中间。制作完成后四张成稿由同一球心以实际目标位置展开；920ms飞行、90ms逐张延迟、180ms起步，与收拢路径对称。展开结束100ms后交还卡片点击与拖动。
+采用时四张卡片收回同一ThinkingOrb，实际最后一张收拢完成后静候520ms；攻略从同一球心圆形展开900ms，开始阶段继续显示同一核心。首次测量完成后才挂载圆形展开层，避免初始0半径动画回调提前终止；展开完成前正文inert，之后恢复正常保存操作。不会直接淡入跳页替代展开。
+减弱动态效果暂停ThinkingOrb，不飞行，仅短静态确认。阶段退出停止生成及过渡回调，arrival token避免旧展开回调影响新页面；重复采用锁定。当前依据为截图97—101、thinking-unified-check.json、完整17项回归与修正后2项受影响回归、新视频thinking-unified-demo.mp4。此前液体/不同Orb状态/无展开的录屏仅为历史版本。
+
+旅行日记照片抽屉（2026-10-11，当前交付）：
+按最新浏览器批注1，将日记的“今日安排说明”“自己的旅行记录”“照片来源与拍摄建议”三个折叠框改为照片卡片。入口164px高：照片116px贴边，圆角内容面板覆盖照片下缘、78px最小高度，标题14px（窄屏13px）、预览11px、展开图标14px；不添加附件中与旅行日记无关的头像/点赞或虚假占位条。
+点击入口以实际点击处展开同款RoutePlaceSurface照片抽屉。照片在上，近实色磨砂内容面板在下，上推同步压缩照片，下拉恢复。面板标题19px/sans，正文12px，时间10px；44px透明关闭点击区、14px字形。照片绝对定位至卡片上沿，消除原生按钮内容垂直居中产生的24px空隙；局部覆盖纸质玻璃透明度，避免正文透出照片截线。
+今日安排展示当前日的完整开始/结束时间、地点与原说明。自己的旅行记录在该抽屉里阅读、编辑、保存：底部“记下这一刻”直接打开同一抽屉编辑态；表单16px，保存操作44px高/12px字。保存更新卡片预览与阅读内容；取消修改/关闭丢弃草稿，快速关闭重开以新token建立草稿；日期之间的记录仍按day.id隔离。
+照片来源沿用原有AI示意/非个人实拍文案，不伪造外部资料。生成手记时排除每日行程则隐藏安排卡；排除照片则隐藏照片来源入口、入口图片与抽屉大图，自己的记录仍可使用纯文字面板；附录开关与原有打印/分享/地图入口保持。
+当前截图102—107、notebook-photo-check.json、受影响的采用/保存/记录/附录回归notebook-photo-regression-check.json、新视频videos/notebook-photo-demo.mp4为依据；先前日记折叠框仅保留历史图稿/录屏范围。
+
+2026-10-11 最新 Discovery 四项批注：旅行想法/文件夹/确定均为纯图标；顶部可见36px圆片、确认34px圆片，均保留44px触控区域。旅行想法保留原对话抽屉；文件夹保留打开/移出功能，右上红色18px数字气泡直接取自selected.length，零收藏隐藏、移出同步减数。徽标.28s轻弹，减少动态效果时静态。六项受影响回归、触屏拖入与图标确认、键盘焦点恢复、四状态axe、六宽布局与file离线检查通过；历史图片/视频范围保留，最新截图119—121。
+
+2026-10-11 照片库扩展：1000张独立原照片经本地人物、人脸与语义筛查、近似重复剔除及27页缩略图复核，记录于magazine1000-photo-sources.json。每次工作流入口挂载均匀抽取6张，组内不重复；当前组在翻页时保持不变。1000个惰性数据节点随离线HTML交付，仅6个抽中的图像进入轮播并解码。完整照片库可在photo-library.html查看。此次检查报告与截图为magazine1000-check.json、magazine1000-regression-check.json、122/123；旧录屏与旧照片报告保留原历史范围。
+
+2026-10-11 对话需求卡片：初始问题17px、准备状态15px/450系统无衬线字。输入由单行input改为自适应textarea，空态52px；按文字和宽度换行，最多132px文本区，之后内部滚动；删字/发送后缩回，Enter发送、Shift+Enter换行，中文输入法组合态不提前发送。共享景点抽屉同样采用紧凑输入。只提交鹿儿岛后停留在需求追问，依附件磨砂列表卡片用照片缩略图、细分隔线与小胶囊选择：时间同行、预算节奏交通、六类兴趣。已说的条件可预填，未决条件须明确选择未定，不擅自套用示例日期/两人。需求草稿/步骤/补充备注保留于会话，最终确认接原思考光球，抽屉提供摘要与返回修改入口，偏好页收到实际选项，四日示例日期同步。原型仍为本地四日鹿儿岛示例，不声称生产AI或任意天数行程生成。最新报告chat-refinement-*、截图124—131；旧报告与录屏保留历史范围。
+
+
+2026-10-11 十五条交互批注（当前交付，以motion15-*报告/录屏为准）
+需求天数/人数刻度局部压低至66px，刻度步长、范围和键盘规则保持。预算、节奏、当地交通主行下垫10px深灰托盘边；展开高度100px，以340/30弹簧推开下方行，主行锚点不变。预算四个、节奏/交通各三个图标按钮复用实测LiquidNav，只有当前选项显示文字；选值立即写草稿，430ms文字反馈后自动收回。Escape关闭并恢复主行焦点。
+兴趣采用按距离连续变化的图片与行缩放：起点测量各行中心，105px影响范围，图片43→53px，行放大最多1.065且让位16px。松手选中最近兴趣，不移除已有选项；直接点击/键盘仍可切换，取消不改变原选择。原生触摸手势与成稿排序分开处理。
+成稿每日摘要变成94px铺满照片的胶囊，文字浮在浅灰玻璃片。向下拖156px，照片摘要实时展开至250px，露出实际安排数量、起点与末站时间；剩余卡片下移并降至.45透明度。松手超过38%打开，其余弹回；点击/键盘展开入口与完成/排序保持。摘要下方“调整行程”改为当前页编辑，开始/结束时间、名称、说明、增加/删除均可改；时间冲突阻止确认，写入后保留日记修订对照。
+右上蓝紫光球以实际按钮中心开圆形遮罩，.7→1.035→1弹跳成为AI聊天模态。聊天支持本地图片、表格、代码块、格式文本及```card玻璃卡片；格式按钮可插入对应语法。React转义原始HTML，不执行代码；不展示SVG或危险协议。聊天仍为本地规则演示，提议需确认才修改。航班偏好依据用户附件采用薄亮边、透灰底及柔和薄荷/桃色/淡紫渐变已选标签；服务区继续使用水平条目上下排列、向下展开。
+日记输入仅保留麦克风与回车图标，并允许附图。按住指针或Space/Enter启动麦克风，条宽40→240px并受剩余空间限制；实际WebAudio读取频率幅度，不用随机波形。松手停止录音轨道与音频上下文，条弹回；识别服务的最终文字追加到输入框，可继续改字。MediaRecorder保存真实音频和24点采样包络，录音最长45秒。拒绝权限/不支持时保留输入；关闭编辑器清理会话。回车确认写入记录，旋转放大成绿色圆形对勾，500ms后整窗收回；取消/保存文字按钮及footer移除。减少动态效果直接定位，确认反馈缩至80ms。
+记录按天新增独立玻璃卡片；图片贴上部，文字置于下方托盘；音频左侧1/3为播放/暂停按钮与采样声波，右侧文字。多条记录、既有纯文本、整体编辑与AI笔记仍兼容，保存/恢复与JSON导出包含附件。单附件限900KB，总编码数据限1.8MB，避免双份本地快照越过常见浏览器配额；损坏列表/危险媒体恢复时剔除，文字保留。真实设备识别准确率与iOS真机未验证；仍未连接生产模型或真实预订。
+当前截图186—197为本轮交互；连续旅程截图198—204从新任务开始。历史图片/报告/视频保留各自版本范围。
+
+
+Compact21 — 2026-10-11 — 21 browser comments
+Independent icon choices with selected capsule text; light pastel frosted trays; removed whole requirement footer, top-right confirm with optional fields. Four discovery cards and four-slot replenishment. Budget/pace reference chips and icon-only currency selector (USD/EUR/JPY/CNY/THB); top-right check. Flight tags4 per row; city input shares row; go/back calendar beside touch/wheel/keyboard digital clock, independent times; two people icons spring right to reveal editable number. Floating light glass service rows. Counterclockwise plus to green check expands named leg+mode. Compact segment buttons replace select. Origin entry produces gradient location chip, arrow fades in, then destination chip; known-point autocomplete and coordinate validation for unknown labels. Local prototype only; no production deployment, live fares, real geocoder or iOS-device claim.
+
+
+flight3 / 2026-10-11 / three browser comments
+{
+  "comments": 3,
+  "currency": {
+    "supported": [
+      "CNY",
+      "USD",
+      "EUR",
+      "JPY",
+      "THB"
+    ],
+    "conversion": "Fixed demonstration rates; preserve quote numeric price and original CNY currency. List, nearby day fares, ticket and bus reference fare share formatting. Persist display preference separately from budget amount."
+  },
+  "recommended": "One same-day quote ranked by price, duration, stops and time distance. 8s rotating mint/peach/lavender border and diffuse halo; upper-right Recommended. Reduced motion static.",
+  "date": "Independent outbound/return date filters; nearby day selection regenerates quotes, closes open ticket and scrolls visible results heading into view. Adopted booking remains until explicitly replaced.",
+  "guides": "Four Kagoshima Airport guides: bus, bus-to-JR, rental shuttle, taxi. Facts, 3-step directions, luggage/timing, official source links; outbound CTA hands mode to transport planner. Return scope explicitly limited.",
+  "sources": "flight3-guide-sources.json",
+  "reports": [
+    "flight3-check.json",
+    "flight3-journey-check.json",
+    "flight3-regression-check.json",
+    "flight3-rich-rules-check.json",
+    "flight3-hub-check.json"
+  ],
+  "backup": "motion-prototype/.build/flight3-before"
+}
+
+
+tray7 / 2026-10-11 / seven browser comments
+{
+  "comments": 7,
+  "recap": "Destination photo with overlapping frosted bottom tray; native toggle exposes photo/detail rows. Inline edit, validated atomic save and cancel without leaving discovery drawer. Profile/requirements/calendar days persist consistently.",
+  "discovery_confirm": "Selected places retained; enters preferences first. Floating confirmation proceeds to route.",
+  "floating_confirm": "Always available; down scroll compresses to44px circle/check; up scroll112px confirmation label. Focus expands; reduced motion immediate.",
+  "extra_card": "Compact alternating thumbnail column and offset title/body; existing TravelComposer + mini-chat + ThinkingOrb. Local deterministic title/body proposal; explicit fill then manual editing and explicit add. No model endpoint.",
+  "confirm_material": "Shared Primary and affirmative controls: compact dark glass capsule, subtle resting rim, touch/active pink-purple internal gradient; disabled/focus/reduced motion retained.",
+  "reference": "tray7-reference-evidence.json",
+  "reports": [
+    "tray7-check.json",
+    "tray7-journey-check.json",
+    "tray7-regression-check.json",
+    "tray7-rich-rules-check.json",
+    "tray7-hub-check.json"
+  ],
+  "backup": "motion-prototype/.build/tray7-before"
+}
+
+Final tray7 verification: pointer/touch end/cancel restores shared resting capsule; notebook idle background priority corrected, green completion glyphs preserved.
+
+
+FLY22 / 22 review comments / 2026-10-11
+Shared measured-origin flying glass panels for dates, five service categories and access guides, with reversed exit path, blurred backdrop, focus restoration and reduced-motion behavior. Currency dock continuously scales by pointer distance and shifts neighbours; release selects, cancel preserves. Recommended flight first, sticky compact summary with waterfall expansion and independent ticket action. Nearby fares share recommendation glow and emphasized heading. Close icon has no fill.
+Day details now include lodging and all three meals, linked to shared services. Hotel centre/radius inputs and verbose no-match block removed; automatic day-relative map context remains. Glass chips, selected-item aligned custom dropdown and checkbox comparison table replace old filter/shortlist layout. Multi-room capacity is calculated for group stays.
+Reused chat/composer offers quoted text questions throughout workflow nodes; modal header provides the same assistant without covering confirmation buttons. Local contextual demonstration only. Long press marks linked pending cards; stationary hold cancels on movement/release/cancel, reorder remains on grip. Right-slide todo editor adds, reorders and completes rows; completion strikes text and clears source badge, persisted in draft/saved/exported profile. Generation/guide adoption/notebook entry warn about unresolved tasks and allow reviewing or explicitly continuing.
+Evidence: fly22-check.json, fly22-journey-check.json, fly22-regression-check.json, fly22-rich-rules-check.json, fly22-hub-check.json; screenshots252-270; fly22 reference hashes. Earlier clips are historical comparisons.
+
+
+2026-10-11 · weather2 / 两条新反馈
+每日 DAY 标题下加入深色毛玻璃天气条，原生指针捕获，下拉跟手展开142px逐小时预报，上滑收起，取消手势复原；键盘按钮与减少动态均支持。天气数据为明确标注的本地示例。
+全流程25个文件、76处可编辑控件使用 FloatingField；空白失焦时标题17px位置/14px字号，聚焦或已有内容时7px位置/10px字号，聚焦粉色描边。保留原生 input/textarea、受控和非受控值、日期时间数字验证、表单重置、DOM引用、中文IME与Shift+Enter。勾选、文件上传等控件保持其原生形式。
+检查：15专项、7原生兼容、27连续流程、17回归、7富文本规则，32个应用axe状态与36布局；预览页1次axe和6种屏宽。源码120个指纹、30个变更文件及离线HTML指纹一致。
+视频：weather2-review.mp4、weather2-journey.mp4；截图271–280、282–288。真实iOS未验证，无实时天气、远端AI或预订服务。
+
+
+2026-10-11 · adopt-small / 中间摘要与飞出
+照片内摘要宽142px，左14/上14，15px圆角，8px/10px内边距；展开、完成与排序把手分开。静止、拖动副本与飞出副本使用同样尺寸规则。飞出不再1.025放大，依次1→.96→.12→0；返回反向，最大旋转4度、0.76秒、0.07秒逐卡延迟。
+9项专项检查、17项回归通过；4次应用axe与6种屏宽，预览1次axe与6种屏宽通过。视频adopt-small-review.mp4、截图289–292；此前连续完整流程视频明确标为历史参考。
+
+
+2026-10-11 todo-tight continuation
+AI and close share 44×44px hit targets, top12px; close right12px / AI right60px. Same center, separate hit areas. Todo cards height56px, title20px line and caption12px line with2px gap; each single line with ellipsis. Label and checkbox inherited margins reset. Completion, keyboard ordering, AI opening and persistence verified in Chrome. Main preview is screenshot294; adoption recording is historical. Physical iOS not tested. Verification:todo-tight-check.json, todo-tight-regression-check.json, todo-tight-hub-check.json.
+
+
+2026-10-11 transit17 continuation — 17 browser comments
+人数图标随 1–20 人变化并动画换行；航班票据顶部保留 76px 操作区，AI 与关闭使用 44px 点击区域。点击邻近日期只更新数据，保留焦点与滚动位置。机场接驳改为四张 56px 攻略卡片，移除原标题和方式条。
+坐标保留在内部，生成的 resolvedLocations 自动匹配待查询地点。交通方式读取 generatedRoutes，或使用上下文演示选项；分段控件选中块移动，内容同步横向切换 30px / 0.24s，支持键盘与减少动态效果设置。逐段路线各自一张卡片，移除实例摘要和展开按钮。
+点击票据直接选择并展开一张渐变玻璃卡片，其余保留两行摘要；移除单独采用按钮与外部已选提示。增加两张图文卡片和单独费用卡片，复用 UI.Primary 确认胶囊。选择、费用和时间在确认后保存并可恢复。
+当前截图：300-transport-selected-phone.png。验证：transit17-check.json、transit17-regression-check.json、transit17-hub-check.json。外部 AI 与实时坐标/班次尚未接入，iOS 真机尚未验证。
+
+
+2026-10-11 budget continuation — 旅行账本与多币种分账
+攻略新增预算页，笔记新增预算章节，两处读取并保存同一本账。玻璃汇总卡展示已花费、预计待花、总预算与余额；账目、分账、设置三页复用移动选中块。沿途账目按日期分组，类别图标、标题与两行摘要，原币金额保留；新增与编辑使用原有抽屉、浮动标题输入框和确认胶囊。
+选中的交通、航班、房间晚数、餐饮和体验费用通过固定来源ID自动进入预计费用，避免重复。实际支付需核对后记录付款人；个人花费只选自己，共同费用可单人垫付或多人付不同金额，平均或指定金额分摊。账目总金额必须等于付款与承担合计。
+统一结算币种支持 CNY/USD/EUR/JPY/THB，保留原币、采用的汇率与实际付款快照。平均分摊在结算币种中分尾差，指定金额按比例分配；日元整元，其他币种精确到分。每人应收应付及还款卡自动计算；可登记部分已转账及撤销，不会把转账重复计入花费。
+购物记账复用 VoiceText 按住语音与波形，可说“今天买了一个包，花了12000日元”，或输入同一句话；明确的商品、金额、币种自动入账并可撤销，多商品与指定支付/AA描述支持；缺少或含糊的信息保留到编辑卡片。默认付款与承担是自己，结算币种在语音卡可见。
+iOS handoff: Foundation Decimal + WKScriptMessageHandler + on-device Speech + Siri AppIntents/AppShortcuts与App Group队列，优先本机能力；宿主未集成，浏览器使用精确整数计算与可用的语音/文字输入。需安装原生宿主和配置快捷指令后才能呼叫 Siri；没有常驻监听或拿起手机自动开始录音。13项Swift测试含400组尾差守恒、9项JS桥接测试、4个iOS适配器SDK类型检查通过。18项网页计算测试通过；实际语音、Siri与iOS真机尚未验证。
+截图303–309与 budget-* 检查对应本轮，旧录屏保持历史范围。初始汇率为可修改的示例，未接入实时汇率；原型只登记费用与转账，不执行支付。
+
+
+2026-10-11 trip-lifecycle continuation — 游前、游中与游后
+详细审计对照本session预算版前端、已核对远端main的backend travel v2与iOS实现，28项能力按三阶段分别列出现状、差距和接入合同，见trip-lifecycle-design.md及trip-lifecycle-capability-matrix.json。
+新增这趟旅行分段页：出发前显示准备清单、资料与待确认问题；在路上显示当前天、下一项、用户确认的实际进度，以及原话/照片/录音、剩余安排修改和一句话记账；回来后显示实际记录、自己的总结、出发计划对照、未发生费用核对和已有分账。
+分段浏览不改变实际旅行状态；明确开始保存出发快照，明确结束保留未完成活动。保存手记快照与最新安排分开，比较包含开始与结束时间。实际进度、用户原话、付款金额和汇率快照不被计划重排覆盖。未知坐标保持空，不补入示例位置。
+复用玻璃卡片、Sheet、浮动标题输入框、Primary确认胶囊和共享账本；选中块沿用spring，页面内容以12px位移/0.18秒切换，减少动态效果设置生效。
+最终34项浏览器回归、15项生命周期/适配模型和20项金额/费用核对模型通过；24项离线观察、11个axe状态、36个页面布局以及独立入口检查对应当前构建。当前截图310–316；旧视频和报告保留历史范围。
+本轮未修改当前产品、部署后端或集成原生宿主；专属旅行阶段、片段、共享账本/分账持久化仍需实现。设备语音、Siri与真机未验证。
+
+
+2026-10-11 chat-grow continuation — 三条聊天浮层评论
+首次使用聊天输入区时，中英文介绍在180ms渐隐并于280ms收起高度；无历史且输入为空时失焦可恢复，已有聊天再次打开直接呈现聊天区。选中文字作为上下文保留。
+面板从480px起步，每轮用户消息增加68px，并根据实际消息、引用、输入高度测量扩展；320ms平滑增高到手机与可见viewport允许的高度，同次打开不因思考提示消失回缩。到上限后仅消息区滚动，顶部64px保留关闭操作，输入框在底部可见。
+沿用既有FlyingPanel从触发点飞出/收回、TravelComposer浮动标题和玻璃消息卡片；减少动态效果时立即更新高度和标题。查看旧消息时不抢回底部；发送新问题回到最新位置。
+本轮仅调整FlowSupport.jsx、fly22.css；未改服务日期面板或iOS宿主。物理iOS软键盘未验证。验证与当前截图见chat-grow-check.json；先前生命周期与全量回归保留对应历史构建的范围。
+
+本轮最终校验：20交互、7个axe状态零违规、20布局、4截图；入口11项检查/1次axe/6宽度通过。20项范围含真实多轮发送、历史阅读不抢滚动、80条上限、长引用键盘滚动、短触屏与窗口resize。当前HTML SHA256：5b7a821fe96f39e84c0c9786c22ffa9080402500ec95e6014a21510f158c0e84。
+
+
+2026-10-11 · Interest status and tiny support sphere (TESTED)
+The interest state is an independent button next to the content button. Its two words move vertically16px; the check enters with opacity/scale/occupied width, and measured capsule width springs between states. Row scrub and keyboard selection remain.
+One mint/orange/lavender white-bordered ? sphere replaces the always-visible pair. Its diameter follows the 徒步 line-height; a transparent44px target supports touch. Dragging uses pointer capture and phone-scale compensation; release snaps to the nearest horizontal edge. Real page scrolling tucks the sphere half out of view, then700ms idle restores it. A tap bursts the existing44px Todo/AI controls inward. Session position is clamped on resize. Reduced motion updates immediately. Shared sheets, pending counts and local chat content/growth remain.
+Current screenshots321–324 and326 and scoped orb-toggle reports supersede previous floating-control appearance. Earlier screenshots/videos and full suites retain original revision scopes.
+
+Final scoped observation:21 directed checks;6 axe states with zero violations;23 layouts at320/375/430/768/1024/1566;145 unchanged source fingerprints and offline HTML d0e5592db5f18980843e74c73dd2f882986873dc7682b5ba5aa6ff4480a3c11e. Mouse/touch cancel, edge storage/resize, half hide/idle reveal, rapid reverse state changes, nearest-row scrub, pending count/focus and growing chat passed. Physical iOS is unverified.
+
+
+2026-10-11 budget-refine continuation — 八条预算交互反馈
+购物原句中的三人、三个人、3人、三位、AA等人数描述与账本名单匹配时自动共同分摊。明确姓名只选对应成员；人数或姓名对不上时保留原句和待核对意图，不默认为个人账。手工选人与原人数不符时，需要再确认按当前所选人数分摊。
+账目卡片从实际位置飞到顶部，先保留150px摘要，500ms后向下展开详情；关闭、保存与删除先收拢350ms再回飞。既有Sheet负责模态锁定、键盘和焦点恢复；摘要固定，详情独立滚动，减少动态效果时立即切换。原生保存失败重新展开，保留编辑内容。
+预算分段直接复用LiquidNav；汇总卡和设置币种直接复用AlignedSelect；币种和总预算设置缩到44px；确认复用ScrollAction的浮动胶囊、滚动圆形对勾。收起的推荐航班摘要使用直角底边衔接操作区；票据展开保留原有圆角。
+确认按钮在普通页面固定于手机容器；在游前预算浮层中留在对话框内部，内容独立滚动，保留Tab焦点约束。避免输入框自动滚入视野时造成点按松手位置偏移。
+本轮37项金额/购物人数/原生JS桥契约检查、24项浏览器专项、10个axe状态和29个布局场景全部通过；预览入口12项检查、6种屏宽通过。当前149个应用源码及离线HTML指纹匹配，截图327–332为本轮真实操作。原生保存失败使用明示的模拟桥回调验证浏览器保留编辑与重试；没有执行原生宿主。旧报告和录屏保留各自历史构建范围；物理iOS与原生宿主/Siri接入尚未验证。
+
+2026-10-11 note-cover continuation — 生成旅行笔记三条反馈
+生成弹层复用Sheet、FloatingField、原生checkbox和Primary胶囊。左侧照片封面与右侧标题及旅行摘要并排；封面向下错8px，两个内容开关错6px，第三项收右边28px。标题和旅行摘要保持独立大小，压缩原有巨大封面和居中留白。弹层正文可独立滚动，底部生成动作始终留在Sheet内；关闭、模态锁和Tab焦点约束保留。
+目的地照片改成紧凑横滑轮播，复用LiquidCard及UI.spring，指尖附近照片放大、邻图随距离响应。鼠标拖动与原生触屏横滑、点选、方向键和Home/End均可选封面；无自动切换计时器，减少动态效果立即切换。
+仅移除生成弹层里的“仅自己可见”，阅读封面仍保留原有文案；不改变可见范围或后端权限。标题草稿继续同步Context，取消保留标题，封面与勾选仍仅在生成时提交。完整手记保存、阅读、预算、导出流程保留。
+本轮观察报告note-cover-check.json、入口报告note-cover-hub-check.json与截图333起为当前证据；此前预算、聊天及全流程报告与录屏保持历史范围。
+触屏手势契约：共享LiquidCard的touch-action:none会阻止浏览器原生横滑；轮播按钮和照片框局部改为pan-x pan-y。Chrome触屏专项以真实CDP手势、图片几何与scrollLeft验证，不以合成React事件代替原生滚动。
+
+2026-10-11 guide-editor continuation — 十一条成稿与编辑反馈
+攻略底部独立“生成旅行笔记”区域移除。复用展开悬浮球的圆形对勾：未保存生成手记、已保存翻开手记；通过Guide局部事件和requestGenerate保留待定warning与上一轮紧凑生成弹层。攻略待办页保留旅行待办入口；其他阶段的小球对勾仍打开待办。
+每日成稿卡片用实际img铺满整个背景（包括展开详情），摘要宽124px/内边距7×9px，透明低饱和材质；完成及排序小按钮从静止、拖动和飞行副本统一移除。照片背景移动>5px开始排序，静止点击展开；摘要短拉展开、长按620ms标记待定，避免两个hold计时器冲突。共享useHoldReorder继续管理顺序、日期、取消回滚和Alt上下；新一轮按压重置前次drag阻断，防止拖完无法再点开。AI入口保留。
+VoiceText原生textarea与选区、录音和图片保存逻辑保留。格式栏单行、长按或选区出现，代码图标不换行；保存选区再套用B/I/code/table/card。录音和图片动作移入FloatingField框，发送使用共享Primary的箭头胶囊。助手页局部本地演示caption移除，仍在交付入口说明实际能力范围。
+本轮证据为guide-editor-check.json、guide-editor-hub-check.json和截图338起。此前note-cover153源码、333–337与视频保持原构建范围；不声称重新测试金融/Swift或接入后端模型。
+
+本轮连续操作修复：Guide 保存成功后清掉 save 弹层状态，快速返回攻略不再遮挡确认球。AdoptSummary 无位移与取消手势保持原展开状态，避免按打开动画中间帧先改状态；实际下拉仍以 progress>.38 结算，快速点开后立即点关可反向。
+
+2026-10-11 顶部确认 continuation：成稿采用移到TopBar右侧，仅圆形对勾图标，仍使用requestGenerate待定提醒/采用飞出。Route确认的34px宽与44px高造成椭圆，两个确认图标统一严格44×44圆形触控盒、padding0、50%圆角，复用确认光效；其余导航图标尺寸不动。confirm-icon专项和344起图为当前证据，guide-editor35及338–343图保留历史范围。
+
+
+旅行日记地图（notebook-map，2026-10-11）
+照片之后、个人记录之前加入地图，用现有地图与行程坐标呈现每天所在的位置和整趟游览顺序。冷色低饱和度地理底图搭配手记的衬线标题和细线，不增加多层嵌套卡片。地图突出当前DAY、地点和日期；展开共享Sheet后切换DAY，同步日记内容与地图焦点。地图只使用已知范围内的有限坐标，未知或域外地点保持未标注，不虚构道路或逐站导航。遵循包含每日行程选项、键盘和减少动态效果。当前专项与入口报告为notebook-map-check.json和notebook-map-hub-check.json，346起截图为本轮；此前confirm12与guide35保留历史版本范围。
+地图边界验收补充：已存的新地点即使缺少预设交通/住宿/饮食/玩法说明，也保留日记正文，显示对应安排尚未补充；不以缺说明引起阅读崩溃。颜色按真实computed前景与背景补足≥4.5，除axe外另存对比数值。
+
+
+2026-10-12 · revision68 · 68条浏览器评审批注
+淡彩虹确认材质统一，Chat备注独立入口，待办图标与待定红点置顶。景点拖拽靠近文件夹吸附及呼吸反馈。
+十类建议卡片通过实际字段交互产生提议，用户明确确认后回填；失败、过期与重复确认均有边界。预订只记录待选择需求，不产生实际订单。
+每日服务显示已选事实。地图搜索默认1km、选中图钉优先。住宿房间×晚数及交通票先估计，经明确金额、付款与分账确认登记实际费用；实际金额只替换对应预计项一次。
+成稿错落全照片；顶部44px圆形确认；协作弹窗采用液态导航与横滑。阅读选文批注持久保存，安排详情支持手动及AI提议后确认。
+游前逐条备忘及问题徽章持久保存；今日照片主卡、内联安排、真实片段和连续修改历史；游后由保存片段整理提议，确认追加手记，不改写尚未发生的实际进度。
+预算和旅程入口共享0.48秒原位圆形展开；尊重减少动态效果。攻略移除Earth按钮与菜单项。
+当前源码、离线HTML、观察器和证据哈希须在检查期间保持一致；此前报告与录屏仅作历史对照。浏览器触屏模拟与本地模型测试不代表iOS真机或已接入外部AI。

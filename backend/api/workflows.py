@@ -169,6 +169,7 @@ class WorkflowCreate(BaseModel):
     source_image_id: str | None = Field(None, pattern=r"^(ga|doc)_[a-f0-9]{32}$")
     output_kind: Literal["general", "presentation", "document", "html", "travel", "image"] = "general"
     source_client_session_id: str | None = Field(None, min_length=1, max_length=100)
+    request_id: str | None = Field(None, min_length=8, max_length=160)
     presentation_review_gates: list[Literal["outline", "design"]] = Field(
         default_factory=list, max_length=2
     )
@@ -201,6 +202,7 @@ class RollbackRequest(BaseModel):
 
 class ReplanRequest(BaseModel):
     instruction: str = Field("", max_length=2000)
+    description: str | None = Field(None, min_length=3, max_length=12000)
 
 
 class ApprovalRequest(BaseModel):
@@ -1051,7 +1053,18 @@ async def _create_workflow_draft(
 
 @router.post("/workflows", status_code=201)
 async def create_workflow(body: WorkflowCreate, payload: dict = Depends(require_auth)):
-    return await _create_workflow(body, payload)
+    if not body.request_id:
+        return await _create_workflow(body, payload)
+    identity = json.dumps(["rest-workflow-create", tenant(), current_user(payload), body.request_id])
+    workflow_id = "wf_" + hashlib.sha256(identity.encode()).hexdigest()[:32]
+    request_hash = hashlib.sha256(json.dumps(body.model_dump(exclude={"request_id"}),
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    try:
+        return await _create_workflow(body, payload, workflow_id=workflow_id, qcp_request_hash=request_hash)
+    except IntegrityError:
+        # A concurrent request may have committed the same deterministic identity.
+        # Re-read it through the same ownership and payload checks.
+        return await _create_workflow(body, payload, workflow_id=workflow_id, qcp_request_hash=request_hash)
 
 
 @router.get("/workflows/{workflow_id}/clarification")
@@ -2430,6 +2443,12 @@ async def replan(
             raise HTTPException(status_code=409, detail="已归档工作流不能重新规划")
         if session.phase == "planning":
             raise HTTPException(status_code=409, detail="同一规划任务已经在运行")
+        if body.description is not None:
+            if (workflow.requirements_snapshot or {}).get("output_kind") != "travel":
+                raise HTTPException(status_code=422, detail="完整旅行条件仅适用于旅行任务")
+            if await db.scalar(select(WorkflowExecution.id).where(WorkflowExecution.workflow_id == workflow.id).limit(1)):
+                raise HTTPException(status_code=409, detail="制作已开始，请通过旅行修订调整行程")
+            workflow.description = body.description.strip()
         instruction = body.instruction.strip()
         snapshot = dict(workflow.requirements_snapshot or {})
         snapshot["revision_instruction"] = instruction or "按现有确认需求重新生成"
@@ -2782,6 +2801,8 @@ async def start_workflow(
                 request_key=(
                     body.request_id or f"start:{workflow.id}:{uuid.uuid4().hex}"
                 ),
+                expected_plan_hash=body.expected_hash,
+                expected_activation_revision=body.expected_revision,
             )
         except WorkflowStartError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -3466,6 +3487,7 @@ async def approve_output(
 
 
 class TravelRevisionRequest(BaseModel):
+    client_state: dict | None = None
     confirmed_bookings: dict[str, str] = Field(default_factory=dict, max_length=10)
     artifact_id: str = Field(min_length=8, max_length=48)
     expected_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -3480,7 +3502,7 @@ class TravelRevisionRequest(BaseModel):
 @router.post("/workflow-executions/{execution_id}/travel-revisions")
 async def save_travel_revision(execution_id: str, body: TravelRevisionRequest, payload: dict = Depends(require_auth)):
     """Append a reviewed travel revision or a user-recorded fact to existing artifacts."""
-    from backend.services.travel_plan import revise_travel_document, validate_travel_document
+    from backend.services.travel_plan import revise_travel_document, validate_travel_document, update_travel_client_state
     async with SessionLocal() as db:
         execution = await owned_execution(db, execution_id, payload)
         execution = (await db.execute(select(WorkflowExecution).where(
@@ -3507,7 +3529,11 @@ async def save_travel_revision(execution_id: str, body: TravelRevisionRequest, p
         timestamp = now()
         try:
             old = json.loads(read_verified_artifact(path, current.content_hash))
-            if body.proposed is not None:
+            if body.client_state is not None:
+                if body.proposed is not None or body.progress is not None or body.action_id is not None or body.confirmed_bookings:
+                    raise ValueError("个人记录不能同时修改计划、预订或实际进度")
+                updated = update_travel_client_state(old, body.client_state)
+            elif body.proposed is not None:
                 if body.progress is not None or body.action_id is not None:
                     raise ValueError("一次请求只能修改计划或记录实际进度")
                 updated = revise_travel_document(old, body.proposed, now=timestamp, confirmed_bookings=body.confirmed_bookings)
@@ -3516,25 +3542,8 @@ async def save_travel_revision(execution_id: str, body: TravelRevisionRequest, p
                     raise ValueError("预订变更必须随明确确认的计划提交")
                 if not body.action_id or not body.progress:
                     raise ValueError("必须提供计划或实际进度")
-                updated = json.loads(json.dumps(old))
-                action = next((a for a in updated["actions"] if a["id"] == body.action_id), None)
-                if action is None:
-                    raise ValueError("行程事项不存在")
-                if action["status"] in {"completed", "cancelled", "skipped"}:
-                    raise ValueError("已发生事项不可通过进度更新覆盖")
-                actual = body.happened_at or timestamp
-                if actual.utcoffset() is None or actual > timestamp:
-                    raise ValueError("实际发生时间必须含时区且不能位于未来")
-                if action["status"] == "in_progress" and body.progress == "in_progress":
-                    raise ValueError("已经开始的事项不能覆盖原开始时间")
-                if body.progress == "delayed" and (action["status"] not in {"planned", "delayed"} or action.get("actual_start")):
-                    raise ValueError("已实际开始的事项不能改成尚未出发")
-                action["status"] = body.progress
-                if body.progress == "in_progress":
-                    action["actual_start"] = actual.isoformat()
-                elif body.progress != "delayed":
-                    action["actual_end"] = actual.isoformat()
-                updated = validate_travel_document(updated)
+                from backend.services.travel_notebook import record_progress
+                updated = record_progress(old, body.action_id, body.progress, now=timestamp, happened_at=body.happened_at)
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         metadata = {"render_type": "travel_plan_v2", "mime_type": "application/json",

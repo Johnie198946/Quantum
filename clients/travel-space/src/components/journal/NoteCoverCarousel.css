@@ -1,0 +1,98 @@
+.phone .note-save-compact .note-cover-carousel{
+ min-width:0;
+ width:100%;
+ margin:0;
+ color:#3e5149;
+}
+.phone .note-save-compact .note-cover-caption{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:10px;
+ font-size:10px;
+ line-height:18px;
+ padding:0 4px;
+}
+.phone .note-save-compact .note-cover-caption small{
+ color:#66786e;
+ font-size:9px;
+ font-variant-numeric:tabular-nums;
+}
+.phone .note-save-compact .note-cover-rail{
+ --note-cover-size:88px;
+ position:relative;
+ display:flex;
+ gap:12px;
+ width:100%;
+ min-width:0;
+ margin:0;
+ padding:10px calc((100% - var(--note-cover-size))/2) 10px;
+ overflow-x:auto;
+ overflow-y:hidden;
+ overscroll-behavior-x:contain;
+ scroll-snap-type:x mandatory;
+ scrollbar-width:none;
+ touch-action:pan-x pan-y;
+ cursor:grab;
+ user-select:none;
+ -webkit-user-select:none;
+}
+.phone .note-save-compact .note-cover-rail::-webkit-scrollbar{display:none}
+.phone .note-save-compact .note-cover-rail.is-dragging{cursor:grabbing}
+.phone .note-save-compact .note-cover-slot{
+ flex:0 0 var(--note-cover-size);
+ width:var(--note-cover-size);
+ height:80px;
+ scroll-snap-align:center;
+}
+.phone .note-save-compact .note-cover-option{
+ display:block;
+ width:100%;
+ height:80px;
+ min-height:44px;
+ padding:2px;
+ margin:0;
+ border:0;
+ border-radius:18px;
+ background:transparent;
+ color:inherit;
+ cursor:inherit;
+ touch-action:pan-x pan-y;
+}
+.phone .note-save-compact .note-cover-option.selected{background:transparent!important}
+.phone .note-save-compact .note-cover-option:focus-visible{outline-offset:3px}
+.phone .note-save-compact .note-cover-image{
+ position:relative;
+ width:100%;
+ height:76px;
+ overflow:hidden;
+ transform-origin:center;
+ touch-action:pan-x pan-y;
+ border:1px solid #ffffffb0;
+ box-shadow:0 3px 11px -7px #40594c75;
+}
+.phone .note-save-compact .note-cover-option.selected .note-cover-image{box-shadow:0 0 0 2px #70877c,0 5px 13px -8px #40594c80}
+.phone .note-save-compact .note-cover-image img{
+ width:100%;
+ height:100%;
+ border-radius:0;
+ object-fit:cover;
+ pointer-events:none;
+}
+.phone .note-save-compact .note-cover-check{
+ position:absolute;
+ right:6px;
+ bottom:6px;
+ width:19px;
+ height:19px;
+ display:grid;
+ place-items:center;
+ border-radius:50%;
+ border:1px solid #ffffffdb;
+ background:#eef4ecdc;
+ color:#486453;
+ pointer-events:none;
+}
+@media(prefers-reduced-motion:reduce){
+ .phone .note-save-compact .note-cover-rail{scroll-behavior:auto!important}
+}

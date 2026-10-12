@@ -1,0 +1,12 @@
+import React,{useRef,useState} from 'react';
+import {Icon} from '../UI';
+import RichMessage,{safeImage,safeAudio} from './RichMessage';
+function Audio({media}){
+ const ref=useRef(null),[playing,setPlaying]=useState(false),[status,setStatus]=useState('');
+ async function toggle(){try{if(playing)ref.current.pause();else await ref.current.play();}catch{setStatus('暂时无法播放这段录音。');}}
+ return <div className="memory-audio-player"><audio ref={ref} src={media.src} preload="none" onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)}/><button type="button" aria-label={playing?'暂停旅行录音':'播放旅行录音'} aria-pressed={playing} onClick={toggle}><Icon name={playing?'pause':'play'} size={17}/></button><svg role="img" aria-label="录音声波" viewBox="0 0 100 32">{(media.wave||[]).slice(0,24).map((n,i)=><line key={i} x1={2+i*4} x2={2+i*4} y1={16-Math.max(1,Math.min(1,n)*14)} y2={16+Math.max(1,Math.min(1,n)*14)} stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>)}</svg><small>{Math.max(1,Math.round(media.seconds||0))} 秒</small>{status&&<small role="status">{status}</small>}</div>;
+}
+export default function RecordCards({records,legacy,dayId,ReaderText}){
+ const combined=records.map(r=>r.text).filter(Boolean).join('\n\n'),extra=records.length>1&&legacy&&legacy!==combined?(legacy.startsWith(combined)?legacy.slice(combined.length).trim():legacy):'';
+ return <div className="journal-record-cards">{records.map((r,i)=>{const text=records.length===1&&legacy?legacy:r.text;const image=r.media?.find(x=>x.kind==='image'&&safeImage(x.src)),audio=r.media?.find(x=>x.kind==='audio'&&safeAudio(x.src));return <article className={'memory-card glass'+(image?' has-image':'')+(audio?' has-audio':'')} key={r.id} aria-label={'旅行记录'+(i+1)}>{image&&<img className="memory-card-photo" src={image.src} alt={image.name||'旅行记录照片'}/>}<div className="memory-card-body">{audio&&<Audio media={audio}/>}<div className="memory-card-text">{/[*`|#>]/.test(text)?<RichMessage text={text}/>:<p><ReaderText dayId={dayId} id={i===0?'memory':'memory-'+r.id} text={text}/></p>}</div></div><small className="memory-card-date">{new Date(r.at).toLocaleDateString('zh-CN')}</small></article>;})}{extra&&<article className="memory-card glass legacy-memory"><RichMessage text={extra}/></article>}{legacy&&!records.length&&<article className="memory-card glass legacy-memory"><p><ReaderText dayId={dayId} id="memory" text={legacy}/></p></article>}</div>;
+}

@@ -20,11 +20,13 @@
 		1DEF132BBABAAE7BE740235E /* KnowledgeNoteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62ED7CB52D98E7F4FE22A9D2 /* KnowledgeNoteStore.swift */; };
 		1EF0A40ED0CF79A929CB6F20 /* MarkdownBlockParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B1D23EEB21DD2DD62B8D52D /* MarkdownBlockParser.swift */; };
 		254C1CD57C1EACE9BAAF30A1 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 682708AC3F789E460269179F /* ChatHistoryStore.swift */; };
+		2AD089C2E33630FDB6DC1A79 /* TravelLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E646D168A049E039451F2E7D /* TravelLocationService.swift */; };
+		325FA9E80373884214B5D440 /* QuantumTravelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D81D5F65E263D85928FFC29 /* QuantumTravelStyle.swift */; };
 		32CA4D62282D44DD746E91EF /* QuantumWebLoginModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9480163EBF61FD4892D5BFB9 /* QuantumWebLoginModal.swift */; };
-		347B8891FA73F4A13044017F /* WorkflowDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 865230675174544683A40C47 /* WorkflowDashboardView.swift */; };
 		353DDBE9B6F14BAA4DD7F20F /* ChatStatusCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F5BB3EF9C10F911B036B99 /* ChatStatusCards.swift */; };
 		364D6C336F779FC90000B64E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD70BD59CD071FB619837740 /* ChatView.swift */; };
 		37DA4DD87773B20EFF539BC8 /* CleanupMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E73DBE97E6AA3631E09834 /* CleanupMergeTests.swift */; };
+		3BF7E77337188276856A33F3 /* WorkflowActivityCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38AB1E87C0D8CCFFEBA47FDF /* WorkflowActivityCoordinator.swift */; };
 		3D4EB2B968E8F9E3C3CF0F67 /* ZCOOLXiaoWei-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 10E41DFDA330C72B9F510812 /* ZCOOLXiaoWei-Regular.ttf */; };
 		3FFEAF19DF3D4DE1A028D6F0 /* PlusMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEA8E5B249F6B3A2259CE92A /* PlusMenuSheet.swift */; };
 		44364A0B81BC8C873E2A107F /* QuantumAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0179B18110033BC1CA0851 /* QuantumAvatarView.swift */; };
@@ -34,8 +36,8 @@
 		4968A2BF3FA933724CA3EED1 /* TokenSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF013F7A1E943E1DB704B2C0 /* TokenSummaryCard.swift */; };
 		4D0490AB8539AF2303A30FD6 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5739784ABF1359A2846D8888 /* APIClient.swift */; };
 		4D319A3D19CA80342E334019 /* ImageStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1C322A27D385A84D091D270 /* ImageStudioUITests.swift */; };
+		5035AD129AAC46C3854AB326 /* TravelSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23859F8566E1DE5B425F4E6E /* TravelSpaceView.swift */; };
 		511FE1B06DE33A584C0A8C69 /* QuickCommandTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46EACC0E8183D29E10202F1 /* QuickCommandTracker.swift */; };
-		54F1BB8A5626FEC33057A530 /* TopologyCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416F0C2DCD91D27B61D53C19 /* TopologyCanvasView.swift */; };
 		55DD59AAB0EEDE356FDDD4ED /* TravelJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8ECB329FA486803C0CF0A18 /* TravelJourneyTests.swift */; };
 		55FE0861FFFFA12CF6705B08 /* ChartCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DF83086061F218C1259F32C /* ChartCard.swift */; };
 		5820D9361C974E6882000A61 /* TableCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A789A71D20741647361F7B75 /* TableCard.swift */; };
@@ -71,7 +73,9 @@
 		C98FD932847C88BE89894AB2 /* CleanupMergeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646A92392E73537267929C64 /* CleanupMergeUITests.swift */; };
 		C9A8805D56EF7F858B0ADD99 /* InboxFileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E70EAC9E0B5B8A7FA5B187 /* InboxFileManager.swift */; };
 		CA2644A033D838AAF6B53339 /* PluginRenderContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 154956AEA3EB99E3828A50FC /* PluginRenderContext.swift */; };
+		CE631B64B995318A0B5F55CC /* TravelExpenseDraftQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF701751E92192E58502C06A /* TravelExpenseDraftQueue.swift */; };
 		D2BBAD0E6CB91667F92E60EA /* VoiceInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE840AF43A4B6B0BA1587D11 /* VoiceInputView.swift */; };
+		D4165E29CD392A5D770A87AB /* TravelSpaceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA03732E5FD67A17F5724F1F /* TravelSpaceUITests.swift */; };
 		D441495B74D602C2B3DF2A55 /* MemoryCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FC76B7071BB7FE6A36B5322 /* MemoryCenterView.swift */; };
 		D495E92480514E6AB3D57E3B /* AgreementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D6C7C4532C2DF95CC7DB2EE /* AgreementSheet.swift */; };
 		D5E5539813EF231D57471760 /* ProfileEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77831964D4BC5807CFED21D0 /* ProfileEditSheet.swift */; };
@@ -119,12 +123,13 @@
 		1A3BE8AD803B5136E3F127F3 /* zcoolxiaowei-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "zcoolxiaowei-OFL.txt"; sourceTree = "<group>"; };
 		1E42C6AE38CB19DC89CB01BB /* StructuredReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredReviewView.swift; sourceTree = "<group>"; };
 		2358634EFA73CA1C68794682 /* BlockCardDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockCardDispatcher.swift; sourceTree = "<group>"; };
+		23859F8566E1DE5B425F4E6E /* TravelSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelSpaceView.swift; sourceTree = "<group>"; };
 		23FFAE078B1A873282C9BC36 /* journey.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = journey.js; sourceTree = "<group>"; };
 		2DF83086061F218C1259F32C /* ChartCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCard.swift; sourceTree = "<group>"; };
 		3303A163B51136C09EB429B8 /* CleanupMergeReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupMergeReviewView.swift; sourceTree = "<group>"; };
 		372859EF56AE692E12D52C31 /* ChatInFlightPlaceholderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatInFlightPlaceholderView.swift; sourceTree = "<group>"; };
+		38AB1E87C0D8CCFFEBA47FDF /* WorkflowActivityCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowActivityCoordinator.swift; sourceTree = "<group>"; };
 		3BB42AC8860AD677441DC107 /* mashanzheng-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mashanzheng-OFL.txt"; sourceTree = "<group>"; };
-		416F0C2DCD91D27B61D53C19 /* TopologyCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopologyCanvasView.swift; sourceTree = "<group>"; };
 		42A09EB0901BFFE6D59012F0 /* ImageCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCard.swift; sourceTree = "<group>"; };
 		487851A719C4FA40DFA066AC /* ClarifyCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarifyCard.swift; sourceTree = "<group>"; };
 		4E35AD99D2D7E9243E8DADC7 /* InfoPlist.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
@@ -140,6 +145,7 @@
 		681E5D881AB162D60B3DB542 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		682708AC3F789E460269179F /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistoryStore.swift; sourceTree = "<group>"; };
 		6C3999D4D79E502B3827976F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		6D81D5F65E263D85928FFC29 /* QuantumTravelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuantumTravelStyle.swift; sourceTree = "<group>"; };
 		72B1A4AC90DF0BCFE3FF666D /* ImageStudioPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStudioPanels.swift; sourceTree = "<group>"; };
 		7750BD954579739BA54A25C7 /* ImageStudioRecipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStudioRecipe.swift; sourceTree = "<group>"; };
 		77831964D4BC5807CFED21D0 /* ProfileEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditSheet.swift; sourceTree = "<group>"; };
@@ -150,7 +156,6 @@
 		7F8D52A373AED7411BC20AF3 /* WorkflowLifecycleDTOTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowLifecycleDTOTests.swift; sourceTree = "<group>"; };
 		813DB031876CEDFE50599942 /* AIPlatformApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPlatformApp.entitlements; sourceTree = "<group>"; };
 		83AE56DBEAAD443368B0DC9F /* ProductionBookshelfUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionBookshelfUITests.swift; sourceTree = "<group>"; };
-		865230675174544683A40C47 /* WorkflowDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowDashboardView.swift; sourceTree = "<group>"; };
 		8CC0682A56D72BAAB4097CFA /* WeChatLinkValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeChatLinkValidator.swift; sourceTree = "<group>"; };
 		9480163EBF61FD4892D5BFB9 /* QuantumWebLoginModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuantumWebLoginModal.swift; sourceTree = "<group>"; };
 		9503A88EC7D490F2425318D0 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
@@ -172,10 +177,12 @@
 		B3FC5F4C097BA70F5B293F60 /* journey.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = journey.html; sourceTree = "<group>"; };
 		B4C9371EEE0A71253EADCED7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B736F9BD0E2F1D7CAAC12DEF /* ChatResponseRecoveryRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatResponseRecoveryRegressionTests.swift; sourceTree = "<group>"; };
+		BA03732E5FD67A17F5724F1F /* TravelSpaceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelSpaceUITests.swift; sourceTree = "<group>"; };
 		BB63B402208C7E69F946E7BD /* ChatInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatInputBar.swift; sourceTree = "<group>"; };
 		BCBB7C00E5A6746E434E2EBC /* KnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeView.swift; sourceTree = "<group>"; };
 		BCDDE88C99A1E6AD867618B5 /* ImageStudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStudioRenderer.swift; sourceTree = "<group>"; };
 		BD70BD59CD071FB619837740 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		BF701751E92192E58502C06A /* TravelExpenseDraftQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelExpenseDraftQueue.swift; sourceTree = "<group>"; };
 		C1C322A27D385A84D091D270 /* ImageStudioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStudioUITests.swift; sourceTree = "<group>"; };
 		C1F5BB3EF9C10F911B036B99 /* ChatStatusCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStatusCards.swift; sourceTree = "<group>"; };
 		C46EACC0E8183D29E10202F1 /* QuickCommandTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCommandTracker.swift; sourceTree = "<group>"; };
@@ -186,6 +193,7 @@
 		D8C3C41383CABE92AED74AF8 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		DDE22EF3C3F7FCC3CC76BC20 /* ProductionSessionIsolationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductionSessionIsolationUITests.swift; sourceTree = "<group>"; };
 		DEA8E5B249F6B3A2259CE92A /* PlusMenuSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusMenuSheet.swift; sourceTree = "<group>"; };
+		E646D168A049E039451F2E7D /* TravelLocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelLocationService.swift; sourceTree = "<group>"; };
 		EEC763B7972BB3B1AF533EB4 /* SessionDrawerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDrawerSheet.swift; sourceTree = "<group>"; };
 		EF73CD2E97B8DC153BDFD826 /* ChatMessageStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageStreamView.swift; sourceTree = "<group>"; };
 		F1BB3C5ED04BDD0018FB3421 /* AgentCreatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCreatorView.swift; sourceTree = "<group>"; };
@@ -249,7 +257,6 @@
 				F8FB98A8C1A0FBDBCC3F98CD /* Knowledge */,
 				3E68705A20B184B4A4FD1603 /* Settings */,
 				8DB5E2D6FB34E8870609C003 /* Shared */,
-				5A8E130177EC425138211AC1 /* Topology */,
 				1E494BE1071AB4A216C8927B /* Voice */,
 				4B27D90F0CECB894B4022B50 /* Workflows */,
 			);
@@ -281,7 +288,10 @@
 			isa = PBXGroup;
 			children = (
 				1E42C6AE38CB19DC89CB01BB /* StructuredReviewView.swift */,
-				865230675174544683A40C47 /* WorkflowDashboardView.swift */,
+				BF701751E92192E58502C06A /* TravelExpenseDraftQueue.swift */,
+				E646D168A049E039451F2E7D /* TravelLocationService.swift */,
+				23859F8566E1DE5B425F4E6E /* TravelSpaceView.swift */,
+				38AB1E87C0D8CCFFEBA47FDF /* WorkflowActivityCoordinator.swift */,
 			);
 			path = Workflows;
 			sourceTree = "<group>";
@@ -294,14 +304,6 @@
 				A174CCE3F2E34CECB507D824 /* AIPlatformAppUITests */,
 				66CC9398B1530934BB9FDDF8 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		5A8E130177EC425138211AC1 /* Topology */ = {
-			isa = PBXGroup;
-			children = (
-				416F0C2DCD91D27B61D53C19 /* TopologyCanvasView.swift */,
-			);
-			path = Topology;
 			sourceTree = "<group>";
 		};
 		6172F2059282E46D8401B26E /* Fonts */ = {
@@ -329,6 +331,7 @@
 		6767AA4A11C8D340E760E734 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
+				6D81D5F65E263D85928FFC29 /* QuantumTravelStyle.swift */,
 				F421FF9169B217EA9B1F3CB3 /* Theme.swift */,
 			);
 			path = DesignSystem;
@@ -398,6 +401,7 @@
 				DDE22EF3C3F7FCC3CC76BC20 /* ProductionSessionIsolationUITests.swift */,
 				799225B8FF577454F1843D21 /* ReadingDesignUITests.swift */,
 				5B80D562DB971E1AC456CC14 /* TravelJourneyUITests.swift */,
+				BA03732E5FD67A17F5724F1F /* TravelSpaceUITests.swift */,
 			);
 			path = AIPlatformAppUITests;
 			sourceTree = "<group>";
@@ -528,6 +532,7 @@
 				48AAA9836727B98528F3962F /* Sources */,
 				00987747F71BE5DF9E6BA0B2 /* Resources */,
 				A66234566AEE8A4CFD6F96B2 /* Frameworks */,
+				83CC527FF289BA56D9E1149B /* Bundle approved TravelSpace renderer */,
 				72B00004047AE29D8B9B6392 /* Package static OpenCV privacy resources */,
 			);
 			buildRules = (
@@ -653,6 +658,26 @@
 			shellScript = "#!/bin/sh\nset -eu\n\napp=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nframework=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/opencv2.framework\"\nbundle=\"$app/OpenCVResources.bundle\"\n[ -d \"$framework\" ] || exit 0\n\n# Xcode injects a codeless dylib for this static library's privacy resources.\n# Refuse to remove OpenCV if a future package actually needs dynamic loading.\nloads=\"$(xcrun otool -L \"$app/${EXECUTABLE_NAME}\")\"\nif printf '%s\\n' \"$loads\" | /usr/bin/grep -q 'opencv2.framework/'; then\n    echo 'error: OpenCV is dynamically linked; keep its framework and provide real dSYMs.' >&2\n    exit 1\nfi\nsymbols=\"$(xcrun nm -g \"$framework/opencv2\" 2>/dev/null)\"\nsections=\"$(xcrun otool -l \"$framework/opencv2\")\"\nif [ -n \"$symbols\" ] || ! printf '%s\\n' \"$sections\" | /usr/bin/awk '\n    $1 == \"sectname\" { text = ($2 == \"__text\") }\n    text && $1 == \"size\" && $2 !~ /^0x0+$/ { exit 1 }\n'; then\n    echo 'error: OpenCV framework contains code; do not repackage it as resources.' >&2\n    exit 1\nfi\n\n/usr/bin/plutil -lint \"$framework/PrivacyInfo.xcprivacy\"\n/usr/bin/ditto \"$framework\" \"$bundle\"\n/bin/rm -f \"$bundle/opencv2\"\n/bin/rm -rf \"$bundle/_CodeSignature\"\n/usr/libexec/PlistBuddy -c 'Delete :CFBundleExecutable' \"$bundle/Info.plist\"\n/usr/libexec/PlistBuddy -c 'Set :CFBundlePackageType BNDL' \"$bundle/Info.plist\"\n/usr/bin/cmp \"$framework/PrivacyInfo.xcprivacy\" \"$bundle/PrivacyInfo.xcprivacy\"\n/bin/rm -rf \"$framework\"\n";
 			showEnvVarsInLog = 0;
 		};
+		83CC527FF289BA56D9E1149B /* Bundle approved TravelSpace renderer */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle approved TravelSpace renderer";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/sh\nset -eu\ntravel_client=\"$SRCROOT/../clients/travel-space\"\nif [ ! -d \"$travel_client/node_modules/esbuild\" ]; then\n    echo \"error: Install the TravelSpace dependencies with npm ci --prefix clients/travel-space before building iOS.\" >&2\n    exit 1\nfi\nif command -v node >/dev/null 2>&1; then\n    travel_node=\"$(command -v node)\"\nelif [ -x /opt/homebrew/bin/node ]; then\n    travel_node=/opt/homebrew/bin/node\nelif [ -x /usr/local/bin/node ]; then\n    travel_node=/usr/local/bin/node\nelse\n    echo \"error: Node.js is required to bundle the approved TravelSpace renderer.\" >&2\n    exit 1\nfi\nQUANTUM_TRAVEL_OUT=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/TravelSpace\" \"$travel_node\" \"$travel_client/build.mjs\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -710,6 +735,7 @@
 				3FFEAF19DF3D4DE1A028D6F0 /* PlusMenuSheet.swift in Sources */,
 				D5E5539813EF231D57471760 /* ProfileEditSheet.swift in Sources */,
 				44364A0B81BC8C873E2A107F /* QuantumAvatarView.swift in Sources */,
+				325FA9E80373884214B5D440 /* QuantumTravelStyle.swift in Sources */,
 				32CA4D62282D44DD746E91EF /* QuantumWebLoginModal.swift in Sources */,
 				511FE1B06DE33A584C0A8C69 /* QuickCommandTracker.swift in Sources */,
 				9C25372BFB1CB99B45A8FE38 /* ReadingComponents.swift in Sources */,
@@ -724,12 +750,14 @@
 				70A7548492134FB38A9468A2 /* Theme.swift in Sources */,
 				F97A7339A74692F2CEE74D86 /* ThinkingPlaceholderView.swift in Sources */,
 				4968A2BF3FA933724CA3EED1 /* TokenSummaryCard.swift in Sources */,
-				54F1BB8A5626FEC33057A530 /* TopologyCanvasView.swift in Sources */,
+				CE631B64B995318A0B5F55CC /* TravelExpenseDraftQueue.swift in Sources */,
 				E210B6E6403B708C687D6D83 /* TravelJourneyView.swift in Sources */,
+				2AD089C2E33630FDB6DC1A79 /* TravelLocationService.swift in Sources */,
+				5035AD129AAC46C3854AB326 /* TravelSpaceView.swift in Sources */,
 				6519DC1C7260123F1CD43718 /* UIModels.swift in Sources */,
 				D2BBAD0E6CB91667F92E60EA /* VoiceInputView.swift in Sources */,
 				F3462447EFD8BB4DAFA14A1E /* WeChatLinkValidator.swift in Sources */,
-				347B8891FA73F4A13044017F /* WorkflowDashboardView.swift in Sources */,
+				3BF7E77337188276856A33F3 /* WorkflowActivityCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -743,6 +771,7 @@
 				E870D8138E3A18AC80F5B0B4 /* ProductionSessionIsolationUITests.swift in Sources */,
 				EFA7A2308775E2606A382009 /* ReadingDesignUITests.swift in Sources */,
 				5FA14B19BB5B655AD38E58FC /* TravelJourneyUITests.swift in Sources */,
+				D4165E29CD392A5D770A87AB /* TravelSpaceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

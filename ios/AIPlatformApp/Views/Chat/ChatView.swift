@@ -44,32 +44,7 @@ public struct ChatView: View {
 
     public init() {}
 
-    private var homeBackground: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                AppTheme.Reading.paper
-                Ellipse()
-                    .fill(AppTheme.Colors.mistMint.opacity(0.65))
-                    .frame(width: 300, height: 370)
-                    .rotationEffect(.degrees(-24))
-                    .offset(x: proxy.size.width - 190, y: -150)
-                Ellipse()
-                    .fill(AppTheme.Reading.lilac.opacity(0.55))
-                    .frame(width: 260, height: 340)
-                    .rotationEffect(.degrees(20))
-                    .offset(x: -170, y: proxy.size.height * 0.48)
-                Ellipse()
-                    .fill(AppTheme.Colors.mistMint.opacity(0.30))
-                    .frame(width: 220, height: 280)
-                    .offset(x: proxy.size.width - 110, y: proxy.size.height * 0.76)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
+    private var homeBackground: some View { QuantumMistBackground() }
 
     public var body: some View {
         NavigationStack {
@@ -77,7 +52,7 @@ public struct ChatView: View {
                 if coordinator.messages.isEmpty {
                     homeBackground
                 } else {
-                    Color(hex: "FCFBF7").ignoresSafeArea()
+                    QuantumMistBackground()
                 }
 
                 VStack(spacing: 0) {
@@ -102,7 +77,12 @@ public struct ChatView: View {
                             coordinator.startTargetedTopic(from: message)
                             showingTopicDiscussion = currentTopic != nil
                         },
-                        onWelcomeAction: { homeJourney = $0 },
+                        onWelcomeAction: { action in
+                            if action.id == "continue-doing" { appState.activeTab = 1 }
+                            else if action.id == "help-me-clean" { appState.activeTab = 2 }
+                            else if action.id == "attention" { coordinator.sendMessage(text: action.prompt) }
+                            else { homeJourney = action }
+                        },
                         homeRefreshID: homeRefreshID
                     )
                 }

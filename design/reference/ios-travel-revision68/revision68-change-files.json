@@ -1,0 +1,277 @@
+[
+  {
+    "file": "src/App.jsx",
+    "before_sha256": "e2e74eff871e45a9482826f71bf03284aa5c9cf1b26bd4865acca0ab097079ed",
+    "after_sha256": "50db6aeaaee97116c59f7fab37cb106054a211a275d79bfcf3533e666cd8f6ed"
+  },
+  {
+    "file": "src/TravelContext.jsx",
+    "before_sha256": "62f8c1c456c041cf8731e9f9a5b75d43cd1626e995a977f6c63f743e803b1394",
+    "after_sha256": "90787d341f890e437b23900dd07378c4dc0140c6e681f50bdb64b4bf33b86e27"
+  },
+  {
+    "file": "src/components/CardPageUnfold.jsx",
+    "before_sha256": null,
+    "after_sha256": "74b0891703c3662aac0840f9f2571d9df82961c2c5f30c3b3e012d156427c41f"
+  },
+  {
+    "file": "src/components/DayDetail.jsx",
+    "before_sha256": "23b5147034ea804e92247fe9f14f6fbeb1d72c09c6d251931de37fdf6e8113bb",
+    "after_sha256": "e434a18759657d49e6b6afcc3b5553d8c7c497eeee479a477ad08dcffc0d2dcb"
+  },
+  {
+    "file": "src/components/FloatingSupportDock.jsx",
+    "before_sha256": "d59f6a01d47b9228c11dbb6cc4e51f9d9575c579ce6cdd4d22a62a6e3f98498f",
+    "after_sha256": "86651f5a67a0c22e5aa660421af425ba0a0877192b0c010c4d2c490b4408beb7"
+  },
+  {
+    "file": "src/components/FlowSupport.jsx",
+    "before_sha256": "64104895b70163ae9b0703287dc8c48fc751fd5304cef943d4ddb07297d81366",
+    "after_sha256": "669841f9fe308b1ff22438532ed8fb7e0534249c16f91f9ceee65331914be421"
+  },
+  {
+    "file": "src/components/LiquidCard.jsx",
+    "before_sha256": "57a848f5ce14fae50e0d986a5b306a11e255da19011bda4162d6a144a9f95d3e",
+    "after_sha256": "3e842a50fec79e26eda3ef150ef879ef46d71d8368bd629accb18dae60c94a06"
+  },
+  {
+    "file": "src/components/UI.jsx",
+    "before_sha256": "756b29401a48bad6ea54cff5cec29876f0d103271af75c672b0e5d7208caab86",
+    "after_sha256": "dbb9f84127795b054a87381b8db2bb798fe52aeeea08d3c91e9f715e06313862"
+  },
+  {
+    "file": "src/components/assistant/AssistantRoute.jsx",
+    "before_sha256": null,
+    "after_sha256": "50898d7dfeb85192d97a9bee4015ca2299ea0d9612606d41e78f908d7e443d14"
+  },
+  {
+    "file": "src/components/assistant/StructuredAnswer.jsx",
+    "before_sha256": null,
+    "after_sha256": "a654474c25594bd9f2ea3bd061904ee7e52a25d525347b10c102a2ebe7c8e7f2"
+  },
+  {
+    "file": "src/components/assistant/assistant-cards.css",
+    "before_sha256": null,
+    "after_sha256": "fd376b56e8a8d42ed6c88167e0f91f84f83634b62dc0e910524b91ea86d25a7e"
+  },
+  {
+    "file": "src/components/assistant/assistant-model.js",
+    "before_sha256": null,
+    "after_sha256": "fec687ad103bd6d8a0328b040bf33bb91ab46c8f961002f16761c0b777a0b0f9"
+  },
+  {
+    "file": "src/components/flight/InlinePassengers.jsx",
+    "before_sha256": "a16547f22d0acbf0d90ac86e3e1ed67cba879ec9f8a73dbb64cc25ecb5befca1",
+    "after_sha256": "9eeb5705c46369265d9b5ebce5ffe1389e47d75a4bd71a97f10475bfa9dcaa84"
+  },
+  {
+    "file": "src/components/journal/AdoptPhotoInk.js",
+    "before_sha256": null,
+    "after_sha256": "8b714703b8a2668f351858778b77a2414f74ec34f7572ea0bce04742c1f01d64"
+  },
+  {
+    "file": "src/components/journal/JournalAnnotationsPage.jsx",
+    "before_sha256": null,
+    "after_sha256": "5d4bf96a1981bb9a68060f320635b0f3f3f38cb665d5269b36e445a605eead40"
+  },
+  {
+    "file": "src/components/journal/JournalArrangePage.jsx",
+    "before_sha256": null,
+    "after_sha256": "f7470c9cc8497124246816bbaf107a18c5edd6ae82c5649d87d3d2b8321d020a"
+  },
+  {
+    "file": "src/components/journal/JournalAssistant.jsx",
+    "before_sha256": "825dd9c90926920a1b473461d2be1dd7410c9aab5a4456fb653a19ec1080f8c7",
+    "after_sha256": "1ffc2027aae8e9d85cf7fefccbe67b64e113312122b9ed2143679b450cc80650"
+  },
+  {
+    "file": "src/components/journal/JournalDay.jsx",
+    "before_sha256": "22d2f39021ef8d0db5f8b1ec7c6d557a89694ed4ed2e5cc07b11db2445fa0100",
+    "after_sha256": "9652a8fc89f4527b09860ff1a613f35b34f03b0cac0eea0f6478a24d805cbea7"
+  },
+  {
+    "file": "src/components/journal/JournalWeather.jsx",
+    "before_sha256": "5f46843d85f752be808c830863bcafa30f2385e0f5f8e369be995c32bc224f08",
+    "after_sha256": "d955914bc9be083905f396633613864d7f1777e53d50beb149922ab996aaf6bd"
+  },
+  {
+    "file": "src/components/journal/ReaderAnnotations.jsx",
+    "before_sha256": "7ea151d5b4f162cb54f9b40b1212f93b4bdf2db5fdf22b33d199305b62782e70",
+    "after_sha256": "ce15c59d4081593ceeb98752cf73f37398fe7a192fd2743076e8fd62b9e6e614"
+  },
+  {
+    "file": "src/components/journal/journal-media.js",
+    "before_sha256": "65578a254f33aa83b2692a0b0771d72d1902ea42acd49973a3943fb5eb1f9820",
+    "after_sha256": "e9001dadca76b4eb46e17563d953b0578b2214147db20d84726384d7ea22d1cb"
+  },
+  {
+    "file": "src/components/journal/revision68-adopt.css",
+    "before_sha256": null,
+    "after_sha256": "6d5d21622f3e694a9e02142680a806f5fc3b711875c381b26fce323bd1f1732d"
+  },
+  {
+    "file": "src/components/lifecycle/BeforePage.jsx",
+    "before_sha256": "e3ab5135a832c51937096bbda23fe7f0b686f7afddf9612c32ce7d746ef048fd",
+    "after_sha256": "cb4561c747143f39396fbc94d5d728026386b79c11ba7f92c2608f4b9712b0c4"
+  },
+  {
+    "file": "src/components/lifecycle/ChangeSheet.jsx",
+    "before_sha256": "81d330eda31a5852fcf4c89636879841c739af143bc006fa8e9a387894363baa",
+    "after_sha256": "6df23c6ac595d0639bfa63a25a51dbb3bf7aab389b638919bf8184f364c4a6fe"
+  },
+  {
+    "file": "src/components/lifecycle/SummarySheet.jsx",
+    "before_sha256": null,
+    "after_sha256": "10f2039205c40a9f1f61276e68ca95619dee597119c1e8f401f5ef065c67ddfc"
+  },
+  {
+    "file": "src/components/lifecycle/TodayPage.jsx",
+    "before_sha256": "6ab2b0b640ebbdd78abb66c09b072c5beeab60239dbd9f9f18ec62879cbcfbd6",
+    "after_sha256": "12e8b4d22ba962646d2b80480f5770790a79d87f52c8def7392f924d7518018c"
+  },
+  {
+    "file": "src/components/lifecycle/TripReview.jsx",
+    "before_sha256": "deb7e179c5ce9c1da120256c47751eceb18b81df2e2b4af62a025a5c97d954d7",
+    "after_sha256": "ce8375dc1fb9086bc87033d6ba751a22b00e39151b359578b3e2b224858b1948"
+  },
+  {
+    "file": "src/components/lifecycle/lifecycle-model.js",
+    "before_sha256": null,
+    "after_sha256": "98a4067e9474d72fef1cee9e1f1dbf0bea8abc5dfb5b3eb52a2e179db3835282"
+  },
+  {
+    "file": "src/components/lifecycle/revision68-lifecycle.css",
+    "before_sha256": null,
+    "after_sha256": "9d337827226620d3c809bd6fd5b2182fb23d57e143f1b116a22ef4c25ffc3e41"
+  },
+  {
+    "file": "src/components/services/DayServiceFacts.jsx",
+    "before_sha256": null,
+    "after_sha256": "414da077f7e11681a0343629cb1cc81ae602137e39b97bd99acfceb02b12bb95"
+  },
+  {
+    "file": "src/components/services/HotelPlanner.jsx",
+    "before_sha256": "3cd8d0aca0d50a378171613df6f0f2c7412ff2fd45e17b5fb8d16a9551e93403",
+    "after_sha256": "f38fd75d3f1b3f73d525d21118b6b0121336c342aee5534cd8bcb8ecd17d1a64"
+  },
+  {
+    "file": "src/components/services/NearbyMap.jsx",
+    "before_sha256": "85817aa033805f1a50d7c13ff0b592eefcf33e6ca5c2c6c648a55e0108c8feaa",
+    "after_sha256": "d2590ca3b27824bc6c47056fb6f3c1bb7cd364a1c8478440a5c8739c54e6bb5a"
+  },
+  {
+    "file": "src/components/services/RouteTickets.jsx",
+    "before_sha256": "fff165751159c9de152148d903fdbe088bba8148afb57468adbefe0e776dde6f",
+    "after_sha256": "51549eefb1390f9122d554c86557d12e3fe711dc2d2e10b9148064c098920ef0"
+  },
+  {
+    "file": "src/components/services/ServiceExpenseForm.jsx",
+    "before_sha256": null,
+    "after_sha256": "f2965a38e32e3ba784b081ec7753010364d2981b76f9e5d13e68bd3954eb92b8"
+  },
+  {
+    "file": "src/components/services/ServiceSheet.jsx",
+    "before_sha256": "064b1d0166f0bcb14fff8aed7b23602ffe0943b4c0b7b8460244eebe555dc5bc",
+    "after_sha256": "0a9bc3751757c70ccd13bcef87efc44ba580cabb72f0c28bbc12b7fb7934d7e2"
+  },
+  {
+    "file": "src/components/services/TravelLegs.jsx",
+    "before_sha256": "3b62fc6677873b681af3fc7165de19a076673c32135b69963f27f76a0be8a87e",
+    "after_sha256": "ecb4a927c6f4a28069f4a90f32c054ee8412ea24fa9d5f4d5c4b3f4833da16a8"
+  },
+  {
+    "file": "src/components/services/TripServices.jsx",
+    "before_sha256": "54fb03d33554a2159a4a134744c830c497bf0602c7458048dcbc02450225685b",
+    "after_sha256": "c494d302a2b74695600e5f029e332f7ccf38c59b63ddd21d0134d44c9f0afb51"
+  },
+  {
+    "file": "src/components/services/nearby-markers.js",
+    "before_sha256": null,
+    "after_sha256": "dfa559d3d9b6800660295fb2175ceb9ce39bcc7a3d6aba94acf138251d6acf56"
+  },
+  {
+    "file": "src/components/services/revision68-services.css",
+    "before_sha256": null,
+    "after_sha256": "d58d3c360702f34f96e7c78ee954eb9f131db5877750b91a421b9fe93b3ceb7d"
+  },
+  {
+    "file": "src/components/services/service-expenses.js",
+    "before_sha256": null,
+    "after_sha256": "7641a0f24d121a88580512693e62d05189d9a7d3316ee595f11d89bd426928ee"
+  },
+  {
+    "file": "src/main.jsx",
+    "before_sha256": "1142a136b01ba41de1a1e6e6a442571ea4e0fa9eb76ebd59878c6f00070a74e7",
+    "after_sha256": "1d82aa76389d439c5f16780d11bd0b2172b2d0837795ae117c1b1b2474ac741f"
+  },
+  {
+    "file": "src/revision68.css",
+    "before_sha256": null,
+    "after_sha256": "951e93e8602dad1956aa1817d5a5e8ac362873309e45ad3adeda4081b3ba64f0"
+  },
+  {
+    "file": "src/screens/Adopt.jsx",
+    "before_sha256": "1b39e3c85d14439591ad9bc2df63afa0721fcde69af86fcf36264c25fc86ee73",
+    "after_sha256": "0180ca036818a09d8c57bdd8f063b338d3655927a1bb89ea4754f4fe2a8ae680"
+  },
+  {
+    "file": "src/screens/Chat.jsx",
+    "before_sha256": "e5f3630b19b98c305348980cdf5bdd25f20e99055d3570f386e47efb8f815851",
+    "after_sha256": "1cbb7b68e292fd5176ad2635ff4a179d32f118a0a9ebff5a86d3a7114ee01ad2"
+  },
+  {
+    "file": "src/screens/Discover.jsx",
+    "before_sha256": "bbdbcc05fbd95b369d1243fb6a1c61dcefa3f6e4ba4d3914a3001c1c5110fc36",
+    "after_sha256": "1a2f30267f861a1e20e6f85918a190123709ba2369f0aa608d70a535d3fa7fed"
+  },
+  {
+    "file": "src/screens/JourneyHome.jsx",
+    "before_sha256": "dd306a23c804e6700992e02dae1096a2fbe07a283995d299b49cf01f0c0f5eae",
+    "after_sha256": "ddb7df6edd142cd5a30cb5ee72ec19ff2771e3a430d6abf04f3d33651b45461c"
+  },
+  {
+    "file": "src/screens/Notebook.jsx",
+    "before_sha256": "fd7a07e36224e4ef511cedb18abdd6dcfeac7a780c4d0354571d4ce75dafe8fa",
+    "after_sha256": "d76fd2ee6c2775e8ad4d619f0de2788a177be7902dc237d61fa6ed2e55aad29c"
+  },
+  {
+    "file": "tests/inspect-revision68-adopt.mjs",
+    "before_sha256": null,
+    "after_sha256": "31e46463c0e852af1788df0d5e7fdc66f355f41698fc1ad1410eb8c0b00e591b"
+  },
+  {
+    "file": "tests/inspect-revision68-core.mjs",
+    "before_sha256": null,
+    "after_sha256": "7094430b9f4af069142e3d6af006f4fc86d773a48dc235e305a302ce623250ca"
+  },
+  {
+    "file": "tests/inspect-revision68-hub.mjs",
+    "before_sha256": null,
+    "after_sha256": "1d3c59d4a7edd9f30441e0b0af8091e72e6be3ac52b0d4bd9935665424b49e3c"
+  },
+  {
+    "file": "tests/inspect-revision68-lifecycle.mjs",
+    "before_sha256": null,
+    "after_sha256": "1d1b10774c6e1dcca4d8aadcde050ae0cb8c61541c2f5874d13d06c95e0426eb"
+  },
+  {
+    "file": "tests/inspect-revision68-services.mjs",
+    "before_sha256": null,
+    "after_sha256": "4d47c8cf5019cb7e2e7095f32c4f871a2d32625c32d73ee933cfae1941170a72"
+  },
+  {
+    "file": "tests/revision68-assistant-model.test.mjs",
+    "before_sha256": null,
+    "after_sha256": "996626a511ea4584bdd9e0db70dc50e059fc2fedaf8929d5a6a1cc9565b741dc"
+  },
+  {
+    "file": "tests/revision68-lifecycle-model.test.mjs",
+    "before_sha256": null,
+    "after_sha256": "21bc16bff297fbd2b379b219a01ee30805bf98a90350bee6159f16514ff059eb"
+  },
+  {
+    "file": "tests/revision68-services-expenses.test.mjs",
+    "before_sha256": null,
+    "after_sha256": "313420e0d79ba04bc5816b53cf02ef2fa8db6375f9ba3fcfb977b72d7688eb05"
+  }
+]

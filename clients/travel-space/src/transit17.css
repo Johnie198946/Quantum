@@ -1,0 +1,47 @@
+/* Ticket header actions have their own band above core information. */
+.phone .tear-ticket-sheet .tear-summary{padding-top:76px}
+.phone .tear-ticket-sheet .ticket-kicker{margin-top:0}
+.phone .tear-ticket-sheet .sheet-close,.phone .tear-ticket-sheet .sheet-ask-ai{background:transparent;border:0;box-shadow:none}
+.phone .tear-ticket-sheet .tear-summary-values{flex-wrap:wrap;row-gap:8px}
+.phone .tear-ticket-sheet .tear-summary-values>strong{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.phone .route-ticket-choice{margin:22px 0}
+.route-ticket-choice>header small{font-size:9px;letter-spacing:1.6px;color:#586d62}
+.phone .route-ticket-choice>header h3{font-size:17px;font-weight:500;margin:7px 0 14px}
+.phone .route-ticket-options{display:flex;flex-direction:column;gap:9px}
+.phone .route-ticket-card{padding:0;min-width:0;overflow:hidden;border-radius:21px;border:1px solid #ffffffc9;background:#edf0e878;box-shadow:none}
+.phone .route-ticket-card.is-selected{background:linear-gradient(120deg,#b4d7d8b8 0%,#ebc7aabe 54%,#cabbdfb8 100%);border-color:#fffffff0;box-shadow:0 10px 24px #6d636510}
+.phone .route-ticket-card>button{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:10px 14px;margin:0;width:100%;background:transparent;border:0;border-radius:20px;text-align:left}
+.route-ticket-card>button>span:first-child{min-width:0;flex:1}
+.route-ticket-card strong{font-size:16px;font-weight:550;font-variant-numeric:tabular-nums;line-height:1.4}
+.route-ticket-card strong span{font-size:13px;font-weight:400}
+.route-ticket-card small{display:block;font-size:10px;line-height:1.4;color:#415b51;margin-top:3px}
+.route-ticket-price{display:flex;align-items:center;gap:9px;flex:none;font-size:15px;font-variant-numeric:tabular-nums}
+.route-ticket-card-details{padding:0 14px;overflow:hidden;font-size:11px}
+.route-ticket-card-details>p{display:flex;align-items:center;gap:7px;font-size:11px;line-height:1.5;margin:7px 0 13px;overflow-wrap:anywhere}
+.route-ticket-card-details ol{list-style:none;margin:0;padding:0}
+.route-ticket-card-details li{display:flex;align-items:center;gap:9px;min-height:30px;position:relative;line-height:1.6}
+.route-ticket-card-details li>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+.route-ticket-station-dot{width:6px;height:6px;flex:none;border-radius:50%;background:#62776b}
+.route-ticket-card-details li:not(:last-child):before{content:'';position:absolute;left:2px;top:19px;bottom:-8px;border-left:1px dashed #60746780}
+.route-ticket-card-details time{font-size:10px;font-variant-numeric:tabular-nums}
+.route-ticket-card-details footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #fff7;padding:12px 0;margin-top:10px;font-size:9px;color:#415b51}
+.route-ticket-card-details footer>span:last-child{display:flex;align-items:center;gap:4px;flex:none}
+.transport-story-cards{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:24px 0}
+.transport-story-card{margin:0;overflow:hidden;border-radius:19px;background:#eef0e978;border:1px solid #fff9;min-width:0}
+.transport-story-card img{display:block;object-fit:cover;width:100%;height:100px}
+.transport-story-card figcaption{padding:11px 12px}
+.transport-story-card strong{font-size:12px;font-weight:500;line-height:1.6;display:block}
+.phone .transport-story-card p{font-size:10px;line-height:1.8;margin:5px 0 0;color:#50665b}
+.phone .transport-cost-card{border-radius:22px;padding:16px;background:#eef0e978;border:1px solid #fffb;margin:18px 0;box-shadow:none}
+.transport-cost-card header{display:flex;gap:10px;align-items:center;margin:0 0 12px}
+.transport-cost-card h3{font-size:14px;font-weight:500;margin:0}
+.phone .transport-cost-card .transport-cost{display:block;margin:0;font-size:10px}
+.phone .transport-cost-card .transport-cost>span{margin:8px 0 0;display:flex;align-items:center;position:relative}
+.transport-cost-card .float-field{width:100%;min-width:0}
+.transport-cost-card b{position:absolute;right:15px;pointer-events:none;font-size:15px;font-weight:500}
+.phone .transport-confirm{display:flex;justify-content:center;align-items:center;gap:10px;width:112px;min-height:44px;margin:24px auto 12px;padding:0 18px;border-radius:25px;font-size:13px}
+.phone .transport-confirm:disabled{opacity:.5}
+.route-ticket-card button:focus-visible,.transport-confirm:focus-visible{outline:2px solid #637d6c;outline-offset:-3px}
+@container travel-phone (max-width:350px){.transport-story-cards{gap:8px}.transport-story-card img{height:84px}.transport-story-card figcaption{padding:10px}.phone .route-ticket-card>button{gap:8px;padding:10px 11px}.route-ticket-price{font-size:13px;gap:6px}.route-ticket-card strong{font-size:15px}}
+
+.phone .transfer-flying-panel .airport-transfer-guide>header h2{font-family:inherit;font-size:15px;font-weight:600;line-height:1.5;letter-spacing:0;margin:3px 0 0;color:inherit}

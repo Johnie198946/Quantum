@@ -438,172 +438,67 @@ public struct ChatHomeAction: Identifiable, Hashable {
 }
 
 struct LearningWelcomeView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    @EnvironmentObject private var activities: WorkflowActivityCoordinator
+    @ObservedObject private var notes = KnowledgeNoteStore.shared
     let resume: LearningResumeDTO?
     let resumeStatus: String
     let onAction: ((ChatHomeAction) -> Void)?
-
     private var progress: Double { min(max(resume?.subscription.progress ?? 0, 0), 1) }
-    var learningAccessibilityLabel: String {
-        resume.map { "继续学，\($0.subscription.book.title)，\($0.sectionTitle)，已读百分之\(Int(progress * 100))" } ?? "继续学，\(resumeStatus)"
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("下午好，\n今天想从哪里继续？")
-                .font(.system(size: 35, weight: .bold, design: .serif))
-                .foregroundStyle(HomePalette.ink)
-                .lineSpacing(2)
-            Text("你的进度和灵感，都在这里等你。")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(HomePalette.secondary)
-
+        VStack(alignment: .leading, spacing: 24) {
+            QuantumSectionHeading(eyebrow: "QUANTUM · YOUR EVERYDAY SPACE", title: "今天，\n想从哪里开始？", detail: "把进度和灵感，慢慢留在这里。")
+            QuantumSceneryMagazine()
             learningHero
-            HStack(spacing: 10) {
-                compactAction(ChatHomeAction.all[1], tint: HomePalette.mint, icon: "doc.text.fill")
-                compactAction(ChatHomeAction.all[2], tint: HomePalette.lilac, icon: "paintbrush.fill")
+            HStack(spacing: 12) {
+                action(ChatHomeAction.all[1], icon: "square.3.layers.3d", detail: "\(activities.workflows.count) 个当前对话任务")
+                action(ChatHomeAction.all[2], icon: "tray", detail: "\(notes.notes.count) 篇笔记与记录")
             }
-            attentionSection
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, AppTheme.Metrics.contentGutter)
-        .padding(.top, AppTheme.Spacing.lg)
-        .padding(.bottom, AppTheme.Spacing.xxl)
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : (reduceMotion ? 0 : 12))
-        .onAppear {
-            withAnimation(reduceMotion ? nil : AppTheme.Motion.standard) { appeared = true }
-        }
-        .accessibilityLabel("下午好，今天想从哪里继续？")
+            Button { onAction?(.attention) } label: {
+                HStack { Text("看看值得留意的事"); Spacer(); Image(systemName: "chevron.right") }
+                    .font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).padding(.vertical, 12)
+            }.buttonStyle(.plain)
+        }.padding(.horizontal, AppTheme.Metrics.contentGutter).padding(.top, 28).padding(.bottom, 12)
     }
-
+    var learningAccessibilityLabel: String {
+        if let resume { return "继续学，\(resume.subscription.book.title)，\(resume.sectionTitle)，百分之\(Int(progress * 100))" }
+        return "继续学，\(resumeStatus)"
+    }
     var learningHero: some View {
-        Button { onAction?(ChatHomeAction.all[0]) } label: {
-            ZStack(alignment: .leading) {
-            Image("home_learning_hero")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 228)
-                .clipped()
-                LinearGradient(colors: [Color.white.opacity(0.96), Color.white.opacity(0.15)], startPoint: .leading, endPoint: .trailing)
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Text("继续学")
-                            .font(.system(size: 30, weight: .bold, design: .serif))
-                        Image(systemName: "chevron.right")
-                            .font(.headline.weight(.bold))
-                            .frame(width: 38, height: 38)
-                            .background(Color.white.opacity(0.66), in: Circle())
+            Button { onAction?(ChatHomeAction.all[0]) } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: "book").font(.system(size: 22)).frame(width: 44, height: 44)
+                        .background(AppTheme.Colors.mistMint.opacity(0.6), in: Circle())
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(resume?.subscription.book.title ?? "继续阅读").font(.custom("Songti SC", size: 22, relativeTo: .title2))
+                        Text(resume?.sectionTitle ?? resumeStatus).font(.system(size: 12)).foregroundStyle(AppTheme.Colors.textSecondary)
+                        if resume != nil { ProgressView(value: progress).tint(AppTheme.Colors.primary) }
                     }
-                    Text(resume?.subscription.book.title ?? resumeStatus)
-                        .font(.system(size: 17, weight: .semibold))
-                        .lineLimit(2)
-                    if let resume {
-                        Text(resume.sectionTitle)
-                            .font(.caption).foregroundStyle(HomePalette.secondary).lineLimit(1)
-                        HStack(spacing: 10) {
-                            ProgressView(value: progress).tint(HomePalette.green).frame(width: 128)
-                            Text("已读 \(Int(progress * 100))%")
-                                .font(.caption.weight(.semibold)).foregroundStyle(HomePalette.secondary)
-                        }
-                    }
-                    HomePrimaryLabel("继续阅读", width: 132)
-                }
-                .foregroundStyle(HomePalette.ink)
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .buttonStyle(SoftButtonStyle())
-        .frame(height: 228)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        }
-        .shadow(color: HomePalette.shadow, radius: 18, y: 8)
-        .accessibilityLabel(learningAccessibilityLabel)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.system(size: 13))
+                }.foregroundStyle(AppTheme.Colors.textPrimary).padding(22).quantumCard()
+            }.buttonStyle(SoftButtonStyle())
+            .accessibilityLabel(learningAccessibilityLabel)
     }
-
-    private func compactAction(_ action: ChatHomeAction, tint: Color, icon: String) -> some View {
-        Button { onAction?(action) } label: {
-            ZStack(alignment: .bottomTrailing) {
-                Image(action.id == "continue-doing" ? "home_continue_work_art" : "home_cleanup_art")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 112, height: 112)
-                    .offset(x: 26, y: 18)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundStyle(action.id == "help-me-clean" ? Color(hex: "7664E8") : Color(hex: "27B8B2"))
-                    .frame(width: 42, height: 42)
-                    .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
-                HStack(spacing: 6) {
-                    Text(action.title).font(.system(size: 19, weight: .bold, design: .serif))
-                    Image(systemName: "chevron.right").font(.caption.weight(.bold))
-                }
-                Text(action.id == "continue-doing" ? "毕业论文资料整理" : "查看整理建议")
-                    .font(.subheadline.weight(.medium))
-                Text(action.id == "continue-doing" ? "3 个步骤待完成" : "对话 · 笔记 · 待办")
-                    .font(.caption).foregroundStyle(HomePalette.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .foregroundStyle(HomePalette.ink)
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 136, alignment: .leading)
-            .background(tint, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 24).stroke(Color.white, lineWidth: 1) }
-        }
-        .buttonStyle(SoftButtonStyle())
-    }
-
-    private var attentionSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("为你留意").font(.system(size: 22, weight: .bold, design: .serif))
-                Spacer()
-                Button("更多 ›") { onAction?(.attention) }
-                    .font(.subheadline.weight(.medium)).foregroundStyle(HomePalette.secondary)
-            }
-            attentionRow(icon: "calendar", tint: HomePalette.coral, title: "今天的学习计划", subtitle: "线性代数第 4 章 · 预计 25 分钟", button: "开始") {
-                onAction?(.attention)
-            }
-            attentionRow(icon: "lightbulb.fill", tint: HomePalette.blue, title: "值得回看的灵感", subtitle: "“先别急着问它像不像人，而是问一个更好的问题。”", button: "继续阅读") {
-                onAction?(ChatHomeAction.all[0])
-            }
-        }
-    }
-
-    private func attentionRow(icon: String, tint: Color, title: String, subtitle: String, button: String, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).font(.title3).foregroundStyle(tint)
-                .frame(width: 42, height: 42).background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.subheadline.weight(.bold)).foregroundStyle(HomePalette.ink)
-                Text(subtitle).font(.caption).foregroundStyle(HomePalette.secondary).lineLimit(2)
-            }
-            Spacer(minLength: 4)
-            Button(button, action: action).font(.caption.weight(.semibold)).foregroundStyle(tint)
-                .padding(.horizontal, 12).frame(height: 34).background(tint.opacity(0.12), in: Capsule())
-        }
-        .padding(12).background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 20))
-        .overlay { RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1) }
+    private func action(_ value: ChatHomeAction, icon: String, detail: String) -> some View {
+        Button { onAction?(value) } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                Image(systemName: icon).font(.system(size: 23, weight: .regular))
+                Text(value.title).font(.custom("Songti SC", size: 20, relativeTo: .title3))
+                Text(detail).font(.system(size: 11)).foregroundStyle(AppTheme.Colors.textSecondary)
+            }.frame(maxWidth: .infinity, minHeight: 134, alignment: .leading).padding(20)
+                .foregroundStyle(AppTheme.Colors.textPrimary).quantumCard()
+        }.buttonStyle(SoftButtonStyle())
     }
 }
 
 private enum HomePalette {
-    static let ink = Color(hex: "10213C")
-    static let secondary = Color(hex: "71819B")
-    static let green = Color(hex: "55C982")
-    static let mint = Color(hex: "E4FBF2")
-    static let lilac = Color(hex: "F0EEFF")
-    static let coral = Color(hex: "FF706F")
-    static let blue = Color(hex: "438FF2")
+    static let ink = Color(hex: "263D35")
+    static let secondary = Color(hex: "6D8178")
+    static let green = Color(hex: "829D8D")
+    static let mint = Color(hex: "E4ECE7")
+    static let lilac = Color(hex: "E8E5EF")
+    static let coral = Color(hex: "B98580")
+    static let blue = Color(hex: "7B918E")
     static let shadow = Color(hex: "526A79").opacity(0.11)
 }
 

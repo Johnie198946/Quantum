@@ -182,10 +182,10 @@ public struct KnowledgeView: View {
                     onDismiss: { inspectedBook = nil }
                 )
             }
-            .sheet(isPresented: $showingTravelPlanner) {
-                WorkflowCreateSheet(initialKind: "travel") { created in
+            .onChange(of: showingTravelPlanner) { _, showing in
+                if showing {
                     showingTravelPlanner = false
-                    appState.openWorkflow(created.workflow)
+                    appState.activeTab = 1
                 }
             }
             .sheet(isPresented: $showingArchive) { KnowledgeArchiveView() }
@@ -414,7 +414,7 @@ public struct KnowledgeView: View {
 
     private var libraryHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("阅读与记录").font(.caption.weight(.semibold))
+            Text("YOUR WORDS, KEPT").font(.system(size: 10, weight: .semibold)).tracking(1.8)
                 .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                 .overlay(alignment: .trailing) { knowledgeMenu }
             HStack(alignment: .bottom, spacing: 26) {
@@ -424,7 +424,7 @@ public struct KnowledgeView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(shelf ? "书架" : "笔记")
-                                .font(.title.weight(.bold))
+                                .font(.custom(AppTheme.Typography.editorialName, size: 32, relativeTo: .largeTitle))
                                 .foregroundStyle(showingBookshelf == shelf ? AppTheme.Reading.ink : AppTheme.Reading.secondary)
                             Capsule().fill(showingBookshelf == shelf ? AppTheme.Colors.primary : .clear)
                                 .frame(width: 52, height: 2)
@@ -454,11 +454,8 @@ public struct KnowledgeView: View {
         Button(action: createNote) {
             Label("新建笔记", systemImage: "square.and.pencil")
                 .font(.body.weight(.semibold))
-                .foregroundStyle(AppTheme.Colors.onPrimary)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(AppTheme.Colors.primary, in: RoundedRectangle(cornerRadius: AppTheme.Reading.radius))
         }
-        .buttonStyle(SoftButtonStyle())
+        .buttonStyle(QuantumPrimaryButtonStyle())
         .accessibilityIdentifier("note-create")
         Button(action: openDailyNote) {
             Label("今日日记", systemImage: "sun.max")
@@ -643,7 +640,8 @@ public struct KnowledgeView: View {
             Text(store.notes.isEmpty ? "一句话也值得留下。" : "换个关键词，或清除筛选再试。")
         } actions: {
             if store.notes.isEmpty {
-                Button("写第一篇笔记", action: createNote).buttonStyle(.borderedProminent)
+                Button("写第一篇笔记", action: createNote)
+                    .buttonStyle(QuantumPrimaryButtonStyle()).frame(maxWidth: 240)
             } else {
                 Button("清除搜索与筛选") { searchText = ""; selectedTags.removeAll(); scope = .all }
                     .frame(minHeight: 44)
@@ -1067,12 +1065,19 @@ struct KnowledgeNoteEditor: View {
     private var note: KnowledgeNote? { store.note(id: noteID) }
 
     var body: some View {
-        editorContent
+        Group {
+            if isTravelNote, NoteIllustrationPlacement.travelObject(noteContent) != nil { TravelNoteTemplateView(noteID: noteID) }
+            else { editorContent }
+        }
         .navigationTitle(mode == .edit ? "" : (isTravelNote ? "旅行手记" : (title.isEmpty ? "笔记" : title)))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .toolbar { editorToolbar }
+        .toolbar {
+            if isTravelNote, NoteIllustrationPlacement.travelObject(noteContent) != nil {
+                ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "chevron.left") } }
+            } else { editorToolbar }
+        }
         .task(id: noteID) { loadNote() }
         .onChange(of: title) { _, _ in scheduleSave() }
         .onChange(of: noteContent) { _, value in store.activeNoteDrafts[noteID] = value; scheduleSave() }
@@ -2722,6 +2727,7 @@ struct TravelNoteSaveSheet: View {
     }
 }
 
+// Compatibility names preserve existing artifact call sites; the old native travel pages are retired.
 struct TravelNoteReadingView: View {
     enum Page: String, CaseIterable, Identifiable {
         case cover = "封面", day = "旅行日记", place = "地点", appendix = "实用附录"
@@ -2730,284 +2736,14 @@ struct TravelNoteReadingView: View {
     let title: String
     let content: String
     let baseURL: URL
-    let showsPagePicker: Bool
-    let onSelection: (String) -> Void
-    let onIllustrate: ((String) -> Void)?
-    let onRecord: (() -> Void)?
-    let onSync: ((String) -> Void)?
-    let onNavigate: (() -> Void)?
-    @State private var page: Page
-    @State private var day: String?
-    @State private var showingGlobe = false
-    @State private var latestContent: String?
-    @State private var syncError: String?
-    @State private var copiedSummary = false
-    private var object: [String: Any] { NoteIllustrationPlacement.travelObject(content) ?? [:] }
-    private var plan: TravelPlanDocument? { TravelPlanDocument.decode(content) }
-    private var days: [String] { plan?.dayIds ?? [] }
-    private var actions: [TravelDayAction] { (plan?.actions ?? []).filter { $0.dayId == (day ?? days.first) } }
-
-    init(title: String, content: String, baseURL: URL, initialPage: Page = .cover, showsPagePicker: Bool = true,
-         onSelection: @escaping (String) -> Void = { _ in }, onIllustrate: ((String) -> Void)? = nil, onRecord: (() -> Void)? = nil, onSync: ((String) -> Void)? = nil, onNavigate: (() -> Void)? = nil) {
-        self.title = title; self.content = content; self.baseURL = baseURL
-        self.showsPagePicker = showsPagePicker; self.onSelection = onSelection
-        self.onIllustrate = onIllustrate; self.onRecord = onRecord; self.onSync = onSync; self.onNavigate = onNavigate
-        _page = State(initialValue: initialPage)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if plan == nil {
-                NoteReadingView(content: content, baseURL: baseURL, onSelection: onSelection)
-            } else {
-                if showsPagePicker && page != .cover {
-                    Picker("旅行手记页面", selection: $page) {
-                        Text("封面").tag(Page.cover)
-                        Text("旅行日记").tag(Page.day)
-                        Text("实用附录").tag(Page.appendix)
-                    }.pickerStyle(.segmented).padding(.horizontal, 20)
-                }
-                switch page {
-                case .cover: coverPage
-                case .day: dayPage
-                case .place, .appendix:
-                    if TravelNotePresentation.includes("include_places", in: content) {
-                        VStack(alignment: .leading, spacing: 20) {
-                            Text("安心出门的小事。").font(.system(size: 30, weight: .semibold, design: .serif))
-                            Text("把住、食、行放在一起，需要时随手翻。")
-                                .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
-                            if let plan {
-                                Label(plan.readinessTitle, systemImage: "info.circle").font(.caption)
-                                Text("预算参考 · " + (plan.budget ?? "标准待选择")).font(.headline)
-                                LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 12) {
-                                    ForEach(["stay", "transport", "food", "activities"], id: \.self) { category in
-                                        let item = plan.budgetBreakdown.first { $0.category == category }
-                                        TravelInfoCard(icon: category == "stay" ? "bed.double" : category == "food" ? "fork.knife" : category == "transport" ? "tram" : "ticket",
-                                            title: ["stay": "住宿", "transport": "当地交通", "food": "餐饮", "activities": "游玩与备用" ][category] ?? category,
-                                            value: item?.value ?? "标准待选择", detail: item?.note ?? "按日期、人数与路线核算", color: AppTheme.Colors.primary)
-                                    }
-                                }
-                                Text("金额为分项参考，往返机票与备用金请另行核对；不是已预订总价。").font(.caption).foregroundStyle(.secondary)
-                                TravelPracticalGuideView(plan: plan, content: content)
-                            }
-                            Button("旅行小世界", systemImage: "globe") { showingGlobe = true }.frame(minHeight: 44)
-                            HStack {
-                                Button("打印 / PDF", systemImage: "printer") {
-                                    let controller = UIPrintInteractionController.shared
-                                    controller.printFormatter = UISimpleTextPrintFormatter(text: plan?.shareSummary ?? title)
-                                    controller.present(animated: true, completionHandler: nil)
-                                }.frame(minHeight: 44)
-                                Spacer()
-                                Button(copiedSummary ? "已复制摘要" : "复制分享摘要", systemImage: "doc.on.doc") {
-                                    UIPasteboard.general.string = plan?.shareSummary ?? title
-                                    copiedSummary = true
-                                }.frame(minHeight: 44)
-                            }.font(.subheadline)
-                            Button("继续写旅行日记") { page = .day }.buttonStyle(QuantumPrimaryButtonStyle())
-                        }.padding(20)
-                    } else {
-                        ContentUnavailableView("附录还没收进来", systemImage: "book.closed", description: Text("生成时未选择附录；原攻略仍然保留。"))
-                    }
-                }
-            }
-        }
-        .tint(AppTheme.Colors.primary)
-        .onChange(of: page) { _, _ in onNavigate?() }
-        .onChange(of: day) { _, _ in onNavigate?() }
-        .fullScreenCover(isPresented: $showingGlobe) { if let plan { TravelJourneyView(title: title, plan: plan) } }
-        .task(id: object["workflow_artifact_hash"] as? String) {
-            guard onSync != nil, let execution = object["workflow_execution_id"] as? String else { return }
-            let account = KnowledgeNoteStore.shared.accountFingerprint
-            do {
-                let state = try await APIClient.shared.fetchWorkflowExecution(id: execution)
-                guard state.status == "completed", KnowledgeNoteStore.shared.accountFingerprint == account else { return }
-                let versions = try await APIClient.shared.fetchWorkflowArtifacts(executionId: execution)
-                guard KnowledgeNoteStore.shared.accountFingerprint == account else { return }
-                let latest = versions.filter { $0.metadata.renderType == "travel_plan_v2" && $0.metadata.approvalGate == nil }
-                    .max { ($0.metadata.travelRevision ?? 0) < ($1.metadata.travelRevision ?? 0) }
-                guard let latest, latest.contentHash != object["workflow_artifact_hash"] as? String else { latestContent = nil; return }
-                let loaded = try await APIClient.shared.fetchWorkflowArtifactContent(executionId: execution, artifactId: latest.id).content
-                guard KnowledgeNoteStore.shared.accountFingerprint == account, var value = NoteIllustrationPlacement.travelObject(loaded) else { return }
-                value["workflow_execution_id"] = execution; value["workflow_artifact_id"] = latest.id; value["workflow_artifact_hash"] = latest.contentHash
-                latestContent = NoteIllustrationPlacement.json(value)
-            } catch { syncError = "暂时无法核对最新攻略，已保留保存时的版本。" }
-        }
-    }
-
-    private var coverPage: some View {
-        let stored = (object["note_presentation"] as? [String: Any])?["cover"] as? String
-        let archived = (object["illustrations"] as? [[String: String]])?.first { $0["anchor"] == "overview" && ($0["alt"] ?? "").hasPrefix("网络风景参考") }
-        let localCover = stored == nil || stored == TravelNotePresentation.destinationCover ? archived : nil
-        let references = object["photo_references"] as? [[String: Any]] ?? []
-        let reference = references.first { "photo:" + ($0["id"] as? String ?? "") == stored } ?? references.first { ($0["image_url"] as? String)?.hasPrefix("https://") == true }
-        return VStack(spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                GeometryReader { size in
-                    if let path = localCover?["path"] {
-                        NoteReadingImage(url: baseURL.appendingPathComponent(path), caption: "目的地风景封面", compact: true)
-                            .frame(width: size.size.width, height: size.size.height).clipped()
-                    } else if let raw = reference?["image_url"] as? String, let url = URL(string: raw) {
-                        AsyncImage(url: url) { phase in
-                            if let image = phase.image { image.resizable().scaledToFill() }
-                            else { AppTheme.Colors.primary }
-                        }.frame(width: size.size.width, height: size.size.height).clipped()
-                    } else {
-                        AppTheme.Colors.primary
-                    }
-                }
-                LinearGradient(colors: [.white.opacity(0.9), .clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top) {
-                        Image("quantum_wordmark").resizable().scaledToFit().frame(width: 112)
-                        Spacer()
-                        Text(plan?.destination ?? "MY JOURNEY").font(.caption.weight(.semibold))
-                    }.foregroundStyle(AppTheme.Colors.textPrimary)
-                    Text(title).font(.system(size: title.count > 18 ? 30 : 38, weight: .semibold, design: .serif)).foregroundStyle(AppTheme.Colors.textPrimary)
-                    Text(plan?.dateRange ?? "日期待决定").font(.subheadline).foregroundStyle(AppTheme.Colors.textPrimary)
-                    Spacer(minLength: 140)
-                    Text("在步履中，记录自己的风景。\n收藏一段属于我们的时光。")
-                        .font(.system(size: 20, weight: .medium, design: .serif)).lineSpacing(6)
-                    if TravelNotePresentation.includes("include_route", in: content) {
-                        Text("\(days.count) 个参考日 · 游览顺序").font(.caption)
-                        TravelDayRouteStrip(actions: plan?.actions.filter { days.contains($0.dayId) } ?? [], compact: true)
-                    }
-                    HStack {
-                        if let companions = plan?.companions { Label("\(companions) 人同行", systemImage: "person.2") }
-                        Spacer()
-                        Label("仅自己可见", systemImage: "lock")
-                    }.font(.caption)
-                    Text(reference != nil || localCover != nil ? "目的地参考图 · 不是个人旅行实拍" : "目的地封面 · 待补充旅行照片")
-                        .font(.caption2)
-                }.padding(28).foregroundStyle(.white)
-            }.frame(minHeight: 650)
-            VStack(spacing: 16) {
-                if let plan { Text(plan.readinessTitle).font(.caption).foregroundStyle(.secondary) }
-                if let latestContent, let onSync {
-                    Button("同步最新计划") {
-                        do { onSync(try TravelNotePresentation.syncing(content, with: latestContent)); self.latestContent = nil }
-                        catch { syncError = error.localizedDescription }
-                    }.buttonStyle(.bordered)
-                    Text("只更新计划，你的文字、照片和封面保持原样。").font(.caption).foregroundStyle(.secondary)
-                }
-                if let syncError { Text(syncError).font(.caption).foregroundStyle(.secondary) }
-                Button("翻开旅行手记 →") { page = .day }.buttonStyle(QuantumPrimaryButtonStyle())
-                    .accessibilityIdentifier("travel-note-open-diary")
-                if let alt = localCover?["alt"], let raw = alt.components(separatedBy: " · ").last,
-                   let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
-                    Link("封面照片来源", destination: url).font(.caption).frame(minHeight: 44)
-                }
-                if let reference, let sourceId = reference["source_id"] as? String,
-                   let sources = object["sources"] as? [[String: Any]],
-                   let source = sources.first(where: { $0["id"] as? String == sourceId }),
-                   let raw = source["url"] as? String, let url = URL(string: raw) {
-                    Link("封面参考来源", destination: url).font(.caption)
-                }
-            }.padding(20)
-        }
-    }
-
-    private var dayPage: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack { ForEach(Array(days.enumerated()), id: \.element) { index, value in
-                    Button("DAY \(index + 1)") { day = value }.buttonStyle(.bordered)
-                        .tint((day ?? days.first) == value ? AppTheme.Colors.primary : .secondary)
-                } }
-            }
-            Text("DAY \((days.firstIndex(of: day ?? "") ?? 0) + 1)").font(.system(size: 30, weight: .semibold, design: .serif))
-            let chapter = plan?.days.first { $0.id == (day ?? days.first) }
-            HStack {
-                Text(chapter?.title ?? actions.first?.title ?? plan?.destination ?? "我的旅行").font(.system(size: 18, weight: .medium, design: .serif))
-                Spacer()
-                if let date = chapter?.date, !date.isEmpty { Text(date).font(.caption) }
-            }
-            if let journal = chapter?.journal, !journal.isEmpty {
-                Text(journal).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(7).lineLimit(journal.count > 120 ? 3 : nil)
-                if journal.count > 120 { DisclosureGroup("展开今日安排说明") { TravelDetailText(content: journal) } }
-            }
-            if let journal = object["journal"] as? String, !journal.isEmpty {
-                DisclosureGroup("自己的旅行记录") { NoteReadingView(content: journal, baseURL: baseURL, onSelection: onSelection) }
-            }
-            if TravelNotePresentation.includes("include_photos", in: content) {
-                let dayIds = Set(actions.map(\.id))
-                let stopAnchors = Set(actions.compactMap(\.placeId).compactMap { id in
-                    plan?.stops.firstIndex { $0.sourceID == id }.map { "stop:\($0)" }
-                })
-                let localPhotos = (object["illustrations"] as? [[String: String]] ?? []).filter {
-                    !($0["alt"] ?? "").hasPrefix("AI 插图") && !($0["alt"] ?? "").hasPrefix("来源页面截图")
-                }.filter {
-                    $0["day_id"] == (day ?? days.first) || $0["anchor"] == "day:" + (day ?? days.first ?? "") ||
-                    dayIds.contains($0["anchor"] ?? "") || stopAnchors.contains($0["anchor"] ?? "")
-                }
-                let references = (object["photo_references"] as? [[String: Any]] ?? []).filter { item in
-                    if let id = item["place_id"] as? String { return actions.contains { $0.placeId == id } }
-                    return stopAnchors.contains(item["anchor"] as? String ?? "")
-                }
-                let remotePhotos: [[String: String]] = references.compactMap { item in
-                    guard let raw = item["image_url"] as? String, URL(string: raw)?.scheme == "https",
-                          !localPhotos.contains(where: { $0["anchor"] == item["anchor"] as? String }) else { return nil }
-                    return ["url": raw, "alt": item["caption"] as? String ?? "目的地风景"]
-                }
-                let photos = localPhotos + remotePhotos
-                if photos.count >= 3 {
-                    GeometryReader { geometry in
-                        let width = max(0, (geometry.size.width - 6) / 2)
-                        HStack(alignment: .top, spacing: 6) {
-                            diaryPhoto(photos[0]).frame(width: width, height: 260).clipped()
-                            VStack(spacing: 6) {
-                                diaryPhoto(photos[1]).frame(width: width, height: 127).clipped()
-                                diaryPhoto(photos[2]).frame(width: width, height: 127).clipped()
-                            }
-                        }
-                    }.frame(height: 260).clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 6) {
-                    ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
-                        if photos.count < 3 || index >= 3 { diaryPhoto(photo) }
-                    }
-                }
-                if !references.isEmpty || localPhotos.contains(where: { ($0["alt"] ?? "").hasPrefix("网络风景参考") }) {
-                    DisclosureGroup("照片来源与拍摄建议") {
-                        ForEach(Array(localPhotos.enumerated()), id: \.offset) { _, photo in
-                            if let alt = photo["alt"], alt.hasPrefix("网络风景参考"),
-                               let raw = alt.components(separatedBy: " · ").last, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
-                                Link(alt.components(separatedBy: " · ").first ?? "风景照片来源", destination: url).font(.caption).frame(minHeight: 44)
-                            }
-                        }
-                        ForEach(Array(references.enumerated()), id: \.offset) { _, item in
-                            if let tip = item["shooting_tip"] as? String, !tip.isEmpty { TravelDetailText(content: tip) }
-                            if let sourceId = item["source_id"] as? String,
-                               let source = (object["sources"] as? [[String: Any]])?.first(where: { $0["id"] as? String == sourceId }),
-                               let raw = source["url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
-                                Link(source["title"] as? String ?? "照片来源", destination: url).font(.caption).frame(minHeight: 44)
-                            }
-                        }
-                    }.font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-                if photos.isEmpty, let onIllustrate { Button("查找目的地风景照片", systemImage: "photo") { onIllustrate("overview") }.buttonStyle(.bordered) }
-            }
-            if TravelNotePresentation.includes("include_route", in: content) {
-                HStack { Text("今日路线").font(.headline); Spacer(); Button("旅行小世界", systemImage: "globe") { showingGlobe = true } }
-                TravelDayRouteStrip(actions: actions)
-                ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                    TravelActionReadingCard(action: action, stop: plan?.stops.first { $0.sourceID == action.placeId }, number: index + 1)
-                }
-            }
-            if let onRecord { Button("＋ 记下这一刻", action: onRecord).buttonStyle(QuantumPrimaryButtonStyle()).accessibilityIdentifier("travel-note-record") }
-            Button("实用附录") { page = .appendix }.buttonStyle(.bordered).accessibilityIdentifier("travel-note-appendix")
-        }.padding(20)
-    }
-    @ViewBuilder
-    private func diaryPhoto(_ photo: [String: String]) -> some View {
-        if let path = photo["path"] {
-            NoteReadingImage(url: baseURL.appendingPathComponent(path), caption: photo["alt"] ?? "旅行照片", compact: true)
-        } else if let raw = photo["url"], let url = URL(string: raw) {
-            AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
-                AppTheme.Colors.mistMint.overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
-            }.frame(maxWidth: .infinity, minHeight: 120).clipped().accessibilityLabel(photo["alt"] ?? "目的地风景")
-        }
-    }
-
+    var initialPage: Page = .cover
+    var showsPagePicker: Bool = true
+    var onSelection: ((String) -> Void)? = nil
+    var onIllustrate: ((String) -> Void)? = nil
+    var onRecord: (() -> Void)? = nil
+    var onSync: ((String) -> Void)? = nil
+    var onNavigate: (() -> Void)? = nil
+    var body: some View { TravelArtifactTemplateView(content: content).frame(minHeight: 700) }
 }
 
 struct TravelDetailText: View {
@@ -3507,540 +3243,14 @@ private struct TravelInfoCard: View {
 
 struct TravelPlanResultView: View {
     enum Page: Hashable { case overview, day, place, check }
-
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var appState: AppState
-    @State private var linkedWorkflowError: String?
     let title: String
     let content: String
-    let showsPagePicker: Bool
-    @State private var page: Page
-    @State private var selectedDay: String?
-    @State private var showingGlobe = false
-    let baseURL: URL?
-    let onIllustrate: ((String) -> Void)?
-    let onProgress: ((String, String) -> Void)?
-    let onEdit: ((TravelDayAction) -> Void)?
-    private var previewOnly: Bool { content.isEmpty && ProcessInfo.processInfo.arguments.contains("-prototypePreview") }
-
-    init(title: String, content: String, initialPage: Page = .overview, baseURL: URL? = nil, onIllustrate: ((String) -> Void)? = nil, onProgress: ((String, String) -> Void)? = nil, onEdit: ((TravelDayAction) -> Void)? = nil, showsPagePicker: Bool = true) {
-        self.showsPagePicker = showsPagePicker
-        self.onEdit = onEdit
-        self.onProgress = onProgress
-        self.title = title
-        self.content = content
-        self.baseURL = baseURL
-        self.onIllustrate = onIllustrate
-        _page = State(initialValue: initialPage)
+    init(title: String, content: String, initialPage: Page = .overview, baseURL: URL? = nil,
+         onIllustrate: ((String) -> Void)? = nil, onProgress: ((String, String) -> Void)? = nil,
+         onEdit: ((TravelDayAction) -> Void)? = nil, showsPagePicker: Bool = true) {
+        self.title = title; self.content = content
     }
-
-    private var plan: TravelPlanDocument {
-        TravelPlanDocument.decode(content) ?? (previewOnly ? .kyotoPreview : TravelPlanDocument(destination: nil, dateRange: nil, budget: nil, companions: nil, style: nil, stops: []))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            if TravelPlanDocument.decode(content) == nil && !previewOnly {
-                Label("旅行版式暂时无法读取，原文已保留。", systemImage: "exclamationmark.circle")
-                    .font(.subheadline).foregroundStyle(AppTheme.Colors.textSecondary)
-                NoteReadingView(content: content, baseURL: baseURL)
-            } else {
-                if let executionId = NoteIllustrationPlacement.travelObject(content)?["workflow_execution_id"] as? String {
-                    Button("查看或调整最新行程", systemImage: "arrow.triangle.2.circlepath") {
-                        let account = KnowledgeNoteStore.shared.accountFingerprint
-                        Task {
-                            do {
-                                let execution = try await APIClient.shared.fetchWorkflowExecution(id: executionId)
-                                let workflow = try await APIClient.shared.fetchWorkflow(id: execution.workflowId)
-                                guard KnowledgeNoteStore.shared.accountFingerprint == account else { return }
-                                appState.openWorkflow(workflow)
-                                dismiss()
-                            } catch { linkedWorkflowError = error.localizedDescription }
-                        }
-                    }.buttonStyle(.bordered).frame(minHeight: 44)
-                    Text("当前笔记保留保存时的版本，最新安排与历史记录可在行程中查看。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let linkedWorkflowError { Text(linkedWorkflowError).font(.caption).foregroundStyle(.red) }
-                }
-                if showsPagePicker { Picker("旅行笔记页面", selection: $page) {
-                    Text("总览").tag(Page.overview)
-                    Text("每天").tag(Page.day)
-                    Text("沿途").tag(Page.place)
-                    Text("待办").tag(Page.check)
-                }.pickerStyle(.segmented) }
-                switch page {
-                case .overview:
-                    overview
-                    travelImages("overview")
-                    if let journal = NoteIllustrationPlacement.travelObject(content)?["journal"] as? String, !journal.isEmpty {
-                        NoteReadingView(content: journal, baseURL: baseURL)
-                    }
-                case .day:
-                    if previewOnly { dailyPlan } else if !plan.actions.isEmpty { itinerary } else { actualStops }
-                case .place:
-                    if previewOnly { placeDetail } else { actualStops }
-                case .check:
-                    if previewOnly { tripCheck } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("出发前，安心核对一下").font(.system(size: 28, weight: .semibold, design: .serif))
-                            Text(plan.readinessTitle).font(.caption).foregroundStyle(.secondary)
-                            checkRow(!plan.stops.isEmpty, "行程地点", plan.stops.isEmpty ? "尚未填写" : "共 \(plan.stops.count) 个地点")
-                            checkRow(plan.dateRange != nil, "旅行日期", plan.dateRange ?? "尚未填写")
-                            checkRow(plan.budget != nil, "预算", plan.budget ?? "尚未填写")
-                            TravelPracticalGuideView(plan: plan, content: content)
-                            sourceList
-                            Text("此处只核对笔记中已有信息，不代表机票、住宿或预约已确认。")
-                                .font(.footnote).foregroundStyle(AppTheme.Colors.textSecondary)
-                        }
-                    }
-                }
-            }
-        }
-        .animation(AppTheme.Motion.standard, value: page)
-        .fullScreenCover(isPresented: $showingGlobe) {
-            TravelJourneyView(title: title, plan: plan)
-        }
-    }
-
-    private var sourceList: some View {
-        let sources = NoteIllustrationPlacement.travelObject(content)?["sources"] as? [[String: Any]] ?? []
-        return VStack(alignment: .leading, spacing: 10) {
-            if !sources.isEmpty { Text("资料与核验").font(.headline) }
-            ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
-                if let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
-                    Link(source["title"] as? String ?? "查看来源", destination: url).frame(minHeight: 44)
-                    if let checked = source["checked_at"] as? String, !checked.isEmpty {
-                        Text("核验时间：" + checked).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
-
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            ZStack(alignment: .bottomLeading) {
-                GeometryReader { geometry in
-                    if previewOnly {
-                        Image("travel_kyoto_camera").resizable().scaledToFill()
-                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
-                    } else {
-                        AppTheme.Colors.mistMint
-                        Image(systemName: "globe.asia.australia.fill")
-                            .font(.system(size: 150, weight: .ultraLight))
-                            .foregroundStyle(AppTheme.Colors.quantumBlue.opacity(0.22))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                LinearGradient(colors: [.clear, AppTheme.Colors.primary.opacity(0.18), AppTheme.Colors.primary.opacity(0.9)], startPoint: .top, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(plan.destination ?? "我的旅行").font(.caption.weight(.semibold))
-                    Text(title.isEmpty ? "我的旅行" : title).font(.system(size: 36, weight: .semibold, design: .serif))
-                    Text(plan.dateRange ?? "日期待填写").font(.subheadline.weight(.medium))
-
-                    HStack(alignment: .bottom) {
-                        Text("在步履中，\n记录自己的风景。")
-                            .font(.system(size: 18, weight: .medium, design: .serif))
-                            .lineSpacing(5)
-                        Spacer()
-                        if previewOnly { HStack(spacing: 8) {
-                            Image(systemName: "sun.max.fill").font(.title2).foregroundStyle(.orange)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("18° 晴").font(.headline)
-                                Text("12° / 22°").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                        .padding(.horizontal, AppTheme.Spacing.md)
-                        .frame(minHeight: 66)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)) }
-                    }
-                    .padding(.top, AppTheme.Spacing.lg)
-                }
-                .foregroundStyle(.white).padding(AppTheme.Spacing.lg)
-
-                if baseURL == nil { VStack {
-                    HStack {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.left")
-                                .frame(width: 42, height: 42)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        Spacer()
-                        ShareLink(item: "\(title)\n\(content)") {
-                            Image(systemName: "square.and.arrow.up")
-                                .frame(width: 42, height: 42)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        Menu {
-                            Button("查看每日行程", systemImage: "list.bullet") { page = .day }
-                            Button("检查行程", systemImage: "checkmark.circle") { page = .check }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .frame(width: 42, height: 42)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                    }
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                    .padding(AppTheme.Spacing.md)
-                    Spacer()
-                } }
-            }
-            .frame(height: 430)
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-
-            HStack(spacing: AppTheme.Spacing.sm) {
-                planStat("预算", plan.budget ?? "待填写", "yensign.circle.fill")
-                planStat("同行", plan.companions.map { "\($0) 人" } ?? "待填写", "person.2.fill")
-                planStat("旅行风格", plan.style ?? "自由探索", "camera.fill")
-            }
-            if !plan.stops.isEmpty {
-                Button { showingGlobe = true } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: "globe.asia.australia.fill")
-                            .font(.system(size: 34, weight: .light))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("旅行小世界").font(.system(.headline, design: .serif))
-                            Text("转动地球，重走这趟旅程")
-                                .font(.caption).foregroundStyle(AppTheme.Colors.textSecondary)
-                        }
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .foregroundStyle(AppTheme.Colors.primary)
-                    .padding(20).frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
-                    .background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: 20))
-                }
-                .buttonStyle(.plain).accessibilityIdentifier("travel-journey-open")
-                TravelRouteMap(stops: plan.orderedStops, height: 200)
-            }
-            Button("查看完整行程  →") { page = .day }
-                .buttonStyle(QuantumPrimaryButtonStyle())
-        }
-    }
-
-    @ViewBuilder
-    func travelImages(_ anchor: String?, includeLocal: Bool = true) -> some View {
-        let document = NoteIllustrationPlacement.travelObject(content) ?? [:]
-        let hasLocalImage = (document["illustrations"] as? [[String: String]] ?? []).contains { anchor == nil || $0["anchor"] == anchor }
-        let references = (document["photo_references"] as? [[String: Any]] ?? []).filter { reference in
-            guard let anchor else { return true }
-            if anchor.hasPrefix("stop:"), let place = reference["place_id"] as? String,
-               let index = plan.stops.firstIndex(where: { $0.sourceID == place }) {
-                return anchor == "stop:\(index)"
-            }
-            return (reference["anchor"] as? String ?? "overview") == anchor
-        }
-        let sources = document["sources"] as? [[String: Any]] ?? []
-        ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
-            VStack(alignment: .leading, spacing: 8) {
-                if !hasLocalImage, let raw = reference["image_url"] as? String, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
-                    GeometryReader { size in
-                        AsyncImage(url: url) { phase in
-                            if let image = phase.image { image.resizable().scaledToFill().frame(width: size.size.width, height: size.size.height).clipped() }
-                            else if phase.error != nil { Label("图片暂不可用，可打开来源页", systemImage: "photo").font(.caption) }
-                            else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-                        }
-                    }.frame(height: 210).clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-                if let caption = reference["caption"] as? String { Text(caption).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary).lineLimit(2) }
-                DisclosureGroup("照片来源与拍摄建议") {
-                    if let tip = reference["shooting_tip"] as? String { TravelDetailText(content: tip) }
-                    if let source = sources.first(where: { $0["id"] as? String == reference["source_id"] as? String }),
-                       let raw = source["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme ?? "") {
-                        Link(source["title"] as? String ?? "查看照片来源", destination: url).frame(minHeight: 44)
-                    }
-                }.font(.caption)
-            }
-        }
-        let images = includeLocal ? (NoteIllustrationPlacement.travelObject(content)?["illustrations"] as? [[String: String]] ?? []).filter { anchor == nil || $0["anchor"] == anchor } : []
-        ForEach(Array(images.enumerated()), id: \.offset) { _, item in
-            if let path = item["path"] { NoteReadingImage(url: baseURL?.appendingPathComponent(path), caption: item["alt"] ?? "旅行照片", compact: true).frame(height: 210).clipped() }
-        }
-        if let onIllustrate, let anchor {
-            Button("为这里配图", systemImage: "sparkles") { onIllustrate(anchor) }
-                .buttonStyle(.bordered).frame(minHeight: 44)
-        }
-    }
-
-    private var itinerary: some View {
-        let days = plan.dayIds
-        let day = selectedDay ?? plan.currentDayId ?? days.first
-        let actions = plan.actions.filter { $0.dayId == day }
-        let dayStops = plan.routeStops(for: actions)
-        return VStack(alignment: .leading, spacing: 20) {
-            Text(plan.destination ?? title).font(.system(size: 32, weight: .semibold, design: .serif))
-            Text(plan.dateRange ?? "旅行日期待决定").foregroundStyle(AppTheme.Colors.textSecondary)
-            Text(plan.readinessTitle).font(.caption).foregroundStyle(.secondary)
-            travelImages("overview")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(days.enumerated()), id: \.element) { index, value in
-                        Button("DAY \(index + 1)") { selectedDay = value }
-                            .buttonStyle(.bordered).tint(day == value ? AppTheme.Colors.primary : .secondary)
-                            .frame(minHeight: 44)
-                    }
-                }
-            }
-            if !plan.alternativeDayIds.isEmpty {
-                DisclosureGroup("备选安排 · 未计入旅行天数") {
-                    ForEach(plan.alternativeDayIds, id: \.self) { id in
-                        Text(plan.days.first(where: { $0.id == id })?.title ?? "备选路线") .font(.headline)
-                        ForEach(plan.actions.filter { $0.dayId == id }) { action in
-                            Text(action.title).font(.subheadline)
-                            if let details = action.details { Text(details).font(.caption).foregroundStyle(.secondary) }
-                        }
-                    }
-                }
-            }
-            if let next = actions.first(where: { $0.status == "in_progress" }) ?? actions.first(where: { ["planned", "delayed"].contains($0.status) }) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(next.status == "in_progress" ? "正在这里" : "下一站", systemImage: next.symbol)
-                        .font(.caption).foregroundStyle(AppTheme.Colors.primary)
-                    Text(next.title).font(.title2.weight(.semibold))
-                    Text(next.timeLabel).font(.subheadline).foregroundStyle(.secondary)
-                }.padding(20).frame(maxWidth: .infinity, alignment: .leading).quantumCard()
-            }
-            TravelRouteMap(stops: dayStops, height: 200)
-            TravelDayRouteStrip(actions: actions)
-            ForEach(actions) { action in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Label(action.timeLabel, systemImage: action.symbol).font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(action.statusTitle).font(.caption)
-                        if action.locked == true { Image(systemName: "lock.fill").accessibilityLabel("已锁定") }
-                    }
-                    Text(action.title).font(.title3.weight(.semibold))
-                    if let from = plan.stops.first(where: { $0.sourceID == action.fromPlaceId }),
-                       let to = plan.stops.first(where: { $0.sourceID == action.toPlaceId }) {
-                        Text(from.name + " → " + to.name).font(.subheadline)
-                    }
-                    if let booking = action.bookingReference, !booking.isEmpty { Text("预订编号：" + booking).textSelection(.enabled) }
-                    if let actual = action.actualStart { Text("实际开始：" + action.displayTime(actual)).font(.caption) }
-                    if let actual = action.actualEnd { Text("实际结束：" + action.displayTime(actual)).font(.caption) }
-                    if let onEdit, action.canEdit {
-                        Button("调整这个安排", systemImage: "slider.horizontal.3") { onEdit(action) }.frame(minHeight: 44)
-                    }
-                    if let onProgress, ["planned", "delayed", "in_progress"].contains(action.status) {
-                        HStack {
-                            if ["planned", "delayed"].contains(action.status) { Button("现在开始") { onProgress(action.id, "in_progress") } }
-                            Button("已完成") { onProgress(action.id, "completed") }
-                            Button("跳过") { onProgress(action.id, "skipped") }
-                        }.buttonStyle(.bordered).frame(minHeight: 44)
-                        if action.status == "planned" {
-                            Button("延误了，还没开始") { onProgress(action.id, "delayed") }.frame(minHeight: 44)
-                        }
-                    }
-                    if let end = action.end { Text("至 " + action.displayTime(end)).font(.caption) }
-                    if let zone = action.timezone { Text(zone).font(.caption).foregroundStyle(.secondary) }
-                    if let place = plan.stops.first(where: { $0.sourceID == action.placeId }), let address = place.address, !address.isEmpty {
-                        Text(address).font(.subheadline).textSelection(.enabled)
-                    }
-                    if let detail = action.details, !detail.isEmpty {
-                        Text(detail).font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(5).lineLimit(2)
-                        DisclosureGroup("交通、票务与安排详情") { TravelDetailText(content: detail) }.font(.subheadline)
-                    }
-                }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-            }
-            if !plan.openQuestions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("出发前仍需确认", systemImage: "checklist").font(.headline)
-                    ForEach(plan.openQuestions, id: \.self) { Text($0).font(.subheadline) }
-                }.padding(16)
-            }
-        }
-    }
-
-    private var actualStops: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(page == .place ? "沿途地点" : "我的行程").font(.title2.bold())
-            if plan.stops.isEmpty {
-                Text("还没有行程地点，可从聊天规划旅行后保存，也可在编辑中填写行程。")
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-            ForEach(Array(plan.stops.enumerated()), id: \.offset) { index, stop in
-                planStop("\(index + 1)", "mappin", stop.name, "行程地点", nil, isLast: index == plan.stops.count - 1)
-                travelImages("stop:\(index)")
-                if let coordinate = stop.coordinate {
-                    Button("打开导航", systemImage: "map") {
-                        MKMapItem(placemark: MKPlacemark(coordinate: coordinate)).openInMaps()
-                    }.frame(minHeight: 44)
-                }
-            }
-        }
-    }
-
-    private var dailyPlan: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                Button { page = .overview } label: { Image(systemName: "chevron.left") }
-                Spacer()
-                Text("京都 5 日行").font(.headline)
-                Spacer()
-                Button { page = .check } label: { Image(systemName: "plus") }
-            }
-            HStack(spacing: 5) {
-                ForEach(1...5, id: \.self) { day in
-                    VStack(spacing: 3) {
-                        Text("第\(day)天").font(.caption.weight(.semibold))
-                        Text("4/\(11 + day)").font(AppTheme.Typography.micro)
-                    }
-                    .foregroundStyle(day == 1 ? AppTheme.Colors.quantumBlue : AppTheme.Colors.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(day == 1 ? AppTheme.Colors.mistSky : AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-                }
-            }
-            HStack(alignment: .firstTextBaseline) {
-                Text("第 1 天").font(.title2.bold())
-                Text("抵达 · 初见京都").font(.headline)
-                Spacer()
-                Text("4月12日 周五").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-            VStack(spacing: 0) {
-                planStop("09:00", "airplane", "抵达关西机场 (KIX)", "机场 → 京都站 · 约 75 分钟", nil)
-                planStop("11:30", "tram.fill", "京都站 → 酒店", "约 15 分钟", nil)
-                planStop("13:00", "fork.knife", "锦市场", "美食 · 1–2 小时", "travel_kyoto_street")
-                Button { page = .place } label: {
-                    planStop("15:30", "building.columns.fill", "清水寺", "经典 · 2–3 小时", "travel_kyoto_bridge")
-                }
-                .buttonStyle(.plain)
-                planStop("18:30", "fork.knife", "祇园 · 花见小路", "散步 · 1–2 小时", "travel_kyoto_moment", isLast: true)
-            }
-        }
-    }
-
-    private var placeDetail: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            ZStack(alignment: .topLeading) {
-                Image("travel_kyoto_bridge").resizable().scaledToFill().frame(height: 240).clipped()
-                Button { page = .day } label: {
-                    Image(systemName: "chevron.left").frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
-                }.padding(AppTheme.Spacing.sm)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("清水寺").font(AppTheme.Typography.screenTitle)
-                    Text("きよみずでら · Kiyomizu-dera").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-                Spacer()
-                Image(systemName: "bookmark").frame(width: 42, height: 42).background(AppTheme.Colors.surfaceTint, in: Circle())
-            }
-            HStack { tag("寺庙"); tag("世界文化遗产"); tag("京都市") }
-            Text("★ 4.7  （3.2 万条评价）").font(AppTheme.Typography.supporting).foregroundStyle(.orange)
-            Text("建于 778 年，依山而建的木造舞台是京都的象征，四季皆美，尤以樱花与红叶闻名。")
-                .font(AppTheme.Typography.body).foregroundStyle(AppTheme.Colors.textSecondary)
-            Text("为什么值得去").font(.headline)
-            Text("站在清水舞台，俯瞰京都的街巷与远山，感受千年古都的宁静与生命力。")
-                .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
-            HStack(spacing: AppTheme.Spacing.sm) {
-                tip("sun.max", "最佳时间", "清晨或傍晚")
-                tip("camera", "拍照建议", "从舞台侧面取景")
-            }
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Button("在地图中查看", systemImage: "map") {}.buttonStyle(.bordered)
-                Button("✦ 加入行程") { page = .check }.buttonStyle(.borderedProminent)
-            }
-        }
-    }
-
-    private var tripCheck: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack {
-                Button("取消") { page = .overview }
-                Spacer(); Text("行程检查").font(.headline); Spacer(); Button("完成") {}
-            }
-            HStack(spacing: AppTheme.Spacing.md) {
-                Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundStyle(AppTheme.Colors.statusCompleted)
-                VStack(alignment: .leading) { Text("准备就绪！").font(.title3.bold()); Text("你的京都 5 日行已准备好").font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary) }
-            }
-            .padding(AppTheme.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.Colors.statusCompleted.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-            checkRow(true, "机票与住宿", "已安排")
-            checkRow(true, "每日行程", "共 5 天 · 12 个地点")
-            checkRow(true, "预算估算", "约 ¥8,000/人")
-            checkRow(false, "旅行保险", "建议提前购买")
-            checkRow(false, "部分景点需预约", "清水寺、二条城等")
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                HStack { Text("备注").font(.headline); Spacer(); Button("编辑") {} }
-                Text("想在清水寺看日落，\n也想体验一次正宗的怀石料理。")
-                    .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
-                    .padding(AppTheme.Spacing.md).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-            }
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("保存到 Quantum").font(.headline)
-                Label(title.isEmpty ? "京都 5 日行" : title, systemImage: "map.fill")
-                HStack { tag("旅行"); tag("日本"); tag("京都") }
-                Toggle("设为公开", isOn: .constant(false))
-            }
-            .padding(AppTheme.Spacing.md).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-            HStack(spacing: AppTheme.Spacing.sm) {
-                export("doc", "导出 PDF", "图文行程单")
-                export("link", "复制链接", "分享行程")
-                export("calendar", "重新生成", "调整第 N 天")
-            }
-        }
-    }
-
-    private func planStat(_ title: String, _ value: String, _ icon: String) -> some View {
-        VStack(spacing: 4) { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive); Text(title).font(AppTheme.Typography.micro); Text(value).font(.caption.weight(.semibold)).lineLimit(1) }
-            .frame(maxWidth: .infinity, minHeight: 72).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-    }
-
-    private func planStop(_ time: String, _ icon: String, _ title: String, _ detail: String, _ image: String?, isLast: Bool = false) -> some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-            Text(time).font(.caption.weight(.semibold)).frame(width: 45, alignment: .leading)
-            ZStack(alignment: .top) {
-                if !isLast {
-                    Rectangle()
-                        .fill(AppTheme.Colors.quantumBlue.opacity(0.48))
-                        .frame(width: 2, height: image == nil ? 82 : 190)
-                        .offset(y: 32)
-                }
-                Image(systemName: icon)
-                    .foregroundStyle(icon == "fork.knife" || icon == "building.columns.fill" ? AppTheme.Colors.emberOrange : AppTheme.Icons.interactive)
-                    .frame(width: 38, height: 38)
-                    .background(icon == "fork.knife" || icon == "building.columns.fill" ? AppTheme.Colors.mistRose : AppTheme.Colors.mistSky, in: Circle())
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(AppTheme.Typography.body.weight(.semibold))
-                Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
-                if let image { Image(image).resizable().scaledToFill().frame(height: 94).clipped().clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm)) }
-            }
-            Spacer()
-            VStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "mappin.circle.fill")
-                    .foregroundStyle(AppTheme.Colors.quantumBlue)
-                    .frame(width: 34, height: 34)
-                    .background(AppTheme.Colors.mistSky.opacity(0.72), in: Circle())
-                Image(systemName: "line.3.horizontal").foregroundStyle(AppTheme.Colors.textTertiary)
-            }
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-    }
-
-    private func tag(_ text: String) -> some View {
-        Text(text).font(AppTheme.Typography.micro).padding(.horizontal, 9).frame(minHeight: 26).background(AppTheme.Colors.mistSky, in: Capsule())
-    }
-
-    private func tip(_ icon: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 8) { Image(systemName: icon).foregroundStyle(AppTheme.Icons.interactive); VStack(alignment: .leading) { Text(title).font(.caption.weight(.semibold)); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) } }
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading).padding(AppTheme.Spacing.sm).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-    }
-
-    private func checkRow(_ checked: Bool, _ title: String, _ detail: String) -> some View {
-        HStack { Image(systemName: checked ? "checkmark.circle.fill" : "circle.fill").foregroundStyle(checked ? AppTheme.Colors.statusCompleted : AppTheme.Colors.textTertiary); Text(title).font(.subheadline.weight(.semibold)); Spacer(); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }
-    }
-
-    private func export(_ icon: String, _ title: String, _ detail: String) -> some View {
-        VStack(spacing: 5) { Image(systemName: icon).font(.title3).foregroundStyle(AppTheme.Icons.interactive); Text(title).font(.caption.weight(.semibold)); Text(detail).font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary) }
-            .frame(maxWidth: .infinity, minHeight: 88).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-    }
+    var body: some View { TravelArtifactTemplateView(content: content).frame(minHeight: 700) }
 }
 
 #if DEBUG
@@ -4058,11 +3268,11 @@ struct V5PrototypePreviewHost: View {
         case let value where value.hasPrefix("v3/07-note-editor-reader-"):
             V3NotePrototypeHost(pageID: value)
         case let value where value.hasPrefix("v3/08-workflow-plan-"):
-            V4WorkflowPrototypeHost(pageID: "v4/04-workflow-simple-plan-v4-\(value.suffix(3))")
+            TravelSpaceView()
         case let value where value.hasPrefix("v3/09-workflow-execution-"):
-            V3WorkflowExecutionPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v3/10-topology-evaluation-"):
-            V3TopologyEvaluationPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v3/11-settings-agent-memory-"):
             V3SettingsMemoryPrototypeHost(pageID: value)
         case let value where value.hasPrefix("v3/12-subscription-governance-"):
@@ -4076,9 +3286,9 @@ struct V5PrototypePreviewHost: View {
         case let value where value.hasPrefix("v4/03-clarify-merge-preview-v4-"):
             V4ClarifyMergePrototypeHost(pageID: value)
         case let value where value.hasPrefix("v4/04-workflow-simple-plan-v4-") || value.hasPrefix("v4/05-workflow-agent-usage-v4-"):
-            V4WorkflowPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v4/06-travel-chat-to-workflow-v4-"):
-            V4TravelPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v4/07-travel-plan-output-v4-"):
             travelPlanResult(value)
         case let value where value.hasPrefix("v4/08-reader-question-annotation-v4-"):
@@ -4088,11 +3298,11 @@ struct V5PrototypePreviewHost: View {
         case let value where value.hasPrefix("v4/10-agent-knowledge-tools-crud-v4-"):
             V4AgentManagementPrototypeHost(pageID: value)
         case let value where value.hasPrefix("v4/11-workflow-canvas-comfy-v4-"):
-            V4CanvasPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v4/12-node-detail-eval-compare-v4-"):
-            V4NodeEvaluationPrototypeHost(pageID: value)
+            TravelSpaceView()
         case let value where value.hasPrefix("v4/13-smart-research-ppt-v4-"):
-            V4SmartResearchPrototypeHost(pageID: value)
+            TravelSpaceView()
         case "v5/01-startup-clean-v5-p01":
             LoginView(prototypePageID: pageID)
         case "v5/02-travel-note-layout-v5-p01":

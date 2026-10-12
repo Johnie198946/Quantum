@@ -1,0 +1,18 @@
+/* Available modes share one moving selection surface. */
+.phone .transit-route-design .route-mode-segment{display:flex;gap:2px;padding:4px;margin:18px 0 12px;border:1px solid #ffffffa8;border-radius:18px;background:#eef1eb85;overflow-x:auto;scrollbar-width:none;isolation:isolate}
+.phone .transit-route-design .route-mode-segment button{position:relative;flex:1 0 auto;min-width:58px;min-height:58px;padding:8px 10px;gap:5px;border:0;border-radius:14px;background:transparent;color:#3c504c;white-space:nowrap;z-index:0}
+.phone .transit-route-design .route-mode-segment button[aria-selected=true]{background:transparent;font-weight:600}
+.phone .route-mode-selected{position:absolute;inset:0;z-index:-1;border-radius:14px;background:linear-gradient(120deg,#d8e8dcf5,#e5dfe9f5);border:1px solid #fff;box-shadow:0 2px 5px #445a4f10;pointer-events:none}
+.phone .route-mode-viewport{position:relative;overflow:hidden;min-width:0;outline-offset:-2px}
+.phone .route-mode-content{min-width:0;outline-offset:-2px}
+.phone .route-mode-segment button:focus-visible{outline:2px solid #9b6489;outline-offset:-3px}
+.phone .route-segment-cards{display:flex;flex-direction:column;gap:8px;list-style:none;padding:0;margin:14px 0}
+.phone .route-segment-card{display:grid;grid-template-columns:36px 22px minmax(0,1fr);align-items:start;column-gap:8px;padding:12px;border:1px solid #fff;border-radius:16px;background:linear-gradient(120deg,#edf1e5b5,#eae2e8a8);box-shadow:none;min-width:0}
+.phone .route-segment-card time{font-size:10px;font-variant-numeric:tabular-nums;line-height:18px;color:#4e655a;padding-top:1px}
+.phone .route-segment-icon{display:grid;place-items:center;width:22px;height:22px;color:#527064}
+.phone .route-segment-card strong{display:block;font-size:12px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
+.phone .route-segment-card p{font-size:10px;line-height:17px;color:#506657;margin:3px 0 0;overflow-wrap:anywhere}
+.phone .location-query-pending,.phone .route-query-pending{font-size:10px;line-height:18px;color:#596b60;margin:10px 0 0}
+.phone .location-query-pending{display:flex;align-items:center;gap:5px}
+.phone .transit-route-design .route-public-facts{margin:14px 0}
+@media(prefers-reduced-motion:reduce){.phone .route-mode-content{transform:none!important;opacity:1!important}}

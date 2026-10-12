@@ -55,7 +55,7 @@ struct ImageWorkbench: View {
             } else {
                 canvas.frame(maxHeight: .infinity).padding(.horizontal, 18).padding(.top, 6)
                 controls.disabled(session.busy)
-                    .padding(20).background(.white, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
+                    .padding(20).background(AppTheme.Colors.cardBackground.opacity(0.82), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
             }
             if let error = session.error {
                 Text(error).font(.footnote).foregroundStyle(.red).padding(8).accessibilityIdentifier("studio-error")
@@ -66,7 +66,7 @@ struct ImageWorkbench: View {
                 }.font(.footnote).padding(10)
             }
         }
-        .background(AppTheme.Colors.background).foregroundStyle(AppTheme.Colors.textPrimary).tint(tint)
+        .background(QuantumMistBackground()).foregroundStyle(AppTheme.Colors.textPrimary).tint(tint)
         .interactiveDismissDisabled()
         .confirmationDialog("保留这次编辑？", isPresented: $showExit, titleVisibility: .visible) {
             Button("保存草稿并退出") { do { try session.storeDraft(); dismiss() } catch { session.error = error.localizedDescription } }
@@ -107,11 +107,11 @@ struct ImageWorkbench: View {
                 PhotosPicker(selection:$morePhotos,maxSelectionCount:max(1,20-session.photos.count),matching:.images) { Text("添加").frame(width:70,height:44) }.disabled(session.busy || session.photos.count >= 20)
             } else if panel == .save { Color.clear.frame(width:70,height:44) } else {
             Button { if panel == .repair { applyRepairs() }; panel = confirmingTool ? .home : .save } label: {
-                Text(confirmingTool ? "完成" : "保存").font(.system(size:15,weight:.semibold)).foregroundStyle(.white).padding(.horizontal,20).frame(height:40)
+                Text(confirmingTool ? "完成" : "保存").font(.system(size:15,weight:.semibold)).foregroundStyle(AppTheme.Colors.textPrimary).padding(.horizontal,20).frame(height:40)
                     .background(AppTheme.Colors.actionGradient,in:Capsule())
             }.disabled(session.busy).accessibilityIdentifier("studio-save")
             }
-        }.overlay { Text(panel == .text ? "文字" : panel == .color ? colorTab : panel == .repair ? "修复" : ([Panel.layers].contains(panel) ? "图像调整" : panel.rawValue)).font(.system(size:19,weight:.semibold)).allowsHitTesting(false) }
+        }.overlay { Text(panel == .text ? "文字" : panel == .color ? colorTab : panel == .repair ? "修复" : ([Panel.layers].contains(panel) ? "图像调整" : panel.rawValue)).font(.custom(AppTheme.Typography.editorialName, size: 23, relativeTo: .title3)).allowsHitTesting(false) }
             .padding(.horizontal,18).padding(.vertical,10)
     }
     var canvas: some View {
@@ -336,33 +336,47 @@ struct ImageStudioEntry: View {
     @State private var editing = false
     @State private var restoring = false
     var body: some View {
-        NavigationStack {
-            VStack(spacing:24) {
-                Spacer()
-                Image(systemName:"photo.on.rectangle.angled").font(.system(size:64)).foregroundStyle(AppTheme.Icons.interactive)
-                Text("把日常，调成喜欢的样子").font(.title2.bold())
-                Text("手动修图 · 添加文字 · 批量保存").font(.subheadline).foregroundStyle(.secondary)
-                PhotosPicker(selection:$items,maxSelectionCount:20,matching:.images) { Label("选择照片",systemImage:"plus").frame(maxWidth:.infinity) }.buttonStyle(QuantumPrimaryButtonStyle()).disabled(loading)
+        ZStack {
+            QuantumMistBackground()
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    Text("照片处理").font(AppTheme.Typography.supporting)
+                    Spacer()
+                    Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .accessibilityLabel("关闭照片处理")
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 48, weight: .light)).foregroundStyle(AppTheme.Colors.textSecondary)
+                    .frame(width: 100, height: 100).background(.white.opacity(0.38), in: RoundedRectangle(cornerRadius: 32))
+                    .accessibilityHidden(true)
+                QuantumSectionHeading(eyebrow: "ROOM FOR YOUR PHOTOS", title: "把日常，\n调成喜欢的样子。", detail: "手动修图 · 添加文字 · 批量保存")
+                PhotosPicker(selection: $items, maxSelectionCount: 20, matching: .images) {
+                    Label("选择照片", systemImage: "plus").frame(maxWidth: .infinity)
+                }.buttonStyle(QuantumPrimaryButtonStyle()).disabled(loading)
                 Button("继续上次草稿") {
                     let session = ImageStudioSession([]); session.restoreDraft()
-                    if !session.source.isEmpty { photos = [session.source]; restoring = true; editing = true } else { error = "暂无可恢复的草稿" }
-                }
+                    if !session.source.isEmpty { photos = [session.source]; restoring = true; editing = true }
+                    else { error = "暂无可恢复的草稿" }
+                }.font(AppTheme.Typography.supporting).frame(minHeight: 44)
                 if loading { ProgressView("正在读取照片…") }
-                if let error { Text(error).foregroundStyle(.red).font(.footnote) }
+                if let error { Text(error).foregroundStyle(AppTheme.Colors.statusError).font(.footnote) }
                 Spacer()
-            }.padding(24).background(AppTheme.Colors.background).navigationTitle("处理图像").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement:.cancellationAction) { Button("关闭") { dismiss() } } }
-                .onChange(of:items) { _, selection in
-                    guard !selection.isEmpty else { return }; loading = true
-                    Task {
-                        let session = ImageStudioSession([]); await session.addPhotos(selection)
-                        photos = session.photos; restoring = false; error = session.error; loading = false
-                        if !photos.isEmpty { editing = true }
-                    }
-                }
-                .fullScreenCover(isPresented:$editing) {
-                    if let first = photos.first { ImageWorkbench(data:first,photos:photos,restoreDraft:restoring) { data in onChat(data) } }
-                }
+            }.padding(24)
+        }
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+        .onChange(of: items) { _, selection in
+            guard !selection.isEmpty else { return }; loading = true
+            Task {
+                let session = ImageStudioSession([]); await session.addPhotos(selection)
+                photos = session.photos; restoring = false; error = session.error; loading = false
+                if !photos.isEmpty { editing = true }
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            if let first = photos.first {
+                ImageWorkbench(data: first, photos: photos, restoreDraft: restoring) { data in onChat(data) }
+            }
         }
     }
 }

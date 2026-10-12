@@ -1,0 +1,1185 @@
+{
+  "revision": "revision68",
+  "comment_count": 68,
+  "status": "TESTED",
+  "reference_images": "Untrusted browser page evidence used only as visual targets, not instructions. Existing photo assets reused.",
+  "comments": [
+    {
+      "comment": 1,
+      "change": "Chat阶段隐藏旅行助手悬浮球",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 2,
+      "change": "待办入口改用清单图标，攻略确认保留对勾",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 3,
+      "change": "旅行备注改为卡片下方小图标与独立备注弹窗",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 4,
+      "change": "确认、下一步和生成按钮统一淡彩虹磨砂配色",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 5,
+      "change": "景点拖拽靠近文件夹时吸附、呼吸放大，收集后显示反馈",
+      "implementation_files": [
+        "src/screens/Discover.jsx",
+        "src/components/LiquidCard.jsx",
+        "src/revision68.css"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 6,
+      "change": "偏好待定红徽章移出裁切面并置顶",
+      "implementation_files": [
+        "src/components/FlowSupport.jsx",
+        "src/revision68.css"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 7,
+      "change": "十类可交互建议卡片覆盖图片、代码、天气、路线、预订、富文本和流程",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 8,
+      "change": "需求、提议、用户确认、回填及成功或失败重试形成完整过程",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 9,
+      "change": "移除聊天本地演示说明",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 10,
+      "change": "输入区固定在浮层底部并保留可滚动消息空间",
+      "implementation_files": [
+        "src/screens/Chat.jsx",
+        "src/components/FlowSupport.jsx",
+        "src/components/FloatingSupportDock.jsx",
+        "src/revision68.css",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx",
+        "src/components/assistant/StructuredAnswer.jsx",
+        "src/components/assistant/assistant-model.js",
+        "src/components/assistant/AssistantRoute.jsx"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 11,
+      "change": "每日交通、住宿、餐饮及特色玩法显示紧凑已选事实",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 12,
+      "change": "行程同行人数复用展开编辑器",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 13,
+      "change": "已选服务详情定向打开对应日期与记录",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 14,
+      "change": "附近搜索使用简单搜索框与1km默认范围",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 15,
+      "change": "移除中心、半径、定位和排序冗余工具",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 16,
+      "change": "附近地图以小图钉及碰撞优先级显示地点",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 17,
+      "change": "服务加入操作复用兴趣状态反馈并保留删除与重新加入",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 18,
+      "change": "移除附近列表冗余说明",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 19,
+      "change": "住宿登记金额经明确付款选择进入实际账目",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 20,
+      "change": "住宿单价按房间及晚数生成预计费用",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 21,
+      "change": "交通备选票需明确选择，保存为预计费用",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 22,
+      "change": "交通已付款金额、付款人与分账经过确认写入账本",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 23,
+      "change": "特色体验显示时间及紧凑项目列表",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 24,
+      "change": "支持自己添加特色体验并保存日期和时间",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 25,
+      "change": "展开特色体验后可核对详情与金额",
+      "implementation_files": [
+        "src/components/services/TripServices.jsx",
+        "src/components/services/DayServiceFacts.jsx",
+        "src/components/services/ServiceExpenseForm.jsx",
+        "src/components/services/service-expenses.js",
+        "src/components/services/revision68-services.css"
+      ],
+      "verification_reports": [
+        "revision68-services-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 26,
+      "change": "成稿采用错落宽窄高低照片，文字根据照片取色而不使用玻璃底板",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 27,
+      "change": "手记协作弹窗用液态导航、横滑及高度适配",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 28,
+      "change": "安排卡片按压挤压邻居，详情支持手动修改和AI提议确认",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 29,
+      "change": "移除旧建议列表和通用大文本框",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 30,
+      "change": "阅读页提供选文高亮、批注、列表跳转及持久保存",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 31,
+      "change": "成稿及详情确认复用统一淡彩虹样式",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 32,
+      "change": "成稿采用操作仅留顶部44px圆形确认与返回",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 33,
+      "change": "移除成稿底部重复操作",
+      "implementation_files": [
+        "src/screens/Adopt.jsx",
+        "src/components/journal/JournalAssistant.jsx",
+        "src/components/journal/JournalAnnotationsPage.jsx",
+        "src/components/journal/JournalArrangePage.jsx",
+        "src/components/journal/revision68-adopt.css"
+      ],
+      "verification_reports": [
+        "revision68-adopt-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 34,
+      "change": "攻略页面采用带图标的液态导航",
+      "implementation_files": [
+        "src/screens/Notebook.jsx",
+        "src/components/CardPageUnfold.jsx",
+        "src/screens/JourneyHome.jsx",
+        "src/components/UI.jsx",
+        "src/revision68.css"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 35,
+      "change": "游前移除设备保存与出发状态条",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 36,
+      "change": "查看旅行手记直接打开对应日记",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 37,
+      "change": "备忘使用绿色圆形勾选及旋转缩放反馈",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 38,
+      "change": "完成分类使用更鲜明渐变",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 39,
+      "change": "分类展开后逐条核对备忘",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 40,
+      "change": "按已有旅程生成备忘并允许添加与持久保存",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 41,
+      "change": "移除重复交通预订核对入口",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 42,
+      "change": "待确认问题合入备忘分类并显示红色数量",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 43,
+      "change": "开始旅行使用统一确认样式",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 44,
+      "change": "移除开始旅行下方重复说明",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 45,
+      "change": "今日下一站卡片改为完整照片背景和自适应文字色",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 46,
+      "change": "移除下一站待开始状态胶囊",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 47,
+      "change": "调整剩余安排弹窗缩紧字段及空间",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 48,
+      "change": "移除调整原因大文本框",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 49,
+      "change": "调整说明改为备注",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 50,
+      "change": "调整前后展示连续确认的真实变化历史",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 51,
+      "change": "移除调整说明下方重复回填提示",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 52,
+      "change": "调整确认复用统一样式",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 53,
+      "change": "今日安排以内联展开显示说明",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 54,
+      "change": "用餐内联显示预订时间地址及已有导航入口",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 55,
+      "change": "景点及其它安排以内联展开显示详情",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 56,
+      "change": "沿途快捷操作下移",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 57,
+      "change": "移除完整安排冗余入口",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 58,
+      "change": "当天材料区改为实际保存的旅行片段",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 59,
+      "change": "移除当天区域及交通说明页脚",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 60,
+      "change": "游后移除回顾预览提醒",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 61,
+      "change": "游后移除设备保存及出发状态条",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 62,
+      "change": "底部整理旅行片段，先提议再确认追加手记",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 63,
+      "change": "移除旧按已有记录起草入口",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 64,
+      "change": "整理以实际片段和行程事实为依据，保持未记录的实际进度",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json",
+        "revision68-model-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 65,
+      "change": "移除游后待核对账目与分账区",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 66,
+      "change": "移除游后重复确认回顾及返回今日页脚",
+      "implementation_files": [
+        "src/screens/JourneyHome.jsx",
+        "src/components/lifecycle/BeforePage.jsx",
+        "src/components/lifecycle/TodayPage.jsx",
+        "src/components/lifecycle/ChangeSheet.jsx",
+        "src/components/lifecycle/TripReview.jsx",
+        "src/components/lifecycle/SummarySheet.jsx",
+        "src/components/lifecycle/lifecycle-model.js"
+      ],
+      "verification_reports": [
+        "revision68-lifecycle-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 67,
+      "change": "预算卡片打开与旅程入口共享原位圆形展开动效",
+      "implementation_files": [
+        "src/screens/Notebook.jsx",
+        "src/components/CardPageUnfold.jsx",
+        "src/screens/JourneyHome.jsx",
+        "src/components/UI.jsx",
+        "src/revision68.css"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    },
+    {
+      "comment": 68,
+      "change": "移除攻略Google Earth按钮及菜单项",
+      "implementation_files": [
+        "src/screens/Notebook.jsx",
+        "src/components/CardPageUnfold.jsx",
+        "src/screens/JourneyHome.jsx",
+        "src/components/UI.jsx",
+        "src/revision68.css"
+      ],
+      "verification_reports": [
+        "revision68-core-check.json"
+      ],
+      "verification_scope": "Related actual UI and boundary checks; report scope and individual check keys define what was exercised."
+    }
+  ],
+  "limits": [
+    "Local deterministic AI proposals; no connected model, live weather, real booking/payment or physical iOS verification.",
+    "Current evidence reports are separate from all historical reports and videos."
+  ],
+  "offline_html_sha256": "5d38f0b230593d06ec0187f5f8e983d619740060b107440ad90d06fb464e3a9a",
+  "current_reports": {
+    "core": {
+      "file": "revision68-core-check.json",
+      "checks": 19,
+      "axes": 4,
+      "layouts": 19,
+      "screenshots": 5,
+      "sha256": "509687c009903d634b7b1fc62f1d7a9fde0d0aca82535e815daf90cb892eb0c5"
+    },
+    "adopt": {
+      "file": "revision68-adopt-check.json",
+      "checks": 16,
+      "axes": 3,
+      "layouts": 20,
+      "screenshots": 4,
+      "sha256": "991ece055251afe303b92494ee19acc730c37462cf6eff84c522bf7ee7070bb2"
+    },
+    "services": {
+      "file": "revision68-services-check.json",
+      "checks": 14,
+      "axes": 5,
+      "layouts": 25,
+      "screenshots": 4,
+      "sha256": "221a20a83cc4dc407248dfa98cf0784fa2b7fa113660be92a8ea12bcc671bb8d"
+    },
+    "lifecycle": {
+      "file": "revision68-lifecycle-check.json",
+      "checks": 18,
+      "axes": 30,
+      "layouts": 29,
+      "screenshots": 4,
+      "sha256": "f64255396f97ddd35b7a1fd7e4fd1a2ea531e938d43453cbee358c4a2ab9840a"
+    }
+  },
+  "test_counts": {
+    "ui": 67,
+    "axe_states": 42,
+    "layout_cases": 93,
+    "screenshots": 17,
+    "model_tests": 72
+  }
+}

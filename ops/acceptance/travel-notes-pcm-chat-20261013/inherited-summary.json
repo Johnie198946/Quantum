@@ -1,0 +1,107 @@
+{
+  "task_id": "quantum-frontend-rebuild-20261012",
+  "status": "LOCAL_ONLY",
+  "backend_passed": 151,
+  "model_checks": 43,
+  "browser_checks": 138,
+  "axe_scans": 114,
+  "browser_errors": 0,
+  "axe_violations": 0,
+  "reports": {
+    "model": {
+      "checks": 43,
+      "axe_scans": 0,
+      "errors": 0,
+      "violations": 0
+    },
+    "creation": {
+      "checks": 26,
+      "axe_scans": 36,
+      "errors": 0,
+      "violations": 0
+    },
+    "failure-recovery": {
+      "checks": 18,
+      "axe_scans": 8,
+      "errors": 0,
+      "violations": 0
+    },
+    "services-evidence": {
+      "checks": 8,
+      "axe_scans": 6,
+      "errors": 0,
+      "violations": 0
+    },
+    "task-pages": {
+      "checks": 42,
+      "axe_scans": 30,
+      "errors": 0,
+      "violations": 0
+    },
+    "journey": {
+      "checks": 12,
+      "axe_scans": 12,
+      "errors": 0,
+      "violations": 0
+    },
+    "booking": {
+      "checks": 2,
+      "axe_scans": 4,
+      "errors": 0,
+      "violations": 0
+    },
+    "ui": {
+      "checks": 30,
+      "axe_scans": 18,
+      "errors": 0,
+      "violations": 0
+    }
+  },
+  "native_current_checks": "4 unique tests passed: PDF pagination, persisted save receipt, native entry/navigation/photo, real Aomori read-only failure state",
+  "live_complete_flow_passed": false,
+  "live_blocker": "travel_notebook upstream travel_itinerary 53337 > 48000 chars; failed at 66%; local worker repair not deployed",
+  "external_writes": "No commit, push or server deployment authorized or performed",
+  "native_results": {
+    "pdf": {
+      "result": "Passed",
+      "totalTestCount": 1,
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "finishTime": 1791825231.832
+    },
+    "delivery": {
+      "result": "Passed",
+      "totalTestCount": 2,
+      "passedTests": 2,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "finishTime": 1791826021.307
+    },
+    "live": {
+      "result": "Passed",
+      "totalTestCount": 1,
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "finishTime": 1791826753.886
+    }
+  },
+  "live_state": {
+    "workflow_id": "wf_850913895443090c7f670cc566ab3a36",
+    "workflow_status": "ready",
+    "execution_id": "wfr_ecf90f87bec24f898fdc35e4fd630a14",
+    "execution_status": "failed",
+    "execution_progress": 66,
+    "execution_error": "上游成果 travel_itinerary 超过 48000 字符；禁止静默截断",
+    "artifact_id": "wfa_e857fbe9bbf546ac8e3d43999b5d034e",
+    "offline": false,
+    "content_characters": 53337,
+    "content_utf8_bytes": 86141,
+    "content_sha256": "99d636ee4283cd3fee00b571812daba9da9881dc3e4ff869c614412abf4d2b19",
+    "days": 5,
+    "actions": 69,
+    "sources": 12,
+    "capture": "explicit diagnostic from the selected task simulator; no credential reads"
+  }
+}

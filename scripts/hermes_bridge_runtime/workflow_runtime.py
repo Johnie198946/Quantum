@@ -334,7 +334,7 @@ def _workflow_run_sync(execution_id: str) -> None:
             approved_outline = None
             render_type = str(contract["render_type"])
             if render_type == "travel_plan_v2":
-                from backend.services.travel_plan import validate_travel_document, revise_travel_document
+                from backend.services.travel_plan import validate_travel_document, revise_travel_document, finalize_travel_notebook
                 baseline = run.get("travel_baseline")
                 travel = validate_travel_document(_workflow_artifacts._extract_json_object(reply), require_guidance=bool(
                     (node.get("parameters") or {}).get("require_travel_guidance")
@@ -344,14 +344,7 @@ def _workflow_run_sync(execution_id: str) -> None:
                 # Final writing must not silently modify the approved itinerary.
                 if node_id == "travel_notebook":
                     approved, _binding = _workflow_artifacts._approved_presentation_stage(run, "travel_plan_v2", "itinerary")
-                    for field in ("actions", "stops", "days", "practical_guidance", "budget_breakdown"):
-                        travel[field] = approved.get(field, [])
-                    for field in ("destination", "date_range", "budget", "companions", "style", "journal", "open_questions"):
-                        travel[field] = approved.get(field)
-                    sources = {s["id"]: s for s in travel.get("sources", [])}
-                    sources.update({s["id"]: s for s in approved.get("sources", [])})
-                    travel["sources"] = list(sources.values())
-                    travel = validate_travel_document(travel)
+                    travel = finalize_travel_notebook(approved, travel)
                 if baseline:
                     from datetime import datetime, timezone
                     travel = revise_travel_document(baseline["document"], travel, now=datetime.now(timezone.utc))

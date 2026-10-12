@@ -66,8 +66,10 @@ public struct AIPlatformApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-travelWorkflowPreview") {
-                    TravelWorkflowPreviewHost()
+                if ProcessInfo.processInfo.arguments.contains("-travelSpacePreview") {
+                    TravelSpacePreviewHost()
+                } else if ProcessInfo.processInfo.arguments.contains("-travelWorkflowPreview") {
+                    TravelSpacePreviewHost()
                 } else if ProcessInfo.processInfo.arguments.contains("-travelJourneyPreview") {
                     NavigationStack {
                         ScrollView {

@@ -295,6 +295,11 @@ capabilities:
         type: string
         minLength: 1
         maxLength: 2000
+      client_state:
+        type: object
+        required: [version]
+        properties:
+          version: {type: integer, const: 1}
       proposed:
         type: object
       confirmed_bookings:
@@ -389,4 +394,38 @@ capabilities:
   tests:
   - tests/test_travel_pcm_capabilities.py
   - tests/test_workflows_api.py
+  implementation_status: implemented
+- id: travel.notebook.update
+  version: 1.0.0
+  domain: knowledge
+  description: Update one saved private travel notebook in the revision68 template. Read knowledge.note.read first and bind expected_note_hash to that exact body. Save either personal journal/photos/audio/checklists/annotations/cover/budget/splits/versioned client_state, a reviewed proposed itinerary with explicitly confirmed bookings, or an explicit user-recorded action progress. Preserve completed history, provenance and source workflow link. This writes the notebook independently of its original Chat session and never purchases tickets or fabricates actual visits.
+  positive_examples: ["保存这趟旅行的照片和手记", "把仙岩园标为已完成", "调整旅行笔记中的剩余安排", "保存旅行账本和分账", "确认游后总结"]
+  negative_examples: ["Record an imagined visit, overwrite a newer note, alter completed history, book/pay from a suggestion, or edit another owner's note"]
+  input_schema:
+    type: object
+    properties:
+      note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}
+      expected_note_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
+      reason: {type: string, minLength: 1, maxLength: 2000}
+      client_state: {type: object, required: [version], properties: {version: {type: integer, const: 1}}}
+      proposed: {type: object}
+      confirmed_bookings: {type: object, additionalProperties: {type: string}, maxProperties: 10}
+      action_id: {type: string, maxLength: 100}
+      progress: {type: string, enum: [delayed, in_progress, completed, cancelled, skipped]}
+      happened_at: {type: string, format: date-time}
+    required: [note_id, expected_note_hash, reason]
+    additionalProperties: false
+  output_schema: {type: object, required: [note]}
+  effect: write
+  risk: high
+  confirmation: required
+  preconditions: [authenticated_owner, current_version_or_state, explicit_user_confirmation]
+  policy_ref: personal-knowledge-owner
+  handler_binding: travel.notebook.update
+  idempotency: required
+  receipt: required
+  result_event: knowledge.note
+  renderer: answer
+  renderer_version: 1
+  tests: [tests/test_travel_notebook_template.py, tests/test_travel_pcm_capabilities.py]
   implementation_status: implemented

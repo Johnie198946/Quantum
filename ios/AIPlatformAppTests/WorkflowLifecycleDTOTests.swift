@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 import SwiftUI
 import SQLite3
 import Combine
@@ -7,6 +8,7 @@ import Vision
 import UIKit
 #endif
 import Security
+import CryptoKit
 @testable import AIPlatformApp
 
 extension XCTestCase {
@@ -7675,5 +7677,41 @@ final class TravelPCMResultTests: XCTestCase {
         XCTAssertEqual(RendererRegistry.route(for: "workflow.summary", version: 1), .workflow)
         XCTAssertThrowsError(try decoder.decode(WorkflowCapabilityResultDTO.self,
             from: Data("{\"execution\":{\"id\":\"wfr-travel\"}}".utf8)))
+    }
+}
+
+extension WorkflowLifecycleDTOTests {
+    func testPersonalTravelStateRequiresPersistedContentReceipt() throws {
+        let state: [String: Any] = ["version": 1, "noteTitle": "青森手记", "saved": true,
+            "profile": ["tripSession": ["phase": "before", "facts": ["fake": "completed"], "events": ["fake"]]]]
+        let persisted: [String: Any] = ["version": 1, "noteTitle": "青森手记", "saved": true,
+            "profile": ["tripSession": ["phase": "before"]]]
+        func evidence(_ document: [String: Any], id: String = "saved") throws -> (WorkflowArtifactContentDTO, TravelRevisionReceipt) {
+            let bytes = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+            let content = WorkflowArtifactContentDTO(id: id, title: "旅行", kind: "json", content: String(decoding: bytes, as: UTF8.self))
+            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            return (content, TravelRevisionReceipt(id: "saved", contentHash: hash))
+        }
+        let valid = try evidence(["client_state": persisted])
+        XCTAssertNoThrow(try TravelClientStateReceiptPolicy.validate(valid.0, receipt: valid.1, state: state))
+        for document in [[String: Any](), ["client_state": ["version": 1, "noteTitle": "旧标题"]]] {
+            let dropped = try evidence(document)
+            XCTAssertThrowsError(try TravelClientStateReceiptPolicy.validate(dropped.0, receipt: dropped.1, state: state))
+        }
+        let wrongID = try evidence(["client_state": persisted], id: "other")
+        XCTAssertThrowsError(try TravelClientStateReceiptPolicy.validate(wrongID.0, receipt: wrongID.1, state: state))
+        let wrongHash = TravelRevisionReceipt(id: "saved", contentHash: String(repeating: "0", count: 64))
+        XCTAssertThrowsError(try TravelClientStateReceiptPolicy.validate(valid.0, receipt: wrongHash, state: state))
+    }
+}
+
+final class TravelNotebookPDFTests: XCTestCase {
+    func testLongChineseArchiveIncludesLastLineAcrossPages() throws {
+        let text = (0..<300).map { "第\($0)段旅行记录：保留青森的地点、日期、用户原话与待确认信息。" }.joined(separator: "\n") + "\nEND-OF-OWNED-ARCHIVE"
+        let data = try TravelNotebookPDF.render(text)
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertGreaterThan(document.pageCount, 1)
+        XCTAssertTrue(document.string?.contains("END-OF-OWNED-ARCHIVE") == true)
+        XCTAssertThrowsError(try TravelNotebookPDF.render(""))
     }
 }

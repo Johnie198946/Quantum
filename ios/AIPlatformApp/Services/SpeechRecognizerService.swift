@@ -3,7 +3,7 @@
 //  AIPlatformApp
 //
 //  语音状态机（idle → recording → processing → idle）+ SFSpeechRecognizer(zh-CN) 端侧识别。
-//  硬锁：模拟器 / 无 zh-CN 端侧模型 → 自动切 Mock fallback，防假死；标注「语音演示需真机」。
+//  语音能力不可用时保留输入，不生成模拟转写。
 //
 
 import Foundation
@@ -33,24 +33,26 @@ public final class SpeechRecognizerService: ObservableObject {
     private let speechRecognizer: SFSpeechRecognizer?
 
     private var silenceTimer: Timer?
-    private var mockTimer: Timer?
-    private var tickTimer: Timer?
+        private var tickTimer: Timer?
     private var lastSpeechAt = Date()
     private let silenceThreshold: TimeInterval = 3.5
     private var shouldAutoStopOnSilence = true
+    public private(set) var capturedAudioURL: URL?
+    private var captureAudioRequested = false
+    private var recordingFile: AVAudioFile?
 
     public init() {
         #if targetEnvironment(simulator)
-        // 模拟器无 zh-CN 端侧模型 → 强制 Mock，防止 UI 假死
+        // 模拟器没有端侧识别能力，保持空转写并提示使用文字输入。
         self.speechRecognizer = nil
         self.isMockMode = true
-        self.mockHint = "语音演示需真机（zh-CN 端侧模型），当前为模拟器 Mock。"
+        self.mockHint = "当前模拟器不支持语音识别，请使用文字输入。"
         #else
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
         self.speechRecognizer = recognizer
         self.isMockMode = (recognizer == nil) || !(recognizer?.isAvailable ?? false)
         if self.isMockMode {
-            self.mockHint = "zh-CN 端侧语音模型不可用，已切换 Mock 演示（需真机）。"
+            self.mockHint = "语音识别暂不可用，请使用文字输入。"
         }
         #endif
     }
@@ -70,11 +72,13 @@ public final class SpeechRecognizerService: ObservableObject {
         }
     }
 
-    public func start(autoStopOnSilence: Bool = true) async {
+    public func start(autoStopOnSilence: Bool = true, captureAudio: Bool = false) async {
         guard state == .idle else { return }
         shouldAutoStopOnSilence = autoStopOnSilence
+        captureAudioRequested = captureAudio
+        capturedAudioURL = nil
         if isMockMode {
-            startMockRecording()
+            recordingUnavailable()
             return
         }
         // 真实设备：先申请权限
@@ -135,8 +139,8 @@ public final class SpeechRecognizerService: ObservableObject {
     private func startRealRecording() {
         guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             isMockMode = true
-            mockHint = "识别器不可用，已切换 Mock。"
-            startMockRecording()
+            mockHint = "语音识别暂不可用，请使用文字输入。"
+            recordingUnavailable()
             return
         }
 
@@ -149,8 +153,8 @@ public final class SpeechRecognizerService: ObservableObject {
             try session.setActive(true)
         } catch {
             isMockMode = true
-            mockHint = "录音音频会话启动失败，已切换 Mock。"
-            startMockRecording()
+            mockHint = "无法启动录音，请检查麦克风权限后重试。"
+            recordingUnavailable()
             return
         }
 
@@ -167,9 +171,19 @@ public final class SpeechRecognizerService: ObservableObject {
         do {
             let inputNode = audioEngine.inputNode
             let format = inputNode.outputFormat(forBus: 0)
+            if captureAudioRequested {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+                recordingFile = try AVAudioFile(forWriting: url, settings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: format.sampleRate,
+                    AVNumberOfChannelsKey: format.channelCount, AVEncoderBitRateKey: 32000
+                ], commonFormat: .pcmFormatFloat32, interleaved: false)
+                capturedAudioURL = url
+            }
+            let capturedFile = recordingFile
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
                 guard let self else { return }
                 request.append(buffer)
+                try? capturedFile?.write(from: buffer)
                 let level = Self.computeLevel(buffer: buffer)
                 let speechDetected = level > 0.02
                 DispatchQueue.main.async {
@@ -199,9 +213,9 @@ public final class SpeechRecognizerService: ObservableObject {
             startTimers()
         } catch {
             isMockMode = true
-            mockHint = "音频引擎启动失败，已切换 Mock。"
+            mockHint = "无法启动录音，请稍后重试或使用文字输入。"
             cleanupRecognition()
-            startMockRecording()
+            recordingUnavailable()
         }
     }
 
@@ -228,6 +242,9 @@ public final class SpeechRecognizerService: ObservableObject {
         }
 
         if cancelled {
+            recordingFile = nil
+            if let capturedAudioURL { try? FileManager.default.removeItem(at: capturedAudioURL) }
+            capturedAudioURL = nil
             recognitionTask?.cancel()
             recognitionTask = nil
             resetToIdle()
@@ -243,9 +260,6 @@ public final class SpeechRecognizerService: ObservableObject {
             if !self.isMockMode {
                 self.cleanupRecognition()
             }
-            if self.isMockMode && self.transcript.isEmpty {
-                self.transcript = "帮我查询制造产线 SMT 贴片机的异常告警，并给出根因分析。"
-            }
             self.transcript = self.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             self.state = .idle
         }
@@ -257,42 +271,21 @@ public final class SpeechRecognizerService: ObservableObject {
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
+        recordingFile = nil
         try? AVAudioSession.sharedInstance().setActive(
             false,
             options: .notifyOthersOnDeactivation
         )
     }
 
-    // MARK: - Mock 录音（模拟器/离线 fallback）
+    // MARK: - 不可用状态
 
-    private func startMockRecording() {
-        state = .recording
+    private func recordingUnavailable() {
+        stopTimers()
         transcript = ""
-        elapsedSeconds = 0
         audioLevels = []
-        lastSpeechAt = Date()
-
-        // 模拟波形
-        mockTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let level = CGFloat.random(in: 0.2...0.95)
-            DispatchQueue.main.async {
-                self.appendLevel(level)
-            }
-        }
-        startTimers()
-
-        if shouldAutoStopOnSilence {
-            // 独立语音页兼容：静音 3.5s 自动结束；按住说话模式关闭此逻辑。
-            silenceTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                DispatchQueue.main.async {
-                    if self.state == .recording {
-                        self.finishRecording(cancelled: false)
-                    }
-                }
-            }
-        }
+        elapsedSeconds = 0
+        state = .idle
     }
 
     // MARK: - 计时 / 静音检测
@@ -315,8 +308,6 @@ public final class SpeechRecognizerService: ObservableObject {
     }
 
     private func stopTimers() {
-        mockTimer?.invalidate()
-        mockTimer = nil
         silenceTimer?.invalidate()
         silenceTimer = nil
         tickTimer?.invalidate()

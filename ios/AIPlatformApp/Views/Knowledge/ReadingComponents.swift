@@ -3,13 +3,13 @@ import SwiftUI
 // Reading-only presentation tokens. Shared app colors and business state remain authoritative.
 extension AppTheme {
     enum Reading {
-        static let paper = Color(hex: "FCFCFA")
-        static let ink = Color(hex: "182126")
-        static let border = Color(hex: "E3E5ED")
+        static let paper = Colors.paper
+        static let ink = Colors.textPrimary
+        static let border = Colors.border
         static let peach = Color(hex: "FBEDE2")
         static let lilac = Color(hex: "F0EBF7")
         static let secondary = Colors.textSecondary
-        static let radius: CGFloat = 14
+        static let radius: CGFloat = 24
         static let gutter: CGFloat = 20
     }
 }

@@ -140,7 +140,7 @@ public struct ChatInputBar: View {
                 Button(action: onSend) {
                     Image(systemName: "arrow.up")
                         .font(.body.weight(.bold))
-                    .foregroundColor(AppTheme.Icons.onAccent)
+                    .foregroundColor(AppTheme.Colors.onConfirmation)
                         .minimumTouchTarget()
                         .background(AppTheme.Colors.actionGradient)
                         .clipShape(Circle())
@@ -298,7 +298,7 @@ public struct ChatInputBar: View {
         }
         let transcript = speechService.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         if !transcript.isEmpty { return transcript }
-        if speechService.isMockMode { return "模拟器正在演示页面内拾音" }
+        if speechService.isMockMode { return "语音识别暂不可用，请使用文字输入" }
         return speechService.state == .processing ? "请稍候…" : "说出你想输入的内容"
     }
 

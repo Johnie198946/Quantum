@@ -82,7 +82,9 @@ enum LoginConsentPolicy {
             return "协议服务暂时不可用，请稍后重试。"
         case .decoding:
             return "协议服务响应无法确认，请稍后重试。"
-        case .invalidURL, .authenticationRejected, .server:
+        case .authenticationRejected(let reason):
+            return reason == "无法安全保存登录凭证，请重试" ? reason : "登录验证未完成，请重新登录。"
+        case .invalidURL, .server:
             return "协议记录未完成，请重试。"
         }
     }
@@ -353,9 +355,11 @@ public struct LoginView: View {
         VStack(spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text(loginStep == .phone ? "你好，\n欢迎来到 Quantum" : "请输入验证码")
-                    .font(AppTheme.Typography.screenTitle)
+                    .font(.custom(AppTheme.Typography.editorialName, size: 32, relativeTo: .title))
                     .foregroundColor(AppTheme.Colors.textPrimary)
-                Text(loginStep == .phone ? "知识，让世界更大" : "我们已将 6 位验证码发送至\n+86 \(formattedPhoneNumber)")
+                Text(loginStep == .phone ? "知识，让世界更大" : phoneNumber == LoginInputPolicy.developerPhone
+                     ? "请输入开发测试验证码；需要服务端开启此登录方式。"
+                     : "我们已将 6 位验证码发送至\n+86 \(formattedPhoneNumber)")
                     .font(AppTheme.Typography.supporting)
                     .foregroundColor(AppTheme.Colors.textSecondary)
             }
@@ -442,7 +446,7 @@ public struct LoginView: View {
                 HStack {
                     if isLoading {
                         ProgressView()
-                            .tint(AppTheme.Colors.onPrimary)
+                            .tint(AppTheme.Colors.onConfirmation)
                             .padding(.trailing, AppTheme.Spacing.xs)
                     }
                     Text("获取验证码")
@@ -452,6 +456,12 @@ public struct LoginView: View {
             .buttonStyle(QuantumPrimaryButtonStyle())
             .disabled(!canRequestCode)
             .opacity(canRequestCode ? 1.0 : 0.6)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+                    .font(AppTheme.Typography.supporting)
+                    .foregroundStyle(AppTheme.Colors.statusError)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -505,7 +515,7 @@ public struct LoginView: View {
 
             Button(action: performPhoneLogin) {
                 HStack {
-                    if isLoading { ProgressView().tint(AppTheme.Colors.onPrimary) }
+                    if isLoading { ProgressView().tint(AppTheme.Colors.onConfirmation) }
                     Text(isRetryingAgreementAcceptance ? "重试协议确认" : "登录")
                         .font(.headline.weight(.semibold))
                 }
@@ -707,6 +717,7 @@ public struct LoginView: View {
         let normalizedPhone = LoginInputPolicy.digits(phoneNumber, limit: 11)
         guard normalizedPhone.count == 11, !isLoading,
               channels.phone || normalizedPhone == LoginInputPolicy.developerPhone else { return }
+        // This account uses the server-gated developer code endpoint, never SMS.
         if normalizedPhone == LoginInputPolicy.developerPhone {
             loginStep = .code
             isCountdownActive = true
@@ -841,7 +852,23 @@ public struct LoginView: View {
             isLoading = false
         } catch {
             isLoading = false
-            errorMessage = LoginConsentPolicy.failureMessage(for: error)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-travelLiveEvidence") {
+                if case let APIError.server(status, _) = error {
+                    print("AOMORI_AUTH_ERROR_HTTP: \(status)")
+                } else {
+                    print("AOMORI_AUTH_ERROR_KIND: \(String(describing: type(of: error)))")
+                }
+            }
+            #endif
+            if case .authenticated = pendingAuthAction {
+                errorMessage = LoginConsentPolicy.failureMessage(for: error)
+            } else if case .phone(_, _, let developer) = pendingAuthAction,
+                      developer, case APIError.server(404, _) = error {
+                errorMessage = "当前环境未启用开发者登录，请使用正常账号。"
+            } else {
+                errorMessage = "登录未完成，请检查账号、验证码与网络后重试。"
+            }
         }
     }
 

@@ -156,7 +156,7 @@ async def upload_document(
         )
     except DocumentSourceError as exc:
         raise _error(exc) from exc
-    if receipt["status"] == "ready":
+    if receipt["status"] == "ready" and receipt.get("extraction_method") != "original_audio_only":
         candidate = ContributionCandidate(
             tenant_key=tenant_key,
             user_id=user_id,

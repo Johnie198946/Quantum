@@ -1,0 +1,7 @@
+{
+  "source_worktree": "/Users/dengzhaoyu/Desktop/TepVis/.worktrees/quantum-frontend-rebuild-20261012",
+  "source_head": "de3c2ad00a4fb33029d7138f52622689be3267e7",
+  "destination_base": "00bfe47e4fceb994d0e85b6720b21e3248b3c43d",
+  "patch_sha256": "8b386dcf56be8ca9d53a8173dcc592d2ffbd0fc14ac5cbae4f0bc889d2346039",
+  "scope": "previous user-authorized frontend and API fixes; preserve current main changes"
+}

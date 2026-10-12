@@ -41,7 +41,7 @@ public struct MainTabView: View {
                     .tag(2)
 
                 // 工作流：可执行计划、运行、成果与拓扑。
-                WorkflowDashboardView()
+                TravelSpaceView()
                     .toolbar(.hidden, for: .tabBar)
                     .tabItem {
                         Label("工作流", systemImage: "square.stack.3d.up.fill")
@@ -60,8 +60,8 @@ public struct MainTabView: View {
 
             if !keyboardObserver.isKeyboardVisible {
                 QuantumFloatingTabBar(selection: $appState.activeTab)
-                    .padding(.top, appState.activeTab == 2 ? 0 : AppTheme.Spacing.xs)
-                    .padding(.bottom, appState.activeTab == 2 ? 0 : 10)
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -126,41 +126,39 @@ private final class KeyboardObserver: ObservableObject {
     }
 }
 
-private struct QuantumFloatingTabBar: View {
+struct QuantumFloatingTabBar: View {
     @Binding var selection: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private let items: [(tag: Int, title: String, symbol: String, selectedSymbol: String)] = [
-        (0, "首页", "house", "house.fill"),
-        (2, "阅读", "book", "book.fill"),
-        (1, "工作流", "square.stack.3d.up", "square.stack.3d.up.fill"),
-        (3, "我的", "person", "person.fill")
+    @Namespace private var liquidSelection
+    @State private var stretching = false
+    private let items: [(tag: Int, title: String, symbol: String)] = [
+        (0, "首页", "house"), (2, "阅读", "book"),
+        (1, "工作流", "square.3.layers.3d"), (3, "我的", "person")
     ]
-
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.xs) {
+        HStack(spacing: 6) {
             ForEach(items, id: \.tag) { item in
-                Button {
-                    guard selection != item.tag else { return }
-                    #if os(iOS)
-                    UISelectionFeedbackGenerator().selectionChanged()
-                    #endif
-                    if reduceMotion {
-                        selection = item.tag
-                    } else {
-                        withAnimation(AppTheme.Motion.spring) { selection = item.tag }
+                Button { choose(item.tag) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 19, weight: .regular))
+                        if selection == item.tag {
+                            Text(item.title).font(.system(size: 13, weight: .semibold))
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        }
                     }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: selection == item.tag ? item.selectedSymbol : item.symbol)
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(height: 22)
-                        Text(item.title)
-                            .font(.caption2.weight(selection == item.tag ? .bold : .medium))
+                    .foregroundStyle(selection == item.tag ? Color(hex: "263D35") : Color(hex: "61726D"))
+                    .frame(minWidth: 44, minHeight: 46)
+                    .padding(.horizontal, selection == item.tag ? 12 : 0)
+                    .background {
+                        if selection == item.tag {
+                            Capsule().fill(AppTheme.Colors.confirmationGradient)
+                                .overlay(Capsule().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                                .scaleEffect(x: stretching && !reduceMotion ? 1.08 : 1,
+                                             y: stretching && !reduceMotion ? 0.96 : 1)
+                                .matchedGeometryEffect(id: "selected", in: liquidSelection)
+                        }
                     }
-                    .foregroundStyle(selection == item.tag ? AppTheme.Colors.primary : AppTheme.Icons.navigationInactive)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(selection == item.tag && selection != 2 ? Color.white.opacity(0.70) : Color.clear, in: Capsule())
                     .contentShape(Capsule())
                 }
                 .buttonStyle(SoftButtonStyle())
@@ -170,20 +168,32 @@ private struct QuantumFloatingTabBar: View {
             }
         }
         .padding(6)
-        .frame(height: selection == 2 ? 64 : 68)
-        .background {
-            if selection == 2 { AppTheme.Reading.paper }
-            else { Capsule().fill(.ultraThinMaterial).background(Capsule().fill(.white.opacity(0.42))) }
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.85), lineWidth: 1))
+        .shadow(color: Color(hex: "647F75").opacity(0.13), radius: 22, y: 8)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity)
+        .gesture(DragGesture(minimumDistance: 20).onEnded { value in
+            guard abs(value.translation.width) > abs(value.translation.height),
+                  let index = items.firstIndex(where: { $0.tag == selection }) else { return }
+            let next = min(items.count - 1, max(0, index + (value.translation.width < 0 ? 1 : -1)))
+            choose(items[next].tag)
+        })
+    }
+    private func choose(_ tag: Int) {
+        guard selection != tag else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        if reduceMotion { selection = tag; return }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.76)) {
+            stretching = true; selection = tag
         }
-        .overlay {
-            if selection == 2 {
-                Rectangle().fill(AppTheme.Reading.border).frame(height: 0.5).frame(maxHeight: .infinity, alignment: .top)
-            } else { Capsule().stroke(Color.white.opacity(0.82), lineWidth: 0.8) }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(140))
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { stretching = false }
         }
-        .shadow(color: selection == 2 ? .clear : Color(hex: "385A58").opacity(0.13), radius: 18, y: 7)
-        .padding(.horizontal, selection == 2 ? 0 : AppTheme.Spacing.lg)
     }
 }
+
 
 // MARK: - 开发模式·免鉴权 提示 banner（Quantum 蓝细窄条 · 小号白字）
 

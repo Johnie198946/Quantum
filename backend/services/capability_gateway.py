@@ -170,6 +170,8 @@ async def create_capability_proposal(
         elif capability_id == "travel.revise":
             verb = "记录实际进度" if canonical_input.get("progress") else "修改已采用行程"
             review_summary = verb + "：" + canonical_input["reason"] + "。保留已有日记、照片和预订，不代为订票或付款。"
+        elif capability_id == "travel.notebook.update":
+            review_summary = "保存这份私人旅行笔记：" + canonical_input["reason"] + "。保留实际进度、原始成果和来源，笔记有新版本时停止写入。"
         elif capability_id == "travel.notebook.save":
             review_summary = "将这版已采用成果保存为私人旅行笔记；复用同一行程的已有笔记，不覆盖个人日记。"
         if capability_id == "media.process":

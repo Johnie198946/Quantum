@@ -1,0 +1,70 @@
+html,body,#root{width:100%;height:100%;overflow:hidden;background:transparent}
+body{margin:0;overscroll-behavior:none}
+/* WebKit zooms focused fields below 16px and leaves nested panels offscreen. */
+#root .phone input,#root .phone textarea,#root .phone select{font-size:16px!important}
+.prototype-shell{display:block;padding:0;width:100%;height:100%;min-height:0;background:transparent}
+.phone{position:relative;width:100%;max-width:none;min-width:0;height:100%;min-height:0;margin:0;border:0;border-radius:0;box-shadow:none;overflow:hidden}
+.screen-host{inset:0!important}
+.status-bar,.home-indicator,.review-rail,.preview-caption,.preview-note{display:none!important}
+.workflow-screen .bottom-tabs{display:none!important}
+.workflow-heading{padding-top:60px}
+.production-error{position:absolute;z-index:12000;left:16px;right:16px;top:10px;display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px solid #fff9;border-radius:22px;background:#f1e6e6f5;color:#623f43;font-size:13px;box-shadow:0 8px 32px #354c4820}
+.production-error span{flex:1}.production-error button{background:transparent;min-width:44px;min-height:44px;border:0;color:inherit}
+.production-task-panel textarea{width:100%;min-height:88px;padding:14px;background:#ffffff70;border:1px solid #fff;border-radius:20px;margin:12px 0;color:#263d35;font:inherit}
+.production-task-panel progress{width:100%;accent-color:#829f95}
+.production-task-panel ol{padding-left:20px;line-height:1.8;font-size:14px}
+.production-workflows{position:absolute;left:24px;right:24px;bottom:20px;max-height:130px;overflow:auto;z-index:10;display:flex;gap:10px;scrollbar-width:none}
+.production-workflows button{flex:0 0 210px;border:1px solid #fff8;border-radius:24px;padding:14px 18px;text-align:left;background:#ebefefb0;backdrop-filter:blur(20px);color:#263d35}
+.production-workflows strong,.production-workflows small{display:block}.production-workflows small{margin-top:8px;color:#657a72;font-size:11px}
+.production-workflows + .travel-magazine{bottom:170px}
+.production-sync{position:absolute;right:22px;top:8px;font-size:10px;color:#526e63;z-index:20;pointer-events:none}
+.production-generation-error{padding:20px 28px;color:#623f43;font-size:14px}
+.production-empty{padding:28px;font-size:14px;color:#657a72}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
+
+.production-service-query{display:flex;align-items:center;gap:12px;margin:14px 0;color:#62786d;font-size:11px}.production-service-query button{display:flex;align-items:center;gap:8px;padding:12px 16px;color:#263d35;border-radius:24px;min-height:44px;border:1px solid #fff9}.production-service-query small{flex:1}.production-map-pending{background:linear-gradient(125deg,#e6ece6,#e9e5ec)}
+
+.production-nearby-base,.production-route-base{position:absolute;inset:0;width:100%;height:100%;object-fit:fill}.route-map{position:relative}.route-map svg,.route-map figcaption{position:relative}.nearby-canvas>svg{position:relative}
+
+.workflow-other-tasks{position:absolute;left:26px;top:12px;z-index:25;font-size:11px;color:#526e63;display:flex;align-items:center;gap:3px;padding:8px 0}
+.route-location-pending{display:flex;align-items:center;justify-content:space-between;width:calc(100% - 48px);margin:12px 24px;padding:18px 22px;border:1px solid #fff8;border-radius:24px;color:#263d35}.route-location-pending small{color:#657a72}
+
+.production-recovery{position:absolute;right:20px;bottom:16px;z-index:10000;border:1px solid #fff;background:#e6eae9e8;color:#263d35;min-height:44px;border-radius:22px;padding:0 18px;font-size:12px}
+
+.service-sheet select{display:block;width:100%;min-height:44px;border:1px solid #fff;border-radius:18px;padding:10px 12px;font-size:16px;color:#263d35;background:#ffffff70}
+
+.booking-review .floating-title{color:#263d35!important;opacity:1!important}
+
+.service-sheet .service-source{color:#42564c}
+.task-library,.task-details,.production-task-panel,.task-preview{color:#304844}
+.task-caption{color:#61766e;font-size:13px;line-height:1.7}
+.task-search{display:flex;align-items:center;gap:12px;padding:12px 18px;margin:22px 0;border-radius:24px}
+.task-search input{border:0;background:transparent;color:inherit;min-width:0;width:100%;outline:none}
+.task-search:focus-within{outline:2px solid #667f77;outline-offset:2px}
+.task-list,.task-artifacts{display:grid;gap:12px;margin:20px 0}
+.task-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:80px;padding:18px 20px;border:1px solid #ffffffb0;border-radius:26px;width:100%;color:#304844;text-align:left}
+.task-row span{min-width:0;flex:1}.task-row strong{display:block;font-size:16px;font-weight:600;overflow-wrap:anywhere}.task-row small,.task-timeline small{display:block;margin-top:7px;font-size:12px;color:#61766e}
+.task-row:disabled{opacity:.65}.task-brief{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.8}
+.task-disclosure{padding:18px 20px;border-radius:24px;margin:16px 0}.task-disclosure summary{cursor:pointer;min-height:28px;font-size:14px}.task-disclosure p{line-height:1.8}
+.task-disclosure dl{display:grid;grid-template-columns:70px 1fr;gap:12px;font-size:12px}.task-disclosure dd{margin:0;overflow-wrap:anywhere}
+.task-progress{display:flex;align-items:center;gap:16px;margin:24px 0}.task-progress progress{width:100%;accent-color:#6d8b7e}.task-progress small{color:#61766e}
+.production-task-panel .task-timeline,.task-timeline{list-style:none;padding:0;margin:24px 0}.task-timeline li{display:flex;align-items:flex-start;gap:16px;padding:0 0 24px;position:relative;font-size:14px;line-height:1.6}.task-timeline li:last-child{padding-bottom:0}.task-timeline li:not(:last-child):before{content:'';position:absolute;left:5px;top:18px;bottom:6px;width:1px;background:#8ca29466}.task-dot{width:11px;height:11px;border:1px solid #7b9389;border-radius:50%;flex-shrink:0;margin-top:6px}.task-timeline [data-status=succeeded] .task-dot{background:#7b9389}.task-timeline [data-status=running] .task-dot{box-shadow:0 0 0 5px #7b938922}.task-timeline [data-status=failed] .task-dot{background:#976365;border-color:#976365}.task-timeline p{margin-bottom:0;overflow-wrap:anywhere}
+.task-failure{color:#734e51;font-size:13px;line-height:1.8}.task-failure.glass{padding:20px;border-radius:26px}
+.task-content{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.9 inherit;margin:24px 0;padding:20px;background:#ffffff40;border:1px solid #ffffff99;border-radius:24px;max-height:45vh;overflow:auto}
+.task-preview textarea{display:block;width:100%;min-height:90px;padding:18px;margin-top:16px;border:1px solid #ffffffaa;background:#ffffff60;border-radius:24px;color:#304844;font:inherit}.task-preview .text-btn,.task-details>.text-btn,.task-library>.text-btn{min-height:44px;margin-top:16px}
+.task-events{list-style:none;padding:0;max-height:38vh;overflow:auto}.task-events li{padding:12px 0;border-bottom:1px solid #7b938933;overflow-wrap:anywhere}.task-events p{margin:0}.task-events small{color:#61766e;white-space:pre-wrap}
+.task-timeline details{margin-top:12px}.task-timeline summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:#61766e;font-size:12px}.task-step-output{white-space:pre-wrap;max-height:34vh;overflow:auto}
+.workflow-photo-entry{position:absolute;right:84px;top:14px;z-index:25;width:42px;height:42px;color:#526e63}
+.travel-conversation-summary{padding:16px 20px;margin:12px 0;border-radius:24px;color:#304844}.travel-conversation-summary small{color:#61766e;font-size:11px}.travel-conversation-summary p{font-size:14px;line-height:1.8;margin:8px 0}
+.geo-route-footer>p{color:#526e63}
+
+.travel-practical-info section {padding:16px 0;border-top:1px solid rgba(56,76,71,.15)}
+.travel-practical-info h3 {font-size:16px;line-height:1.5;margin:0 0 10px}
+.travel-practical-info p {font-size:14px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.travel-reference-links {display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;line-height:1.6}
+.travel-reference-links a {color:#355d55;text-decoration:underline}
+.travel-next-step {color:#355d55}
+
+.final-photo-copy h2.long-place-title {font-size:26px;line-height:1.2;overflow-wrap:anywhere}
+
+.production-error .production-recovery{position:static;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 8px;font-size:11px}

@@ -30,6 +30,7 @@ SUPPORTED_DOCUMENTS = {
     ".heic": "image/heic", ".webp": "image/webp",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".wav": "audio/wav", ".m4a": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg",
 }
 
 
@@ -132,11 +133,20 @@ def save_document_source(
     filename = _safe_filename(filename)
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENTS:
-        raise DocumentSourceError("unsupported_document_type", "支持 PDF、Word、PowerPoint、CSV、JSON、TXT、Markdown 和图片")
+        raise DocumentSourceError("unsupported_document_type", "支持 PDF、Word、PowerPoint、CSV、JSON、TXT、Markdown、图片及录音")
     if not data:
         raise DocumentSourceError("empty_document", "文档为空")
     if len(data) > MAX_DOCUMENT_BYTES:
         raise DocumentSourceError("document_too_large", "文档超过 25 MB 上限")
+    audio = suffix in {".wav", ".m4a", ".webm", ".ogg"}
+    if audio:
+        valid = (suffix == ".wav" and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+                 or suffix == ".m4a" and data[4:8] == b"ftyp"
+                 or suffix == ".webm" and data[:4] == b"\x1a\x45\xdf\xa3"
+                 or suffix == ".ogg" and data[:4] == b"OggS")
+        if not valid:
+            raise DocumentSourceError("invalid_audio_attachment", "录音格式与文件类型不符")
+        file_opt_out = True
     digest = hashlib.sha256(data).hexdigest()
     if expected_hash and expected_hash.lower() != digest:
         raise DocumentSourceError("content_hash_mismatch", "文档校验失败，请重新选择")
@@ -166,6 +176,13 @@ def save_document_source(
         "owner_user": namespace(user_id),
         "original_name": original_name,
     }
+    if audio:
+        # Retain the owned original without fabricating a transcription or
+        # automatically contributing personal travel recordings to knowledge.
+        receipt.update(status="ready", note_id=None, note_status="not_requested",
+                       extraction_method="original_audio_only")
+        _atomic_write(directory / "receipt.json", json.dumps(receipt, ensure_ascii=False, indent=2).encode())
+        return receipt
     try:
         if len(extracted_text) > 200_000:
             raise ValueError("OCR text exceeds extraction limit")

@@ -762,7 +762,9 @@ def _workflow_node_prompt(run: dict[str, Any], node: dict[str, Any]) -> str:
             continue
         state = (run.get("nodes") or {}).get(node_id) or {}
         if state.get("status") == "succeeded" and state.get("output"):
-            upstream_limit = 48000 if travel_output else 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
+            # Keep approved multi-day JSON in full. The complete travel prompt
+            # remains bounded by MAX_DOCUMENT_WORKFLOW_INPUT below.
+            upstream_limit = _contracts.MAX_DOCUMENT_WORKFLOW_INPUT if travel_output else 16000 if html_output or illustration_output else 5000 if presentation_output else 8000 if document_output else 1800
             output = str(state["output"])
             if travel_output or presentation_output or document_output or html_output or illustration_output:
                 if len(output) > upstream_limit:

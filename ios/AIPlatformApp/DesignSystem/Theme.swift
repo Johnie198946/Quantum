@@ -29,41 +29,41 @@ public enum AppTheme {
         public static let emberCream = Color(hex: "FFF7EC")
         public static let emberInk = Color(hex: "2B1811")
         /// 历史命名兼容：交互入口沿用当前蓝紫语义色。
-        public static let interactiveBlue = Color(hex: "3F7278")
-        public static let interactiveViolet = Color(hex: "6673A6")
+        public static let interactiveBlue = Color(hex: "526E63")
+        public static let interactiveViolet = Color(hex: "80768B")
 
         // 语义别名（收敛到 Quantum 真值，杜绝双源漂移）
         public static let brandPrimary = quantumBlue
         public static let brandSecondary = quantumViolet
         public static let brandTertiary = quantumCyan
 
-        // Quantum 光谱只用于品牌标识；结构性操作使用暖色 Ember 渐变。
+        // 品牌色与批准原型的薄荷、沙色、淡紫确认胶囊。
         public static let quantumGradient = LinearGradient(
             colors: [Color(hex: "6673A6"), Color(hex: "58758E"), Color(hex: "78A596")],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-        public static let actionGradient = LinearGradient(
-            colors: [Color(hex: "3F7278"), Color(hex: "557B92"), Color(hex: "6673A6")],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+        public static let confirmationGradient = LinearGradient(
+            colors: [Color(hex: "A0D2C7").opacity(0.86), Color(hex: "E8CCAF").opacity(0.86), Color(hex: "CFBBE3").opacity(0.88)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
         )
+        public static let actionGradient = confirmationGradient
         public static let userBubbleGradient = LinearGradient(
-            colors: [Color(hex: "557B92"), Color(hex: "6673A6")],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            colors: [Color(hex: "DFEAE5"), Color(hex: "E5E2EE")],
+            startPoint: .topLeading, endPoint: .bottomTrailing
         )
 
-        // primary / accent 统一为 Quantum Blue（主 CTA / 链接 / TabBar 选中高亮）
+        // 深鼠尾草纯色操作与淡紫辅助交互。
         public static let primary = interactiveBlue
         public static let accent = interactiveViolet
-        // onPrimary：primary（饱和蓝）之上的文字与图标——亮暗恒为白字，保证 WCAG AA 对比
-        public static let onPrimary = Color(hex: "FFFFFF")
+        // 纯色操作用白字；浅色确认胶囊和用户气泡用深墨字。
+        public static let onPrimary = Color.white
+        public static let onConfirmation = Color(hex: "263D35")
         // onSemantic：语义色（黄/绿）按钮上的深色文字——亮暗通用（浅色底必须深字才达 AA）
         public static let onSemantic = Color(hex: "1F1F1F")
 
-        // 对话气泡系统：用户气泡三色流光渐变（白字），助手卡片冷岩/深曜石底 + 量子青/蓝微光细边框
-        public static let userBubbleBackground = Color(hex: "557B92")
+        // 对话沿用原型的浅色玻璃气泡与柔和边缘。
+        public static let userBubbleBackground = Color(hex: "DFEAE5")
         public static let assistantBubbleBorder = adaptive("8FB4AE", "78AEB0")
         
         // Security Classification Three-Color Tokens (红黄绿三色安全徽章) → System Semantic Colors
@@ -140,7 +140,7 @@ public enum AppTheme {
         public static let codeSyntaxType = Color(hex: "6BDFFF")
         
         // Dynamic Label Colors — Quantum 同源文字（亮 #333333 · 暗 #F5F5F7）
-        public static var textPrimary: Color { adaptive("1F2D2E", "F8F4FF") }
+        public static var textPrimary: Color { adaptive("263D35", "F8F4FF") }
         public static var textSecondary: Color { adaptive("667373", "D1C9DC") }
         public static var textTertiary: Color { adaptive("8A9693", "A69BB2") }
         
@@ -191,10 +191,18 @@ public enum AppTheme {
 
     // MARK: - Semantic Type (Dynamic Type by default)
     public enum Typography {
-        public static let hero = Font.system(.largeTitle, design: .rounded, weight: .bold)
-        public static let screenTitle = Font.system(.title, design: .rounded, weight: .bold)
-        public static let sectionTitle = Font.system(.title2, design: .rounded, weight: .semibold)
-        public static let cardTitle = Font.system(.headline, design: .rounded, weight: .semibold)
+        public static var editorialName: String {
+            #if os(iOS)
+            return ["SongtiSC-Regular", "STSongti-SC-Regular", "ZCOOLXiaoWei-Regular"]
+                .first(where: { UIFont(name: $0, size: 20) != nil }) ?? "TimesNewRomanPSMT"
+            #else
+            return "Songti SC"
+            #endif
+        }
+        public static let hero = Font.custom(AppTheme.Typography.editorialName, size: 38, relativeTo: .largeTitle).weight(.semibold)
+        public static let screenTitle = Font.custom(AppTheme.Typography.editorialName, size: 32, relativeTo: .title).weight(.semibold)
+        public static let sectionTitle = Font.custom(AppTheme.Typography.editorialName, size: 24, relativeTo: .title2).weight(.semibold)
+        public static let cardTitle = Font.custom(AppTheme.Typography.editorialName, size: 20, relativeTo: .headline).weight(.semibold)
         public static let body = Font.body
         public static let supporting = Font.subheadline
         public static let label = Font.caption.weight(.semibold)
@@ -207,13 +215,13 @@ public enum AppTheme {
         public static let contentGutter: CGFloat = 20
         public static let readableContentWidth: CGFloat = 720
         public static let floatingTabBarHeight: CGFloat = 64
-        public static let panelRadius: CGFloat = 20
+        public static let panelRadius: CGFloat = 28
     }
 
     public enum Motion {
         public static let quick = Animation.easeOut(duration: 0.18)
         public static let standard = Animation.easeOut(duration: 0.24)
-        public static let spring = Animation.spring(response: 0.36, dampingFraction: 0.90)
+        public static let spring = Animation.spring(response: 0.40, dampingFraction: 0.80)
     }
     
     // MARK: - Corner Radius Tokens
@@ -221,8 +229,8 @@ public enum AppTheme {
         public static let xs: CGFloat = 8
         public static let sm: CGFloat = 12
         public static let md: CGFloat = 16
-        public static let lg: CGFloat = 20
-        public static let xl: CGFloat = 24
+        public static let lg: CGFloat = 28
+        public static let xl: CGFloat = 32
         public static let full: CGFloat = 999
     }
     
@@ -627,7 +635,7 @@ public struct QuantumCardModifier: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .background(.ultraThinMaterial)
-            .background(AppTheme.Colors.cardBackground.opacity(reduceTransparency ? 1 : 0.72))
+            .background(AppTheme.Colors.surfaceTint.opacity(reduceTransparency ? 1 : 0.58))
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
@@ -636,7 +644,7 @@ public struct QuantumCardModifier: ViewModifier {
             }
             .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             .shadow(
-                color: Color(hex: "385A58").opacity(0.10),
+                color: Color(hex: "6B8276").opacity(0.08),
                 radius: 18,
                 x: 0,
                 y: 6
@@ -670,10 +678,11 @@ public struct QuantumPrimaryButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline.weight(.semibold))
-            .foregroundStyle(AppTheme.Colors.onPrimary)
+            .foregroundStyle(AppTheme.Colors.onConfirmation)
             .frame(maxWidth: .infinity, minHeight: AppTheme.Metrics.inputHeight)
             .padding(.horizontal, AppTheme.Spacing.xl)
             .background(AppTheme.Colors.actionGradient.opacity(isEnabled ? 1 : 0.46))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(configuration.isPressed ? 1 : 0.7), lineWidth: configuration.isPressed ? 1.8 : 0.8))
             .clipShape(Capsule())
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
@@ -689,20 +698,11 @@ public struct QuantumMistBackground: View {
     public var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "EDF3F0"), Color(hex: "F7F5EF"), Color(hex: "F4E9E1")],
+                colors: [Color(hex: "ECF0ED"), Color(hex: "F2F0ED"), Color(hex: "ECE9F0")],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             GeometryReader { proxy in
-                Image("knowledge_home_hero")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: proxy.size.width, height: min(420, proxy.size.height * 0.48))
-                    .clipped()
-                    .opacity(0.20)
-                    .mask {
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                    }
                 Circle()
                     .fill(AppTheme.Colors.mistLilac.opacity(0.54))
                     .frame(width: 250, height: 250)

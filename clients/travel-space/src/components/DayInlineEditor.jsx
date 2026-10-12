@@ -1,0 +1,11 @@
+import FloatingField from './FloatingField';
+import React,{useState} from 'react';
+import {useTravel} from '../TravelContext';
+import {Icon} from './UI';
+import {stableItems,scheduleIssues,reviseDay} from './journal/journal-model';
+export default function DayInlineEditor({day,onClose}){
+ const {updateDay}=useTravel(),[name,setName]=useState(day.name),[items,setItems]=useState(()=>stableItems(day));
+ const issues=scheduleIssues(items),change=(id,key,value)=>setItems(prev=>prev.map(x=>x.journalId===id?{...x,[key]:value}:x));
+ const save=()=>{if(issues.length||!name.trim())return;updateDay({...reviseDay(day,items,{source:'页内调整',reason:'在每日成稿中调整安排'}),name:name.trim()});onClose();};
+ return <section className="day-inline-editor" aria-label="页内调整当天行程"><header><h3>调整这一天</h3><button aria-label="收起页内调整" onClick={onClose}><Icon name="close" size={14}/></button></header><label>当天标题<FloatingField aria-label="页内当天标题" value={name} onChange={e=>setName(e.target.value)}/></label>{items.map((item,i)=><fieldset key={item.journalId}><legend>安排 {i+1}</legend><div className="inline-edit-times"><label>开始<FloatingField type="time" aria-label={'页内安排'+(i+1)+'开始'} value={item.time} onChange={e=>change(item.journalId,'time',e.target.value)}/></label><label>结束<FloatingField type="time" aria-label={'页内安排'+(i+1)+'结束'} value={item.endTime||''} onChange={e=>change(item.journalId,'endTime',e.target.value)}/></label></div><label>名称<FloatingField aria-label={'页内安排'+(i+1)+'名称'} value={item.title} onChange={e=>change(item.journalId,'title',e.target.value)}/></label><label>说明<FloatingField as="textarea" aria-label={'页内安排'+(i+1)+'说明'} rows={2} value={item.description||''} onChange={e=>change(item.journalId,'description',e.target.value)}/></label><button className="text-btn" onClick={()=>setItems(prev=>prev.filter(x=>x.journalId!==item.journalId))}>移除安排 {i+1}</button></fieldset>)}<button className="text-btn" onClick={()=>setItems(prev=>[...prev,{journalId:crypto.randomUUID(),time:'17:30',title:'自由停留',description:''}])}><Icon name="plus" size={12}/>增加安排</button><div role="status">{issues.map((x,i)=><p key={i}>{x}</p>)}</div><button className="inline-edit-confirm" disabled={!!issues.length||!name.trim()} onClick={save}>确认当天调整 <Icon name="check" size={14}/></button></section>;
+}

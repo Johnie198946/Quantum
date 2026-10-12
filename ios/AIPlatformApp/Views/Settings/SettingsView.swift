@@ -288,14 +288,7 @@ public struct SettingsView: View {
 
     private var settingsOverviewHeader: some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("我的日常")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.Colors.textPrimary)
-                Text("学习、收藏，还有你的 Quantum")
-                    .font(AppTheme.Typography.supporting)
-                    .foregroundColor(AppTheme.Colors.textSecondary)
-            }
+            QuantumSectionHeading(eyebrow: "YOUR SPACE, AT YOUR PACE", title: "把日常，\n留给自己。", detail: "学习、收藏，还有你的 Quantum")
             Spacer()
             Button { showingProfileEdit = true } label: {
                 Image(systemName: "person.crop.circle")

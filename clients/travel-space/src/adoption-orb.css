@@ -1,0 +1,16 @@
+.adoption-gather { position: absolute; inset: 0; z-index: 40; overflow: hidden; isolation: isolate; }
+.adoption-veil { position: absolute; inset: 0; background: rgba(232, 235, 227, .84); backdrop-filter: blur(8px); }
+.adopt-list-screen.is-adopting > .topbar { visibility: hidden; }
+.adopt-list-screen.is-adopting > header:not(.topbar),
+.adopt-list-screen.is-adopting > .adopt-bottom { opacity: 0; transition: opacity .2s; }
+.adopt-list-screen.is-adopting .adopt-canvas > .photo-position { visibility: hidden; }
+.adopt-list-screen .adoption-flight-card { position: absolute; margin: 0; min-height: 0; pointer-events: none; will-change: transform, opacity; border-radius: 22px; }
+.adoption-orb-anchor { position: absolute; width: 64px; height: 64px; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; }
+.adoption-orb-core { width: 64px; height: 64px; position: relative; }
+.adoption-orb-core canvas { display: block; }
+.adoption-orb-halo { position: absolute; inset: -24px; border-radius: 50%; background: radial-gradient(circle, rgba(235, 242, 231, .85), rgba(224, 232, 217, .24) 60%, transparent 72%); }
+.adoption-gather-status { position: absolute; top: 86px; left: 50%; transform: translateX(-50%); width: max-content; max-width: 240px; font-size: 12px; line-height: 1.7; letter-spacing: .04em; color: #526858; outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .adopt-list-screen.is-adopting > header:not(.topbar),
+  .adopt-list-screen.is-adopting > .adopt-bottom { transition: none; }
+}

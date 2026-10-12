@@ -96,6 +96,7 @@ capabilities:
   - workflow.retry
   - travel.revise
   - travel.notebook.save
+  - travel.notebook.update
 annotations:
   conversation.lifecycle:
     ios_consumer: ios/AIPlatformApp/Views/Chat/NativeClientActionHost.swift
@@ -116,7 +117,7 @@ annotations:
     ios_consumer: ios/AIPlatformApp/Views/ImageStudio/ImageWorkbench.swift
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   media.process:
-    ios_consumer: ios/AIPlatformApp/Views/Workflows/WorkflowDashboardView.swift
+    ios_consumer: ios/AIPlatformApp/Views/Workflows/TravelSpaceView.swift
     qws_consumer: frontend/src/features/quantum-workspace/TaskChatDrawer.jsx
   media.create:
     ios_consumer: ios/AIPlatformApp/Networking/APIClient.swift:RendererRegistry
@@ -387,4 +388,7 @@ annotations:
     qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
   travel.notebook.save:
     ios_consumer: ios/AIPlatformApp/Views/Chat/Coordinators/TenantSessionCoordinator.swift
+    qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js
+  travel.notebook.update:
+    ios_consumer: ios/AIPlatformApp/Views/Workflows/TravelSpaceView.swift
     qws_consumer: frontend/src/features/quantum-workspace/qcpEventRegistry.js

@@ -39,7 +39,7 @@ public struct TokenSummaryCard: View {
                     if let summary {
                         HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
                             Text(compact(summary.totalTokens))
-                                .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                                .font(.custom(AppTheme.Typography.editorialName, size: 38, relativeTo: .largeTitle))
                                 .monospacedDigit()
                                 .foregroundColor(AppTheme.Colors.textPrimary)
                                 .contentTransition(.numericText())

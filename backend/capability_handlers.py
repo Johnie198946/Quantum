@@ -226,7 +226,29 @@ async def _knowledge_read(data: dict[str, Any], payload: dict[str, Any], _key: s
     note = next((item for item in snapshot["items"] if item["note_id"] == data["note_id"]), None)
     if note is None:
         raise HTTPException(status_code=404, detail={"code": "note_not_found"})
-    return {"note": {**note, "title": _note_title(note["markdown"])}, "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
+    versions = []
+    if data.get("include_versions") or data.get("version_hash"):
+        from backend.api import knowledge_sync as sync
+        directory = sync.note_directory(str(payload.get("tenant_key") or ""), str(payload.get("user_id") or payload.get("sub") or ""), sync._sync_root())
+        history = directory / ".travel-history" / data["note_id"]
+        if history.is_dir() and not history.is_symlink():
+            for path in sorted(history.glob("*.json"), key=lambda p: p.name)[:500]:
+                if path.is_symlink():
+                    continue
+                item = sync._read_metadata(path)
+                markdown = item.get("markdown", "")
+                if item.get("note_id") != data["note_id"] or hashlib.sha256(markdown.encode()).hexdigest() != item.get("content_hash"):
+                    continue
+                versions.append(item)
+        versions.append({**note, "change_reason": "当前旅行笔记"})
+        versions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        if data.get("version_hash"):
+            note = next((item for item in versions if item["content_hash"] == data["version_hash"]), None)
+            if note is None:
+                raise HTTPException(404, detail={"code": "note_version_not_found"})
+    return {"note": {**note, "title": _note_title(note["markdown"])},
+            "versions": [{k: item.get(k) for k in ("note_id", "content_hash", "updated_at", "change_reason")} for item in versions[:50]],
+            "local_state": "client_managed", "cloud_state": "synced", "index_state": snapshot["compile_status"]}
 
 
 async def _knowledge_compare(data: dict[str, Any], payload: dict[str, Any], key: str | None) -> dict[str, Any]:
@@ -672,15 +694,46 @@ async def _travel_revise(data, payload, key):
 
 
 def _travel_note_document(markdown):
-    # Match existing raw JSON / fenced JSON notebook formats; unrelated notes stay untouched.
-    text = str(markdown or "").strip()
-    if "```json" in text:
-        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
-    try:
-        value = json.loads(text)
-    except (ValueError, TypeError):
-        return None
-    return value if isinstance(value, dict) else None
+    from backend.services.travel_notebook import parse_notebook
+    return parse_notebook(markdown)
+
+
+async def _travel_notebook_update(data, payload, key):
+    from backend.services.travel_notebook import parse_notebook, serialize_notebook, update_notebook
+    async def apply():
+        snapshot = await list_synced_notes(True, payload, include_trashed=True)
+        note = next((n for n in snapshot["items"] if n["note_id"] == data["note_id"]), None)
+        if note is None:
+            raise HTTPException(404, detail={"code": "note_not_found"})
+        if note.get("archived") or note.get("trashed"):
+            raise HTTPException(409, detail={"code": "note_inactive"})
+        if note["content_hash"] != data["expected_note_hash"]:
+            raise HTTPException(409, detail={"code": "stale_travel_note", "message": "笔记已更新，请读取最新内容后确认"})
+        previous = parse_notebook(note["markdown"])
+        if previous is None:
+            raise HTTPException(422, detail="这不是结构化旅行笔记")
+        try:
+            document = update_notebook(previous, data, now=datetime.now(timezone.utc))
+            markdown = serialize_notebook(document)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(422, detail=str(exc)) from exc
+        from backend.api import knowledge_sync as sync
+        directory = sync.note_directory(str(payload.get("tenant_key") or ""), str(payload.get("user_id") or payload.get("sub") or ""), sync._sync_root())
+        history = directory / ".travel-history" / data["note_id"]
+        history.mkdir(parents=True, exist_ok=True)
+        if history.is_symlink():
+            raise HTTPException(409, detail="旅行版本目录无效")
+        sync._atomic_write(history / (note["content_hash"] + ".json"), json.dumps(
+            {**note, "change_reason": data["reason"]}, ensure_ascii=False).encode())
+        receipt = await sync_note(data["note_id"], NoteSyncRequest(
+            markdown=markdown, content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
+            base_hash=data["expected_note_hash"], updated_at=datetime.now(timezone.utc),
+        ), payload)
+        result = await _knowledge_read({"note_id": data["note_id"]}, payload, None)
+        if result["note"]["content_hash"] != receipt["content_hash"]:
+            raise HTTPException(409, detail="笔记在保存后已变化，请重新读取")
+        return {**result, "mutation": receipt}
+    return await _knowledge_mutation("travel.notebook.update", data, payload, key, apply)
 
 
 async def _travel_notebook_save(data, payload, key):
@@ -713,10 +766,13 @@ async def _travel_notebook_save(data, payload, key):
                 raise HTTPException(409, detail={"code": "linked_note_requires_review", "message": "已有旅行笔记，请读取原笔记并确认合并；不会覆盖日记或创建重复笔记"})
             note = {"note_id": linked[0]["note_id"], "content_hash": linked[0]["content_hash"], "reused": True}
         else:
-            document.update(workflow_execution_id=data["execution_id"], workflow_artifact_id=current["id"],
+            from backend.services.travel_notebook import TEMPLATE, serialize_notebook
+            personal = document.setdefault("client_state", {"version": 1})
+            personal["saved"] = True
+            document.update(note_template=TEMPLATE, workflow_id=execution["workflow_id"], workflow_execution_id=data["execution_id"], workflow_artifact_id=current["id"],
                             workflow_artifact_hash=current["content_hash"])
             # Stable per owned execution across separate confirmation keys; create_only prevents overwrite.
-            note = await _knowledge_create({"markdown": json.dumps(document, ensure_ascii=False, indent=2)},
+            note = await _knowledge_create({"markdown": serialize_notebook(document)},
                                            payload, "travel-notebook:" + data["execution_id"])
         return await _execution_workflow_result(data["execution_id"], payload, note=note)
     return await _knowledge_mutation("travel.notebook.save", data, payload, key, apply)
@@ -1476,6 +1532,7 @@ HANDLERS: dict[str, Handler] = {
     "workflow.retry": _workflow_retry,
     "travel.revise": _travel_revise,
     "travel.notebook.save": _travel_notebook_save,
+    "travel.notebook.update": _travel_notebook_update,
 
     "workflow.open": _workflow_open,
     "workflow.status": _workflow_status,

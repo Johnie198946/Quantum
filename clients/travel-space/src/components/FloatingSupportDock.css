@@ -1,0 +1,13 @@
+.phone[data-stage]>.flow-support-actions.floating-support-dock{position:absolute;top:0;left:0;right:auto;bottom:auto;width:44px;height:44px;display:block;gap:0;z-index:110;isolation:isolate}
+.phone>.flow-support-actions.floating-support-dock>.support-orb-trigger{position:absolute;inset:0;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;backdrop-filter:none;display:grid;place-items:center;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+.floating-support-dock[data-dragging=true]>.support-orb-trigger{cursor:grabbing}
+.support-orb{width:var(--support-orb-size,19.5px);height:var(--support-orb-size,19.5px);border:1px solid #fffffff0;border-radius:50%;background:conic-gradient(from 205deg,#f2b17c,#90d5cf 30%,#cec1eb 64%,#dcacda 81%,#f2b17c);box-shadow:0 1px 5px #35473a30,inset 0 1px 3px #ffffff7a;display:grid;place-items:center;pointer-events:none}
+.support-orb>span{color:#fff;font-size:calc(var(--support-orb-size,19.5px)*.67);font-weight:650;line-height:1;text-shadow:0 1px 2px #45565c30;transform:translateY(-.25px)}
+.support-orb-dot{position:absolute;top:calc(22px - var(--support-orb-size,19.5px)/2 - 1px);right:calc(22px - var(--support-orb-size,19.5px)/2 - 2px);width:6px;height:6px;border:1px solid #fff;border-radius:50%;background:#ca6e91;pointer-events:none}
+.phone .support-orb-trigger:focus-visible{outline:none}
+.support-orb-trigger:focus-visible .support-orb{outline:2px solid #52695b;outline-offset:2px}
+.support-dock-menu{position:absolute;inset:0;pointer-events:none;z-index:-1}
+.phone .support-dock-menu>button{position:absolute;top:0;left:0;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;border-radius:50%;border:1px solid #ffffffbd;background:linear-gradient(135deg,#ffffff78,#ffffff24);box-shadow:0 5px 15px #35463916,inset 0 1px 0 #ffffff9c;backdrop-filter:blur(18px);pointer-events:auto;color:#3c514d}
+.support-dock-menu>button:focus-visible{outline:2px solid #52695b;outline-offset:3px}
+.support-dock-menu>.flow-todo-bubble>span{position:absolute;right:-2px;top:-2px;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#c66d91;color:#fff;font-size:9px;border:1px solid #fff}
+.phone:has(.sheet-overlay:not([inert]))>.flow-support-actions.floating-support-dock,.phone:has(.budget-panel)>.flow-support-actions.floating-support-dock{display:none}

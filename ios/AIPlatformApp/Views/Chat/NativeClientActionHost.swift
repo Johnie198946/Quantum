@@ -64,16 +64,20 @@ private struct ActionShell<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消", action: cancel)
-                    }
+        ZStack {
+            QuantumMistBackground()
+            VStack(spacing: 24) {
+                HStack {
+                    Text(title).font(.custom(AppTheme.Typography.editorialName, size: 25, relativeTo: .title2))
+                    Spacer()
+                    Button("取消", action: cancel).font(AppTheme.Typography.supporting)
+                        .padding(.horizontal, 18).frame(minHeight: 44)
+                        .background(.white.opacity(0.42), in: Capsule())
                 }
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.padding(24)
         }
+        .foregroundStyle(AppTheme.Colors.textPrimary)
     }
 }
 
@@ -468,10 +472,10 @@ private struct NativeImageProcessAction: View {
     @State private var result: ImageReceiptDTO?
 
     var body: some View {
-        ActionShell(title: "图片工坊", cancel: { cancelled = true; onComplete("CANCELLED", [:]) }) {
+        ActionShell(title: "照片处理", cancel: { cancelled = true; onComplete("CANCELLED", [:]) }) {
             VStack(spacing: AppTheme.Spacing.xl) {
                 Image(systemName: "photo.badge.sparkles")
-                    .font(.system(size: 54)).foregroundStyle(AppTheme.Colors.quantumBlue)
+                    .font(.system(size: 54, weight: .light)).foregroundStyle(AppTheme.Colors.textSecondary)
                 Text(errorMessage == nil ? "正在你的 iPhone 上处理" : "图片处理未完成")
                     .font(AppTheme.Typography.screenTitle)
                 Text("裁剪、文字图层、调色和修复均在本机完成，完成后保存结果。")

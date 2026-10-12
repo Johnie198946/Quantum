@@ -1,0 +1,17 @@
+import FloatingField from '../FloatingField';
+import React,{useState,useRef,useLayoutEffect,useId} from 'react';
+import {motion,AnimatePresence,useReducedMotion} from 'motion/react';
+import {Icon,spring} from '../UI';
+export default function PreferenceTags({values,onChange,scope='航班',title='把偏好带上'}){
+ const tagId=useId();
+ const [open,setOpen]=useState(false),[text,setText]=useState(''),[pending,setPending]=useState([]),[enterCount,setEnterCount]=useState(0),input=useRef(null),body=useRef(null),[height,setHeight]=useState(0),reduced=useReducedMotion();
+ useLayoutEffect(()=>{const observer=new ResizeObserver(()=>setHeight(body.current.offsetHeight));observer.observe(body.current);setHeight(body.current.offsetHeight);return()=>observer.disconnect();},[]);
+ const addParts=value=>{const parts=value.split(','),rest=parts.pop();setPending(prev=>[...new Set([...prev,...parts.map(x=>x.trim()).filter(Boolean)])].filter(x=>!values.includes(x)));setText(rest);};
+ const confirm=()=>{const next=[...new Set([...pending,text.trim()].filter(Boolean))].filter(x=>!values.includes(x));setEnterCount(next.length);onChange([...next,...values]);setPending([]);setText('');setOpen(false);};
+ const cancel=()=>{setOpen(false);setPending([]);setText('');};
+ return <motion.section layout initial={false} animate={{height:height?height+26:'auto'}} transition={reduced?{duration:0}:spring} className="flight-preferences glass" aria-label={scope+'偏好标签'}><div ref={body}>
+ <header><span>{title}</span><div className="tag-compose-anchor"><AnimatePresence>{open&&<motion.div className="tag-composer" initial={reduced?false:{clipPath:'circle(0% at 100% 50%)',opacity:0}} animate={{clipPath:'circle(150% at 100% 50%)',opacity:1}} exit={{clipPath:'circle(0% at 100% 50%)',opacity:0}} transition={spring}><FloatingField ref={input} autoFocus aria-label={'添加'+scope+'偏好'} placeholder="输入偏好，以英文逗号分隔" value={text} onChange={e=>{if(!e.nativeEvent.isComposing)addParts(e.target.value);else setText(e.target.value);}} onCompositionEnd={e=>addParts(e.currentTarget.value)} onKeyDown={e=>{if(e.nativeEvent.isComposing)return;if(e.key==='Enter'){e.preventDefault();confirm();}if(e.key==='Escape')cancel();}}/><button type="button" aria-label="确认偏好标签" onClick={confirm}><Icon name="check" size={16}/></button></motion.div>}</AnimatePresence><button type="button" style={{visibility:open?'hidden':'visible'}} tabIndex={open?-1:undefined} aria-hidden={open||undefined} aria-label={open?'取消添加偏好':'添加'+scope+'偏好标签'} onClick={()=>open?cancel():setOpen(true)}><Icon name={open?'close':'plus'} size={16}/></button></div></header>
+ {pending.length>0&&<div className="pending-flight-tags" aria-label="待加入偏好">{pending.map(x=><motion.span layoutId={tagId+'-tag-'+x} key={x}>{x}</motion.span>)}</div>}
+ <motion.ul layout transition={spring} className="flight-tag-list"><AnimatePresence initial={false}>{values.map((text,i)=><motion.li data-pending-key={scope+'-tag-'+text} layout layoutId={tagId+'-tag-'+text} key={text} initial={reduced?false:{opacity:0,x:95,y:-28,scale:.65}} animate={{opacity:1,x:0,y:0,scale:1}} exit={reduced?{opacity:0}:{opacity:0,scale:.2,width:6,height:6,minHeight:6,borderRadius:'50%',margin:0,padding:0}} transition={{...spring,delay:i<enterCount?i*.05:0}}><Icon name="check" size={11}/><span>{text}</span><button type="button" aria-label={'删除偏好'+text} onClick={()=>onChange(values.filter(x=>x!==text))}><Icon name="close" size={10}/></button></motion.li>)}</AnimatePresence></motion.ul>
+ </div></motion.section>;
+}

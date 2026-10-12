@@ -197,7 +197,7 @@ public struct MessageBubbleView: View {
             if userAttachmentBlocks.isEmpty {
                 Text(message.content)
                     .font(AppTheme.Typography.body)
-                    .foregroundColor(AppTheme.Colors.onPrimary)
+                    .foregroundColor(AppTheme.Colors.onConfirmation)
                     .padding(.horizontal, AppTheme.Spacing.md)
                     .padding(.vertical, AppTheme.Spacing.sm + 2)
                     .background(AppTheme.Colors.userBubbleGradient)

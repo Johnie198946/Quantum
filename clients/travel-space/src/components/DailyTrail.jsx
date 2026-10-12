@@ -1,0 +1,17 @@
+import React from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Icon, spring } from './UI';
+import ServiceDaySummary from './services/ServiceDaySummary';
+import GeographicMap from './GeographicMap';
+import { dayNumber, navigationURL } from './mapRoute';
+import { useTravel } from '../TravelContext';
+export {trailNotes} from './trail-notes';
+import {notesForDay} from './trail-notes';
+export function DayFacts({day,compact=false,onEdit}){
+ const notes=notesForDay(day),{setStage,openServices}=useTravel();
+ return <div className={'day-facts'+(compact?' compact':'')}><div className="day-category">{notes.categories.map(c=><span key={c}>{c}</span>)}</div><ol className="trail-timeline">{day.items.map((item,i)=><li key={item.id??i}><time>{item.time}{item.endTime&&' — '+item.endTime}</time><div><strong>{item.title}</strong><p>{item.description}</p></div></li>)}</ol>{!compact&&<><div className="trail-map"><GeographicMap days={[day]} focus={day.id}/><div><span>{day.geo?.anchor||day.place}</span><a href={navigationURL(day)} target="_blank" rel="noreferrer">打开导航 <Icon name="expand" size={12}/></a></div></div><div className="trail-mosaic"><article className="trail-transport"><button aria-label="规划当天交通" onClick={()=>openServices('transport',day.id)}><span>交通 <Icon name="expand" size={11}/></span><p>{notes.transport}</p></button></article><article className="trail-food"><button aria-label="规划当天三餐" onClick={()=>openServices('restaurant',day.id)}><span>饮食 <Icon name="expand" size={11}/></span><p>{notes.food}</p></button></article><article className="trail-stay"><button aria-label="规划当天住宿" onClick={()=>openServices('hotel',day.id)}><span>住宿 <Icon name="expand" size={11}/></span><p>{notes.stay}</p></button></article><article className="trail-play"><button aria-label="规划当天游玩" onClick={()=>openServices('activity',day.id)}><span>玩法 <Icon name="expand" size={11}/></span><p>{notes.play}</p></button></article></div></>}<ServiceDaySummary day={day} compact={compact}/><button className="text-btn teal trail-edit" onClick={onEdit||(()=>setStage('route'))}>调整行程 <Icon name="edit" size={12}/></button></div>;
+}
+export default function DailyTrail({days,opened,onToggle}){
+ const reduced=useReducedMotion();
+ return <div className="daily-trail"><header className="trail-heading"><p className="eyebrow">ALONG THE WAY / {days.length} DAYS</p><h1>每天，都有自己的节奏。</h1><p>时间、路程与停留，都收在这一天。</p></header>{days.map((day,i)=><motion.article layout="position" transition={reduced?{duration:0}:spring} key={day.id} className={'trail-day trail-day-'+(i%2)+(opened===day.id?' is-open':'')}><button className="trail-day-summary" aria-expanded={opened===day.id} aria-controls={'trail-content-'+day.id} onClick={()=>onToggle(opened===day.id?null:day.id)}><img src={day.image} alt=""/><span><small>DAY {String(dayNumber(day)).padStart(2,'0')} · {day.date}</small><strong>{day.place}</strong><span>{day.name}</span></span><motion.span className="trail-chevron" animate={{rotate:opened===day.id?180:0}}><Icon name="down" size={12}/></motion.span></button><AnimatePresence initial={false}>{opened===day.id&&<motion.div id={'trail-content-'+day.id} initial={{height:0,opacity:0}} animate={{height:'auto',opacity:1}} exit={{height:0,opacity:0}} transition={reduced?{duration:0}:spring} className="trail-day-content"><>{day.summary&&<p className="travel-day-summary">{day.summary}</p>}<DayFacts day={day}/></></motion.div>}</AnimatePresence></motion.article>)}</div>;
+}

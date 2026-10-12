@@ -19,7 +19,7 @@ from scripts import hermes_bridge as bridge
 
 IDS = {
     "workflow.clarification.read", "workflow.clarification.respond", "workflow.plan.read",
-    "workflow.artifacts.list", "workflow.review", "workflow.retry", "travel.revise", "travel.notebook.save",
+    "workflow.artifacts.list", "workflow.review", "workflow.retry", "travel.revise", "travel.notebook.save", "travel.notebook.update",
 }
 PAYLOAD = {"tenant_key": "travel-pcm", "user_id": "travel-pcm-owner"}
 HASH = "a" * 64

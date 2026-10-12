@@ -1,0 +1,21 @@
+import FloatingField from '../FloatingField';
+import React,{useState,useRef,useId,useLayoutEffect} from 'react';
+import {AnimatePresence,motion,useReducedMotion} from 'motion/react';
+import {Icon} from '../UI';
+export const popularCities=['上海','北京','广州','深圳','香港','台北','杭州','成都','重庆','南京','武汉','西安','厦门','青岛','天津','昆明','长沙','福州','首尔','新加坡'];
+const clean=value=>value.trim().replace(/\s+/g,' ').slice(0,40);
+export default function CityRoutePicker({cities,customCities,onChange}){
+ const [open,setOpen]=useState(false),[expanded,setExpanded]=useState(false),[input,setInput]=useState(''),[limit,setLimit]=useState(cities.length),[added,setAdded]=useState(null);
+ const measure=useRef(null),toggle=useRef(null),id=useId(),reduced=useReducedMotion(),catalog=[...new Set([...popularCities,...customCities])];
+ useLayoutEffect(()=>{const el=measure.current;if(!el)return;const update=()=>{const items=[...el.children],rows=[...new Set(items.map(x=>x.offsetTop))].sort((a,b)=>a-b);setLimit(items.filter(x=>x.offsetTop<=(rows[2]??Infinity)).length);};update();const observer=new ResizeObserver(update);observer.observe(el);return()=>observer.disconnect();},[cities.join('|')]);
+ const select=city=>{const exists=cities.includes(city);setAdded(exists?null:city);onChange(exists?cities.filter(x=>x!==city):[...cities,city],customCities);};
+ const commit=()=>{const values=[...new Set(input.split(/[,，;；\n]/).map(clean).filter(Boolean))];if(!values.length){setInput('');return;}const next=[...new Set([...cities,...values])],custom=[...new Set([...customCities,...values.filter(x=>!popularCities.includes(x))])];setAdded(values.at(-1));setInput('');onChange(next,custom);};
+ const shown=expanded?cities:cities.slice(0,limit),hidden=cities.length-shown.length;
+ const content=(city,index)=><><small>{index===0?'出发':'返回'}</small><span title={city}>{city}</span><Icon name="close" size={10}/></>;
+ return <div className="city-route-picker" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setOpen(false);toggle.current?.focus();}}}>
+ <div className="city-input-row"><button className="city-route-toggle" ref={toggle} type="button" aria-label="出发返回地" aria-expanded={open} aria-controls={id} onClick={()=>setOpen(!open)}><span>出发返回地</span><Icon name="chevron" size={14}/></button>{open&&<label className="city-input"><span className="sr-only">输入新城市</span><FloatingField aria-label="输入新城市" autoComplete="off" value={input} placeholder="输入城市，回车添加" onChange={e=>setInput(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();commit();}}}/></label>}</div>
+ <div className="city-selected-wrap"><div ref={measure} className="city-measure" aria-hidden="true">{cities.map((city,i)=><span className="city-selected-tag" key={city}>{content(city,i)}</span>)}</div><div className="city-selected" aria-label="已选出发返回地"><AnimatePresence initial={false}>{shown.map((city,i)=><motion.button type="button" className="city-selected-tag" key={city} aria-label={'删除'+(i===0?'出发地':'返回地')+city} title={'删除'+city} initial={reduced?false:{opacity:0,scale:.8,y:6}} animate={reduced?{opacity:1}:{opacity:1,scale:added===city?[.8,1.08,1]:1,y:added===city?[6,-3,0]:0}} exit={{opacity:0,scale:.85}} transition={{duration:reduced?0:.38}} onClick={()=>select(city)}>{content(city,i)}</motion.button>)}</AnimatePresence>{!cities.length&&<span className="city-empty">选择或输入城市</span>}</div></div>
+ {(hidden>0||expanded&&cities.length>limit)&&<button type="button" className="city-overflow" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{expanded?'收起':'还有 '+hidden+' 个'}<Icon name="chevron" size={11}/></button>}
+ <AnimatePresence>{open&&<motion.div id={id} className="city-route-options" initial={{height:0,opacity:0}} animate={{height:'auto',opacity:1}} exit={{height:0,opacity:0}} transition={{duration:reduced?0:.24}}><div className="popular-origins city-catalog" role="group" aria-label="航班常用出发城市">{catalog.map(city=><motion.button type="button" key={city} aria-pressed={cities.includes(city)} onMouseDown={e=>e.preventDefault()} onClick={()=>select(city)} initial={reduced?false:{opacity:0,y:4}} animate={{opacity:1,y:0}} transition={{delay:reduced?0:.08}}>{city}{cities.includes(city)&&<Icon name="check" size={10}/>}</motion.button>)}</div></motion.div>}</AnimatePresence>
+ </div>;
+}

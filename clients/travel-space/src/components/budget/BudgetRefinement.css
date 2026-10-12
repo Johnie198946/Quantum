@@ -1,0 +1,116 @@
+/* Budget uses the same liquid navigation, aligned list and scrolling confirm. */
+.phone .budget-panel .budget-tabs.liquid-nav{
+ min-height:48px;
+ margin:20px 0 24px;
+ border-radius:24px;
+ background:#dce2df88;
+ border:1px solid #ffffff9c;
+ padding:4px;
+ gap:4px;
+}
+.phone .budget-panel .budget-tabs.liquid-nav>button{
+ height:auto;
+ min-height:40px;
+ min-width:40px;
+ padding:0 8px;
+ flex:1;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ gap:6px;
+ border-radius:22px;
+ background:none;
+}
+.phone .budget-panel .budget-tabs.liquid-nav>button[aria-pressed=true]{flex:2.2}
+.phone .budget-panel .budget-tabs.liquid-nav>button>span{font-size:11px;line-height:1.3}
+.phone .budget-panel .budget-currency-select{min-width:0}
+.phone .budget-panel .budget-currency-select .aligned-select>button{
+ min-height:44px;
+ height:44px;
+ box-sizing:border-box;
+ border-radius:15px;
+ padding:8px 11px;
+ font-size:12px;
+}
+.phone .budget-panel .budget-currency-select .aligned-select>button>span{
+ min-width:0;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+.phone .budget-panel .budget-total-top .budget-currency-select{width:124px;max-width:58%}
+.phone .budget-panel .budget-total-top .aligned-select>button{
+ border-radius:23px;
+ background:#ffffff45;
+ color:inherit;
+ font-size:11px;
+}
+.phone .budget-panel .budget-settings .budget-form-pair{gap:10px;align-items:start}
+.phone .budget-panel .budget-settings .budget-form-pair .floating-field{
+ height:44px;
+ min-height:44px;
+ border-radius:15px;
+}
+.phone .budget-panel .budget-settings .budget-form-pair .floating-field>input{
+ height:42px;
+ min-height:42px;
+ padding:18px 11px 3px!important;
+ font-size:13px;
+ line-height:20px;
+}
+.phone .budget-panel .budget-settings .budget-form-pair .floating-title{
+ top:11px;
+ left:11px;
+ font-size:12px;
+ line-height:20px;
+}
+.phone .budget-panel .budget-settings .budget-form-pair .floating-field:is(.is-focused,.is-filled)>.floating-title{
+ top:3px;
+ font-size:9px;
+ line-height:13px;
+}
+.phone .lifecycle-budget-sheet.has-budget-settings-confirm{
+ display:flex;
+ flex-direction:column;
+ height:calc(100% - 82px);
+ overflow:hidden!important;
+}
+.phone .lifecycle-budget-sheet.has-budget-settings-confirm>.budget-panel{
+ flex:1;
+ min-height:0;
+ overflow-y:auto;
+ padding-bottom:80px;
+}
+.phone .budget-settings-confirm{
+ position:absolute;
+ left:50%;
+ bottom:max(24px,env(safe-area-inset-bottom));
+ transform:translateX(-50%);
+ width:max-content;
+ max-width:calc(100% - 40px);
+ height:44px;
+ z-index:75;
+}
+.phone .budget-settings-confirm .scroll-action{
+ position:relative;
+ left:auto;
+ right:auto;
+ bottom:auto;
+ height:44px;
+}
+.phone .budget-settings-confirm .scroll-action .primary{
+ min-height:44px;
+ height:44px;
+ width:100%;
+ max-width:100%;
+ margin:0;
+ padding:0 10px;
+ border-radius:24px;
+ font-size:13px;
+}
+.phone .budget-settings-confirm .scroll-action.is-compact .primary{gap:0}
+@media(max-width:350px){
+ .phone .budget-panel .budget-total-top .budget-currency-select{width:116px}
+ .phone .budget-panel .budget-settings .budget-form-pair{gap:8px}
+ .phone .budget-panel .budget-currency-select .aligned-select>button{padding:8px 9px;font-size:11px}
+}

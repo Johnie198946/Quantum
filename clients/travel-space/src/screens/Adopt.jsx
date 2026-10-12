@@ -1,0 +1,38 @@
+import {runtime} from '../production/runtime';
+import {useRuntime} from '../production/RuntimePanel';
+import React, { useState, useCallback, useRef, useLayoutEffect, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useTravel } from '../TravelContext';
+import { TopBar, Icon, spring } from '../components/UI';
+import AdoptionGather, { AdoptCardContent, captureAdoptionFlight } from '../components/AdoptionGather';
+import { useHoldReorder } from '../components/useHoldReorder';
+import { DayFacts } from '../components/DailyTrail';
+import AdoptSummary from '../components/AdoptSummary';
+import DayInlineEditor from '../components/DayInlineEditor';
+import JournalAssistant from '../components/journal/JournalAssistant';
+import { photoRevealOrigin } from '../components/RoutePlaceSurface';
+import { dayNumber } from '../components/mapRoute';
+import useAdoptPhotoInk from '../components/journal/AdoptPhotoInk';
+import '../components/journal/revision68-adopt.css';
+function Card({day,expanded,onExpand,onSetExpanded,onPull,onAI,editing,onEdit,preview=false}){
+ const reduced=useReducedMotion();
+ const {image,ink}=useAdoptPhotoInk(day.image);
+ return <div className={'final-photo-card adopt-surface-card revision68-photo-card photo-ink-'+ink} data-photo-ink={ink}><img ref={image} className="adopt-card-backdrop" src={day.image} alt="" aria-hidden="true"/><AdoptSummary day={day} preview={preview} expanded={expanded} onExpand={onExpand} onSetExpanded={onSetExpanded} onPull={onPull} onAI={onAI}></AdoptSummary><AnimatePresence initial={false}>{expanded&&<motion.div className="adopt-inline-detail" id={preview?undefined:'adopt-details-'+day.id} initial={{height:0,opacity:0}} animate={{height:'auto',opacity:1}} exit={{height:0,opacity:0}} transition={reduced?{duration:0}:{type:'spring',stiffness:260,damping:28}}>{editing?<DayInlineEditor day={day} onClose={()=>onEdit(false)}/>:<DayFacts day={day} compact onEdit={()=>onEdit(true)}/>}</motion.div>}</AnimatePresence></div>;
+}
+export default function Adopt(){
+ const {requestGenerate,adoptDraft,setStage,days,reorderDays,orbArrival,finishOrbArrival}=useTravel();
+ const live=useRuntime(),execution=live.snapshot?.execution,canApprove=['awaiting_approval','awaiting_review','completed'].includes(execution?.status),failed=['failed','cancelled'].includes(execution?.status);
+ const [approving,setApproving]=useState(false),[draft,setDraft]=useState(days),[expanded,setExpanded]=useState(null),[flight,setFlight]=useState(null),[editing,setEditing]=useState(null),[pull,setPull]=useState(null),[chat,setChat]=useState(null);
+ const screen=useRef(null),adopting=useRef(false),arrivalToken=useRef(null),reduced=useReducedMotion();
+ useEffect(()=>setDraft(days),[days]);
+ const drag=useHoldReorder(draft,setDraft,{onDrop:reorderDays});
+ useLayoutEffect(()=>{if(orbArrival?.stage!=='adopt'||arrivalToken.current===orbArrival.token)return;arrivalToken.current=orbArrival.token;setFlight({...captureAdoptionFlight(screen.current,days),direction:'expand'});},[orbArrival,days]);
+ const complete=useCallback(()=>{if(flight?.direction==='expand'){setFlight(null);finishOrbArrival(arrivalToken.current);requestAnimationFrame(()=>screen.current?.querySelector('.final-view')?.focus({preventScroll:true}));}else setStage('guide',{fromOrb:true});},[flight,finishOrbArrival,setStage]);
+ function toggle(id){if(!flight&&!adopting.current&&!drag.lift&&drag.allowTap())setExpanded(value=>value===id?null:id);}
+ async function adopt(){if(adopting.current||flight||drag.lift)return;adopting.current=true;setApproving(true);try{await adoptDraft();if(runtime.state.snapshot?.execution?.status!=='completed')throw new Error('正在等待最终手记，请稍后检查并采用。');setFlight(captureAdoptionFlight(screen.current,days));}catch(error){adopting.current=false;runtime.publish({error:error.message});}finally{setApproving(false);}}
+ const liftTarget=drag.lift&&drag.refs.current.get(drag.lift.id)?.getBoundingClientRect();
+ return <section ref={screen} className={'adopt-screen adopt-list-screen revision68-adopt-screen'+(flight?' is-adopting':'')+(flight?.direction==='expand'?' is-expanding':'')} aria-busy={flight?true:undefined}><TopBar title="" onBack={()=>{if(!adopting.current)setStage('route');}}><motion.button type="button" className="icon-btn topbar-confirm-icon" aria-label="采用这份行程" disabled={!canApprove||approving||!!flight||!!drag.lift} aria-busy={approving} onClick={()=>requestGenerate(adopt)} whileTap={reduced?undefined:{scale:.96}} transition={spring}><Icon name="check" size={18}/></motion.button></TopBar><header aria-hidden={flight?true:undefined}><p className="eyebrow">{days.length}天 · 山海之间</p><h1>这份旅程，终于有了模样。</h1><p>{failed?execution.errorMessage||'生成未完成，已确认行程保留。':canApprove?'点开摘要，拖动照片调整每天的顺序。':'行程已确认，正在整理最终手记。'}</p>{failed&&<button className="text-btn" onClick={()=>runtime.publish({taskDetails:true})}>查看任务与已完成内容<Icon name="chevron" size={16}/></button>}</header><div className="adopt-canvas" role="list" aria-label="每日成稿" inert={flight?'':undefined} aria-hidden={flight?true:undefined}>
+ {draft.map(day=><motion.div layout="position" animate={{opacity:((expanded&&expanded!==day.id)||(pull?.value>.03&&pull.id!==day.id))?.45:1}} transition={reduced?{duration:0}:spring} ref={el=>{if(el)drag.refs.current.set(day.id,el);else drag.refs.current.delete(day.id);}} className={'photo-position'+(drag.lift?.id===day.id?' adopted-held-slot':'')+(expanded===day.id?' is-open':'')} key={day.id} role="listitem" data-day-id={day.id} data-pending-key={'adopt-day-'+day.id} data-testid={'adopt-day-'+day.id} tabIndex={0} aria-label={'第'+dayNumber(day)+'天 '+day.place+'成稿'} onContextMenu={e=>e.preventDefault()} onPointerDownCapture={()=>drag.resetTap()} onTouchStartCapture={()=>drag.resetTap()} onPointerDown={e=>drag.start(e,day)} onTouchStart={e=>drag.start(e,day)} onKeyDown={e=>{drag.resetTap();drag.keyDown(e,day);if((e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();toggle(day.id);}}} onClick={e=>{if(!e.target.closest('button,a,input'))toggle(day.id);}}><Card day={day} expanded={expanded===day.id} onExpand={e=>{e.stopPropagation();toggle(day.id);}} onSetExpanded={value=>setExpanded(value?day.id:null)} onPull={value=>setPull({id:day.id,value})} onAI={event=>setChat({dayId:day.id,origin:photoRevealOrigin(event,screen.current)})} editing={editing===day.id} onEdit={value=>setEditing(value?day.id:null)}/></motion.div>)}
+ </div><span className="sr-only" role="status">{drag.announcement}</span><AnimatePresence>{chat&&<JournalAssistant day={days.find(x=>x.id===chat.dayId)} initialMode="itinerary" revealFrom={chat.origin} burst onClose={()=>setChat(null)}/>}</AnimatePresence>{flight&&<AdoptionGather flight={flight} onComplete={complete}/>}{createPortal(<AnimatePresence>{drag.lift&&<motion.div key={drag.lift.id} className="adopt-lift" aria-hidden="true" inert="" data-testid="adopt-drag-overlay" style={{position:'fixed',top:drag.lift.top,left:drag.lift.left,width:drag.lift.width,zIndex:200,pointerEvents:'none'}} initial={{scale:1,y:0}} animate={{scale:reduced?1:1.025,y:drag.lift.y,rotate:reduced?0:Math.max(-1.5,Math.min(1.5,drag.lift.y/150))}} exit={{scale:1,rotate:0,y:liftTarget?liftTarget.top-drag.lift.top:drag.lift.y,opacity:0,transition:{y:{type:'spring',stiffness:650,damping:26},scale:{type:'spring',stiffness:650,damping:26},opacity:{duration:.1,delay:reduced?0:.32}}}} transition={{type:'spring',stiffness:540,damping:30,mass:.7}}><Card day={draft.find(d=>d.id===drag.lift.id)||drag.lift.item} expanded={expanded===drag.lift.id} preview/></motion.div>}</AnimatePresence>,document.body)}</section>;
+}

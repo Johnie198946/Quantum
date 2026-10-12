@@ -1,0 +1,44 @@
+/* Shared floating labels retain the actual native input/textarea and its ref. */
+.phone .floating-field{position:relative;display:block;box-sizing:border-box;width:100%;min-width:0;min-height:56px;border:1px solid rgba(255,255,255,.85);border-radius:18px;background:rgba(248,248,252,.46);color:#30483f;font-family:inherit;font-size:14px;font-weight:400;line-height:1.45;transition:border-color .22s,box-shadow .22s,background .22s;isolation:isolate}
+.phone label:has(>.floating-field){font-size:0;gap:0}
+.phone .floating-field>input,.phone .floating-field>textarea{display:block;width:100%!important;max-width:100%;min-width:0;box-sizing:border-box;min-height:54px;margin:0!important;padding:24px 15px 9px!important;border:0!important;border-radius:inherit;background:transparent!important;color:#30483f;font:inherit;font-size:14px;line-height:1.5;box-shadow:none!important;outline:none!important}
+.phone .floating-field>textarea{min-height:82px;resize:vertical}
+.phone .floating-field>input::placeholder,.phone .floating-field>textarea::placeholder{color:transparent!important}
+.phone .floating-title{position:absolute;top:17px;left:15px;right:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px;font-weight:400;line-height:20px;color:#65736c;pointer-events:none;transform-origin:left top;transition:top .22s,font-size .22s,color .22s}
+.phone .floating-field:is(.is-focused,.is-filled)>.floating-title{top:7px;font-size:10px;font-weight:600;letter-spacing:.03em;line-height:15px}
+.phone .floating-field.is-focused{border-color:#cf829f;background:rgba(250,247,251,.58);box-shadow:0 0 0 2px rgba(217,145,174,.17)}
+.phone .floating-field.is-focused>.floating-title{color:#92506e}
+.phone .floating-field.is-disabled{opacity:.6}
+.phone .floating-field:not(.is-focused,.is-filled)>input:is([type=date],[type=time])::-webkit-datetime-edit{color:transparent}
+.phone .composer>.floating-field{flex:1;min-width:0;min-height:44px;background:transparent;border:0;border-radius:15px}
+.phone .composer>.floating-field>textarea{min-height:24px;height:auto;padding:0!important;resize:none;font-size:14px}
+.phone .composer>.floating-field:is(.is-focused,.is-filled){padding-top:18px}
+.phone .composer>.floating-field>.floating-title{left:0;top:3px}
+.phone .composer>.floating-field:is(.is-focused,.is-filled)>.floating-title{top:0}
+.phone .composer:has(.is-focused){box-shadow:inset 0 0 0 1.5px #cf829f}
+.phone .location-input-wrap>.floating-field{flex:1;width:auto}
+.phone .location-input-wrap{min-height:58px}
+.phone .todo-input>.floating-field{flex:1;width:auto}
+.phone .passenger-number{width:105px!important}
+.phone .passenger-number .floating-title{font-size:10px;left:9px;right:4px}
+.phone .passenger-number .floating-field>input{padding-left:9px!important}
+.phone .transport-cost>span{position:relative}
+.phone .transport-cost>span>b{position:absolute;right:13px;bottom:12px}
+.phone .floating-field>input[type=number]{padding-right:22px!important}
+/* The compact dark glass strip grows in place; only its handles claim vertical gestures. */
+.phone .journal-weather{margin:14px 0 22px;border-radius:20px;background:linear-gradient(125deg,rgba(66,73,56,.91),rgba(67,58,66,.91));box-shadow:inset 0 1px 0 rgba(255,255,255,.23),0 6px 20px rgba(42,47,39,.06);color:#f9f6ed;overflow:hidden;text-align:left;font-family:inherit}
+.phone .weather-summary{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:65px;border:0;background:transparent;color:inherit;padding:13px 15px;touch-action:none;cursor:ns-resize;text-align:left;font-family:inherit}
+.phone .weather-now{display:flex;align-items:center;gap:9px;font-size:15px}
+.phone .weather-now>strong{font-size:24px;font-weight:600;letter-spacing:-.04em}
+.phone .weather-range{font-size:10px;line-height:1.65;color:#e8e5dc;text-align:right}
+.phone .weather-hourly-reveal{overflow:hidden}
+.phone .weather-hours{display:flex;gap:5px;margin:0;padding:3px 12px 0;list-style:none;overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none}
+.phone .weather-hours li{flex:1 0 39px;display:flex;align-items:center;flex-direction:column;gap:15px;padding:12px 4px;border-radius:16px;color:inherit}
+.phone .weather-hours li.is-now{background:rgba(248,245,237,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
+.phone .weather-hours time{font-size:10px;white-space:nowrap}
+.phone .weather-hours strong{font-size:17px;font-weight:600}
+.phone .weather-grip{display:flex;align-items:center;justify-content:center;width:100%;height:23px;border:0;background:transparent;touch-action:none;cursor:ns-resize}
+.phone .weather-grip>span{width:35px;height:3px;border-radius:3px;background:rgba(248,245,237,.5)}
+.phone .weather-demo{display:block;padding:0 15px 8px;color:#dddcd0;font-size:9px;line-height:1.4;letter-spacing:.02em}
+.phone .weather-summary:focus-visible,.phone .weather-grip:focus-visible{outline:2px solid #e1b6cf;outline-offset:-4px}
+@media(prefers-reduced-motion:reduce){.phone .floating-field,.phone .floating-title{transition:none}}

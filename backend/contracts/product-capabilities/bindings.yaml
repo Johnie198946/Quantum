@@ -196,3 +196,5 @@ bindings:
     handler: travel.revise
   - id: travel.notebook.save
     handler: travel.notebook.save
+  - id: travel.notebook.update
+    handler: travel.notebook.update

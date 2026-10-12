@@ -1833,6 +1833,7 @@ public struct WorkflowArtifactDTO: Codable, Identifiable, Hashable {
     public let `extension`: String
     public let mimeType: String
     public let metadata: WorkflowArtifactMetadataDTO
+    public var createdAt: String? = nil
 }
 
 public struct WorkflowArtifactMetadataDTO: Codable, Hashable {
@@ -2988,6 +2989,11 @@ public final class APIClient: ObservableObject {
                 guard let http = response as? HTTPURLResponse else {
                     throw APIError.network("无效响应")
                 }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-travelLiveEvidence") {
+                    print("AOMORI_HTTP: \(request.httpMethod ?? "GET") \(request.url?.path ?? "") \(http.statusCode)")
+                }
+                #endif
                 if http.statusCode == 401 {
                     // 401 绝不重试：主链路清 token 置 needsReauth 引导登录；
                     // 登录/探测链路保留服务端原因，避免把验证码错误误报为登录态失效。
@@ -3625,13 +3631,14 @@ public final class APIClient: ObservableObject {
         sourceDocumentId: String? = nil,
         outputKind: String = "general",
         sourceClientSessionId: String,
-        sourceImageId: String? = nil
+        sourceImageId: String? = nil,
+        requestId suppliedRequestId: String? = nil
     ) async throws -> WorkflowCreateResponseDTO {
         guard !sourceClientSessionId.isEmpty else {
             throw APIError.network("当前对话会话不可用，无法创建工作流")
         }
-        let key = UUID().uuidString
-        let requestId = UUID().uuidString
+        let requestId = suppliedRequestId ?? UUID().uuidString
+        let key = requestId
         let client = CapabilityClient(apiClient: self)
         let input = WorkflowCreateRequestDTO(
             title: title, description: description, desiredOutput: desiredOutput,
@@ -3664,7 +3671,7 @@ public final class APIClient: ObservableObject {
     public func fetchWorkflowClarification(
         workflowId: String
     ) async throws -> WorkflowClarificationSnapshotDTO {
-        try await request(
+        try await workflowSnapshot(
             WorkflowClarificationSnapshotDTO.self,
             path: "workflows/\(encodedPath(workflowId))/clarification"
         )
@@ -3748,7 +3755,7 @@ public final class APIClient: ObservableObject {
     }
 
     public func fetchWorkflowPlan(workflowId: String) async throws -> WorkflowPlanDTO {
-        var plan = try await request(
+        var plan = try await workflowSnapshot(
             WorkflowPlanDTO.self,
             path: "workflows/\(encodedPath(workflowId))/plan"
         )
@@ -3780,14 +3787,15 @@ public final class APIClient: ObservableObject {
 
     public func replanWorkflow(
         workflowId: String,
-        instruction: String
+        instruction: String,
+        description: String? = nil
     ) async throws -> WorkflowClarificationSessionDTO {
-        struct Body: Encodable { let instruction: String }
+        struct Body: Encodable { let instruction: String; let description: String? }
         return try await request(
             WorkflowClarificationSessionDTO.self,
             path: "workflows/\(encodedPath(workflowId))/replan",
             method: "POST",
-            body: Body(instruction: instruction)
+            body: Body(instruction: instruction, description: description)
         )
     }
 
@@ -3821,17 +3829,19 @@ public final class APIClient: ObservableObject {
         )
     }
 
-    public func startWorkflow(workflowId: String, requestId: String) async throws -> WorkflowExecutionDTO {
+    public func startWorkflow(workflowId: String, requestId: String, expectedHash: String? = nil, expectedRevision: Int? = nil) async throws -> WorkflowExecutionDTO {
         struct Body: Encodable {
             let comment: String
             let requestId: String
-            enum CodingKeys: String, CodingKey { case comment; case requestId = "request_id" }
+            let expectedHash: String?
+            let expectedRevision: Int?
+            enum CodingKeys: String, CodingKey { case comment; case requestId = "request_id"; case expectedHash = "expected_hash"; case expectedRevision = "expected_revision" }
         }
         return try await request(
             WorkflowExecutionDTO.self,
             path: "workflows/\(encodedPath(workflowId))/start",
             method: "POST",
-            body: Body(comment: "iOS 启动任务", requestId: requestId)
+            body: Body(comment: "iOS 启动任务", requestId: requestId, expectedHash: expectedHash, expectedRevision: expectedRevision)
         )
     }
 
@@ -3891,7 +3901,7 @@ public final class APIClient: ObservableObject {
         executionId: String,
         artifactId: String
     ) async throws -> WorkflowArtifactContentDTO {
-        try await request(
+        try await workflowSnapshot(
             WorkflowArtifactContentDTO.self,
             path: "workflow-executions/\(encodedPath(executionId))/artifacts/\(encodedPath(artifactId))/content"
         )
@@ -5227,7 +5237,86 @@ public struct TravelRevisionReceipt: Decodable {
     let contentHash: String
 }
 
+enum TravelClientStateReceiptPolicy {
+    static func validate(_ content: WorkflowArtifactContentDTO, receipt: TravelRevisionReceipt, state: [String: Any]) throws {
+        var expected = state
+        if var profile = expected["profile"] as? [String: Any], var trip = profile["tripSession"] as? [String: Any] {
+            trip.removeValue(forKey: "facts"); trip.removeValue(forKey: "events")
+            profile["tripSession"] = trip; expected["profile"] = profile
+        }
+        let digest = SHA256.hash(data: Data(content.content.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard content.id == receipt.id, digest == receipt.contentHash,
+              let document = try JSONSerialization.jsonObject(with: Data(content.content.utf8)) as? [String: Any],
+              let stored = document["client_state"] as? [String: Any], NSDictionary(dictionary: stored).isEqual(to: expected) else {
+            throw APIError.network("服务器未确认保存当前手记，草稿已在此设备保留。请重新读取后同步。")
+        }
+    }
+}
+
 extension APIClient {
+    public func saveTravelClientState(executionId: String, artifactId: String, expectedHash: String,
+                                     state: [String: Any], requestId: String) async throws -> TravelRevisionReceipt {
+        let body = try JSONSerialization.data(withJSONObject: ["artifact_id": artifactId, "expected_hash": expectedHash,
+            "request_id": requestId, "reason": "用户保存旅行手记与账本", "client_state": state])
+        let receipt = try await submitTravelRevision(executionId: executionId, body: body)
+        let stored = try await fetchWorkflowArtifactContent(executionId: executionId, artifactId: receipt.id)
+        try TravelClientStateReceiptPolicy.validate(stored, receipt: receipt, state: state)
+        return receipt
+    }
+
+    /// A user action in the travel renderer confirms the same PCM proposal as Chat.
+    public func performTravelCapability(_ capability: String, input: [String: Any],
+                                        sessionId: String, requestId: String) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: input)
+        let scalar = try JSONDecoder().decode(JSONScalar.self, from: data)
+        let client = CapabilityClient(apiClient: self)
+        let proposal = try await client.propose(capability, input: scalar, sessionId: sessionId,
+            requestId: requestId, idempotencyKey: requestId)
+        guard proposal.status == "awaiting_confirmation", let event = proposal.events.first?.payload,
+              let token = event.confirmationToken else { throw APIError.network(proposal.error?.message ?? "旅行操作确认失败") }
+        let response: QCPInvokeResponseDTO<JSONScalar> = try await client.confirm(
+            proposalId: event.id, confirmationToken: token, sessionId: sessionId)
+        guard response.status == "completed", response.receipt?.status == "completed",
+              let result = response.events.first?.payload else { throw APIError.network(response.error?.message ?? "旅行操作没有保存回执") }
+        guard let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any] else {
+            throw APIError.network("旅行回执格式无效")
+        }
+        return value
+    }
+
+    public func readTravelNotebook(id: String) async throws -> CloudKnowledgeNoteDTO {
+        struct Input: Encodable { let note_id: String }
+        struct Output: Decodable { let note: CloudKnowledgeNoteDTO }
+        let result: QCPInvokeResponseDTO<Output> = try await CapabilityClient(apiClient: self).invoke(
+            "knowledge.note.read", input: Input(note_id: id))
+        guard result.status == "completed", let note = result.events.first?.payload.note,
+              note.noteId == id, !note.archived, note.trashed != true,
+              SHA256.hash(data: Data(note.markdown.utf8)).map({ String(format: "%02x", $0) }).joined() == note.contentHash else {
+            throw APIError.network(result.error?.message ?? "旅行笔记无法读取或已归档")
+        }
+        return note
+    }
+
+    public func confirmTravelWorkflowPlan(workflowId: String, expectedHash: String, expectedRevision: Int,
+                                         clientSessionId: String) async throws -> WorkflowAgentBuildResponseDTO {
+        struct Input: Encodable {
+            let workflow_id: String; let expected_plan_hash: String; let expected_plan_revision: Int; let comment: String
+        }
+        let client = CapabilityClient(apiClient: self)
+        let proposal = try await client.propose("workflow.approve",
+            input: Input(workflow_id: workflowId, expected_plan_hash: expectedHash,
+                         expected_plan_revision: expectedRevision, comment: "用户确认旅行执行计划"),
+            sessionId: clientSessionId, requestId: UUID().uuidString, idempotencyKey: UUID().uuidString)
+        guard proposal.status == "awaiting_confirmation", let event = proposal.events.first?.payload,
+              let token = event.confirmationToken else { throw APIError.network(proposal.error?.message ?? "计划确认失败") }
+        let result: QCPInvokeResponseDTO<WorkflowAgentBuildResponseDTO> = try await client.confirm(
+            proposalId: event.id, confirmationToken: token, sessionId: clientSessionId)
+        guard result.status == "completed", result.receipt != nil, let output = result.events.first?.payload else {
+            throw APIError.network(result.error?.message ?? "计划确认失败")
+        }
+        return output
+    }
+
     public func reviseTravelPlan(executionId: String, artifactId: String, expectedHash: String,
                                   content: String, reason: String, requestId: String, confirmedBookings: [String: String] = [:]) async throws -> TravelRevisionReceipt {
         let proposed = try JSONSerialization.jsonObject(with: Data(content.utf8))

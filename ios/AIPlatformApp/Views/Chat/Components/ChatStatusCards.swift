@@ -1296,7 +1296,7 @@ public struct CapabilityProposalCard: View {
             }
         }
         .sheet(isPresented: $showsTravelDetails) {
-            TravelPlanPreferencesView(input: proposal.input) { updated in
+            TravelRequirementSheet(input: proposal.input) { updated in
                 showsTravelDetails = false
                 onTravelEdit?(updated)
             }
@@ -1508,7 +1508,7 @@ public struct CapabilityProposalCard: View {
     }
 }
 
-struct TravelPlanPreferencesView: View {
+struct TravelRequirementSheet: View {
     let input: CapabilityProposalInput
     let onSave: (CapabilityProposalInput) -> Void
     var embedded = false
@@ -1553,7 +1553,7 @@ struct TravelPlanPreferencesView: View {
             else {
                 NavigationStack {
                     formContent
-                        .navigationTitle("完善旅行计划").navigationBarTitleDisplayMode(.inline)
+                        .background(QuantumMistBackground()).navigationTitle("完善旅行计划").navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
                 }
             }
@@ -1692,167 +1692,10 @@ struct TravelPlanPreferencesView: View {
     }
 }
 
-struct TravelPlanningAnswerCard: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Text("京都是一座把传统与现代完美融合的城市。为你推荐一个 5 天的行程思路，涵盖经典景点、在地体验和美食，节奏舒适，适合第一次去。")
-                .font(AppTheme.Typography.body)
-            HStack(spacing: 3) {
-                photo("travel_kyoto_bridge", "清水寺", "京都的必访地标")
-                photo("travel_kyoto_street", "伏见稻荷大社", "千本鸟居的震撼")
-                photo("travel_kyoto_bamboo", "岚山", "竹林与渡月桥")
-            }
-            Text("5 天行程概览").font(.headline)
-            VStack(spacing: 0) {
-                itinerary("第 1 天", "抵达京都 · 城市初探")
-                itinerary("第 2 天", "东山经典 · 寺社巡礼")
-                itinerary("第 3 天", "岚山自然 · 健康野风光")
-                itinerary("第 4 天", "宇治一日 · 茶香与古韵")
-                itinerary("第 5 天", "自由探索 · 购物与美食")
-            }
-            .background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-            Text("参考来源").font(AppTheme.Typography.micro).foregroundStyle(AppTheme.Colors.textSecondary)
-            HStack {
-                source("日本观光局")
-                source("京都市旅游官网")
-                source("Lonely Planet")
-            }
-        }
-    }
 
-    private func photo(_ image: String, _ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Image(image).resizable().scaledToFill().frame(height: 104).clipped()
-            Text(title).font(.caption.weight(.semibold)).lineLimit(1)
-            Text(subtitle).font(.system(size: 9)).foregroundStyle(AppTheme.Colors.textTertiary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
-    private func itinerary(_ day: String, _ detail: String) -> some View {
-        HStack { Text(day).foregroundStyle(AppTheme.Icons.interactive).frame(width: 56); Text(detail); Spacer() }
-            .font(AppTheme.Typography.supporting)
-            .padding(.horizontal, AppTheme.Spacing.sm).frame(minHeight: 34)
-    }
-
-    private func source(_ title: String) -> some View {
-        Text(title).font(AppTheme.Typography.micro).lineLimit(1)
-            .padding(.horizontal, 9).frame(minHeight: 28)
-            .background(AppTheme.Colors.mistSky, in: Capsule())
-    }
-}
-
-struct TravelWorkflowPlanView: View {
-    private let steps: [(String, String, String, String)] = [
-        ("binoculars", "目的地研究", "目的地概况 · 最佳季节 · 注意事项", "按你的目的地和日期研究，标注信息来源与需要出发前复核的事项。"),
-        ("point.topleft.down.curvedto.point.bottomright.up", "行程路线规划", "每日安排 · 地图路线 · 交通衔接", "结合抵达和返程时间编排；日期未定时保留可调整的参考日，不虚构已订航班。"),
-        ("mappin.and.ellipse", "景点推荐", "必去景点 · 小众选择 · 购票预约", "说明为什么值得去、游览顺序、营业时间及购票或预约入口。"),
-        ("camera", "拍照建议", "目的地地标 · 风景构图 · 拍摄时间", "检索目的地真实风景参考图，保留来源，并给出机位与时间建议。"),
-        ("bed.double", "住宿推荐", "住宿区域 · 具体酒店 · 交通连接", "比较车站与景点周边住宿，说明机场、市内交通及晚到入住的衔接。"),
-        ("fork.knife", "美食推荐", "具体餐厅 · 口碑来源 · 预约办法", "提供具名餐厅、用餐区域和预约步骤；评分标注平台与核验日期。"),
-        ("tram", "交通指南", "航班时段 · 机场到市区 · 交通券", "说明落地接驳、购票与支付，一日券及周游券按实际路线判断是否划算。"),
-        ("shield", "安全与应急", "现金与支付 · 紧急联系 · 备选安排", "海外出行说明换汇、取现与支付；保留晚到、休业和天气变化时的替代。"),
-    ]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("旅行计划").font(.system(size: 28, weight: .semibold, design: .serif))
-            Text("将根据已确认需求制作攻略，\n包含行程安排、地图、景点与实用建议。")
-                .font(.system(size: 14)).foregroundStyle(AppTheme.Colors.textSecondary).lineSpacing(4)
-                .padding(.bottom, 10)
-            VStack(spacing: 6) {
-                ForEach(steps.indices, id: \.self) { index in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(index + 1)").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppTheme.Colors.onPrimary)
-                            .frame(width: 24, height: 24).background(AppTheme.Colors.primary, in: Circle()).padding(.top, 10)
-                        DisclosureGroup {
-                            Text(steps[index].3).font(.system(size: 13)).foregroundStyle(AppTheme.Colors.textSecondary)
-                                .lineSpacing(4).padding(.top, 8)
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: steps[index].0).font(.system(size: 18)).foregroundStyle(AppTheme.Colors.primary)
-                                    .frame(width: 34, height: 34).background(AppTheme.Colors.surfaceTint, in: RoundedRectangle(cornerRadius: 10))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(steps[index].1).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.Colors.textPrimary)
-                                    Text(steps[index].2).font(.system(size: 11)).foregroundStyle(AppTheme.Colors.textSecondary)
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }.padding(8).background(AppTheme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay { RoundedRectangle(cornerRadius: 12).stroke(AppTheme.Colors.border.opacity(0.6)) }
-                            .accessibilityIdentifier("travel-planning-step-\(index)")
-                    }
-                }
-            }
-        }.tint(AppTheme.Colors.primary)
-    }
-}
-
-#if DEBUG
-struct V4TravelPrototypeHost: View {
-    let pageID: String
-    @State private var reviewedInput: CapabilityProposalInput?
-    @State private var draft = ""
-    @State private var quote: QuotedContext?
-    @State private var isVoicePressing = false
-    @StateObject private var speechService = SpeechRecognizerService()
-
-    var body: some View {
-        if pageID.hasSuffix("p03") {
-            TravelPlanPreferencesView(input: Self.proposal.input, onSave: { reviewedInput = $0 })
-                .alert("旅行需求已准备", isPresented: Binding(get: { reviewedInput != nil }, set: { if !$0 { reviewedInput = nil } })) {
-                    Button("返回修改") { reviewedInput = nil }
-                } message: { Text(reviewedInput.map(TravelPlanPreferencesView.answer) ?? "") }
-        } else if pageID.hasSuffix("p04") {
-            NavigationStack { ScrollView { TravelWorkflowPlanView().padding(20) }.safeAreaInset(edge: .bottom) { Button("确认开始") {}.buttonStyle(QuantumPrimaryButtonStyle()).padding(20) }.background(AppTheme.Colors.background) }
-        } else {
-            ZStack {
-                QuantumMistBackground()
-                VStack(spacing: 0) {
-                    ChatTopBarView(isGenerating: false, title: "Quantum", onTitleTap: {}, onNewSession: {}, onHistoryTap: {}, onClearTap: {})
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                            Text(pageID.hasSuffix("p02") ? "帮我完成旅行计划" : "第一次去京都，五天怎么玩？")
-                                .font(AppTheme.Typography.body)
-                                .padding(AppTheme.Spacing.md)
-                                .background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                                QuantumAvatarView(size: 34)
-                                if pageID.hasSuffix("p02") {
-                                    VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                                        Text("好的！我将根据我们的对话内容，为你创建旅行计划任务。")
-                                        CapabilityProposalCard(proposal: Self.proposal, onConfirm: {}, onDiscard: {})
-                                        Text("可以继续补充更多偏好，或直接开始规划完整的旅行计划。")
-                                            .font(AppTheme.Typography.supporting).foregroundStyle(AppTheme.Colors.textSecondary)
-                                            .padding(AppTheme.Spacing.md).background(AppTheme.Colors.mistSky, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                                    }
-                                } else {
-                                    TravelPlanningAnswerCard()
-                                }
-                            }
-                        }
-                        .padding(AppTheme.Metrics.contentGutter)
-                    }
-                    ChatInputBar(inputText: $draft, quotedContext: $quote, isVoicePressing: $isVoicePressing,
-                                 speechService: speechService, isGenerating: false, dismissKeyboardToken: 0,
-                                 onSend: {}, onVoicePressChanged: { _ in }, onPlusTap: {})
-                }
-            }
-        }
-    }
-
-    private static let proposal = CapabilityProposalBlock(
-        id: "travel-plan-preview", capabilityId: "workflow.create",
-        input: CapabilityProposalInput(
-            title: "京都 · 日本", description: "京都五日旅行计划", desiredOutput: "图文旅行计划",
-            sourceDocumentId: nil, outputKind: "travel", workflowId: nil, textMaterial: nil,
-            audience: nil, intendedUse: nil, layoutStyle: nil, slideCount: nil, clarificationStrategy: nil,
-            researchQuestion: nil, thesis: nil, language: nil, citationStyle: nil, evidencePolicy: nil,
-            destination: "京都 · 日本", travelDates: "2026年10月1日至5日", travelers: "一个人", travelPreferences: "寺社文化、自然风光、在地美食"
-        ),
-        summary: "创建旅行计划", risk: "将创建新的工作流"
-    )
-}
-#endif
+// Compatibility name for existing Chat requirement bindings.
+typealias TravelPlanPreferencesView = TravelRequirementSheet
 
 
 /// The same persisted job drives the note editor and its Chat result card.

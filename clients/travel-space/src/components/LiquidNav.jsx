@@ -1,0 +1,13 @@
+import React,{useRef,useLayoutEffect,useEffect} from 'react';
+import {motion,useReducedMotion,useMotionValue,useSpring,useMotionValueEvent} from 'motion/react';
+import {Icon,spring} from './UI';
+// Reuse the primary navigation's measured spring, velocity stretch and settling.
+export default function LiquidNav({items,value,onChange,label,className='',labelPrefix='',step=false}){
+ const nav=useRef(null),buttons=useRef([]),idle=useRef(null),initialized=useRef(false),reduced=useReducedMotion();
+ const target=useMotionValue(0),widthTarget=useMotionValue(0),x=useSpring(target,{stiffness:400,damping:31,mass:.85}),width=useSpring(widthTarget,{stiffness:400,damping:31});
+ const scaleX=useSpring(1,{stiffness:240,damping:22}),scaleY=useSpring(1,{stiffness:240,damping:22}),skew=useSpring(0,{stiffness:210,damping:23});
+ useMotionValueEvent(x,'change',()=>{if(reduced)return;const velocity=x.getVelocity(),strength=Math.min(Math.abs(velocity)/1200,1);scaleX.set(1+strength*.38);scaleY.set(1-strength*.11);skew.set(Math.max(-6,Math.min(6,velocity/300)));clearTimeout(idle.current);idle.current=setTimeout(()=>{scaleX.set(1);scaleY.set(1);skew.set(0);},90);});
+ useLayoutEffect(()=>{const measure=()=>{const i=items.findIndex(item=>item[0]===value),b=buttons.current[i];if(!b)return;target.set(b.offsetLeft);widthTarget.set(b.offsetWidth);if(!initialized.current||reduced){x.jump(b.offsetLeft);width.jump(b.offsetWidth);scaleX.jump(1);scaleY.jump(1);skew.jump(0);}initialized.current=true;};const observer=new ResizeObserver(measure);observer.observe(nav.current);buttons.current.filter(Boolean).forEach(b=>observer.observe(b));measure();return()=>observer.disconnect();},[value,items,reduced]);
+ useEffect(()=>()=>clearTimeout(idle.current),[]);
+ return <nav ref={nav} className={'liquid-nav glass '+className} aria-label={label}><motion.div aria-hidden="true" className="liquid-nav-active requirement-liquid-active" style={{x,width,scaleX:reduced?1:scaleX,scaleY:reduced?1:scaleY,skewX:reduced?0:skew}}/>{items.map(([id,text,icon],i)=><motion.button key={id} ref={b=>buttons.current[i]=b} type="button" aria-label={labelPrefix+text} aria-pressed={id===value} aria-current={step&&id===value?'step':undefined} onClick={()=>onChange(id)} onKeyDown={e=>{const next=e.key==='ArrowRight'?(i+1)%items.length:e.key==='ArrowLeft'?(i+items.length-1)%items.length:e.key==='Home'?0:e.key==='End'?items.length-1:null;if(next!==null){e.preventDefault();onChange(items[next][0]);buttons.current[next]?.focus();}}} whileTap={reduced?undefined:{scale:.91}} transition={spring}><Icon name={icon} size={17}/>{id===value&&<motion.span initial={reduced?false:{opacity:0}} animate={{opacity:1}}>{text}</motion.span>}</motion.button>)}</nav>;
+}

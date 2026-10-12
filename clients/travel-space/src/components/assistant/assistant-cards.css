@@ -1,0 +1,73 @@
+#root .phone .assistant-answer{border-radius:22px;padding:16px;margin:12px 0 16px;background:linear-gradient(125deg,rgba(229,240,234,.82),rgba(234,222,216,.73) 58%,rgba(225,215,233,.75));border:1px solid rgba(255,255,255,.86);box-shadow:0 7px 20px -17px #3f5349;color:#2b463c;overflow:hidden}
+#root .phone .answer-heading{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+#root .phone .answer-heading small{font-size:10px;line-height:1.5;color:#586a60;display:block;margin-bottom:5px}
+#root .phone .answer-heading h2{font-size:17px;line-height:1.45;letter-spacing:-.2px;font-weight:600}
+#root .phone .answer-kind-icon{height:34px;width:34px;flex:none;display:grid;place-items:center;background:rgba(255,255,255,.5);border:1px solid white;border-radius:12px}
+#root .phone .answer-workflow{display:flex;list-style:none;margin:0 0 12px;padding:0;gap:4px}
+#root .phone .answer-workflow li{flex:1;display:flex;gap:4px;flex-direction:column;align-items:center;position:relative;color:#5c6e64}
+#root .phone .answer-workflow li:not(:last-child):after{content:"";width:calc(100% - 18px);height:1px;background:rgba(85,106,93,.23);position:absolute;top:9px;left:calc(50% + 11px)}
+#root .phone .answer-workflow li>span{width:19px;height:19px;border:1px solid rgba(70,101,78,.4);border-radius:50%;display:grid;place-items:center;font-size:9px}
+#root .phone .answer-workflow li.is-done>span{background:#516e60;border-color:#516e60;color:white}
+#root .phone .answer-workflow li.is-active>span{background:rgba(255,255,255,.8);border-color:#486052;font-weight:700}
+#root .phone .answer-workflow small{font-size:9px;white-space:nowrap}
+#root .phone .answer-extract{margin:0 0 14px;padding:6px 0 6px 10px;border-left:2px solid rgba(87,109,98,.4);font-size:11px;line-height:1.6;color:#586a60}
+#root .phone .answer-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:12px}
+#root .phone .answer-fields label{font-size:11px;color:#52665b;margin:0;min-width:0}
+#root .phone .assistant-answer :is(input,select,textarea){font-size:13px;color:#2c453b;min-height:44px;border-radius:12px;background:rgba(255,255,255,.56);border:1px solid rgba(255,255,255,.8);padding:10px}
+#root .phone .assistant-answer select{width:100%;margin-top:6px}
+#root .phone .assistant-answer .floating-field{margin-top:6px}
+#root .phone .answer-time-note{grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:11px;color:#52655a;line-height:1.6}
+#root .phone .answer-control-tray{padding:10px 12px;border-radius:15px;background:rgba(255,255,255,.35);margin-bottom:12px}
+#root .phone .answer-counter{display:flex;align-items:center;justify-content:space-between;min-height:52px;border-bottom:1px solid rgba(74,100,85,.13);font-size:12px}
+#root .phone .answer-counter>div{display:flex;gap:8px;align-items:center}
+#root .phone .answer-counter button{width:44px;height:44px;font-size:20px;border-radius:12px;background:rgba(255,255,255,.46);padding:0}
+#root .phone .answer-counter output{min-width:20px;text-align:center;font-size:19px;font-weight:600}
+#root .phone .answer-switch{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:12px 0 0;font-size:11px}
+#root .phone .answer-switch input{appearance:none;-webkit-appearance:none;position:relative;min-height:22px;height:22px;width:38px;flex:none;padding:0;border-radius:20px;background:#94a89b}
+#root .phone .answer-switch input:after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:white;transition:transform .2s}
+#root .phone .answer-switch input:checked{background:#547362}
+#root .phone .answer-switch input:checked:after{transform:translateX(16px)}
+#root .phone .answer-route-endpoints{display:flex;gap:8px}
+#root .phone .answer-route-endpoints label{flex:1;min-width:0;margin:0 0 12px;font-size:11px;color:#52665b}
+#root .phone .answer-route figure{margin:0 0 12px;height:210px;position:relative;border-radius:16px;overflow:hidden}
+#root .phone .answer-route .geographic-map{height:100%;width:100%}
+#root .phone .answer-route figcaption{position:absolute;bottom:8px;left:8px;background:#f7f8f1e8;border-radius:7px;padding:4px 6px;font-size:10px}
+#root .phone .answer-map-pin{position:absolute;transform:translate(-50%,-100%);width:22px;height:26px;border-radius:12px 12px 12px 2px;background:#4c715d;color:white;display:grid;place-items:center;font-size:12px;font-weight:700;border:1px solid white;z-index:2}
+#root .phone .answer-map-pin small{position:absolute;left:26px;top:4px;background:#fffdf4ed;color:#294532;white-space:nowrap;padding:3px 5px;border-radius:5px;font-size:9px}
+#root .phone .answer-weather>div:first-child{display:flex;gap:10px;align-items:center;padding:12px 0 18px}
+#root .phone .answer-weather strong{font-size:37px;font-weight:600;letter-spacing:-1px}
+#root .phone .answer-weather p,.answer-booking p{font-size:11px;line-height:1.6;color:#52645a;margin-bottom:10px}
+#root .phone .answer-booking-route{display:grid;grid-template-columns:28px 1fr;gap:6px 8px;align-items:center;padding:10px 0}
+#root .phone .answer-booking-route strong{font-size:14px;font-weight:500}
+#root .phone .answer-booking-route span{grid-column:2;font-size:11px;color:#52645a}
+#root .phone .answer-photo{margin:0;position:relative;height:186px;border-radius:16px;overflow:hidden}
+#root .phone .answer-photo img{width:100%;height:100%}
+#root .phone .answer-photo figcaption{position:absolute;inset:auto 0 0;padding:28px 12px 10px;color:white;font-size:12px;background:linear-gradient(transparent,#22332dc9)}
+#root .phone .answer-photo-tray{display:flex;gap:8px;overflow-x:auto;padding:12px 0;scroll-snap-type:x mandatory}
+#root .phone .answer-photo-tray button{width:55px;height:55px;flex:none;padding:3px;scroll-snap-align:center;border-radius:12px;border:1px solid transparent}
+#root .phone .answer-photo-tray button[aria-pressed=true]{border-color:#506e5d;background:rgba(255,255,255,.65)}
+#root .phone .answer-photo-tray img{width:100%;height:100%;border-radius:9px}
+#root .phone .answer-note{margin:6px 0 14px;font-size:11px;color:#52665b}
+#root .phone .answer-code{border-radius:14px;overflow:hidden;background:rgba(246,249,245,.6);margin-bottom:12px}
+#root .phone .answer-code header{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid rgba(94,111,101,.15);font-size:11px}
+#root .phone .answer-code header button{min-height:44px;font-size:11px;padding:5px}
+#root .phone .answer-code pre{overflow:auto;max-height:190px;margin:0;padding:12px;font-size:11px;line-height:1.6;color:#334c40;white-space:pre}
+#root .phone .answer-flow-chart{display:flex;align-items:center;flex-direction:column;margin:12px 0 18px}
+#root .phone .answer-flow-chart>div{display:flex;gap:8px;justify-content:center;align-items:center;padding:10px 14px;width:94%;min-height:44px;background:rgba(255,255,255,.38);border:1px solid rgba(255,255,255,.8);border-radius:12px;font-size:12px}
+#root .phone .answer-flow-chart>span{font-size:12px;color:#647c6e;margin:4px}
+#root .phone .answer-actions{display:flex;gap:8px;align-items:center;border-top:1px solid rgba(88,110,97,.15);padding-top:12px;margin-top:10px}
+#root .phone .answer-actions .primary{font-size:12px;min-height:44px;padding:9px 12px;margin:0;flex:1;width:auto;gap:8px}
+#root .phone .answer-secondary{min-height:44px;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:8px 2px;color:#3f5c4c}
+#root .phone .answer-result{display:flex;align-items:flex-start;gap:9px;padding:12px;border-radius:14px;margin-top:12px;font-size:12px;background:rgba(171,203,184,.38)}
+#root .phone .answer-result>svg{flex:none}
+#root .phone .answer-result p{font-size:11px;margin-top:5px;line-height:1.6}
+#root .phone .answer-result.is-failed{background:rgba(225,194,182,.45)}
+#root .phone .answer-result button{min-height:44px;text-decoration:underline;font-size:11px;padding:5px 0}
+#root .phone .assistant-answer .rich-message p{font-size:13px;line-height:1.75;margin-bottom:8px}
+#root .phone .answer-missing{padding:16px;font-size:12px;line-height:1.7}
+#root .phone .answer-kind-rail{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:none;margin:6px 0 10px;padding:0 1px}
+#root .phone .answer-kind-rail button{display:inline-flex;align-items:center;gap:5px;min-height:34px;white-space:nowrap;font-size:11px;flex:none;padding:6px 9px;border-radius:18px;background:rgba(248,250,245,.55);color:#3d5547}
+@media(prefers-reduced-motion:reduce){#root .phone .answer-switch input:after{transition:none}}
+
+#root .phone .answer-body{border:0;padding:0;margin:0;min-width:0;width:100%}
+#root .phone .answer-body:disabled button{opacity:.7}

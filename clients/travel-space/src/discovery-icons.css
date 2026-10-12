@@ -1,0 +1,71 @@
+/* Small visible controls retain a 44px touch target. */
+.discover-screen .idea-drawer,
+.discover-screen .folder-target,
+.discover-screen .round-confirm {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  gap: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+.discover-screen .idea-drawer::before,
+.discover-screen .folder-target::before,
+.discover-screen .round-confirm::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: rgba(244, 246, 242, .62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45);
+  transition: background .2s, box-shadow .2s;
+}
+.discover-screen .round-confirm::before {
+  inset: 5px;
+  background: rgba(202, 211, 204, .8);
+}
+.discover-screen .folder-target.folder-hover::before {
+  background: rgba(230, 235, 219, .92);
+  box-shadow: 0 0 0 2px rgba(147, 160, 126, .3);
+}
+.discover-screen .idea-drawer > svg,
+.discover-screen .folder-target > svg,
+.discover-screen .round-confirm > svg {
+  position: relative;
+}
+.discover-screen .folder-target > .folder-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #b84048;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  box-shadow: 0 0 0 2px rgba(242, 243, 236, .85);
+  pointer-events: none;
+  animation: folder-count-pop .28s cubic-bezier(.22, 1.3, .5, 1);
+}
+@keyframes folder-count-pop {
+  from { transform: scale(.65); }
+  to { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .discover-screen .folder-target > .folder-count { animation: none; }
+}

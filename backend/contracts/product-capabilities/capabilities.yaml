@@ -41,10 +41,10 @@ capabilities:
   - id: knowledge.note.read
     version: 1.0.0
     domain: knowledge
-    description: Read one authenticated user's note by stable note id.
+    description: Read one authenticated user's note by stable note id. include_versions lists saved travel notebook versions; version_hash reads an owned immutable snapshot for comparison.
     positive_examples: ["Open note note-123"]
     negative_examples: ["Read another user's note"]
-    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}}, required: [note_id], additionalProperties: false}
+    input_schema: {type: object, properties: {note_id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'}, include_versions: {type: boolean}, version_hash: {type: string, pattern: '^[a-f0-9]{64}$'}}, required: [note_id], additionalProperties: false}
     output_schema: {type: object, required: [note]}
     effect: read
     risk: low

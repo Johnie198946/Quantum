@@ -278,6 +278,28 @@ def merge_travel_day(document: dict, block: dict, day_id: str) -> dict:
     return result
 
 
+def finalize_travel_notebook(approved: dict, written: dict) -> dict:
+    """Keep every approved travel fact; add only notebook text and references."""
+    result = validate_travel_document(approved)
+    supplement = validate_travel_document(written)
+    result["journal"] = result.get("journal") or supplement["journal"]
+    if supplement["journal"] and supplement["journal"] != result["journal"]:
+        result["notebook_supplement"] = supplement["journal"]
+    places = {p["id"] for p in result["stops"]}
+    photos = {p["id"]: p for p in result["photo_references"]}
+    sources = {s["id"]: s for s in result["sources"]}
+    for photo in supplement["photo_references"]:
+        if photo["id"] in photos or photo.get("place_id") and photo["place_id"] not in places:
+            continue
+        photos[photo["id"]] = photo
+        if photo["source_id"] not in sources:
+            sources[photo["source_id"]] = next(s for s in supplement["sources"] if s["id"] == photo["source_id"])
+    result["photo_references"] = list(photos.values())
+    result["sources"] = list(sources.values())
+    result["open_questions"] = list(dict.fromkeys([*result["open_questions"], *supplement["open_questions"]]))
+    return validate_travel_document(result)
+
+
 def revise_travel_document(previous: dict, proposed: dict, *, now: datetime, confirmed_bookings: dict[str, str] | None = None) -> dict:
     """Validate an AI proposal against current facts; callers own CAS and persistence."""
     if now.utcoffset() is None:
@@ -346,9 +368,50 @@ def revise_travel_document(previous: dict, proposed: dict, *, now: datetime, con
         raise ValueError("historical evidence cannot change indirectly")
     result = new.model_dump(mode="json")
     # An AI planning proposal cannot replace personal writing or attached assets.
-    for key in ("journal", "illustrations"):
+    for key in ("journal", "illustrations", "client_state"):
         if key in previous:
             result[key] = copy.deepcopy(previous[key])
+    return result
+
+
+def update_travel_client_state(previous: dict, state: dict) -> dict:
+    """User-authored UI/ledger state lives in the versioned travel artifact.
+
+    It never changes planned actions, evidence, bookings or actual progress.
+    The API's existing owner, hash CAS and request receipt protect this write.
+    """
+    if not isinstance(state, dict) or state.get("version") != 1:
+        raise ValueError("unsupported travel client state")
+    encoded = json.dumps(state, ensure_ascii=False, allow_nan=False)
+    if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+        raise ValueError("travel client state exceeds 4 MB; upload media separately")
+    def bounded(value, depth=0):
+        if depth > 24:
+            raise ValueError("travel client state nesting limit")
+        if isinstance(value, dict):
+            if len(value) > 1000:
+                raise ValueError("travel client state object limit")
+            for key, item in value.items():
+                if not isinstance(key, str) or len(key) > 240:
+                    raise ValueError("invalid travel client state key")
+                bounded(item, depth + 1)
+        elif isinstance(value, list):
+            if len(value) > 1000:
+                raise ValueError("travel client state list limit")
+            for item in value:
+                bounded(item, depth + 1)
+        elif isinstance(value, str) and (len(value) > 48000 or value.startswith("data:")):
+            raise ValueError("travel client state text/media limit")
+    bounded(state)
+    result = validate_travel_document(previous)
+    saved = copy.deepcopy(state)
+    # Progress is read exclusively from validated actions. UI recovery cannot
+    # supply alternate facts or let an AI answer masquerade as an actual visit.
+    profile = saved.get("profile")
+    if isinstance(profile, dict) and isinstance(profile.get("tripSession"), dict):
+        profile["tripSession"].pop("facts", None)
+        profile["tripSession"].pop("events", None)
+    result["client_state"] = saved
     return result
 
 

@@ -81,7 +81,7 @@ public struct ChatTopBarView: View {
         }
         .padding(.horizontal, AppTheme.Spacing.md)
         .frame(minHeight: 52)
-        .background(Color(hex: "FCFBF7").opacity(0.97))
-        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Color.white.opacity(0.7).frame(height: 0.5) }
     }
 }

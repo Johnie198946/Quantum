@@ -1,0 +1,112 @@
+.phone .revision68-services{color:#304a43}
+.phone .revision68-services .services-heading{margin-bottom:18px}
+.phone .service-search-capsule{display:flex;align-items:center;gap:8px;min-width:0;width:100%;height:44px;margin:10px 0;padding:0 12px;border:1px solid #ffffffbc;border-radius:24px;background:linear-gradient(115deg,#e7f1edc7,#ece7f2ad);box-shadow:inset 0 1px 0 #fff9}
+.phone .service-search-capsule>svg{flex:none}
+.phone .service-search-capsule .floating-field{flex:1;min-width:0;background:none;border:none;margin:0}
+.phone .service-search-capsule .floating-field input{width:100%;min-height:40px;height:40px;padding:5px 0;border:0;border-radius:0;background:none;font-size:13px;color:#304a43;box-shadow:none}
+.phone .service-search-capsule .floating-title{display:none}
+.phone .service-search-capsule .floating-field input::placeholder{color:#53675f!important}
+.phone .service-search-capsule>button{display:grid;place-items:center;flex:none;width:28px;height:32px;padding:0;border:0;background:none;color:inherit}
+.phone .service-search-simple{padding:0;margin-top:14px;border:0;background:none}
+.phone .service-search-simple .service-inline-time{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0;font-size:11px;color:#53675f}
+.phone .service-search-simple .service-inline-time .floating-field{max-width:122px}
+.phone .service-search-simple .service-inline-time input{min-height:36px;height:36px;margin:0;padding:6px 10px;border-radius:14px;font-size:13px}
+.phone .revision68-services .service-result{display:flex;align-items:center;gap:8px;padding:9px 10px;min-width:0;background:linear-gradient(115deg,#dce7e482,#e8e3ec91);border:1px solid #ffffffb3;border-radius:19px;margin:8px 0}
+.phone .revision68-services .service-result.is-selected{background:linear-gradient(115deg,#c6ddd4c9,#dddbedd9)}
+.phone .revision68-services .service-result>.service-result-detail{display:flex;align-items:center;gap:10px;flex:1;min-width:0;width:auto;padding:0;min-height:64px;background:none;border:0;box-shadow:none;text-align:left;color:#304a43}
+.phone .revision68-services .service-result-detail>img{width:49px;height:64px;flex:none;object-fit:cover;border-radius:12px}
+.phone .revision68-services .service-result-detail>span{min-width:0;display:grid;gap:4px}
+.phone .revision68-services .service-result-detail strong{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.phone .revision68-services .service-result-detail small,.phone .revision68-services .service-result-meta{font-size:10px;line-height:1.4;color:#4f665c}
+.phone .revision68-services .interest-status,.phone .route-ticket-card-heading .interest-status{position:relative;flex:none;display:flex;align-items:center;justify-content:center;height:32px;min-height:32px;min-width:0;max-width:none;padding:7px 8px;overflow:hidden;white-space:nowrap;line-height:16px;font-size:10px;border-radius:18px;border:1px solid #ffffffd1;background:#ffffff50;color:#354d44}
+.phone .revision68-services .interest-status.has-value,.phone .route-ticket-card-heading .interest-status.has-value{background:#ffffffde}
+.phone .revision68-services .interest-status:focus-visible,.phone .route-ticket-card-heading .interest-status:focus-visible{outline:2px solid #52695b;outline-offset:3px}
+.phone .service-poi-map .nearby-canvas{height:232px;border-radius:18px;overflow:hidden}
+.phone .service-poi-map .poi-pin{display:flex;align-items:center;gap:4px;transform:translate(-12px,-28px);min-width:44px;width:auto;max-width:145px;min-height:44px;height:44px;padding:0 4px 0 0;border:0;border-radius:0;background:none;box-shadow:none;z-index:2;color:#314c43;font-size:10px}
+.phone .service-poi-map .poi-pin.is-selected{z-index:5}
+.phone .service-poi-map .poi-pin:after{display:none}
+.phone .service-poi-map .poi-pin-glyph{display:grid;place-items:center;flex:none;width:24px;height:27px;border:2px solid white;border-radius:12px 12px 12px 3px;background:#587664;color:white;box-shadow:0 1px 3px #253b4340}
+.phone .service-poi-map .poi-pin.is-selected .poi-pin-glyph{width:28px;height:31px;background:#3d6255}
+.phone .service-poi-map .poi-pin-title{padding:3px 4px;border-radius:5px;background:#fafbf3ed;text-align:left;line-height:1.3;font-weight:600;max-width:96px;white-space:normal;overflow-wrap:anywhere;text-shadow:none}
+.phone .service-poi-map .nearby-legend{display:flex;gap:6px;overflow-x:auto;justify-content:flex-start;margin-top:8px;padding-bottom:3px}
+.phone .service-poi-map .nearby-legend>button{display:flex;align-items:center;gap:5px;flex:none;min-height:36px;padding:4px 9px;font-size:10px;border-radius:18px;background:#ffffff6e;color:#344f44}
+.phone .service-poi-map figcaption{font-size:10px;color:#4c665a}
+.phone .experience-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px}
+.phone .experience-list-heading small{font-size:8px;letter-spacing:1.2px;color:#556b60}
+.phone .experience-list-heading h3{font-size:17px;margin:7px 0}
+.phone .experience-new{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:50%;border:1px solid #ffffffc7;background:#ffffff80;color:#304a43}
+.phone .custom-experience,.phone .experience-current{padding:14px;margin:12px 0;border:1px solid #ffffffb5;border-radius:18px;background:linear-gradient(115deg,#deebe481,#e7dfea91)}
+.phone .custom-experience>.floating-field{margin:8px 0}
+.phone .custom-experience input{height:40px;min-height:40px;font-size:13px}
+.phone .experience-current>small,.phone .experience-current>strong{display:block;margin-bottom:6px}
+.phone .experience-current>small{font-size:10px;color:#4e655b}
+.phone .experience-current>strong{font-size:13px}
+.phone .experience-current>button{display:flex;align-items:center;gap:8px;font-size:11px;margin-top:12px}
+.phone .revision68-service-sheet .service-sheet-photo{height:126px;margin-bottom:14px}
+.phone .revision68-service-sheet .service-sheet-photo img{height:126px;object-fit:cover}
+.phone .revision68-service-sheet h2{font-size:21px;margin:8px 0 16px}
+.phone .revision68-service-sheet .service-form-grid{gap:10px;margin:12px 0}
+.phone .revision68-service-sheet .service-form-grid label{font-size:10px}
+.phone .revision68-service-sheet .service-form-grid input{height:40px;min-height:40px;font-size:13px}
+.phone .revision68-service-sheet .service-policy{font-size:10px;line-height:1.7;margin:12px 0}
+.phone .revision68-service-sheet textarea{min-height:66px;font-size:13px}
+.phone .service-payment{padding:12px 0;margin:14px 0;border-top:1px solid #45645724;border-bottom:1px solid #45645724;color:#304a43}
+.phone .service-payment>header{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.phone .service-payment h3{font-size:12px;margin:0}
+.phone .service-payment header>small{font-size:10px;color:#4e655b;margin-left:auto}
+.phone .service-paid-check{display:flex;align-items:center;gap:8px;font-size:11px;min-height:32px;margin:0}
+.phone .service-payment input[type=checkbox]{width:17px;height:17px;min-height:17px;margin:0;accent-color:#526f60}
+.phone .service-payment-details{display:grid;gap:8px;margin-top:10px}
+.phone .service-payment-details .service-form-grid{align-items:center;gap:10px}
+.phone .service-payment-details .floating-field{margin:0}
+.phone .service-payment-details input:not([type=checkbox]){min-height:40px;height:40px;padding:8px 10px;font-size:13px}
+.phone .service-payment fieldset{border:0;padding:4px 0;margin:0;display:flex;flex-wrap:wrap;gap:10px}
+.phone .service-payment legend{font-size:10px;padding:0;margin-bottom:8px;color:#50675b}
+.phone .service-payment fieldset label{display:flex;align-items:center;gap:5px;font-size:11px;margin:0}
+.phone .service-paid-status{font-size:11px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.phone .service-paid-status>small{display:block;flex-basis:100%;font-size:10px;color:#52685d}
+.phone .service-save-error:empty{display:none}
+.phone .service-save-error{font-size:11px;color:#7f3948;line-height:1.5}
+.phone .route-ticket-card-heading{display:flex;align-items:center;gap:8px;padding:12px}
+.phone .route-ticket-card-heading>button:first-child{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:1;min-width:0;min-height:44px;width:auto;padding:0;border:0;background:none;text-align:left}
+.phone .route-ticket-card-heading>button:first-child strong{font-size:17px}
+.phone .route-ticket-card-heading>button:first-child small{display:block;font-size:10px;margin-top:6px;color:#4e655a}
+.phone .route-ticket-card-heading .route-ticket-price{font-size:13px;font-weight:600}
+.phone .route-ticket-card.is-selected{background:linear-gradient(115deg,#bbdacead,#e6d5c8a6,#d9d0e8b5);border-color:#ffffffed}
+.phone .transport-time-advice{display:flex;gap:6px;align-items:flex-start;font-size:11px;line-height:1.7;color:#4c6258;margin:14px 0}
+.phone .transport-time-advice>svg{flex:none;margin-top:3px}
+.phone .transport-cost-card{padding:10px 0;margin:10px 0;border:0;background:none}
+.phone .transport-cost-card .transport-cost{display:flex;justify-content:space-between;align-items:center;font-size:11px;gap:10px}
+.phone .transport-cost-card .transport-cost>span{max-width:124px}
+.phone .transport-cost-card input{min-height:38px;height:38px;font-size:13px}
+.phone .transport-cost-card>small{display:block;font-size:10px;color:#52685d;margin-top:8px}
+.phone .day-service-facts{margin:20px 0;color:#304a43}
+.phone .day-service-facts section>header{position:relative;margin:20px 0 12px}
+.phone .day-service-facts header>small{font-size:8px;letter-spacing:1.4px;color:#53695e}
+.phone .day-service-facts header h3{font-size:17px;margin:7px 0}
+.phone .daily-fact-card{padding:10px 12px;border:1px solid #ffffff9c;border-radius:15px;background:linear-gradient(115deg,#dfe8e557,#e4dfeb66);margin:8px 0}
+.phone .daily-fact-heading{display:flex;align-items:center;gap:9px;min-height:40px;width:100%;padding:0;color:#304a43;text-align:left;background:none;border:0}
+.phone .daily-fact-heading>span{flex:1;min-width:0}
+.phone .daily-fact-heading small{font-size:9px;color:#4f665a;display:block;margin-bottom:4px}
+.phone .daily-fact-heading strong{font-size:12px;display:block;line-height:1.5}
+.phone .daily-fact-card dl,.phone .daily-traffic-card dl{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px;padding:8px 0 0;margin:0;border-top:1px solid #3f605413}
+.phone .daily-fact-card dl>div,.phone .daily-traffic-card dl>div{min-width:0}
+.phone .daily-fact-card dt,.phone .daily-traffic-card dt{font-size:8px;color:#53695e;margin:0 0 3px}
+.phone .daily-fact-card dd,.phone .daily-traffic-card dd{font-size:10px;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.phone .day-traffic-facts header>button{position:absolute;right:0;bottom:0;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:1px solid #fff9;background:#ffffff6e}
+.phone .daily-traffic-card{padding:11px 12px;border-radius:15px;background:#e4e9e582;margin:8px 0}
+.phone .daily-traffic-card>button{display:flex;align-items:center;gap:10px;width:100%;padding:0;min-height:40px;text-align:left;background:none;border:0}
+.phone .daily-traffic-card>button>time{font-size:13px;flex:none}
+.phone .daily-traffic-card>button>span{flex:1;min-width:0}
+.phone .daily-traffic-card strong{font-size:12px;display:block;line-height:1.4}
+.phone .daily-traffic-card small{display:block;font-size:10px;margin-top:4px;color:#4f665b}
+.phone .daily-time-advice{display:flex;gap:5px;align-items:flex-start;font-size:10px;line-height:1.5;margin:10px 0 0;color:#4f665b}
+.phone .daily-time-advice>svg{flex:none;margin-top:2px}
+.phone .daily-traffic-empty{display:flex;align-items:center;gap:10px;width:100%;padding:12px;text-align:left;min-height:64px;border-radius:15px;background:#ffffff5c;border:1px solid #fff9}
+.phone .daily-traffic-empty>span{flex:1;font-size:12px}
+.phone .daily-traffic-empty small{display:block;font-size:10px;line-height:1.5;color:#52685d;margin-top:5px}
+.phone .day-detail .inline-passengers,.phone .route-detail-content .inline-passengers{margin:12px 0}
+.phone .day-detail .passenger-icons,.phone .route-detail-content .passenger-icons{width:auto;max-width:150px;overflow-x:auto;min-height:38px}
+.phone .day-detail .passenger-number,.phone .route-detail-content .passenger-number{max-width:54px}
+.phone .day-detail .passenger-number input,.phone .route-detail-content .passenger-number input{height:36px;min-height:36px;width:54px;padding:6px;border-radius:12px}
+@media(prefers-reduced-motion:reduce){.phone .service-poi-map .poi-pin,.phone .revision68-services .interest-status,.phone .route-ticket-card-heading .interest-status{transition:none}}

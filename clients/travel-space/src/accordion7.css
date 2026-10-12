@@ -1,0 +1,68 @@
+/* Shared calendar owns its grid: parent requirement selectors cannot reshape days. */
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.travel-calendar.travel-calendar{display:block!important;width:100%;padding:12px!important;border-radius:20px;background:#e5e9e5b8;border:1px solid #ffffff6e;backdrop-filter:blur(24px);color:#30443c;box-sizing:border-box}
+.travel-calendar.travel-calendar>header{display:grid!important;grid-template-columns:36px minmax(0,1fr) 36px;align-items:center;gap:4px;margin:0 0 15px;text-align:center}
+.travel-calendar.travel-calendar>header strong{font-size:13px;font-weight:500;white-space:nowrap}
+.travel-calendar.travel-calendar>header button{width:36px!important;height:36px!important;min-height:36px;padding:0!important;border-radius:50%!important;display:grid!important;place-items:center;background:#ffffff75}
+.travel-calendar.travel-calendar>.calendar-week,.travel-calendar.travel-calendar>.calendar-days{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:3px!important;flex-wrap:initial!important;width:100%;text-align:center}
+.travel-calendar.travel-calendar .calendar-week span{font-size:10px;color:#56675e;line-height:24px;margin:0 0 5px}
+.travel-calendar.travel-calendar .calendar-days button{display:grid!important;place-items:center;min-width:0;width:100%!important;height:34px!important;min-height:34px;aspect-ratio:auto;padding:0!important;margin:0;font-size:12px;line-height:1;border:0;border-radius:10px!important;background:transparent;font-variant-numeric:tabular-nums;box-shadow:none;color:#334b40}
+.travel-calendar.travel-calendar .calendar-days button.in-range{background:#a8bdad66;border-radius:3px!important}
+.travel-calendar.travel-calendar .calendar-days button.range-start,.travel-calendar.travel-calendar .calendar-days button.range-end,.travel-calendar.travel-calendar .calendar-days button[aria-pressed=true]{background:#627b6e;border-radius:10px!important;color:#fff}
+.travel-calendar.travel-calendar .calendar-days button:disabled{opacity:.35}
+.travel-calendar.travel-calendar .calendar-days button:focus-visible{outline:2px solid #304c3e;outline-offset:1px}
+/* City input, selected route and small charcoal glass tags. */
+.city-route-picker{position:relative;margin:18px 0 24px;padding:12px;border:1px solid #ffffff57;border-radius:18px;background:#e8edebaf;backdrop-filter:blur(24px);min-width:0;color:#30483e}
+.city-route-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:32px;text-align:left;font-size:11px;padding:0;background:none}
+.city-route-toggle>svg{transform:rotate(90deg);transition:transform .24s}
+.city-route-toggle[aria-expanded=true]>svg{transform:rotate(-90deg)}
+.city-selected-wrap{position:relative;margin-top:8px;min-width:0}
+.city-selected,.city-measure{display:flex;flex-wrap:wrap;gap:6px;min-width:0;width:100%}
+.city-measure{position:absolute;top:0;left:0;visibility:hidden;pointer-events:none}
+.city-route-picker .city-selected-tag{display:flex;align-items:center;gap:5px;min-height:29px;max-width:100%;border:1px solid #ffffff2e;border-radius:11px;padding:5px 8px;background:#313a38d9;backdrop-filter:blur(18px);color:#f3f5f3;font-size:10px;font-weight:400;line-height:18px;box-sizing:border-box;white-space:nowrap}
+.city-selected-tag>small{font-size:8px;color:#d2dcd6;flex:none}.city-selected-tag>span{overflow:hidden;text-overflow:ellipsis;min-width:0}.city-selected-tag>svg{flex:none}
+.city-empty{font-size:11px;color:#52655b;padding:4px 0}.city-overflow{display:flex;gap:6px;align-items:center;font-size:10px;color:#3d5147;margin:9px 0 0;min-height:26px}
+.city-route-options{overflow:hidden}.city-input{display:block;margin:12px 0 10px!important}.flight-redesign .city-input input{margin:0;width:100%;min-height:38px;border:1px solid #65776b30;border-radius:11px;font-size:11px;background:#f4f6f1b3;padding:8px}
+.flight-redesign .city-catalog{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0 0 3px}
+.flight-redesign .city-catalog button{display:flex;align-items:center;gap:4px;min-height:28px;padding:5px 9px;border-radius:10px;background:#3b4341c9;border:1px solid #ffffff25;backdrop-filter:blur(18px);color:#f1f4f2;font-size:10px}
+.flight-redesign .city-catalog button[aria-pressed=true]{background:#253f33e6;border-color:#a3bba69e}
+.flight-return-options{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.flight-return-options button{font-size:11px;padding:7px 10px;min-height:32px;border-radius:12px;background:#d3ded6;color:#354e40}.flight-return-options button[aria-pressed=true]{background:#627b6e;color:#fff}
+/* Horizontal rows expand vertically; neutral glass preserves the background. */
+.service-accordion{--glass-dark:rgba(32,34,34,.64);--glass-light:rgba(250,250,250,.24);--glass-ink:#222424;--glass-muted:#292b2b;margin:22px 0 18px;min-width:0;isolation:isolate}
+.service-accordion-panels{display:flex;flex-direction:column;gap:8px;width:100%;padding:0;background:none;position:relative;align-items:stretch}
+.service-accordion-panel{position:relative;display:flex;flex-direction:column;flex-shrink:0;min-width:0;overflow:hidden;border-radius:18px;border:1px solid #ffffff50;background:rgba(40,42,42,.13);backdrop-filter:blur(24px) saturate(.12);color:#333737;box-shadow:inset 0 1px 0 #ffffff25;transition:background-color .24s,color .24s}
+.service-accordion-panel.is-active{background:var(--glass-dark);border-color:#ffffff45;color:#fafafa}
+.service-accordion-trigger{display:flex;align-items:center;justify-content:flex-start;flex-direction:row;gap:12px;flex:none;width:100%;height:60px;min-height:48px;padding:0 16px;color:inherit;font-size:13px;background:none;border:0;overflow:hidden;position:relative;text-align:left}
+.service-accordion-trigger>small{font-size:9px;letter-spacing:1px;color:inherit;opacity:.8}.service-accordion-trigger>span{writing-mode:horizontal-tb;letter-spacing:2px;margin:0}.service-accordion-trigger>svg:last-child{margin-left:auto;opacity:.8;transform:rotate(90deg);transition:transform .24s}
+.is-expanded .service-accordion-panel:not(.is-active) .service-accordion-trigger{height:48px}
+.service-accordion-panel.is-active>.service-accordion-trigger{height:56px;border-bottom:1px solid #ffffff20}.is-active>.service-accordion-trigger>svg:last-child{transform:rotate(-90deg)}
+.service-panel-body{flex:1;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#60666677 transparent;padding:16px 14px 24px;min-width:0;background:var(--glass-light);backdrop-filter:blur(24px) saturate(.12);color:var(--glass-ink);container:service-body / inline-size}
+.service-panel-body .flight-redesign{--flight-ink:var(--glass-ink);--flight-muted:var(--glass-muted)}
+.service-panel-body :is(p,label,small,strong,span,h2,h3,h4,li,button,input,select,textarea,legend,summary){color:var(--glass-ink)}
+.service-panel-body :is(.flight-preferences,.city-route-picker,.search-orbit,.service-filters,.transfer-plan-preview,.flight-date-fares,.transport-endpoints,.hotel-area-picker,.service-result,.hotel-map-card,.hotel-assessment blockquote,.route-alternatives button,.route-map-empty,.route-unavailable,.hotel-assessment-stale){background:rgba(245,245,245,.18);color:var(--glass-ink);border:1px solid #ffffff40;backdrop-filter:blur(24px) saturate(.12)}
+.service-panel-body :is(.flight-field>button,.flight-recommendations li>button,.airport-mode-cards button,.services-days button,.flight-direction,.meal-tabs,.service-result>button,.flight-tag-list li,.pending-flight-tags>span,.hotel-assess-button,.flight-return-options button){background:rgba(245,245,245,.22);color:var(--glass-ink);border-color:#ffffff40;backdrop-filter:blur(20px) saturate(.12)}
+.service-panel-body :is(input,select,textarea){background:rgba(250,250,250,.24);border-color:#ffffff45;color:var(--glass-ink)}
+.service-panel-body :is(.airport-mode-cards button,.services-days button,.flight-direction button,.meal-tabs button,.flight-return-options button)[aria-pressed=true],.service-panel-body .flight-recommendations li>button.lowest-fare{background:rgba(245,245,245,.34);border-color:#555b5b80;box-shadow:inset 0 0 0 1px #555b5b50}
+.service-panel-body .flight-recommendations header{flex-wrap:wrap}.service-panel-body .flight-recommendations h3{font-size:20px}.service-panel-body .flight-recommendations header small{font-size:8px}
+.service-panel-body .services-days{margin:0 0 14px}.service-panel-body .service-results{min-width:0}.service-panel-body .transport-planner,.service-panel-body .hotel-planner{color:var(--glass-ink)}
+.service-panel-body :is(.city-selected-tag,.city-catalog button){background:rgba(35,37,37,.54);border-color:#ffffff28;backdrop-filter:blur(16px);color:#f7f7f7}
+.service-panel-body :is(.city-selected-tag,.city-catalog button)>:is(span,small){color:#f7f7f7}.service-panel-body .city-catalog button[aria-pressed=true]{background:rgba(35,37,37,.7);border-color:#ffffff75}
+.service-panel-body .travel-calendar.travel-calendar{background:rgba(245,245,245,.22)}
+.service-panel-body .travel-calendar.travel-calendar .calendar-days button.in-range{background:#44494925}
+.service-panel-body .travel-calendar.travel-calendar .calendar-days :is(button.range-start,button.range-end,button[aria-pressed=true]){background:#555959;color:#fff}
+.service-accordion-trigger:focus-visible{outline:2px solid currentColor;outline-offset:-4px}.city-route-picker button:focus-visible{outline:2px solid #4b5252;outline-offset:2px}
+@container service-body (max-width:260px){
+ .service-form-grid,.route-vehicle-fields,.transport-endpoint-grid{grid-template-columns:minmax(0,1fr)!important}
+ .flight-redesign h2{font-size:18px;line-height:1.6}.flight-recommendations li>button{grid-template-columns:1fr 1fr;gap:5px;padding:10px}.flight-row-price{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;text-align:left}.flight-row-time strong{font-size:17px}
+ .flight-field>button strong,.range-field>button strong{font-size:12px}.flight-field>button{padding:10px 8px;gap:3px}.flight-time-field>button strong{font-size:21px}
+ .flight-date-fares header{flex-wrap:wrap;gap:6px}.airport-mode-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.flight-people{max-width:105px}
+ .service-result>button{display:flex;flex-wrap:wrap;gap:8px}.service-result>button>span{flex:1;min-width:100px}.service-result>button>img{width:45px;height:58px}.service-result>button>svg{margin-left:auto}
+ .service-result strong{font-size:13px}.service-accordion-panel .flight-calendar{padding:6px!important}.flight-calendar .calendar-days button{font-size:10px!important}
+}
+@media(prefers-reduced-motion:reduce){.city-route-toggle>svg,.service-accordion-trigger>svg,.service-accordion-panel{transition:none}}
+
+.service-panel-body{animation:service-detail-in .25s .2s both}
+@keyframes service-detail-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.service-panel-body{animation:none}}
+
+.requirement-options:has(>.travel-calendar){padding-left:0;padding-right:0}

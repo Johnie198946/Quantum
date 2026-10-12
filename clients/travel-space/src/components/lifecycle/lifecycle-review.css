@@ -1,0 +1,83 @@
+.trip-review{--review-ink:#2e4741;--review-muted:#52645e;--review-line:#73827929;color:var(--review-ink);min-width:0;padding:8px 0 32px;overflow-wrap:anywhere}
+.trip-review h2,.trip-review h3,.trip-review h4,.trip-review p{margin:0}
+.trip-review button{color:inherit}
+.trip-review .eyebrow{font-size:10px;letter-spacing:1.5px;line-height:1.6;color:var(--review-muted);margin-bottom:8px}
+.trip-review-heading{margin:8px 0 24px}
+.trip-review-heading h2{font-family:"Songti SC","STSong",serif;font-size:27px;font-weight:500;line-height:1.4;margin:0 0 12px}
+.trip-review-heading>p:last-child{font-size:12px;line-height:1.8;color:var(--review-muted)}
+.trip-review-overview{border:1px solid #ffffffc4;border-radius:24px;padding:20px 16px;background:linear-gradient(125deg,#dcece49c,#f0e4d680 60%,#e2dbec8c);margin-bottom:28px}
+.trip-review-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;text-align:center}
+.trip-review-metrics>span+span{border-left:1px solid #ffffff91}
+.trip-review-metrics strong{display:block;font-size:30px;font-weight:500;line-height:1.2;font-variant-numeric:tabular-nums}
+.trip-review-metrics small{display:block;font-size:10px;color:var(--review-muted);margin-top:8px}
+.trip-review-overview>p{font-size:11px;line-height:1.8;color:var(--review-muted);text-align:center;border-top:1px solid #ffffff82;margin-top:16px;padding-top:12px}
+.trip-review-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.trip-review-section-heading>div{min-width:0}
+.trip-review-section-heading h3{font-size:17px;font-weight:550;line-height:1.6}
+.trip-review-section-heading>span{flex:none;font-size:11px;color:var(--review-muted)}
+.trip-review-icon{flex:none;width:40px;height:40px;min-height:40px;display:grid;place-items:center;border-radius:50%;background:#ffffff78;border:1px solid #ffffffbd}
+.trip-review-recap{margin-bottom:20px}
+.trip-review-recap textarea{min-height:160px;line-height:1.8;font-size:14px;max-width:100%}
+.trip-review-edit-actions{display:flex;justify-content:flex-end;align-items:center;gap:16px;margin-top:12px}
+.trip-review-edit-actions>button{min-height:44px;font-size:12px}
+.trip-review-edit-actions .primary{font-size:12px;padding:12px 16px}
+.trip-review-own-words{padding:16px 0;border-top:1px solid var(--review-line);border-bottom:1px solid var(--review-line)}
+.trip-review-own-words p{white-space:pre-wrap;font-family:"Songti SC","STSong",serif;font-size:16px;line-height:1.9}
+.trip-review-own-words small{display:block;margin-top:16px;color:var(--review-muted);font-size:10px}
+.trip-review-empty{display:flex;align-items:center;gap:16px;padding:20px 0;border-block:1px solid var(--review-line)}
+.trip-review-empty>svg{flex:none;color:var(--review-muted)}
+.trip-review-empty p{font-size:12px;color:var(--review-muted);line-height:1.8}
+.trip-review-draft-action{display:flex;gap:8px;align-items:center;font-size:12px;min-height:44px;padding:8px 0;text-align:left}
+.trip-review-draft-action>svg:last-child{flex:none}
+.trip-review-note{font-size:11px;line-height:1.9;color:var(--review-muted);margin-top:12px!important}
+.trip-review>.disclosure{margin:16px 0 28px;border-color:var(--review-line)}
+.trip-review .disclosure>summary{min-height:48px;font-size:13px;line-height:1.7}
+.trip-review .disclosure>div{padding-top:12px}
+.trip-review-days{display:flex;flex-direction:column;gap:24px;min-width:0}
+.trip-review-day header{margin:4px 0 12px}
+.trip-review-day header small{font-size:10px;letter-spacing:.5px;color:var(--review-muted)}
+.trip-review-day h3{font-size:16px;line-height:1.8;font-weight:550;margin-top:4px}
+.trip-review-plan-row{display:flex;align-items:flex-start;gap:8px;padding:12px 0;border-bottom:1px solid var(--review-line)}
+.trip-review-plan-row>div{min-width:0;flex:1}
+.trip-review-plan-row strong{font-size:12px;line-height:1.8;font-weight:550}
+.trip-review-plan-row small{display:block;font-size:10px;line-height:1.8;color:var(--review-muted);margin-top:4px}
+.trip-review-plan-row small span{display:block}
+.trip-review-status{flex:none;font-size:10px;line-height:1.8;color:var(--review-muted);padding-top:2px}
+.trip-review-status-dot{height:6px;width:6px;flex:none;border-radius:50%;background:#9a9b94;margin-top:7px}
+.trip-review-status-dot.status-completed{background:#50766d}
+.trip-review-status-dot.status-skipped,.trip-review-status-dot.status-cancelled{background:#947e89}
+.trip-review-memories{margin:28px 0}
+.trip-review-records>section{margin-bottom:20px}
+.trip-review-records>section>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.trip-review-records h4{font-size:11px;font-weight:500;line-height:1.8}
+.trip-review-records>section>header>button{width:40px;min-height:40px;display:grid;place-items:center}
+.trip-review-records .memory-card-text{font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.trip-review-records .memory-card{margin-bottom:12px}
+.trip-review-records .memory-card-photo{max-width:100%}
+.trip-review-finance{padding:20px;border:1px solid #ffffffb8;border-radius:24px;background:linear-gradient(125deg,#e5eee5ad,#ebe3ed8c);margin:28px 0 24px}
+.trip-review-finance>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.trip-review-finance h3{font-size:17px;line-height:1.7;font-weight:550}
+.trip-review-finance>header>span{flex:none;font-size:10px;border:1px solid #ffffffd0;padding:5px 8px;border-radius:20px}
+.trip-review-finance-label{font-size:11px;color:var(--review-muted);margin-top:20px!important}
+.trip-review-paid{display:block;font-size:32px;letter-spacing:-.5px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.4;margin:8px 0 12px}
+.trip-review-finance-meta{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--review-muted)}
+.trip-review-budget-action{border-top:1px solid #ffffff9c;width:100%;margin-top:16px;padding:12px 0 0;min-height:44px;display:flex;justify-content:space-between;align-items:center;font-size:12px;text-align:left}
+.trip-review-open-items{margin:24px 0}
+.trip-review-followup{width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:12px;border:1px solid #ffffffae;border-radius:20px;margin:12px 0;background:#ffffff48}
+.trip-review-followup>svg{flex:none}
+.trip-review-followup>span{flex:1;min-width:0}
+.trip-review-followup strong{display:block;font-weight:550;font-size:12px;line-height:1.8}
+.trip-review-followup small{display:block;font-size:10px;line-height:1.8;color:var(--review-muted);margin-top:4px}
+.trip-review-transfer-list{margin-top:16px}
+.trip-review-transfer-list>div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--review-line)}
+.trip-review-transfer-list>div>span{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0;flex-wrap:wrap}
+.trip-review-transfer-list strong{font-size:13px;font-weight:550;font-variant-numeric:tabular-nums;text-align:right}
+.trip-review-settle-action{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;font-size:12px;text-align:left;padding:12px 0}
+.trip-review-balanced{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.8;padding:12px 0}
+.trip-review-footer{border-top:1px solid var(--review-line);padding-top:20px;margin-top:28px}
+.trip-review-footer>p:first-child{font-size:11px;line-height:1.8;color:var(--review-muted);margin-bottom:16px}
+.trip-review-footer>.primary{width:100%;justify-content:center;font-size:13px;min-height:48px}
+.trip-review-footer>.trip-review-draft-action{margin:8px auto 0;justify-content:center}
+.trip-review-notice{font-size:11px;line-height:1.8;color:var(--review-muted);min-height:20px;margin-top:8px!important;text-align:center}
+@media(max-width:350px){.trip-review-heading h2{font-size:24px}.trip-review-metrics{gap:8px}.trip-review-metrics strong{font-size:27px}.trip-review-finance{padding:16px}.trip-review-paid{font-size:29px}.trip-review-finance h3{font-size:16px}.trip-review-plan-row{gap:6px}}
+@media(prefers-reduced-motion:reduce){.trip-review *{scroll-behavior:auto!important}}

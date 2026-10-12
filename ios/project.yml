@@ -25,7 +25,9 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - AIPlatformApp
+      - path: AIPlatformApp
+        excludes:
+          - Resources/TravelSpace
     info:
       path: AIPlatformApp/Info.plist
       properties:
@@ -51,6 +53,7 @@ targets:
           - ZCOOLXiaoWei-Regular.ttf
           - MaShanZheng-Regular.ttf
         NSPhotoLibraryAddUsageDescription: "将你编辑完成的图片副本保存到相册。"
+        NSLocationWhenInUseUsageDescription: "在你开始记录 GPS 轨迹时读取位置，保留旅行中的真实路线。"
         NSMicrophoneUsageDescription: "用于语音交互输入，将你的语音实时转写为文字。"
         NSCameraUsageDescription: "用于在你明确确认设备操作后拍摄并附加照片。"
         NSLocalNetworkUsageDescription: "用于连接本机开发服务完成真机端到端验收。"
@@ -78,6 +81,10 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: YES
     postBuildScripts:
+      - name: Bundle approved TravelSpace renderer
+        path: scripts/bundle-travel-space.sh
+        showEnvVars: false
+        basedOnDependencyAnalysis: false
       - name: Package static OpenCV privacy resources
         path: scripts/package-opencv-resources.sh
         showEnvVars: false

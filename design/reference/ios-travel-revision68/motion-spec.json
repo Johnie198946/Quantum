@@ -1,0 +1,1583 @@
+{
+  "version": "v4-muted",
+  "entry": "workflow/expand-new-task/portal",
+  "independent_chat_tab": false,
+  "palette_reference": "/Users/dengzhaoyu/Downloads/来翻翻你的收藏.png",
+  "prototype": "motion-prototype/dist/index.html",
+  "flows": {
+    "quick": [
+      "workflow",
+      "portal",
+      "chat",
+      "discover",
+      "route",
+      "generating",
+      "adopt",
+      "guide",
+      "notebook"
+    ],
+    "detailed_review": [
+      "workflow",
+      "portal",
+      "chat",
+      "discover",
+      "preferences",
+      "route",
+      "generating",
+      "adopt",
+      "guide",
+      "notebook"
+    ],
+    "lifecycle": [
+      "guide/notebook",
+      "trip:before",
+      "explicit-start",
+      "trip:during",
+      "fragment/change/expense",
+      "explicit-finish",
+      "trip:after",
+      "recap/reconcile/settlement"
+    ]
+  },
+  "parameters": {
+    "page_crossfade_ms": 380,
+    "portal_countdown_ms_per_step": 1000,
+    "typewriter_ms_per_character": 85,
+    "thinking_ms": 2200,
+    "chat_fold_ms": 650,
+    "discovery_batch_replacement_ms": 400,
+    "discovery_swipe_distance_threshold_px": 70,
+    "semantic_zoom_thresholds": {
+      "large_above": 0.85,
+      "three_above": 0.48,
+      "text_at_or_below": 0.48
+    },
+    "scroll_action_idle_ms": 1500,
+    "liquid_demo_fill_ms": 9500,
+    "liquid_hold_delay_ms": 220,
+    "card_velocity_cap_px_per_second": 1800,
+    "card_max_deformation": 0.18,
+    "card_motion_idle_ms": 90,
+    "folder_collect_absorb_ms": 180,
+    "folder_replacement_thinking_ms": 1500,
+    "folder_gravity_settle_ms": 720,
+    "folder_gravity_spring": {
+      "stiffness": 210,
+      "damping": 18,
+      "mass": 1.4
+    },
+    "replacement_orb": {
+      "state": "searching",
+      "size": 64
+    },
+    "new_task_idle_collapse_ms": 5000,
+    "magazine_auto_advance_ms": 5500,
+    "beam_rotation_seconds": 4.8
+  },
+  "thinking_orb": {
+    "package": "thinking-orbs",
+    "version": "0.3.2",
+    "documentation": "https://libraries.dev/orbs",
+    "states": [
+      "searching",
+      "weaving",
+      "breathing"
+    ],
+    "sizes": [
+      64,
+      20
+    ],
+    "theme": "light"
+  },
+  "business_mode": "local-demo-data",
+  "production_code_changed": false,
+  "drawer": {
+    "preference_entry_removed": true,
+    "composer": "shared frosted glass TravelComposer with actual ocean BorderBeam",
+    "submit": "button or Enter",
+    "empty_input_disabled": true,
+    "follow_up_bubbles": "right aligned with spring pop",
+    "preserve": "session messages and drafts",
+    "preferences_access": "review navigation",
+    "automatic_page_redirect": false
+  },
+  "workflow_entry": {
+    "trigger": "top right circular plus, 48px",
+    "first_click": "expand to 132px and show 新建任务",
+    "second_click": "directly enter portal countdown; no intermediate task chooser",
+    "idle_collapse_ms": 5000,
+    "carousel": {
+      "source": "magazine1000-photo-sources.json",
+      "reviewed_no_visible_people": 1000,
+      "random_photos_per_visit": 6,
+      "style": "vertical frosted magazine occupying remaining space",
+      "input": "touch swipe, mouse drag, keyboard arrows and pagination",
+      "indicator": "continuous 6+18*max(0,1-abs(progress-index)) px width",
+      "auto_advance_ms": 5500,
+      "auto_pause": "hover, drag, recent interaction, expanded trigger, document hidden and reduced motion",
+      "random_selection": "uniform partial Fisher-Yates, six distinct per workflow mount",
+      "asset_delivery": "1000 inert inline data URLs; only six sampled images decoded",
+      "source_originals_edited": false,
+      "web_copy_max_edge_px": 800
+    },
+    "task_chooser_removed": true,
+    "ambient_light": {
+      "source": "actual visible image crop, 48x48 canvas sample",
+      "dominant_color": "weighted RGB histogram, ignore near-white/black pixels",
+      "palette": "65% original chroma, pastel lift, minimum luminance 190",
+      "interpolation": "adjacent photo RGB colors weighted by fractional carousel scroll progress",
+      "smoothing_ms": 140,
+      "blur_px": 48,
+      "opacity": 0.68,
+      "large_radius": "photo surround extends 55px beyond each side of magazine",
+      "resample": "on image load and carousel ResizeObserver",
+      "reduced_motion": "disable color smoothing",
+      "network": "none, embedded local photo pixels",
+      "pointers": "none, decorative aria-hidden layer"
+    }
+  },
+  "border_beam": {
+    "package": "border-beam",
+    "version": "1.4.1",
+    "documentation": "https://libraries.dev/beam",
+    "size": "md",
+    "colorVariant": "ocean",
+    "theme": "light",
+    "strength": 0.7,
+    "duration": 4.8,
+    "staticColors": true,
+    "radius_px": 25,
+    "stroke_opacity_multiplier": 4,
+    "inner_opacity_multiplier": 1.7,
+    "locations": [
+      "chat composer",
+      "ideas drawer composer"
+    ],
+    "disabled_pause": true,
+    "reduced_motion_pause": true
+  },
+  "map_route": {
+    "path": "M + C/S irregular curves through each day point in order",
+    "legs": 3,
+    "dash_px": [
+      4,
+      7
+    ],
+    "stroke": "muted lavender with translucent white underlay",
+    "pin_anchors": "44px pin touch zone centered at existing normalized geographic point; x:-50%,y:-22px",
+    "geographic_accuracy": "schematic, not navigation",
+    "screen": "route / travel planning; duplicate confirm screen removed"
+  },
+  "notebook_visual": {
+    "style": "cool restrained Japanese editorial with large negative space",
+    "reference": "journal-cool-style-reference.png",
+    "historical_concept": "journal-style-concept.png (earlier warm version, superseded)",
+    "implementation": [
+      "src/screens/Notebook.jsx",
+      "src/journal-cool.css"
+    ],
+    "palette": {
+      "paper": "#f3f4f2",
+      "ink": "#384440",
+      "muted": "#65706b",
+      "sage": "#c7cdc4",
+      "lavender": "#cbc7ce",
+      "glass": "translucent grey sage / fog lavender"
+    },
+    "typography": "52px 800-weight vertical destination; 28–38px bold horizontal headings; 8–12px muted secondary text, balanced heading wraps",
+    "cover": "narrow 40%-width portrait photograph with vertical destination, small vertical caption and horizontal note title; large white space",
+    "diary": "large grey day number, horizontal bold chapter heading, vertical date, staggered narrow frosted photo figures",
+    "appendix": "bold balanced title, vertical section marker, spacious frosted disclosures",
+    "photo_treatment": "CSS saturate(.42) contrast(.91) brightness(1.05); source files unchanged",
+    "material": "backdrop-filter blur(28px) saturate(.75), no static white border; translucent controls and 32px-blur overlays",
+    "saved_configuration": "four covers and three independent switches retained",
+    "interactions": "all data and handlers preserved",
+    "production_ios_changed": false
+  },
+  "surface_finish": {
+    "style": "borderless muted frosted glass",
+    "static_white_strokes": false,
+    "white_inset_highlights": false,
+    "photo_white_matting": false,
+    "separation": "soft neutral shadow and muted material tones",
+    "retained": "animated blue-purple BorderBeam, orb reflections, focus outlines and sage selected states"
+  },
+  "preferences_zoom_controls": {
+    "visible_toolbar": false,
+    "gesture": "two-finger semantic pinch retained",
+    "mouse_fallback": "Ctrl + wheel retained",
+    "modes": [
+      "large",
+      "three",
+      "text"
+    ],
+    "initial_mode": "large"
+  },
+  "original_requirement": {
+    "visible_on_preferences": false,
+    "internal_profile_original": "retained",
+    "chat_input_capture": "retained",
+    "production_backend_changed": false
+  },
+  "preferences_cylinder_scroll": {
+    "viewport": "preference-scroll",
+    "unit": "each actual grid row, same effect for all its cards",
+    "position": "untransformed slot center relative to visible viewport center",
+    "rotation": "rotateX up to 54.6 degrees; sign flips across center",
+    "scale": "up to 10% horizontal and 7% vertical edge compression",
+    "depth": "negative Z up to 52px",
+    "fade": "smooth edge opacity 1 to .2",
+    "brightness": "1 to .86",
+    "liquid": "scroll velocity adds 1.8% width/3.4% height deformation and directional corner bending; 95ms exponential settling",
+    "composition": "outer Motion layout slots with separate inner surfaces",
+    "input": "wheel, single-finger drag, two-finger pinch and Ctrl+wheel retained",
+    "reduced_motion": "neutral transform/brightness/opacity",
+    "keyboard": "focused surface is fully legible with neutral transform",
+    "recording": "videos/preferences-cylinder-scroll.mp4"
+  },
+  "floating_tab_bar": {
+    "placement": "left/right 18px, bottom 22px, height 66px; floating glass capsule without white strokes",
+    "items": [
+      "首页",
+      "阅读",
+      "工作流",
+      "我的"
+    ],
+    "initial_selection": "工作流",
+    "interaction": "click changes selected icon/label to dark sage and moves liquid backdrop; arrow/Home/End keyboard selection",
+    "liquid": "spring position, velocity-dependent stretch, vertical compression, skew and corner softness; 90ms idle settle",
+    "reduced_motion": "live matchMedia subscription; instant position with neutral shape",
+    "smallest_tested_touch_target": "68x54px at 320px viewport",
+    "scope": "selection/motion in existing workflow screen only; no new root pages or backend routing",
+    "recording": "videos/floating-liquid-tabs.mp4"
+  },
+  "day_details_revision": {
+    "date": "2026-10-11",
+    "route_anchor": "dot center, Motion x=-50%, y=-7px",
+    "card_style": "Morandi frosted thumbnail rows, no white border",
+    "edit_control": "icon only, accessible name retained",
+    "hold_reorder": {
+      "hold_ms": 360,
+      "early_move_cancel_px": 9,
+      "lift_scale": 1.035,
+      "spring": {
+        "stiffness": 280,
+        "damping": 26,
+        "mass": 0.85
+      },
+      "touch_scroll_before_hold": true,
+      "keyboard": "Alt+ArrowUp/ArrowDown",
+      "cancellation": "touchcancel, Escape, window blur revert active drag"
+    },
+    "time_range": {
+      "step_minutes": 30,
+      "bounds": [
+        "00:00",
+        "24:00"
+      ],
+      "contiguous": true,
+      "handles": "independent, clamp crossing",
+      "live_values": true
+    },
+    "date_range": {
+      "month_navigation": true,
+      "contiguous": true,
+      "handles": "independent",
+      "shift_click_cross_month": true,
+      "live_values": true
+    },
+    "persistence": "child confirmation updates day draft, day confirmation commits order, times, travel dates; cancellation discards draft",
+    "prototype_limit": "fixed four-day sample shifts from selected start; duration does not regenerate sample content",
+    "evidence": [
+      "screenshots/52-route-aligned.png",
+      "screenshots/53-frosted-day-cards.png",
+      "screenshots/54-long-press-reorder.png",
+      "screenshots/55-drag-time-range.png",
+      "screenshots/56-drag-date-range.png",
+      "route-controls-check.json",
+      "route-touch-check.json",
+      "route-controls-regression-check.json",
+      "videos/route-cards-and-ranges.mp4",
+      "route-controls-final-regression-check.json",
+      "range-boundaries-check.json",
+      "route-persistence-check.json"
+    ],
+    "card_tap": "whole non-editing row or timestamp bounces into range sheet; drag/swipe suppresses click",
+    "rapid_reopen": "new present draft, discard unconfirmed values",
+    "downstream": "full start-end time visible in guide and notebook"
+  },
+  "route_place_revision": {
+    "revision_date": "2026-10-11",
+    "scope": "Local React travel route prototype; existing editing and later workflow retained",
+    "generate_button": {
+      "placement": "top-right",
+      "size_px": [
+        70,
+        44
+      ],
+      "visible_label": "生成",
+      "accessible_label": "确认并生成方案",
+      "bottom_scroll_action_removed": true
+    },
+    "daily_markers": {
+      "number_font_px": 30,
+      "destination_font_px": 17,
+      "secondary_font_px": 9,
+      "date_writing_mode": "vertical-rl",
+      "no_static_white_border": true,
+      "all_four_days_visible_initially": true,
+      "dot_path_max_error_px": 0.107164
+    },
+    "gold_feedback": {
+      "target": "touched, selected or focused day dot only",
+      "period_ms": 1900,
+      "color": "#b7a06b",
+      "reduced_motion": "static selected gold"
+    },
+    "detail_reveal": {
+      "origin": "actual pointer click relative to inset card; keyboard uses dot center",
+      "circular_clip_duration_ms": 480,
+      "photo_zoom_duration_ms": 800,
+      "card_inset_px": 16
+    },
+    "panel_drag": {
+      "pointer_capture": true,
+      "photo_height_fraction": [
+        0.54,
+        0.16
+      ],
+      "panel_y_fraction": [
+        0.46,
+        0.13
+      ],
+      "panel_height_fraction": [
+        0.54,
+        0.87
+      ],
+      "overlap_fraction": [
+        0.08,
+        0.03
+      ],
+      "settle_threshold": 0.45,
+      "keyboard_toggle": true,
+      "reduced_motion": "instant settlement",
+      "caption_fades_on_compression": true
+    },
+    "summary": "Joined descriptions of the existing daily itinerary; no AI call added",
+    "preserved": [
+      "icon edit",
+      "long-press itinerary reorder",
+      "time range drag and handles",
+      "date range drag and handles",
+      "confirm/cancel drafts",
+      "map and adoption original details",
+      "liquid generation"
+    ],
+    "evidence": [
+      "route-place-check.json",
+      "route-place-touch-check.json",
+      "route-place-regression-check.json",
+      "route-place-recording-check.json",
+      "screenshots/57-route-editorial-days.png",
+      "screenshots/58-route-golden-touch.png",
+      "screenshots/59-route-place-overview.png",
+      "screenshots/60-route-place-expanded.png",
+      "videos/route-place-panel-demo.mp4"
+    ]
+  },
+  "consolidated_flow_revision": {
+    "date": "2026-10-11",
+    "scope": "Six latest annotations; local React prototype",
+    "removed_screen": "confirm; generating at 100% now advances directly to adopt",
+    "route_map": "Existing hand-drawn map asset and pin icons reused with geographic x/y and C/S dashed connections, existing photo drawer and editing retained",
+    "dimensional_liquid": {
+      "renderer": "WebGL ray-marched sphere; depth absorption, dynamic wave surface normals and highlights",
+      "ray_samples": 56,
+      "interaction": "pointer position excites spring tilt; damping 3.2/s with continuous low amplitude slosh",
+      "progress": "existing 0–100 fill and 220ms hold-to-drain retained",
+      "reduced_motion": "no waves or tilt",
+      "fallback": "CSS curved surface when WebGL unavailable or context lost",
+      "runtime_dependencies_added": 0
+    },
+    "adoption_layout": "Single vertical glass photo list; 68x84 image, day/date, destination, daily title and existing open action; velocity deformation retained",
+    "guide_overview": "Single full-width image, aligned title/dates/party meta, vertical daily photo rows; no floating offset images",
+    "guide_daily": "Stable day selector, single photo, aligned heading and time/status cards; all start/completed/skipped/delayed/adjust controls preserved",
+    "todo": "Four photo entry cards open shared photo-and-sliding-frosted-panel surface; drag compresses photo; original unverified content retained",
+    "preserved": "Sources, along-route navigation links, more/version/adjust/JSON, four cover choices, three content switches, notebook save and all existing nonduplicate workflow actions",
+    "evidence": [
+      "consolidated-flow-check.json",
+      "consolidated-touch-check.json",
+      "consolidated-flow-regression-check.json",
+      "consolidated-recording-check.json",
+      "screenshots/61–68",
+      "videos/consolidated-travel-demo.mp4"
+    ],
+    "historical_evidence": "Earlier confirm-page videos and screenshots retain historical revision scope; final dist and latest evidence are authoritative"
+  },
+  "typography_revision": {
+    "date": "2026-10-11",
+    "scope": "card-size-based type hierarchy, existing layout and interactions retained",
+    "scale_px": {
+      "page": 26,
+      "panel": 23,
+      "section": 18,
+      "card": 16,
+      "body": 12,
+      "meta": 11,
+      "action": 14
+    },
+    "card_width_container_queries": {
+      "under_115_px": {
+        "value": 12,
+        "label": 11
+      },
+      "over_240_px_large_mode": {
+        "value": 16
+      },
+      "text_rows": {
+        "value": 14
+      }
+    },
+    "phone_under_350_px": {
+      "page": 24,
+      "adoption_card": 16,
+      "preparation_card": 14
+    },
+    "notebook": {
+      "vertical_destination": 44,
+      "diary_title": 28,
+      "decorative_chapter": 76,
+      "appendix_title": 28,
+      "writing_axes_preserved": true
+    },
+    "evidence": "typography-check.json, typography-regression-check.json, screenshots 69–82",
+    "video_scope": "Existing motion videos precede this font-only revision."
+  },
+  "compact_details_revision": {
+    "date": "2026-10-11",
+    "comments": 7,
+    "itinerary_card": {
+      "height_px": 84,
+      "previous_min_height_px": 120,
+      "thumbnail_px": [
+        46,
+        58
+      ],
+      "title_px": 14,
+      "body_px": 11,
+      "time_px": 10,
+      "detail_heading_px": 19
+    },
+    "range_picker": {
+      "heading_px": 18,
+      "value_px": 20,
+      "half_hour_cell_px": [
+        44,
+        60
+      ],
+      "gap_px": 4,
+      "visible_slots_at_review_size": 7,
+      "ruler_drag_gain": 0.62,
+      "wheel_gain": 0.62,
+      "snap_step_px": 48,
+      "reduced_motion": "instant snap"
+    },
+    "confirmation_button": {
+      "height_px": 44,
+      "minimum_width_px": 126,
+      "font_px": 12,
+      "alignment": "right"
+    },
+    "reorder": {
+      "hold_ms": 360,
+      "start_on_time_button": true,
+      "activity_moves_between_chronological_slots": true,
+      "start_and_end_time_stay_with_slot": true,
+      "confirm_persists": true,
+      "cancel_restores": true,
+      "pointer_id_isolation": true,
+      "motion_keyboard_cancel_does_not_interrupt_mouse": true
+    },
+    "evidence": "compact-details-check.json, compact-details-regression-check.json, compact-range-boundaries-check.json, screenshots 83–86, compact-details-demo.mp4"
+  },
+  "latest_adoption_orb": {
+    "trigger": "采用这份行程",
+    "library": "thinking-orbs@0.3.2; React 18; installed dependency reused",
+    "official_docs": "https://libraries.dev/orbs",
+    "installed_api": "ThinkingOrb size=64 theme=light color=#607264 speed=1.1; weaving → composing; paused under reduced motion. Installed 0.3.2 uses theme rather than the docs prompt’s dark boolean.",
+    "gather": "Capture all day-card rectangles in screen-local coordinates, preserving photos/date/name; lift copies out of the scroll clip; converge with staggered shrinking and a slight turn at the screen center.",
+    "timing": "0.18s initial delay + 0.09s per card, 0.92s flight. Last animation completion triggers a 0.52s Orb acknowledgement, then Guide. About 1.9–2.2s including frame scheduling.",
+    "input": "Mouse/touch/keyboard activation; synchronously locked against duplicate clicks; background controls inert while gathering; pending navigation cancelled when the stage is left.",
+    "reduced_motion": "No card flights, no Orb clock animation, 0.22s static acknowledgement; live preference changes respected.",
+    "offline": "Library and photos embedded in dist/index.html; no remote requests.",
+    "evidence": "adoption-orb-check.json; adoption-orb-regression-check.json; screenshots/87—89; videos/adoption-orb-demo.mp4"
+  },
+  "latest_ruler_and_photo_revision": {
+    "date": "2026-10-11",
+    "scope": "latest ten user browser annotations; replaces earlier time-grid/browse-only interaction",
+    "guide_daily": "remove DAY 1–4 selector from Guide daily; overview photo rows open each day; notebook own day selection retained",
+    "time_ruler": {
+      "type": "continuous horizontal half-hour ticks 00:00–24:00",
+      "selected": "center needle + highlight",
+      "step_px": 32,
+      "drag_gain": 0.72,
+      "idle_snap_ms": 120,
+      "live": "upper range changes during pointer/touch/wheel movement",
+      "modes": [
+        "whole interval with fixed duration",
+        "independent start",
+        "independent end"
+      ],
+      "keyboard": "arrows, Home, End",
+      "cancel": "restore range on pointer cancel; discard unconfirmed child draft"
+    },
+    "play_description": "non-time itinerary body click opens photo drawer from clicked point; time button opens time ruler; editing text does not open description",
+    "photo_drawer": "same photo above and glass panel below; upward drag compresses photo, downward restores; reused for adoption day and activity description",
+    "sort": {
+      "body_hold_ms": 280,
+      "grip": "immediate pointer/touch drag, icon six dots",
+      "edge_autoscroll": "requestAnimationFrame near internal scroll edges",
+      "keyboard": "whole row Alt+arrows; grip arrows",
+      "time_slots": "activity replaces destination start/end slot; displaced activity receives former slot",
+      "cancel": "Escape/touch/pointer cancellation restores order and times",
+      "save": "confirm day persists"
+    },
+    "sizes_px": {
+      "editing_input": 12,
+      "editing_label": 10,
+      "time_close_glyph": 10,
+      "photo_close_glyph": 14,
+      "close_hit": 44,
+      "adopt_expand_icon": 14,
+      "adopt_expand_hit": 44,
+      "adopt_action_width": 148,
+      "adopt_action_height": 44,
+      "adopt_action_font": 12
+    },
+    "adoption_loading": "actual thinking-orbs@0.3.2; existing four-card convergence into central 64px weaving/composing orb retained; repeated clicks locked",
+    "evidence": [
+      "ruler-and-photo-check.json",
+      "ruler-and-photo-regression-check.json",
+      "ruler-photo-edit-layout-check.json",
+      "ruler-and-photo-recording-check.json",
+      "screenshots/90–96",
+      "videos/ruler-and-photo-demo.mp4"
+    ]
+  },
+  "latest_thinking_unified_revision": {
+    "date": "2026-10-11",
+    "annotation": 1,
+    "request": "two effects must match ThinkingOrb; inward motion must have an outward counterpart",
+    "shared_component": "TravelThinkingOrb.jsx",
+    "orb": {
+      "library": "thinking-orbs@0.3.2",
+      "state": "weaving",
+      "size": 64,
+      "theme": "light",
+      "color": "#607264",
+      "speed": 1.1,
+      "reduced_motion": "paused"
+    },
+    "scope": "generation and adoption use same thinking core; chat/discover use same visual tuning; inline 20px retains its independently tuned size",
+    "generation": "replace SloshingLiquid presentation with shared ThinkingOrb at exact screen center; preserve progress, short press and hold-to-return",
+    "card_unfold": "actual generation completion sends fromOrb arrival; measure each final card position; all four start at same orb center and unfold to their real list positions using reverse gather path",
+    "gather": "all four cards fly to same screen center, including cards cropped by scrolled list; same state, size, color and clock as generation; no composing switch",
+    "guide_unfold": "after last card reaches core and 520ms acknowledgement, reveal actual guide via circle expanding from the same screen center; keep core visible during beginning; only then release inert page",
+    "timing": {
+      "card_duration_ms": 920,
+      "card_stagger_ms": 90,
+      "card_delay_ms": 180,
+      "expanded_settle_ms": 100,
+      "guide_unfold_ms": 900
+    },
+    "control": "arrival token guards cancellation; Motion present-state stops outgoing generation/transition callbacks; repeated adopt clicks locked; reduced motion uses static acknowledgement without flying cards",
+    "evidence": [
+      "thinking-unified-check.json",
+      "thinking-unified-regression-check.json",
+      "thinking-unified-final-regression-check.json",
+      "screenshots/97–101",
+      "videos/thinking-unified-demo.mp4"
+    ]
+  },
+  "latest_notebook_photo_revision": {
+    "date": "2026-10-11",
+    "browser_comment": 1,
+    "scope": "Notebook travel diary: 今日安排说明 / 自己的旅行记录 / 照片来源与拍摄建议",
+    "reference": "photo above, white/frosted drawer over its bottom edge; same surface as existing travel photo drawers",
+    "closed": "three full-width 164px photo entries, 116px photo flush with top edge, overlapping rounded 78px panel, title14px/13px at narrow width, preview11px, expand glyph14px",
+    "opened": "shared RoutePlaceSurface: photo above, frosted content below; upward handle drag compresses photo; downward restores; close glyph14px with 44px touch hit",
+    "content": "day itinerary times including endTime and original descriptions; existing personal record; original AI visual/source wording",
+    "record": "read and edit in same photo panel; bottom notebook action opens that same panel in edit mode; save updates both card and panel, cancel/close discards draft, entry remains scoped to day",
+    "rapid_reopen": "unique panel token creates fresh draft during outgoing animation",
+    "preferences": "hide plan when itinerary flag disabled; hide photo/source entry and all diary-card/photo-panel images when photo flag disabled; record stays available via text surface",
+    "accessibility": "buttons and labeled dialogs, keyboard/Escape/focus return, reduced-motion handling retained; textarea16px",
+    "evidence": [
+      "notebook-photo-check.json",
+      "notebook-photo-regression-check.json",
+      "screenshots/102–107",
+      "videos/notebook-photo-demo.mp4"
+    ]
+  },
+  "revision17": {
+    "route": "Official tourist-board WGS84 anchors projected into bundled GSI pale map using Web Mercator, sequential dashed itinerary drawing; KML export with lon,lat,alt tuple order. Segment lines indicate visit order, not road geometry.",
+    "guide_tabs": [
+      "总览",
+      "沿途",
+      "待办"
+    ],
+    "along_the_way": "Per-day inline accordion with time, transport, geographic map, food, lodging and activity categories; alternating day indentation plus staggered fact panels.",
+    "adopt": "Inline spring expansion, vertically rolling completion toggle with spring width; hold/grip/keyboard sorting with top-level body portal, yielding slots, magnetic spring drop and date/ordinal reassignment; cancel restores order.",
+    "generating": "Shared weaving ThinkingOrb, upper-left to upper-right moving sunbeams; static when reduced-motion is enabled.",
+    "journal": "01 cover / 02 diary / 03 essentials are real section links; no isolated volume number or cover reference disclosure. Record and adoption buttons show a compact 34px surface inside 44px hit area."
+  },
+  "discovery_icon_revision": {
+    "scope": "Latest four browser comments",
+    "idea": "single 20px thought icon; existing conversation drawer and accessible name retained",
+    "folder": "single 21px folder icon; red 18px badge at upper right when selected count is positive; real selected state, removal and clear update count",
+    "confirm": "single 16px check; original route/ThinkingOrb transition retained",
+    "controls": "44px touch target, 36px visible top discs and 34px confirm disc",
+    "motion": "badge pop .28s; static badge for reduced motion",
+    "evidence": [
+      "discovery-icons-check.json",
+      "discovery-icons-regression-check.json",
+      "screenshots/119-discovery-icons-empty.png",
+      "screenshots/120-discovery-icons-two-collected.png",
+      "screenshots/121-discovery-icons-touch-collected.png"
+    ]
+  },
+  "chat_refinement": {
+    "composer": {
+      "empty_height_px": 52,
+      "textarea_line_height_px": 24,
+      "textarea_max_height_px": 132,
+      "height_follows_text_and_width": true,
+      "shrinks_on_delete": true,
+      "long_text_scrolls": true,
+      "enter": "send",
+      "shift_enter": "newline",
+      "ime_composition": "preserved",
+      "shared_with_discovery_drawer": true
+    },
+    "question_typography": {
+      "typing_px": 17,
+      "ready_px": 15,
+      "weight": 450,
+      "family": "system sans / PingFang SC"
+    },
+    "reference_style": "frosted list panel, photo thumbnails, fine row separators and compact trailing pills",
+    "steps": [
+      {
+        "name": "时间与同行",
+        "fields": [
+          "date",
+          "duration",
+          "count",
+          "origin"
+        ]
+      },
+      {
+        "name": "按你的节奏",
+        "fields": [
+          "budget",
+          "pace",
+          "transport"
+        ]
+      },
+      {
+        "name": "把喜欢的放进旅程",
+        "fields": [
+          "自然风光",
+          "温泉",
+          "当地美食",
+          "购物",
+          "徒步",
+          "小众"
+        ]
+      }
+    ],
+    "flow": "destination submission -> explicit questions -> confirm -> thinking -> discovery",
+    "unknowns": "explicit 未定, no silent sample defaults",
+    "existing_text_hints": "local bounded extraction of dates/duration/count/origin/style/interests; free text retained; negated food hints excluded",
+    "state": "draft and step persist in TravelContext profile; recap links back to edit",
+    "date_sync": "confirmed start updates four sample day dates; undecided date remains 日期未定",
+    "constraints": "local UI prototype; no production AI call; existing itinerary content remains a four-day Kagoshima demonstration",
+    "checks": [
+      "chat-refinement-check.json",
+      "chat-refinement-regression-check.json"
+    ],
+    "screenshots": "124–131"
+  },
+  "final_experience": {
+    "revision": "flow36",
+    "entry": "final-experience.html",
+    "journey": [
+      "workflow / new task",
+      "chat / three-step requirements",
+      "discover / collection",
+      "preferences via route back / profile adjustments",
+      "coordinate route / Earth export",
+      "services / roundtrip flights",
+      "services / hotel radius and stars",
+      "services / meal location and diet",
+      "services / activity interests weather free slot",
+      "services / intercity and intracity transport",
+      "flight paper ticket selection and transfer schedule",
+      "generating / sunshine and thinking",
+      "adopt / expand completion and reorder",
+      "guide / overview along the way reservations preparation",
+      "save notebook / cover and title",
+      "journal / four living service sections",
+      "journal / whole editing and voice entry",
+      "journal / reviewed local AI notes and itinerary changes",
+      "journal / old strike new highlight and history",
+      "journal / practical appendix and JSON export",
+      "workflow / saved reading reopen and new task",
+      "guide / preparation checklist and verification notes",
+      "journal / selection highlight annotation contextual AI and back to source"
+    ],
+    "storage": {
+      "draft": "quantum-travel-v4-draft-v1",
+      "saved_journal": "quantum-travel-v4-saved-v1",
+      "version": 1,
+      "debounce_ms": 150,
+      "flush": [
+        "pagehide",
+        "visibility hidden"
+      ],
+      "payload": "profile including servicePlan/journal/journalChats, stable day IDs/order/dates/completion/items/revisions, selected places, notes, cover/flags and entries; large image data excluded; profile.preparations and profile.readerAnnotations (stable day/block/quote anchors)",
+      "new_trip": "clears current draft, retains last saved journal",
+      "reader_back": "returns to workflow",
+      "failure": "visible message with JSON export fallback"
+    },
+    "source_of_truth": "requirements / Preferences known fields and dates synchronize; supplements and adjustment text retained",
+    "current_validation": [
+      "flow36-regression-check.json",
+      "flow36-rules-check.json",
+      "flow36-service-rules-check.json",
+      "flow36-services-check.json",
+      "flow36-flight-check.json",
+      "flow36-journey-check.json",
+      "flow36-details-check.json",
+      "flow36-hub-check.json"
+    ],
+    "scope": "Local React prototype; four-day Kagoshima example; no production AI or iOS release",
+    "video": "videos/flow36-journey.mp4",
+    "historical_validation": [
+      "final-experience-regression-check.json",
+      "final-experience-check.json",
+      "final-experience-video-metadata.json",
+      "services-map-check.json",
+      "services-map-rules-check.json",
+      "services-map-flight-check.json",
+      "services-map-regression-check.json",
+      "services-map-complete-journey-check.json",
+      "services-map-hub-check.json",
+      "flight-complete-journey-check.json",
+      "flight-ticket-check.json",
+      "flight-ticket-rules-check.json",
+      "flight-ticket-regression-check.json",
+      "flight-ticket-hub-check.json"
+    ]
+  },
+  "travel_services": {
+    "entry": [
+      "route/topbar-plane",
+      "guide/预订",
+      "dailyTrail/transport-hotel-food-play",
+      "dist/index.html?view=services"
+    ],
+    "navigation": [
+      "往返",
+      "交通",
+      "住宿",
+      "三餐",
+      "体验"
+    ],
+    "flight": [
+      "inline outbound/return calendars",
+      "5-minute horizontal time ruler with optional vibration/visual fallback",
+      "passenger ruler, up to10 vector icons then +",
+      "editable preferences with comma chips and elastic + composer",
+      "5 quotes before /5 after time, lowest fare emphasis",
+      "seven day lowest fare comparison",
+      "blurred paper ticket with dashed tear edge, pull or keyboard open",
+      "airport bus /rail /self drive /taxi icon cards",
+      "bus /rail schedules30–60min after selected landing, station ticket",
+      "quotes and selections shared with journal/export; no inventory/order validation"
+    ],
+    "transport": [
+      "intercity and five intraday links",
+      "train/car/taxi/bus/bicycle/walk/ferry",
+      "straight-line distance and explicit demo duration",
+      "ferry connection for Sakura",
+      "long-bike guard",
+      "next appointment and preceding activity duration gates",
+      "car pick-up/drop-off"
+    ],
+    "nearby": {
+      "distance": "WGS84 Haversine, km; includes nearby other regions",
+      "map": "Web Mercator/GSI embedded local basemap; fixture merchant positions labeled illustrative",
+      "centers": [
+        "today POI",
+        "today/next-day weighted focus when next within30km",
+        "selected hotel",
+        "breakfast/lunch/dinner temporal location",
+        "chosen meal restaurant",
+        "real device coordinates on explicit user request"
+      ],
+      "radius_km": [
+        0.5,
+        1,
+        3,
+        5,
+        10,
+        30
+      ],
+      "sort": [
+        "interest",
+        "distance",
+        "rating",
+        "price"
+      ],
+      "hotel": [
+        "stars",
+        "rating",
+        "budget",
+        "capacity",
+        "amenities",
+        "check-in/out",
+        "rooms",
+        "room type",
+        "same lodging next night"
+      ],
+      "food": [
+        "three periods",
+        "opening windows and full visit duration",
+        "customer rating separate from demo guide stars",
+        "diet restrictions retained when radius expanded",
+        "hotel and midday experience context"
+      ],
+      "play": [
+        "interest category",
+        "rain/indoor fallback",
+        "hotel/restaurant/current location",
+        "visit duration/opening",
+        "available slots and 15-minute buffers"
+      ]
+    },
+    "reservation_states": [
+      "planned",
+      "todo",
+      "recorded by user with external confirmation checkbox/provider/reference",
+      "needs review after route/date/time/dependency edits"
+    ],
+    "persistence": "profile.servicePlan in existing draft/saved storage and JSON export; daily facts and journal share stable day IDs",
+    "production_scope": "64 synthetic venue fixtures. No live availability, routing, payment, authenticated booking, verified orders or automated cancellation."
+  },
+  "journal_editorial": {
+    "entry": "dist/index.html?view=journal",
+    "visual": [
+      "cool muted paper",
+      "large regional photo,280px lead and300px closing",
+      "flat magazine sections,quiet asymmetric service columns",
+      "serif key headlines and low emphasis captions",
+      "32/48/64/80px section rhythm"
+    ],
+    "daily_content": [
+      "actual day title and date",
+      "record without invented experiences",
+      "current itinerary with old del/new highlight",
+      "transport including flight records",
+      "hotel state and checkout",
+      "three individual meal slots,missing slots explicit",
+      "special activities",
+      "shared appendix across all days"
+    ],
+    "editing": [
+      "whole title/subtitle/cover/content flags",
+      "all day titles/notes",
+      "times/end times/names/descriptions/add/remove schedule items",
+      "service commentary separated from orders",
+      "15minute and valid-time validation",
+      "draft cancel without changing source"
+    ],
+    "voice": {
+      "api": "SpeechRecognition or webkitSpeechRecognition, zh-CN, explicit start only",
+      "interim": "visible uncommitted preview",
+      "final": "append to existing draft, editable before save",
+      "stop": "stop to request final result, abort on close",
+      "errors": [
+        "permission denied",
+        "network unavailable",
+        "no speech",
+        "unsupported browser"
+      ],
+      "privacy": "Browser speech service may receive audio; not guaranteed offline",
+      "verification": "mocked API interim/final/error/abort events; real microphone/accuracy not verified",
+      "reference": "https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition"
+    },
+    "ai": {
+      "scope": "local conversation prototype without a model connection",
+      "modes": [
+        "notes",
+        "itinerary"
+      ],
+      "notes": "append only user supplied content, edit/accept/reject",
+      "itinerary": "explicit subject/time or gentle rest suggestion; unknown requests ask clarification",
+      "review": "pending comparison never mutates plan before confirmation",
+      "record": "confirmed del/ins evidence, timestamp,source,reason,revision snapshots",
+      "undo": "latest confirmed schedule change only, guarded against later external edits",
+      "orders": "dependency warnings; keeps original credentials and marks needs-review; never changes external orders"
+    },
+    "storage": "days.journalRevisions,days.journalServices,profile.journal/journalChats,entries in existing draft/saved/export"
+  },
+  "flight_ticket_revision": {
+    "comments": "All21 browser comments addressed",
+    "removed": [
+      "draft-resume",
+      "services bottom return",
+      "three policy cards",
+      "arrival-date input",
+      "cabin and baggage fields",
+      "buffer and first-day warning",
+      "manual-ticket checkbox",
+      "provider link",
+      "old source paragraph",
+      "old apply button",
+      "booking ledger"
+    ],
+    "preferences": "predefined six; removable dot exit; pending comma-separated chips; spring fly/prepend; measured panel height; persists in filters.flight",
+    "quote_scope": "Deterministic demonstration provider adapter; no live flight/timetable/price or inventory API",
+    "haptics": "navigator.vibrate when available, visual tick feedback, reduced-motion fallback; physical vibration unverified",
+    "current_checks": [
+      "flight-ticket-check.json",
+      "flight-ticket-rules-check.json",
+      "flight-ticket-regression-check.json",
+      "flight-complete-journey-check.json",
+      "flight-ticket-hub-check.json"
+    ]
+  },
+  "services_map_revision": {
+    "comments": [
+      1,
+      2,
+      3
+    ],
+    "navigation": "shared LiquidNav: measured spring, velocity stretch and settle; icon-only inactive tabs; keyboard and reduced motion",
+    "transport": "inherit selected airport mode and quote time; bus/train detailed timed legs, walking/waits/transfers/fares and alternate route map; unavailable metro state; taxi pickup/vehicle/price range; driving road/parking/fuel/car return; intracity segments and original cycling/walking/ferry retained",
+    "hotel": "shared comma preference tags; coordinate radius map with real clickable price markers; inline descriptive card; checked shortlist; supplemental text; local rule assessment of interests, radius, distance, budget and amenities; stale suggestion disabled; user confirms through booking detail",
+    "data_scope": "synthetic routes/fares/hotel data; local rule-based AI, no live Google Maps API, model, inventory or payment",
+    "validation": [
+      "services-map-check.json",
+      "services-map-rules-check.json",
+      "services-map-flight-check.json",
+      "services-map-regression-check.json",
+      "services-map-complete-journey-check.json",
+      "services-map-hub-check.json"
+    ]
+  },
+  "flow36_revision": {
+    "date": "2026-10-11",
+    "comments": "1–36",
+    "scope": [
+      "shared calendars/rulers and requirement choice layouts",
+      "range selection/preview/independent ends/days pill",
+      "origin guidance and transfers",
+      "route overview then detail; paper plane generates",
+      "editable endpoints, mode-specific plans and tear tickets",
+      "GPS GPX import/export and user supply coordinates",
+      "map hotel camera, photo rows, guided evaluation",
+      "guide spacing; persisted four preparation checklists",
+      "reading selections, highlights, annotations, contextual local AI, jump/edit/delete/restore"
+    ],
+    "research": [
+      "https://support.apple.com/guide/iphone/annotate-books-iph17bf340c1/27/ios/27"
+    ],
+    "current_sources": 91,
+    "current_screenshots": "172–177",
+    "videos": [
+      "videos/flow36-journey.mp4",
+      "videos/flow36-details.mp4"
+    ],
+    "validation": [
+      "flow36-regression-check.json",
+      "flow36-rules-check.json",
+      "flow36-service-rules-check.json",
+      "flow36-services-check.json",
+      "flow36-flight-check.json",
+      "flow36-journey-check.json",
+      "flow36-details-check.json",
+      "flow36-hub-check.json"
+    ],
+    "limits": "Synthetic routes/quotes; local AI rules; no live booking/model, real GPS accuracy or production iOS claim."
+  },
+  "accordion7_revision": {
+    "date": "2026-10-11",
+    "scope": "7 latest browser comments",
+    "calendar": "Shared isolated seven-column calendar; range selected in two clicks, preview and duration chip; redundant endpoint blocks and visible instructions removed; Escape returns focus.",
+    "cities": {
+      "label": "出发返回地",
+      "presets": 20,
+      "semantics": "First selected city is departure; subsequent cities are selectable return candidates. Deleting first city promotes next.",
+      "custom": "Enter or blur adds a trimmed unique city; selected tag bounces; IME Enter does not commit.",
+      "overflow": "Actual wrapped rows measured with ResizeObserver; three rows plus remaining count; expand/collapse preserves all selected cities.",
+      "persistence": "Ordered selection, custom catalog and active return city saved in flight filters.",
+      "finish_input": "Commit on Enter/blur, not each partial keystroke."
+    },
+    "accordion": {
+      "orientation": "Parallel vertical strips expanding horizontally",
+      "default": "Five equal-width closed strips",
+      "active": "Dark charcoal frosted surface; light-gray translucent form layers; other four strips simultaneously shrink.",
+      "motion": "Width spring stiffness260/damping32; content fade delay200ms/duration250ms; reduced-motion instant.",
+      "accessibility": "Five labeled expanded/pressed buttons; Home/End/arrows; selected region labeled by trigger; one mounted body.",
+      "small_screen": "Contained scroll area, single-column fields below260px, fares scroll within component."
+    },
+    "current_reports": [
+      "accordion7-check.json",
+      "accordion7-journey-check.json",
+      "accordion7-regression-check.json",
+      "accordion7-hub-check.json"
+    ],
+    "current_videos": [
+      "videos/accordion7-journey.mp4",
+      "videos/accordion7-review.mp4"
+    ],
+    "production_code_changed": false
+  },
+  "horizontal_service_revision": {
+    "date": "2026-10-11",
+    "scope": "Horizontal accordion and lower card saturation/higher transparency",
+    "layout": "Five full-width horizontal rows stacked vertically; 60px closed,48px others when active; selected panel expands downward to560px. Labels remain horizontal.",
+    "glass": {
+      "closed_panel_opacity": 0.13,
+      "active_panel_opacity": 0.64,
+      "detail_layer_opacity": 0.24,
+      "inner_card_opacity": 0.18,
+      "controls_opacity": 0.22,
+      "palette": "Neutral gray, without applying new filters to photos",
+      "backdrop_saturation": 0.12
+    },
+    "motion": "Height spring260/32, content200ms delayed250ms fade; reduced-motion instant",
+    "reports": [
+      "horizontal-check.json",
+      "horizontal-journey-check.json",
+      "horizontal-regression-check.json",
+      "horizontal-hub-check.json"
+    ],
+    "videos": [
+      "videos/horizontal-journey.mp4",
+      "videos/horizontal-review.mp4"
+    ]
+  },
+  "motion15_revision": {
+    "date": "2026-10-11",
+    "scope": "15 latest browser comments; horizontal services preserved",
+    "duration": "Shared ruler reduced to66px within requirement fields; 24px/day distance unchanged; arrows/Home/End and cancel retained.",
+    "intent_trays": "Dark gray tray always shows10px edge under fixed requirement row. Height100px while open, spring340/30. Budget4, pace3, transport3 icon options; measured LiquidNav expands selected label; immediate value update then430ms feedback and spring close; Escape/keyboard supported.",
+    "interests": "Vertical pointer scrub. Fixed centers measured at start; weight=max(0,1-distance/105); row scale1+.065*weight, image43→53px, vertical space0→16px. Release selects nearest; click/keyboard toggles; cancel preserves selection; reduced motion instant.",
+    "adopt_summary": "Full photo capsule94px, frosted text overlay. Pull156px maps0→1 to94→250px summary statistics. Release above38% opens; below snaps back; controls/reorder separate; remaining cards opacity.45 and content flows down.",
+    "day_adjustment": "Inline validated time/name/description editor with add/remove and explicit apply; revision history retained. Orb opens independent AI modal from measured center with circular reveal and scale.7→1.035→1.",
+    "ai_rich_text": "React-escaped markdown subset: headings/bold/italic/strike/list/quote/HTTP links/table/code/card fences. Raw HTML stays text; raster local image attachments; javascript/data-html/SVG rejected. Local AI rules remain demonstration; proposals require confirmation.",
+    "flight_reference": "Thin light borders, translucent gray glass, soft mint/peach/lavender gradient selected tags with check icons. Shared horizontal service accordion unchanged.",
+    "record_voice": "Icon only. Pointer or Space/Enter hold starts microphone stream on demand; width40→240px capped to available space, gradient ribbon. Actual WebAudio frequency bins every45ms draw20 bars; MediaRecorder saves optional audio; browser SpeechRecognition final events append text. Release stops audio tracks/context, bar springs back;45s limit; permission denial/unsupported retains text.",
+    "record_submit": "Return icon becomes green circular check, rotates360 and scales1.18; save immediately then500ms feedback before editor closes. No cancel/save footer. Reduced motion80ms feedback.",
+    "memory_cards": "Append per-day local records; migrate existing notes on first append. Raster photo above frosted text tray; optional actual audio player takesone third, recorded envelope and text on right. Existing text entries, whole editor, AI notes, export and restore remain compatible.",
+    "media_bounds": "Raster/audio up to900KB per file, total encoded attachments/chats/notes1.8MB,45s recording; corrupt stored media normalized while preserving text.",
+    "reports": [
+      "motion15-check.json",
+      "motion15-journey-check.json",
+      "motion15-rich-rules-check.json",
+      "motion15-regression-check.json",
+      "motion15-hub-check.json"
+    ],
+    "videos": [
+      "videos/motion15-review.mp4",
+      "videos/motion15-journey.mp4"
+    ],
+    "limits": "Local React prototype. An actual WebAudio oscillator stream injected as microphone validates actual analyser/recorder; speech result events simulated. Actual voice recognition accuracy, iOS device, model and real bookings not verified."
+  },
+  "compact21": {
+    "comments": 21,
+    "choices": "Independent icon buttons; selected button expands with label. Four options per group, budget excludes undecided; pace and transport retain undecided. No shared navigation rail.",
+    "requirements": "Entire footer removed; top-right check confirms with empty fields deferred.",
+    "discovery_cards": 4,
+    "currency": [
+      "USD",
+      "EUR",
+      "JPY",
+      "CNY",
+      "THB"
+    ],
+    "preference_chips": "Thin white edge, selected check and mint/peach/lavender frosted gradient; top-right check replaces done.",
+    "flight": "4 small tags per row; 6 on wide service body. City input and label share a row. Two date/calendar and digital clock rows; vertical touch, wheel, keys, independent times. People icons spring right to reveal same-line number.",
+    "transport": "Light gradient floating service glass. Counterclockwise plus to green check opens named mode card; custom segments and endpoints persist. Select replaced with small segment buttons. Sequential origin chip → fading arrow → destination chip, keyboard suggestions; unknown places need coordinates.",
+    "source_snapshot": "compact21-check.json",
+    "backup": "motion-prototype/.build/compact21-before",
+    "status": "TESTED after evidence checks"
+  },
+  "flight3": {
+    "comments": 3,
+    "currency": {
+      "supported": [
+        "CNY",
+        "USD",
+        "EUR",
+        "JPY",
+        "THB"
+      ],
+      "conversion": "Fixed demonstration rates; preserve quote numeric price and original CNY currency. List, nearby day fares, ticket and bus reference fare share formatting. Persist display preference separately from budget amount."
+    },
+    "recommended": "One same-day quote ranked by price, duration, stops and time distance. 8s rotating mint/peach/lavender border and diffuse halo; upper-right Recommended. Reduced motion static.",
+    "date": "Independent outbound/return date filters; nearby day selection regenerates quotes, closes open ticket and scrolls visible results heading into view. Adopted booking remains until explicitly replaced.",
+    "guides": "Four Kagoshima Airport guides: bus, bus-to-JR, rental shuttle, taxi. Facts, 3-step directions, luggage/timing, official source links; outbound CTA hands mode to transport planner. Return scope explicitly limited.",
+    "sources": "flight3-guide-sources.json",
+    "reports": [
+      "flight3-check.json",
+      "flight3-journey-check.json",
+      "flight3-regression-check.json",
+      "flight3-rich-rules-check.json",
+      "flight3-hub-check.json"
+    ],
+    "backup": "motion-prototype/.build/flight3-before"
+  },
+  "tray7": {
+    "comments": 7,
+    "recap": "Destination photo with overlapping frosted bottom tray; native toggle exposes photo/detail rows. Inline edit, validated atomic save and cancel without leaving discovery drawer. Profile/requirements/calendar days persist consistently.",
+    "discovery_confirm": "Selected places retained; enters preferences first. Floating confirmation proceeds to route.",
+    "floating_confirm": "Always available; down scroll compresses to44px circle/check; up scroll112px confirmation label. Focus expands; reduced motion immediate.",
+    "extra_card": "Compact alternating thumbnail column and offset title/body; existing TravelComposer + mini-chat + ThinkingOrb. Local deterministic title/body proposal; explicit fill then manual editing and explicit add. No model endpoint.",
+    "confirm_material": "Shared Primary and affirmative controls: compact dark glass capsule, subtle resting rim, touch/active pink-purple internal gradient; disabled/focus/reduced motion retained. Global pointer/touch start/end/cancel feedback; notebook confirmation idle/active/cancel tested. Green completion glyphs retained.",
+    "reference": "tray7-reference-evidence.json",
+    "reports": [
+      "tray7-check.json",
+      "tray7-journey-check.json",
+      "tray7-regression-check.json",
+      "tray7-rich-rules-check.json",
+      "tray7-hub-check.json"
+    ],
+    "backup": "motion-prototype/.build/tray7-before"
+  },
+  "fly22_review": {
+    "scope": "22 browser comments; shared measured-origin expansion, glass comparisons, global context AI, persistent linked todos",
+    "source": "motion-prototype/src/fly22.css",
+    "motion": {
+      "flying_panel": "Origin center -> top 50px; spring stiffness235 damping29 mass.85; 14px backdrop blur; inverse exit; reduced motion immediate",
+      "currency_dock": "5 x 48px cells; Gaussian distance influence scale1..1.42; adjacent displacement; captured pointer release selects; cancel retains prior",
+      "flights": "Recommended first, sticky compact summary; extra flights stagger35ms; independent ticket action",
+      "dropdown": "44px rows; selected row aligns with field; clamp to phone bounds; escape/arrow/home/end supported",
+      "todos": "620ms stationary hold, >9px travel cancels; capture-phase release cancellation; right-slide panel; grip reorder; persistent profile.todos; completed strike clears source badge"
+    },
+    "ai": "Reused TravelComposer/TravelThinkingOrb and current-context local answers. Global text selection quote; existing journal annotations preserved. No remote model.",
+    "comment_map": {
+      "1": "DayDetail lodging and breakfast/lunch/dinner slots",
+      "2-3": "DateRangePicker -> FlyingPanel",
+      "4": "CurrencyPicker distance dock",
+      "5": "transparent ticket close",
+      "6": "recommended first/compact sticky/waterfall",
+      "7,10-13": "ServiceAccordion -> FlyingPanel",
+      "8": "fare heading and halo",
+      "9": "two-line preview -> FlyingPanel guide",
+      "14": "single-line centered flexible capsules",
+      "15-16,21": "hotel center/radius/verbose empty removed",
+      "17-18": "glass filter chips and AlignedSelect",
+      "19,22": "FlowSupport floating/inline AI, hotel check comparison",
+      "20": "linked persistent todos and generation guard"
+    },
+    "verification": "fly22-check.json + fly22-journey-check.json + fly22-regression-check.json + fly22-rich-rules-check.json + fly22-hub-check.json",
+    "device_scope": "Chrome native CDP touch emulation; physical iOS not verified"
+  },
+  "weather2_review": {
+    "source": [
+      "motion-prototype/src/weather2.css",
+      "motion-prototype/src/components/FloatingField.jsx",
+      "motion-prototype/src/components/journal/JournalWeather.jsx"
+    ],
+    "weather": {
+      "placement": "Below each journal daily kicker",
+      "data": "Deterministic local weather demonstration, labeled 天气示例",
+      "expanded_height": 142,
+      "interaction": "Pointer-captured downward pull tracks height; release beyond24px opens/closes by direction; pointercancel restores prior state; keyboard Enter/Space and collapse grip; reduced motion immediate; day changes reset"
+    },
+    "floating_fields": {
+      "editable_control_sites": 76,
+      "files": 25,
+      "empty_blur": "Title at17px,14px font",
+      "focus_or_filled": "Title at7px,10px font; focus pink border #cf829f",
+      "native_semantics": "forwarded DOM ref; native form submission, validation, date/time/number and textarea; controlled and uncontrolled values; form reset; IME/Shift+Enter preserved in existing composer",
+      "excluded": "Checkbox, radio, file, hidden, range and button controls"
+    },
+    "references": "Five images supplied inline in user message; no filesystem copies supplied or inferred",
+    "verification": [
+      "weather2-check.json",
+      "weather2-native-fields-check.json",
+      "weather2-journey-check.json",
+      "weather2-regression-check.json",
+      "weather2-rich-rules-check.json",
+      "weather2-hub-check.json"
+    ],
+    "limitations": "Local demonstration weather/AI; physical iOS not tested"
+  },
+  "adopt_small_review": {
+    "feedback": "中间的卡片太大了，飞出难看",
+    "sources": [
+      "motion-prototype/src/motion15.css",
+      "motion-prototype/src/components/AdoptionGather.jsx"
+    ],
+    "label": {
+      "width": 142,
+      "maximum_width": "calc(100% - 114px)",
+      "position": "left14/top14",
+      "padding": "8px10px",
+      "radius": 15,
+      "verified_height": 76.25
+    },
+    "flight": {
+      "scale": "gather:1→.96→.12→0; expand:0→.12→.96→1",
+      "max_rotation_degrees": 4,
+      "duration_seconds": 0.76,
+      "stagger_seconds": 0.07,
+      "same_content": "Resting and flight copies share identical compact photo label material and geometry"
+    },
+    "verification": [
+      "adopt-small-check.json",
+      "adopt-small-regression-check.json",
+      "adopt-small-hub-check.json"
+    ],
+    "video": "videos/adopt-small-review.mp4",
+    "limitations": "Physical iOS not tested; no push/deploy"
+  },
+  "todo_tight_review": {
+    "feedback": [
+      "没有与叉叉对齐",
+      "太高了，只允许两行高"
+    ],
+    "sources": [
+      "motion-prototype/src/components/FlowSupport.jsx",
+      "motion-prototype/src/fly22.css"
+    ],
+    "sheet_header": {
+      "ai_and_close_hit_target_px": 44,
+      "top_px": 12,
+      "close_right_px": 12,
+      "ai_right_px": 60,
+      "shared_center": true
+    },
+    "todo_rows": {
+      "height_px": 56,
+      "title_line_height_px": 20,
+      "caption_line_height_px": 12,
+      "gap_px": 2,
+      "long_text": "Single line with ellipsis; full checkbox and reorder accessible names retained",
+      "label_margin_px": 0,
+      "checkbox_margin_px": 0
+    },
+    "verification": [
+      "todo-tight-check.json",
+      "todo-tight-regression-check.json",
+      "todo-tight-hub-check.json"
+    ],
+    "current_visual": "screenshots/294-todo-compact-phone.png",
+    "historical_video": "videos/adopt-small-review.mp4",
+    "limitations": "Physical iOS not tested; no push/deploy"
+  },
+  "transit17_review": {
+    "feedback_count": 17,
+    "source_changes": [
+      "motion-prototype/src/components/UI.jsx",
+      "motion-prototype/src/components/flight/InlinePassengers.jsx",
+      "motion-prototype/src/components/flight/TransferGuide.jsx",
+      "motion-prototype/src/components/services/FlightPlanner.jsx",
+      "motion-prototype/src/components/services/RouteDetails.jsx",
+      "motion-prototype/src/components/services/RouteEndpoints.jsx",
+      "motion-prototype/src/components/services/RouteTickets.jsx",
+      "motion-prototype/src/components/services/TravelLegs.jsx",
+      "motion-prototype/src/components/services/route-model.js",
+      "motion-prototype/src/main.jsx",
+      "motion-prototype/src/transit17-flight.css",
+      "motion-prototype/src/transit17-route.css",
+      "motion-prototype/src/transit17.css"
+    ],
+    "passengers": "1–20 person icons, matching the current saved flight count; animated wrapping at larger counts",
+    "flight_header": "76px reserved space above summary content; aligned 44px AI and close targets",
+    "nearby_fares": "Data updates in place. Tile focus and ancestor scroll positions stay unchanged.",
+    "airport_guides": "Four 56px cards for bus, rail, driving and taxi; each opens its corresponding guide. Heading and mode strip removed.",
+    "locations": "Coordinates stay internal. Matching resolvedLocations update pending named places; unknown places await query data.",
+    "transport_modes": "generatedRoutes supplies exact options. Local fallback uses endpoint context. Moving pill and simultaneous 30px horizontal transitions over 0.24s, with keyboard navigation and reduced motion.",
+    "route_steps": "Each stop has its own card; no large example summary or shared expand control.",
+    "tickets": "Clicking selects and expands one pastel glass card; other cards stay compact. Selection restores after confirmation and reload. Collapsed buttons reset inherited margins.",
+    "descriptions": "Two photo and text cards with journey context, or supplied descriptionCards content.",
+    "cost": "Separate editable glass card; negative costs prevent confirmation.",
+    "confirmation": "Existing UI.Primary capsule with shared glow and spring; retains route and scheduling validation.",
+    "verification": [
+      "transit17-check.json",
+      "transit17-regression-check.json",
+      "transit17-hub-check.json"
+    ],
+    "current_visual": "screenshots/300-transport-selected-phone.png",
+    "limitations": "Local prototype with structured data support. External AI, live geocoding, timetable and booking services are not connected; physical iOS is unverified."
+  },
+  "budget_review": {
+    "date": "2026-10-11",
+    "entry": "Shared BudgetPanel in Guide and Notebook; view=budget deep link; full local profile persistence, saved trip, JSON export retain budgetLedger.",
+    "layout": "Pastel glass total card; three tabs with shared moving pill; quick voice card; two-line category/account rows grouped by date; payer/beneficiary chips, exact amount rows, member balances and transfer cards; editor/settlement reuse Sheet + Primary confirmation.",
+    "automatic_costs": "Stable service source IDs, flights CNY per pax, lodging JPY room×night, food/activity JPY per person, transport original explicit currency and per-person/vehicle basis. Planned estimates track service edits; explicit paid snapshots preserve amount/rate and remain after source removal.",
+    "arithmetic": "Original amount/rate strings; integer minor units, five currency digits. Rational conversion and Foundation Decimal host; round converted total once. Equal shares allocate converted settlement minor units; custom shares and multiple payers proportional largest remainder. Positive/negative balances sum zero; transfer settlements offset balances without adding spending.",
+    "voice": "Existing VoiceText hold/wave and typed phrase parser, native Speech if WK host connected. Complete statement auto saves with undo; incomplete/ambiguous statement opens prefilled floating fields. Snapshot edited ledger rates. No background microphone or phone-lift detection; Siri AppIntent requires host install/configuration.",
+    "native": "native-budget contains executable Decimal core, trusted-page WK bridge, on-device speech, AppIntent/AppShortcuts + App Group queue with stable UUID and nondestructive reads. 13 Swift tests incl400 conservation fixtures,9 JS bridge tests,4 Swift6/iOS16 adapters SDK typechecked; no signing/device/Siri execution claim.",
+    "motion": "Existing spring stiffness280 damping26 mass0.85 for segmented pill/progress and UI.Primary; same Sheet right-slide/upward opening and reverse exit; reduced-motion immediate; focus trap/restore.",
+    "rates": "Initial demonstration CNY pivot rates explicitly labeled, user-editable; historical paid snapshots frozen. No live FX/financial feed.",
+    "reports": [
+      "budget-check.json",
+      "budget-model-check.json",
+      "budget-native-check.json",
+      "budget-regression-check.json",
+      "budget-hub-check.json"
+    ],
+    "screenshots": "303–309; main303-budget-ledger-phone.png",
+    "backup": "motion-prototype/.build/budget-before"
+  },
+  "trip_lifecycle": {
+    "status": "TESTED",
+    "scope": "Local frontend; current backend/iOS statically audited, live integration not performed",
+    "phase_navigation": "Viewing before/during/after never starts or ends the real trip",
+    "motion": {
+      "phase_selection": "Existing shared spring pill; reduced motion respected",
+      "phase_content": {
+        "duration_seconds": 0.18,
+        "enter_x_px": 12,
+        "exit_x_px": -12
+      },
+      "sheets": "Existing Sheet/Primary/FloatingField reused"
+    },
+    "data_boundaries": [
+      "saved notebook snapshot",
+      "departure plan baseline",
+      "current itinerary",
+      "actual progress",
+      "original fragments",
+      "paid ledger and adopted rates",
+      "user recap"
+    ],
+    "audit": "trip-lifecycle-design.md",
+    "matrix": "trip-lifecycle-capability-matrix.json",
+    "current_screenshots": [
+      "screenshots/310-trip-before-phone.png",
+      "screenshots/311-trip-today-phone.png",
+      "screenshots/312-trip-progress-record-phone.png",
+      "screenshots/313-trip-change-phone.png",
+      "screenshots/314-trip-review-phone.png",
+      "screenshots/315-trip-reconciliation-phone.png",
+      "screenshots/316-trip-five-day-phone.png"
+    ],
+    "verification": [
+      "lifecycle-regression-check.json",
+      "lifecycle-model-check.json",
+      "lifecycle-finance-model-check.json",
+      "lifecycle-check.json",
+      "lifecycle-hub-check.json"
+    ],
+    "integration_limits": [
+      "Backend travel v2/CAS revision adapter tested locally, not called live",
+      "Lifecycle/fragments/ledger/settlement still need authenticated persistence contracts",
+      "Native-budget host/Siri/device integration remains unverified"
+    ]
+  },
+  "chat_growth": {
+    "status": "TESTED",
+    "scope": "Three browser comments about the travel AI advice dialog",
+    "intro": "Fade opacity to0 in180ms and collapse layout height in280ms when composing, a nonempty draft exists, messages exist or reply is pending. Empty initial blur restores introduction.",
+    "height": "Start480px; grow68px per user turn and enough for measured message/composer/context content, capped by phone and visible viewport. Keep reached height for this opening.",
+    "height_transition_ms": 320,
+    "active_top_controls_px": 64,
+    "overflow": "Only message log scrolls when capped; composer and close remain visible. Reading old messages pauses follow; new submission follows latest.",
+    "reduced_motion": "Immediate intro and panel-height updates",
+    "verification": "chat-grow-check.json",
+    "physical_ios_keyboard_verified": false,
+    "validation": {
+      "directed_checks": 20,
+      "axe_states": 7,
+      "layout_cases": 20,
+      "hub_checks": 11,
+      "hub_widths": 6,
+      "offline_html_sha256": "5b7a821fe96f39e84c0c9786c22ffa9080402500ec95e6014a21510f158c0e84"
+    }
+  },
+  "interest_and_support_orb": {
+    "status": "TESTED",
+    "scope": "Three browser comments: interest state capsule and unified floating travel assistant",
+    "interest_status": {
+      "text": "添加 → 已选, vertical16px shift",
+      "check": "Opacity, scale and occupied width appear together",
+      "width": "Measure actual text and icon, spring stiffness420 damping30 mass0.75",
+      "structure": "Two peer buttons; row scrub retains nearest selection and keyboard activation"
+    },
+    "orb": {
+      "visual_diameter": "Equal to 徒步 text line-height,19.5px normal/16.5px narrow",
+      "hit_target_px": 44,
+      "appearance": "Mint, orange and lavender sphere with white border and question mark",
+      "drag": "Pointer capture,5px movement threshold, scaled-phone coordinate compensation, nearest horizontal edge on release",
+      "position": "Clamped below top controls and above composer/bottom navigation; session-scoped edge and vertical fraction",
+      "scroll": "Actual phone content scroll tucks22px at edge so half sphere remains visible;700ms after last scroll it slides out",
+      "expanded": "Two existing44px glass buttons burst52/104px inward; second click, outside click, Escape, drag, scroll and stage changes close",
+      "accessibility": "Keyboard buttons, expanded state, labels, focus ring, Escape focus return, shared Sheet focus trap",
+      "reduced_motion": "Immediate capsule, position and menu updates"
+    },
+    "verification": "orb-toggle-check.json",
+    "physical_ios_verified": false,
+    "validation": {
+      "directed_checks": 21,
+      "axe_states": 6,
+      "layout_cases": 23,
+      "current_screenshots": [
+        "screenshots/321-interest-state-phone.png",
+        "screenshots/322-orb-expanded-phone.png",
+        "screenshots/323-orb-left-phone.png",
+        "screenshots/324-orb-scroll-hidden-phone.png",
+        "screenshots/326-orb-growing-chat-phone.png"
+      ],
+      "current_source_files": 145,
+      "offline_html_sha256": "d0e5592db5f18980843e74c73dd2f882986873dc7682b5ba5aa6ff4480a3c11e"
+    }
+  },
+  "budget_refinement": {
+    "status": "TESTED",
+    "scope": "Eight browser comments about speech splitting, flying ledger details and reused budget controls",
+    "speech": "Explicit participant count matching the known roster splits equally; named subset selects only matched members. Count mismatch or unknown names retain original text and unresolved split intent for manual review.",
+    "entry_reveal": {
+      "primitive": "Existing FlyingPanel and Sheet; source row origin",
+      "compact_height_px": 150,
+      "lift_then_expand_delay_ms": 500,
+      "details_height_transition_ms": 320,
+      "collapse_before_return_ms": 350,
+      "controls_height_px": 64,
+      "overflow": "Only details region scrolls; original summary stays visible",
+      "save_failure": "Native validation failure reopens details without discarding entry"
+    },
+    "budget_controls": {
+      "tabs": "Shared LiquidNav moving/stretching spring pill",
+      "currency": "Shared AlignedSelect anchored dropdown on total card and settings",
+      "settings_height_px": 44,
+      "confirmation": "Shared ScrollAction; text capsule becomes circular check on down scroll. Fixed outside page scroll content; when embedded in the lifecycle Sheet, kept inside its focus trap with a separate scrolling budget body."
+    },
+    "flight": "Collapsed recommended summary uses square bottom corners, footer retains rounded bottom; expanded ticket keeps its existing corners",
+    "verification": [
+      "budget-refine-model-check.json",
+      "budget-refine-check.json",
+      "budget-refine-hub-check.json"
+    ],
+    "physical_ios_verified": false,
+    "validation": {
+      "model_checks": 37,
+      "ui_checks": 24,
+      "axe_states": 10,
+      "layout_cases": 29,
+      "hub_checks": 12,
+      "hub_widths": 6,
+      "source_files": 149,
+      "current_screenshots": [
+        "screenshots/327-budget-shared-speech-phone.png",
+        "screenshots/328-budget-entry-lift-phone.png",
+        "screenshots/329-budget-entry-expanded-phone.png",
+        "screenshots/330-budget-currency-dropdown-phone.png",
+        "screenshots/331-budget-compact-settings-phone.png",
+        "screenshots/332-flight-square-summary-phone.png"
+      ],
+      "offline_html_sha256": "5725d93a8c3be686fe79253c2460af858de1b2f02c32952798997d83989872a4",
+      "native_failure_ui_scope": "Synthetic host callback failure/success; no actual iOS host execution",
+      "previous_full_regressions": "Historical snapshots retained, not rerun as current revision"
+    }
+  },
+  "note_cover_generation": {
+    "scope": "Guide生成旅行笔记弹层，Notebook阅读及整体编辑器保留既有行为",
+    "composition": "照片封面与标题并排，标题旁旅行摘要错落；两个内容开关并排，第三项向内收边",
+    "carousel": "四张目的地照片，横向scroll-snap；触摸距离放大和邻图抬起，共享LiquidCard与UI.spring；键盘左右/Home/End；减少动态效果立即切换",
+    "generation": "标题空白禁用；保留三项开关与封面保存；固定底部生成胶囊；弹层移除仅自己可见文案",
+    "evidence": "note-cover-check.json / note-cover-hub-check.json / screenshots333起；旧报告和视频保持各自构建范围",
+    "touch_action": "轮播按钮与照片框局部允许pan-x pan-y，覆盖共享LiquidCard拖动时的touch-action:none；不影响其他拖动卡片"
+  },
+  "guide_editor": {
+    "scope": "Guide确认、成稿照片、VoiceText与JournalAssistant编辑区11条反馈",
+    "confirmation": "移除Guide底部paper-fixed；已展开悬浮球对勾根据未保存/已保存状态生成/翻开手记，待定沿用requestGenerate；待办仍从攻略待办页进入",
+    "adoption": "整卡img背景覆盖含展开详情，124px玻璃摘要低饱和透明；移除完成与grip按钮，背景移动5px后开始排序，静止点击展开，摘要短拉展开或620ms长按待定；Alt上下与Escape回滚沿用共享hook",
+    "editor": "长按/选区出现整条单行格式栏，保存原生textarea选区；录音、图片在FloatingField框内；发送复用Primary arrow胶囊；移除助手页局部演示caption，能力范围保留交付说明",
+    "verification": "guide-editor-check.json / guide-editor-hub-check.json / screenshots338起；旧报告和录屏各自保持历史范围",
+    "continuity": "保存后清掉Guide生成弹层状态；快速返回可继续翻开。照片摘要无位移或取消手势保持原展开状态，只让实际下拉按阈值结算，允许动画中再次点击反向。"
+  },
+  "confirmation_icons": {
+    "scope": "两条顶部确认反馈",
+    "adopt": "采用这份行程从底部Primary移至TopBar右侧圆形对勾，保留pending提醒、采用飞出、禁用和返回/继续调整",
+    "route": "原width34与height44造成椭圆，仅确认按钮共享44×44/min/max/aspect1/flex44/padding0/border-radius50%，保留纸飞机和原生成逻辑",
+    "material": "沿用现有确认光效和按压反馈；不改其他header icon尺寸",
+    "verification": "confirm-icon-check.json / confirm-icon-hub-check.json / screenshots344起；guide-editor35保留历史范围"
+  },
+  "journal_maps": {
+    "scope": "Travel diary; reuses the existing regional geographic map and saved itinerary coordinates",
+    "placement": "After the destination photo, before personal memories; included with the daily-plan content flag",
+    "preview": "Muted editorial figure showing travel order and highlighting the current day, place and date",
+    "expanded": "Shared Sheet with a larger geographic map and day controls that update the same diary selection",
+    "data": "Use only finite in-extent coordinates; keep unknown or out-of-region days unlocated, without pinning them to the map edge",
+    "interaction": "Shared Sheet close and Escape behavior, accessible day buttons and reduced motion",
+    "verification": "notebook-map-check.json + notebook-map-hub-check.json; screenshots346+",
+    "unmarked_day_reading": "A valid saved day without predefined regional notes stays readable; empty service copy becomes a neutral missing-arrangement message."
+  },
+  "revision68": {
+    "comments": 68,
+    "coverage": "revision68-comment-coverage.json",
+    "reference_palette": {
+      "mint": "rgba(160,210,199,.86)",
+      "peach": "rgba(232,204,175,.86)",
+      "lilac": "rgba(207,187,227,.88)",
+      "ink": "#263d35",
+      "edge": "rgba(255,255,255,.88)"
+    },
+    "assistant": {
+      "types": [
+        "schedule",
+        "party",
+        "route",
+        "weather",
+        "flight",
+        "hotel",
+        "image",
+        "rich",
+        "code",
+        "flow"
+      ],
+      "workflow": [
+        "需求",
+        "提议",
+        "确认",
+        "回填",
+        "结果"
+      ],
+      "confirm_boundary": "No write before explicit confirmation. Failed/stale proposals can be modified or regenerated. Applied controls lock. Booking confirmation saves requirements, never an order/payment."
+    },
+    "discovery": {
+      "folder_layer": 32,
+      "pending_layer": 9999,
+      "magnetic_distance_px": 100,
+      "magnetic_pull": 0.16,
+      "collection_feedback_seconds": 0.55
+    },
+    "card_reveal": {
+      "duration_seconds": 0.48,
+      "ease": [
+        0.2,
+        0.8,
+        0.2,
+        1
+      ],
+      "used_by": [
+        "BudgetLink sheet",
+        "JourneyLink page"
+      ]
+    },
+    "guide": "Icon LiquidNav; Earth actions removed.",
+    "adopt": "Staggered full photos; bottom-crop luminance selects title ink; single circular44px header confirm; reading annotations and per-item change proposals.",
+    "services": "Saved daily facts, simple1km map search, selected pin collision priority, immutable actual expense snapshots, explicit ticket selection, timed experiences.",
+    "lifecycle": "Persistent per-item preparation and questions, photo Today hero, inline actual meals/arrangements, successive change history, saved fragments summary proposal then confirmed append.",
+    "tests": "Current four UI reports + hub +72 model boundary tests. Historical clips retain earlier scope.",
+    "production_code_changed": false,
+    "physical_ios_tested": false
+  }
+}

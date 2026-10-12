@@ -1,0 +1,35 @@
+import {chromium,webkit} from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import {mkdir,writeFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {installFixture,travelDocument} from './production-fixture.js';
+const out='/private/tmp/travel-notes-pcm-chat-20261013/journey';await mkdir(out,{recursive:true});
+const report={checks:[],errors:[],accessibility:[]};
+for(const [engine,type] of (process.env.QUANTUM_SKIP_WEBKIT?[['chromium',chromium]]:[['chromium',chromium],['webkit',webkit]])){
+ const browser=await type.launch({headless:true,...(engine==='chromium'?{channel:'chrome'}:{})});
+ const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),page=await context.newPage();
+ page.on('pageerror',e=>report.errors.push({engine,message:e.message}));
+ const doc=structuredClone(travelDocument);doc.actions[0].start=new Date(Date.now()+2*86400000).toISOString().slice(0,10)+'T09:00:00+09:00';doc.actions[1].start=new Date(Date.now()+3*86400000).toISOString().slice(0,10)+'T10:00:00+09:00';
+ await page.addInitScript({content:`const travelDocument=${JSON.stringify(doc)};(${installFixture.toString()})();`});
+ const audit=async screen=>{await page.waitForTimeout(450);await page.screenshot({path:`${out}/${engine}-${screen}.png`});const a=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();report.accessibility.push({engine,screen,violations:a.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))});};
+ await page.goto((process.env.QUANTUM_QA_URL||'http://127.0.0.1:4274'));await page.getByRole('button',{name:'旅行测试任务'}).click();await page.locator('.guide-screen').waitFor();await page.getByRole('button',{name:'保存为旅行手记',exact:true}).click();await page.getByRole('button',{name:'生成我的旅行手记',exact:true}).click();await page.locator('.notebook-screen').waitFor();
+ await page.getByRole('button',{name:'打开这趟旅行'}).click();await page.locator('.journey-screen').waitFor();await audit('before');
+ await page.getByRole('checkbox').first().check();assert(await page.getByRole('checkbox').first().isChecked());report.checks.push({engine,check:'preparation state is interactive'});
+ await page.getByRole('button',{name:'开始这趟旅行',exact:true}).click();await page.locator('.lifecycle-today').waitFor();await audit('today');
+ await page.getByRole('button',{name:'调整余下安排',exact:true}).click();await page.getByLabel('调整后的安排名称').fill('慢慢游览');await page.getByLabel('调整后的开始时间').fill('09:30');await audit('change');
+ await page.getByRole('button',{name:'确认调整',exact:true}).click();try{await page.getByLabel('调整后的安排名称').waitFor({state:'hidden',timeout:5000});}catch(e){console.log('CHANGE ERROR',await page.locator('.lifecycle-error,.production-error').allTextContents());await page.screenshot({path:out+'/'+engine+'-change-error.png'});throw e;}await page.waitForTimeout(1500);
+ assert.equal(await page.evaluate(()=>window.fixture.doc.actions[0].title),'慢慢游览');assert.equal(await page.evaluate(()=>window.fixture.doc.actions[0].start.slice(11,16)),'09:30');report.checks.push({engine,check:'confirmed itinerary changes reach the CAS artifact'});
+ await page.getByRole('button',{name:'开始这项安排',exact:true}).click();await page.getByRole('button',{name:'这项已完成',exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>window.fixture.doc.actions[0].status),'in_progress');report.checks.push({engine,check:'actual progress comes from server receipt and refresh'});
+ await page.getByRole('button',{name:'这项已完成',exact:true}).click();await page.waitForTimeout(1300);assert.equal(await page.evaluate(()=>window.fixture.doc.actions[0].status),'completed');
+ await page.getByRole('button',{name:'回来后',exact:true}).click();await audit('review');
+ await page.getByRole('button',{name:'编辑旅行总结'}).click();await page.getByLabel('自己的旅行总结').fill('第一天慢慢走，留下了真实进度。');await page.getByRole('button',{name:'保存总结',exact:true}).click();await page.waitForTimeout(1300);
+ assert(JSON.stringify(await page.evaluate(()=>window.fixture.doc.client_state)).includes('第一天慢慢走'));report.checks.push({engine,check:'user summary is versioned as personal state'});
+ await page.getByRole('button',{name:'返回',exact:true}).click();await page.locator('.notebook-screen').waitFor();await page.getByRole('button',{name:'返回',exact:true}).click();await page.locator('.guide-screen').waitFor();await page.getByRole('button',{name:'展开路线',exact:true}).click();await page.locator('.route-screen').waitFor();await audit('route-unknown-location');
+ assert(await page.getByText('地点坐标待核对',{exact:true}).isVisible());report.checks.push({engine,check:'unknown coordinate remains a textual stop'});
+ await page.getByRole('button',{name:'规划交通住宿与预订'}).click();await page.locator('.services-screen').waitFor();await audit('services');
+ assert.equal(await page.locator('.flight-waterfall li').count(),0);report.checks.push({engine,check:'flights stay empty until sourced results arrive'});
+ await context.close();await browser.close();
+}
+await writeFile(out+'/report.json',JSON.stringify(report,null,2));assert.deepEqual(report.errors,[]);assert.deepEqual(report.accessibility.flatMap(a=>a.violations),[]);
+console.log(JSON.stringify({checks:report.checks.length,errors:report.errors.length,scans:report.accessibility.length}));

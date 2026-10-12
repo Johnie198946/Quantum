@@ -1,0 +1,161 @@
+/* Type follows the available card width, independently of the review viewport. */
+.phone {
+  --type-page: 26px;
+  --type-panel: 23px;
+  --type-section: 18px;
+  --type-card: 16px;
+  --type-body: 12px;
+  --type-meta: 11px;
+  --type-action: 14px;
+  container: travel-phone / inline-size;
+}
+.phone .topbar > span { font-size: var(--type-action); font-weight: 600; }
+.phone .primary { font-size: var(--type-action); line-height: 1.4; letter-spacing: 0; }
+.phone .eyebrow { font-size: var(--type-meta); line-height: 1.5; letter-spacing: .8px; }
+.phone .sheet h2 { font-size: var(--type-panel); line-height: 1.4; letter-spacing: -.3px; font-weight: 700; }
+.phone .sheet > p, .phone .sheet label { font-size: var(--type-body); line-height: 1.7; }
+.phone .sheet input, .phone .sheet textarea { font-size: 16px; line-height: 1.5; }
+.phone .text-btn, .phone .chips button { font-size: 13px; line-height: 1.5; }
+.phone .root-tabs > button { font-size: var(--type-meta); line-height: 1.3; }
+
+/* Photo-led entry: one headline, a quieter card heading and readable captions. */
+.workflow-heading h1 { font-size: var(--type-page); line-height: 1.35; letter-spacing: -.5px; }
+.workflow-heading > p:last-child { font-size: var(--type-body); line-height: 1.7; }
+.magazine-heading h2 { font-size: var(--type-section); line-height: 1.4; letter-spacing: -.3px; }
+.magazine-heading p, .magazine-heading > span { font-size: var(--type-meta); letter-spacing: .5px; }
+.magazine-slide strong { font-size: 23px; line-height: 1.4; letter-spacing: .5px; }
+.magazine-slide figcaption > span, .magazine-slide figcaption p { font-size: var(--type-meta); line-height: 1.6; }
+
+/* Preference cards can be full-width, half-width, three columns or text rows. */
+.information-card { container: preference-card / inline-size; }
+.preference-grid .information-card > div > p { font-size: var(--type-meta); line-height: 1.5; margin-bottom: 6px; }
+.preference-grid .information-card > div > strong { font-size: 14px; font-weight: 600; line-height: 1.5; padding-right: 10px; }
+.mode-large .info-0 .hero-caption h1 { font-size: var(--type-panel); line-height: 1.4; }
+.mode-large .info-0 .hero-caption p { font-size: var(--type-body); line-height: 1.7; }
+.mode-large .info-0 > div > strong { font-size: var(--type-card); }
+.mode-text .information-card > div > strong { font-size: 14px; }
+@container preference-card (max-width: 115px) {
+  .preference-grid .information-card > div > strong { font-size: 12px; line-height: 1.6; padding-right: 8px; }
+  .preference-grid .information-card > div > p { font-size: 11px; line-height: 1.5; }
+}
+@container preference-card (min-width: 240px) {
+  .mode-large .information-card > div > strong { font-size: 16px; }
+}
+
+.preference-grid .info-1 > div > strong { text-wrap: balance; }
+
+/* Map labels remain subordinate to their location pin and map headline. */
+.route-screen .route-art > header h1 { font-size: 28px; line-height: 1.35; letter-spacing: 2px; }
+.route-screen .route-art > header > p, .route-screen .route-help { font-size: var(--type-meta); line-height: 1.6; }
+.route-screen .route-capsule strong { font-size: 14px; line-height: 1.4; }
+.route-screen .route-capsule small { font-size: 10px; line-height: 1.5; }
+.route-place-photo figcaption > span { font-size: var(--type-meta); letter-spacing: .5px; }
+.route-place-photo figcaption > strong { font-size: 28px; line-height: 1.3; letter-spacing: 2px; }
+.route-detail-panel .detail-heading h2,
+.guide-calm .route-detail-panel h2 { font-size: var(--type-panel); line-height: 1.4; letter-spacing: -.3px; }
+.route-detail-panel .detail-heading .eyebrow { font-size: var(--type-meta); }
+.itinerary-card h3 { font-size: var(--type-card); line-height: 1.4; letter-spacing: 0; }
+.itinerary-card p { font-size: var(--type-body); line-height: 1.65; }
+.itinerary-time time { font-size: var(--type-meta); letter-spacing: 0; }
+.itinerary-card label, .date-entry { font-size: var(--type-body); }
+.range-value strong { font-size: 25px; line-height: 1.4; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.range-slot small, .calendar-week { font-size: var(--type-meta); }
+.time-grid .range-slot strong { font-size: 22px; line-height: 1.2; }
+.date-grid .range-slot strong { font-size: 15px; }
+.calendar-endpoints button { font-size: var(--type-body); }
+
+/* 110px photo rows: the destination leads, without overpowering the photo. */
+.adopt-list-screen > header h1 { font-size: var(--type-page); line-height: 1.4; }
+.adopt-list-screen > header > p:last-child { font-size: var(--type-body); line-height: 1.7; }
+.final-photo-copy > small { font-size: var(--type-meta); line-height: 1.5; }
+.adopt-list-screen .final-photo-copy h2 { font-size: 17px; line-height: 1.4; font-weight: 700; margin: 4px 0; }
+.adopt-list-screen .final-photo-copy p { font-size: var(--type-body); line-height: 1.5; }
+.adopt-list-screen .final-view { font-size: var(--type-body); }
+.adopt-list-screen .adopt-bottom .primary { font-size: var(--type-action); }
+
+/* Guide cards use the same 16 / 12 / 11 rhythm as the itinerary drawer. */
+.guide-calm .guide-reading-title h1,
+.guide-calm .guide-day .guide-reading-title h1 { font-size: var(--type-page); line-height: 1.4; letter-spacing: -.4px; }
+.guide-calm .guide-reading-title > .eyebrow { font-size: var(--type-meta); letter-spacing: .8px; }
+.guide-calm .guide-reading-title > p:not(.eyebrow),
+.guide-calm .guide-meta { font-size: var(--type-body); line-height: 1.8; }
+.guide-cover-photo figcaption, .guide-day-hero figcaption { font-size: var(--type-meta); line-height: 1.5; }
+.guide-calm .guide-route-row > span { font-size: var(--type-body); line-height: 1.5; }
+.guide-calm .guide-route-row > span small { font-size: var(--type-meta); line-height: 1.5; }
+.guide-calm .guide-route-row strong { font-size: var(--type-card); line-height: 1.4; font-weight: 700; }
+.guide-calm .day-picker button { font-size: var(--type-meta); }
+.daily-row-title > span small, .daily-row-title > .agenda-status { font-size: var(--type-meta); line-height: 1.5; }
+.daily-row-title strong { font-size: var(--type-card); font-weight: 700; }
+.guide-calm .status-actions button, .guide-calm .agenda-secondary .text-btn { font-size: var(--type-body); }
+.preparation-card strong { font-size: 15px; line-height: 1.5; }
+.preparation-card small { font-size: var(--type-meta); line-height: 1.6; }
+.guide-calm .paper-stop h2 { font-size: var(--type-card); line-height: 1.5; }
+.guide-calm .paper-stop p { font-size: var(--type-body); line-height: 1.7; }
+.guide-calm > .paper-fixed .primary { font-size: var(--type-action); }
+
+/* Preserve the notebook's writing axes, with calmer display-size contrasts. */
+.journal-masthead { font-size: 10px; letter-spacing: 1.5px; }
+.journal-cover-title h1 { font-size: 44px; line-height: 1.25; letter-spacing: 4px; }
+.journal-title-long h1 { font-size: 26px; line-height: 1.45; letter-spacing: .5px; }
+.journal-cover-photo figcaption, .diary-collage figcaption,
+.notebook-screen .cover-route small, .journal-day-title p { font-size: var(--type-meta); line-height: 1.7; }
+.notebook-screen .cover-copy h2 { font-size: 25px; line-height: 1.5; letter-spacing: .5px; }
+.notebook-screen .cover-copy > p { font-size: var(--type-body); line-height: 1.9; }
+.journal-day-number { font-size: 76px; letter-spacing: -3px; }
+.notebook-screen .journal-day-title h1 { font-size: 28px; line-height: 1.5; letter-spacing: .5px; }
+.notebook-screen .diary-route h2 { font-size: var(--type-section); line-height: 1.5; }
+.notebook-screen .diary-route p { font-size: var(--type-body); line-height: 1.9; }
+.notebook-screen .appendix h1 { font-size: 28px; line-height: 1.5; letter-spacing: .5px; }
+.notebook-screen .appendix > p:not(.journal-section-mark),
+.paper-screen .private-line { font-size: var(--type-body); line-height: 1.8; }
+
+@container travel-phone (max-width: 350px) {
+  .workflow-heading h1, .adopt-list-screen > header h1,
+  .guide-calm .guide-reading-title h1,
+  .guide-calm .guide-day .guide-reading-title h1 { font-size: 24px; }
+  .magazine-slide strong { font-size: 21px; }
+  .adopt-list-screen .final-photo-copy h2 { font-size: 16px; }
+  .adopt-list-screen .final-photo-copy p { font-size: 11px; }
+  .preparation-card strong { font-size: 14px; }
+  .journal-cover-title h1 { font-size: 40px; }
+  .journal-title-long h1 { font-size: 24px; }
+}
+
+/* Compact day drawers and a denser, detented half-hour strip. */
+.phone .day-detail .detail-heading h2,
+.phone .route-detail-panel .detail-heading h2 { font-size:19px;line-height:1.45;font-weight:650;letter-spacing:0; }
+.day-detail .detail-heading { margin:12px 0 18px; }
+.day-detail .detail-hero { height:112px;margin-bottom:18px; }
+.itinerary-card { min-height:84px;padding:10px 24px 10px 10px;gap:10px;border-radius:17px;-webkit-touch-callout:none; }
+.itinerary-thumb { width:46px;height:58px;border-radius:11px; }
+.itinerary-card h3 { font-size:14px;line-height:1.4;font-weight:600;margin:0 0 4px;letter-spacing:0; }
+.itinerary-card p { font-size:11px;line-height:1.5; }
+.itinerary-time { min-height:24px;padding:0; }
+.itinerary-time time { font-size:10px;line-height:1.5; }
+.day-detail .timeline-item { margin-bottom:9px; }
+.itinerary-card:has(input) { min-height:84px; }
+.itinerary-lift { --type-body:12px;--type-meta:11px; }
+.phone .day-detail > .primary,
+.phone .route-detail-content > .primary,
+.phone .range-sheet > .primary { width:auto;min-width:126px;min-height:44px;height:44px;margin:12px 0 0 auto;padding:0 16px;gap:6px;border-radius:22px;font-size:12px;font-weight:600; }
+.phone .range-sheet { padding:36px 20px 24px; }
+.phone .range-sheet h2 { font-size:18px;line-height:1.45;font-weight:600;margin-bottom:18px;letter-spacing:0; }
+.range-sheet .eyebrow { font-size:10px;margin-bottom:8px; }
+.range-value { gap:8px;margin:8px 0 18px; }
+.range-value strong { font-size:20px;line-height:1.4;font-weight:500;letter-spacing:0; }
+.range-value > span { font-size:14px; }
+.time-grid { gap:4px;padding:10px 7px 14px;scrollbar-width:none; }
+.time-grid .range-cell { width:44px;height:60px;border-radius:11px; }
+.time-grid .range-cell.range-start { border-radius:11px 4px 4px 11px; }
+.time-grid .range-cell.range-end { border-radius:4px 11px 11px 4px; }
+.time-grid .range-cell.range-start.range-end { border-radius:11px; }
+.time-grid .range-slot { gap:4px; }
+.time-grid .range-slot strong { font-size:17px;font-weight:500;line-height:1.25; }
+.time-grid .range-slot small { font-size:10px;line-height:1.3; }
+.time-scroll-controls { align-items:center;margin:0;gap:6px; }
+.time-ruler { position:relative;flex:1;min-width:0;height:44px;touch-action:none;cursor:ew-resize;padding:0 0 16px;font-size:10px;line-height:1.4;color:#647568;font-variant-numeric:tabular-nums; }
+.time-ruler:before { content:'';position:absolute;left:0;right:0;bottom:3px;height:9px;background:repeating-linear-gradient(90deg,#7d8c7f88 0 1px,transparent 1px var(--ruler-step,48px));background-position-x:var(--ruler-offset,0px);pointer-events:none; }
+.time-ruler i { position:absolute;left:50%;bottom:1px;width:2px;height:13px;border-radius:2px;background:#667c6b;pointer-events:none; }
+.range-sheet .range-hint { font-size:10px!important;line-height:1.6;margin:16px 0 12px!important; }
+.date-range-sheet .range-value strong { font-size:20px; }
+.date-grid .range-slot strong { font-size:14px;font-weight:500; }

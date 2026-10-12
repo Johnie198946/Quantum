@@ -1,0 +1,119 @@
+.phone .journal-voice.journal-voice-composer{
+ min-width:0;
+}
+.phone .journal-voice.journal-voice-composer .journal-voice-frame{
+ position:relative;
+ min-width:0;
+ width:100%;
+ overflow:visible;
+}
+.phone .journal-voice.journal-voice-composer .floating-field{
+ min-height:128px;
+ margin:0;
+ border-radius:18px;
+}
+.phone .journal-voice.journal-voice-composer .floating-field>textarea{
+ min-height:128px;
+ max-height:300px;
+ padding:28px 15px 58px!important;
+ line-height:1.6;
+ resize:vertical;
+ touch-action:pan-x pan-y;
+}
+.phone .journal-voice.journal-voice-composer .voice-frame-actions{
+ position:absolute;
+ left:9px;
+ right:9px;
+ bottom:8px;
+ display:flex;
+ align-items:center;
+ justify-content:flex-start;
+ gap:8px;
+ min-width:0;
+ min-height:40px;
+ margin:0;
+ z-index:2;
+}
+.phone .journal-voice.journal-voice-composer .voice-frame-actions .voice-hold{
+ max-width:calc(100% - var(--voice-reserved-space,0px));
+ height:40px;
+ min-height:40px;
+ padding:0 10px;
+ touch-action:none;
+}
+.phone .journal-voice.journal-voice-composer .voice-frame-actions .voice-image,
+.phone .journal-voice.journal-voice-composer .voice-frame-actions .voice-submit{
+ width:40px;
+ height:40px;
+ min-height:40px;
+ flex:0 0 40px;
+ padding:0;
+}
+.phone .journal-voice.journal-voice-composer .voice-context-tools{
+ position:absolute;
+ z-index:35;
+ display:block;
+ width:max-content;
+ max-width:calc(100% - 12px);
+ margin:0;
+ padding:4px;
+ border:1px solid #ffffffd9;
+ border-radius:22px;
+ background:linear-gradient(115deg,#dce8e4ed,#e9e1e6ed 56%,#ece5d8ed);
+ box-shadow:inset 0 1px 2px #ffffffad,0 7px 24px -11px #465a4b77;
+ backdrop-filter:blur(20px) saturate(1.2);
+ -webkit-backdrop-filter:blur(20px) saturate(1.2);
+ overflow:visible;
+ transform-origin:center;
+}
+.phone .journal-voice.journal-voice-composer .voice-format-row{
+ display:flex;
+ flex-wrap:nowrap;
+ align-items:center;
+ gap:2px;
+ width:max-content;
+ max-width:100%;
+}
+.phone .journal-voice.journal-voice-composer .voice-context-tools button{
+ display:grid;
+ place-items:center;
+ flex:0 0 44px;
+ width:44px;
+ min-width:44px;
+ height:44px;
+ min-height:44px;
+ padding:0;
+ border:0;
+ border-radius:17px;
+ background:transparent;
+ color:#354b43;
+ font-size:14px;
+ line-height:1;
+ white-space:nowrap;
+ overflow-wrap:normal;
+ word-break:normal;
+ touch-action:manipulation;
+}
+.phone .journal-voice.journal-voice-composer .voice-context-tools button:hover{
+ background:#ffffff5c;
+}
+.phone .journal-voice.journal-voice-composer .voice-context-tools button:focus-visible{
+ outline:2px solid #ab7793;
+ outline-offset:-2px;
+ background:#ffffff70;
+}
+.phone .journal-voice.journal-voice-composer .voice-context-tools button[data-format=code]{
+ font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+ font-size:12px;
+ font-style:normal;
+ letter-spacing:-.5px;
+}
+.phone .journal-assistant .primary.journal-send{
+ display:flex;
+ margin:16px auto 0;
+}
+@media(prefers-reduced-motion:reduce){
+ .phone .journal-voice.journal-voice-composer .voice-context-tools{
+  transition:none;
+ }
+}

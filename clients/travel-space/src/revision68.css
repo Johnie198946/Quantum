@@ -1,0 +1,31 @@
+/* Shared action palette from the user-supplied frosted rainbow reference. */
+#root .phone{--action-ink:#263d35;--action-glass:linear-gradient(125deg,rgba(160,210,199,.86),rgba(232,204,175,.86) 48%,rgba(207,187,227,.88));--action-edge:rgba(255,255,255,.88)}
+#root .phone :is(button.primary,button.round-confirm,button.confirm-capsule,button.inline-edit-confirm,button.service-apply,button.ticket-select,button.journal-save-action,button.location-commit,button.requirement-confirm,button.voice-submit,button[aria-label^="确认"],button[aria-label^="确定"],button[aria-label^="采用"],button[aria-label^="生成"],button[aria-label="继续"],button[aria-label="下一步"],button.support-confirm){background:var(--action-glass)!important;color:var(--action-ink)!important;border:1px solid var(--action-edge)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,.55),0 4px 12px -8px rgba(57,72,62,.35)!important;backdrop-filter:blur(20px) saturate(.9);-webkit-backdrop-filter:blur(20px) saturate(.9)}
+#root .phone :is(button.primary,button.round-confirm,button.confirm-capsule,button.requirement-confirm,button.support-confirm):is(:active,.is-touching){background:linear-gradient(125deg,rgba(160,210,199,.96),rgba(232,204,175,.96) 48%,rgba(207,187,227,.97))!important;filter:saturate(1.16);box-shadow:inset 0 0 0 1px rgba(255,255,255,.92),0 0 16px rgba(165,190,172,.3)!important;border-color:rgba(255,255,255,.95)!important}
+#root .phone button.confirm-icon{width:44px;height:44px;min-width:44px;min-height:44px;flex:none;padding:0;aspect-ratio:1;border-radius:50%;display:grid;place-items:center}
+#root .phone .chat-screen.phase-refining .chat-scroll{padding-bottom:32px}
+#root .phone .chat-note-entry{display:flex;justify-content:flex-end;margin:4px 2px 12px}
+#root .phone .chat-note-entry button{width:44px;height:44px;padding:0;color:#5b6c62;display:grid;place-items:center}
+#root .phone .travel-note-sheet label{margin:16px 0 8px}
+#root .phone .travel-note-sheet textarea{min-height:100px}
+#root .phone .discovery-top{z-index:32;isolation:isolate;pointer-events:none}
+#root .phone .discovery-top>button{pointer-events:auto}
+#root .phone .folder-target{overflow:visible;transform-origin:center;will-change:transform}
+#root .phone .folder-target.folder-hover{box-shadow:0 0 0 6px rgba(167,190,176,.14),0 0 22px rgba(121,158,137,.3)}
+#root .phone .discovery-collection-state{position:absolute;top:54px;right:20px;max-width:65%;z-index:33;font-size:11px;color:#395244;background:rgba(250,251,246,.9);padding:5px 9px;border-radius:20px;pointer-events:none}
+#root .phone .pending-number{z-index:9999;isolation:isolate;pointer-events:none}
+#root .phone .cylinder-slot:has(>.pending-number){z-index:50}
+#root .phone .cylinder-slot>.pending-number{position:absolute;top:-3px;right:2px;transform:translateZ(50px);z-index:9999}
+#root .phone .guide-screen>.guide-reader-navigation{margin:0 20px 12px;flex:none;height:48px;min-height:48px;padding:4px;position:relative;z-index:15}
+#root .phone .guide-reader-navigation button{min-height:40px;font-size:11px;gap:5px}
+#root .phone .guide-reader-navigation .liquid-nav-active{height:40px;top:4px}
+#root .phone .guide-screen .budget-unfold{position:absolute;inset:0;background:rgba(240,243,239,.98);overflow:auto;padding:68px 4px 28px;isolation:isolate}
+#root .phone .flow-chat-sheet{padding-bottom:20px;display:flex;flex-direction:column;gap:0}
+#root .phone .flow-chat-sheet .flow-chat-log{flex:1 1 auto;min-height:100px;margin-bottom:10px}
+#root .phone .flow-chat-sheet .flow-chat-compose{flex:0 0 auto;margin-top:auto;padding-top:6px;margin-bottom:0}
+#root .phone .flow-chat-sheet .flow-chat-messages>.assistant{background:none;box-shadow:none;backdrop-filter:none;padding:0;width:100%;max-width:none}
+#root .phone .flow-chat-sheet .composer-shell{margin:0}
+#root .phone .flow-chat-intro h2{font-size:21px}
+@media(prefers-reduced-motion:reduce){#root .phone .folder-target{will-change:auto}}
+#root .phone .card-page-unfold,#root .phone .card-page-unfold-content{position:absolute;inset:0}
+#root .phone .card-page-unfold-content>section{width:100%;height:100%;position:relative}

@@ -1,0 +1,90 @@
+{
+  "task_id": "travel-notes-pcm-chat-20261013",
+  "prototype": "revision68",
+  "registered_functions": 216,
+  "backend_suite": "146 passed",
+  "pcm_chat_suite": "116 passed",
+  "final_delta_suite": "20 passed",
+  "native_unit_tests": 7,
+  "native_ui_tests": 1,
+  "model_checks": 44,
+  "native_budget_checks": 7,
+  "browser_suites": {
+    "layout": {
+      "checks": 30,
+      "errors": 0,
+      "accessibility_scans": 18,
+      "violations": 0
+    },
+    "saved_note": {
+      "checks": 8,
+      "errors": 0,
+      "accessibility_scans": 0,
+      "violations": 0
+    },
+    "creation": {
+      "checks": 26,
+      "errors": 0,
+      "accessibility_scans": 36,
+      "violations": 0
+    },
+    "failure_recovery": {
+      "checks": 18,
+      "errors": 0,
+      "accessibility_scans": 8,
+      "violations": 0
+    },
+    "journey": {
+      "checks": 12,
+      "errors": 0,
+      "accessibility_scans": 12,
+      "violations": 0
+    },
+    "services": {
+      "checks": 8,
+      "errors": 0,
+      "accessibility_scans": 6,
+      "violations": 0
+    },
+    "booking": {
+      "checks": 2,
+      "errors": 0,
+      "accessibility_scans": 4,
+      "violations": 0
+    },
+    "tasks": {
+      "checks": 42,
+      "errors": 0,
+      "accessibility_scans": 30,
+      "violations": 0
+    }
+  },
+  "real_aomori_save": "pending exact-SHA deployment and same-workflow simulator retry",
+  "raw_private_evidence": "kept outside git under task temporary directory",
+  "packaged_renderer": [
+    {
+      "file": "app.js",
+      "source_sha256": "47bd1a7ff5bbabddb4d845f93d53c36ed1c8154d9a0e888032c72ac48283ed00",
+      "packaged_sha256": "47bd1a7ff5bbabddb4d845f93d53c36ed1c8154d9a0e888032c72ac48283ed00",
+      "matches": true
+    },
+    {
+      "file": "app.css",
+      "source_sha256": "1d07a29496b9e18da9bd239387e43dc2f670f93579a44235ba495dc837fce2ab",
+      "packaged_sha256": "1d07a29496b9e18da9bd239387e43dc2f670f93579a44235ba495dc837fce2ab",
+      "matches": true
+    },
+    {
+      "file": "catalog.json",
+      "source_sha256": "3b2b5da7737a5700f612464ca4fef3afe65abf52d18dc4bc997382905f57559c",
+      "packaged_sha256": "3b2b5da7737a5700f612464ca4fef3afe65abf52d18dc4bc997382905f57559c",
+      "matches": true
+    },
+    {
+      "file": "index.html",
+      "source_sha256": "32f3e4490719e415568f7982c27e0ad93f4146433c0009e0c9ceb5b6b4e08880",
+      "packaged_sha256": "32f3e4490719e415568f7982c27e0ad93f4146433c0009e0c9ceb5b6b4e08880",
+      "matches": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "packaged_resources": 1010,
+  "resource_sha_differences": [],
+  "critical_hashes": {
+    "app.js": "915a667855627b614e7ab4b4186d9ee1e1be0cf870edccd7f6db9c3836f4417e",
+    "app.css": "1d07a29496b9e18da9bd239387e43dc2f670f93579a44235ba495dc837fce2ab",
+    "index.html": "32f3e4490719e415568f7982c27e0ad93f4146433c0009e0c9ceb5b6b4e08880",
+    "catalog.json": "3b2b5da7737a5700f612464ca4fef3afe65abf52d18dc4bc997382905f57559c"
+  },
+  "native_source_differences": [],
+  "native_files_compared": 80
+}
