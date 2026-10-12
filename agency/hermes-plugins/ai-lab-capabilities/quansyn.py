@@ -19,6 +19,7 @@ SLASH = re.compile(r"/quansyn(?:\s+(qs_[a-f0-9]{32}))?", re.I)
 ID = re.compile(r"qs_[a-f0-9]{32}")
 RUN_TTL_SECONDS = 2 * 60 * 60
 MAX_BATCH_ITEMS = 100
+CARD_ACTION_TTL_SECONDS = 15 * 60
 
 
 def digest(text):
@@ -63,6 +64,7 @@ class QuanSyn:
         self.turns = {}
         self.delivery = {}
         self.card_callbacks = {}
+        self.card_actions = {}
         if callable(getattr(ctx, "register_hook", None)):
             ctx.register_hook("pre_gateway_dispatch", self.gateway)
 
@@ -101,10 +103,50 @@ class QuanSyn:
             if card:
                 context = getattr(native, "context", None)
                 message_id = str(getattr(context, "open_message_id", "") or "")
+                match = COMMAND.fullmatch(command)
+                if match is None:
+                    return {"action": "skip", "reason": "quansyn_invalid_card_command"}
+                action, transfer, selection = match.groups()
+                if action in {"查看", "拉取", "推送"}:
+                    self.run_card_action(adapter, message_id, sender, action, transfer, selection)
+                    return {"action": "skip", "reason": "quansyn_card_handled"}
                 if message_id:
                     self.card_callbacks[sender] = (message_id, command)
                 self.update_progress_card(adapter, message_id, sender, command)
         return {"action": "rewrite", "text": command}
+
+    def run_card_action(self, adapter, message_id, sender, action, transfer, selection):
+        """Run deterministic card actions without creating an LLM turn."""
+        now = time.time()
+        self.card_actions = {key: stamp for key, stamp in self.card_actions.items()
+                             if now - stamp < CARD_ACTION_TTL_SECONDS}
+        key = (sender, message_id, action, transfer or "", selection or "")
+        if key in self.card_actions:
+            return False
+        self.card_actions[key] = now
+        command = f"{action} QuanSyn" + (f" {transfer}" if transfer else "")
+        if selection:
+            command += f" 附件 {selection}"
+        self.update_progress_card(adapter, message_id, sender, command)
+        turn = {"sender": sender, "action": action, "id": transfer, "selection": selection,
+                "reply": None, "card_message_id": message_id}
+
+        async def run():
+            await asyncio.to_thread(self._command, turn)
+            self.update_progress_card(adapter, message_id, sender, "", turn=turn)
+
+        loop = getattr(adapter, "_loop", None)
+        if loop is None or not loop.is_running():
+            self.card_actions.pop(key, None)
+            return False
+        try:
+            if asyncio.get_running_loop() is loop:
+                loop.create_task(run())
+            else:
+                asyncio.run_coroutine_threadsafe(run(), loop)
+        except RuntimeError:
+            asyncio.run_coroutine_threadsafe(run(), loop)
+        return True
 
     def progress_card(self, sender, command):
         return self.card({"sender": sender, "action": "执行中", "progress": True,

@@ -12,6 +12,7 @@ Date: 2026-10-12
 - Render green success, orange partial-success, or red failure completion cards.
 - For every completed batch item, send an independent result card with an explicit “推送完整结果到 QuanSyn” confirmation button.
 - A card callback updates that same card to “执行中” and then to its final state; a published result removes the push button so repeat clicks cannot append duplicate receipt cards.
+- Deterministic card actions (`查看`, `拉取`, `推送`) execute in the authenticated plugin handler without an LLM turn; only content-producing actions (`执行`, `拉取并执行`, `批量执行`) enter Hermes generation.
 - Keep failed requests in the local queue; skip active/completed requests to prevent duplicate execution.
 
 ## Security and state invariants
@@ -27,8 +28,8 @@ Date: 2026-10-12
 
 - `python3 -m py_compile` passed for the plugin package.
 - `git diff --check` passed.
-- `pytest tests/test_quansyn.py tests/test_quansyn_mac.py tests/test_travel_pcm_capabilities.py -q`: 36 passed.
-- Tests cover slash normalization, all-pending batch collection, independent success/failure recording, failed-item retry, duplicate-active suppression, immediate original-card replacement, completion-card delivery from the adapter event loop, and in-place published-card finalization without another push button.
+- `pytest tests/test_quansyn.py tests/test_quansyn_mac.py tests/test_travel_pcm_capabilities.py -q`: 37 passed.
+- Tests cover slash normalization, all-pending batch collection, independent success/failure recording, failed-item retry, duplicate-active suppression, immediate original-card replacement, completion-card delivery from the adapter event loop, in-place published-card finalization without another push button, and deterministic callback execution without an LLM turn.
 
 ## Rollout
 

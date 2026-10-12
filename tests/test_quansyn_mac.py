@@ -3,6 +3,7 @@ import importlib.util
 import json
 import uuid
 import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -461,6 +462,36 @@ def test_published_callback_replaces_card_without_another_push_button(runtime):
                for button in element["actions"]]
     assert not any(button.get("value", {}).get("quansyn_command", "").startswith("推送 QuanSyn")
                    for button in buttons)
+
+
+def test_deterministic_card_action_bypasses_model_and_deduplicates(runtime):
+    plugin, _, _, _ = runtime
+    transfer = "qs_" + "a" * 32
+    loop = asyncio.new_event_loop()
+    worker = threading.Thread(target=loop.run_forever)
+    worker.start()
+    adapter = SimpleNamespace(_loop=loop)
+    gateway = SimpleNamespace(adapters={"feishu": adapter})
+    source = SimpleNamespace(platform="feishu", chat_type="dm", user_id="ou_owner",
+                             user_id_alt=None, chat_id="oc_private")
+    value = {"quansyn_command": "推送 QuanSyn " + transfer, "sender_id": "ou_owner"}
+    native = SimpleNamespace(action=SimpleNamespace(value=value), operator=SimpleNamespace(open_id="ou_owner"),
+                             context=SimpleNamespace(open_message_id="om_card"))
+    event = SimpleNamespace(source=source, text="", raw_message=SimpleNamespace(event=native))
+    calls = []
+    done = threading.Event()
+    plugin.update_progress_card = lambda *args, **kwargs: True
+    plugin._command = lambda turn: calls.append(turn.copy()) or turn.update(
+        published=True, reply="已回传") or done.set() or {"success": True}
+    try:
+        assert plugin.gateway(event, gateway) == {"action": "skip", "reason": "quansyn_card_handled"}
+        assert plugin.gateway(event, gateway) == {"action": "skip", "reason": "quansyn_card_handled"}
+        assert done.wait(2)
+        assert len(calls) == 1
+        assert calls[0]["action"] == "推送"
+        assert not plugin.turns
+    finally:
+        loop.call_soon_threadsafe(loop.stop); worker.join(3); loop.close()
 
 
 def test_mac_requires_existing_host_owner_policy(runtime):
