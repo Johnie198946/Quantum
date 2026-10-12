@@ -248,8 +248,11 @@ def test_feishu_cards_use_native_private_callback_and_sender(runtime):
     native.operator.open_id = "ou_other"
     assert plugin.gateway(event, gateway)["action"] == "skip"
     native.operator.open_id = "ou_owner"
-    source.chat_type = "group"
+    source.chat_type = "group"  # Feishu card callbacks omit the original DM type.
+    assert plugin.gateway(event, gateway)["text"] == command
+    source.chat_id = "oc_other"
     assert plugin.gateway(event, gateway)["action"] == "skip"
+    source.chat_id = "oc_private"
     source.chat_type = "dm"
     value["quansyn_command"] = "绑定 QuanSyn secret"
     assert plugin.gateway(event, gateway)["action"] == "skip"
@@ -283,6 +286,102 @@ def test_pending_card_and_default_full_result_do_not_execute_twice(runtime):
     published = next(x for x in rows if x["reply_to"] == transfer)
     assert len(published["files"]) == 1 and published["blocks"][0]["kind"] == "code"
     assert c.get("/api/v1/quansyn/files/" + published["files"][0]["artifact_id"]).content == path.read_bytes()
+
+
+def test_slash_quansyn_batches_all_pending_and_retries_only_failures(runtime):
+    plugin, c, _, _ = runtime
+    pair = c.post("/api/v1/quansyn/devices/pair").json()
+    kw, _ = turn(plugin, "绑定 QuanSyn " + pair["code"])
+    assert plugin.command(**kw)["success"]
+    requests = [c.post("/api/v1/quansyn/transfers", json={
+        "request_id": uuid.uuid4().hex, "target": "mac", "text": f"批量任务 {index}"
+    }).json() for index in range(2)]
+
+    kw, context = turn(plugin, "/quansyn", session="batch-one")
+    assert context and plugin.turns["batch-one"]["action"] == "批量执行"
+    execution = plugin.command(**kw)
+    assert execution["success"] and execution["goal"]["batch"] is True
+    assert {item["id"] for item in execution["goal"]["items"]} == {item["id"] for item in requests}
+    first, second = execution["goal"]["items"]
+    output = Path(first["output_directory"]) / "first.txt"
+    output.write_text("first output")
+    receipt = plugin.outputs({"items": [
+        {"id": first["id"], "success": True, "result": "first done", "paths": [str(output)], "blocks": []},
+        {"id": second["id"], "success": False, "error": "temporary failure"},
+    ]}, **kw)
+    assert receipt == {"success": False, "completed": 1, "failed": 1,
+                       "message": "批量执行完成：成功 1 条，失败 1 条。失败项已保留在队列，可再次发送 /quansyn 重试。"}
+    assert "成功 1 条，失败 1 条" in plugin.finalize("ignored aggregate", **kw)
+    assert plugin.ctx.state.get(plugin.key("ou_owner", first["id"]), {})["completed"] is True
+    assert plugin.ctx.state.get(plugin.key("ou_owner", second["id"]), {})["completed"] is False
+
+    retry_kw, _ = turn(plugin, "/quansyn", session="batch-retry")
+    retry = plugin.command(**retry_kw)
+    assert [item["id"] for item in retry["goal"]["items"]] == [second["id"]]
+    assert plugin.outputs({"items": [{"id": second["id"], "success": True,
+        "result": "second done", "paths": [], "blocks": []}]}, **retry_kw)["success"]
+    assert "成功 1 条，失败 0 条" in plugin.finalize("ignored aggregate", **retry_kw)
+    assert plugin.queue("ou_owner") == []
+
+
+def test_slash_quansyn_does_not_duplicate_an_active_batch(runtime):
+    plugin, c, _, _ = runtime
+    pair = c.post("/api/v1/quansyn/devices/pair").json()
+    kw, _ = turn(plugin, "绑定 QuanSyn " + pair["code"])
+    plugin.command(**kw)
+    request = c.post("/api/v1/quansyn/transfers", json={
+        "request_id": uuid.uuid4().hex, "target": "mac", "text": "do once"}).json()
+    first_kw, _ = turn(plugin, "/quansyn", session="batch-active-one")
+    assert plugin.command(**first_kw)["goal"]["items"][0]["id"] == request["id"]
+    second_kw, _ = turn(plugin, "/quansyn", session="batch-active-two")
+    duplicate = plugin.command(**second_kw)
+    assert duplicate["success"] and "goal" not in duplicate
+    assert "已在执行中" in duplicate["receipt"]
+
+
+def test_card_click_immediately_replaces_original_with_progress(runtime):
+    import threading
+    plugin, _, _, _ = runtime
+    loop = asyncio.new_event_loop()
+    ready = threading.Event()
+    updated = threading.Event()
+    updates = []
+    def run():
+        asyncio.set_event_loop(loop)
+        loop.call_soon(ready.set)
+        loop.run_forever()
+    worker = threading.Thread(target=run)
+    worker.start(); assert ready.wait(3)
+    def update(request):
+        updates.append(request)
+        updated.set()
+        return SimpleNamespace(success=True)
+    async def run_blocking(fn, request):
+        return fn(request)
+    adapter = SimpleNamespace(
+        _loop=loop, _client=SimpleNamespace(im=SimpleNamespace(v1=SimpleNamespace(
+            message=SimpleNamespace(update=update)))), _run_blocking=run_blocking,
+        _build_update_message_body=lambda **kw: SimpleNamespace(**kw),
+        _build_update_message_request=lambda **kw: SimpleNamespace(**kw),
+        _finalize_send_result=lambda response, error: response)
+    plugin.delivery["ou_owner"] = (adapter, "oc_private")
+    source = SimpleNamespace(platform="feishu", chat_type="group", user_id="ou_owner",
+                             user_id_alt=None, chat_id="oc_private")
+    value = {"quansyn_command": "批量执行 QuanSyn", "sender_id": "ou_owner"}
+    native = SimpleNamespace(action=SimpleNamespace(value=value), operator=SimpleNamespace(open_id="ou_owner"),
+                             context=SimpleNamespace(open_message_id="om_card"))
+    event = SimpleNamespace(source=source, text="/card button", raw_message=SimpleNamespace(event=native))
+    try:
+        assert plugin.gateway(event, SimpleNamespace(adapters={"feishu": adapter}))["text"] == "批量执行 QuanSyn"
+        assert updated.wait(3)
+        request = updates[0]
+        assert request.message_id == "om_card"
+        card = json.loads(request.request_body.content)
+        assert card["header"]["template"] == "orange"
+        assert "执行中" in card["header"]["title"]["content"]
+        assert not any(element["tag"] == "action" for element in card["elements"])
+    finally:
+        loop.call_soon_threadsafe(loop.stop); worker.join(3); loop.close()
 
 
 def test_card_delivery_uses_existing_adapter_loop_and_falls_back(runtime):

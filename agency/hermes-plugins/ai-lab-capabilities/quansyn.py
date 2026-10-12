@@ -8,17 +8,33 @@ import os
 import re
 import secrets
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
 
-COMMAND = re.compile(r"(查看|绑定|拉取并执行|拉取|执行|推送)\s*QuanSyn(?:\s+(\S+))?(?:\s+附件\s+([0-9,，]+))?", re.I)
+COMMAND = re.compile(r"(批量执行|查看|绑定|拉取并执行|拉取|执行|推送)\s*QuanSyn(?:\s+(\S+))?(?:\s+附件\s+([0-9,，]+))?", re.I)
+SLASH = re.compile(r"/quansyn(?:\s+(qs_[a-f0-9]{32}))?", re.I)
 ID = re.compile(r"qs_[a-f0-9]{32}")
+RUN_TTL_SECONDS = 2 * 60 * 60
+MAX_BATCH_ITEMS = 100
 
 
 def digest(text):
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def canonical_command(text):
+    """Map the public slash entry point to the existing trusted command grammar."""
+    value = str(text or "").strip().replace("qs\\_", "qs_")
+    match = SLASH.fullmatch(value)
+    if match:
+        transfer = match.group(1)
+        return "拉取并执行 QuanSyn " + transfer if transfer else "批量执行 QuanSyn"
+    if value.lower() == "quansyn":
+        return "查看 QuanSyn"
+    return value if COMMAND.fullmatch(value) else None
 
 
 class MacKeychain:
@@ -58,11 +74,15 @@ class QuanSyn:
         native = getattr(getattr(event, "raw_message", None), "event", None)
         value = getattr(getattr(native, "action", None), "value", None)
         card = isinstance(value, dict) and "quansyn_command" in value
-        if not card and text.lower() != "quansyn" and not COMMAND.fullmatch(text):
+        command = str(value.get("quansyn_command", "")) if isinstance(value, dict) and card else canonical_command(text)
+        if not command:
             return None
-        if getattr(source, "chat_type", "") != "dm":
-            return {"action": "skip", "reason": "quansyn_private_chat_only"}
         sender = str(getattr(source, "user_id", "") or "")
+        chat_id = str(getattr(source, "chat_id", "") or "")
+        if getattr(source, "chat_type", "") != "dm":
+            route = self.delivery.get(sender)
+            if not card or not route or route[1] != chat_id:
+                return {"action": "skip", "reason": "quansyn_private_chat_only"}
         if not sender or not self.owner_check(str(getattr(platform, "value", platform)), sender):
             return {"action": "skip", "reason": "quansyn_local_owner_required"}
         if card:
@@ -70,17 +90,53 @@ class QuanSyn:
             if (not operator or operator not in {sender, getattr(source, "user_id_alt", None)}
                     or value.get("sender_id") != sender):
                 return {"action": "skip", "reason": "quansyn_card_owner_mismatch"}
-            text = str(value.get("quansyn_command", ""))
-            if not COMMAND.fullmatch(text) or text.startswith("绑定"):
+            if not COMMAND.fullmatch(command) or command.startswith("绑定"):
                 return {"action": "skip", "reason": "quansyn_invalid_card_command"}
-        elif text.lower() == "quansyn":
-            text = "查看 QuanSyn"
         adapter = getattr(gateway, "adapters", {}).get(platform)
         if adapter is not None:
             if len(self.delivery) >= 128 and sender not in self.delivery:
                 self.delivery.clear()
             self.delivery[sender] = (adapter, str(source.chat_id))
-        return {"action": "rewrite", "text": text}
+            if card:
+                context = getattr(native, "context", None)
+                message_id = str(getattr(context, "open_message_id", "") or "")
+                self.update_progress_card(adapter, message_id, sender, command)
+        return {"action": "rewrite", "text": command}
+
+    def progress_card(self, sender, command):
+        return self.card({"sender": sender, "action": "执行中", "progress": True,
+                          "reply": f"⏳ **执行中**\n\n已接收：`{command}`\n正在拉取并执行，请勿重复点击。"})
+
+    def update_progress_card(self, adapter, message_id, sender, command):
+        """Immediately replace the clicked card; final state is sent after execution."""
+        loop = getattr(adapter, "_loop", None)
+        if loop is None or not loop.is_running():
+            return False
+        payload = json.dumps(self.progress_card(sender, command), ensure_ascii=False)
+
+        async def update():
+            try:
+                if message_id and getattr(adapter, "_client", None) is not None:
+                    body = adapter._build_update_message_body(msg_type="interactive", content=payload)
+                    request = adapter._build_update_message_request(message_id=message_id, request_body=body)
+                    response = await adapter._run_blocking(adapter._client.im.v1.message.update, request)
+                    return adapter._finalize_send_result(response, "QuanSyn progress update failed").success
+                response = await adapter._feishu_send_with_retry(
+                    chat_id=self.delivery[sender][1], msg_type="interactive", payload=payload,
+                    reply_to=None, metadata=None)
+                return adapter._finalize_send_result(response, "QuanSyn progress card failed").success
+            except Exception:
+                return False
+
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
+        if current is loop:
+            loop.create_task(update())
+        else:
+            asyncio.run_coroutine_threadsafe(update(), loop)
+        return True
 
     def card(self, turn):
         sender = turn["sender"]
@@ -89,7 +145,9 @@ class QuanSyn:
                     "type": "primary" if primary else "default",
                     "value": {"quansyn_command": command, "sender_id": sender}}
         elements = []
-        if "rows" in turn:
+        if turn.get("progress"):
+            elements.append({"tag": "markdown", "content": turn["reply"]})
+        elif "rows" in turn:
             rows = turn["rows"]
             for row in rows[:10]:
                 elements.append({"tag": "markdown", "content":
@@ -101,6 +159,9 @@ class QuanSyn:
                 elements.append({"tag": "markdown", "content": "暂无发给 Mac 的待处理需求。"})
             elif len(rows) > 10:
                 elements.append({"tag": "markdown", "content": "先显示前10条，处理后刷新查看其余需求。"})
+            if rows:
+                elements.append({"tag": "action", "actions": [
+                    button("全部拉取并执行", "批量执行 QuanSyn", True)]})
         else:
             elements.append({"tag": "markdown", "content": str(turn.get("reply") or "执行已完成，可回传完整结果。")[:600]})
             transfer = turn.get("id")
@@ -112,12 +173,14 @@ class QuanSyn:
                     elements.append({"tag": "action", "actions": [button("推送完整结果到 QuanSyn", "推送 QuanSyn " + transfer, True)]})
                 elif saved.get("imported") and turn.get("action") == "拉取":
                     elements.append({"tag": "action", "actions": [button("开始执行", "执行 QuanSyn " + transfer, True)]})
-        elements.append({"tag": "action", "actions": [button("刷新待处理", "查看 QuanSyn"),
-            {"tag": "button", "text": {"tag": "plain_text", "content": "打开 QuanSyn"},
-             "type": "default", "url": self.base() + "/quansyn/"}]})
+        if not turn.get("progress"):
+            elements.append({"tag": "action", "actions": [button("刷新待处理", "查看 QuanSyn"),
+                {"tag": "button", "text": {"tag": "plain_text", "content": "打开 QuanSyn"},
+                 "type": "default", "url": self.base() + "/quansyn/"}]})
+        template = "orange" if turn.get("progress") or turn.get("partial") else "red" if turn.get("failed") else "green" if turn.get("completed_count") else "blue"
         return {"config": {"wide_screen_mode": True},
-                "header": {"template": "red" if turn.get("failed") else "blue",
-                           "title": {"tag": "plain_text", "content": "Quantum · QuanSyn"}},
+                "header": {"template": template,
+                           "title": {"tag": "plain_text", "content": "Quantum · QuanSyn" + (" · 执行中" if turn.get("progress") else "")}},
                 "elements": elements}
 
     def deliver_card(self, turn):
@@ -157,6 +220,44 @@ class QuanSyn:
 
     def key(self, sender, transfer):
         return "quansyn:" + digest(sender + "\0" + transfer)
+
+    def queue_key(self, sender):
+        return "quansyn-queue:" + digest(sender)
+
+    def queue(self, sender):
+        value = self.ctx.state.get(self.queue_key(sender), {"ids": []})
+        return [item for item in value.get("ids", []) if ID.fullmatch(str(item))]
+
+    def queue_add(self, sender, transfer):
+        ids = self.queue(sender)
+        if transfer not in ids:
+            ids.append(transfer)
+            self.ctx.state.set(self.queue_key(sender), {"ids": ids})
+
+    def queue_remove(self, sender, transfer):
+        ids = [item for item in self.queue(sender) if item != transfer]
+        self.ctx.state.set(self.queue_key(sender), {"ids": ids})
+
+    def pending_rows(self, sender):
+        """Collect every server-pending row without silently truncating pagination."""
+        rows = []
+        before = None
+        while True:
+            suffix = "?target=mac&pending=true&limit=100"
+            if before:
+                from urllib.parse import quote
+                suffix += "&before=" + quote(str(before), safe="")
+            page = self.http(sender, "GET", "/transfers" + suffix)
+            if not isinstance(page, dict):
+                raise ValueError("QuanSyn 待处理队列返回格式无效")
+            batch = page.get("items", [])
+            rows.extend(batch)
+            before = page.get("next")
+            if not before:
+                break
+            if len(rows) >= MAX_BATCH_ITEMS:
+                raise ValueError(f"待处理需求超过 {MAX_BATCH_ITEMS} 条，请先减少队列后重试")
+        return rows
 
     def root(self, sender, transfer):
         root = self.ctx.state.data_dir / "quansyn" / digest(sender + "\0" + transfer)
@@ -200,6 +301,8 @@ class QuanSyn:
         if row["direction"] != "request" or row["target"] != "mac":
             raise ValueError("请选择发给 Mac 的需求")
         if saved.get("imported"):
+            if not saved.get("completed"):
+                self.queue_add(sender, transfer)
             return saved
         if row["status"] in {"claimed", "imported", "returned"} and saved.get("claim") and "files" in saved and "text" in saved:
             for file in saved["files"]:
@@ -209,6 +312,8 @@ class QuanSyn:
             self.http(sender, "POST", f"/transfers/{transfer}/imported", payload={"revision": row["revision"], "claim": saved["claim"]})
             saved["imported"] = True
             self.ctx.state.set(key, saved)
+            if not saved.get("completed"):
+                self.queue_add(sender, transfer)
             return saved
         claim = saved.get("claim") or secrets.token_urlsafe(32)
         saved.update(claim=claim, id=transfer, sender=sender)
@@ -233,6 +338,7 @@ class QuanSyn:
         self.http(sender, "POST", f"/transfers/{transfer}/imported", payload={"revision": leased["revision"], "claim": claim})
         saved["imported"] = True
         self.ctx.state.set(key, saved)
+        self.queue_add(sender, transfer)
         return saved
 
     def before_turn(self, user_message="", **kw):
@@ -242,7 +348,8 @@ class QuanSyn:
         if platform not in {"feishu", "lark"} or not session or not sender or not self.owner_check(platform, sender):
             return None
         # Human command must be the entire trusted gateway message, not quoted instructions in content.
-        match = COMMAND.fullmatch(user_message.strip())
+        command = canonical_command(user_message)
+        match = COMMAND.fullmatch(command or "")
         if not match:
             self.turns.pop(session, None)
             return None
@@ -297,9 +404,48 @@ class QuanSyn:
                 self.credentials.set(self.account(sender), paired["token"])
                 turn["reply"] = "QuanSyn 已绑定。发送“查看 QuanSyn”即可读取发给 Mac 的需求；可在 Web 撤销权限。"
             elif action == "查看":
-                rows = self.http(sender, "GET", "/transfers?target=mac&pending=true")["items"]
+                rows = self.pending_rows(sender)
                 turn["rows"] = rows
                 turn["reply"] = "\n".join(f'{r["id"]} · {r["text"][:100]} · {len(r["files"])} 个附件' for r in rows) or "暂无发给 Mac 的待处理需求。"
+            elif action == "批量执行":
+                rows = self.pending_rows(sender)
+                ids = self.queue(sender)
+                for row in reversed(rows):
+                    if row["id"] not in ids:
+                        ids.append(row["id"])
+                if len(ids) > MAX_BATCH_ITEMS:
+                    raise ValueError(f"本地与服务端待处理需求合计超过 {MAX_BATCH_ITEMS} 条，请先减少队列后重试")
+                items = []
+                running = []
+                now = time.time()
+                for item_id in ids:
+                    saved = self.ctx.state.get(self.key(sender, item_id), {})
+                    if not saved.get("imported"):
+                        saved = self.pull(sender, item_id)
+                    if saved.get("completed"):
+                        self.queue_remove(sender, item_id)
+                        continue
+                    if float(saved.get("running_until") or 0) > now:
+                        running.append(item_id)
+                        continue
+                    saved.update(completed=False, outputs=[], running_until=now + RUN_TTL_SECONDS,
+                                 running_turn=str(turn.get("turn_id") or ""))
+                    self.ctx.state.set(self.key(sender, item_id), saved)
+                    items.append({"id": item_id, "request": saved["text"], "blocks": saved["blocks"],
+                                  "files": saved["files"], "output_directory": str(self.root(sender, item_id))})
+                if not items:
+                    turn["reply"] = (f"{len(running)} 条需求已在执行中，请勿重复提交。" if running
+                                     else "暂无未处理的 QuanSyn 需求。")
+                else:
+                    turn.update(executing=True, batch=True, batch_ids=[item["id"] for item in items])
+                    return {"success": True, "goal": {
+                        "batch": True, "items": items,
+                        "instruction": (
+                            "逐条独立完成 items 中的全部需求；一条失败不得阻断其他条目。每条输出文件只能保存在其 output_directory。"
+                            "完成后必须调用一次 ai_lab_execute capability=quansyn action=outputs，inputs.items 中逐条提交 "
+                            "id、success、result、paths、blocks；失败项提交 success=false 与 error。不要自动回传到 Web。"
+                        ),
+                    }}
             elif not transfer or not ID.fullmatch(transfer):
                 raise ValueError("请提供完整需求编号 qs_…")
             elif action == "推送":
@@ -337,10 +483,15 @@ class QuanSyn:
                     turn["reply"] = f'已拉取 {transfer}：\n{saved["text"]}\n附件：\n' + "\n".join(f['path'] for f in saved["files"]) + f"\n发送“执行 QuanSyn {transfer}”开始运行。"
                 elif saved.get("completed"):
                     turn["reply"] = "该需求已执行完成，可直接回传已有完整结果，无需重新执行。"
+                    self.queue_remove(sender, transfer)
+                elif float(saved.get("running_until") or 0) > time.time():
+                    turn["reply"] = "该需求已在执行中，请勿重复提交。"
                 else:
                     turn["executing"] = True
                     saved["completed"] = False
                     saved["outputs"] = []
+                    saved["running_until"] = time.time() + RUN_TTL_SECONDS
+                    saved["running_turn"] = str(turn.get("turn_id") or "")
                     self.ctx.state.set(self.key(sender, transfer), saved)
                     return {"success": True, "goal": {
                         "request": saved["text"], "blocks": saved["blocks"], "files": saved["files"],
@@ -352,13 +503,7 @@ class QuanSyn:
             turn["reply"] = str(exc) if isinstance(exc, ValueError) else "QuanSyn 操作失败，未确认成功，请检查连接或重试。"
         return {"success": not turn.get("failed", False), "receipt": turn["reply"]}
 
-    def outputs(self, inputs, **kw):
-        session = str(kw.get("session_id") or "")
-        turn = self.turns.get(session, {})
-        if not turn.get("executing") or not self.authorized(turn, "outputs", kw):
-            raise ValueError("只有当前可信执行回合可以登记输出")
-        paths = inputs.get("paths", [])
-        blocks = inputs.get("blocks", [])
+    def validate_outputs(self, sender, transfer, paths, blocks):
         if not isinstance(paths, list) or len(paths) > 10:
             raise ValueError("最多登记 10 个文件")
         # Installed packages include an exact copy of the canonical server contract.
@@ -369,7 +514,6 @@ class QuanSyn:
         if not isinstance(blocks, list) or len(blocks) > 100 or len(json.dumps(blocks).encode()) > 512_000:
             raise ValueError("输出块超过 100 项或 512 KB")
         validated = [Block.model_validate(b).model_dump() for b in blocks]
-        sender, transfer = turn["sender"], turn["id"]
         root = self.root(sender, transfer)
         outputs = []
         for value in paths:
@@ -381,6 +525,62 @@ class QuanSyn:
             with path.open("rb") as stream:
                 content_hash = hashlib.file_digest(stream, "sha256").hexdigest()
             outputs.append({"path": str(path), "hash": content_hash})
+        return outputs, validated
+
+    def outputs(self, inputs, **kw):
+        session = str(kw.get("session_id") or "")
+        turn = self.turns.get(session, {})
+        if not turn.get("executing") or not self.authorized(turn, "outputs", kw):
+            raise ValueError("只有当前可信执行回合可以登记输出")
+        sender = turn["sender"]
+        if turn.get("batch"):
+            items = inputs.get("items")
+            if not isinstance(items, list):
+                raise ValueError("批量执行必须逐条登记 items")
+            expected = list(turn.get("batch_ids") or [])
+            supplied = [str(item.get("id") or "") for item in items if isinstance(item, dict)]
+            if len(items) != len(supplied) or len(supplied) != len(set(supplied)) or set(supplied) != set(expected):
+                raise ValueError("批量输出必须且只能覆盖本回合全部需求")
+            prepared = []
+            for item in items:
+                transfer = str(item["id"])
+                success = item.get("success") is True
+                if success:
+                    result = str(item.get("result") or "").strip()
+                    if not result:
+                        raise ValueError(f"{transfer} 缺少完整执行结果")
+                    outputs, blocks = self.validate_outputs(
+                        sender, transfer, item.get("paths", []), item.get("blocks", []))
+                    prepared.append((transfer, True, result, outputs, blocks, ""))
+                else:
+                    error = str(item.get("error") or "").strip()
+                    if not error:
+                        raise ValueError(f"{transfer} 失败项缺少错误说明")
+                    prepared.append((transfer, False, "", [], [], error[:1000]))
+            completed = failed = 0
+            for transfer, success, result, outputs, blocks, error in prepared:
+                saved = self.ctx.state.get(self.key(sender, transfer), {})
+                saved.pop("running_until", None)
+                saved.pop("running_turn", None)
+                if success:
+                    saved.update(outputs=outputs, result_blocks=blocks, result=result, completed=True)
+                    self.queue_remove(sender, transfer)
+                    completed += 1
+                else:
+                    saved.update(completed=False, last_error=error)
+                    self.queue_add(sender, transfer)
+                    failed += 1
+                self.ctx.state.set(self.key(sender, transfer), saved)
+            turn.update(batch_registered=True, completed_count=completed, failed_count=failed,
+                        partial=bool(completed and failed), failed=bool(failed and not completed),
+                        reply=f"批量执行完成：成功 {completed} 条，失败 {failed} 条。失败项已保留在队列，可再次发送 /quansyn 重试。")
+            return {"success": failed == 0, "completed": completed, "failed": failed,
+                    "message": turn["reply"]}
+
+        paths = inputs.get("paths", [])
+        blocks = inputs.get("blocks", [])
+        transfer = turn["id"]
+        outputs, validated = self.validate_outputs(sender, transfer, paths, blocks)
         saved = self.ctx.state.get(self.key(sender, transfer), {})
         saved.update(outputs=outputs, result_blocks=validated)
         self.ctx.state.set(self.key(sender, transfer), saved)
@@ -395,11 +595,25 @@ class QuanSyn:
             return turn["reply"]
         if not turn.get("command_result"):
             return "QuanSyn 指令未取得实际执行回执，请重试。"
+        if turn.get("batch"):
+            for transfer in turn.get("batch_ids", []):
+                saved = self.ctx.state.get(self.key(turn["sender"], transfer), {})
+                saved.pop("running_until", None)
+                saved.pop("running_turn", None)
+                saved["completed"] = False
+                self.ctx.state.set(self.key(turn["sender"], transfer), saved)
+                self.queue_add(turn["sender"], transfer)
+            turn.update(failed=True, reply="批量执行未登记逐项结果，全部需求已保留在队列；发送 /quansyn 可重试。")
+            self.deliver_card(turn)
+            return turn["reply"]
         if turn.get("executing") and response_text:
             key = self.key(turn["sender"], turn["id"])
             saved = self.ctx.state.get(key, {})
             saved.update(result=response_text, completed=True)
+            saved.pop("running_until", None)
+            saved.pop("running_turn", None)
             self.ctx.state.set(key, saved)
+            self.queue_remove(turn["sender"], turn["id"])
             self.deliver_card(turn)
             outputs = saved.get("outputs", [])
             files = "\n".join(f'{i + 1}. {Path(f["path"]).name}' for i, f in enumerate(outputs))
