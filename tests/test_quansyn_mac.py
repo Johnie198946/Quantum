@@ -311,7 +311,16 @@ def test_slash_quansyn_batches_all_pending_and_retries_only_failures(runtime):
     ]}, **kw)
     assert receipt == {"success": False, "completed": 1, "failed": 1,
                        "message": "批量执行完成：成功 1 条，失败 1 条。失败项已保留在队列，可再次发送 /quansyn 重试。"}
+    delivered = []
+    plugin.deliver_card = lambda value: delivered.append(value) or True
     assert "成功 1 条，失败 1 条" in plugin.finalize("ignored aggregate", **kw)
+    assert [item["id"] for item in delivered] == [first["id"], second["id"]]
+    success_card = plugin.card(delivered[0])
+    buttons = [button for element in success_card["elements"] if element["tag"] == "action"
+               for button in element["actions"]]
+    assert any(button.get("value", {}).get("quansyn_command") == "推送 QuanSyn " + first["id"]
+               for button in buttons)
+    assert delivered[1]["failed"] is True
     assert plugin.ctx.state.get(plugin.key("ou_owner", first["id"]), {})["completed"] is True
     assert plugin.ctx.state.get(plugin.key("ou_owner", second["id"]), {})["completed"] is False
 

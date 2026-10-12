@@ -591,6 +591,14 @@ class QuanSyn:
         turn = self.turns.get(str(kw.get("session_id") or ""), {})
         if not turn or kw.get("turn_id") != turn.get("turn_id"):
             return None
+        if turn.get("batch_registered"):
+            for transfer in turn.get("batch_ids", []):
+                saved = self.ctx.state.get(self.key(turn["sender"], transfer), {})
+                completed = saved.get("completed") is True
+                self.deliver_card({"sender": turn["sender"], "action": "批量执行", "id": transfer,
+                    "reply": saved.get("result") if completed else saved.get("last_error", "执行失败"),
+                    "failed": not completed, "completed_count": 1 if completed else 0})
+            return turn["reply"]
         if turn.get("reply") is not None:
             self.deliver_card(turn)
             return turn["reply"]

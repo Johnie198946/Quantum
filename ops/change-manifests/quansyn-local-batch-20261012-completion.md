@@ -10,6 +10,7 @@ Date: 2026-10-12
 - Preserve `/quansyn qs_…` and the existing Chinese single-item commands for compatibility.
 - Replace a clicked Feishu card immediately with an orange, non-actionable “执行中” card.
 - Render green success, orange partial-success, or red failure completion cards.
+- For every completed batch item, send an independent result card with an explicit “推送完整结果到 QuanSyn” confirmation button.
 - Keep failed requests in the local queue; skip active/completed requests to prevent duplicate execution.
 
 ## Security and state invariants
