@@ -1,18 +1,18 @@
 # QuanSyn push/pull authenticated E2E repair
 
 task_id: quansyn-push-pull-e2e-20261013
-status: TESTED
+status: VERIFIED
 branch: main
 worktree: /Users/dengzhaoyu/Projects/Quantum-quansyn-e2e-20261013
-head/local_commit: pending
-remote_sha: pending
+implementation_commit: 38a935b5d62d82c246a87011ae48c7569cbca15b
+remote_sha_at_deploy: 38a935b5d62d82c246a87011ae48c7569cbca15b
 server_before: 165d4fffa71886fc3131d27869d4c7d874f866f8
-server_after: pending
-health_check: pending
-functional_check: authenticated production pull/return passed; standalone Mac push reproduced HTTP 403 before repair; post-deploy verification pending
-rollback_point: pending
+server_after: 38a935b5d62d82c246a87011ae48c7569cbca15b
+health_check: API ready; public health ok; all Compose services healthy; Hermes Bridge ok
+functional_check: authenticated pull/return passed; standalone Mac push with attachment passed; exact readback and retry idempotency passed
+rollback_point: /opt/releases/ai-lab-platform-165d4fffa718.dzFbvZ
 manifest: ops/change-manifests/quansyn-push-pull-e2e-20261013-completion.md
-remaining_risks: deployment and authenticated production recheck pending
+remaining_risks: test transfers remain visible in the authenticated QuanSyn history as audit evidence
 
 ## Scope and boundary
 
@@ -43,14 +43,31 @@ Authenticated account: phone account ending `0894`; tenant `xFusion_MO_Tenant`; 
 
 ## Verification
 
-- `.venv/bin/python -m pytest tests/test_quansyn.py tests/test_quansyn_mac.py -q`
-- Result: `30 passed`.
+- Backend: `.venv/bin/python -m pytest tests/test_quansyn.py tests/test_quansyn_mac.py -q` → `30 passed`.
+- Installed relay/client source: `python3 -m pytest tests/test_quansyn_relay_batch.py tests/test_quansyn_desktop_relay.py -q` → `18 passed` in `Johnie198946/ai-lab-platform` main checkout.
 - The first host-Python run was invalid because global FastAPI/Starlette versions did not match the repository lock; it is not counted as a product test result. A task-local venv with repository-pinned FastAPI/Starlette was used for the valid run.
 
-## Rollout plan
+## Deployment and production verification
 
-1. Commit and push this exact main revision to `Johnie198946/Quantum`.
-2. Verify GitHub `main` equals the local commit.
-3. Record the current production release as rollback point.
-4. Deploy the verified GitHub SHA through the existing exact-SHA release path.
-5. Verify `/health`, server `.deployed-sha`, authenticated Mac standalone push, account-side transfer readback, retry idempotency, Web-to-Mac pull, and Mac reply-to return.
+- Implementation SHA pushed and read back from GitHub main: `38a935b5d62d82c246a87011ae48c7569cbca15b`.
+- Standard exact-SHA deployment initially stopped safely because the preloaded backend image still carried revision `165d4fffa71886fc3131d27869d4c7d874f866f8`.
+- Built a proof child image from the exact current backend image, replacing only `/app/backend/api/quansyn.py`; image/source SHA-256 matched. New image: `sha256:a849d987e228a52552f7f088b15880cb85718e67eaf280acb5707456ccf4e548`.
+- The first retry stopped safely on the 5 GiB disk gate. Eight oldest, unreferenced release directories were retired; current and immediate rollback releases were preserved.
+- Standard `deploy_exact_sha.sh` then completed with exit 0.
+- Independent readback: `.deployed-sha` and all four backend image labels equal the implementation SHA; API and workers use image `sha256:a849d987e228a52552f7f088b15880cb85718e67eaf280acb5707456ccf4e548`; all Compose services are healthy.
+- Public `https://www.t-react.com/health` returned `{"status":"ok","version":"0.8.0"}`; internal `/ready` returned ready; Hermes Bridge returned ok. Bridge and chat worker CWDs both point to `/opt/releases/ai-lab-platform-38a935b5d62d.1b7oAk`.
+- Authenticated post-deploy standalone Mac push: `qs_452cb2df24f7797f0acb6588bbe4cc93`.
+  - Exact text marker read back: `QS-E2E-PUSH-e0d35e0e6484`.
+  - Attachment SHA-256 read back: `2df51cd6adb84edbf1b6326391b0d9921a43f61ac1372aca07984c2ec0ee05b5`.
+  - Repeating the same persisted-session push returned local cursor `noop=true`; no duplicate was created.
+  - Anonymous and wrong-sender probes both returned 401.
+- Authenticated Web→Mac pull and linked return evidence from the same account:
+  - request `qs_d8014d2edc877af7ddee6d41afd4a38d` reached `returned`;
+  - linked result `qs_9c0c9e3eaf85ddca067c3bd1e5461271` read back with the matching `reply_to` and exact marker.
+
+## Rollout completion
+
+1. Implementation commit pushed to `Johnie198946/Quantum` main and remote SHA verified.
+2. Previous immutable release recorded as the rollback point.
+3. Verified implementation SHA deployed through the existing exact-SHA release path.
+4. Runtime SHA, image identity, health, authenticated push/pull records, attachment hashes, idempotency, and denial probes read back.
