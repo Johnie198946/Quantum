@@ -96,6 +96,13 @@ def test_device_pair_scope_and_revocation(client):
     assert c.get('/api/v1/quansyn/transfers/' + ios["id"], headers=headers).status_code == 404
     assert c.get("/api/v1/quansyn/transfers", headers={**headers, "X-QuanSyn-Sender": "another"}).status_code == 401
     assert c.post("/api/v1/quansyn/transfers", json=body(), headers=headers).status_code == 403
+    assert c.post("/api/v1/quansyn/transfers", json=body(direction="request", target="mac"), headers=headers).status_code == 403
+    assert c.post("/api/v1/quansyn/transfers", json=body(direction="result", target="ios"), headers=headers).status_code == 403
+    pushed_payload = body(direction="result", target="mac", text="Mac 主动推送")
+    pushed = c.post("/api/v1/quansyn/transfers", json=pushed_payload, headers=headers)
+    assert pushed.status_code == 201, pushed.text
+    assert pushed.json()["text"] == "Mac 主动推送" and pushed.json()["reply_to"] is None
+    assert c.post("/api/v1/quansyn/transfers", json=pushed_payload, headers=headers).json()["id"] == pushed.json()["id"]
     assert c.post("/api/v1/quansyn/devices/pair", headers=headers).status_code == 403
     async def authenticated():
         return dict(who)
@@ -133,6 +140,15 @@ def test_device_cannot_bypass_withdrawal_or_attach_other_queue_file(client):
         claim["revision"] = leased.json()["revision"]
         assert c.post('/api/v1/quansyn/transfers/' + mac["id"] + '/imported', json=claim, headers=headers).status_code == 200
         assert c.post("/api/v1/quansyn/transfers", json=body(direction="result", target="mac", reply_to=mac["id"], files=[{"artifact_id": hidden["artifact_id"]}]), headers=headers).status_code == 403
+        assert c.post("/api/v1/quansyn/transfers", json=body(direction="result", target="mac", files=[{"artifact_id": hidden["artifact_id"]}]), headers=headers).status_code == 403
+        uploaded = c.post("/api/v1/quansyn/files", content=b"device owned", headers={**headers, "X-File-Name": "device.txt"})
+        assert uploaded.status_code == 201, uploaded.text
+        standalone = c.post("/api/v1/quansyn/transfers", json=body(
+            direction="result", target="mac", text="device file push",
+            files=[{"artifact_id": uploaded.json()["artifact_id"]}],
+        ), headers=headers)
+        assert standalone.status_code == 201, standalone.text
+        assert standalone.json()["files"][0]["metadata"]["device_id"] == device["device_id"]
         from backend.models.knowledge_contribution import KnowledgeContributionUserConsent
         async def withdraw():
             async with SessionLocal() as db:

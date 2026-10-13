@@ -83,8 +83,8 @@ async def owned_row(db, transfer_id, p):
 
 @router.post("/transfers", status_code=201)
 async def create_transfer(body: TransferBody, p=Depends(principal)):
-    if p.get("device_id") and (body.direction != "result" or body.target != "mac" or not body.reply_to):
-        raise HTTPException(403, "Mac 凭证只能回传关联结果")
+    if p.get("device_id") and (body.direction != "result" or body.target != "mac"):
+        raise HTTPException(403, "Mac 凭证只能向所属账号推送结果")
     tenant, user = owner(p)
     fingerprint = digest(body.model_dump_json())
     async with SessionLocal() as db:
@@ -104,6 +104,10 @@ async def create_transfer(body: TransferBody, p=Depends(principal)):
             except GeneratedArtifactError as exc:
                 raise HTTPException(404, "附件不存在或无权访问") from exc
             files.append(receipt)
+        if p.get("device_id") and not body.reply_to and any(
+            file.get("metadata", {}).get("device_id") != p["device_id"] for file in files
+        ):
+            raise HTTPException(403, "附件不属于当前设备")
         if body.reply_to:
             parent = await owned_row(db, body.reply_to, p)
             if parent.direction != "request" or parent.target != body.target:
